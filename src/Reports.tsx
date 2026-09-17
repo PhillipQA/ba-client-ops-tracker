@@ -58,7 +58,7 @@ export default function Reports({ clients, projects, items, planner, taskSetting
   const [projectId, setProjectId] = useState('')
   const today = localDateKey(new Date())
 
-  const contextProjects = useMemo(() => projects.filter((project) => !clientId || !project.clientId || project.clientId === clientId), [projects, clientId])
+  const contextProjects = useMemo(() => projects, [projects])
   const contextItems = useMemo(() => items.filter((item) => (!clientId || item.clientId === clientId) && (!projectId || item.projectId === projectId)), [items, clientId, projectId])
   const periodActivities = useMemo(() => planner.filter((activity) => {
     const endDate = activity.endDate || activity.date

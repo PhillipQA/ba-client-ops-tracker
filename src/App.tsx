@@ -20,6 +20,7 @@ import {
   LockKeyhole,
   Settings2,
   Sparkles,
+  Trash2,
   Users,
   X,
 } from 'lucide-react'
@@ -47,7 +48,7 @@ type Store = {
   taskSettings: TaskSettings
 }
 
-const STORE_SCHEMA_VERSION = 3
+const STORE_SCHEMA_VERSION = 4
 const STORAGE_KEY = 'ba-client-ops-tracker-v2'
 const LEGACY_STORAGE_KEY = 'ba-client-ops-tracker-v1'
 function localDateKey(date: Date) {
@@ -133,7 +134,14 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
   const parsed = value && typeof value === 'object' ? value as Partial<Store> : {}
   const legacy = Number(parsed.schemaVersion || 0) < STORE_SCHEMA_VERSION
   const clients = Array.isArray(parsed.clients) ? parsed.clients.filter((item) => !legacy || !legacyDemoIds.clients.has(item.id)) : fallback.clients
-  const projects = Array.isArray(parsed.projects) ? parsed.projects.filter((item) => !legacy || !legacyDemoIds.projects.has(item.id)) : fallback.projects
+  const rawProjects = Array.isArray(parsed.projects) ? parsed.projects.filter((item) => !legacy || !legacyDemoIds.projects.has(item.id)) : fallback.projects
+  const projects: Project[] = rawProjects.map((project) => ({
+    id: String(project.id),
+    name: String(project.name || 'Untitled project'),
+    status: project.status === 'Active' || project.status === 'UAT' || project.status === 'Closing' || project.status === 'Closed' ? project.status : 'Discovery',
+    targetDate: String(project.targetDate || ''),
+    summary: String(project.summary || ''),
+  }))
   const items = Array.isArray(parsed.items) ? parsed.items.filter((item) => !legacy || !legacyDemoIds.items.has(item.id)) : fallback.items
   const activity = Array.isArray(parsed.activity) ? parsed.activity.filter((item) => !legacy || !legacyDemoIds.activity.has(item.id)) : fallback.activity
   const planner = Array.isArray(parsed.planner) ? parsed.planner.filter((item) => !legacy || !legacyDemoIds.planner.has(item.id)) : fallback.planner
@@ -230,8 +238,10 @@ function App() {
   const [taskDateFilter, setTaskDateFilter] = useState<'All' | 'due-3' | 'due-7' | 'followup-3' | 'followup-7' | 'overdue'>('All')
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [selectedProjectClientId, setSelectedProjectClientId] = useState<string | null>(null)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [taskPreset, setTaskPreset] = useState<{ clientId?: string; projectId?: string; type?: ItemType } | null>(null)
-  const [modal, setModal] = useState<'item' | 'client' | 'project' | 'activity' | null>(null)
+  const [modal, setModal] = useState<'item' | 'taskEdit' | 'client' | 'project' | 'activity' | null>(null)
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null)
   const [calendarMessage, setCalendarMessage] = useState('')
   const [calendarBusy, setCalendarBusy] = useState(false)
@@ -464,6 +474,7 @@ function App() {
   }, [searchedItems, taskClientFilter, taskProjectFilter, taskDateFilter, store.taskSettings])
   const selectedClient = store.clients.find((client) => client.id === selectedClientId) ?? null
   const selectedProject = store.projects.find((project) => project.id === selectedProjectId) ?? null
+  const editingTask = editingTaskId ? store.items.find((item) => item.id === editingTaskId) ?? null : null
 
   const resolveItem = (id: string) => {
     if (!canWrite) return
@@ -500,6 +511,55 @@ function App() {
         ...store.activity,
       ],
     })
+  }
+
+  const saveTaskEdit = (updated: WorkItem) => {
+    if (!canWrite) return
+    const previous = store.items.find((item) => item.id === updated.id)
+    if (!previous) return
+    const closed = isTaskClosed(updated.status, store.taskSettings)
+    const normalized: WorkItem = {
+      ...updated,
+      title: previous.title,
+      clientId: previous.clientId,
+      waitingOn: closed ? 'Done' : updated.waitingOn === 'Done' ? 'Me' : updated.waitingOn,
+      resolvedDate: closed ? (previous.resolvedDate || TODAY) : undefined,
+    }
+    persist({
+      ...store,
+      items: store.items.map((item) => item.id === updated.id ? normalized : item),
+      activity: [
+        { id: crypto.randomUUID(), clientId: previous.clientId, projectId: normalized.projectId, date: TODAY, text: `Updated task: ${previous.title}` },
+        ...store.activity,
+      ],
+    })
+    setEditingTaskId(null)
+    setModal(null)
+  }
+
+  const deleteTask = (id: string) => {
+    if (!canWrite) return
+    const target = store.items.find((item) => item.id === id)
+    if (!target) return
+    if (!window.confirm(`Delete task "${target.title}"? This cannot be undone.`)) return
+    persist({
+      ...store,
+      items: store.items.filter((item) => item.id !== id),
+      activity: [
+        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: TODAY, text: `Deleted task: ${target.title}` },
+        ...store.activity,
+      ],
+    })
+    if (editingTaskId === id) {
+      setEditingTaskId(null)
+      setModal(null)
+    }
+  }
+
+  const openTaskEditor = (id: string) => {
+    if (!canWrite) return
+    setEditingTaskId(id)
+    setModal('taskEdit')
   }
 
   const convertInquiry = (id: string, type: 'Requirement' | 'Issue') => {
@@ -561,8 +621,7 @@ function App() {
 
   const applyAISuggestion = (suggestion: AISuggestion, contextClientId: string, contextProjectId: string) => {
     if (!canWrite) return 'Your Viewer role is read-only. Ask an Administrator or Contributor to approve tracker changes.'
-    const project = contextProjectId ? store.projects.find((candidate) => candidate.id === contextProjectId) : undefined
-    const clientId = contextClientId || project?.clientId || undefined
+    const clientId = contextClientId || undefined
     const projectId = contextProjectId || undefined
 
     if (suggestion.kind === 'activity') {
@@ -730,7 +789,7 @@ function App() {
               }}>
                 <div className="dashboard-ai-context">
                   <label>Client<select value={aiClientId} onChange={(e) => { setAiClientId(e.target.value); setAiProjectId('') }}><option value="">General / all clients</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
-                  <label>Project<select value={aiProjectId} onChange={(e) => setAiProjectId(e.target.value)}><option value="">All projects</option>{store.projects.filter((project) => !aiClientId || !project.clientId || project.clientId === aiClientId).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                  <label>Project<select value={aiProjectId} onChange={(e) => setAiProjectId(e.target.value)}><option value="">All projects</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 </div>
                 <textarea value={dashboardAiPrompt} onChange={(e) => setDashboardAiPrompt(e.target.value)} rows={3} placeholder="Example: Client says search should support @gmail but it does not. Assess what I should do next." />
                 <div className="dashboard-ai-footer"><span>Suggestions only — nothing is saved until you approve it.</span><button className="primary" disabled={!dashboardAiPrompt.trim()}><Sparkles size={16} /> Assess with AI</button></div>
@@ -746,11 +805,12 @@ function App() {
 
         {!selectedClient && !selectedProject && view === 'clients' && hasModule('clients') && (
           <section className="page-stack">
-            <div className="section-actions"><p className="page-intro">Clients hold relationship context. Projects can be linked to a client when relevant, but projects can also stand on their own.</p>{canWrite && <button className="primary" onClick={() => setModal('client')}><Plus size={18} /> New client</button>}</div>
+            <div className="section-actions"><p className="page-intro">Clients hold relationship context. Projects are global; client association happens on each task.</p>{canWrite && <button className="primary" onClick={() => setModal('client')}><Plus size={18} /> New client</button>}</div>
             <div className="client-grid">
               {store.clients.length === 0 && <div className="panel empty-start-card"><Users size={24} /><div><h3>No clients yet</h3><p>Add a client when you need client-specific context. General projects can be created without a client.</p></div></div>}
               {store.clients.map((client) => {
-                const projects = store.projects.filter((p) => p.clientId === client.id)
+                const projectIds = new Set(store.items.filter((item) => item.clientId === client.id && item.projectId).map((item) => item.projectId as string))
+                const projects = store.projects.filter((project) => projectIds.has(project.id))
                 const open = openItems.filter((i) => i.clientId === client.id)
                 const next = open.filter((i) => i.followUpDate).sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))[0]
                 return <button key={client.id} className="client-card" onClick={() => setSelectedClientId(client.id)}>
@@ -766,8 +826,12 @@ function App() {
 
         {!selectedClient && !selectedProject && view === 'projects' && hasModule('projects') && (
           <section className="page-stack">
-            <div className="section-actions"><p className="page-intro">Projects are general delivery containers. Link one to a client when relevant, or keep it as a general/internal project.</p>{canWrite && <button className="primary" onClick={() => setModal('project')}><Plus size={18} /> New project</button>}</div>
-            <div className="panel table-panel"><table><thead><tr><th>Project</th><th>Client</th><th>Status</th><th>Target</th><th>Open tasks</th></tr></thead><tbody>{store.projects.length === 0 ? <tr><td colSpan={5}><Empty text="No projects yet. Create a general project or optionally link one to a client." /></td></tr> : store.projects.map((project) => <tr key={project.id}><td><button className="table-link project-name-link" type="button" onClick={() => setSelectedProjectId(project.id)}><strong>{project.name}</strong><small>{project.summary || 'Open project dashboard'}</small></button></td><td>{clientName(project.clientId)}</td><td><StatusChip value={project.status} /></td><td>{niceDate(project.targetDate)}</td><td>{openItems.filter((item) => item.projectId === project.id).length}</td></tr>)}</tbody></table></div>
+            <div className="section-actions"><p className="page-intro">Projects are global delivery containers. Client association lives on tasks, so one project can serve multiple clients without mixing their client views.</p>{canWrite && <button className="primary" onClick={() => setModal('project')}><Plus size={18} /> New project</button>}</div>
+            <div className="panel table-panel"><table><thead><tr><th>Project</th><th>Clients with tasks</th><th>Status</th><th>Target</th><th>Open tasks</th></tr></thead><tbody>{store.projects.length === 0 ? <tr><td colSpan={5}><Empty text="No projects yet. Projects are global and can contain tasks for any client." /></td></tr> : store.projects.map((project) => {
+              const clientIds = [...new Set(store.items.filter((item) => item.projectId === project.id && item.clientId).map((item) => item.clientId as string))]
+              const clientLabel = clientIds.length ? clientIds.map((id) => clientName(id)).join(', ') : 'No client tasks yet'
+              return <tr key={project.id}><td><button className="table-link project-name-link" type="button" onClick={() => { setSelectedProjectClientId(null); setSelectedProjectId(project.id) }}><strong>{project.name}</strong><small>{project.summary || 'Open project dashboard'}</small></button></td><td>{clientLabel}</td><td><StatusChip value={project.status} /></td><td>{niceDate(project.targetDate)}</td><td>{openItems.filter((item) => item.projectId === project.id).length}</td></tr>
+            })}</tbody></table></div>
           </section>
         )}
 
@@ -789,11 +853,11 @@ function App() {
               <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} />
               <div className="task-filter-grid">
                 <label>Client<select value={taskClientFilter} onChange={(event) => { setTaskClientFilter(event.target.value); setTaskProjectFilter('') }}><option value="">All clients</option><option value="__none__">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
-                <label>Project<select value={taskProjectFilter} onChange={(event) => setTaskProjectFilter(event.target.value)}><option value="">All projects</option><option value="__none__">No project</option>{store.projects.filter((project) => taskClientFilter === '__none__' ? !project.clientId : (!taskClientFilter || !project.clientId || project.clientId === taskClientFilter)).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                <label>Project<select value={taskProjectFilter} onChange={(event) => setTaskProjectFilter(event.target.value)}><option value="">All projects</option><option value="__none__">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 <label>Due / follow-up<select value={taskDateFilter} onChange={(event) => setTaskDateFilter(event.target.value as typeof taskDateFilter)}><option value="All">All dates</option><option value="due-3">Due in next 3 days</option><option value="due-7">Due in next 7 days</option><option value="followup-3">Follow-up in next 3 days</option><option value="followup-7">Follow-up in next 7 days</option><option value="overdue">Overdue due/follow-up</option></select></label>
                 <button className="secondary task-filter-clear" type="button" onClick={() => { setTaskClientFilter(''); setTaskProjectFilter(''); setTaskDateFilter('All'); setWaitingFilter('All'); setQuery('') }}>Clear filters</button>
               </div>
-              <TaskTable items={filteredTasks} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} canEdit={canWrite} />
+              <TaskTable items={filteredTasks} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} canEdit={canWrite} />
             </div>
           </section>
         )}
@@ -806,15 +870,16 @@ function App() {
           <section className="page-stack"><AIAssistant clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
         )}
 
-        {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId) => { setSelectedClientId(null); setSelectedProjectId(projectId) }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} />}
+        {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} />}
 
-        {selectedProject && <ProjectDetail project={selectedProject} store={store} setStore={persist} onBack={() => setSelectedProjectId(null)} onAddTask={() => { setTaskPreset({ clientId: selectedProject.clientId, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onStatusChange={updateTaskStatus} onResolve={resolveItem} canWrite={canWrite} />}
+        {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} />}
       </main>
 
-      {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setTaskPreset(null) }}>
+      {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
         {modal === 'item' && <TaskForm store={store} preset={taskPreset} onSubmit={(item) => { persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
+        {modal === 'taskEdit' && editingTask && <TaskEditForm store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} />}
         {modal === 'client' && <ClientForm onSubmit={(client) => { persist({ ...store, clients: [...store.clients, client] }); setModal(null) }} />}
-        {modal === 'project' && <ProjectForm clients={store.clients} onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
+        {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
         {modal === 'activity' && <ActivityForm clients={store.clients} projects={store.projects} initial={editingActivity} onSubmit={saveActivity} />}
       </Modal>}
       {profileOpen && <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />}
@@ -955,7 +1020,7 @@ function ActivityColumn({ title, subtitle, items, clients, projects, onEdit, onT
 function ActivityForm({ clients, projects, initial, onSubmit }: { clients: Client[]; projects: Project[]; initial: PlannerActivity | null; onSubmit: (activity: PlannerActivity) => void }) {
   const [clientId, setClientId] = useState(initial?.clientId ?? '')
   const [allDay, setAllDay] = useState(initial?.allDay ?? false)
-  const linkedProjects = clientId ? projects.filter((project) => !project.clientId || project.clientId === clientId) : projects
+  const linkedProjects = projects
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
@@ -1002,58 +1067,64 @@ function FilterBar({ query, setQuery, waiting, setWaiting }: { query: string; se
   return <div className="filters"><label className="search-box"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, client, project..." /></label><select value={waiting} onChange={(e) => setWaiting(e.target.value as 'All' | WaitingOn)}><option>All</option><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></div>
 }
 
-function TaskTable({ items, clients, projects, taskSettings, onResolve, onStatusChange, canEdit = true, hiddenColumns = [] }: { items: WorkItem[]; clients: Client[]; projects: Project[]; taskSettings: TaskSettings; onResolve: (id: string) => void; onStatusChange: (id: string, status: string) => void; canEdit?: boolean; hiddenColumns?: TaskColumnKey[] }) {
+function TaskTable({ items, clients, projects, taskSettings, onResolve, onStatusChange, onEdit, onDelete, canEdit = true, hiddenColumns = [] }: { items: WorkItem[]; clients: Client[]; projects: Project[]; taskSettings: TaskSettings; onResolve: (id: string) => void; onStatusChange: (id: string, status: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; canEdit?: boolean; hiddenColumns?: TaskColumnKey[] }) {
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown client' : 'General / no client'
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name ?? 'Unknown project' : 'No project'
   const labels: Record<TaskColumnKey, string> = { status: 'Status', client: 'Client', project: 'Project', type: 'Type', waitingOn: 'Waiting on', priority: 'Priority', owner: 'Owner', dueDate: 'Due date', followUpDate: 'Follow-up' }
   const columns = taskSettings.visibleColumns.filter((column) => !hiddenColumns.includes(column))
   if (!items.length) return <Empty text="No tasks match this view." />
-  return <div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th></th></tr></thead><tbody>{items.map((item) => {
+  return <div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{items.map((item) => {
     const closed = isTaskClosed(item.status, taskSettings)
     const overdue = !closed && Boolean((item.dueDate && item.dueDate < TODAY) || (item.followUpDate && item.followUpDate < TODAY))
     return <tr key={item.id} className={overdue ? 'overdue-row' : ''}>
       <td><strong>{item.title}</strong><small>{item.description || 'No description'}</small></td>
       {columns.map((column) => <td key={column}>{column === 'status' ? (canEdit ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || '—' : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
-      <td>{canEdit && !closed && <button className="icon-button" title="Mark task completed" onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}</td>
+      <td><div className="task-row-actions">{canEdit && <button className="icon-button" title="Edit task" onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title="Mark task completed" onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title="Delete task" onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
   })}</tbody></table></div>
 }
 
-function ClientDetail({ client, store, onBack, onOpenProject, onAskAI, canUseAI }: { client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean }) {
-  const projects = store.projects.filter((project) => project.clientId === client.id)
+function ClientDetail({ client, store, onBack, onOpenProject, onAskAI, canUseAI }: { client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean }) {
+  const projectTaskCounts = new Map<string, number>()
+  store.items.filter((item) => item.clientId === client.id && item.projectId).forEach((item) => projectTaskCounts.set(item.projectId as string, (projectTaskCounts.get(item.projectId as string) || 0) + 1))
+  const projects = store.projects.filter((project) => projectTaskCounts.has(project.id))
   return <section className="page-stack">
     <button className="back-link" onClick={onBack}>← Back to clients</button>
     <div className="client-hero"><div><div className="row-meta"><StatusChip value={client.status} /><HealthChip value={client.health} /></div><p>{client.contact} · {client.email}</p><p>{client.notes}</p></div><div className="client-hero-actions">{canUseAI && <button className="secondary" onClick={() => onAskAI(client.id)}><Sparkles size={17} /> Ask AI</button>}</div></div>
-    <div className="panel"><div className="panel-heading"><div><h2>Projects</h2><p>{projects.length} project{projects.length === 1 ? '' : 's'} linked to this client.</p></div></div>{projects.length ? <div className="client-project-list">{projects.map((project) => <button type="button" className="mini-project mini-project-button" key={project.id} onClick={() => onOpenProject(project.id)}><div><strong>{project.name}</strong><p>{project.summary || 'Open project dashboard'}</p></div><div><StatusChip value={project.status} /><small>Target {niceDate(project.targetDate)}</small><ChevronRight size={16} /></div></button>)}</div> : <Empty text="No projects are linked to this client yet." />}</div>
+    <div className="panel"><div className="panel-heading"><div><h2>Projects</h2><p>Projects are global. Only projects containing tasks for {client.name} are shown here.</p></div></div>{projects.length ? <div className="client-project-list">{projects.map((project) => <button type="button" className="mini-project mini-project-button" key={project.id} onClick={() => onOpenProject(project.id, client.id)}><div><strong>{project.name}</strong><p>{project.summary || 'Open project dashboard'}</p></div><div><StatusChip value={project.status} /><small>{projectTaskCounts.get(project.id) || 0} task{projectTaskCounts.get(project.id) === 1 ? '' : 's'} · Target {niceDate(project.targetDate)}</small><ChevronRight size={16} /></div></button>)}</div> : <Empty text="No tasks for this client are assigned to a project yet." />}</div>
   </section>
 }
 
-function ProjectDetail({ project, store, setStore, onBack, onAddTask, onStatusChange, onResolve, canWrite }: { project: Project; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; canWrite: boolean }) {
-  const tasks = store.items.filter((item) => item.projectId === project.id)
+function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAddTask, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite }: { project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean }) {
+  const contextClient = clientContextId ? store.clients.find((client) => client.id === clientContextId) : undefined
+  const allProjectTasks = store.items.filter((item) => item.projectId === project.id)
+  const tasks = clientContextId ? allProjectTasks.filter((item) => item.clientId === clientContextId) : allProjectTasks
   const openTasks = tasks.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
   const dueSoon = openTasks.filter((item) => item.dueDate && item.dueDate >= TODAY && item.dueDate <= addDays(TODAY, 7))
-  const communication = store.activity.filter((entry) => entry.projectId === project.id).sort((a, b) => b.date.localeCompare(a.date))
+  const clientCount = new Set(allProjectTasks.map((item) => item.clientId).filter(Boolean)).size
+  const communication = store.activity.filter((entry) => entry.projectId === project.id && (!clientContextId || entry.clientId === clientContextId)).sort((a, b) => b.date.localeCompare(a.date))
   const [note, setNote] = useState('')
   const addNote = (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || !note.trim()) return
-    setStore({ ...store, activity: [{ id: crypto.randomUUID(), clientId: project.clientId, projectId: project.id, date: TODAY, text: note.trim() }, ...store.activity] })
+    setStore({ ...store, activity: [{ id: crypto.randomUUID(), clientId: clientContextId || undefined, projectId: project.id, date: TODAY, text: note.trim() }, ...store.activity] })
     setNote('')
   }
   return <section className="page-stack project-detail-page">
-    <button className="back-link" onClick={onBack}>← Back to projects</button>
+    <button className="back-link" onClick={onBack}>{contextClient ? `← Back to ${contextClient.name}` : '← Back to projects'}</button>
     <div className="project-hero">
-      <div><div className="row-meta"><StatusChip value={project.status} /><span>{project.clientId ? store.clients.find((client) => client.id === project.clientId)?.name || 'Unknown client' : 'General / no client'}</span></div><p>{project.summary || 'No project summary yet.'}</p><small>Target {niceDate(project.targetDate)}</small></div>
-      {canWrite && <button className="primary" onClick={onAddTask}><Plus size={18} /> Add task</button>}
+      <div><div className="row-meta"><StatusChip value={project.status} /><span>{contextClient ? `${contextClient.name} view` : `Global project · ${clientCount} client${clientCount === 1 ? '' : 's'} with tasks`}</span></div><p>{project.summary || 'No project summary yet.'}</p><small>Target {niceDate(project.targetDate)}</small></div>
+      {canWrite && <button className="primary" onClick={onAddTask}><Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}</button>}
     </div>
+    {contextClient && <div className="project-context-banner"><strong>{contextClient.name}</strong><span>Only this client's tasks and communications are shown. Tasks from other clients in {project.name} are hidden.</span></div>}
     <div className="project-stat-grid">
       <div className="project-stat"><span>Total tasks</span><strong>{tasks.length}</strong></div>
       <div className="project-stat"><span>Open tasks</span><strong>{openTasks.length}</strong></div>
       <div className="project-stat"><span>Due in 7 days</span><strong>{dueSoon.length}</strong></div>
-      <div className="project-stat"><span>Target date</span><strong className="project-stat-date">{niceDate(project.targetDate)}</strong></div>
+      <div className="project-stat"><span>{contextClient ? 'Client' : 'Clients represented'}</span><strong className="project-stat-date">{contextClient ? contextClient.name : clientCount}</strong></div>
     </div>
-    <div className="panel"><div className="panel-heading"><div><h2>Project tasks</h2><p>Rollout, sign-off, preparation, follow-ups, and other work created under this project.</p></div><span className="count-pill">{tasks.length}</span></div><TaskTable items={tasks} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} canEdit={canWrite} hiddenColumns={['project']} /></div>
-    <div className="panel project-communication-panel"><div className="panel-heading"><div><h2>Communication log</h2><p>Project notes, decisions, task events, and follow-up context in one timeline.</p></div></div>{canWrite && <form className="quick-note" onSubmit={addNote}><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a project communication note..." /><button className="secondary">Add</button></form>}<div className="timeline">{communication.length ? communication.map((entry) => <div key={entry.id}><span>{niceDate(entry.date)}</span><p>{entry.text}</p></div>) : <div className="activity-empty">No communication logged for this project yet.</div>}</div></div>
+    <div className="panel"><div className="panel-heading"><div><h2>{contextClient ? `${contextClient.name} tasks` : 'Project tasks'}</h2><p>{contextClient ? `Tasks for ${contextClient.name} under ${project.name}.` : 'All client and general tasks created under this global project.'}</p></div><span className="count-pill">{tasks.length}</span></div><TaskTable items={tasks} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} onEdit={onEditTask} onDelete={onDeleteTask} canEdit={canWrite} hiddenColumns={contextClient ? ['project', 'client'] : ['project']} /></div>
+    <div className="panel project-communication-panel"><div className="panel-heading"><div><h2>Communication log</h2><p>{contextClient ? `Communication for ${contextClient.name} within this project.` : 'Project notes, decisions, task events, and follow-up context across all clients.'}</p></div></div>{canWrite && <form className="quick-note" onSubmit={addNote}><input value={note} onChange={(event) => setNote(event.target.value)} placeholder={contextClient ? `Add a ${contextClient.name} communication note...` : 'Add a project communication note...'} /><button className="secondary">Add</button></form>}<div className="timeline">{communication.length ? communication.map((entry) => <div key={entry.id}><span>{niceDate(entry.date)}{!clientContextId && entry.clientId ? ` · ${store.clients.find((client) => client.id === entry.clientId)?.name || 'Unknown client'}` : ''}</span><p>{entry.text}</p></div>) : <div className="activity-empty">No communication logged for this view yet.</div>}</div></div>
   </section>
 }
 
@@ -1062,30 +1133,16 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientId?: string; projectId?: string; type?: ItemType } | null; onSubmit: (item: WorkItem) => void }) {
-  const presetProject = preset?.projectId ? store.projects.find((project) => project.id === preset.projectId) : undefined
-  const [clientId, setClientId] = useState(preset?.clientId || presetProject?.clientId || '')
+  const [clientId, setClientId] = useState(preset?.clientId || '')
   const [projectId, setProjectId] = useState(preset?.projectId || '')
   const [type, setType] = useState<ItemType>(preset?.type || 'Task')
   const [status, setStatus] = useState(defaultOpenTaskStatus(store.taskSettings))
-  const availableProjects = store.projects.filter((project) => !clientId || !project.clientId || project.clientId === clientId)
-  const changeClient = (nextClientId: string) => {
-    setClientId(nextClientId)
-    const currentProject = store.projects.find((project) => project.id === projectId)
-    if (currentProject?.clientId && currentProject.clientId !== nextClientId) setProjectId('')
-  }
-  const changeProject = (nextProjectId: string) => {
-    setProjectId(nextProjectId)
-    const project = store.projects.find((candidate) => candidate.id === nextProjectId)
-    if (project?.clientId) setClientId(project.clientId)
-  }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const selectedProject = projectId ? store.projects.find((project) => project.id === projectId) : undefined
-    const resolvedClientId = selectedProject?.clientId || clientId || undefined
     onSubmit({
       id: crypto.randomUUID(),
-      clientId: resolvedClientId,
+      clientId: clientId || undefined,
       projectId: projectId || undefined,
       title: String(form.get('title') || '').trim(),
       type,
@@ -1103,8 +1160,8 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
   }
   return <form className="form-grid" onSubmit={submit}>
     <label className="span-2">Task title<input name="title" required placeholder="Rollout, sign-off, client follow-up, QA review..." /></label>
-    <label>Client<select value={clientId} onChange={(event) => changeClient(event.target.value)}><option value="">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
-    <label>Project<select value={projectId} onChange={(event) => changeProject(event.target.value)}><option value="">No project</option>{availableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}{project.clientId ? '' : ' · General'}</option>)}</select></label>
+    <label>Client<select value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+    <label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
@@ -1118,19 +1175,59 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
   </form>
 }
 
+function TaskEditForm({ store, item, onSubmit, onDelete }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => void; onDelete: (id: string) => void }) {
+  const [type, setType] = useState<ItemType>(item.type)
+  const [status, setStatus] = useState(item.status)
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    onSubmit({
+      ...item,
+      title: item.title,
+      clientId: item.clientId,
+      projectId: String(form.get('projectId') || '') || undefined,
+      type,
+      status,
+      priority: form.get('priority') as Priority,
+      waitingOn: form.get('waitingOn') as WaitingOn,
+      owner: String(form.get('owner') || ''),
+      dueDate: String(form.get('dueDate') || ''),
+      followUpDate: String(form.get('followUpDate') || ''),
+      source: form.get('source') as WorkItem['source'],
+      description: String(form.get('description') || ''),
+    })
+  }
+  const clientLabel = item.clientId ? store.clients.find((client) => client.id === item.clientId)?.name || 'Unknown client' : 'General / no client'
+  return <form className="form-grid" onSubmit={submit}>
+    <div className="readonly-notice span-2"><LockKeyhole size={18} /><div><strong>Task identity is locked</strong><span>Task name and client cannot be changed after creation.</span></div></div>
+    <label className="span-2">Task title<input value={item.title} readOnly disabled /></label>
+    <label>Client<input value={clientLabel} readOnly disabled /></label>
+    <label>Project<select name="projectId" defaultValue={item.projectId || ''}><option value="">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+    <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
+    <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
+    <label>Priority<select name="priority" defaultValue={item.priority}><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
+    <label>Waiting on<select name="waitingOn" defaultValue={item.waitingOn}><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
+    <label>Owner<input name="owner" defaultValue={item.owner} /></label>
+    <label>Due date<input name="dueDate" type="date" defaultValue={item.dueDate || ''} /></label>
+    <label>Follow-up date<input name="followUpDate" type="date" defaultValue={item.followUpDate || ''} /></label>
+    <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
+    <label className="span-2">Description<textarea name="description" rows={4} defaultValue={item.description} /></label>
+    <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete task</button><button className="primary">Save task changes</button></div>
+  </form>
+}
+
 function ClientForm({ onSubmit }: { onSubmit: (client: Client) => void }) {
   const submit = (e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const f = new FormData(e.currentTarget); onSubmit({ id: crypto.randomUUID(), name: String(f.get('name')), contact: String(f.get('contact')), email: String(f.get('email')), status: 'Active', health: 'Good', notes: String(f.get('notes') || '') }) }
   return <form className="form-grid" onSubmit={submit}><label>Client name<input name="name" required /></label><label>Primary contact<input name="contact" required /></label><label className="span-2">Email<input name="email" type="email" required /></label><label className="span-2">Notes<textarea name="notes" rows={4} /></label><div className="form-actions span-2"><button className="primary">Create client</button></div></form>
 }
 
-function ProjectForm({ clients, onSubmit }: { clients: Client[]; onSubmit: (project: Project) => void }) {
+function ProjectForm({ onSubmit }: { onSubmit: (project: Project) => void }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const clientId = String(form.get('clientId') || '') || undefined
-    onSubmit({ id: crypto.randomUUID(), clientId, name: String(form.get('name')), status: 'Discovery', targetDate: String(form.get('targetDate') || ''), summary: String(form.get('summary') || '') })
+    onSubmit({ id: crypto.randomUUID(), name: String(form.get('name')), status: 'Discovery', targetDate: String(form.get('targetDate') || ''), summary: String(form.get('summary') || '') })
   }
-  return <form className="form-grid" onSubmit={submit}><label className="span-2">Project name<input name="name" required /></label><label>Client <small>Optional</small><select name="clientId"><option value="">General / no client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Target date<input name="targetDate" type="date" /></label><label className="span-2">Summary<textarea name="summary" rows={4} placeholder="Purpose, scope, rollout context, sign-off expectations..." /></label><div className="form-actions span-2"><button className="primary">Create project</button></div></form>
+  return <form className="form-grid" onSubmit={submit}><div className="readonly-notice span-2"><BriefcaseBusiness size={18} /><div><strong>Global project</strong><span>Projects are not owned by one client. Client association happens on each task.</span></div></div><label className="span-2">Project name<input name="name" required /></label><label>Target date<input name="targetDate" type="date" /></label><div /><label className="span-2">Summary<textarea name="summary" rows={4} placeholder="Purpose, scope, rollout context, sign-off expectations..." /></label><div className="form-actions span-2"><button className="primary">Create project</button></div></form>
 }
 
 function Empty({ text }: { text: string }) { return <div className="empty"><CheckCircle2 size={28} /><p>{text}</p></div> }

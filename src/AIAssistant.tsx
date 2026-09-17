@@ -66,7 +66,7 @@ export default function AIAssistant({
   useEffect(() => { setProjectId(initialProjectId) }, [initialProjectId])
   useEffect(() => { if (initialPrompt) setInput(initialPrompt) }, [initialPrompt])
 
-  const linkedProjects = useMemo(() => clientId ? projects.filter((project) => !project.clientId || project.clientId === clientId) : projects, [clientId, projects])
+  const linkedProjects = useMemo(() => projects, [projects])
   const resolvedProjectId = linkedProjects.some((project) => project.id === projectId) ? projectId : ''
   const threadKey = `${clientId || 'global'}:${resolvedProjectId || 'all'}`
   const messages = threads[threadKey] ?? []

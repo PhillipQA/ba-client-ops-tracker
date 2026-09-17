@@ -401,7 +401,7 @@ function findNamedContext(text: string, clients: any[], projects: any[]) {
   const q = text.toLowerCase()
   const client = [...clients].filter((candidate) => candidate?.name && q.includes(String(candidate.name).toLowerCase())).sort((a, b) => String(b.name).length - String(a.name).length)[0]
   const project = [...projects].filter((candidate) => candidate?.name && q.includes(String(candidate.name).toLowerCase())).sort((a, b) => String(b.name).length - String(a.name).length)[0]
-  return { clientId: String(client?.id || project?.clientId || ''), projectId: String(project?.id || '') }
+  return { clientId: String(client?.id || ''), projectId: String(project?.id || '') }
 }
 
 async function assessDiscordInquiry(messageText: string, sender: string, state: any) {
@@ -426,7 +426,7 @@ async function assessDiscordInquiry(messageText: string, sender: string, state: 
   const model = process.env.OPENAI_MODEL || 'gpt-5.6-terra'
   const today = new Date().toISOString().slice(0, 10)
   const clientContext = clients.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
-  const projectContext = projects.map((item: any) => ({ id: String(item.id), clientId: String(item.clientId || ''), name: String(item.name) }))
+  const projectContext = projects.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
   const instructions = `You convert a Business Analyst's Discord capture into one clean Inquiry record. Today is ${today}.
 Return JSON only:
 {
@@ -450,9 +450,8 @@ Do not invent commitments, dates, defects, client names, or projects. Only choos
     const validClientIds = new Set(clientContext.map((item: any) => item.id))
     const validProjectIds = new Set(projectContext.map((item: any) => item.id))
     const projectId = validProjectIds.has(String(parsed.projectId || '')) ? String(parsed.projectId) : fallback.projectId
-    const project = projectContext.find((item: any) => item.id === projectId)
     const parsedClientId = validClientIds.has(String(parsed.clientId || '')) ? String(parsed.clientId) : ''
-    const clientId = parsedClientId || String(project?.clientId || '') || fallback.clientId
+    const clientId = parsedClientId || fallback.clientId
     const priority = allowedPriorities.has(String(parsed.priority)) ? String(parsed.priority) : fallback.priority
     const waitingOn = allowedWaiting.has(String(parsed.waitingOn)) ? String(parsed.waitingOn) : fallback.waitingOn
     const followUpDate = /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.followUpDate || '')) ? String(parsed.followUpDate) : ''

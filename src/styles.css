@@ -606,3 +606,18 @@ select option { background: #181818; color: #fff; }
   .task-status-row .task-status-closed { grid-column: 1 / -1; }
   .task-column-grid { grid-template-columns: 1fr; }
 }
+
+/* --------------------------------------------------------------------------
+   v0.3.3 Global projects + editable tasks
+   -------------------------------------------------------------------------- */
+.task-row-actions { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.task-edit-actions { justify-content: space-between; align-items: center; gap: 10px; }
+.project-context-banner { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: 1px solid #3d4a66; border-radius: 10px; background: #1d2430; color: #dce6ff; font-size: 10.5px; }
+.project-context-banner strong { color: #fff; }
+.project-context-banner span { color: #aebbd3; }
+.form-grid input:disabled, .form-grid input[readonly]:disabled { opacity: .72; cursor: not-allowed; }
+@media (max-width: 620px) {
+  .task-edit-actions { align-items: stretch; flex-direction: column-reverse; }
+  .task-edit-actions button { width: 100%; justify-content: center; }
+  .project-context-banner { align-items: flex-start; flex-direction: column; }
+}

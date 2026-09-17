@@ -29,7 +29,6 @@ export interface Client {
 
 export interface Project {
   id: string
-  clientId?: string
   name: string
   status: 'Discovery' | 'Active' | 'UAT' | 'Closing' | 'Closed'
   targetDate: string
