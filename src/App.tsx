@@ -240,7 +240,7 @@ function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedProjectClientId, setSelectedProjectClientId] = useState<string | null>(null)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
-  const [taskPreset, setTaskPreset] = useState<{ clientId?: string; projectId?: string; type?: ItemType } | null>(null)
+  const [taskPreset, setTaskPreset] = useState<{ clientId?: string; projectId?: string; type?: ItemType; parentTaskId?: string } | null>(null)
   const [modal, setModal] = useState<'item' | 'taskEdit' | 'client' | 'project' | 'activity' | null>(null)
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null)
   const [calendarMessage, setCalendarMessage] = useState('')
@@ -481,6 +481,11 @@ function App() {
     const now = new Date().toISOString().slice(0, 10)
     const target = store.items.find((item) => item.id === id)
     if (!target) return
+    const openSubtasks = store.items.filter((item) => item.parentTaskId === id && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+    if (openSubtasks.length) {
+      window.alert(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before completing this task.`)
+      return
+    }
     const closedStatus = defaultClosedTaskStatus(store.taskSettings)
     persist({
       ...store,
@@ -497,6 +502,11 @@ function App() {
     const target = store.items.find((item) => item.id === id)
     if (!target || target.status === status) return
     const closed = isTaskClosed(status, store.taskSettings)
+    const openSubtasks = closed ? store.items.filter((item) => item.parentTaskId === id && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done') : []
+    if (openSubtasks.length) {
+      window.alert(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`)
+      return
+    }
     const reopened = isTaskClosed(target.status, store.taskSettings) && !closed
     persist({
       ...store,
@@ -518,16 +528,22 @@ function App() {
     const previous = store.items.find((item) => item.id === updated.id)
     if (!previous) return
     const closed = isTaskClosed(updated.status, store.taskSettings)
+    const openSubtasks = closed ? store.items.filter((item) => item.parentTaskId === updated.id && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done') : []
+    if (openSubtasks.length) {
+      window.alert(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`)
+      return
+    }
     const normalized: WorkItem = {
       ...updated,
       title: previous.title,
       clientId: previous.clientId,
+      projectId: previous.parentTaskId ? previous.projectId : updated.projectId,
       waitingOn: closed ? 'Done' : updated.waitingOn === 'Done' ? 'Me' : updated.waitingOn,
       resolvedDate: closed ? (previous.resolvedDate || TODAY) : undefined,
     }
     persist({
       ...store,
-      items: store.items.map((item) => item.id === updated.id ? normalized : item),
+      items: store.items.map((item) => item.id === updated.id ? normalized : item.parentTaskId === updated.id ? { ...item, projectId: normalized.projectId } : item),
       activity: [
         { id: crypto.randomUUID(), clientId: previous.clientId, projectId: normalized.projectId, date: TODAY, text: `Updated task: ${previous.title}` },
         ...store.activity,
@@ -541,10 +557,14 @@ function App() {
     if (!canWrite) return
     const target = store.items.find((item) => item.id === id)
     if (!target) return
-    if (!window.confirm(`Delete task "${target.title}"? This cannot be undone.`)) return
+    const childCount = store.items.filter((item) => item.parentTaskId === id).length
+    const deleteMessage = childCount
+      ? `Delete task "${target.title}" and its ${childCount} subtask${childCount === 1 ? '' : 's'}? This cannot be undone.`
+      : `Delete task "${target.title}"? This cannot be undone.`
+    if (!window.confirm(deleteMessage)) return
     persist({
       ...store,
-      items: store.items.filter((item) => item.id !== id),
+      items: store.items.filter((item) => item.id !== id && item.parentTaskId !== id),
       activity: [
         { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: TODAY, text: `Deleted task: ${target.title}` },
         ...store.activity,
@@ -560,6 +580,14 @@ function App() {
     if (!canWrite) return
     setEditingTaskId(id)
     setModal('taskEdit')
+  }
+
+  const openSubtaskCreator = (parentTaskId: string) => {
+    if (!canWrite) return
+    const parent = store.items.find((item) => item.id === parentTaskId)
+    if (!parent || parent.parentTaskId) return
+    setTaskPreset({ clientId: parent.clientId, projectId: parent.projectId, type: 'Task', parentTaskId: parent.id })
+    setModal('item')
   }
 
   const convertInquiry = (id: string, type: 'Requirement' | 'Issue') => {
@@ -857,7 +885,7 @@ function App() {
                 <label>Due / follow-up<select value={taskDateFilter} onChange={(event) => setTaskDateFilter(event.target.value as typeof taskDateFilter)}><option value="All">All dates</option><option value="due-3">Due in next 3 days</option><option value="due-7">Due in next 7 days</option><option value="followup-3">Follow-up in next 3 days</option><option value="followup-7">Follow-up in next 7 days</option><option value="overdue">Overdue due/follow-up</option></select></label>
                 <button className="secondary task-filter-clear" type="button" onClick={() => { setTaskClientFilter(''); setTaskProjectFilter(''); setTaskDateFilter('All'); setWaitingFilter('All'); setQuery('') }}>Clear filters</button>
               </div>
-              <TaskTable items={filteredTasks} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} canEdit={canWrite} />
+              <TaskTable items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} onCreateSubtask={openSubtaskCreator} canEdit={canWrite} />
             </div>
           </section>
         )}
@@ -872,11 +900,11 @@ function App() {
 
         {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} />}
 
-        {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} />}
+        {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} />}
       </main>
 
-      {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
-        {modal === 'item' && <TaskForm store={store} preset={taskPreset} onSubmit={(item) => { persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
+      {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
+        {modal === 'item' && <TaskForm store={store} preset={taskPreset} onSubmit={(item) => { const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined; persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: parent ? `Created subtask under ${parent.title}: ${item.title}` : `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
         {modal === 'taskEdit' && editingTask && <TaskEditForm store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} />}
         {modal === 'client' && <ClientForm onSubmit={(client) => { persist({ ...store, clients: [...store.clients, client] }); setModal(null) }} />}
         {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
@@ -1067,21 +1095,33 @@ function FilterBar({ query, setQuery, waiting, setWaiting }: { query: string; se
   return <div className="filters"><label className="search-box"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, client, project..." /></label><select value={waiting} onChange={(e) => setWaiting(e.target.value as 'All' | WaitingOn)}><option>All</option><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></div>
 }
 
-function TaskTable({ items, clients, projects, taskSettings, onResolve, onStatusChange, onEdit, onDelete, canEdit = true, hiddenColumns = [] }: { items: WorkItem[]; clients: Client[]; projects: Project[]; taskSettings: TaskSettings; onResolve: (id: string) => void; onStatusChange: (id: string, status: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; canEdit?: boolean; hiddenColumns?: TaskColumnKey[] }) {
+function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve, onStatusChange, onEdit, onDelete, onCreateSubtask, canEdit = true, hiddenColumns = [] }: { items: WorkItem[]; allItems?: WorkItem[]; clients: Client[]; projects: Project[]; taskSettings: TaskSettings; onResolve: (id: string) => void; onStatusChange: (id: string, status: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onCreateSubtask: (id: string) => void; canEdit?: boolean; hiddenColumns?: TaskColumnKey[] }) {
+  const sourceItems = allItems || items
+  const visibleIds = new Set(items.map((item) => item.id))
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown client' : 'General / no client'
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name ?? 'Unknown project' : 'No project'
-  const labels: Record<TaskColumnKey, string> = { status: 'Status', client: 'Client', project: 'Project', type: 'Type', waitingOn: 'Waiting on', priority: 'Priority', owner: 'Owner', dueDate: 'Due date', followUpDate: 'Follow-up' }
+  const labels: Record<TaskColumnKey, string> = { status: 'Status', client: 'Client', project: 'Project', type: 'Type', waitingOn: 'Waiting on', priority: 'Priority', owner: 'Owner / Assigned', dueDate: 'Due date', followUpDate: 'Follow-up' }
   const columns = taskSettings.visibleColumns.filter((column) => !hiddenColumns.includes(column))
   if (!items.length) return <Empty text="No tasks match this view." />
-  return <div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{items.map((item) => {
+
+  const renderRow = (item: WorkItem, isSubtask = false) => {
     const closed = isTaskClosed(item.status, taskSettings)
     const overdue = !closed && Boolean((item.dueDate && item.dueDate < TODAY) || (item.followUpDate && item.followUpDate < TODAY))
-    return <tr key={item.id} className={overdue ? 'overdue-row' : ''}>
-      <td><strong>{item.title}</strong><small>{item.description || 'No description'}</small></td>
+    const children = sourceItems.filter((candidate) => candidate.parentTaskId === item.id)
+    const completedChildren = children.filter((child) => isTaskClosed(child.status, taskSettings) || child.waitingOn === 'Done').length
+    return <tr key={item.id} className={`${overdue ? 'overdue-row ' : ''}${isSubtask ? 'subtask-row' : ''}`.trim()}>
+      <td><div className={isSubtask ? 'subtask-title' : ''}>{isSubtask && <span className="subtask-branch">↳</span>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed` : ''}</small></div></div></td>
       {columns.map((column) => <td key={column}>{column === 'status' ? (canEdit ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || '—' : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
-      <td><div className="task-row-actions">{canEdit && <button className="icon-button" title="Edit task" onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title="Mark task completed" onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title="Delete task" onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
+      <td><div className="task-row-actions">{canEdit && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{canEdit && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
-  })}</tbody></table></div>
+  }
+
+  const topLevel = items.filter((item) => !item.parentTaskId || !visibleIds.has(item.parentTaskId))
+  const rows = topLevel.flatMap((item) => [
+    renderRow(item, Boolean(item.parentTaskId)),
+    ...sourceItems.filter((candidate) => candidate.parentTaskId === item.id && (visibleIds.has(candidate.id) || visibleIds.has(item.id))).map((child) => renderRow(child, true)),
+  ])
+  return <div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task / Subtask</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{rows}</tbody></table></div>
 }
 
 function ClientDetail({ client, store, onBack, onOpenProject, onAskAI, canUseAI }: { client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean }) {
@@ -1095,12 +1135,15 @@ function ClientDetail({ client, store, onBack, onOpenProject, onAskAI, canUseAI 
   </section>
 }
 
-function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAddTask, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite }: { project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean }) {
+function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite }: { project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean }) {
   const contextClient = clientContextId ? store.clients.find((client) => client.id === clientContextId) : undefined
   const allProjectTasks = store.items.filter((item) => item.projectId === project.id)
   const tasks = clientContextId ? allProjectTasks.filter((item) => item.clientId === clientContextId) : allProjectTasks
+  const parentTasks = tasks.filter((item) => !item.parentTaskId)
+  const subtasks = tasks.filter((item) => Boolean(item.parentTaskId))
   const openTasks = tasks.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
   const dueSoon = openTasks.filter((item) => item.dueDate && item.dueDate >= TODAY && item.dueDate <= addDays(TODAY, 7))
+  const completedSubtasks = subtasks.filter((item) => isTaskClosed(item.status, store.taskSettings) || item.waitingOn === 'Done').length
   const clientCount = new Set(allProjectTasks.map((item) => item.clientId).filter(Boolean)).size
   const communication = store.activity.filter((entry) => entry.projectId === project.id && (!clientContextId || entry.clientId === clientContextId)).sort((a, b) => b.date.localeCompare(a.date))
   const [note, setNote] = useState('')
@@ -1116,14 +1159,14 @@ function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAd
       <div><div className="row-meta"><StatusChip value={project.status} /><span>{contextClient ? `${contextClient.name} view` : `Global project · ${clientCount} client${clientCount === 1 ? '' : 's'} with tasks`}</span></div><p>{project.summary || 'No project summary yet.'}</p><small>Target {niceDate(project.targetDate)}</small></div>
       {canWrite && <button className="primary" onClick={onAddTask}><Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}</button>}
     </div>
-    {contextClient && <div className="project-context-banner"><strong>{contextClient.name}</strong><span>Only this client's tasks and communications are shown. Tasks from other clients in {project.name} are hidden.</span></div>}
+    {contextClient && <div className="project-context-banner"><strong>{contextClient.name}</strong><span>Only this client's tasks, subtasks, and communications are shown. Work from other clients in {project.name} is hidden.</span></div>}
     <div className="project-stat-grid">
-      <div className="project-stat"><span>Total tasks</span><strong>{tasks.length}</strong></div>
-      <div className="project-stat"><span>Open tasks</span><strong>{openTasks.length}</strong></div>
+      <div className="project-stat"><span>Parent tasks</span><strong>{parentTasks.length}</strong></div>
+      <div className="project-stat"><span>Subtasks</span><strong>{subtasks.length}</strong><small>{subtasks.length ? `${completedSubtasks}/${subtasks.length} completed` : 'No subtasks yet'}</small></div>
+      <div className="project-stat"><span>Open work</span><strong>{openTasks.length}</strong></div>
       <div className="project-stat"><span>Due in 7 days</span><strong>{dueSoon.length}</strong></div>
-      <div className="project-stat"><span>{contextClient ? 'Client' : 'Clients represented'}</span><strong className="project-stat-date">{contextClient ? contextClient.name : clientCount}</strong></div>
     </div>
-    <div className="panel"><div className="panel-heading"><div><h2>{contextClient ? `${contextClient.name} tasks` : 'Project tasks'}</h2><p>{contextClient ? `Tasks for ${contextClient.name} under ${project.name}.` : 'All client and general tasks created under this global project.'}</p></div><span className="count-pill">{tasks.length}</span></div><TaskTable items={tasks} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} onEdit={onEditTask} onDelete={onDeleteTask} canEdit={canWrite} hiddenColumns={contextClient ? ['project', 'client'] : ['project']} /></div>
+    <div className="panel"><div className="panel-heading"><div><h2>{contextClient ? `${contextClient.name} tasks` : 'Project tasks'}</h2><p>{contextClient ? `Tasks and subtasks for ${contextClient.name} under ${project.name}.` : 'All client and general tasks created under this global project, with subtasks nested below their parent.'}</p></div><span className="count-pill">{parentTasks.length} tasks · {subtasks.length} subtasks</span></div><TaskTable items={tasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} onEdit={onEditTask} onDelete={onDeleteTask} onCreateSubtask={onCreateSubtask} canEdit={canWrite} hiddenColumns={contextClient ? ['project', 'client'] : ['project']} /></div>
     <div className="panel project-communication-panel"><div className="panel-heading"><div><h2>Communication log</h2><p>{contextClient ? `Communication for ${contextClient.name} within this project.` : 'Project notes, decisions, task events, and follow-up context across all clients.'}</p></div></div>{canWrite && <form className="quick-note" onSubmit={addNote}><input value={note} onChange={(event) => setNote(event.target.value)} placeholder={contextClient ? `Add a ${contextClient.name} communication note...` : 'Add a project communication note...'} /><button className="secondary">Add</button></form>}<div className="timeline">{communication.length ? communication.map((entry) => <div key={entry.id}><span>{niceDate(entry.date)}{!clientContextId && entry.clientId ? ` · ${store.clients.find((client) => client.id === entry.clientId)?.name || 'Unknown client'}` : ''}</span><p>{entry.text}</p></div>) : <div className="activity-empty">No communication logged for this view yet.</div>}</div></div>
   </section>
 }
@@ -1132,9 +1175,10 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><h2>{title}</h2><button className="icon-button" onClick={onClose}><X size={20} /></button></div>{children}</div></div>
 }
 
-function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientId?: string; projectId?: string; type?: ItemType } | null; onSubmit: (item: WorkItem) => void }) {
-  const [clientId, setClientId] = useState(preset?.clientId || '')
-  const [projectId, setProjectId] = useState(preset?.projectId || '')
+function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientId?: string; projectId?: string; type?: ItemType; parentTaskId?: string } | null; onSubmit: (item: WorkItem) => void }) {
+  const parent = preset?.parentTaskId ? store.items.find((item) => item.id === preset.parentTaskId) : undefined
+  const [clientId, setClientId] = useState(parent?.clientId || preset?.clientId || '')
+  const [projectId, setProjectId] = useState(parent?.projectId || preset?.projectId || '')
   const [type, setType] = useState<ItemType>(preset?.type || 'Task')
   const [status, setStatus] = useState(defaultOpenTaskStatus(store.taskSettings))
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -1142,8 +1186,9 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
     const form = new FormData(event.currentTarget)
     onSubmit({
       id: crypto.randomUUID(),
-      clientId: clientId || undefined,
-      projectId: projectId || undefined,
+      clientId: parent?.clientId || clientId || undefined,
+      projectId: parent?.projectId || projectId || undefined,
+      parentTaskId: parent?.id,
       title: String(form.get('title') || '').trim(),
       type,
       priority: form.get('priority') as Priority,
@@ -1158,26 +1203,29 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
       source: form.get('source') as WorkItem['source'],
     })
   }
+  const clientLabel = parent?.clientId ? store.clients.find((client) => client.id === parent.clientId)?.name || 'Unknown client' : 'General / no client'
+  const projectLabel = parent?.projectId ? store.projects.find((project) => project.id === parent.projectId)?.name || 'Unknown project' : 'No project'
   return <form className="form-grid" onSubmit={submit}>
-    <label className="span-2">Task title<input name="title" required placeholder="Rollout, sign-off, client follow-up, QA review..." /></label>
-    <label>Client<select value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
-    <label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+    {parent && <div className="readonly-notice span-2"><CircleDot size={18} /><div><strong>Subtask of: {parent.title}</strong><span>Client and project are inherited from the parent task so the hierarchy stays consistent.</span></div></div>}
+    <label className="span-2">{parent ? 'Subtask title' : 'Task title'}<input name="title" required placeholder={parent ? 'Enter the work needed under this task...' : 'Rollout, sign-off, client follow-up, QA review...'} /></label>
+    {parent ? <><label>Client<input value={clientLabel} readOnly disabled /></label><label>Project<input value={projectLabel} readOnly disabled /></label></> : <><label>Client<select value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></>}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
     <label>Waiting on<select name="waitingOn" defaultValue="Me"><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
+    <label>Owner / Assigned task<input name="owner" defaultValue="Me" placeholder="Person responsible" /></label>
     <label>Due date<input name="dueDate" type="date" /></label>
     <label>Follow-up date<input name="followUpDate" type="date" /></label>
     <label>Source<select name="source" defaultValue={type === 'Inquiry' ? 'Chat' : 'Internal'}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
-    <label>Owner<input name="owner" defaultValue="Me" /></label>
     <label className="span-2">Description<textarea name="description" rows={4} placeholder="Context, acceptance details, dependencies, or what needs to be done..." /></label>
-    <div className="form-actions span-2"><button className="primary">{type === 'Inquiry' ? 'Capture inquiry' : 'Create task'}</button></div>
+    <div className="form-actions span-2"><button className="primary">{parent ? 'Create subtask' : type === 'Inquiry' ? 'Capture inquiry' : 'Create task'}</button></div>
   </form>
 }
 
 function TaskEditForm({ store, item, onSubmit, onDelete }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => void; onDelete: (id: string) => void }) {
   const [type, setType] = useState<ItemType>(item.type)
   const [status, setStatus] = useState(item.status)
+  const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -1185,7 +1233,7 @@ function TaskEditForm({ store, item, onSubmit, onDelete }: { store: Store; item:
       ...item,
       title: item.title,
       clientId: item.clientId,
-      projectId: String(form.get('projectId') || '') || undefined,
+      projectId: parent ? item.projectId : String(form.get('projectId') || '') || undefined,
       type,
       status,
       priority: form.get('priority') as Priority,
@@ -1198,21 +1246,22 @@ function TaskEditForm({ store, item, onSubmit, onDelete }: { store: Store; item:
     })
   }
   const clientLabel = item.clientId ? store.clients.find((client) => client.id === item.clientId)?.name || 'Unknown client' : 'General / no client'
+  const projectLabel = item.projectId ? store.projects.find((project) => project.id === item.projectId)?.name || 'Unknown project' : 'No project'
   return <form className="form-grid" onSubmit={submit}>
-    <div className="readonly-notice span-2"><LockKeyhole size={18} /><div><strong>Task identity is locked</strong><span>Task name and client cannot be changed after creation.</span></div></div>
-    <label className="span-2">Task title<input value={item.title} readOnly disabled /></label>
+    <div className="readonly-notice span-2"><LockKeyhole size={18} /><div><strong>{parent ? `Subtask of: ${parent.title}` : 'Task identity is locked'}</strong><span>{parent ? 'Subtask name, client, and parent project stay fixed. You can update its execution fields below.' : 'Task name and client cannot be changed after creation.'}</span></div></div>
+    <label className="span-2">{parent ? 'Subtask title' : 'Task title'}<input value={item.title} readOnly disabled /></label>
     <label>Client<input value={clientLabel} readOnly disabled /></label>
-    <label>Project<select name="projectId" defaultValue={item.projectId || ''}><option value="">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+    {parent ? <label>Project<input value={projectLabel} readOnly disabled /></label> : <label>Project<select name="projectId" defaultValue={item.projectId || ''}><option value="">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue={item.priority}><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
     <label>Waiting on<select name="waitingOn" defaultValue={item.waitingOn}><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
-    <label>Owner<input name="owner" defaultValue={item.owner} /></label>
+    <label>Owner / Assigned task<input name="owner" defaultValue={item.owner} /></label>
     <label>Due date<input name="dueDate" type="date" defaultValue={item.dueDate || ''} /></label>
     <label>Follow-up date<input name="followUpDate" type="date" defaultValue={item.followUpDate || ''} /></label>
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description<textarea name="description" rows={4} defaultValue={item.description} /></label>
-    <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete task</button><button className="primary">Save task changes</button></div>
+    <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete {parent ? 'subtask' : 'task'}</button><button className="primary">Save changes</button></div>
   </form>
 }
 

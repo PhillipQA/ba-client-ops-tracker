@@ -69,6 +69,19 @@ export default function Reports({ clients, projects, items, planner, taskSetting
   const isClosed = (status: string) => taskSettings.statuses.find((candidate) => candidate.label === status)?.closed ?? ['Resolved', 'Closed'].includes(status)
   const openItems = useMemo(() => contextItems.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done'), [contextItems, taskSettings])
   const overdueItems = useMemo(() => openItems.filter((item) => (item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)), [openItems, today])
+  const parentTasks = useMemo(() => contextItems.filter((item) => !item.parentTaskId), [contextItems])
+  const subtasks = useMemo(() => contextItems.filter((item) => Boolean(item.parentTaskId)), [contextItems])
+  const openSubtasks = useMemo(() => subtasks.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done'), [subtasks, taskSettings])
+  const completedSubtasks = subtasks.length - openSubtasks.length
+  const overdueSubtasks = useMemo(() => openSubtasks.filter((item) => (item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)), [openSubtasks, today])
+  const subtasksRaisedInPeriod = useMemo(() => subtasks.filter((item) => item.dateRaised >= from && item.dateRaised <= to), [subtasks, from, to])
+  const subtasksResolvedInPeriod = useMemo(() => subtasks.filter((item) => item.resolvedDate && item.resolvedDate >= from && item.resolvedDate <= to), [subtasks, from, to])
+  const subtaskCompletion = subtasks.length ? Math.round((completedSubtasks / subtasks.length) * 100) : 0
+  const subtaskProgress = useMemo(() => parentTasks.map((parent) => {
+    const children = subtasks.filter((item) => item.parentTaskId === parent.id)
+    const completed = children.filter((item) => isClosed(item.status) || item.waitingOn === 'Done').length
+    return { parent, total: children.length, completed, percent: children.length ? Math.round((completed / children.length) * 100) : 0 }
+  }).filter((row) => row.total > 0).sort((a, b) => a.percent - b.percent || b.total - a.total), [parentTasks, subtasks, taskSettings])
 
   const tatValues = resolvedInPeriod.map((item) => daysBetween(item.dateRaised, item.resolvedDate || item.dateRaised))
   const avgTat = average(tatValues)
@@ -113,8 +126,16 @@ export default function Reports({ clients, projects, items, planner, taskSetting
     const rows = [
       ['Metric', 'Value'],
       ['Date range', `${from} to ${to}`],
-      ['Tasks raised', raisedInPeriod.length],
-      ['Tasks resolved', resolvedInPeriod.length],
+      ['Tasks and subtasks raised', raisedInPeriod.length],
+      ['Tasks and subtasks resolved', resolvedInPeriod.length],
+      ['Parent tasks', parentTasks.length],
+      ['Subtasks', subtasks.length],
+      ['Open subtasks', openSubtasks.length],
+      ['Completed subtasks', completedSubtasks],
+      ['Overdue subtasks', overdueSubtasks.length],
+      ['Subtasks raised in range', subtasksRaisedInPeriod.length],
+      ['Subtasks resolved in range', subtasksResolvedInPeriod.length],
+      ['Subtask completion percent', subtaskCompletion],
       ['Average turnaround days', avgTat.toFixed(1)],
       ['Median turnaround days', medianTat.toFixed(1)],
       ['Open tasks', openItems.length],
@@ -122,8 +143,8 @@ export default function Reports({ clients, projects, items, planner, taskSetting
       ['Activities', periodActivities.length],
       ['Activity completion percent', activityCompletion],
       [],
-      ['Resolved task', 'Client', 'Project', 'Raised', 'Resolved', 'Turnaround days'],
-      ...resolvedInPeriod.map((item) => [item.title, clients.find((client) => client.id === item.clientId)?.name ?? '', projects.find((project) => project.id === item.projectId)?.name ?? '', item.dateRaised, item.resolvedDate ?? '', daysBetween(item.dateRaised, item.resolvedDate || item.dateRaised)]),
+      ['Resolved task', 'Parent task', 'Client', 'Project', 'Raised', 'Resolved', 'Turnaround days'],
+      ...resolvedInPeriod.map((item) => [item.title, item.parentTaskId ? contextItems.find((candidate) => candidate.id === item.parentTaskId)?.title ?? '' : '', clients.find((client) => client.id === item.clientId)?.name ?? '', projects.find((project) => project.id === item.projectId)?.name ?? '', item.dateRaised, item.resolvedDate ?? '', daysBetween(item.dateRaised, item.resolvedDate || item.dateRaised)]),
     ]
     const blob = new Blob([rows.map((row) => row.map(csvEscape).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -147,9 +168,16 @@ export default function Reports({ clients, projects, items, planner, taskSetting
 
     <div className="metric-grid dashboard-metrics">
       <ReportMetric title="Avg turnaround" value={resolvedInPeriod.length ? `${avgTat.toFixed(1)}d` : '—'} detail={`${resolvedInPeriod.length} resolved · median ${medianTat.toFixed(1)}d`} icon={<Clock3 size={18} />} />
-      <ReportMetric title="Tasks raised" value={raisedInPeriod.length} detail={`${resolvedInPeriod.length} resolved in range`} icon={<ListTodo size={18} />} />
-      <ReportMetric title="Overdue now" value={overdueItems.length} detail={`${openItems.length} open tasks`} icon={<AlertTriangle size={18} />} />
-      <ReportMetric title="Activity completion" value={`${activityCompletion}%`} detail={`${completedActivities} of ${periodActivities.length} activities done`} icon={<CheckCircle2 size={18} />} />
+      <ReportMetric title="Work raised" value={raisedInPeriod.length} detail={`${parentTasks.length} parent tasks · ${subtasks.length} subtasks`} icon={<ListTodo size={18} />} />
+      <ReportMetric title="Subtask completion" value={`${subtaskCompletion}%`} detail={`${completedSubtasks} of ${subtasks.length} completed`} icon={<CheckCircle2 size={18} />} />
+      <ReportMetric title="Overdue now" value={overdueItems.length} detail={`${overdueSubtasks.length} overdue subtasks`} icon={<AlertTriangle size={18} />} />
+      <ReportMetric title="Activity completion" value={`${activityCompletion}%`} detail={`${completedActivities} of ${periodActivities.length} activities done`} icon={<CalendarRange size={18} />} />
+    </div>
+
+    <div className="panel report-panel">
+      <div className="panel-heading"><div><h2>Subtask progress</h2><p>Completion and overdue status for work broken down under parent tasks.</p></div><span className="count-pill">{subtasks.length} subtasks</span></div>
+      <div className="subtask-report-summary"><div><strong>{subtasks.length}</strong><span>Total subtasks</span></div><div><strong>{openSubtasks.length}</strong><span>Open</span></div><div><strong>{completedSubtasks}</strong><span>Completed</span></div><div><strong>{overdueSubtasks.length}</strong><span>Overdue</span></div></div>
+      <div className="subtask-progress-list">{subtaskProgress.length ? subtaskProgress.slice(0, 10).map((row) => <div className="subtask-progress-row" key={row.parent.id}><div className="subtask-progress-label"><span><strong>{row.parent.title}</strong>{clients.find((client) => client.id === row.parent.clientId)?.name ? ` · ${clients.find((client) => client.id === row.parent.clientId)?.name}` : ''}</span><span>{row.completed}/{row.total} · {row.percent}%</span></div><div className="subtask-progress-track"><div className="subtask-progress-fill" style={{ width: `${row.percent}%` }} /></div></div>) : <div className="report-empty">Create subtasks under a task to see progress here.</div>}</div>
     </div>
 
     <div className="panel report-panel">
@@ -198,7 +226,7 @@ export default function Reports({ clients, projects, items, planner, taskSetting
 
     <div className="panel report-panel">
       <div className="panel-heading"><div><h2>Task aging</h2><p>Your oldest unresolved tasks, useful for spotting work that is quietly sitting too long.</p></div></div>
-      <div className="table-scroll"><table className="report-table"><thead><tr><th>Task</th><th>Client</th><th>Age</th><th>Waiting on</th><th>Follow-up</th></tr></thead><tbody>{aging.map(({ item, age }) => <tr key={item.id}><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{clients.find((client) => client.id === item.clientId)?.name ?? 'General'}</td><td>{age} day{age === 1 ? '' : 's'}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < today ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</td></tr>)}</tbody></table></div>
+      <div className="table-scroll"><table className="report-table"><thead><tr><th>Task</th><th>Client</th><th>Age</th><th>Waiting on</th><th>Follow-up</th></tr></thead><tbody>{aging.map(({ item, age }) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.parentTaskId ? `Subtask of ${contextItems.find((candidate) => candidate.id === item.parentTaskId)?.title || 'parent task'} · ` : ''}{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{clients.find((client) => client.id === item.clientId)?.name ?? 'General'}</td><td>{age} day{age === 1 ? '' : 's'}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < today ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</td></tr>)}</tbody></table></div>
     </div>
   </section>
 }
