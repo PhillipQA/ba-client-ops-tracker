@@ -807,7 +807,7 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">BA</div><div><strong>Client Ops</strong><span>Tracker</span></div></div>
+        <div className="brand"><img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
         <nav>
           {visibleNavItems.map(({ id, label, icon: Icon }) => (
             <button key={id} className={view === id ? 'nav-button active' : 'nav-button'} onClick={() => { setView(id); setSelectedClientId(null); setSelectedProjectId(null) }}>
@@ -990,7 +990,7 @@ function App() {
 }
 
 function AuthSplash() {
-  return <div className="auth-shell"><div className="auth-card auth-loading"><div className="auth-brand"><div className="brand-mark">BA</div><div><strong>Client Ops</strong><span>Tracker</span></div></div><div className="auth-spinner" /><p>Checking your session…</p></div></div>
+  return <div className="auth-shell"><div className="auth-card auth-loading"><div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div><div className="auth-spinner" /><p>Checking your session…</p></div></div>
 }
 
 function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; onLogin: (username: string, password: string) => Promise<void> }) {
@@ -1001,7 +1001,7 @@ function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; o
   }
   return <div className="auth-shell">
     <div className="auth-card">
-      <div className="auth-brand"><div className="brand-mark">BA</div><div><strong>Client Ops</strong><span>Tracker</span></div></div>
+      <div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
       <div className="auth-copy"><span className="auth-icon"><LockKeyhole size={22} /></span><div><h1>Sign in</h1><p>Access your BA workspace, client records, activities, reports, and AI assistant.</p></div></div>
       <form className="auth-form" onSubmit={submit}>
         <label>Username<input name="username" defaultValue="Admin" autoComplete="username" required /></label>
