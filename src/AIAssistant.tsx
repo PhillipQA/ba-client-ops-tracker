@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Bot, CalendarPlus, CheckCircle2, Clipboard, FileText, Loader2, MessageSquareText, PlusCircle, Sparkles, TicketCheck } from 'lucide-react'
 import { askBAAssistant, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
-import type { Client, PlannerActivity, Project, WorkItem } from './types'
+import type { Client, PlannerActivity, Project, TaskSettings, WorkItem } from './types'
 
 const THREAD_STORAGE_KEY = 'ba-client-ops-ai-threads-v1'
 
@@ -36,6 +36,7 @@ export default function AIAssistant({
   projects,
   items,
   planner,
+  taskSettings,
   initialClientId = '',
   initialProjectId = '',
   initialPrompt = '',
@@ -46,6 +47,7 @@ export default function AIAssistant({
   projects: Project[]
   items: WorkItem[]
   planner: PlannerActivity[]
+  taskSettings: TaskSettings
   initialClientId?: string
   initialProjectId?: string
   initialPrompt?: string
@@ -64,7 +66,7 @@ export default function AIAssistant({
   useEffect(() => { setProjectId(initialProjectId) }, [initialProjectId])
   useEffect(() => { if (initialPrompt) setInput(initialPrompt) }, [initialPrompt])
 
-  const linkedProjects = useMemo(() => clientId ? projects.filter((project) => project.clientId === clientId) : projects, [clientId, projects])
+  const linkedProjects = useMemo(() => clientId ? projects.filter((project) => !project.clientId || project.clientId === clientId) : projects, [clientId, projects])
   const resolvedProjectId = linkedProjects.some((project) => project.id === projectId) ? projectId : ''
   const threadKey = `${clientId || 'global'}:${resolvedProjectId || 'all'}`
   const messages = threads[threadKey] ?? []
@@ -73,10 +75,11 @@ export default function AIAssistant({
     const client = clients.find((value) => value.id === clientId)
     const project = projects.find((value) => value.id === resolvedProjectId)
     const scopedItems = items.filter((item) => (!clientId || item.clientId === clientId) && (!resolvedProjectId || item.projectId === resolvedProjectId))
-    const openItems = scopedItems.filter((item) => !['Resolved', 'Closed'].includes(item.status) && item.waitingOn !== 'Done').slice(0, 20)
+    const closedStatuses = new Set(taskSettings.statuses.filter((status) => status.closed).map((status) => status.label))
+    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && item.waitingOn !== 'Done').slice(0, 20)
     const upcomingActivities = planner.filter((activity) => (!clientId || activity.clientId === clientId) && (!resolvedProjectId || activity.projectId === resolvedProjectId) && activity.status === 'Planned').slice(0, 15)
     return { client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities }
-  }, [clientId, resolvedProjectId, clients, projects, items, planner])
+  }, [clientId, resolvedProjectId, clients, projects, items, planner, taskSettings])
 
   const updateContext = (nextClientId: string, nextProjectId: string) => {
     setClientId(nextClientId)
@@ -148,7 +151,7 @@ export default function AIAssistant({
         <label>Project<select value={resolvedProjectId} onChange={(e) => updateContext(clientId, e.target.value)}><option value="">All projects</option>{linkedProjects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
       </div>
       <div className="ai-context-summary">
-        <div><strong>{context.openItems.length}</strong><span>open items</span></div>
+        <div><strong>{context.openItems.length}</strong><span>open tasks</span></div>
         <div><strong>{context.upcomingActivities.length}</strong><span>planned activities</span></div>
         <div><strong>{context.client ? context.client.status : 'Global'}</strong><span>context</span></div>
       </div>
@@ -156,7 +159,7 @@ export default function AIAssistant({
       <div className="ai-prompts">
         <span>Try asking:</span>
         <button type="button" onClick={() => setInput('Assess this client inquiry and tell me what I should do next: ')}>Assess an inquiry</button>
-        <button type="button" onClick={() => setInput('Review the open items in this context. What should I prioritize and follow up on?')}>Review open work</button>
+        <button type="button" onClick={() => setInput('Review the open tasks in this context. What should I prioritize and follow up on?')}>Review open work</button>
         <button type="button" onClick={() => setInput('Draft a concise client update based on the current project context.')}>Draft client update</button>
       </div>
     </div>

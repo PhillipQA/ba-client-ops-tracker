@@ -1,9 +1,21 @@
-export type ItemType = 'Requirement' | 'Issue' | 'Inquiry' | 'Decision' | 'Follow-up'
+export type ItemType = 'Task' | 'Requirement' | 'Issue' | 'Inquiry' | 'Decision' | 'Follow-up'
 export type WaitingOn = 'Me' | 'Developer' | 'Client' | 'QA' | 'Design' | 'Done'
 export type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
-export type Status = 'Open' | 'In Progress' | 'Blocked' | 'Resolved' | 'Closed'
 export type UserRole = 'Administrator' | 'Contributor' | 'Viewer'
 export type AppModule = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'reports' | 'ai' | 'settings'
+
+export type TaskColumnKey = 'status' | 'client' | 'project' | 'type' | 'waitingOn' | 'priority' | 'owner' | 'dueDate' | 'followUpDate'
+
+export interface TaskStatusDefinition {
+  id: string
+  label: string
+  closed: boolean
+}
+
+export interface TaskSettings {
+  statuses: TaskStatusDefinition[]
+  visibleColumns: TaskColumnKey[]
+}
 
 export interface Client {
   id: string
@@ -17,7 +29,7 @@ export interface Client {
 
 export interface Project {
   id: string
-  clientId: string
+  clientId?: string
   name: string
   status: 'Discovery' | 'Active' | 'UAT' | 'Closing' | 'Closed'
   targetDate: string
@@ -26,15 +38,16 @@ export interface Project {
 
 export interface WorkItem {
   id: string
-  clientId: string
-  projectId: string
+  clientId?: string
+  projectId?: string
   title: string
   type: ItemType
   priority: Priority
-  status: Status
+  status: string
   waitingOn: WaitingOn
   owner: string
   dateRaised: string
+  dueDate?: string
   followUpDate: string
   description: string
   resolution: string
@@ -46,7 +59,7 @@ export interface WorkItem {
 
 export interface ActivityLog {
   id: string
-  clientId: string
+  clientId?: string
   projectId?: string
   date: string
   text: string

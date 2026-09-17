@@ -45,6 +45,22 @@ const defaultAdmin = {
   modules: ALL_MODULES, status: 'Active', createdAt: '2026-09-17',
 }
 
+const defaultTaskSettings = {
+  statuses: [
+    { id: 'open', label: 'Open', closed: false },
+    { id: 'in-progress', label: 'In Progress', closed: false },
+    { id: 'blocked', label: 'Blocked', closed: false },
+    { id: 'resolved', label: 'Resolved', closed: true },
+    { id: 'closed', label: 'Closed', closed: true },
+  ],
+  visibleColumns: ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'dueDate', 'followUpDate'],
+}
+
+function openTaskStatus(state: any) {
+  const statuses = Array.isArray(state?.taskSettings?.statuses) ? state.taskSettings.statuses : defaultTaskSettings.statuses
+  return String(statuses.find((status: any) => !status?.closed)?.label || 'Open')
+}
+
 type SessionUser = Omit<typeof defaultAdmin, 'passwordHash' | 'createdAt'> & { createdAt?: string }
 const sessions = new Map<string, SessionUser>()
 
@@ -96,7 +112,7 @@ async function loadTrackerState() {
 }
 
 function isLegacyStore(data: any) {
-  return !data || typeof data !== 'object' || Number(data.schemaVersion || 0) < 2
+  return !data || typeof data !== 'object' || Number(data.schemaVersion || 0) < 3
 }
 
 app.get('/api/auth/session', (req, res) => {
@@ -203,7 +219,7 @@ app.put('/api/store', requireAuth, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try {
     const currentState = await loadTrackerState()
-    const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { clients: [], projects: [], items: [], activity: [], planner: [], accounts: [defaultAdmin] }
+    const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { schemaVersion: 3, clients: [], projects: [], items: [], activity: [], planner: [], accounts: [defaultAdmin], taskSettings: defaultTaskSettings }
 
     // Protect externally captured Discord inquiries from being erased by a browser tab
     // that loaded before the bot received them. Existing IDs remain fully editable.
@@ -220,6 +236,7 @@ app.put('/api/store', requireAuth, async (req, res) => {
 
     if (user.role === 'Viewer') {
       const operationalUnchanged = ['clients', 'projects', 'items', 'activity', 'planner'].every((key) => stable(current[key] ?? []) === stable(next[key] ?? []))
+        && stable(current.taskSettings ?? defaultTaskSettings) === stable(next.taskSettings ?? defaultTaskSettings)
       if (!operationalUnchanged || (accountsChanged && !selfOnlyAccounts)) {
         res.status(403).json({ configured: true, error: 'Viewer accounts are read-only except for their own profile.' })
         return
@@ -231,9 +248,10 @@ app.put('/api/store', requireAuth, async (req, res) => {
         res.status(403).json({ configured: true, error: 'Only Administrators can manage other accounts.' })
         return
       }
+      if (stable(current.taskSettings ?? defaultTaskSettings) !== stable(next.taskSettings ?? defaultTaskSettings)) return void res.status(403).json({ configured: true, error: 'Only Administrators can change task configuration.' })
       if (stable(current.clients ?? []) !== stable(next.clients ?? []) && !moduleAllowed(user, 'clients')) return void res.status(403).json({ configured: true, error: 'Client module access is required.' })
       if (stable(current.projects ?? []) !== stable(next.projects ?? []) && !moduleAllowed(user, 'projects')) return void res.status(403).json({ configured: true, error: 'Project module access is required.' })
-      if (stable(current.items ?? []) !== stable(next.items ?? []) && !moduleAllowed(user, 'items') && !moduleAllowed(user, 'inbox')) return void res.status(403).json({ configured: true, error: 'Work-item module access is required.' })
+      if (stable(current.items ?? []) !== stable(next.items ?? []) && !moduleAllowed(user, 'items') && !moduleAllowed(user, 'inbox')) return void res.status(403).json({ configured: true, error: 'Task module access is required.' })
       if (stable(current.planner ?? []) !== stable(next.planner ?? []) && !moduleAllowed(user, 'action')) return void res.status(403).json({ configured: true, error: 'Action Center access is required.' })
     }
 
@@ -408,7 +426,7 @@ async function assessDiscordInquiry(messageText: string, sender: string, state: 
   const model = process.env.OPENAI_MODEL || 'gpt-5.6-terra'
   const today = new Date().toISOString().slice(0, 10)
   const clientContext = clients.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
-  const projectContext = projects.map((item: any) => ({ id: String(item.id), clientId: String(item.clientId), name: String(item.name) }))
+  const projectContext = projects.map((item: any) => ({ id: String(item.id), clientId: String(item.clientId || ''), name: String(item.name) }))
   const instructions = `You convert a Business Analyst's Discord capture into one clean Inquiry record. Today is ${today}.
 Return JSON only:
 {
@@ -462,7 +480,7 @@ async function captureDiscordInquiry(discordMessage: any) {
   const stateResult = await loadTrackerState()
   const base = stateResult.data && typeof stateResult.data === 'object'
     ? stateResult.data
-    : { schemaVersion: 2, clients: [], projects: [], items: [], activity: [], planner: [], accounts: [defaultAdmin] }
+    : { schemaVersion: 3, clients: [], projects: [], items: [], activity: [], planner: [], accounts: [defaultAdmin], taskSettings: defaultTaskSettings }
   const items = Array.isArray(base.items) ? base.items : []
   const existing = items.find((item: any) => item?.externalSourceId === externalSourceId)
   if (existing) return { created: false, reason: 'duplicate', item: existing }
@@ -478,10 +496,11 @@ async function captureDiscordInquiry(discordMessage: any) {
     title: assessed.title,
     type: 'Inquiry',
     priority: assessed.priority,
-    status: 'Open',
+    status: openTaskStatus(base),
     waitingOn: assessed.waitingOn,
     owner: 'Me',
     dateRaised: today,
+    dueDate: '',
     followUpDate: assessed.followUpDate,
     description: `${assessed.summary}\n\nDiscord sender: ${sender}${senderTag ? ` (${senderTag})` : ''}\nOriginal: ${text}`,
     resolution: '',

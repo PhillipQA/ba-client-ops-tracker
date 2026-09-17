@@ -3,7 +3,7 @@ import { ArchiveRestore, Bot, Check, Cloud, Database, KeyRound, MessageCircleMor
 import { defaultModulesForRole, MODULE_DEFINITIONS } from './access'
 import { hashPassword } from './auth'
 import type { CloudStorageStatus } from './cloudStore'
-import type { AppModule, UserAccount, UserRole } from './types'
+import type { AppModule, TaskColumnKey, TaskSettings, UserAccount, UserRole } from './types'
 import { APP_VERSION } from './version'
 
 type DiscordStatus = {
@@ -24,7 +24,7 @@ const roleDescriptions: Record<UserRole, { summary: string; permissions: string[
   Viewer: { summary: 'Read-only access.', permissions: ['Can only view modules assigned by an Administrator', 'Reports can be assigned as the default module', 'Cannot create, edit, delete, import, or approve AI actions', 'Cannot manage accounts'] },
 }
 
-export default function Settings({ currentUser, accounts, onCreate, onUpdate, onDelete, cloudStatus, cloudMessage, lastCloudSync, onSyncNow }: {
+export default function Settings({ currentUser, accounts, onCreate, onUpdate, onDelete, cloudStatus, cloudMessage, lastCloudSync, onSyncNow, taskSettings, taskStatusUsage, onTaskSettingsChange }: {
   currentUser: UserAccount
   accounts: UserAccount[]
   onCreate: (account: UserAccount) => string | void
@@ -34,6 +34,9 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
   cloudMessage: string
   lastCloudSync: string
   onSyncNow: () => Promise<void>
+  taskSettings: TaskSettings
+  taskStatusUsage: Record<string, number>
+  onTaskSettingsChange: (settings: TaskSettings) => string | void
 }) {
   const isAdmin = currentUser.role === 'Administrator'
   const [showAdd, setShowAdd] = useState(false)
@@ -43,6 +46,9 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null)
   const [discordStatus, setDiscordStatus] = useState<DiscordStatus | null>(null)
   const [discordLoading, setDiscordLoading] = useState(true)
+  const [newTaskStatus, setNewTaskStatus] = useState('')
+  const [newTaskStatusClosed, setNewTaskStatusClosed] = useState(false)
+  const [taskMessage, setTaskMessage] = useState('')
   const usernameLookup = useMemo(() => new Set(accounts.map((account) => account.username.trim().toLowerCase())), [accounts])
 
   const loadDiscordStatus = async () => {
@@ -129,6 +135,48 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
     update(account.id, { modules })
   }
 
+  const saveTaskSettings = (next: TaskSettings, successMessage: string) => {
+    const result = onTaskSettingsChange(next)
+    setTaskMessage(result || successMessage)
+  }
+
+  const addTaskStatus = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isAdmin) return
+    const label = newTaskStatus.trim()
+    if (!label) return
+    if (taskSettings.statuses.some((status) => status.label.toLowerCase() === label.toLowerCase())) {
+      setTaskMessage('That task status already exists.')
+      return
+    }
+    saveTaskSettings({ ...taskSettings, statuses: [...taskSettings.statuses, { id: crypto.randomUUID(), label, closed: newTaskStatusClosed }] }, `Added task status: ${label}`)
+    setNewTaskStatus('')
+    setNewTaskStatusClosed(false)
+  }
+
+  const toggleTaskStatusClosed = (id: string) => {
+    if (!isAdmin) return
+    const next = { ...taskSettings, statuses: taskSettings.statuses.map((status) => status.id === id ? { ...status, closed: !status.closed } : status) }
+    saveTaskSettings(next, 'Task status updated.')
+  }
+
+  const removeTaskStatus = (id: string) => {
+    if (!isAdmin) return
+    const status = taskSettings.statuses.find((candidate) => candidate.id === id)
+    if (!status) return
+    if ((taskStatusUsage[status.label] || 0) > 0) {
+      setTaskMessage(`Cannot remove ${status.label} while tasks are using it.`)
+      return
+    }
+    saveTaskSettings({ ...taskSettings, statuses: taskSettings.statuses.filter((candidate) => candidate.id !== id) }, `Removed task status: ${status.label}`)
+  }
+
+  const toggleTaskColumn = (column: TaskColumnKey) => {
+    if (!isAdmin || column === 'status') return
+    const visibleColumns = taskSettings.visibleColumns.includes(column) ? taskSettings.visibleColumns.filter((candidate) => candidate !== column) : [...taskSettings.visibleColumns, column]
+    saveTaskSettings({ ...taskSettings, visibleColumns }, 'Task table columns updated.')
+  }
+
   return <section className="page-stack settings-page">
     <div className="panel settings-current">
       <div className="panel-heading"><div><h2>Access & settings</h2><p>Role-based access plus module-level permissions.</p></div><span className="role-badge"><ShieldCheck size={15} /> {currentUser.role}</span></div>
@@ -142,6 +190,24 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
         <div className="storage-card"><Database size={20} /><div><strong>Cloud database</strong><span>{cloudStatus === 'local' ? 'Not configured — additional users require Supabase to sign in.' : cloudStatus === 'error' ? 'Unavailable right now — local cache is still retained.' : 'Supabase PostgreSQL is the persistent shared copy.'}</span></div></div>
         <div className="storage-card"><Cloud size={20} /><div><strong>Last sync</strong><span>{lastCloudSync ? new Date(lastCloudSync).toLocaleString() : 'No cloud sync yet'}</span></div></div>
         <button type="button" className="secondary storage-sync-button" onClick={() => void onSyncNow()} disabled={cloudStatus === 'saving' || cloudStatus === 'checking'}><RefreshCw size={16} /> {cloudStatus === 'saving' ? 'Syncing…' : 'Sync now'}</button>
+      </div>
+    </div>
+
+    <div className="panel settings-task-panel">
+      <div className="panel-heading"><div><h2>Task configuration</h2><p>Control the status workflow and which columns appear in project and task tables.</p></div><span className="role-badge"><ShieldCheck size={15} /> {isAdmin ? 'Administrator editable' : 'View only'}</span></div>
+      {taskMessage && <div className="settings-message">{taskMessage}</div>}
+      <div className="task-settings-grid">
+        <div className="task-settings-section">
+          <div className="task-settings-head"><div><strong>Status workflow</strong><span>Add the statuses your BA process actually uses. Completed statuses are excluded from open-task counts.</span></div></div>
+          {isAdmin && <form className="task-status-create" onSubmit={addTaskStatus}><input value={newTaskStatus} onChange={(event) => setNewTaskStatus(event.target.value)} placeholder="e.g. Ready for Sign-off" /><label className="checkbox-label"><input type="checkbox" checked={newTaskStatusClosed} onChange={(event) => setNewTaskStatusClosed(event.target.checked)} /> Completed status</label><button className="secondary">Add status</button></form>}
+          <div className="task-status-list">{taskSettings.statuses.map((status) => <div className="task-status-row" key={status.id}><div><strong>{status.label}</strong><span>{taskStatusUsage[status.label] || 0} task{(taskStatusUsage[status.label] || 0) === 1 ? '' : 's'} using this status</span></div><label className="task-status-closed"><input type="checkbox" checked={status.closed} disabled={!isAdmin} onChange={() => toggleTaskStatusClosed(status.id)} /> Completed</label>{isAdmin && <button type="button" className="icon-button danger-button" title={(taskStatusUsage[status.label] || 0) > 0 ? 'Status is in use' : 'Remove status'} disabled={(taskStatusUsage[status.label] || 0) > 0} onClick={() => removeTaskStatus(status.id)}><Trash2 size={15} /></button>}</div>)}</div>
+        </div>
+        <div className="task-settings-section">
+          <div className="task-settings-head"><div><strong>Task table columns</strong><span>Choose the standard columns shown under Projects and in the Tasks module. Task title is always shown.</span></div></div>
+          <div className="task-column-grid">{([
+            ['status', 'Status'], ['client', 'Client'], ['project', 'Project'], ['type', 'Type'], ['waitingOn', 'Waiting on'], ['priority', 'Priority'], ['owner', 'Owner'], ['dueDate', 'Due date'], ['followUpDate', 'Follow-up date'],
+          ] as [TaskColumnKey, string][]).map(([column, label]) => <label className="module-check" key={column}><input type="checkbox" checked={taskSettings.visibleColumns.includes(column)} disabled={!isAdmin || column === 'status'} onChange={() => toggleTaskColumn(column)} /><div><b>{label}</b><small>{column === 'status' ? 'Required column' : 'Show this column in task tables'}</small></div></label>)}</div>
+        </div>
       </div>
     </div>
 

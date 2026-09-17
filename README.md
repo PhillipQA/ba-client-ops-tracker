@@ -6,7 +6,7 @@ A lightweight, client-centric operations tracker for Business Analysts who need 
 
 - Login screen with server session cookie
 - Initial Administrator login: **Admin / admin**
-- No preset/demo clients, projects, work items, or activities
+- No preset/demo clients, projects, tasks, or activities
 - Clients and client health
 - Projects and delivery status
 - Requirements, issues, inquiries, decisions, and follow-ups
@@ -51,7 +51,7 @@ Administrators always have every module. For Contributor and Viewer accounts, an
 - Clients
 - Projects
 - Inbox / Inquiries
-- All Items
+- Tasks
 - Reports
 - AI BA Assistant
 - Settings
@@ -339,3 +339,16 @@ Behavior:
 - Supabase is required for Discord capture because the bot is a server-side integration and cannot rely on one browser's localStorage.
 
 On Render Free, the web service may spin down during inactivity. A Gateway-based Discord bot can therefore become unavailable while the Render service is asleep. This setup is suitable for testing; use an always-on service for reliable 24/7 capture.
+
+## v0.3.1 — Project + Task workflow
+
+This release changes the operating model from item-centric to task-centric:
+
+- Projects can now be general/internal or optionally linked to a client.
+- Clicking a project opens a project dashboard with its tasks and communication log.
+- The former **All Items** module is now **Tasks** and the primary action is **Add task**.
+- Tasks support a due date in addition to a follow-up date.
+- The Tasks module can filter by client, project, due-date window, follow-up window, or overdue dates.
+- Client detail no longer shows a Client Items section. It focuses on client context and linked projects.
+- **Settings → Task configuration** lets Administrators add task statuses, mark statuses as completed, and choose visible task-table columns.
+- Existing data is migrated automatically to schema version 3. Existing work items are preserved as tasks.

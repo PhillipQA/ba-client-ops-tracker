@@ -1,12 +1,23 @@
 import { ALL_MODULES } from './access'
-import type { ActivityLog, Client, PlannerActivity, Project, UserAccount, WorkItem } from './types'
+import type { ActivityLog, Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkItem } from './types'
 
-// The tracker intentionally starts without preset clients, projects, work items, or activities.
+// The tracker intentionally starts without preset clients, projects, tasks, or activities.
 export const seedClients: Client[] = []
 export const seedProjects: Project[] = []
 export const seedItems: WorkItem[] = []
 export const seedActivity: ActivityLog[] = []
 export const seedPlannerActivities: PlannerActivity[] = []
+
+export const defaultTaskSettings: TaskSettings = {
+  statuses: [
+    { id: 'open', label: 'Open', closed: false },
+    { id: 'in-progress', label: 'In Progress', closed: false },
+    { id: 'blocked', label: 'Blocked', closed: false },
+    { id: 'resolved', label: 'Resolved', closed: true },
+    { id: 'closed', label: 'Closed', closed: true },
+  ],
+  visibleColumns: ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'dueDate', 'followUpDate'],
+}
 
 // Initial administrator requested for first setup.
 // Username: Admin

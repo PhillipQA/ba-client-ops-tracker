@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CalendarRange, CheckCircle2, Clock3, Download, ListTodo, UsersRound } from 'lucide-react'
-import type { Client, PlannerActivity, Project, WorkItem } from './types'
+import type { Client, PlannerActivity, Project, TaskSettings, WorkItem } from './types'
 
 function localDateKey(date: Date) {
   const yyyy = date.getFullYear()
@@ -51,14 +51,14 @@ function csvEscape(value: unknown) {
   return `"${text.replace(/"/g, '""')}"`
 }
 
-export default function Reports({ clients, projects, items, planner }: { clients: Client[]; projects: Project[]; items: WorkItem[]; planner: PlannerActivity[] }) {
+export default function Reports({ clients, projects, items, planner, taskSettings }: { clients: Client[]; projects: Project[]; items: WorkItem[]; planner: PlannerActivity[]; taskSettings: TaskSettings }) {
   const [from, setFrom] = useState(startOfMonthKey())
   const [to, setTo] = useState(endOfMonthKey())
   const [clientId, setClientId] = useState('')
   const [projectId, setProjectId] = useState('')
   const today = localDateKey(new Date())
 
-  const contextProjects = useMemo(() => projects.filter((project) => !clientId || project.clientId === clientId), [projects, clientId])
+  const contextProjects = useMemo(() => projects.filter((project) => !clientId || !project.clientId || project.clientId === clientId), [projects, clientId])
   const contextItems = useMemo(() => items.filter((item) => (!clientId || item.clientId === clientId) && (!projectId || item.projectId === projectId)), [items, clientId, projectId])
   const periodActivities = useMemo(() => planner.filter((activity) => {
     const endDate = activity.endDate || activity.date
@@ -66,8 +66,9 @@ export default function Reports({ clients, projects, items, planner }: { clients
   }), [planner, from, to, clientId, projectId])
   const resolvedInPeriod = useMemo(() => contextItems.filter((item) => item.resolvedDate && item.resolvedDate >= from && item.resolvedDate <= to), [contextItems, from, to])
   const raisedInPeriod = useMemo(() => contextItems.filter((item) => item.dateRaised >= from && item.dateRaised <= to), [contextItems, from, to])
-  const openItems = useMemo(() => contextItems.filter((item) => !['Resolved', 'Closed'].includes(item.status) && item.waitingOn !== 'Done'), [contextItems])
-  const overdueItems = useMemo(() => openItems.filter((item) => item.followUpDate && item.followUpDate < today), [openItems, today])
+  const isClosed = (status: string) => taskSettings.statuses.find((candidate) => candidate.label === status)?.closed ?? ['Resolved', 'Closed'].includes(status)
+  const openItems = useMemo(() => contextItems.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done'), [contextItems, taskSettings])
+  const overdueItems = useMemo(() => openItems.filter((item) => (item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)), [openItems, today])
 
   const tatValues = resolvedInPeriod.map((item) => daysBetween(item.dateRaised, item.resolvedDate || item.dateRaised))
   const avgTat = average(tatValues)
@@ -112,16 +113,16 @@ export default function Reports({ clients, projects, items, planner }: { clients
     const rows = [
       ['Metric', 'Value'],
       ['Date range', `${from} to ${to}`],
-      ['Items raised', raisedInPeriod.length],
-      ['Items resolved', resolvedInPeriod.length],
+      ['Tasks raised', raisedInPeriod.length],
+      ['Tasks resolved', resolvedInPeriod.length],
       ['Average turnaround days', avgTat.toFixed(1)],
       ['Median turnaround days', medianTat.toFixed(1)],
-      ['Open items', openItems.length],
-      ['Overdue items', overdueItems.length],
+      ['Open tasks', openItems.length],
+      ['Overdue tasks', overdueItems.length],
       ['Activities', periodActivities.length],
       ['Activity completion percent', activityCompletion],
       [],
-      ['Resolved item', 'Client', 'Project', 'Raised', 'Resolved', 'Turnaround days'],
+      ['Resolved task', 'Client', 'Project', 'Raised', 'Resolved', 'Turnaround days'],
       ...resolvedInPeriod.map((item) => [item.title, clients.find((client) => client.id === item.clientId)?.name ?? '', projects.find((project) => project.id === item.projectId)?.name ?? '', item.dateRaised, item.resolvedDate ?? '', daysBetween(item.dateRaised, item.resolvedDate || item.dateRaised)]),
     ]
     const blob = new Blob([rows.map((row) => row.map(csvEscape).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
@@ -135,7 +136,7 @@ export default function Reports({ clients, projects, items, planner }: { clients
 
   return <section className="page-stack reports-page">
     <div className="panel report-filter-panel">
-      <div className="panel-heading"><div><h2>Reports</h2><p>Operational reporting derived from your work items and activities.</p></div><button className="secondary" onClick={exportCsv}><Download size={16} /> Export CSV</button></div>
+      <div className="panel-heading"><div><h2>Reports</h2><p>Operational reporting derived from your tasks and activities.</p></div><button className="secondary" onClick={exportCsv}><Download size={16} /> Export CSV</button></div>
       <div className="report-filters">
         <label>From<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label>To<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
@@ -146,8 +147,8 @@ export default function Reports({ clients, projects, items, planner }: { clients
 
     <div className="metric-grid dashboard-metrics">
       <ReportMetric title="Avg turnaround" value={resolvedInPeriod.length ? `${avgTat.toFixed(1)}d` : '—'} detail={`${resolvedInPeriod.length} resolved · median ${medianTat.toFixed(1)}d`} icon={<Clock3 size={18} />} />
-      <ReportMetric title="Items raised" value={raisedInPeriod.length} detail={`${resolvedInPeriod.length} resolved in range`} icon={<ListTodo size={18} />} />
-      <ReportMetric title="Overdue now" value={overdueItems.length} detail={`${openItems.length} open items`} icon={<AlertTriangle size={18} />} />
+      <ReportMetric title="Tasks raised" value={raisedInPeriod.length} detail={`${resolvedInPeriod.length} resolved in range`} icon={<ListTodo size={18} />} />
+      <ReportMetric title="Overdue now" value={overdueItems.length} detail={`${openItems.length} open tasks`} icon={<AlertTriangle size={18} />} />
       <ReportMetric title="Activity completion" value={`${activityCompletion}%`} detail={`${completedActivities} of ${periodActivities.length} activities done`} icon={<CheckCircle2 size={18} />} />
     </div>
 
@@ -180,14 +181,14 @@ export default function Reports({ clients, projects, items, planner }: { clients
       </div>
       <div className="panel report-panel">
         <div className="panel-heading"><div><h2>Waiting-on breakdown</h2><p>Who currently owns the next move.</p></div></div>
-        <div className="report-bars">{waitingBreakdown.map((row) => <ReportBar key={row.waitingOn} label={row.waitingOn} value={row.count} max={maxWaiting} suffix=" items" />)}</div>
+        <div className="report-bars">{waitingBreakdown.map((row) => <ReportBar key={row.waitingOn} label={row.waitingOn} value={row.count} max={maxWaiting} suffix=" tasks" />)}</div>
       </div>
     </div>
 
     <div className="report-grid-two">
       <div className="panel report-panel">
-        <div className="panel-heading"><div><h2>Turnaround by client</h2><p>Average days from item raised to resolved.</p></div></div>
-        <div className="report-bars">{turnaroundByClient.length ? turnaroundByClient.map((row) => <ReportBar key={row.client.id} label={row.client.name} value={row.avg} max={maxTat} suffix={` days · ${row.count} completed`} decimals={1} />) : <div className="report-empty">Resolve items to build turnaround reporting.</div>}</div>
+        <div className="panel-heading"><div><h2>Turnaround by client</h2><p>Average days from task raised to resolved.</p></div></div>
+        <div className="report-bars">{turnaroundByClient.length ? turnaroundByClient.map((row) => <ReportBar key={row.client.id} label={row.client.name} value={row.avg} max={maxTat} suffix={` days · ${row.count} completed`} decimals={1} />) : <div className="report-empty">Resolve tasks to build turnaround reporting.</div>}</div>
       </div>
       <div className="panel report-panel">
         <div className="panel-heading"><div><h2>Activity mix</h2><p>Calendar meetings versus tracker-only BA work.</p></div><CalendarRange size={18} /></div>
@@ -196,8 +197,8 @@ export default function Reports({ clients, projects, items, planner }: { clients
     </div>
 
     <div className="panel report-panel">
-      <div className="panel-heading"><div><h2>Task aging</h2><p>Your oldest unresolved items, useful for spotting work that is quietly sitting too long.</p></div></div>
-      <div className="table-scroll"><table className="report-table"><thead><tr><th>Item</th><th>Client</th><th>Age</th><th>Waiting on</th><th>Follow-up</th></tr></thead><tbody>{aging.map(({ item, age }) => <tr key={item.id}><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{clients.find((client) => client.id === item.clientId)?.name ?? 'Unknown'}</td><td>{age} day{age === 1 ? '' : 's'}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < today ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</td></tr>)}</tbody></table></div>
+      <div className="panel-heading"><div><h2>Task aging</h2><p>Your oldest unresolved tasks, useful for spotting work that is quietly sitting too long.</p></div></div>
+      <div className="table-scroll"><table className="report-table"><thead><tr><th>Task</th><th>Client</th><th>Age</th><th>Waiting on</th><th>Follow-up</th></tr></thead><tbody>{aging.map(({ item, age }) => <tr key={item.id}><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{clients.find((client) => client.id === item.clientId)?.name ?? 'General'}</td><td>{age} day{age === 1 ? '' : 's'}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < today ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</td></tr>)}</tbody></table></div>
     </div>
   </section>
 }

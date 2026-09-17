@@ -3,9 +3,9 @@ import type { AppModule, UserRole } from './types'
 export const MODULE_DEFINITIONS: { id: AppModule; label: string; description: string }[] = [
   { id: 'action', label: 'Action Center', description: 'Dashboard, activities, and follow-ups.' },
   { id: 'clients', label: 'Clients', description: 'Client records and client detail.' },
-  { id: 'projects', label: 'Projects', description: 'Project records and delivery context.' },
+  { id: 'projects', label: 'Projects', description: 'General or client-linked projects and their tasks.' },
   { id: 'inbox', label: 'Inbox / Inquiries', description: 'Capture and classify client inquiries.' },
-  { id: 'items', label: 'All Items', description: 'Requirements, issues, decisions, and follow-ups.' },
+  { id: 'items', label: 'Tasks', description: 'Tasks, requirements, issues, decisions, and follow-ups.' },
   { id: 'reports', label: 'Reports', description: 'Gantt, turnaround time, workload, and exports.' },
   { id: 'ai', label: 'AI BA Assistant', description: 'Contextual AI assessment and suggested actions.' },
   { id: 'settings', label: 'Settings', description: 'Storage, roles, and account management.' },
