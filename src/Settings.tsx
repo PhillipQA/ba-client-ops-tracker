@@ -18,6 +18,13 @@ type DiscordStatus = {
   mentionCapture: boolean
 }
 
+type DataArchitectureStatus = {
+  ready: boolean
+  syncedAt?: string
+  counts?: Record<string, number>
+  error?: string
+}
+
 const roleDescriptions: Record<UserRole, { summary: string; permissions: string[] }> = {
   Administrator: { summary: 'Full system access.', permissions: ['Can access every module', 'Create, read, update, and delete operational records', 'Use AI and Calendar import', 'Add, update, disable, and delete accounts'] },
   Contributor: { summary: 'Day-to-day BA delivery access.', permissions: ['CRUD access to modules assigned by an Administrator', 'Can use AI when the AI module is assigned', 'Can view/export Reports when assigned', 'Cannot add or manage other accounts'] },
@@ -49,7 +56,41 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
   const [newTaskStatus, setNewTaskStatus] = useState('')
   const [newTaskStatusClosed, setNewTaskStatusClosed] = useState(false)
   const [taskMessage, setTaskMessage] = useState('')
+  const [dataArchitecture, setDataArchitecture] = useState<DataArchitectureStatus | null>(null)
+  const [dataArchitectureLoading, setDataArchitectureLoading] = useState(true)
+  const [dataArchitectureMessage, setDataArchitectureMessage] = useState('')
   const usernameLookup = useMemo(() => new Set(accounts.map((account) => account.username.trim().toLowerCase())), [accounts])
+
+  const loadDataArchitectureStatus = async () => {
+    setDataArchitectureLoading(true)
+    try {
+      const response = await fetch('/api/data-architecture/status', { credentials: 'include' })
+      const body = await response.json().catch(() => ({})) as DataArchitectureStatus
+      if (!response.ok) throw new Error(body.error || 'Could not load data architecture status.')
+      setDataArchitecture(body)
+    } catch (error) {
+      setDataArchitecture({ ready: false, error: error instanceof Error ? error.message : 'Could not load data architecture status.' })
+    } finally {
+      setDataArchitectureLoading(false)
+    }
+  }
+
+  const migrateDataArchitecture = async () => {
+    if (!isAdmin) return
+    setDataArchitectureLoading(true)
+    setDataArchitectureMessage('')
+    try {
+      const response = await fetch('/api/data-architecture/migrate', { method: 'POST', credentials: 'include' })
+      const body = await response.json().catch(() => ({})) as DataArchitectureStatus
+      if (!response.ok) throw new Error(body.error || 'Migration failed.')
+      setDataArchitecture(body)
+      setDataArchitectureMessage('Migration completed. Structured Supabase tables are now synchronized with tracker_state.')
+    } catch (error) {
+      setDataArchitectureMessage(error instanceof Error ? error.message : 'Migration failed.')
+    } finally {
+      setDataArchitectureLoading(false)
+    }
+  }
 
   const loadDiscordStatus = async () => {
     setDiscordLoading(true)
@@ -66,6 +107,7 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
 
   useEffect(() => {
     void loadDiscordStatus()
+    void loadDataArchitectureStatus()
   }, [])
 
   const changeNewRole = (role: UserRole) => {
@@ -191,6 +233,18 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
         <div className="storage-card"><Cloud size={20} /><div><strong>Last sync</strong><span>{lastCloudSync ? new Date(lastCloudSync).toLocaleString() : 'No cloud sync yet'}</span></div></div>
         <button type="button" className="secondary storage-sync-button" onClick={() => void onSyncNow()} disabled={cloudStatus === 'saving' || cloudStatus === 'checking'}><RefreshCw size={16} /> {cloudStatus === 'saving' ? 'Syncing…' : 'Sync now'}</button>
       </div>
+    </div>
+
+    <div className="panel settings-storage-panel">
+      <div className="panel-heading"><div><h2>Data Architecture v2</h2><p>Normalized Supabase tables for migration, recovery, reporting, soft-delete history, and audit tracking.</p></div><span className={`storage-badge ${dataArchitecture?.ready ? 'storage-synced' : 'storage-local'}`}><Database size={15} /> {dataArchitectureLoading ? 'Checking…' : dataArchitecture?.ready ? 'Ready' : 'Setup required'}</span></div>
+      <div className="storage-grid">
+        <div className="storage-card"><Database size={20} /><div><strong>Structured tables</strong><span>{dataArchitecture?.ready ? 'Clients, projects, tasks, inquiries, activities, users, statuses, documents, and audit history are available.' : 'Run supabase/schema-v2.sql in the Supabase SQL Editor first.'}</span></div></div>
+        <div className="storage-card"><ArchiveRestore size={20} /><div><strong>Last normalized sync</strong><span>{dataArchitecture?.syncedAt ? new Date(dataArchitecture.syncedAt).toLocaleString() : 'No migration run recorded yet'}</span><small>{dataArchitecture?.counts ? Object.entries(dataArchitecture.counts).map(([key, value]) => `${key}: ${value}`).join(' · ') : 'tracker_state remains the compatibility fallback.'}</small></div></div>
+        {isAdmin && <button type="button" className="secondary storage-sync-button" onClick={() => void migrateDataArchitecture()} disabled={dataArchitectureLoading || !dataArchitecture?.ready}><RefreshCw size={16} /> {dataArchitectureLoading ? 'Working…' : 'Migrate / Sync now'}</button>}
+      </div>
+      {dataArchitectureMessage && <div className="settings-message">{dataArchitectureMessage}</div>}
+      {!dataArchitecture?.ready && dataArchitecture?.error && <div className="settings-note"><b>Setup note:</b> {dataArchitecture.error.includes('does not exist') || dataArchitecture.error.includes('schema cache') ? 'The v2 tables have not been created yet. Open Supabase SQL Editor and run supabase/schema-v2.sql, then return here and refresh.' : dataArchitecture.error}</div>}
+      <div className="settings-note"><b>Safety:</b> v0.4.0 keeps <code>tracker_state</code> intact. New saves dual-write into normalized tables when v2 is ready. Deleted records are soft-deleted there, and changes are recorded in <code>audit_logs</code>.</div>
     </div>
 
     <div className="panel settings-task-panel">

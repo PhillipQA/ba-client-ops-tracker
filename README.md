@@ -378,3 +378,15 @@ When Supabase is connected and the signed-in account can access Inbox or Tasks, 
 - Logs received DM/@mention events without logging message text.
 - Replies when an event arrives with empty text instead of silently ignoring it.
 - Exposes last Discord event metadata through the integration status endpoint for troubleshooting.
+
+## Data Architecture v2 (v0.4.0)
+
+This release keeps `tracker_state` as a compatibility fallback while adding normalized Supabase tables for migration, recovery, reporting, soft deletion, and audit history.
+
+1. Deploy/apply v0.4.0.
+2. In Supabase SQL Editor, run `supabase/schema-v2.sql` once.
+3. Open **Settings → Data Architecture v2**.
+4. Click **Migrate / Sync now** as an Administrator.
+5. Verify the new tables (`clients`, `projects`, `tasks`, `inquiries`, `activity_logs`, `planner_activities`, `app_users`, `task_statuses`, `app_settings`, `audit_logs`).
+
+After the v2 schema exists, normal tracker saves automatically dual-write to the normalized tables. Removed records are marked with `deleted_at` instead of being physically erased from the normalized copy. `audit_logs` keeps before/after snapshots and changed-field names. The existing app login continues to use the compatibility state in this release; Supabase Auth migration can be done separately without blocking the data migration.

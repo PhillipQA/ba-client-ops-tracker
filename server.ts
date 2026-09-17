@@ -114,6 +114,138 @@ async function loadTrackerState() {
   return { configured: true, data: data?.data ?? null, updatedAt: data?.updated_at as string | undefined }
 }
 
+
+
+type NormalizedSyncResult = {
+  ready: boolean
+  syncedAt?: string
+  counts?: Record<string, number>
+  error?: string
+}
+
+function cleanObject(value: any) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value
+}
+
+function sanitizedAccountRaw(account: any) {
+  const { passwordHash: _passwordHash, ...safe } = cleanObject(account)
+  return safe
+}
+
+async function normalizedSchemaStatus(): Promise<NormalizedSyncResult> {
+  if (!supabaseAdmin) return { ready: false, error: 'Supabase is not configured.' }
+  const { error } = await supabaseAdmin.from('data_migration_runs').select('id').limit(1)
+  if (error) return { ready: false, error: error.message }
+  const { data: lastRun } = await supabaseAdmin.from('data_migration_runs').select('completed_at, counts').eq('status', 'completed').order('completed_at', { ascending: false }).limit(1).maybeSingle()
+  return { ready: true, syncedAt: lastRun?.completed_at || undefined, counts: lastRun?.counts || undefined }
+}
+
+async function upsertAndSoftDelete(table: string, rows: any[]) {
+  if (!supabaseAdmin) throw new Error('Supabase is not configured.')
+  const now = new Date().toISOString()
+  const normalizedRows = rows.map((row) => ({ ...row, deleted_at: null, updated_at: now }))
+  if (normalizedRows.length) {
+    const { error } = await supabaseAdmin.from(table).upsert(normalizedRows, { onConflict: 'id' })
+    if (error) throw error
+  }
+  const { data: existing, error: existingError } = await supabaseAdmin.from(table).select('id, deleted_at')
+  if (existingError) throw existingError
+  const keep = new Set(normalizedRows.map((row) => String(row.id)))
+  const missingIds = (existing || []).filter((row: any) => !keep.has(String(row.id)) && !row.deleted_at).map((row: any) => String(row.id))
+  if (missingIds.length) {
+    const { error } = await supabaseAdmin.from(table).update({ deleted_at: now, updated_at: now }).in('id', missingIds)
+    if (error) throw error
+  }
+  return normalizedRows.length
+}
+
+function changedFields(before: any, after: any) {
+  const keys = new Set([...Object.keys(cleanObject(before)), ...Object.keys(cleanObject(after))])
+  return [...keys].filter((key) => stable(before?.[key]) !== stable(after?.[key]))
+}
+
+async function writeAuditEntries(current: any, next: any, actor: SessionUser | null, source = 'tracker') {
+  if (!supabaseAdmin) return
+  const groups = [
+    ['client', current?.clients, next?.clients],
+    ['project', current?.projects, next?.projects],
+    ['work_item', current?.items, next?.items],
+    ['activity', current?.activity, next?.activity],
+    ['planner_activity', current?.planner, next?.planner],
+    ['account', current?.accounts, next?.accounts],
+  ] as const
+  const entries: any[] = []
+  for (const [entityType, beforeRowsRaw, afterRowsRaw] of groups) {
+    const beforeRows = Array.isArray(beforeRowsRaw) ? beforeRowsRaw : []
+    const afterRows = Array.isArray(afterRowsRaw) ? afterRowsRaw : []
+    const beforeMap = new Map(beforeRows.map((row: any) => [String(row?.id || ''), row]))
+    const afterMap = new Map(afterRows.map((row: any) => [String(row?.id || ''), row]))
+    const ids = new Set([...beforeMap.keys(), ...afterMap.keys()])
+    for (const id of ids) {
+      if (!id) continue
+      const before = beforeMap.get(id)
+      const after = afterMap.get(id)
+      if (stable(before) === stable(after)) continue
+      const action = !before ? 'create' : !after ? 'delete' : 'update'
+      const safeBefore = entityType === 'account' && before ? sanitizedAccountRaw(before) : before || null
+      const safeAfter = entityType === 'account' && after ? sanitizedAccountRaw(after) : after || null
+      entries.push({
+        id: crypto.randomUUID(), entity_type: entityType, entity_id: id, action,
+        changed_fields: changedFields(safeBefore, safeAfter), before_data: safeBefore, after_data: safeAfter,
+        changed_by: actor?.id || null, changed_by_name: actor?.name || 'System', source,
+      })
+    }
+  }
+  if (entries.length) {
+    const { error } = await supabaseAdmin.from('audit_logs').insert(entries)
+    if (error) throw error
+  }
+}
+
+async function syncNormalizedState(state: any, actor: SessionUser | null = null, reason = 'sync'): Promise<NormalizedSyncResult> {
+  if (!supabaseAdmin) return { ready: false, error: 'Supabase is not configured.' }
+  const status = await normalizedSchemaStatus()
+  if (!status.ready) return status
+  const source = state && typeof state === 'object' ? state : {}
+  const clients = Array.isArray(source.clients) ? source.clients : []
+  const projects = Array.isArray(source.projects) ? source.projects : []
+  const items = Array.isArray(source.items) ? source.items : []
+  const activities = Array.isArray(source.activity) ? source.activity : []
+  const planner = Array.isArray(source.planner) ? source.planner : []
+  const accounts = Array.isArray(source.accounts) ? source.accounts : []
+  const statuses = Array.isArray(source.taskSettings?.statuses) ? source.taskSettings.statuses : defaultTaskSettings.statuses
+  const tasks = items.filter((item: any) => item?.type !== 'Inquiry')
+  const inquiries = items.filter((item: any) => item?.type === 'Inquiry')
+  const startedAt = new Date().toISOString()
+  const runId = crypto.randomUUID()
+  await supabaseAdmin.from('data_migration_runs').insert({ id: runId, status: 'running', reason, started_at: startedAt, started_by: actor?.id || null })
+  try {
+    const counts: Record<string, number> = {}
+    counts.clients = await upsertAndSoftDelete('clients', clients.map((row: any) => ({ id: String(row.id), name: row.name || '', contact: row.contact || '', email: row.email || '', status: row.status || '', health: row.health || '', notes: row.notes || '', raw_data: row })))
+    counts.projects = await upsertAndSoftDelete('projects', projects.map((row: any) => ({ id: String(row.id), name: row.name || '', status: row.status || '', target_date: row.targetDate || null, summary: row.summary || '', raw_data: row })))
+    counts.tasks = await upsertAndSoftDelete('tasks', tasks.map((row: any) => ({ id: String(row.id), client_id: row.clientId || null, project_id: row.projectId || null, parent_task_id: row.parentTaskId || null, subtask_order: Number.isFinite(row.subtaskOrder) ? row.subtaskOrder : null, title: row.title || '', type: row.type || 'Task', priority: row.priority || '', status: row.status || '', waiting_on: row.waitingOn || '', owner: row.owner || '', date_raised: row.dateRaised || null, due_date: row.dueDate || null, follow_up_date: row.followUpDate || null, description: row.description || '', resolution: row.resolution || '', resolved_date: row.resolvedDate || null, source: row.source || '', external_source_id: row.externalSourceId || null, source_sender: row.sourceSender || null, raw_data: row })))
+    counts.inquiries = await upsertAndSoftDelete('inquiries', inquiries.map((row: any) => ({ id: String(row.id), client_id: row.clientId || null, project_id: row.projectId || null, title: row.title || '', priority: row.priority || '', status: row.status || '', waiting_on: row.waitingOn || '', owner: row.owner || '', date_raised: row.dateRaised || null, follow_up_date: row.followUpDate || null, description: row.description || '', resolution: row.resolution || '', resolved_date: row.resolvedDate || null, source: row.source || '', external_source_id: row.externalSourceId || null, source_sender: row.sourceSender || null, raw_data: row })))
+    counts.activity_logs = await upsertAndSoftDelete('activity_logs', activities.map((row: any) => ({ id: String(row.id), client_id: row.clientId || null, project_id: row.projectId || null, activity_date: row.date || null, text: row.text || '', raw_data: row })))
+    counts.planner_activities = await upsertAndSoftDelete('planner_activities', planner.map((row: any) => ({ id: String(row.id), client_id: row.clientId || null, project_id: row.projectId || null, title: row.title || '', activity_date: row.date || null, start_time: row.startTime || null, end_time: row.endTime || null, end_date: row.endDate || null, all_day: Boolean(row.allDay), source: row.source || '', status: row.status || '', notes: row.notes || '', calendar_event_id: row.calendarEventId || null, calendar_link: row.calendarLink || null, raw_data: row })))
+    counts.app_users = await upsertAndSoftDelete('app_users', accounts.map((row: any) => ({ id: String(row.id), username: row.username || '', password_hash: row.passwordHash || '', name: row.name || '', email: row.email || '', phone: row.phone || '', role: row.role || '', modules: Array.isArray(row.modules) ? row.modules : [], status: row.status || '', created_on: row.createdAt || null, raw_data: sanitizedAccountRaw(row) })))
+    counts.task_statuses = await upsertAndSoftDelete('task_statuses', statuses.map((row: any, index: number) => ({ id: String(row.id), label: row.label || '', is_completed: Boolean(row.closed), sort_order: index, raw_data: row })))
+    counts.app_settings = await upsertAndSoftDelete('app_settings', [{ id: 'task-settings', setting_key: 'task_settings', value: source.taskSettings || defaultTaskSettings, raw_data: source.taskSettings || defaultTaskSettings }])
+    const completedAt = new Date().toISOString()
+    const { error: updateError } = await supabaseAdmin.from('data_migration_runs').update({ status: 'completed', completed_at: completedAt, counts }).eq('id', runId)
+    if (updateError) throw updateError
+    return { ready: true, syncedAt: completedAt, counts }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Normalized data sync failed.'
+    try {
+      await supabaseAdmin.from('data_migration_runs').update({ status: 'failed', completed_at: new Date().toISOString(), error: message }).eq('id', runId)
+    } catch {
+      // Keep the original sync error as the useful failure signal.
+    }
+    return { ready: true, error: message }
+  }
+}
+
 function isLegacyStore(data: any) {
   return !data || typeof data !== 'object' || Number(data.schemaVersion || 0) < 3
 }
@@ -166,6 +298,33 @@ app.post('/api/auth/logout', requireAuth, (req, res) => {
   if (token) sessions.delete(token)
   res.setHeader('Set-Cookie', 'ba_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
   res.json({ ok: true })
+})
+
+
+app.get('/api/data-architecture/status', requireAuth, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!moduleAllowed(user, 'settings')) return void res.status(403).json({ error: 'Settings access is required.' })
+  try {
+    const status = await normalizedSchemaStatus()
+    res.json(status)
+  } catch (error) {
+    res.status(500).json({ ready: false, error: error instanceof Error ? error.message : 'Could not check normalized data architecture.' })
+  }
+})
+
+app.post('/api/data-architecture/migrate', requireAuth, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (user.role !== 'Administrator') return void res.status(403).json({ error: 'Administrator access is required.' })
+  try {
+    const state = await loadTrackerState()
+    if (!state.data) return void res.status(400).json({ error: 'There is no tracker state to migrate yet.' })
+    const result = await syncNormalizedState(state.data, user, 'manual-migration')
+    if (!result.ready) return void res.status(409).json(result)
+    if (result.error) return void res.status(500).json(result)
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ ready: false, error: error instanceof Error ? error.message : 'Migration failed.' })
+  }
 })
 
 app.get('/api/store', requireAuth, async (_req, res) => {
@@ -264,6 +423,19 @@ app.put('/api/store', requireAuth, async (req, res) => {
       .select('updated_at')
       .single()
     if (error) throw error
+
+    // Keep the normalized Supabase tables in sync for reporting, recovery, and future migration.
+    // This is best-effort so the legacy tracker_state remains the compatibility fallback.
+    try {
+      const normalized = await normalizedSchemaStatus()
+      if (normalized.ready) {
+        await writeAuditEntries(current, next, user, 'tracker-save')
+        const normalizedResult = await syncNormalizedState(next, user, 'tracker-save')
+        if (normalizedResult.error) console.warn('Normalized Supabase sync warning:', normalizedResult.error)
+      }
+    } catch (normalizedError) {
+      console.warn('Normalized Supabase sync skipped:', normalizedError)
+    }
 
     // Apply account/permission changes immediately to active sessions on this server process.
     if (user.role === 'Administrator' && accountsChanged) {
@@ -518,6 +690,16 @@ async function captureDiscordInquiry(discordMessage: any) {
   }
   const { error } = await supabaseAdmin.from('tracker_state').upsert({ id: 'main', data: nextState }, { onConflict: 'id' })
   if (error) throw error
+  try {
+    const normalized = await normalizedSchemaStatus()
+    if (normalized.ready) {
+      await writeAuditEntries(base, nextState, null, 'discord')
+      const normalizedResult = await syncNormalizedState(nextState, null, 'discord-capture')
+      if (normalizedResult.error) console.warn('Normalized Discord sync warning:', normalizedResult.error)
+    }
+  } catch (normalizedError) {
+    console.warn('Normalized Discord sync skipped:', normalizedError)
+  }
   return { created: true, item, clients: base.clients || [], projects: base.projects || [] }
 }
 
