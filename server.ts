@@ -26,7 +26,7 @@ const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
 const discordToken = process.env.DISCORD_BOT_TOKEN?.trim() || ''
 const discordAllowedUserIds = new Set((process.env.DISCORD_ALLOWED_USER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean))
 const discordClient = discordToken ? new DiscordClient({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
   partials: [Partials.Channel],
 }) : null
 const discordRuntime = {
@@ -34,6 +34,9 @@ const discordRuntime = {
   online: false,
   botName: '',
   guildCount: 0,
+  lastEventAt: '',
+  lastEventKind: '',
+  lastEventUserId: '',
   lastMessageAt: '',
   lastError: '',
 }
@@ -525,6 +528,9 @@ function discordStatusPayload() {
     botName: discordRuntime.botName,
     guildCount: discordRuntime.guildCount,
     allowedUsersConfigured: discordAllowedUserIds.size,
+    lastEventAt: discordRuntime.lastEventAt,
+    lastEventKind: discordRuntime.lastEventKind,
+    lastEventUserId: discordRuntime.lastEventUserId,
     lastMessageAt: discordRuntime.lastMessageAt,
     lastError: discordRuntime.lastError,
     dmCapture: true,
@@ -588,8 +594,23 @@ async function startDiscordBot() {
     const isDm = !message.guildId
     const mentionsBot = Boolean(message.guildId && message.mentions.users.has(discordClient.user.id))
     if (!isDm && !mentionsBot) return
+
+    discordRuntime.lastEventAt = new Date().toISOString()
+    discordRuntime.lastEventKind = isDm ? 'DM' : 'Mention'
+    discordRuntime.lastEventUserId = message.author.id
+    console.log(`Discord message received: kind=${discordRuntime.lastEventKind} author=${message.author.id} contentLength=${String(message.content || '').length}`)
+
     if (discordAllowedUserIds.size && !discordAllowedUserIds.has(message.author.id)) {
+      console.warn(`Discord capture rejected unauthorized user ${message.author.id}`)
       if (isDm) await message.reply('This Discord account is not authorized for BA Tracker inquiry capture.').catch(() => undefined)
+      return
+    }
+
+    const normalizedText = normalizeDiscordContent(String(message.content || ''))
+    if (!normalizedText) {
+      discordRuntime.lastError = 'Discord message event received, but the text content was empty.'
+      console.warn(discordRuntime.lastError)
+      await message.reply({ content: '⚠️ I received your message, but I could not read any text from it. Please send a plain-text message and try again.', allowedMentions: { repliedUser: false } }).catch(() => undefined)
       return
     }
 

@@ -358,6 +358,14 @@ This release changes the operating model from item-centric to task-centric:
 Subtasks can be reordered within their parent task by dragging the subtask row. The saved order is persisted with tracker data and is shared through Supabase. Up/down buttons are also available as a keyboard/touch-friendly alternative to drag-and-drop.
 
 
-## v0.3.6 — live Discord inquiry sync
+## v0.3.7 — live Discord inquiry sync
 
 When Supabase is connected and the signed-in account can access Inbox or Tasks, the open app polls for new Discord-captured inquiries every 12 seconds. Newly discovered records are merged into the browser state without overwriting local edits, the Inbox navigation badge highlights the new count, and Discord inquiries receive a source/new badge. Use **Mark seen** in Inbox to clear the session-level new indicator. Existing Discord records are not re-marked as new after a fresh login/cloud load.
+
+
+## v0.3.7 Discord capture diagnostics
+
+- Requests the Discord Message Content gateway intent in addition to Direct Messages.
+- Logs received DM/@mention events without logging message text.
+- Replies when an event arrives with empty text instead of silently ignoring it.
+- Exposes last Discord event metadata through the integration status endpoint for troubleshooting.
