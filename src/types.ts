@@ -2,7 +2,7 @@ export type ItemType = 'Task' | 'Requirement' | 'Issue' | 'Inquiry' | 'Decision'
 export type WaitingOn = 'Me' | 'Developer' | 'Client' | 'QA' | 'Design' | 'Done'
 export type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
 export type UserRole = 'Administrator' | 'Contributor' | 'Viewer'
-export type AppModule = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'reports' | 'ai' | 'settings'
+export type AppModule = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings'
 
 export type TaskColumnKey = 'status' | 'client' | 'project' | 'type' | 'waitingOn' | 'priority' | 'owner' | 'dueDate' | 'followUpDate'
 

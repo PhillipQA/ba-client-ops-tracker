@@ -41,7 +41,7 @@ const discordRuntime = {
   lastError: '',
 }
 
-const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'reports', 'ai', 'settings']
+const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'reports', 'ai', 'settings']
 const ADMIN_PASSWORD_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'
 const defaultAdmin = {
   id: 'admin', username: 'Admin', passwordHash: ADMIN_PASSWORD_HASH, name: 'Administrator', email: '', phone: '', role: 'Administrator',

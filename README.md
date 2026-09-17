@@ -1,3 +1,12 @@
+
+## v0.3.8 — Document Creation module
+
+- Added a new **Document Creation** module with module-level role access.
+- Added **DRF Creation** intake with COR file selection and planned extraction fields for Business Name, Trade Name, TIN, and Address.
+- Added **FSD Creation** intake requiring a BRD before generation can proceed.
+- Added **Sign Off Form** intake with multi-file supporting attachments.
+- Document extraction, persistent file storage, and final generated outputs remain intentionally disabled until the approved DRF/FSD/Sign-Off templates are supplied.
+
 # BA Client Ops Tracker
 
 A lightweight, client-centric operations tracker for Business Analysts who need to manage clients, projects, inquiries, follow-ups, activities, reports, and AI-assisted triage without the overhead of a full Jira setup.

@@ -12,6 +12,7 @@ import {
   CircleDot,
   Clock3,
   ExternalLink,
+  FileText,
   GripVertical,
   Inbox,
   LayoutDashboard,
@@ -28,6 +29,7 @@ import {
   X,
 } from 'lucide-react'
 import AIAssistant from './AIAssistant'
+import DocumentCreation from './DocumentCreation'
 import { ALL_MODULES, defaultModulesForRole } from './access'
 import { getAuthSession, hashPassword, login, logout, type AuthUser } from './auth'
 import { loadCloudStore, loadDiscordInquiries, queueCloudStoreSave, type CloudStorageStatus } from './cloudStore'
@@ -38,7 +40,7 @@ import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems
 import { importPrimaryCalendar } from './googleCalendar'
 import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
 
-type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'reports' | 'ai' | 'settings'
+type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings'
 
 type Store = {
   schemaVersion: number
@@ -182,6 +184,7 @@ const labels: Record<View, string> = {
   projects: 'Projects',
   inbox: 'Inbox / Inquiries',
   items: 'Tasks',
+  documents: 'Document Creation',
   reports: 'Reports',
   ai: 'AI BA Assistant',
   settings: 'Settings',
@@ -193,6 +196,7 @@ const navItems: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'projects', label: 'Projects', icon: BriefcaseBusiness },
   { id: 'inbox', label: 'Inbox / Inquiries', icon: Inbox },
   { id: 'items', label: 'Tasks', icon: Archive },
+  { id: 'documents', label: 'Document Creation', icon: FileText },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'ai', label: 'AI BA Assistant', icon: Sparkles },
   { id: 'settings', label: 'Settings', icon: Settings2 },
@@ -952,6 +956,8 @@ function App() {
             </div>
           </section>
         )}
+
+        {!selectedClient && !selectedProject && view === 'documents' && hasModule('documents') && <DocumentCreation />}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} />}
 
