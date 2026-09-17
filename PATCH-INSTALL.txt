@@ -1,0 +1,19 @@
+BA Client Ops Tracker - Patch Updater Bootstrap v0.2.0
+
+This is the ONE-TIME bootstrap patch for an existing pre-v0.2.0 project.
+
+1. Stop the app with Ctrl+C.
+2. Back up your project folder if desired.
+3. Extract this ZIP DIRECTLY into the existing BA Client Ops Tracker project folder.
+4. Allow Windows to replace the listed existing files.
+5. Do NOT delete or replace .env.local.
+6. Run: npm run patch:status
+7. Start the app again: npm run dev
+
+No new npm dependency is added by this bootstrap patch, so npm install is not required.
+
+After this bootstrap, future patches are applied with:
+  npm run patch -- "C:\Downloads\ba-client-ops-patch-vX.Y.Z.zip"
+
+Rollback for future patches:
+  npm run patch:rollback

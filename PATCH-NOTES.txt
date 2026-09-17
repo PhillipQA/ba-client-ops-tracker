@@ -1,0 +1,13 @@
+BA Client Ops Tracker v0.2.1 Hotfix
+
+Fixes:
+- Restores missing src/auth.ts required by Settings.tsx.
+- No database changes.
+- No .env.local changes.
+- No npm install required.
+
+Apply from your project folder:
+  npm run patch -- "C:\\path\\to\\ba-client-ops-patch-v0.2.1-hotfix.zip"
+
+Then:
+  npm run dev

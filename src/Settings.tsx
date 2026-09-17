@@ -1,0 +1,156 @@
+import { FormEvent, useMemo, useState } from 'react'
+import { ArchiveRestore, Check, Cloud, Database, KeyRound, PackageCheck, RefreshCw, ShieldCheck, Terminal, Trash2, UserPlus, Users } from 'lucide-react'
+import { defaultModulesForRole, MODULE_DEFINITIONS } from './access'
+import { hashPassword } from './auth'
+import type { CloudStorageStatus } from './cloudStore'
+import type { AppModule, UserAccount, UserRole } from './types'
+import { APP_VERSION } from './version'
+
+const roleDescriptions: Record<UserRole, { summary: string; permissions: string[] }> = {
+  Administrator: { summary: 'Full system access.', permissions: ['Can access every module', 'Create, read, update, and delete operational records', 'Use AI and Calendar import', 'Add, update, disable, and delete accounts'] },
+  Contributor: { summary: 'Day-to-day BA delivery access.', permissions: ['CRUD access to modules assigned by an Administrator', 'Can use AI when the AI module is assigned', 'Can view/export Reports when assigned', 'Cannot add or manage other accounts'] },
+  Viewer: { summary: 'Read-only access.', permissions: ['Can only view modules assigned by an Administrator', 'Reports can be assigned as the default module', 'Cannot create, edit, delete, import, or approve AI actions', 'Cannot manage accounts'] },
+}
+
+export default function Settings({ currentUser, accounts, onCreate, onUpdate, onDelete, cloudStatus, cloudMessage, lastCloudSync, onSyncNow }: {
+  currentUser: UserAccount
+  accounts: UserAccount[]
+  onCreate: (account: UserAccount) => string | void
+  onUpdate: (id: string, patch: Partial<UserAccount>) => string | void
+  onDelete: (id: string) => string | void
+  cloudStatus: CloudStorageStatus
+  cloudMessage: string
+  lastCloudSync: string
+  onSyncNow: () => Promise<void>
+}) {
+  const isAdmin = currentUser.role === 'Administrator'
+  const [showAdd, setShowAdd] = useState(false)
+  const [message, setMessage] = useState('')
+  const [newRole, setNewRole] = useState<UserRole>('Contributor')
+  const [newModules, setNewModules] = useState<AppModule[]>(defaultModulesForRole('Contributor'))
+  const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null)
+  const usernameLookup = useMemo(() => new Set(accounts.map((account) => account.username.trim().toLowerCase())), [accounts])
+
+  const changeNewRole = (role: UserRole) => {
+    setNewRole(role)
+    setNewModules(defaultModulesForRole(role))
+  }
+
+  const toggleNewModule = (module: AppModule) => {
+    if (newRole === 'Administrator') return
+    setNewModules((value) => value.includes(module) ? value.filter((item) => item !== module) : [...value, module])
+  }
+
+  const createAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isAdmin) return
+    const form = new FormData(event.currentTarget)
+    const username = String(form.get('username') || '').trim()
+    const password = String(form.get('password') || '')
+    const name = String(form.get('name') || '').trim()
+    const email = String(form.get('email') || '').trim()
+    const phone = String(form.get('phone') || '').trim()
+    if (usernameLookup.has(username.toLowerCase())) {
+      setMessage('That username is already in use.')
+      return
+    }
+    if (password.length < 4) {
+      setMessage('Use an initial password with at least 4 characters.')
+      return
+    }
+    const result = onCreate({
+      id: crypto.randomUUID(),
+      username,
+      passwordHash: await hashPassword(password),
+      name,
+      email,
+      phone,
+      role: newRole,
+      modules: newRole === 'Administrator' ? defaultModulesForRole('Administrator') : newModules,
+      status: 'Active',
+      createdAt: new Date().toISOString().slice(0, 10),
+    })
+    if (result) {
+      setMessage(result)
+      return
+    }
+    event.currentTarget.reset()
+    setNewRole('Contributor')
+    setNewModules(defaultModulesForRole('Contributor'))
+    setShowAdd(false)
+    setMessage('Account added. The user can sign in with the username and initial password you provided.')
+  }
+
+  const update = (id: string, patch: Partial<UserAccount>) => {
+    const result = onUpdate(id, patch)
+    setMessage(result || 'Account updated.')
+  }
+
+  const remove = (id: string) => {
+    if (!window.confirm('Delete this account from the tracker?')) return
+    const result = onDelete(id)
+    setMessage(result || 'Account deleted.')
+  }
+
+  const toggleAccountModule = (account: UserAccount, module: AppModule) => {
+    if (!isAdmin || account.role === 'Administrator') return
+    const modules = account.modules.includes(module) ? account.modules.filter((item) => item !== module) : [...account.modules, module]
+    update(account.id, { modules })
+  }
+
+  return <section className="page-stack settings-page">
+    <div className="panel settings-current">
+      <div className="panel-heading"><div><h2>Access & settings</h2><p>Role-based access plus module-level permissions.</p></div><span className="role-badge"><ShieldCheck size={15} /> {currentUser.role}</span></div>
+      <div className="current-user-card"><div className="settings-avatar">{currentUser.name.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase() || 'U'}</div><div><strong>{currentUser.name}</strong><span>@{currentUser.username}{currentUser.email ? ` · ${currentUser.email}` : ''}</span></div><div className="current-user-role"><small>Signed-in account</small><b>{currentUser.role}</b></div></div>
+      <div className="settings-note">Use <b>My profile</b> in the left sidebar to update your own name, email, contact number, or password. Administrators manage other accounts and module access here.</div>
+    </div>
+
+    <div className="panel settings-storage-panel">
+      <div className="panel-heading"><div><h2>Data storage</h2><p>Supabase is the persistent cloud copy when configured; browser storage remains a local cache.</p></div><span className={`storage-badge storage-${cloudStatus}`}><Cloud size={15} /> {cloudMessage}</span></div>
+      <div className="storage-grid">
+        <div className="storage-card"><Database size={20} /><div><strong>Cloud database</strong><span>{cloudStatus === 'local' ? 'Not configured — additional users require Supabase to sign in.' : cloudStatus === 'error' ? 'Unavailable right now — local cache is still retained.' : 'Supabase PostgreSQL is the persistent shared copy.'}</span></div></div>
+        <div className="storage-card"><Cloud size={20} /><div><strong>Last sync</strong><span>{lastCloudSync ? new Date(lastCloudSync).toLocaleString() : 'No cloud sync yet'}</span></div></div>
+        <button type="button" className="secondary storage-sync-button" onClick={() => void onSyncNow()} disabled={cloudStatus === 'saving' || cloudStatus === 'checking'}><RefreshCw size={16} /> {cloudStatus === 'saving' ? 'Syncing…' : 'Sync now'}</button>
+      </div>
+    </div>
+
+    <div className="panel settings-update-panel">
+      <div className="panel-heading"><div><h2>System updates</h2><p>Apply small code patches without replacing the full project folder.</p></div><span className="version-badge"><PackageCheck size={15} /> v{APP_VERSION}</span></div>
+      <div className="update-grid">
+        <div className="update-card"><Terminal size={20} /><div><strong>Patch update</strong><span>{isAdmin ? 'Download the patch ZIP, then run the command from the project folder. A backup is created automatically.' : 'Only an Administrator should apply application code updates.'}</span>{isAdmin && <code>npm run patch -- &quot;C:\Downloads\ba-client-ops-patch-vX.Y.Z.zip&quot;</code>}</div></div>
+        <div className="update-card"><ArchiveRestore size={20} /><div><strong>Rollback</strong><span>If a patch causes a problem, restore the project files from the automatic pre-update backup.</span>{isAdmin && <code>npm run patch:rollback</code>}</div></div>
+        <div className="update-protection"><ShieldCheck size={17} /><div><strong>Protected during patches</strong><span>.env.local, node_modules, .git, Supabase data, and browser/database records are not replaced by the patch updater.</span></div></div>
+      </div>
+    </div>
+
+    <div className="panel settings-role-panel">
+      <div className="panel-heading"><div><h2>Role permissions</h2><p>Roles define what a user can do; module access defines where they can do it.</p></div></div>
+      <div className="role-grid">{(['Administrator', 'Contributor', 'Viewer'] as UserRole[]).map((role) => <div className="role-card" key={role}><div className="role-card-head"><strong>{role}</strong>{role === currentUser.role && <span>Current</span>}</div><p>{roleDescriptions[role].summary}</p><ul>{roleDescriptions[role].permissions.map((permission) => <li key={permission}><Check size={14} /> {permission}</li>)}</ul></div>)}</div>
+    </div>
+
+    <div className="panel settings-account-panel">
+      <div className="panel-heading"><div><h2>Accounts & module access</h2><p>{isAdmin ? 'Create accounts, assign roles, and choose which modules each account can open.' : 'Only Administrators can manage other accounts and module access.'}</p></div>{isAdmin && <button className="primary" onClick={() => setShowAdd((value) => !value)}><UserPlus size={16} /> Add account</button>}</div>
+      {message && <div className="settings-message">{message}</div>}
+      {showAdd && isAdmin && <form className="account-create-form account-create-expanded" onSubmit={(event) => void createAccount(event)}>
+        <label>Name<input name="name" required placeholder="Team member name" /></label>
+        <label>Username<input name="username" required placeholder="e.g. jsantos" autoComplete="off" /></label>
+        <label>Email<input name="email" type="email" placeholder="name@company.com" /></label>
+        <label>Contact number<input name="phone" placeholder="e.g. +63 900 000 0000" /></label>
+        <label>Initial password<input name="password" type="password" required minLength={4} autoComplete="new-password" /></label>
+        <label>Role<select name="role" value={newRole} onChange={(event) => changeNewRole(event.target.value as UserRole)}><option>Administrator</option><option>Contributor</option><option>Viewer</option></select></label>
+        <div className="module-picker account-form-modules"><strong>Module access</strong><span>{newRole === 'Administrator' ? 'Administrators always have every module.' : 'Select the modules this account can open.'}</span><div className="module-check-grid">{MODULE_DEFINITIONS.map((module) => <label className="module-check" key={module.id}><input type="checkbox" checked={newRole === 'Administrator' || newModules.includes(module.id)} disabled={newRole === 'Administrator'} onChange={() => toggleNewModule(module.id)} /><div><b>{module.label}</b><small>{module.description}</small></div></label>)}</div></div>
+        <button className="primary"><KeyRound size={16} /> Create account</button>
+      </form>}
+
+      <div className="table-scroll"><table className="accounts-table"><thead><tr><th>Account</th><th>Role</th><th>Status</th><th>Modules</th><th>Created</th><th></th></tr></thead><tbody>{accounts.map((account) => <tr key={account.id}><td><strong>{account.name}</strong><small>@{account.username}{account.email ? ` · ${account.email}` : ''}{account.id === currentUser.id ? ' · Current session' : ''}</small></td><td>{isAdmin ? <select value={account.role} disabled={account.id === currentUser.id} onChange={(event) => { const role = event.target.value as UserRole; update(account.id, { role, modules: defaultModulesForRole(role) }) }}><option>Administrator</option><option>Contributor</option><option>Viewer</option></select> : <span className="role-chip">{account.role}</span>}</td><td>{isAdmin ? <select value={account.status} disabled={account.id === currentUser.id} onChange={(event) => update(account.id, { status: event.target.value as UserAccount['status'] })}><option>Active</option><option>Disabled</option></select> : account.status}</td><td><button type="button" className="secondary compact" disabled={!isAdmin && account.id !== currentUser.id} onClick={() => setExpandedAccountId((value) => value === account.id ? null : account.id)}>{account.role === 'Administrator' ? 'All modules' : `${account.modules.length} module${account.modules.length === 1 ? '' : 's'}`}</button></td><td>{account.createdAt}</td><td>{isAdmin && account.id !== currentUser.id && <button className="icon-button danger-button" title="Delete account" onClick={() => remove(account.id)}><Trash2 size={16} /></button>}</td></tr>)}</tbody></table></div>
+
+      {expandedAccountId && (() => {
+        const account = accounts.find((candidate) => candidate.id === expandedAccountId)
+        if (!account) return null
+        return <div className="account-module-panel"><div className="account-module-head"><div><strong>{account.name} · Module access</strong><span>{account.role === 'Administrator' ? 'Administrator access cannot be restricted.' : 'Changes take effect for this account after sync/reload.'}</span></div><button className="secondary compact" type="button" onClick={() => setExpandedAccountId(null)}>Close</button></div><div className="module-check-grid">{MODULE_DEFINITIONS.map((module) => <label className="module-check" key={module.id}><input type="checkbox" checked={account.role === 'Administrator' || account.modules.includes(module.id)} disabled={!isAdmin || account.role === 'Administrator'} onChange={() => toggleAccountModule(account, module.id)} /><div><b>{module.label}</b><small>{module.description}</small></div></label>)}</div></div>
+      })()}
+
+      {!isAdmin && <div className="read-only-account-note"><Users size={17} /> Account management is read-only for your role.</div>}
+    </div>
+  </section>
+}
