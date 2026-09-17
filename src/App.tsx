@@ -830,7 +830,12 @@ function App() {
           <div className="top-actions">
             <span className="top-role-pill">{currentUser.role}</span>
             {canWrite && hasModule('clients') && <button className="secondary" onClick={() => setModal('client')}><Users size={17} /> Add client</button>}
-            {canWrite && (hasModule('items') || hasModule('inbox')) && <button className="primary" onClick={() => { setTaskPreset(null); setModal('item') }}><Plus size={18} /> Add task</button>}
+            {canWrite && (hasModule('items') || hasModule('inbox')) && <button className="primary" onClick={() => {
+              if (selectedClient) setTaskPreset({ clientId: selectedClient.id, type: 'Task' })
+              else if (selectedProject) setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' })
+              else setTaskPreset(null)
+              setModal('item')
+            }}><Plus size={18} /> Add task</button>}
           </div>
         </header>
 
@@ -967,7 +972,7 @@ function App() {
           <section className="page-stack"><AIAssistant clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
         )}
 
-        {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} />}
+        {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWrite} />}
 
         {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} />}
       </main>
@@ -1248,13 +1253,13 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   return <div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task / Subtask</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{rows}</tbody></table></div>
 }
 
-function ClientDetail({ client, store, onBack, onOpenProject, onAskAI, canUseAI }: { client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean }) {
+function ClientDetail({ client, store, onBack, onOpenProject, onAddTask, onAskAI, canUseAI, canWrite }: { client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAddTask: (clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean; canWrite: boolean }) {
   const projectTaskCounts = new Map<string, number>()
   store.items.filter((item) => item.clientId === client.id && item.projectId).forEach((item) => projectTaskCounts.set(item.projectId as string, (projectTaskCounts.get(item.projectId as string) || 0) + 1))
   const projects = store.projects.filter((project) => projectTaskCounts.has(project.id))
   return <section className="page-stack">
     <button className="back-link" onClick={onBack}>← Back to clients</button>
-    <div className="client-hero"><div><div className="row-meta"><StatusChip value={client.status} /><HealthChip value={client.health} /></div><p>{client.contact} · {client.email}</p><p>{client.notes}</p></div><div className="client-hero-actions">{canUseAI && <button className="secondary" onClick={() => onAskAI(client.id)}><Sparkles size={17} /> Ask AI</button>}</div></div>
+    <div className="client-hero"><div><div className="row-meta"><StatusChip value={client.status} /><HealthChip value={client.health} /></div><p>{client.contact} · {client.email}</p><p>{client.notes}</p></div><div className="client-hero-actions">{canWrite && <button className="primary" onClick={() => onAddTask(client.id)}><Plus size={17} /> Add task</button>}{canUseAI && <button className="secondary" onClick={() => onAskAI(client.id)}><Sparkles size={17} /> Ask AI</button>}</div></div>
     <div className="panel"><div className="panel-heading"><div><h2>Projects</h2><p>Projects are global. Only projects containing tasks for {client.name} are shown here.</p></div></div>{projects.length ? <div className="client-project-list">{projects.map((project) => <button type="button" className="mini-project mini-project-button" key={project.id} onClick={() => onOpenProject(project.id, client.id)}><div><strong>{project.name}</strong><p>{project.summary || 'Open project dashboard'}</p></div><div><StatusChip value={project.status} /><small>{projectTaskCounts.get(project.id) || 0} task{projectTaskCounts.get(project.id) === 1 ? '' : 's'} · Target {niceDate(project.targetDate)}</small><ChevronRight size={16} /></div></button>)}</div> : <Empty text="No tasks for this client are assigned to a project yet." />}</div>
   </section>
 }
@@ -1303,6 +1308,7 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
   const parent = preset?.parentTaskId ? store.items.find((item) => item.id === preset.parentTaskId) : undefined
   const [clientId, setClientId] = useState(parent?.clientId || preset?.clientId || '')
   const [projectId, setProjectId] = useState(parent?.projectId || preset?.projectId || '')
+  const clientLocked = Boolean(parent || preset?.clientId)
   const [type, setType] = useState<ItemType>(preset?.type || 'Task')
   const [status, setStatus] = useState(defaultOpenTaskStatus(store.taskSettings))
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -1328,12 +1334,14 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
       source: form.get('source') as WorkItem['source'],
     })
   }
-  const clientLabel = parent?.clientId ? store.clients.find((client) => client.id === parent.clientId)?.name || 'Unknown client' : 'General / no client'
+  const lockedClientId = parent?.clientId || preset?.clientId || ''
+  const clientLabel = lockedClientId ? store.clients.find((client) => client.id === lockedClientId)?.name || 'Unknown client' : 'Select client'
   const projectLabel = parent?.projectId ? store.projects.find((project) => project.id === parent.projectId)?.name || 'Unknown project' : 'No project'
   return <form className="form-grid" onSubmit={submit}>
     {parent && <div className="readonly-notice span-2"><CircleDot size={18} /><div><strong>Subtask of: {parent.title}</strong><span>Client and project are inherited from the parent task so the hierarchy stays consistent.</span></div></div>}
+    {!parent && preset?.clientId && <div className="readonly-notice span-2"><CircleDot size={18} /><div><strong>Client context: {clientLabel}</strong><span>This task is being created from the client record, so the client stays fixed. You can assign any global project to it.</span></div></div>}
     <label className="span-2">{parent ? 'Subtask title' : 'Task title'}<input name="title" required placeholder={parent ? 'Enter the work needed under this task...' : 'Rollout, sign-off, client follow-up, QA review...'} /></label>
-    {parent ? <><label>Client<input value={clientLabel} readOnly disabled /></label><label>Project<input value={projectLabel} readOnly disabled /></label></> : <><label>Client<select value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></>}
+    {parent ? <><label>Client<input value={clientLabel} readOnly disabled /></label><label>Project<input value={projectLabel} readOnly disabled /></label></> : <><label>Client{clientLocked ? <input value={clientLabel} readOnly disabled /> : <select value={clientId} required={type !== 'Inquiry'} onChange={(event) => setClientId(event.target.value)}><option value="">{type === 'Inquiry' ? 'Unassigned / select client' : 'Select client'}</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>}</label><label>Project<select value={projectId} disabled={!clientId} onChange={(event) => setProjectId(event.target.value)}><option value="">{clientId ? 'No project' : 'Select a client first'}</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></>}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
