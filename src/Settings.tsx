@@ -1,10 +1,22 @@
-import { FormEvent, useMemo, useState } from 'react'
-import { ArchiveRestore, Check, Cloud, Database, KeyRound, PackageCheck, RefreshCw, ShieldCheck, Terminal, Trash2, UserPlus, Users } from 'lucide-react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { ArchiveRestore, Bot, Check, Cloud, Database, KeyRound, MessageCircleMore, PackageCheck, RefreshCw, ShieldCheck, Terminal, Trash2, UserPlus, Users } from 'lucide-react'
 import { defaultModulesForRole, MODULE_DEFINITIONS } from './access'
 import { hashPassword } from './auth'
 import type { CloudStorageStatus } from './cloudStore'
 import type { AppModule, UserAccount, UserRole } from './types'
 import { APP_VERSION } from './version'
+
+type DiscordStatus = {
+  configured: boolean
+  online: boolean
+  botName: string
+  guildCount: number
+  allowedUsersConfigured: number
+  lastMessageAt: string
+  lastError: string
+  dmCapture: boolean
+  mentionCapture: boolean
+}
 
 const roleDescriptions: Record<UserRole, { summary: string; permissions: string[] }> = {
   Administrator: { summary: 'Full system access.', permissions: ['Can access every module', 'Create, read, update, and delete operational records', 'Use AI and Calendar import', 'Add, update, disable, and delete accounts'] },
@@ -29,7 +41,26 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
   const [newRole, setNewRole] = useState<UserRole>('Contributor')
   const [newModules, setNewModules] = useState<AppModule[]>(defaultModulesForRole('Contributor'))
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null)
+  const [discordStatus, setDiscordStatus] = useState<DiscordStatus | null>(null)
+  const [discordLoading, setDiscordLoading] = useState(true)
   const usernameLookup = useMemo(() => new Set(accounts.map((account) => account.username.trim().toLowerCase())), [accounts])
+
+  const loadDiscordStatus = async () => {
+    setDiscordLoading(true)
+    try {
+      const response = await fetch('/api/integrations/discord/status', { credentials: 'include' })
+      if (!response.ok) throw new Error('Could not load Discord status.')
+      setDiscordStatus(await response.json() as DiscordStatus)
+    } catch {
+      setDiscordStatus(null)
+    } finally {
+      setDiscordLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadDiscordStatus()
+  }, [])
 
   const changeNewRole = (role: UserRole) => {
     setNewRole(role)
@@ -112,6 +143,16 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
         <div className="storage-card"><Cloud size={20} /><div><strong>Last sync</strong><span>{lastCloudSync ? new Date(lastCloudSync).toLocaleString() : 'No cloud sync yet'}</span></div></div>
         <button type="button" className="secondary storage-sync-button" onClick={() => void onSyncNow()} disabled={cloudStatus === 'saving' || cloudStatus === 'checking'}><RefreshCw size={16} /> {cloudStatus === 'saving' ? 'Syncing…' : 'Sync now'}</button>
       </div>
+    </div>
+
+    <div className="panel settings-integration-panel">
+      <div className="panel-heading"><div><h2>Discord Inquiry Capture</h2><p>DM the bot or @mention it in a server to create a cleaned Inquiry in the tracker.</p></div><span className={`discord-status ${discordStatus?.online ? 'discord-online' : 'discord-offline'}`}><Bot size={15} /> {discordLoading ? 'Checking…' : discordStatus?.online ? 'Online' : discordStatus?.configured ? 'Offline' : 'Not configured'}</span></div>
+      <div className="integration-grid">
+        <div className="integration-card"><MessageCircleMore size={20} /><div><strong>Incoming capture</strong><span>Direct messages: {discordStatus?.dmCapture ? 'Enabled' : 'Unavailable'} · @mentions: {discordStatus?.mentionCapture ? 'Enabled' : 'Unavailable'}</span><small>Each Discord message is de-duplicated, summarized with AI when configured, and saved as an Inquiry.</small></div></div>
+        <div className="integration-card"><Bot size={20} /><div><strong>{discordStatus?.botName || 'BA Inquiry Bot'}</strong><span>{discordStatus?.online ? `Connected to ${discordStatus.guildCount} server${discordStatus.guildCount === 1 ? '' : 's'}` : discordStatus?.configured ? 'Token is configured, but the Gateway is not currently online.' : 'Add DISCORD_BOT_TOKEN to Render Environment.'}</span><small>{discordStatus?.allowedUsersConfigured ? `${discordStatus.allowedUsersConfigured} Discord user ID${discordStatus.allowedUsersConfigured === 1 ? '' : 's'} allowed.` : 'No sender allowlist configured — any user who can DM or mention the bot can create an inquiry.'}</small></div></div>
+        <div className="integration-card integration-status-card"><RefreshCw size={20} /><div><strong>Last capture</strong><span>{discordStatus?.lastMessageAt ? new Date(discordStatus.lastMessageAt).toLocaleString() : 'No Discord inquiry captured since this server started.'}</span>{discordStatus?.lastError && <small className="integration-error">Last error: {discordStatus.lastError}</small>}</div><button type="button" className="secondary compact" onClick={() => void loadDiscordStatus()} disabled={discordLoading}>{discordLoading ? 'Checking…' : 'Refresh'}</button></div>
+      </div>
+      <div className="settings-note"><b>Render setup:</b> add <code>DISCORD_BOT_TOKEN</code>. Optional: <code>DISCORD_ALLOWED_USER_IDS</code> (comma-separated Discord user IDs) and <code>APP_BASE_URL</code> for the confirmation link. The token is never shown in this page.</div>
     </div>
 
     <div className="panel settings-update-panel">

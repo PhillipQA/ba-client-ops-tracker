@@ -314,3 +314,28 @@ ba-client-ops-tracker/
 ├─ tsconfig.json
 └─ README.md
 ```
+
+## Discord Inquiry Capture (v0.3.0)
+
+The tracker can capture Discord direct messages and server messages that @mention the bot as Inbox inquiries.
+
+Server environment variables:
+
+```env
+DISCORD_BOT_TOKEN=your-discord-bot-token
+DISCORD_ALLOWED_USER_IDS=123456789012345678
+APP_BASE_URL=https://your-app.onrender.com
+```
+
+`DISCORD_ALLOWED_USER_IDS` is optional but recommended. Separate multiple Discord user IDs with commas. The bot token is server-side only and must never be committed to GitHub.
+
+Behavior:
+- A direct message to the bot is captured as an Inquiry.
+- A guild/server message is captured only when the bot is @mentioned.
+- Discord message IDs are stored as external IDs so the same message is not imported twice.
+- If `OPENAI_API_KEY` is configured, the message is cleaned into a concise title/summary and the assistant suggests priority, waiting-on, follow-up date, and client/project mapping when the message clearly names existing records.
+- If OpenAI is unavailable, the original message is still captured using safe defaults.
+- The bot replies with a confirmation after Supabase saves the inquiry.
+- Supabase is required for Discord capture because the bot is a server-side integration and cannot rely on one browser's localStorage.
+
+On Render Free, the web service may spin down during inactivity. A Gateway-based Discord bot can therefore become unavailable while the Render service is asleep. This setup is suitable for testing; use an always-on service for reliable 24/7 capture.

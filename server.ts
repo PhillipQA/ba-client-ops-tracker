@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import OpenAI from 'openai'
 import { createClient } from '@supabase/supabase-js'
+import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js'
 import { createServer as createViteServer } from 'vite'
 
 dotenv.config({ path: '.env.local' })
@@ -21,6 +22,21 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
   : null
+
+const discordToken = process.env.DISCORD_BOT_TOKEN?.trim() || ''
+const discordAllowedUserIds = new Set((process.env.DISCORD_ALLOWED_USER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean))
+const discordClient = discordToken ? new DiscordClient({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages],
+  partials: [Partials.Channel],
+}) : null
+const discordRuntime = {
+  configured: Boolean(discordToken),
+  online: false,
+  botName: '',
+  guildCount: 0,
+  lastMessageAt: '',
+  lastError: '',
+}
 
 const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'reports', 'ai', 'settings']
 const ADMIN_PASSWORD_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'
@@ -178,7 +194,7 @@ app.put('/api/store', requireAuth, async (req, res) => {
     res.status(503).json({ configured: false, error: 'Supabase is not configured.' })
     return
   }
-  const next = req.body?.data
+  let next = req.body?.data
   if (!next || typeof next !== 'object' || Array.isArray(next)) {
     res.status(400).json({ configured: true, error: 'A tracker data object is required.' })
     return
@@ -188,6 +204,15 @@ app.put('/api/store', requireAuth, async (req, res) => {
   try {
     const currentState = await loadTrackerState()
     const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { clients: [], projects: [], items: [], activity: [], planner: [], accounts: [defaultAdmin] }
+
+    // Protect externally captured Discord inquiries from being erased by a browser tab
+    // that loaded before the bot received them. Existing IDs remain fully editable.
+    const currentItems = Array.isArray(current.items) ? current.items : []
+    const nextItems = Array.isArray(next.items) ? next.items : []
+    const nextIds = new Set(nextItems.map((item: any) => String(item?.id || '')))
+    const missingDiscordItems = currentItems.filter((item: any) => item?.source === 'Discord' && item?.externalSourceId && !nextIds.has(String(item.id || '')))
+    if (missingDiscordItems.length) next = { ...next, items: [...missingDiscordItems, ...nextItems] }
+
     const currentAccounts = Array.isArray(current.accounts) ? current.accounts : []
     const nextAccounts = Array.isArray(next.accounts) ? next.accounts : []
     const accountsChanged = stable(currentAccounts) !== stable(nextAccounts)
@@ -345,6 +370,227 @@ Use at most 5 suggestions. Do not invent client commitments or technical facts. 
   }
 })
 
+
+function normalizeDiscordContent(content: string) {
+  if (!discordClient?.user) return content.trim()
+  return content
+    .replace(new RegExp(`<@!?${discordClient.user.id}>`, 'g'), '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function findNamedContext(text: string, clients: any[], projects: any[]) {
+  const q = text.toLowerCase()
+  const client = [...clients].filter((candidate) => candidate?.name && q.includes(String(candidate.name).toLowerCase())).sort((a, b) => String(b.name).length - String(a.name).length)[0]
+  const project = [...projects].filter((candidate) => candidate?.name && q.includes(String(candidate.name).toLowerCase())).sort((a, b) => String(b.name).length - String(a.name).length)[0]
+  return { clientId: String(client?.id || project?.clientId || ''), projectId: String(project?.id || '') }
+}
+
+async function assessDiscordInquiry(messageText: string, sender: string, state: any) {
+  const clients = Array.isArray(state?.clients) ? state.clients : []
+  const projects = Array.isArray(state?.projects) ? state.projects : []
+  const named = findNamedContext(messageText, clients, projects)
+  const fallbackTitle = messageText.replace(/\s+/g, ' ').trim().slice(0, 110) || 'Discord inquiry'
+  const fallback = {
+    title: fallbackTitle,
+    summary: messageText.trim(),
+    priority: 'Medium',
+    waitingOn: 'Me',
+    followUpDate: '',
+    clientId: named.clientId,
+    projectId: named.projectId,
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) return fallback
+
+  const client = new OpenAI({ apiKey })
+  const model = process.env.OPENAI_MODEL || 'gpt-5.6-terra'
+  const today = new Date().toISOString().slice(0, 10)
+  const clientContext = clients.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
+  const projectContext = projects.map((item: any) => ({ id: String(item.id), clientId: String(item.clientId), name: String(item.name) }))
+  const instructions = `You convert a Business Analyst's Discord capture into one clean Inquiry record. Today is ${today}.
+Return JSON only:
+{
+  "title": "concise inquiry title under 110 chars",
+  "summary": "clean short summary preserving important facts and questions",
+  "priority": "Low | Medium | High | Urgent",
+  "waitingOn": "Me | Developer | Client | QA | Design",
+  "followUpDate": "YYYY-MM-DD or empty",
+  "clientId": "an ID from the supplied clients or empty",
+  "projectId": "an ID from the supplied projects or empty"
+}
+Do not invent commitments, dates, defects, client names, or projects. Only choose a client/project when the message clearly identifies it. If the user says follow up tomorrow/Friday, resolve that to a date. This is capture/organization, not final classification: the record remains an Inquiry.`
+  try {
+    const response = await client.responses.create({
+      model,
+      instructions,
+      input: `SENDER: ${sender}\nCLIENTS: ${JSON.stringify(clientContext)}\nPROJECTS: ${JSON.stringify(projectContext)}\nMESSAGE: ${messageText}`,
+      reasoning: { effort: 'low' },
+    })
+    const parsed = parseModelJson(response.output_text)
+    const validClientIds = new Set(clientContext.map((item: any) => item.id))
+    const validProjectIds = new Set(projectContext.map((item: any) => item.id))
+    const projectId = validProjectIds.has(String(parsed.projectId || '')) ? String(parsed.projectId) : fallback.projectId
+    const project = projectContext.find((item: any) => item.id === projectId)
+    const parsedClientId = validClientIds.has(String(parsed.clientId || '')) ? String(parsed.clientId) : ''
+    const clientId = parsedClientId || String(project?.clientId || '') || fallback.clientId
+    const priority = allowedPriorities.has(String(parsed.priority)) ? String(parsed.priority) : fallback.priority
+    const waitingOn = allowedWaiting.has(String(parsed.waitingOn)) ? String(parsed.waitingOn) : fallback.waitingOn
+    const followUpDate = /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.followUpDate || '')) ? String(parsed.followUpDate) : ''
+    return {
+      title: String(parsed.title || fallback.title).trim().slice(0, 110),
+      summary: String(parsed.summary || fallback.summary).trim().slice(0, 1800),
+      priority,
+      waitingOn,
+      followUpDate,
+      clientId,
+      projectId,
+    }
+  } catch (error) {
+    console.error('Discord AI assessment failed; using basic capture:', error)
+    return fallback
+  }
+}
+
+async function captureDiscordInquiry(discordMessage: any) {
+  if (!supabaseAdmin) throw new Error('Supabase is not configured; Discord capture requires persistent cloud storage.')
+  const text = normalizeDiscordContent(String(discordMessage.content || ''))
+  if (!text) return { created: false, reason: 'empty' }
+
+  const externalSourceId = `discord:${discordMessage.id}`
+  const stateResult = await loadTrackerState()
+  const base = stateResult.data && typeof stateResult.data === 'object'
+    ? stateResult.data
+    : { schemaVersion: 2, clients: [], projects: [], items: [], activity: [], planner: [], accounts: [defaultAdmin] }
+  const items = Array.isArray(base.items) ? base.items : []
+  const existing = items.find((item: any) => item?.externalSourceId === externalSourceId)
+  if (existing) return { created: false, reason: 'duplicate', item: existing }
+
+  const sender = discordMessage.member?.displayName || discordMessage.author?.globalName || discordMessage.author?.username || 'Discord user'
+  const senderTag = discordMessage.author?.username ? `@${discordMessage.author.username}` : ''
+  const assessed = await assessDiscordInquiry(text, sender, base)
+  const today = new Date().toISOString().slice(0, 10)
+  const item = {
+    id: crypto.randomUUID(),
+    clientId: assessed.clientId,
+    projectId: assessed.projectId,
+    title: assessed.title,
+    type: 'Inquiry',
+    priority: assessed.priority,
+    status: 'Open',
+    waitingOn: assessed.waitingOn,
+    owner: 'Me',
+    dateRaised: today,
+    followUpDate: assessed.followUpDate,
+    description: `${assessed.summary}\n\nDiscord sender: ${sender}${senderTag ? ` (${senderTag})` : ''}\nOriginal: ${text}`,
+    resolution: '',
+    source: 'Discord',
+    externalSourceId,
+    sourceSender: `${sender}${senderTag ? ` (${senderTag})` : ''}`,
+  }
+  const activity = Array.isArray(base.activity) ? base.activity : []
+  const nextState = {
+    ...base,
+    items: [item, ...items],
+    activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: today, text: `Discord inquiry captured: ${item.title}` }, ...activity],
+  }
+  const { error } = await supabaseAdmin.from('tracker_state').upsert({ id: 'main', data: nextState }, { onConflict: 'id' })
+  if (error) throw error
+  return { created: true, item, clients: base.clients || [], projects: base.projects || [] }
+}
+
+function discordStatusPayload() {
+  return {
+    configured: discordRuntime.configured,
+    online: discordRuntime.online,
+    botName: discordRuntime.botName,
+    guildCount: discordRuntime.guildCount,
+    allowedUsersConfigured: discordAllowedUserIds.size,
+    lastMessageAt: discordRuntime.lastMessageAt,
+    lastError: discordRuntime.lastError,
+    dmCapture: true,
+    mentionCapture: true,
+  }
+}
+
+app.get('/api/integrations/discord/status', requireAuth, (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!moduleAllowed(user, 'settings')) return void res.status(403).json({ error: 'Settings access is required.' })
+  res.json(discordStatusPayload())
+})
+
+async function startDiscordBot() {
+  if (!discordClient || !discordToken) {
+    console.log('Discord Inquiry Capture: not configured (DISCORD_BOT_TOKEN is empty).')
+    return
+  }
+
+  discordClient.once('ready', (client) => {
+    discordRuntime.online = true
+    discordRuntime.botName = client.user.tag || client.user.username
+    discordRuntime.guildCount = client.guilds.cache.size
+    discordRuntime.lastError = ''
+    console.log(`Discord Inquiry Capture online as ${discordRuntime.botName}`)
+  })
+
+  discordClient.on('guildCreate', () => { discordRuntime.guildCount = discordClient.guilds.cache.size })
+  discordClient.on('guildDelete', () => { discordRuntime.guildCount = discordClient.guilds.cache.size })
+  discordClient.on('error', (error) => {
+    discordRuntime.lastError = error.message
+    console.error('Discord client error:', error)
+  })
+  discordClient.on('shardError', (error) => {
+    discordRuntime.lastError = error.message
+    console.error('Discord gateway error:', error)
+  })
+  discordClient.on('messageCreate', async (message) => {
+    if (message.author.bot || !discordClient.user) return
+    const isDm = !message.guildId
+    const mentionsBot = Boolean(message.guildId && message.mentions.users.has(discordClient.user.id))
+    if (!isDm && !mentionsBot) return
+    if (discordAllowedUserIds.size && !discordAllowedUserIds.has(message.author.id)) {
+      if (isDm) await message.reply('This Discord account is not authorized for BA Tracker inquiry capture.').catch(() => undefined)
+      return
+    }
+
+    try {
+      const result: any = await captureDiscordInquiry(message)
+      if (!result.created) {
+        if (result.reason === 'duplicate') await message.reply({ content: '✅ This message is already in the BA Tracker.', allowedMentions: { repliedUser: false } }).catch(() => undefined)
+        return
+      }
+      discordRuntime.lastMessageAt = new Date().toISOString()
+      const item = result.item
+      const clientName = result.clients.find((client: any) => String(client.id) === String(item.clientId))?.name || 'Unassigned'
+      const projectName = result.projects.find((project: any) => String(project.id) === String(item.projectId))?.name || 'No project'
+      const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '')
+      const lines = [
+        '✅ **Inquiry added to BA Tracker**',
+        `**${item.title}**`,
+        `Client: ${clientName}${projectName !== 'No project' ? ` · ${projectName}` : ''}`,
+        `Priority: ${item.priority} · Waiting on: ${item.waitingOn}`,
+        item.followUpDate ? `Follow-up: ${item.followUpDate}` : '',
+        baseUrl ? `${baseUrl}` : '',
+      ].filter(Boolean)
+      await message.reply({ content: lines.join('\n').slice(0, 1900), allowedMentions: { repliedUser: false } })
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : 'Discord inquiry capture failed.'
+      discordRuntime.lastError = messageText
+      console.error('Discord inquiry capture failed:', error)
+      await message.reply({ content: `⚠️ I could not add that inquiry: ${messageText}`.slice(0, 1900), allowedMentions: { repliedUser: false } }).catch(() => undefined)
+    }
+  })
+
+  try {
+    await discordClient.login(discordToken)
+  } catch (error) {
+    discordRuntime.online = false
+    discordRuntime.lastError = error instanceof Error ? error.message : 'Discord login failed.'
+    console.error('Discord bot login failed:', error)
+  }
+}
+
 const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('--production')
 
 if (!isProduction) {
@@ -358,4 +604,9 @@ if (!isProduction) {
 
 app.listen(port, () => {
   console.log(`BA Client Ops Tracker running on http://localhost:${port}`)
+  void startDiscordBot()
+})
+
+process.on('SIGTERM', () => {
+  if (discordClient) discordClient.destroy()
 })

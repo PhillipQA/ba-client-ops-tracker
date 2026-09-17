@@ -39,7 +39,9 @@ export interface WorkItem {
   description: string
   resolution: string
   resolvedDate?: string
-  source: 'Email' | 'Meeting' | 'Chat' | 'Internal' | 'Other'
+  source: 'Email' | 'Meeting' | 'Chat' | 'Discord' | 'Internal' | 'Other'
+  externalSourceId?: string
+  sourceSender?: string
 }
 
 export interface ActivityLog {

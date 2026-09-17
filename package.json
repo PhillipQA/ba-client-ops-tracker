@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.2.4",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -23,7 +23,8 @@
     "openai": "^5.20.0",
     "dotenv": "^16.6.1",
     "tsx": "^4.20.5",
-    "@supabase/supabase-js": "latest"
+    "@supabase/supabase-js": "latest",
+    "discord.js": "^14.22.1"
   },
   "devDependencies": {
     "@types/react": "latest",
