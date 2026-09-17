@@ -6,6 +6,24 @@ export type CloudLoadResult<T> = {
   updatedAt?: string
 }
 
+export type ExternalInquiryLoadResult<T> = {
+  configured: boolean
+  items: T[]
+  updatedAt?: string
+}
+
+export async function loadDiscordInquiries<T>(): Promise<ExternalInquiryLoadResult<T>> {
+  const response = await fetch('/api/integrations/discord/inquiries', { credentials: 'same-origin' })
+  const body = await response.json().catch(() => ({}))
+  if (response.status === 503) return { configured: false, items: [] }
+  if (!response.ok) throw new Error(body.error || 'Could not load Discord inquiries.')
+  return {
+    configured: Boolean(body.configured),
+    items: Array.isArray(body.items) ? body.items as T[] : [],
+    updatedAt: body.updatedAt,
+  }
+}
+
 let saveQueue: Promise<unknown> = Promise.resolve()
 
 export async function loadCloudStore<T>(): Promise<CloudLoadResult<T>> {

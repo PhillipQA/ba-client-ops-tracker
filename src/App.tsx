@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Archive,
@@ -6,10 +6,13 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   CircleDot,
   Clock3,
   ExternalLink,
+  GripVertical,
   Inbox,
   LayoutDashboard,
   Pencil,
@@ -27,7 +30,7 @@ import {
 import AIAssistant from './AIAssistant'
 import { ALL_MODULES, defaultModulesForRole } from './access'
 import { getAuthSession, hashPassword, login, logout, type AuthUser } from './auth'
-import { loadCloudStore, queueCloudStoreSave, type CloudStorageStatus } from './cloudStore'
+import { loadCloudStore, loadDiscordInquiries, queueCloudStoreSave, type CloudStorageStatus } from './cloudStore'
 import Reports from './Reports'
 import Settings from './Settings'
 import type { AISuggestion } from './ai'
@@ -48,7 +51,7 @@ type Store = {
   taskSettings: TaskSettings
 }
 
-const STORE_SCHEMA_VERSION = 4
+const STORE_SCHEMA_VERSION = 5
 const STORAGE_KEY = 'ba-client-ops-tracker-v2'
 const LEGACY_STORAGE_KEY = 'ba-client-ops-tracker-v1'
 function localDateKey(date: Date) {
@@ -149,7 +152,12 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
   const accounts = migratedAccounts.length ? migratedAccounts : [...seedAccounts]
   if (!accounts.some((account) => account.role === 'Administrator' && account.status === 'Active')) accounts.unshift(seedAccounts[0])
   const taskSettings = normalizeTaskSettings(parsed.taskSettings)
-  const migratedItems = items.map((item) => ({ ...item, dueDate: item.dueDate || '', status: item.status || defaultOpenTaskStatus(taskSettings) }))
+  const migratedItems = items.map((item, index) => ({
+    ...item,
+    dueDate: item.dueDate || '',
+    status: item.status || defaultOpenTaskStatus(taskSettings),
+    subtaskOrder: item.parentTaskId ? (typeof item.subtaskOrder === 'number' && Number.isFinite(item.subtaskOrder) ? item.subtaskOrder : index) : undefined,
+  }))
   return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, accounts, taskSettings }
 }
 
@@ -258,6 +266,11 @@ function App() {
   const [loginError, setLoginError] = useState('')
   const [loginBusy, setLoginBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [newExternalInquiryIds, setNewExternalInquiryIds] = useState<string[]>([])
+  const storeRef = useRef(store)
+  const discordPollBusy = useRef(false)
+
+  useEffect(() => { storeRef.current = store }, [store])
 
   useEffect(() => {
     let cancelled = false
@@ -317,6 +330,7 @@ function App() {
 
   const persist = (next: Store) => {
     const normalized = { ...next, schemaVersion: STORE_SCHEMA_VERSION }
+    storeRef.current = normalized
     setStore(normalized)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
     if (cloudStatus === 'local') return
@@ -381,6 +395,7 @@ function App() {
     setProfileOpen(false)
     setSelectedClientId(null)
     setSelectedProjectId(null)
+    setNewExternalInquiryIds([])
     setLoginError('')
   }
 
@@ -405,6 +420,41 @@ function App() {
       setView(visibleNavItems[0].id)
     }
   }, [currentUser?.id, currentUser?.role, currentUser?.modules.join('|'), view])
+
+  const canSyncExternalInquiries = Boolean(currentUser && (currentUser.role === 'Administrator' || currentUser.modules.includes('inbox') || currentUser.modules.includes('items')))
+
+  useEffect(() => {
+    if (!authUser || cloudStatus !== 'synced' || !canSyncExternalInquiries) return
+    let cancelled = false
+
+    const pollExternalInquiries = async () => {
+      if (discordPollBusy.current || cancelled) return
+      discordPollBusy.current = true
+      try {
+        const result = await loadDiscordInquiries<WorkItem>()
+        if (cancelled || !result.configured || !result.items.length) return
+        const current = storeRef.current
+        const currentIds = new Set(current.items.map((item) => item.id))
+        const missing = result.items.filter((item) => !currentIds.has(item.id))
+        if (!missing.length) return
+        const merged: Store = { ...current, items: [...missing, ...current.items] }
+        storeRef.current = merged
+        setStore(merged)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+        setNewExternalInquiryIds((previous) => [...new Set([...missing.map((item) => item.id), ...previous])])
+        setLastCloudSync(result.updatedAt || new Date().toISOString())
+        setCloudMessage(`${missing.length} new Discord ${missing.length === 1 ? 'inquiry' : 'inquiries'} received`)
+      } catch (error) {
+        console.error('External inquiry sync failed:', error)
+      } finally {
+        discordPollBusy.current = false
+      }
+    }
+
+    void pollExternalInquiries()
+    const interval = window.setInterval(() => void pollExternalInquiries(), 12000)
+    return () => { cancelled = true; window.clearInterval(interval) }
+  }, [authUser?.id, cloudStatus, canSyncExternalInquiries])
 
   const updateOwnProfile = async (profile: { name: string; email: string; phone: string; newPassword?: string }) => {
     if (!currentUser || !authUser) return 'No signed-in account.'
@@ -455,6 +505,7 @@ function App() {
 
   const actionItems = searchedItems.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
   const inquiryItems = searchedItems.filter((item) => item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings))
+  const newExternalInquiryCount = newExternalInquiryIds.filter((id) => store.items.some((item) => item.id === id && item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')).length
 
   const filteredTasks = useMemo(() => {
     const due3 = addDays(TODAY, 3)
@@ -588,6 +639,18 @@ function App() {
     if (!parent || parent.parentTaskId) return
     setTaskPreset({ clientId: parent.clientId, projectId: parent.projectId, type: 'Task', parentTaskId: parent.id })
     setModal('item')
+  }
+
+  const reorderSubtasks = (parentTaskId: string, orderedIds: string[]) => {
+    if (!canWrite || !orderedIds.length) return
+    const valid = new Set(store.items.filter((item) => item.parentTaskId === parentTaskId).map((item) => item.id))
+    const normalizedIds = orderedIds.filter((id) => valid.has(id))
+    if (normalizedIds.length !== valid.size) return
+    const orderMap = new Map(normalizedIds.map((id, index) => [id, index]))
+    persist({
+      ...store,
+      items: store.items.map((item) => item.parentTaskId === parentTaskId ? { ...item, subtaskOrder: orderMap.get(item.id) ?? item.subtaskOrder } : item),
+    })
   }
 
   const convertInquiry = (id: string, type: 'Requirement' | 'Issue') => {
@@ -744,7 +807,7 @@ function App() {
         <nav>
           {visibleNavItems.map(({ id, label, icon: Icon }) => (
             <button key={id} className={view === id ? 'nav-button active' : 'nav-button'} onClick={() => { setView(id); setSelectedClientId(null); setSelectedProjectId(null) }}>
-              <Icon size={18} /><span>{label}</span>{id === 'inbox' && inquiryItems.length > 0 && <b>{inquiryItems.length}</b>}
+              <Icon size={18} /><span>{label}</span>{id === 'inbox' && inquiryItems.length > 0 && <b className={newExternalInquiryCount > 0 ? 'has-new' : ''} title={newExternalInquiryCount > 0 ? `${newExternalInquiryCount} new external inquiry${newExternalInquiryCount === 1 ? '' : 'ies'}` : `${inquiryItems.length} open inquiries`}>{newExternalInquiryCount > 0 ? newExternalInquiryCount : openInquiryCount}</b>}
             </button>
           ))}
         </nav>
@@ -867,9 +930,9 @@ function App() {
           <section className="page-stack">
             <div className="callout"><Inbox size={22} /><div><strong>Capture first, classify later.</strong><p>Client questions can stay here until you know whether they should become a requirement, issue, decision, or simply be answered.</p></div></div>
             <div className="panel">
-              <div className="panel-heading"><div><h2>Open inquiries</h2><p>Convert an inquiry once its real nature is clear.</p></div>{canWrite && <button className="primary" onClick={() => { setTaskPreset({ type: 'Inquiry' }); setModal('item') }}><Plus size={18} /> Capture inquiry</button>}</div>
+              <div className="panel-heading"><div><h2>Open inquiries</h2><p>Convert an inquiry once its real nature is clear. Discord captures appear here automatically while this page is open.</p></div><div className="inquiry-heading-actions">{newExternalInquiryCount > 0 && <button className="secondary" type="button" onClick={() => setNewExternalInquiryIds([])}>{newExternalInquiryCount} new · Mark seen</button>}{canWrite && <button className="primary" onClick={() => { setTaskPreset({ type: 'Inquiry' }); setModal('item') }}><Plus size={18} /> Capture inquiry</button>}</div></div>
               <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} />
-              {inquiryItems.length ? <div className="inquiry-list">{inquiryItems.map((item) => <div className="inquiry-card" key={item.id}><div><div className="row-meta"><PriorityChip value={item.priority} /><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span></div><h3>{item.title}</h3><p>{item.description}</p><div className="row-meta"><span>Waiting on <b>{item.waitingOn}</b></span><span>Follow-up {niceDate(item.followUpDate)}</span><span>Source: {item.source}</span></div></div><div className="inquiry-actions">{canUseAI && <button className="secondary" onClick={() => { setAiClientId(item.clientId ?? ''); setAiProjectId(item.projectId ?? ''); setAiPrompt(`Assess this client inquiry and recommend what I should do next.\n\nTitle: ${item.title}\nDetails: ${item.description}`); setView('ai') }}><Sparkles size={15} /> Ask AI</button>}{canWrite && <><button className="secondary" onClick={() => convertInquiry(item.id, 'Requirement')}>→ Requirement</button><button className="secondary" onClick={() => convertInquiry(item.id, 'Issue')}>→ Issue</button><button className="success" onClick={() => resolveItem(item.id)}><CheckCircle2 size={16} /> Answered</button></>}</div></div>)}</div> : <Empty text="No open inquiries match your filters." />}
+              {inquiryItems.length ? <div className="inquiry-list">{inquiryItems.map((item) => { const isNewDiscord = item.source === 'Discord' && newExternalInquiryIds.includes(item.id); return <div className={`inquiry-card${item.source === 'Discord' ? ' inquiry-discord' : ''}${isNewDiscord ? ' inquiry-new' : ''}`} key={item.id}><div><div className="row-meta"><PriorityChip value={item.priority} /><InquirySourceBadge source={item.source} isNew={isNewDiscord} /><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span></div><h3>{item.title}</h3><p>{item.description}</p><div className="row-meta"><span>Waiting on <b>{item.waitingOn}</b></span><span>Follow-up {niceDate(item.followUpDate)}</span>{item.sourceSender && <span>From: {item.sourceSender}</span>}</div></div><div className="inquiry-actions">{canUseAI && <button className="secondary" onClick={() => { setAiClientId(item.clientId ?? ''); setAiProjectId(item.projectId ?? ''); setAiPrompt(`Assess this client inquiry and recommend what I should do next.\n\nTitle: ${item.title}\nDetails: ${item.description}`); setView('ai') }}><Sparkles size={15} /> Ask AI</button>}{canWrite && <><button className="secondary" onClick={() => convertInquiry(item.id, 'Requirement')}>→ Requirement</button><button className="secondary" onClick={() => convertInquiry(item.id, 'Issue')}>→ Issue</button><button className="success" onClick={() => resolveItem(item.id)}><CheckCircle2 size={16} /> Answered</button></>}</div></div> })}</div> : <Empty text="No open inquiries match your filters." />}
             </div>
           </section>
         )}
@@ -885,7 +948,7 @@ function App() {
                 <label>Due / follow-up<select value={taskDateFilter} onChange={(event) => setTaskDateFilter(event.target.value as typeof taskDateFilter)}><option value="All">All dates</option><option value="due-3">Due in next 3 days</option><option value="due-7">Due in next 7 days</option><option value="followup-3">Follow-up in next 3 days</option><option value="followup-7">Follow-up in next 7 days</option><option value="overdue">Overdue due/follow-up</option></select></label>
                 <button className="secondary task-filter-clear" type="button" onClick={() => { setTaskClientFilter(''); setTaskProjectFilter(''); setTaskDateFilter('All'); setWaitingFilter('All'); setQuery('') }}>Clear filters</button>
               </div>
-              <TaskTable items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} onCreateSubtask={openSubtaskCreator} canEdit={canWrite} />
+              <TaskTable items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} canEdit={canWrite} />
             </div>
           </section>
         )}
@@ -900,7 +963,7 @@ function App() {
 
         {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} />}
 
-        {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} />}
+        {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} />}
       </main>
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
@@ -1095,31 +1158,86 @@ function FilterBar({ query, setQuery, waiting, setWaiting }: { query: string; se
   return <div className="filters"><label className="search-box"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, client, project..." /></label><select value={waiting} onChange={(e) => setWaiting(e.target.value as 'All' | WaitingOn)}><option>All</option><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></div>
 }
 
-function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve, onStatusChange, onEdit, onDelete, onCreateSubtask, canEdit = true, hiddenColumns = [] }: { items: WorkItem[]; allItems?: WorkItem[]; clients: Client[]; projects: Project[]; taskSettings: TaskSettings; onResolve: (id: string) => void; onStatusChange: (id: string, status: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onCreateSubtask: (id: string) => void; canEdit?: boolean; hiddenColumns?: TaskColumnKey[] }) {
+function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve, onStatusChange, onEdit, onDelete, onCreateSubtask, onReorderSubtasks, canEdit = true, hiddenColumns = [] }: { items: WorkItem[]; allItems?: WorkItem[]; clients: Client[]; projects: Project[]; taskSettings: TaskSettings; onResolve: (id: string) => void; onStatusChange: (id: string, status: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; canEdit?: boolean; hiddenColumns?: TaskColumnKey[] }) {
   const sourceItems = allItems || items
   const visibleIds = new Set(items.map((item) => item.id))
+  const [draggedSubtaskId, setDraggedSubtaskId] = useState<string | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown client' : 'General / no client'
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name ?? 'Unknown project' : 'No project'
   const labels: Record<TaskColumnKey, string> = { status: 'Status', client: 'Client', project: 'Project', type: 'Type', waitingOn: 'Waiting on', priority: 'Priority', owner: 'Owner / Assigned', dueDate: 'Due date', followUpDate: 'Follow-up' }
   const columns = taskSettings.visibleColumns.filter((column) => !hiddenColumns.includes(column))
   if (!items.length) return <Empty text="No tasks match this view." />
 
+  const sortedChildren = (parentTaskId: string) => sourceItems
+    .filter((candidate) => candidate.parentTaskId === parentTaskId)
+    .sort((a, b) => (a.subtaskOrder ?? Number.MAX_SAFE_INTEGER) - (b.subtaskOrder ?? Number.MAX_SAFE_INTEGER) || a.dateRaised.localeCompare(b.dateRaised) || a.title.localeCompare(b.title))
+
+  const moveSubtask = (item: WorkItem, direction: -1 | 1) => {
+    if (!item.parentTaskId) return
+    const siblings = sortedChildren(item.parentTaskId)
+    const currentIndex = siblings.findIndex((candidate) => candidate.id === item.id)
+    const nextIndex = currentIndex + direction
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= siblings.length) return
+    const next = [...siblings]
+    const [moved] = next.splice(currentIndex, 1)
+    next.splice(nextIndex, 0, moved)
+    onReorderSubtasks(item.parentTaskId, next.map((candidate) => candidate.id))
+  }
+
+  const dropSubtask = (target: WorkItem) => {
+    if (!draggedSubtaskId || !target.parentTaskId || draggedSubtaskId === target.id) {
+      setDraggedSubtaskId(null)
+      setDropTargetId(null)
+      return
+    }
+    const dragged = sourceItems.find((candidate) => candidate.id === draggedSubtaskId)
+    if (!dragged?.parentTaskId || dragged.parentTaskId !== target.parentTaskId) {
+      setDraggedSubtaskId(null)
+      setDropTargetId(null)
+      return
+    }
+    const siblings = sortedChildren(target.parentTaskId)
+    const from = siblings.findIndex((candidate) => candidate.id === dragged.id)
+    const to = siblings.findIndex((candidate) => candidate.id === target.id)
+    if (from >= 0 && to >= 0 && from !== to) {
+      const next = [...siblings]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      onReorderSubtasks(target.parentTaskId, next.map((candidate) => candidate.id))
+    }
+    setDraggedSubtaskId(null)
+    setDropTargetId(null)
+  }
+
   const renderRow = (item: WorkItem, isSubtask = false) => {
     const closed = isTaskClosed(item.status, taskSettings)
     const overdue = !closed && Boolean((item.dueDate && item.dueDate < TODAY) || (item.followUpDate && item.followUpDate < TODAY))
-    const children = sourceItems.filter((candidate) => candidate.parentTaskId === item.id)
+    const children = sortedChildren(item.id)
     const completedChildren = children.filter((child) => isTaskClosed(child.status, taskSettings) || child.waitingOn === 'Done').length
-    return <tr key={item.id} className={`${overdue ? 'overdue-row ' : ''}${isSubtask ? 'subtask-row' : ''}`.trim()}>
-      <td><div className={isSubtask ? 'subtask-title' : ''}>{isSubtask && <span className="subtask-branch">↳</span>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed` : ''}</small></div></div></td>
+    const siblings = isSubtask && item.parentTaskId ? sortedChildren(item.parentTaskId) : []
+    const siblingIndex = siblings.findIndex((candidate) => candidate.id === item.id)
+    const rowClass = `${overdue ? 'overdue-row ' : ''}${isSubtask ? 'subtask-row ' : ''}${draggedSubtaskId === item.id ? 'subtask-dragging ' : ''}${dropTargetId === item.id ? 'subtask-drop-target' : ''}`.trim()
+    return <tr
+      key={item.id}
+      className={rowClass}
+      draggable={Boolean(canEdit && isSubtask)}
+      onDragStart={isSubtask ? (event) => { setDraggedSubtaskId(item.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', item.id) } : undefined}
+      onDragOver={isSubtask ? (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropTargetId(item.id) } : undefined}
+      onDragLeave={isSubtask ? () => { if (dropTargetId === item.id) setDropTargetId(null) } : undefined}
+      onDrop={isSubtask ? (event) => { event.preventDefault(); dropSubtask(item) } : undefined}
+      onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
+    >
+      <td><div className={isSubtask ? 'subtask-title' : ''}>{isSubtask && <><span className="subtask-branch">↳</span>{canEdit && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed` : ''}</small></div></div></td>
       {columns.map((column) => <td key={column}>{column === 'status' ? (canEdit ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || '—' : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
-      <td><div className="task-row-actions">{canEdit && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{canEdit && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
+      <td><div className="task-row-actions">{canEdit && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{canEdit && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{canEdit && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
   }
 
   const topLevel = items.filter((item) => !item.parentTaskId || !visibleIds.has(item.parentTaskId))
   const rows = topLevel.flatMap((item) => [
     renderRow(item, Boolean(item.parentTaskId)),
-    ...sourceItems.filter((candidate) => candidate.parentTaskId === item.id && (visibleIds.has(candidate.id) || visibleIds.has(item.id))).map((child) => renderRow(child, true)),
+    ...sortedChildren(item.id).filter((child) => visibleIds.has(child.id) || visibleIds.has(item.id)).map((child) => renderRow(child, true)),
   ])
   return <div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task / Subtask</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{rows}</tbody></table></div>
 }
@@ -1135,7 +1253,7 @@ function ClientDetail({ client, store, onBack, onOpenProject, onAskAI, canUseAI 
   </section>
 }
 
-function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite }: { project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean }) {
+function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onReorderSubtasks, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite }: { project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean }) {
   const contextClient = clientContextId ? store.clients.find((client) => client.id === clientContextId) : undefined
   const allProjectTasks = store.items.filter((item) => item.projectId === project.id)
   const tasks = clientContextId ? allProjectTasks.filter((item) => item.clientId === clientContextId) : allProjectTasks
@@ -1166,7 +1284,7 @@ function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAd
       <div className="project-stat"><span>Open work</span><strong>{openTasks.length}</strong></div>
       <div className="project-stat"><span>Due in 7 days</span><strong>{dueSoon.length}</strong></div>
     </div>
-    <div className="panel"><div className="panel-heading"><div><h2>{contextClient ? `${contextClient.name} tasks` : 'Project tasks'}</h2><p>{contextClient ? `Tasks and subtasks for ${contextClient.name} under ${project.name}.` : 'All client and general tasks created under this global project, with subtasks nested below their parent.'}</p></div><span className="count-pill">{parentTasks.length} tasks · {subtasks.length} subtasks</span></div><TaskTable items={tasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} onEdit={onEditTask} onDelete={onDeleteTask} onCreateSubtask={onCreateSubtask} canEdit={canWrite} hiddenColumns={contextClient ? ['project', 'client'] : ['project']} /></div>
+    <div className="panel"><div className="panel-heading"><div><h2>{contextClient ? `${contextClient.name} tasks` : 'Project tasks'}</h2><p>{contextClient ? `Tasks and subtasks for ${contextClient.name} under ${project.name}.` : 'All client and general tasks created under this global project, with subtasks nested below their parent.'}</p></div><span className="count-pill">{parentTasks.length} tasks · {subtasks.length} subtasks</span></div><TaskTable items={tasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} onEdit={onEditTask} onDelete={onDeleteTask} onCreateSubtask={onCreateSubtask} onReorderSubtasks={onReorderSubtasks} canEdit={canWrite} hiddenColumns={contextClient ? ['project', 'client'] : ['project']} /></div>
     <div className="panel project-communication-panel"><div className="panel-heading"><div><h2>Communication log</h2><p>{contextClient ? `Communication for ${contextClient.name} within this project.` : 'Project notes, decisions, task events, and follow-up context across all clients.'}</p></div></div>{canWrite && <form className="quick-note" onSubmit={addNote}><input value={note} onChange={(event) => setNote(event.target.value)} placeholder={contextClient ? `Add a ${contextClient.name} communication note...` : 'Add a project communication note...'} /><button className="secondary">Add</button></form>}<div className="timeline">{communication.length ? communication.map((entry) => <div key={entry.id}><span>{niceDate(entry.date)}{!clientContextId && entry.clientId ? ` · ${store.clients.find((client) => client.id === entry.clientId)?.name || 'Unknown client'}` : ''}</span><p>{entry.text}</p></div>) : <div className="activity-empty">No communication logged for this view yet.</div>}</div></div>
   </section>
 }
@@ -1189,6 +1307,7 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
       clientId: parent?.clientId || clientId || undefined,
       projectId: parent?.projectId || projectId || undefined,
       parentTaskId: parent?.id,
+      subtaskOrder: parent ? Math.max(-1, ...store.items.filter((item) => item.parentTaskId === parent.id).map((item) => item.subtaskOrder ?? -1)) + 1 : undefined,
       title: String(form.get('title') || '').trim(),
       type,
       priority: form.get('priority') as Priority,
@@ -1282,6 +1401,7 @@ function ProjectForm({ onSubmit }: { onSubmit: (project: Project) => void }) {
 function Empty({ text }: { text: string }) { return <div className="empty"><CheckCircle2 size={28} /><p>{text}</p></div> }
 function TypeChip({ value }: { value: ItemType }) { return <span className={`chip type-${value.toLowerCase().replace(' ', '-')}`}>{value}</span> }
 function PriorityChip({ value }: { value: Priority }) { return <span className={`chip priority-${value.toLowerCase()}`}>{value}</span> }
+function InquirySourceBadge({ source, isNew = false }: { source: WorkItem['source']; isNew?: boolean }) { return <span className={`inquiry-source source-${source.toLowerCase().replace(/\s+/g, '-')} ${isNew ? 'is-new' : ''}`}>{source}{isNew ? ' · New' : ''}</span> }
 function WaitingChip({ value }: { value: WaitingOn }) { return <span className={`chip waiting-${value.toLowerCase()}`}>{value}</span> }
 function StatusChip({ value }: { value: string }) { return <span className="chip neutral">{value}</span> }
 function HealthChip({ value }: { value: Client['health'] }) { return <span className={`chip health-${value.toLowerCase().replace(' ', '-')}`}>{value}</span> }

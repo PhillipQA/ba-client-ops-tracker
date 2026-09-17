@@ -40,6 +40,7 @@ export interface WorkItem {
   clientId?: string
   projectId?: string
   parentTaskId?: string
+  subtaskOrder?: number
   title: string
   type: ItemType
   priority: Priority

@@ -538,6 +538,27 @@ app.get('/api/integrations/discord/status', requireAuth, (req, res) => {
   res.json(discordStatusPayload())
 })
 
+app.get('/api/integrations/discord/inquiries', requireAuth, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!moduleAllowed(user, 'inbox') && !moduleAllowed(user, 'items')) {
+    res.status(403).json({ error: 'Inbox or Task module access is required.' })
+    return
+  }
+  if (!supabaseAdmin) {
+    res.status(503).json({ configured: false, items: [], error: 'Supabase is not configured.' })
+    return
+  }
+  try {
+    const state = await loadTrackerState()
+    const items = Array.isArray(state.data?.items) ? state.data.items : []
+    const discordInquiries = items.filter((item: any) => item?.type === 'Inquiry' && item?.source === 'Discord' && item?.externalSourceId)
+    res.json({ configured: true, items: discordInquiries, updatedAt: state.updatedAt })
+  } catch (error) {
+    console.error('Discord inquiry sync failed:', error)
+    res.status(500).json({ configured: true, items: [], error: error instanceof Error ? error.message : 'Discord inquiry sync failed.' })
+  }
+})
+
 async function startDiscordBot() {
   if (!discordClient || !discordToken) {
     console.log('Discord Inquiry Capture: not configured (DISCORD_BOT_TOKEN is empty).')

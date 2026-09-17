@@ -352,3 +352,12 @@ This release changes the operating model from item-centric to task-centric:
 - Client detail no longer shows a Client Items section. It focuses on client context and linked projects.
 - **Settings → Task configuration** lets Administrators add task statuses, mark statuses as completed, and choose visible task-table columns.
 - Existing data is migrated automatically to schema version 3. Existing work items are preserved as tasks.
+
+## Subtask ordering
+
+Subtasks can be reordered within their parent task by dragging the subtask row. The saved order is persisted with tracker data and is shared through Supabase. Up/down buttons are also available as a keyboard/touch-friendly alternative to drag-and-drop.
+
+
+## v0.3.6 — live Discord inquiry sync
+
+When Supabase is connected and the signed-in account can access Inbox or Tasks, the open app polls for new Discord-captured inquiries every 12 seconds. Newly discovered records are merged into the browser state without overwriting local edits, the Inbox navigation badge highlights the new count, and Discord inquiries receive a source/new badge. Use **Mark seen** in Inbox to clear the session-level new indicator. Existing Discord records are not re-marked as new after a fresh login/cloud load.
