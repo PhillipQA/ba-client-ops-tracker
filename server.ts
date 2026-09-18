@@ -4,6 +4,9 @@ import { createHash, randomBytes } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import OpenAI from 'openai'
+import Docxtemplater from 'docxtemplater'
+import PizZip from 'pizzip'
+import { PDFDocument, PDFTextField } from 'pdf-lib'
 import { createClient } from '@supabase/supabase-js'
 import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js'
 import { createServer as createViteServer } from 'vite'
@@ -15,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const port = Number(process.env.PORT || 5173)
 
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({ limit: '24mb' }))
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -563,6 +566,305 @@ Use at most 5 suggestions. Do not invent client commitments or technical facts. 
   }
 })
 
+
+
+function documentAccessAllowed(user: SessionUser) {
+  return user.role !== 'Viewer' && moduleAllowed(user, 'documents')
+}
+
+function safeDocumentBase64(value: unknown, maxBytes: number) {
+  const raw = typeof value === 'string' ? value.replace(/^data:[^;]+;base64,/, '') : ''
+  if (!raw || !/^[A-Za-z0-9+/=\r\n]+$/.test(raw)) throw new Error('The uploaded file data is invalid.')
+  const estimatedBytes = Math.floor(raw.replace(/\s/g, '').length * 3 / 4)
+  if (estimatedBytes > maxBytes) throw new Error(`The uploaded file is too large. Maximum size is ${Math.round(maxBytes / 1024 / 1024)} MB.`)
+  return raw.replace(/\s/g, '')
+}
+
+function safeTemplateValue(value: unknown) {
+  if (value === null || value === undefined) return ''
+  return String(value).slice(0, 10000)
+}
+
+function normalizeTemplateValues(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {} as Record<string, string>
+  const output: Record<string, string> = {}
+  for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const key = rawKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '')
+    if (!key) continue
+    output[key] = safeTemplateValue(rawValue)
+  }
+  return output
+}
+
+function safeOutputName(businessName: string, extension: string) {
+  const base = businessName.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'Company'
+  return `DRF-${base}.${extension}`
+}
+
+function findDocxTemplateFields(zip: any) {
+  const fields = new Set<string>()
+  for (const [name, file] of Object.entries(zip.files || {}) as [string, any][]) {
+    if (!name.startsWith('word/') || !name.endsWith('.xml') || file.dir) continue
+    const xml = file.asText()
+    for (const match of xml.matchAll(/\{([a-zA-Z0-9_]+)\}/g)) fields.add(match[1])
+  }
+  return [...fields]
+}
+
+function drfText(value: Record<string, string>, key: string) {
+  return safeTemplateValue(value[key]).trim()
+}
+
+function splitDrfText(input: string, preferredFirstLine = 58) {
+  const text = String(input || '').replace(/\s+/g, ' ').trim()
+  if (!text || text.length <= preferredFirstLine) return [text, '']
+  let breakAt = text.lastIndexOf(' ', preferredFirstLine)
+  if (breakAt < Math.floor(preferredFirstLine * 0.55)) breakAt = text.indexOf(' ', preferredFirstLine)
+  if (breakAt < 0) breakAt = preferredFirstLine
+  return [text.slice(0, breakAt).trim(), text.slice(breakAt).trim()]
+}
+
+function signatoryLabel(value: string, fallback: string) {
+  const text = String(value || fallback).trim() || fallback
+  return text.endsWith(':') ? text : `${text}:`
+}
+
+function signatoryInstruction(title: string, fallback: string) {
+  const value = String(title || '').trim()
+  return value ? `(${value}) Signature Over Printed Name & Date` : fallback
+}
+
+function escapeXmlText(value: string) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function xlsxHasCell(sheetXml: string, cellRef: string) {
+  const pattern = new RegExp(`<c\\b[^>]*\\br="${cellRef}"(?:\\s|>|/)`)
+  return pattern.test(sheetXml)
+}
+
+function setXlsxCellText(sheetXml: string, cellRef: string, value: string) {
+  const pattern = new RegExp(`<c\\b([^>]*\\br="${cellRef}"[^>]*?)(?:\\s*/>|>[\\s\\S]*?<\\/c>)`)
+  const match = sheetXml.match(pattern)
+  if (!match) throw new Error(`The DRF template is missing expected cell ${cellRef}.`)
+  let attributes = match[1].replace(/\s+t="[^"]*"/g, '').replace(/\/\s*$/, '')
+  const replacement = `<c${attributes} t="inlineStr"><is><t xml:space="preserve">${escapeXmlText(value)}</t></is></c>`
+  return sheetXml.replace(pattern, replacement)
+}
+
+function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, rawRows: unknown) {
+  const zip = new PizZip(source)
+  const worksheetPath = 'xl/worksheets/sheet1.xml'
+  const worksheetFile = zip.file(worksheetPath)
+  if (!worksheetFile) throw new Error('The Excel template does not contain the expected first DRF worksheet.')
+  let sheetXml = worksheetFile.asText()
+
+  for (const ref of ['B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'H3', 'H4', 'H5', 'H7', 'H8', 'B9', 'B10', 'B11', 'B12', 'B13', 'A16', 'D32', 'A39', 'A40', 'A41', 'D39', 'D40', 'D41', 'H39', 'H40', 'H41']) {
+    if (!xlsxHasCell(sheetXml, ref)) throw new Error(`This Excel file does not match the mapped iRipple DRF template. Expected cell ${ref} was not found.`)
+  }
+
+  const requestDate = drfText(values, 'request_date') || new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  const [address1, address2] = splitDrfText(drfText(values, 'address'), 62)
+  const [notes1, notes2] = splitDrfText(drfText(values, 'notes'), 46)
+  const assignments: [string, string, string][] = [
+    ['B3', 'business_name', drfText(values, 'business_name')],
+    ['B4', 'branch_name', drfText(values, 'branch_name')],
+    ['B5', 'trade_name', drfText(values, 'trade_name')],
+    ['B6', 'tin', drfText(values, 'tin')],
+    ['B7', 'address', address1],
+    ['B8', 'address', address2],
+    ['H3', 'request_date', requestDate],
+    ['H4', 'go_live_date', drfText(values, 'go_live_date') || 'TBA'],
+    ['H5', 'contract_number', drfText(values, 'contract_number')],
+    ['H7', 'notes', notes1],
+    ['H8', 'notes', notes2],
+    ['B9', 'request_for', drfText(values, 'request_for') || 'POS PERMIT APPLICATION ONLY'],
+    ['B10', 'dongle', drfText(values, 'dongle') || 'n/a'],
+    ['B11', 'license_for', drfText(values, 'license_for')],
+    ['B12', 'request_note', drfText(values, 'request_note')],
+    ['B13', 'pos_setup', drfText(values, 'pos_setup') || 'STANDALONE'],
+    ['A39', 'signatory_1_label', signatoryLabel(drfText(values, 'signatory_1_label'), 'Prepared By')],
+    ['A40', 'signatory_1_name', drfText(values, 'signatory_1_name')],
+    ['A41', 'signatory_1_title', signatoryInstruction(drfText(values, 'signatory_1_title'), 'Signature Over Printed Name & Date')],
+    ['D39', 'signatory_2_label', signatoryLabel(drfText(values, 'signatory_2_label'), 'Authorized By')],
+    ['D40', 'signatory_2_name', drfText(values, 'signatory_2_name')],
+    ['D41', 'signatory_2_title', signatoryInstruction(drfText(values, 'signatory_2_title'), '(Account Manager) Signature Over Printed Name & Date')],
+    ['H39', 'signatory_3_label', signatoryLabel(drfText(values, 'signatory_3_label'), 'Approved By')],
+    ['H40', 'signatory_3_name', drfText(values, 'signatory_3_name')],
+    ['H41', 'signatory_3_title', signatoryInstruction(drfText(values, 'signatory_3_title'), '(Accounting Head) Signature Over Printed Name & Date')],
+  ]
+
+  const matchedFields = new Set<string>()
+  for (const [cell, key, value] of assignments) {
+    sheetXml = setXlsxCellText(sheetXml, cell, value)
+    matchedFields.add(key)
+  }
+
+  for (let row = 16; row <= 32; row += 1) {
+    for (const column of ['A', 'B', 'C', 'D']) sheetXml = setXlsxCellText(sheetXml, `${column}${row}`, '')
+  }
+
+  const rows = Array.isArray(rawRows) ? rawRows.slice(0, 17) : []
+  const normalizedRows = rows.map((row: any) => ({
+    computerName: String(row?.computerName || '').trim().toUpperCase().slice(0, 12),
+    serialNo: String(row?.serialNo || '').trim().slice(0, 180),
+    brand: String(row?.brand || '').trim().slice(0, 120),
+    model: String(row?.model || '').trim().slice(0, 120),
+  })).filter((row: any) => row.computerName || row.serialNo || row.brand || row.model)
+
+  normalizedRows.forEach((row: any, index: number) => {
+    const excelRow = 16 + index
+    sheetXml = setXlsxCellText(sheetXml, `A${excelRow}`, row.computerName)
+    sheetXml = setXlsxCellText(sheetXml, `B${excelRow}`, row.serialNo)
+    sheetXml = setXlsxCellText(sheetXml, `C${excelRow}`, row.brand)
+    sheetXml = setXlsxCellText(sheetXml, `D${excelRow}`, row.model)
+  })
+
+  zip.file(worksheetPath, sheetXml)
+  return {
+    output: zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' }) as Buffer,
+    matchedFields: [...matchedFields],
+    posRowsWritten: normalizedRows.length,
+  }
+}
+
+app.post('/api/documents/drf/extract-cor', requireAuth, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!documentAccessAllowed(user)) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
+
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) return void res.status(503).json({ error: 'COR extraction requires OPENAI_API_KEY to be configured on the server.' })
+
+  try {
+    const fileName = String(req.body?.fileName || 'cor-document').slice(0, 180)
+    const mimeType = String(req.body?.mimeType || '').slice(0, 120)
+    const fileData = safeDocumentBase64(req.body?.fileData, 12 * 1024 * 1024)
+    const customFields = Array.isArray(req.body?.customFields)
+      ? req.body.customFields.slice(0, 30).map((field: any) => ({
+          key: String(field?.key || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 80),
+          label: String(field?.label || field?.key || '').trim().slice(0, 120),
+        })).filter((field: any) => field.key)
+      : []
+
+    const client = new OpenAI({ apiKey })
+    const model = process.env.OPENAI_MODEL || 'gpt-5.6-terra'
+    const customInstruction = customFields.length
+      ? `Also try to extract these optional fields when clearly present: ${customFields.map((field: any) => `${field.key} (${field.label})`).join(', ')}.`
+      : 'There are no additional custom fields to extract.'
+
+    const response = await client.responses.create({
+      model,
+      instructions: `You extract structured data from Philippine company Certificate of Registration (COR) documents for a Business Analyst.\nReturn JSON only. Never guess or infer a value that is not visible in the source. Use an empty string when the value is not found. Preserve punctuation and official spelling.\n\nReturn exactly this shape:\n{\n  "businessName": "registered business/company name",\n  "tradeName": "registered trade name",\n  "tin": "tax identification number exactly as shown",\n  "address": "registered business address",\n  "customFields": { "field_key": "value" },\n  "notes": "short note only when something is ambiguous or missing"\n}\n\n${customInstruction}`,
+      input: [{
+        role: 'user',
+        content: [
+          ...(mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp'
+            ? [{ type: 'input_image', image_url: `data:${mimeType};base64,${fileData}`, detail: 'high' }]
+            : [{ type: 'input_file', filename: fileName, file_data: fileData }]),
+          { type: 'input_text', text: 'Read this COR and extract the requested fields. Do not invent missing data.' },
+        ],
+      }],
+      reasoning: { effort: 'low' },
+    })
+
+    const parsed = parseModelJson(response.output_text)
+    const rawCustom = parsed.customFields && typeof parsed.customFields === 'object' && !Array.isArray(parsed.customFields)
+      ? parsed.customFields as Record<string, unknown>
+      : {}
+    const extractedCustom: Record<string, string> = {}
+    for (const field of customFields) extractedCustom[field.key] = safeTemplateValue(rawCustom[field.key])
+    res.json({ extraction: {
+      businessName: safeTemplateValue(parsed.businessName),
+      tradeName: safeTemplateValue(parsed.tradeName),
+      tin: safeTemplateValue(parsed.tin),
+      address: safeTemplateValue(parsed.address),
+      customFields: extractedCustom,
+      notes: safeTemplateValue(parsed.notes).slice(0, 500),
+    } })
+  } catch (error) {
+    console.error('COR extraction failed:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'COR extraction failed.' })
+  }
+})
+
+app.post('/api/documents/drf/render-template', requireAuth, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!documentAccessAllowed(user)) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
+
+  try {
+    const templateName = String(req.body?.templateName || 'drf-template').slice(0, 180)
+    const templateData = safeDocumentBase64(req.body?.templateData, 12 * 1024 * 1024)
+    const values = normalizeTemplateValues(req.body?.values)
+    const extension = templateName.split('.').pop()?.toLowerCase() || ''
+    const source = Buffer.from(templateData, 'base64')
+    let output: Buffer
+    let mimeType = 'application/octet-stream'
+    let matchedFields: string[] = []
+
+    let posRowsWritten = 0
+
+    if (extension === 'xlsx') {
+      const rendered = renderIrippleDrfExcel(source, values, req.body?.posRows)
+      output = rendered.output
+      matchedFields = rendered.matchedFields
+      posRowsWritten = rendered.posRowsWritten
+      mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    } else if (extension === 'docx') {
+      const zip = new PizZip(source)
+      const templateFields = findDocxTemplateFields(zip)
+      const doc = new Docxtemplater(zip, {
+        paragraphLoop: true,
+        linebreaks: true,
+        nullGetter: () => '',
+      })
+      doc.render(values)
+      output = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' })
+      matchedFields = templateFields.filter((field) => Object.prototype.hasOwnProperty.call(values, field))
+      mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    } else if (extension === 'pdf') {
+      const pdf = await PDFDocument.load(source)
+      const form = pdf.getForm()
+      const fields = form.getFields()
+      for (const field of fields) {
+        const fieldName = field.getName()
+        const normalizedName = fieldName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '')
+        if (!Object.prototype.hasOwnProperty.call(values, normalizedName)) continue
+        if (field instanceof PDFTextField) {
+          field.setText(values[normalizedName])
+          matchedFields.push(normalizedName)
+        }
+      }
+      if (!matchedFields.length) throw new Error('No matching fillable PDF fields were found. Use PDF form field names such as business_name, trade_name, tin, address, or use a DOCX template with placeholders.')
+      output = Buffer.from(await pdf.save())
+      mimeType = 'application/pdf'
+    } else if (['txt', 'html', 'htm', 'md', 'rtf'].includes(extension)) {
+      let text = source.toString('utf8')
+      const found = new Set<string>()
+      text = text.replace(/\{\{?([a-zA-Z0-9_]+)\}?\}/g, (full, key) => {
+        const normalized = String(key).toLowerCase()
+        if (!Object.prototype.hasOwnProperty.call(values, normalized)) return full
+        found.add(normalized)
+        return values[normalized]
+      })
+      matchedFields = [...found]
+      output = Buffer.from(text, 'utf8')
+      mimeType = extension === 'html' || extension === 'htm' ? 'text/html' : extension === 'rtf' ? 'application/rtf' : 'text/plain'
+    } else {
+      throw new Error('Unsupported DRF template format. Use the approved XLSX DRF template. Legacy DOCX, fillable PDF, TXT, HTML, MD, and RTF templates are also supported.')
+    }
+
+    const outputName = safeOutputName(values.business_name || values.trade_name || '', extension || 'docx')
+    res.json({ fileData: output.toString('base64'), fileName: outputName, mimeType, matchedFields, posRowsWritten })
+  } catch (error) {
+    console.error('DRF template generation failed:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'DRF template generation failed.' })
+  }
+})
 
 function normalizeDiscordContent(content: string) {
   if (!discordClient?.user) return content.trim()

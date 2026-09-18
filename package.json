@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.4.4",
+  "version": "0.4.6",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -24,7 +24,10 @@
     "dotenv": "^16.6.1",
     "tsx": "^4.20.5",
     "@supabase/supabase-js": "latest",
-    "discord.js": "^14.22.1"
+    "discord.js": "^14.22.1",
+    "docxtemplater": "latest",
+    "pizzip": "latest",
+    "pdf-lib": "latest"
   },
   "devDependencies": {
     "@types/react": "latest",

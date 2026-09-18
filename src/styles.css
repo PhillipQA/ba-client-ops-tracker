@@ -892,3 +892,123 @@ select option { background: #181818; color: #fff; }
   .theme-preview { height: 128px; }
   .app-shell:not(.theme-default) { background-attachment: scroll; }
 }
+
+/* v0.4.5 DRF extractor + template mapping */
+.document-drf-stack { display: flex; flex-direction: column; gap: 16px; padding: 16px; background: #15171a; }
+.document-source-grid { padding: 0; background: transparent; }
+.document-dropzone-compact { min-height: 138px; }
+.document-wide-button { width: 100%; justify-content: center; display: inline-flex; align-items: center; gap: 7px; }
+.document-drf-config-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(360px, .88fr); gap: 16px; }
+.document-subsection { border-top: 1px solid #34363c; padding-top: 15px; display: flex; flex-direction: column; gap: 11px; }
+.document-subsection-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.document-subsection-heading > div { display: flex; flex-direction: column; gap: 3px; }
+.document-subsection-heading strong { color: #f3f4f6; font-size: 13px; }
+.document-subsection-heading span { color: #969da8; font-size: 11px; line-height: 1.45; }
+.document-subsection-heading .compact { padding: 7px 10px; min-height: 32px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.document-empty-config { border: 1px dashed #3a3f47; border-radius: 11px; padding: 14px; color: #8f96a1; background: #181a1e; font-size: 11px; line-height: 1.5; }
+.document-custom-list { display: flex; flex-direction: column; gap: 9px; }
+.document-custom-row { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(130px, .9fr) minmax(150px, 1.1fr) auto auto; gap: 8px; align-items: end; border: 1px solid #34363c; border-radius: 12px; padding: 10px; background: #181a1e; }
+.document-custom-row label { display: flex; flex-direction: column; gap: 5px; color: #aeb4be; font-size: 10px; }
+.document-custom-row input { width: 100%; background: #15171a; border: 1px solid #3a3e45; color: #f1f3f5; }
+.document-placeholder-preview { align-self: end; min-height: 38px; display: flex; align-items: center; padding: 0 10px; border-radius: 9px; border: 1px solid #384150; background: #20252d; color: #a9c3e8; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; white-space: nowrap; }
+.document-custom-row .icon-button { align-self: end; margin-bottom: 1px; }
+.document-signatory-list { display: flex; flex-direction: column; gap: 10px; }
+.document-signatory-card { position: relative; display: flex; flex-direction: column; gap: 9px; border: 1px solid #34363c; border-radius: 13px; padding: 13px 13px 13px 46px; background: #181a1e; }
+.document-signatory-number { position: absolute; left: 12px; top: 13px; width: 25px; height: 25px; border-radius: 8px; background: #252b35; border: 1px solid #3a4555; color: #a9c3e8; display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+.document-signatory-fields { display: grid; grid-template-columns: .8fr 1fr 1fr; gap: 8px; }
+.document-signatory-fields label { display: flex; flex-direction: column; gap: 5px; color: #aeb4be; font-size: 10px; }
+.document-signatory-fields input { width: 100%; background: #15171a; border: 1px solid #3a3e45; color: #f1f3f5; }
+.document-signatory-placeholders { display: flex; flex-wrap: wrap; gap: 5px; }
+.document-signatory-placeholders code, .document-template-token-grid code { border: 1px solid #384150; background: #20252d; color: #a9c3e8; border-radius: 7px; padding: 4px 6px; font-size: 9px; }
+.document-template-guide { margin-top: 2px; border: 1px solid #303945; border-radius: 12px; background: #20252d; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.document-template-guide strong { color: #eef1f5; font-size: 12px; }
+.document-template-guide span { color: #a9b1bd; font-size: 10px; line-height: 1.5; }
+.document-template-token-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.document-status-message { margin: 0; border: 1px solid rgba(76, 175, 119, .32); border-radius: 11px; background: rgba(50, 136, 87, .12); color: #9fe2b9; padding: 10px 12px; font-size: 11px; line-height: 1.45; }
+.document-status-message.error { border-color: rgba(221, 91, 91, .35); background: rgba(148, 55, 55, .14); color: #f3aaaa; }
+.document-generate-bar { border: 1px solid #34363c; border-radius: 14px; background: #1d1f23; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.document-generate-bar > div { display: flex; flex-direction: column; gap: 3px; }
+.document-generate-bar strong { color: #f3f4f6; font-size: 13px; }
+.document-generate-bar span { color: #969da8; font-size: 11px; line-height: 1.45; }
+.document-generate-bar button { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+
+.app-shell:not(.theme-default) .document-drf-stack { background: rgba(16, 18, 23, .48); }
+.app-shell:not(.theme-default) .document-subsection,
+.app-shell:not(.theme-default) .document-custom-row,
+.app-shell:not(.theme-default) .document-signatory-card,
+.app-shell:not(.theme-default) .document-generate-bar { border-color: var(--theme-border); }
+.app-shell:not(.theme-default) .document-custom-row,
+.app-shell:not(.theme-default) .document-signatory-card,
+.app-shell:not(.theme-default) .document-generate-bar,
+.app-shell:not(.theme-default) .document-empty-config { background: rgba(10, 12, 15, .62); }
+.app-shell:not(.theme-default) .document-placeholder-preview,
+.app-shell:not(.theme-default) .document-signatory-placeholders code,
+.app-shell:not(.theme-default) .document-template-token-grid code { color: var(--theme-accent); border-color: var(--theme-border); background: rgba(18, 23, 31, .72); }
+
+@media (max-width: 1180px) {
+  .document-drf-config-grid { grid-template-columns: 1fr; }
+  .document-custom-row { grid-template-columns: 1fr 1fr; }
+  .document-placeholder-preview { align-self: stretch; }
+}
+
+@media (max-width: 720px) {
+  .document-custom-row, .document-signatory-fields { grid-template-columns: 1fr; }
+  .document-subsection-heading, .document-generate-bar { align-items: stretch; flex-direction: column; }
+  .document-generate-bar button { width: 100%; justify-content: center; }
+  .document-signatory-card { padding-left: 13px; padding-top: 46px; }
+}
+
+/* v0.4.6 — Excel DRF mapping */
+.document-drf-fields select,
+.document-drf-fields input,
+.document-drf-fields textarea {
+  width: 100%;
+  background: #15171a;
+  border: 1px solid #3a3e45;
+  color: #f1f3f5;
+}
+.document-drf-fields select { min-height: 38px; border-radius: 9px; padding: 0 10px; }
+.document-readonly-input { opacity: .78; cursor: default; }
+.document-pos-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid #34363c;
+  border-radius: 14px;
+  background: #1d1f23;
+  padding: 14px;
+}
+.document-pos-table-wrap { width: 100%; overflow-x: auto; border: 1px solid #34363c; border-radius: 11px; }
+.document-pos-table { width: 100%; min-width: 850px; border-collapse: collapse; background: #17191d; }
+.document-pos-table th {
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid #3a3e45;
+  color: #cbd1da;
+  background: #202329;
+  font-size: 10px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.document-pos-table td { padding: 7px; border-bottom: 1px solid #2d3137; color: #bfc5ce; font-size: 11px; }
+.document-pos-table tbody tr:last-child td { border-bottom: 0; }
+.document-pos-table td:first-child { width: 36px; text-align: center; color: #87909d; }
+.document-pos-table td:last-child { width: 44px; text-align: center; }
+.document-pos-table input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #373c44;
+  border-radius: 8px;
+  background: #121417;
+  color: #f1f3f5;
+  padding: 7px 8px;
+  font-size: 11px;
+}
+.document-pos-table input::placeholder { color: #68707c; }
+.app-shell:not(.theme-default) .document-pos-panel,
+.app-shell:not(.theme-default) .document-pos-table-wrap { border-color: var(--theme-border); }
+.app-shell:not(.theme-default) .document-pos-panel,
+.app-shell:not(.theme-default) .document-pos-table,
+.app-shell:not(.theme-default) .document-pos-table input { background: rgba(10, 12, 15, .72); }
+.app-shell:not(.theme-default) .document-pos-table th { background: rgba(20, 24, 31, .84); border-color: var(--theme-border); }
+.app-shell:not(.theme-default) .document-pos-table td { border-color: var(--theme-border); }

@@ -1,3 +1,11 @@
+## v0.4.5 — DRF COR extraction and template mapping
+
+- DRF Creation can now send an uploaded COR to the configured OpenAI model and extract Business Name, Trade Name, TIN, Address, and optional user-defined custom fields.
+- Added DRF template upload and generation. DOCX templates use `{field_name}` placeholders; fillable PDF templates use matching form-field names. Text/HTML/MD/RTF placeholder templates are also supported.
+- Added custom DRF fields so users can map extra template values without code changes.
+- Added three editable signatory blocks with label, name, and title/position placeholders.
+- Generated DRFs download in the same template format. COR/template uploads are processed for the current generation session and are not yet persisted to Supabase Storage.
+
 
 ## v0.3.8 — Document Creation module
 
@@ -5,7 +13,7 @@
 - Added **DRF Creation** intake with COR file selection and planned extraction fields for Business Name, Trade Name, TIN, and Address.
 - Added **FSD Creation** intake requiring a BRD before generation can proceed.
 - Added **Sign Off Form** intake with multi-file supporting attachments.
-- Document extraction, persistent file storage, and final generated outputs remain intentionally disabled until the approved DRF/FSD/Sign-Off templates are supplied.
+- DRF COR extraction and template generation are enabled as of v0.4.5. Persistent file storage plus FSD/Sign-Off generation remain pending their approved outputs/templates.
 
 # BA Client Ops Tracker
 
@@ -390,3 +398,30 @@ This release keeps `tracker_state` as a compatibility fallback while adding norm
 5. Verify the new tables (`clients`, `projects`, `tasks`, `inquiries`, `activity_logs`, `planner_activities`, `app_users`, `task_statuses`, `app_settings`, `audit_logs`).
 
 After the v2 schema exists, normal tracker saves automatically dual-write to the normalized tables. Removed records are marked with `deleted_at` instead of being physically erased from the normalized copy. `audit_logs` keeps before/after snapshots and changed-field names. The existing app login continues to use the compatibility state in this release; Supabase Auth migration can be done separately without blocking the data migration.
+
+## DRF Excel mapping (v0.4.6)
+
+DRF Creation now supports the approved iRipple `.xlsx` request form directly. The original workbook is treated as the visual template and the server updates only the mapped cells, preserving the workbook package, logo/drawings, merged cells, styles, print settings, hidden lookup sheet, and iRipple-only POS columns.
+
+Mapped fields in the uploaded template:
+
+- Business / Registered Name → `B3:E3`
+- Branch Name → `B4:E4`
+- Trade / Business Name → `B5:E5`
+- TIN → `B6:E6`
+- Registered Address → `B7:E8`
+- Request Date → `H3:K3` (automatically set to the DRF creation date in `MM/DD/YYYY`)
+- GO-LIVE Date → `H4:K4`
+- Contract Number / SLSS-DRF → `H5:K5`
+- Notes / Instructions → `H7:K8`
+- Request For → `B9:E9`
+- Dongle → `B10:E10`
+- License For → `B11:E11`
+- Request Note → `B12:E12`
+- POS Setup → `B13:E13`
+- POS / Computer rows → `A16:D32` (maximum 17 rows)
+- Prepared By → label/name/title on `A39:A41`
+- Authorized By → label/name/title on `D39:D41`
+- Approved By → label/name/title on `H39:H41`
+
+Request For options are fixed to: POS PERMIT APPLICATION ONLY, BARTER LICENSE, BXI LICENSE, and TEMPORARY LICENSE FOR BXI.
