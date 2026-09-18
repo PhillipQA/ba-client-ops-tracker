@@ -1,4 +1,4 @@
-## v0.4.9 — COR field mapping refinement
+## v0.5.0 — COR field mapping refinement
 
 - Corrected BIR COR mapping so **Name of Taxpayer** is the primary source for **Business / Registered Name**.
 - Refined **Trade Name** detection so it is parsed independently and cannot be swapped with the taxpayer/legal name.
@@ -444,3 +444,11 @@ Request For options are fixed to: POS PERMIT APPLICATION ONLY, BARTER LICENSE, B
 ## v0.4.7 private local COR extraction
 
 DRF COR extraction now runs locally in the user browser instead of sending the COR to OpenAI. Images are read with Tesseract.js; PDFs use embedded text when available and fall back to local OCR for scanned pages. DOCX text is read locally. The COR extractor no longer requires `OPENAI_API_KEY`; that environment variable is still used by the separate AI Assistant/Discord AI features when enabled.
+
+
+## v0.5.0 — Action Center follow-ups, collapsible subtasks, inquiry archive
+
+- Action Center Activities now includes open task and subtask follow-ups for Today and This Week.
+- This Week is Sunday through Saturday.
+- Task tables can collapse/expand subtasks per parent and collapse/expand all visible subtask groups.
+- Discord inquiries that are resolved or converted are retained in an Inbox archive, and conversions are recorded in the activity log.

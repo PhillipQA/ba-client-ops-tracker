@@ -229,11 +229,13 @@ function addDays(date: string, amount: number) {
   return localDateKey(next)
 }
 
-function weekEndKey(date: string) {
+function weekStartKey(date: string) {
   const value = dateFromKey(date)
-  const day = value.getDay()
-  const daysUntilSunday = day === 0 ? 0 : 7 - day
-  return addDays(date, daysUntilSunday)
+  return addDays(date, -value.getDay())
+}
+
+function weekEndKey(date: string) {
+  return addDays(weekStartKey(date), 6)
 }
 
 function activityTime(activity: PlannerActivity) {
@@ -521,6 +523,16 @@ function App() {
 
   const actionItems = searchedItems.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
   const inquiryItems = searchedItems.filter((item) => item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings))
+  const archivedInquiryItems = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return store.items
+      .filter((item) => item.source === 'Discord' && (item.type !== 'Inquiry' || isTaskClosed(item.status, store.taskSettings) || item.waitingOn === 'Done'))
+      .filter((item) => {
+        const text = [item.title, item.description, clientName(item.clientId), projectName(item.projectId), item.type, item.status, item.sourceSender || ''].join(' ').toLowerCase()
+        return !q || text.includes(q)
+      })
+      .sort((a, b) => (b.resolvedDate || b.dateRaised).localeCompare(a.resolvedDate || a.dateRaised))
+  }, [store.items, store.taskSettings, store.clients, store.projects, query])
   const newExternalInquiryCount = newExternalInquiryIds.filter((id) => store.items.some((item) => item.id === id && item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')).length
 
   const filteredTasks = useMemo(() => {
@@ -671,13 +683,29 @@ function App() {
 
   const convertInquiry = (id: string, type: 'Requirement' | 'Issue') => {
     if (!canWrite) return
-    persist({ ...store, items: store.items.map((item) => (item.id === id ? { ...item, type } : item)) })
+    const target = store.items.find((item) => item.id === id)
+    if (!target) return
+    persist({
+      ...store,
+      items: store.items.map((item) => (item.id === id ? { ...item, type } : item)),
+      activity: [
+        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: TODAY, text: `Inquiry converted to ${type.toLowerCase()}: ${target.title}` },
+        ...store.activity,
+      ],
+    })
   }
 
+  const weekStart = weekStartKey(TODAY)
   const weekEnd = weekEndKey(TODAY)
   const sortedPlanner = [...store.planner].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
   const todayActivities = sortedPlanner.filter((item) => item.date === TODAY && item.status !== 'Cancelled')
-  const weekActivities = sortedPlanner.filter((item) => item.date > TODAY && item.date <= weekEnd && item.status !== 'Cancelled')
+  const weekActivities = sortedPlanner.filter((item) => item.date >= weekStart && item.date <= weekEnd && item.status !== 'Cancelled')
+  const todayFollowUps = openItems
+    .filter((item) => item.followUpDate === TODAY)
+    .sort((a, b) => priorityRank[b.priority] - priorityRank[a.priority] || a.title.localeCompare(b.title))
+  const weekFollowUps = openItems
+    .filter((item) => item.followUpDate && item.followUpDate >= weekStart && item.followUpDate <= weekEnd)
+    .sort((a, b) => a.followUpDate.localeCompare(b.followUpDate) || priorityRank[b.priority] - priorityRank[a.priority] || a.title.localeCompare(b.title))
   const editingActivity = editingActivityId ? store.planner.find((item) => item.id === editingActivityId) ?? null : null
 
   const openActivityModal = (activity?: PlannerActivity) => {
@@ -860,13 +888,13 @@ function App() {
             <div className="metric-grid dashboard-metrics">
               <Metric title="Needs attention" value={openItems.length} detail={`Across ${attentionClientCount} client${attentionClientCount === 1 ? '' : 's'}`} icon={<AlertTriangle size={18} />} />
               <Metric title="Waiting on Dev" value={waitingDev.length} detail={`${waitingDevOverdue} overdue`} icon={<Settings2 size={18} />} />
-              <Metric title="Activities today" value={todayActivities.length} detail={`${todayActivities.filter((item) => item.source === 'Google Calendar').length} meetings · ${todayActivities.filter((item) => item.source === 'Local').length} BA tasks`} icon={<CalendarDays size={18} />} />
+              <Metric title="Activities today" value={todayActivities.length + todayFollowUps.length} detail={`${todayActivities.filter((item) => item.source === 'Google Calendar').length} meetings · ${todayActivities.filter((item) => item.source === 'Local').length} tracker activities · ${todayFollowUps.length} follow-ups`} icon={<CalendarDays size={18} />} />
               <Metric title="Open inquiries" value={openInquiryCount} detail="Need classification" icon={<Inbox size={18} />} />
             </div>
 
             <div className="panel planner-panel dashboard-panel">
               <div className="panel-heading planner-heading dashboard-panel-heading">
-                <div><h2>Activities</h2><p>Meetings and your own BA work in one place.</p></div>
+                <div><h2>Activities</h2><p>Meetings, tracker activities, and task/subtask follow-ups in one place.</p></div>
                 <div className="planner-actions dashboard-tabs">
                   <button className={activityRange === 'today' ? 'secondary active-tab' : 'secondary'} onClick={() => setActivityRange('today')}>Today</button>
                   <button className={activityRange === 'week' ? 'secondary active-tab' : 'secondary'} onClick={() => setActivityRange('week')}>This Week</button>
@@ -875,16 +903,19 @@ function App() {
                 </div>
               </div>
               <div className="activity-legend">
-                <span>Calendar = imported</span><span>Tracker = local only</span><span>Local edit = Google unchanged</span>
+                <span>Calendar = imported</span><span>Tracker = local only</span><span>Follow-up = task/subtask date</span><span>Week = Sunday–Saturday</span>
               </div>
               {calendarMessage && <div className="calendar-message">{calendarMessage}</div>}
               <DashboardActivityTimeline
                 mode={activityRange}
                 items={activityRange === 'today' ? todayActivities : weekActivities}
+                followUps={activityRange === 'today' ? todayFollowUps : weekFollowUps}
+                allItems={store.items}
                 clients={store.clients}
                 projects={store.projects}
                 onEdit={openActivityModal}
                 onToggle={toggleActivityDone}
+                onEditTask={openTaskEditor}
                 canEdit={canWrite}
               />
             </div>
@@ -956,6 +987,18 @@ function App() {
               <div className="panel-heading"><div><h2>Open inquiries</h2><p>Convert an inquiry once its real nature is clear. Discord captures appear here automatically while this page is open.</p></div><div className="inquiry-heading-actions">{newExternalInquiryCount > 0 && <button className="secondary" type="button" onClick={() => setNewExternalInquiryIds([])}>{newExternalInquiryCount} new · Mark seen</button>}{canWrite && <button className="primary" onClick={() => { setTaskPreset({ type: 'Inquiry' }); setModal('item') }}><Plus size={18} /> Capture inquiry</button>}</div></div>
               <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} />
               {inquiryItems.length ? <div className="inquiry-list">{inquiryItems.map((item) => { const isNewDiscord = item.source === 'Discord' && newExternalInquiryIds.includes(item.id); return <div className={`inquiry-card${item.source === 'Discord' ? ' inquiry-discord' : ''}${isNewDiscord ? ' inquiry-new' : ''}`} key={item.id}><div><div className="row-meta"><PriorityChip value={item.priority} /><InquirySourceBadge source={item.source} isNew={isNewDiscord} /><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span></div><h3>{item.title}</h3><p>{item.description}</p><div className="row-meta"><span>Waiting on <b>{item.waitingOn}</b></span><span>Follow-up {niceDate(item.followUpDate)}</span>{item.sourceSender && <span>From: {item.sourceSender}</span>}</div></div><div className="inquiry-actions">{canUseAI && <button className="secondary" onClick={() => { setAiClientId(item.clientId ?? ''); setAiProjectId(item.projectId ?? ''); setAiPrompt(`Assess this client inquiry and recommend what I should do next.\n\nTitle: ${item.title}\nDetails: ${item.description}`); setView('ai') }}><Sparkles size={15} /> Ask AI</button>}{canWrite && <><button className="secondary" onClick={() => convertInquiry(item.id, 'Requirement')}>→ Requirement</button><button className="secondary" onClick={() => convertInquiry(item.id, 'Issue')}>→ Issue</button><button className="success" onClick={() => resolveItem(item.id)}><CheckCircle2 size={16} /> Answered</button></>}</div></div> })}</div> : <Empty text="No open inquiries match your filters." />}
+              <details className="inquiry-archive">
+                <summary><span>Discord inquiry archive</span><b>{archivedInquiryItems.length}</b></summary>
+                <p className="inquiry-archive-help">Resolved Discord inquiries and inquiries converted into tasks remain here as a historical record.</p>
+                {archivedInquiryItems.length ? <div className="inquiry-archive-list">{archivedInquiryItems.map((item) => {
+                  const closed = isTaskClosed(item.status, store.taskSettings) || item.waitingOn === 'Done'
+                  const outcome = item.type !== 'Inquiry' ? `Converted to ${item.type}` : closed ? item.status : 'Archived'
+                  return <div className="inquiry-archive-row" key={`archive-${item.id}`}>
+                    <div><div className="row-meta"><InquirySourceBadge source={item.source} /><span>{outcome}</span><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span>{item.sourceSender && <span>From: {item.sourceSender}</span>}</div><strong>{item.title}</strong><small>{item.description || 'No description'}</small></div>
+                    <div className="inquiry-archive-meta"><StatusChip value={item.status} /><span>{item.resolvedDate ? `Resolved ${niceDate(item.resolvedDate)}` : `Received ${niceDate(item.dateRaised)}`}</span></div>
+                  </div>
+                })}</div> : <Empty text="No archived Discord inquiries yet." />}
+              </details>
             </div>
           </section>
         )}
@@ -1074,14 +1117,34 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
 }
 
 
-function DashboardActivityTimeline({ mode, items, clients, projects, onEdit, onToggle, canEdit }: { mode: 'today' | 'week'; items: PlannerActivity[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void; canEdit: boolean }) {
+function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, projects, onEdit, onToggle, onEditTask, canEdit }: { mode: 'today' | 'week'; items: PlannerActivity[]; followUps: WorkItem[]; allItems: WorkItem[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void; onEditTask: (id: string) => void; canEdit: boolean }) {
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name : ''
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name : ''
-  if (!items.length) return <div className="activity-empty dashboard-activity-empty">No activities scheduled for this view.</div>
-  return <div className="dashboard-activity-list">{items.map((activity) => {
+  const entries = [
+    ...items.map((activity) => ({ kind: 'activity' as const, date: activity.date, sortTime: activity.startTime || '99:99', activity })),
+    ...followUps.map((item) => ({ kind: 'followup' as const, date: item.followUpDate, sortTime: '99:98', item })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.sortTime.localeCompare(b.sortTime))
+  if (!entries.length) return <div className="activity-empty dashboard-activity-empty">No activities or follow-ups scheduled for this view.</div>
+  return <div className="dashboard-activity-list">{entries.map((entry) => {
+    if (entry.kind === 'followup') {
+      const item = entry.item
+      const parent = item.parentTaskId ? allItems.find((candidate) => candidate.id === item.parentTaskId) : undefined
+      const context = [clientName(item.clientId), projectName(item.projectId)].filter(Boolean).join(' · ')
+      return <div className="dashboard-activity-row followup-activity-row" key={`followup-${item.id}`}>
+        <div className="dashboard-activity-time">{mode === 'week' && <small>{niceDate(item.followUpDate)}</small>}<strong>Follow-up</strong></div>
+        <div className="dashboard-activity-card">
+          <div className="dashboard-activity-top">
+            <div><strong>{item.title}</strong>{context && <p>{context}</p>}<small>{item.parentTaskId ? `Subtask${parent ? ` of ${parent.title}` : ''}` : 'Task'} · Waiting on {item.waitingOn} · Priority {item.priority}</small></div>
+            <div className="dashboard-activity-badges"><span className="followup-badge">{item.parentTaskId ? 'Subtask follow-up' : 'Task follow-up'}</span></div>
+          </div>
+          <div className="dashboard-activity-actions">{canEdit && <button className="secondary compact" type="button" onClick={() => onEditTask(item.id)}>Edit {item.parentTaskId ? 'subtask' : 'task'}</button>}</div>
+        </div>
+      </div>
+    }
+    const activity = entry.activity
     const timeLabel = activity.allDay ? 'All day' : activity.startTime || '—'
     const context = [clientName(activity.clientId), projectName(activity.projectId)].filter(Boolean).join(' · ')
-    return <div className={`dashboard-activity-row ${activity.status === 'Done' ? 'done' : ''}`} key={activity.id}>
+    return <div className={`dashboard-activity-row ${activity.status === 'Done' ? 'done' : ''}`} key={`activity-${activity.id}`}>
       <div className="dashboard-activity-time">{mode === 'week' && <small>{niceDate(activity.date)}</small>}<strong>{timeLabel}</strong></div>
       <div className="dashboard-activity-card">
         <div className="dashboard-activity-top">
@@ -1190,6 +1253,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   const visibleIds = new Set(items.map((item) => item.id))
   const [draggedSubtaskId, setDraggedSubtaskId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const [collapsedParents, setCollapsedParents] = useState<Set<string>>(() => new Set())
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown client' : 'General / no client'
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name ?? 'Unknown project' : 'No project'
   const labels: Record<TaskColumnKey, string> = { status: 'Status', client: 'Client', project: 'Project', type: 'Type', waitingOn: 'Waiting on', priority: 'Priority', owner: 'Owner / Assigned', dueDate: 'Due date', followUpDate: 'Follow-up' }
@@ -1199,6 +1263,21 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   const sortedChildren = (parentTaskId: string) => sourceItems
     .filter((candidate) => candidate.parentTaskId === parentTaskId)
     .sort((a, b) => (a.subtaskOrder ?? Number.MAX_SAFE_INTEGER) - (b.subtaskOrder ?? Number.MAX_SAFE_INTEGER) || a.dateRaised.localeCompare(b.dateRaised) || a.title.localeCompare(b.title))
+
+  const parentIdsWithChildren = items.filter((item) => !item.parentTaskId && sortedChildren(item.id).length > 0).map((item) => item.id)
+  const allVisibleParentsCollapsed = parentIdsWithChildren.length > 0 && parentIdsWithChildren.every((id) => collapsedParents.has(id))
+  const toggleParent = (id: string) => setCollapsedParents((current) => {
+    const next = new Set(current)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const toggleAllParents = () => setCollapsedParents((current) => {
+    const next = new Set(current)
+    if (allVisibleParentsCollapsed) parentIdsWithChildren.forEach((id) => next.delete(id))
+    else parentIdsWithChildren.forEach((id) => next.add(id))
+    return next
+  })
 
   const moveSubtask = (item: WorkItem, direction: -1 | 1) => {
     if (!item.parentTaskId) return
@@ -1255,7 +1334,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
       onDrop={isSubtask ? (event) => { event.preventDefault(); dropSubtask(item) } : undefined}
       onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
     >
-      <td><div className={isSubtask ? 'subtask-title' : ''}>{isSubtask && <><span className="subtask-branch">↳</span>{canEdit && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed` : ''}</small></div></div></td>
+      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{canEdit && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small></div></div></td>
       {columns.map((column) => <td key={column}>{column === 'status' ? (canEdit ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || '—' : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
       <td><div className="task-row-actions">{canEdit && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{canEdit && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{canEdit && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
@@ -1264,9 +1343,9 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   const topLevel = items.filter((item) => !item.parentTaskId || !visibleIds.has(item.parentTaskId))
   const rows = topLevel.flatMap((item) => [
     renderRow(item, Boolean(item.parentTaskId)),
-    ...sortedChildren(item.id).filter((child) => visibleIds.has(child.id) || visibleIds.has(item.id)).map((child) => renderRow(child, true)),
+    ...(collapsedParents.has(item.id) ? [] : sortedChildren(item.id).filter((child) => visibleIds.has(child.id) || visibleIds.has(item.id)).map((child) => renderRow(child, true))),
   ])
-  return <div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task / Subtask</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{rows}</tbody></table></div>
+  return <div className="task-table-wrap">{parentIdsWithChildren.length > 0 && <div className="task-table-tools"><button className="secondary compact" type="button" onClick={toggleAllParents}>{allVisibleParentsCollapsed ? 'Expand all subtasks' : 'Collapse all subtasks'}</button></div>}<div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task / Subtask</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{rows}</tbody></table></div></div>
 }
 
 function ClientDetail({ client, store, onBack, onOpenProject, onAddTask, onAskAI, canUseAI, canWrite }: { client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAddTask: (clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean; canWrite: boolean }) {
