@@ -1,3 +1,4 @@
+import type { AppTheme } from './theme'
 export type ItemType = 'Task' | 'Requirement' | 'Issue' | 'Inquiry' | 'Decision' | 'Follow-up'
 export type WaitingOn = 'Me' | 'Developer' | 'Client' | 'QA' | 'Design' | 'Done'
 export type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
@@ -97,4 +98,5 @@ export interface UserAccount {
   modules: AppModule[]
   status: 'Active' | 'Disabled'
   createdAt: string
+  theme?: AppTheme
 }

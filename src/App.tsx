@@ -39,6 +39,7 @@ import type { AISuggestion } from './ai'
 import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems, seedPlannerActivities, seedProjects } from './data'
 import { importPrimaryCalendar } from './googleCalendar'
 import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
+import { normalizeAppTheme, THEME_OPTIONS, type AppTheme } from './theme'
 
 type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings'
 
@@ -100,6 +101,7 @@ function normalizeAccount(value: Partial<UserAccount>, index: number): UserAccou
     modules: role === 'Administrator' ? [...ALL_MODULES] : Array.isArray(value.modules) ? value.modules.filter((module): module is AppModule => ALL_MODULES.includes(module as AppModule)) : defaultModulesForRole(role),
     status: value.status === 'Disabled' ? 'Disabled' : 'Active',
     createdAt: String(value.createdAt || TODAY),
+    theme: normalizeAppTheme(value.theme),
   }
 }
 
@@ -460,9 +462,9 @@ function App() {
     return () => { cancelled = true; window.clearInterval(interval) }
   }, [authUser?.id, cloudStatus, canSyncExternalInquiries])
 
-  const updateOwnProfile = async (profile: { name: string; email: string; phone: string; newPassword?: string }) => {
+  const updateOwnProfile = async (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string }) => {
     if (!currentUser || !authUser) return 'No signed-in account.'
-    const patch: Partial<UserAccount> = { name: profile.name.trim(), email: profile.email.trim(), phone: profile.phone.trim() }
+    const patch: Partial<UserAccount> = { name: profile.name.trim(), email: profile.email.trim(), phone: profile.phone.trim(), theme: normalizeAppTheme(profile.theme) }
     if (profile.newPassword) {
       if (profile.newPassword.length < 4) return 'Use a password with at least 4 characters.'
       patch.passwordHash = await hashPassword(profile.newPassword)
@@ -474,6 +476,16 @@ function App() {
     persist(next)
     setAuthUser({ ...authUser, name: patch.name || authUser.name, email: patch.email ?? authUser.email, phone: patch.phone ?? authUser.phone })
     return 'Profile updated.'
+  }
+
+  const updateOwnTheme = (theme: AppTheme) => {
+    if (!currentUser) return 'No signed-in account.'
+    const nextTheme = normalizeAppTheme(theme)
+    persist({
+      ...store,
+      accounts: store.accounts.map((account) => account.id === currentUser.id ? { ...account, theme: nextTheme } : account),
+    })
+    return `Theme changed to ${THEME_OPTIONS.find((candidate) => candidate.id === nextTheme)?.name || 'Default'}.`
   }
 
   const clientName = (id?: string) => id ? store.clients.find((c) => c.id === id)?.name ?? 'Unknown client' : 'General / no client'
@@ -804,8 +816,10 @@ function App() {
   if (authChecking) return <AuthSplash />
   if (!authUser || !currentUser) return <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} />
 
+  const currentTheme = normalizeAppTheme(currentUser.theme)
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell theme-${currentTheme}`} data-theme={currentTheme}>
       <aside className="sidebar">
         <div className="brand"><img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
         <nav>
@@ -966,7 +980,7 @@ function App() {
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} />}
 
-        {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings currentUser={currentUser} accounts={store.accounts} onCreate={createAccount} onUpdate={updateAccount} onDelete={deleteAccount} cloudStatus={cloudStatus} cloudMessage={cloudMessage} lastCloudSync={lastCloudSync} onSyncNow={syncCloudNow} taskSettings={store.taskSettings} taskStatusUsage={Object.fromEntries(store.taskSettings.statuses.map((status) => [status.label, store.items.filter((item) => item.status === status.label).length]))} onTaskSettingsChange={updateTaskSettings} />}
+        {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings currentUser={currentUser} accounts={store.accounts} onCreate={createAccount} onUpdate={updateAccount} onDelete={deleteAccount} onThemeChange={updateOwnTheme} cloudStatus={cloudStatus} cloudMessage={cloudMessage} lastCloudSync={lastCloudSync} onSyncNow={syncCloudNow} taskSettings={store.taskSettings} taskStatusUsage={Object.fromEntries(store.taskSettings.statuses.map((status) => [status.label, store.items.filter((item) => item.status === status.label).length]))} onTaskSettingsChange={updateTaskSettings} />}
 
         {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
           <section className="page-stack"><AIAssistant clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
@@ -1014,7 +1028,7 @@ function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; o
   </div>
 }
 
-function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: () => void; onSave: (profile: { name: string; email: string; phone: string; newPassword?: string }) => Promise<string | void> }) {
+function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: () => void; onSave: (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string }) => Promise<string | void> }) {
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1033,6 +1047,7 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
       name: String(form.get('name') || '').trim(),
       email: String(form.get('email') || '').trim(),
       phone: String(form.get('phone') || '').trim(),
+      theme: normalizeAppTheme(form.get('theme')),
       newPassword: password || undefined,
     })
     setMessage(result || 'Profile updated.')
@@ -1046,6 +1061,7 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
         <label>Display name<input name="name" defaultValue={user.name} required /></label>
         <label>Email<input name="email" type="email" defaultValue={user.email} placeholder="name@company.com" /></label>
         <label>Contact number<input name="phone" defaultValue={user.phone} placeholder="+63 900 000 0000" /></label>
+        <label>Theme<select name="theme" defaultValue={normalizeAppTheme(user.theme)}>{THEME_OPTIONS.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select><small>Your theme follows this account across devices after Supabase sync.</small></label>
         <div className="profile-password-grid">
           <label>New password <small>Optional</small><input name="newPassword" type="password" minLength={4} autoComplete="new-password" /></label>
           <label>Confirm new password<input name="confirmPassword" type="password" minLength={4} autoComplete="new-password" /></label>

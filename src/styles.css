@@ -738,3 +738,157 @@ select option { background: #181818; color: #fff; }
 @media (max-width: 760px) {
   .brand-logo { width: 150px; }
 }
+
+/* --------------------------------------------------------------------------
+   v0.4.4 account themes
+   -------------------------------------------------------------------------- */
+.theme-picker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px; }
+.theme-option-card { padding: 0; overflow: hidden; border: 1px solid #3b3b3b; border-radius: 13px; background: #1b1b1b; color: #f5f5f5; text-align: left; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease; }
+.theme-option-card:hover { transform: translateY(-1px); border-color: #5e6877; }
+.theme-option-card.selected { border-color: #87a4ff; box-shadow: 0 0 0 2px rgba(115, 145, 255, .18); }
+.theme-preview { height: 108px; background-size: cover; background-position: center; position: relative; border-bottom: 1px solid rgba(255,255,255,.1); }
+.theme-preview::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.28)); }
+.theme-preview > span { position: absolute; z-index: 1; top: 9px; right: 9px; width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; background: rgba(8, 12, 18, .78); color: #fff; border: 1px solid rgba(255,255,255,.28); }
+.theme-preview-default { background: linear-gradient(135deg, #111 0%, #20242c 50%, #303744 100%); }
+.theme-option-copy { padding: 12px 13px 13px; }
+.theme-option-copy strong { display: block; color: #fff; font-size: 12px; }
+.theme-option-copy p { margin: 5px 0 8px; color: #b8b8b8; font-size: 10.5px; line-height: 1.45; }
+.theme-option-copy small { color: #8e9aab; font-size: 9.5px; }
+.profile-form > label > small { display: block; margin-top: 5px; color: #8f96a1; font-size: 10px; font-weight: 500; }
+.profile-form select { width: 100%; min-height: 40px; margin-top: 7px; padding: 8px 10px; border-radius: 8px; border: 1px solid #3d3d3d; background: #181818; color: #f7f7f7; }
+
+/* The Default theme intentionally preserves the app's current design exactly. */
+.app-shell.theme-default { background: #101010; }
+
+/* Shared wallpaper behavior. Panels use translucent, theme-tinted glass so the
+   background remains visible without sacrificing table/form readability. */
+.app-shell:not(.theme-default) {
+  --theme-accent: #8aa1ff;
+  --theme-accent-soft: rgba(138, 161, 255, .22);
+  --theme-sidebar: rgba(10, 12, 16, .90);
+  --theme-topbar: rgba(17, 19, 24, .88);
+  --theme-main-tint: rgba(9, 11, 15, .43);
+  --theme-surface: rgba(25, 27, 32, .88);
+  --theme-surface-strong: rgba(22, 24, 29, .95);
+  --theme-border: rgba(255,255,255,.15);
+  background-image: linear-gradient(var(--theme-main-tint), var(--theme-main-tint)), var(--theme-image);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+.app-shell:not(.theme-default) main { background: transparent; }
+.app-shell:not(.theme-default) .sidebar { background: var(--theme-sidebar); border-right-color: var(--theme-border); backdrop-filter: blur(18px) saturate(120%); }
+.app-shell:not(.theme-default) .topbar { background: var(--theme-topbar); border-bottom-color: var(--theme-border); backdrop-filter: blur(18px) saturate(125%); }
+.app-shell:not(.theme-default) .panel,
+.app-shell:not(.theme-default) .metric-card,
+.app-shell:not(.theme-default) .client-card,
+.app-shell:not(.theme-default) .client-hero,
+.app-shell:not(.theme-default) .modal,
+.app-shell:not(.theme-default) .dashboard-activity-card,
+.app-shell:not(.theme-default) .task-settings-section,
+.app-shell:not(.theme-default) .document-flow-card,
+.app-shell:not(.theme-default) .document-workspace,
+.app-shell:not(.theme-default) .document-upload-panel,
+.app-shell:not(.theme-default) .document-extraction-panel {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+  backdrop-filter: blur(13px) saturate(118%);
+}
+.app-shell:not(.theme-default) .panel-heading,
+.app-shell:not(.theme-default) .document-heading,
+.app-shell:not(.theme-default) .document-workspace-grid { background: rgba(16, 18, 23, .48); border-color: var(--theme-border); }
+.app-shell:not(.theme-default) .primary { background: var(--theme-accent); color: #fff; border-color: color-mix(in srgb, var(--theme-accent) 78%, white 8%); }
+.app-shell:not(.theme-default) .primary:hover { filter: brightness(1.08); }
+.app-shell:not(.theme-default) .nav-button.active { box-shadow: inset 3px 0 0 var(--theme-accent); background: var(--theme-accent-soft); }
+.app-shell:not(.theme-default) .nav-button b { background: var(--theme-accent); }
+.app-shell:not(.theme-default) .back-link,
+.app-shell:not(.theme-default) .ai-title-line svg,
+.app-shell:not(.theme-default) .document-flow-icon,
+.app-shell:not(.theme-default) .document-section-title > svg,
+.app-shell:not(.theme-default) .document-dropzone > svg { color: var(--theme-accent); }
+.app-shell:not(.theme-default) .metric-card,
+.app-shell:not(.theme-default) .client-card,
+.app-shell:not(.theme-default) .panel { box-shadow: 0 14px 36px rgba(0,0,0,.16); }
+.app-shell:not(.theme-default) .search-box,
+.app-shell:not(.theme-default) .filters select,
+.app-shell:not(.theme-default) .form-grid select,
+.app-shell:not(.theme-default) .form-grid input,
+.app-shell:not(.theme-default) .form-grid textarea,
+.app-shell:not(.theme-default) .quick-note input,
+.app-shell:not(.theme-default) .profile-form select,
+.app-shell:not(.theme-default) .document-field-grid input,
+.app-shell:not(.theme-default) .document-field-grid textarea,
+.app-shell:not(.theme-default) .dashboard-ai-context select,
+.app-shell:not(.theme-default) .dashboard-ai-body textarea { background: rgba(9, 11, 15, .72); border-color: var(--theme-border); }
+.app-shell:not(.theme-default) th { background: rgba(12, 14, 18, .76); }
+.app-shell:not(.theme-default) .document-dropzone,
+.app-shell:not(.theme-default) .document-file-row { background: rgba(10, 12, 15, .62); border-color: var(--theme-border); }
+
+/* Dark Geek: analogous cool hues — midnight blue, cyan and violet. */
+.app-shell.theme-dark-geek {
+  --theme-image: url('/themes/dark-geek.webp');
+  --theme-accent: #2ca9ff;
+  --theme-accent-soft: rgba(44, 169, 255, .19);
+  --theme-sidebar: rgba(4, 9, 16, .92);
+  --theme-topbar: rgba(7, 13, 21, .88);
+  --theme-main-tint: rgba(2, 7, 13, .36);
+  --theme-surface: rgba(9, 16, 25, .88);
+  --theme-border: rgba(66, 164, 232, .24);
+}
+
+/* Beach: ocean blues paired with sandy warm neutrals. */
+.app-shell.theme-blue-sky {
+  --theme-image: url('/themes/blue-sky.webp');
+  --theme-accent: #2b9ed8;
+  --theme-accent-soft: rgba(43, 158, 216, .20);
+  --theme-sidebar: rgba(13, 41, 55, .88);
+  --theme-topbar: rgba(18, 55, 72, .83);
+  --theme-main-tint: rgba(8, 42, 58, .27);
+  --theme-surface: rgba(17, 51, 64, .84);
+  --theme-border: rgba(176, 230, 239, .24);
+}
+
+/* Meadow: analogous greens with a warm yellow-green accent. */
+.app-shell.theme-green-grass {
+  --theme-image: url('/themes/green-grass.webp');
+  --theme-accent: #72a940;
+  --theme-accent-soft: rgba(114, 169, 64, .22);
+  --theme-sidebar: rgba(18, 35, 17, .90);
+  --theme-topbar: rgba(25, 45, 22, .86);
+  --theme-main-tint: rgba(17, 35, 15, .30);
+  --theme-surface: rgba(29, 48, 27, .86);
+  --theme-border: rgba(178, 214, 135, .23);
+}
+
+/* City: cool graphite balanced with complementary amber. */
+.app-shell.theme-busy-city {
+  --theme-image: url('/themes/busy-city.webp');
+  --theme-accent: #d88b3d;
+  --theme-accent-soft: rgba(216, 139, 61, .20);
+  --theme-sidebar: rgba(20, 21, 24, .91);
+  --theme-topbar: rgba(28, 29, 32, .87);
+  --theme-main-tint: rgba(14, 15, 18, .34);
+  --theme-surface: rgba(34, 34, 36, .86);
+  --theme-border: rgba(232, 177, 113, .22);
+}
+
+/* Bahay kubo: ocean teal, forest green and warm wood-gold. */
+.app-shell.theme-calm-mountain {
+  --theme-image: url('/themes/calm-mountain.webp');
+  --theme-accent: #4b9c91;
+  --theme-accent-soft: rgba(75, 156, 145, .22);
+  --theme-sidebar: rgba(18, 39, 38, .90);
+  --theme-topbar: rgba(25, 50, 47, .86);
+  --theme-main-tint: rgba(16, 43, 42, .28);
+  --theme-surface: rgba(26, 52, 48, .86);
+  --theme-border: rgba(171, 212, 196, .23);
+}
+
+@media (max-width: 980px) {
+  .theme-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .theme-picker-grid { grid-template-columns: 1fr; }
+  .theme-preview { height: 128px; }
+  .app-shell:not(.theme-default) { background-attachment: scroll; }
+}

@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { ArchiveRestore, Bot, Check, Cloud, Database, KeyRound, MessageCircleMore, PackageCheck, RefreshCw, ShieldCheck, Terminal, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArchiveRestore, Bot, Check, Cloud, Database, KeyRound, MessageCircleMore, PackageCheck, Palette, RefreshCw, ShieldCheck, Terminal, Trash2, UserPlus, Users } from 'lucide-react'
 import { defaultModulesForRole, MODULE_DEFINITIONS } from './access'
 import { hashPassword } from './auth'
 import type { CloudStorageStatus } from './cloudStore'
 import type { AppModule, TaskColumnKey, TaskSettings, UserAccount, UserRole } from './types'
+import { normalizeAppTheme, THEME_OPTIONS, type AppTheme } from './theme'
 import { APP_VERSION } from './version'
 
 type DiscordStatus = {
@@ -31,12 +32,13 @@ const roleDescriptions: Record<UserRole, { summary: string; permissions: string[
   Viewer: { summary: 'Read-only access.', permissions: ['Can only view modules assigned by an Administrator', 'Reports can be assigned as the default module', 'Cannot create, edit, delete, import, or approve AI actions', 'Cannot manage accounts'] },
 }
 
-export default function Settings({ currentUser, accounts, onCreate, onUpdate, onDelete, cloudStatus, cloudMessage, lastCloudSync, onSyncNow, taskSettings, taskStatusUsage, onTaskSettingsChange }: {
+export default function Settings({ currentUser, accounts, onCreate, onUpdate, onDelete, onThemeChange, cloudStatus, cloudMessage, lastCloudSync, onSyncNow, taskSettings, taskStatusUsage, onTaskSettingsChange }: {
   currentUser: UserAccount
   accounts: UserAccount[]
   onCreate: (account: UserAccount) => string | void
   onUpdate: (id: string, patch: Partial<UserAccount>) => string | void
   onDelete: (id: string) => string | void
+  onThemeChange: (theme: AppTheme) => string | void
   cloudStatus: CloudStorageStatus
   cloudMessage: string
   lastCloudSync: string
@@ -48,6 +50,7 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
   const isAdmin = currentUser.role === 'Administrator'
   const [showAdd, setShowAdd] = useState(false)
   const [message, setMessage] = useState('')
+  const [themeMessage, setThemeMessage] = useState('')
   const [newRole, setNewRole] = useState<UserRole>('Contributor')
   const [newModules, setNewModules] = useState<AppModule[]>(defaultModulesForRole('Contributor'))
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null)
@@ -219,11 +222,31 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
     saveTaskSettings({ ...taskSettings, visibleColumns }, 'Task table columns updated.')
   }
 
+  const selectTheme = (theme: AppTheme) => {
+    const result = onThemeChange(theme)
+    setThemeMessage(result || 'Theme updated.')
+  }
+
+  const activeTheme = normalizeAppTheme(currentUser.theme)
+
   return <section className="page-stack settings-page">
     <div className="panel settings-current">
       <div className="panel-heading"><div><h2>Access & settings</h2><p>Role-based access plus module-level permissions.</p></div><span className="role-badge"><ShieldCheck size={15} /> {currentUser.role}</span></div>
       <div className="current-user-card"><div className="settings-avatar">{currentUser.name.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase() || 'U'}</div><div><strong>{currentUser.name}</strong><span>@{currentUser.username}{currentUser.email ? ` · ${currentUser.email}` : ''}</span></div><div className="current-user-role"><small>Signed-in account</small><b>{currentUser.role}</b></div></div>
       <div className="settings-note">Use <b>My profile</b> in the left sidebar to update your own name, email, contact number, or password. Administrators manage other accounts and module access here.</div>
+    </div>
+
+    <div className="panel settings-theme-panel">
+      <div className="panel-heading"><div><h2>Personalization</h2><p>Choose a visual theme for your account. Your selection is saved with your user profile and follows you after Supabase sync.</p></div><span className="role-badge"><Palette size={15} /> Personal</span></div>
+      {themeMessage && <div className="settings-message">{themeMessage}</div>}
+      <div className="theme-picker-grid">{THEME_OPTIONS.map((theme) => {
+        const selected = activeTheme === theme.id
+        return <button type="button" className={`theme-option-card${selected ? ' selected' : ''}`} key={theme.id} onClick={() => selectTheme(theme.id)} aria-pressed={selected}>
+          <div className={`theme-preview theme-preview-${theme.id}`} style={theme.image ? { backgroundImage: `url(${theme.image})` } : undefined}><span>{selected ? <Check size={18} /> : null}</span></div>
+          <div className="theme-option-copy"><strong>{theme.name}</strong><p>{theme.description}</p><small>{theme.palette}</small></div>
+        </button>
+      })}</div>
+      <div className="settings-note"><b>Default behavior:</b> new accounts start on the existing Default theme. Theme choice is personal; changing yours does not affect other users.</div>
     </div>
 
     <div className="panel settings-storage-panel">
