@@ -36,6 +36,18 @@ export interface Project {
   summary: string
 }
 
+export interface TaskEvidence {
+  id: string
+  fileName: string
+  mimeType: string
+  fileSize: number
+  storagePath: string
+  uploadedAt: string
+  uploadedBy: string
+  uploadedByName: string
+  kind: 'Screenshot' | 'File'
+}
+
 export interface WorkItem {
   id: string
   clientId?: string
@@ -57,6 +69,7 @@ export interface WorkItem {
   source: 'Email' | 'Meeting' | 'Chat' | 'Discord' | 'Internal' | 'Other'
   externalSourceId?: string
   sourceSender?: string
+  evidence?: TaskEvidence[]
 }
 
 export interface ActivityLog {

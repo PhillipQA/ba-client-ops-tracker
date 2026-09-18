@@ -1095,3 +1095,39 @@ select option { background: #181818; color: #fff; }
 @media (max-width: 600px) {
   .activity-comment-tooltip { width: min(300px, calc(100vw - 44px)); }
 }
+
+/* v0.5.3 — subtask activity evidence uploads */
+.subtask-evidence-panel { display: grid; gap: 10px; padding: 13px; border: 1px solid #3a3a3a; border-radius: 11px; background: #181818; }
+.subtask-evidence-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.subtask-evidence-heading > div { min-width: 0; }
+.subtask-evidence-heading strong { display: flex; align-items: center; gap: 7px; color: #f2f2f2; font-size: 11.5px; }
+.subtask-evidence-heading span:not(.count-pill) { display: block; margin-top: 3px; color: #919191; font-size: 10px; font-weight: 400; line-height: 1.45; }
+.subtask-evidence-dropzone { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 76px; padding: 12px; border: 1px dashed #4b4b4b; border-radius: 10px; background: #141414; color: #aaa; outline: none; }
+.subtask-evidence-dropzone:focus, .subtask-evidence-dropzone:focus-within { border-color: #4f86ff; box-shadow: 0 0 0 2px rgba(79,134,255,.14); }
+.subtask-evidence-dropzone.is-busy { opacity: .7; }
+.subtask-evidence-dropzone b, .subtask-evidence-dropzone span { display: block; }
+.subtask-evidence-dropzone b { color: #e8e8e8; font-size: 10.5px; }
+.subtask-evidence-dropzone span { margin-top: 3px; color: #858585; font-size: 9.5px; line-height: 1.4; }
+.evidence-file-input { display: none !important; }
+.subtask-evidence-message { padding: 8px 10px; border-radius: 8px; background: #202733; color: #c7dcff; font-size: 10px; }
+.subtask-evidence-list { display: grid; gap: 7px; }
+.subtask-evidence-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid #333; border-radius: 9px; background: #151515; }
+.subtask-evidence-file { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.subtask-evidence-file > svg { flex: 0 0 auto; margin-top: 1px; color: #9cbcff; }
+.subtask-evidence-file > div { min-width: 0; }
+.subtask-evidence-file strong { display: block; color: #ececec; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subtask-evidence-file span { display: block; margin-top: 2px; color: #858585; font-size: 9.5px; line-height: 1.35; }
+.subtask-evidence-actions { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.subtask-evidence-actions a.secondary { text-decoration: none; }
+.app-shell:not(.theme-default) .subtask-evidence-panel,
+.app-shell:not(.theme-default) .subtask-evidence-item,
+.app-shell:not(.theme-default) .subtask-evidence-dropzone { border-color: var(--theme-border, rgba(255,255,255,.16)); }
+.app-shell:not(.theme-default) .subtask-evidence-panel { background: var(--theme-card, rgba(18,18,18,.82)); }
+.app-shell:not(.theme-default) .subtask-evidence-item,
+.app-shell:not(.theme-default) .subtask-evidence-dropzone { background: rgba(10,12,15,.66); backdrop-filter: blur(10px); }
+@media (max-width: 600px) {
+  .subtask-evidence-dropzone { grid-template-columns: auto 1fr; }
+  .subtask-evidence-dropzone .secondary { grid-column: 1 / -1; justify-self: stretch; }
+  .subtask-evidence-item { align-items: flex-start; flex-direction: column; }
+  .subtask-evidence-actions { width: 100%; justify-content: flex-end; }
+}

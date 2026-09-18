@@ -1,6 +1,6 @@
 import dotenv from 'dotenv'
 import express from 'express'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import OpenAI from 'openai'
@@ -993,6 +993,248 @@ app.get('/api/integrations/discord/inquiries', requireAuth, async (req, res) => 
   } catch (error) {
     console.error('Discord inquiry sync failed:', error)
     res.status(500).json({ configured: true, items: [], error: error instanceof Error ? error.message : 'Discord inquiry sync failed.' })
+  }
+})
+
+
+const TASK_EVIDENCE_BUCKET = 'task-evidence'
+const TASK_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
+const TASK_EVIDENCE_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'image/bmp',
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+])
+let taskEvidenceBucketReady = false
+
+function taskEvidenceWriteAllowed(user: SessionUser) {
+  return user.role !== 'Viewer' && moduleAllowed(user, 'items')
+}
+
+function taskEvidenceReadAllowed(user: SessionUser) {
+  return moduleAllowed(user, 'items')
+}
+
+function safeEvidenceFileName(value: unknown) {
+  const source = typeof value === 'string' ? value.trim() : ''
+  const fileName = source.split(/[\\/]/).pop() || 'evidence-file'
+  return fileName.replace(/[<>:"|?*\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').slice(0, 140) || 'evidence-file'
+}
+
+function normalizedEvidenceMimeType(rawMimeType: unknown, fileName: string) {
+  const mimeType = String(rawMimeType || '').trim().toLowerCase()
+  if (TASK_EVIDENCE_MIME_TYPES.has(mimeType)) return mimeType
+  const extension = fileName.toLowerCase().split('.').pop() || ''
+  const byExtension: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp',
+    pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', zip: 'application/zip',
+    doc: 'application/msword', xls: 'application/vnd.ms-excel', ppt: 'application/vnd.ms-powerpoint',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  }
+  return byExtension[extension] || mimeType || 'application/octet-stream'
+}
+
+function evidenceBase64(value: unknown) {
+  const raw = typeof value === 'string' ? value.replace(/^data:[^;]+;base64,/, '').replace(/\s/g, '') : ''
+  if (!raw || !/^[A-Za-z0-9+/=]+$/.test(raw)) throw new Error('The evidence file data is invalid.')
+  const buffer = Buffer.from(raw, 'base64')
+  if (!buffer.length) throw new Error('The evidence file is empty.')
+  if (buffer.length > TASK_EVIDENCE_MAX_BYTES) throw new Error('Evidence files must be 10 MB or smaller.')
+  return buffer
+}
+
+async function ensureTaskEvidenceBucket() {
+  if (!supabaseAdmin) throw new Error('Supabase is not configured.')
+  if (taskEvidenceBucketReady) return
+  const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets()
+  if (listError) throw listError
+  if (!(buckets || []).some((bucket: any) => bucket.id === TASK_EVIDENCE_BUCKET || bucket.name === TASK_EVIDENCE_BUCKET)) {
+    const { error: createError } = await supabaseAdmin.storage.createBucket(TASK_EVIDENCE_BUCKET, {
+      public: false,
+      fileSizeLimit: TASK_EVIDENCE_MAX_BYTES,
+      allowedMimeTypes: [...TASK_EVIDENCE_MIME_TYPES],
+    })
+    if (createError) throw createError
+  }
+  taskEvidenceBucketReady = true
+}
+
+async function saveEvidenceState(current: any, next: any, actor: SessionUser, source: string) {
+  if (!supabaseAdmin) throw new Error('Supabase is not configured.')
+  const { data: saved, error } = await supabaseAdmin.from('tracker_state').upsert({ id: 'main', data: next }, { onConflict: 'id' }).select('updated_at').single()
+  if (error) throw error
+  try {
+    const normalized = await normalizedSchemaStatus()
+    if (normalized.ready) {
+      await writeAuditEntries(current, next, actor, source)
+      const normalizedResult = await syncNormalizedState(next, actor, source)
+      if (normalizedResult.error) console.warn('Task evidence normalized sync warning:', normalizedResult.error)
+    }
+  } catch (normalizedError) {
+    console.warn('Task evidence normalized sync skipped:', normalizedError)
+  }
+  return saved?.updated_at as string | undefined
+}
+
+app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to upload evidence.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+
+  const taskId = String(req.params.taskId || '')
+  const fileName = safeEvidenceFileName(req.body?.fileName)
+  const mimeType = normalizedEvidenceMimeType(req.body?.mimeType, fileName)
+  if (!TASK_EVIDENCE_MIME_TYPES.has(mimeType)) return void res.status(400).json({ error: 'This evidence file type is not supported.' })
+
+  let fileBuffer: Buffer
+  try {
+    fileBuffer = evidenceBase64(req.body?.dataBase64)
+  } catch (error) {
+    return void res.status(400).json({ error: error instanceof Error ? error.message : 'The evidence file is invalid.' })
+  }
+
+  try {
+    const state = await loadTrackerState()
+    const current = state.data && typeof state.data === 'object' ? state.data : null
+    if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
+    const items = Array.isArray(current.items) ? current.items : []
+    const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+    if (!task) return void res.status(404).json({ error: 'Subtask was not found.' })
+    if (!task.parentTaskId) return void res.status(400).json({ error: 'Evidence uploads are currently available for subtasks only.' })
+
+    await ensureTaskEvidenceBucket()
+    const evidenceId = randomUUID()
+    const storagePath = `subtasks/${taskId}/${evidenceId}-${fileName}`
+    const { error: uploadError } = await supabaseAdmin.storage.from(TASK_EVIDENCE_BUCKET).upload(storagePath, fileBuffer, {
+      contentType: mimeType,
+      cacheControl: '3600',
+      upsert: false,
+    })
+    if (uploadError) throw uploadError
+
+    const evidence = {
+      id: evidenceId,
+      fileName,
+      mimeType,
+      fileSize: fileBuffer.length,
+      storagePath,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: user.id,
+      uploadedByName: user.name || user.username,
+      kind: mimeType.startsWith('image/') ? 'Screenshot' : 'File',
+    }
+    const updatedTask = { ...task, evidence: [...(Array.isArray(task.evidence) ? task.evidence : []), evidence] }
+    const activity = {
+      id: randomUUID(),
+      clientId: task.clientId || undefined,
+      projectId: task.projectId || undefined,
+      date: new Date().toISOString().slice(0, 10),
+      text: `Attached evidence to subtask "${task.title}": ${fileName}`,
+    }
+    const next = {
+      ...current,
+      items: items.map((candidate: any) => String(candidate?.id || '') === taskId ? updatedTask : candidate),
+      activity: [activity, ...(Array.isArray(current.activity) ? current.activity : [])],
+    }
+
+    try {
+      const updatedAt = await saveEvidenceState(current, next, user, 'task-evidence-upload')
+      res.json({ item: updatedTask, activity, updatedAt })
+    } catch (saveError) {
+      await supabaseAdmin.storage.from(TASK_EVIDENCE_BUCKET).remove([storagePath]).catch(() => undefined)
+      throw saveError
+    }
+  } catch (error) {
+    console.error('Task evidence upload failed:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Task evidence upload failed.' })
+  }
+})
+
+app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to remove evidence.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+
+  try {
+    const taskId = String(req.params.taskId || '')
+    const evidenceId = String(req.params.evidenceId || '')
+    const state = await loadTrackerState()
+    const current = state.data && typeof state.data === 'object' ? state.data : null
+    if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
+    const items = Array.isArray(current.items) ? current.items : []
+    const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+    if (!task || !task.parentTaskId) return void res.status(404).json({ error: 'Subtask was not found.' })
+    const evidence = (Array.isArray(task.evidence) ? task.evidence : []).find((entry: any) => String(entry?.id || '') === evidenceId)
+    if (!evidence) return void res.status(404).json({ error: 'Evidence was not found.' })
+
+    await ensureTaskEvidenceBucket()
+    const updatedTask = { ...task, evidence: (Array.isArray(task.evidence) ? task.evidence : []).filter((entry: any) => String(entry?.id || '') !== evidenceId) }
+    const activity = {
+      id: randomUUID(),
+      clientId: task.clientId || undefined,
+      projectId: task.projectId || undefined,
+      date: new Date().toISOString().slice(0, 10),
+      text: `Removed evidence from subtask "${task.title}": ${evidence.fileName || 'file'}`,
+    }
+    const next = {
+      ...current,
+      items: items.map((candidate: any) => String(candidate?.id || '') === taskId ? updatedTask : candidate),
+      activity: [activity, ...(Array.isArray(current.activity) ? current.activity : [])],
+    }
+    const updatedAt = await saveEvidenceState(current, next, user, 'task-evidence-delete')
+    const { error: removeError } = await supabaseAdmin.storage.from(TASK_EVIDENCE_BUCKET).remove([String(evidence.storagePath || '')])
+    if (removeError) console.warn('Task evidence storage cleanup warning:', removeError.message)
+    res.json({ item: updatedTask, activity, updatedAt })
+  } catch (error) {
+    console.error('Task evidence delete failed:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Task evidence delete failed.' })
+  }
+})
+
+app.get('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!taskEvidenceReadAllowed(user)) return void res.status(403).json({ error: 'Task access is required to view evidence.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+
+  try {
+    const taskId = String(req.params.taskId || '')
+    const evidenceId = String(req.params.evidenceId || '')
+    const state = await loadTrackerState()
+    const items = Array.isArray(state.data?.items) ? state.data.items : []
+    const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+    if (!task || !task.parentTaskId) return void res.status(404).json({ error: 'Subtask was not found.' })
+    const evidence = (Array.isArray(task.evidence) ? task.evidence : []).find((entry: any) => String(entry?.id || '') === evidenceId)
+    if (!evidence?.storagePath) return void res.status(404).json({ error: 'Evidence was not found.' })
+
+    await ensureTaskEvidenceBucket()
+    const { data, error } = await supabaseAdmin.storage.from(TASK_EVIDENCE_BUCKET).download(String(evidence.storagePath))
+    if (error || !data) throw error || new Error('Evidence could not be downloaded.')
+    const buffer = Buffer.from(await data.arrayBuffer())
+    const mimeType = String(evidence.mimeType || 'application/octet-stream')
+    const inline = mimeType.startsWith('image/') || mimeType === 'application/pdf'
+    const encodedName = encodeURIComponent(String(evidence.fileName || 'evidence-file')).replace(/'/g, '%27')
+    res.setHeader('Content-Type', mimeType)
+    res.setHeader('Content-Length', String(buffer.length))
+    res.setHeader('Cache-Control', 'private, no-store')
+    res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodedName}`)
+    res.send(buffer)
+  } catch (error) {
+    console.error('Task evidence download failed:', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Task evidence download failed.' })
   }
 })
 

@@ -7,7 +7,7 @@ A client-centric operations workspace for Business Analysts to manage clients, p
 - **Action Center** — today/this-week activities and task/subtask follow-ups.
 - **Clients** — client records, health, notes, and client-specific project/task views.
 - **Projects** — general/global projects that can contain tasks for multiple clients.
-- **Tasks & Subtasks** — client-required tasks, configurable statuses, due/follow-up dates, owners, priority, collapsible subtasks, and drag/drop ordering.
+- **Tasks & Subtasks** — client-required tasks, configurable statuses, due/follow-up dates, owners, priority, collapsible subtasks, drag/drop ordering, and private activity evidence attachments.
 - **Inbox / Inquiries** — manual and Discord-captured inquiries, conversion to work, and resolved/converted archive history.
 - **Document Creation** — DRF workflow plus FSD and Sign-Off intake areas.
 - **AI BA Assistant** — optional OpenAI-powered analysis and drafting with user approval before saving.
@@ -135,7 +135,8 @@ After the v2 schema is installed, open **Settings → Data Architecture v2 → M
 - Structured records use soft deletion where supported (`deleted_at`).
 - Audit records retain before/after snapshots for tracked changes.
 - `.env.local`, service-role keys, bot tokens, and API keys must never be committed to Git.
-- Supabase Storage for uploaded/generated documents is planned separately; document binaries are not stored directly in PostgreSQL.
+- Subtask evidence files are stored privately in Supabase Storage (`task-evidence` bucket); only attachment metadata is stored with the subtask record.
+- Supabase Storage for uploaded/generated document-creation files is still planned separately; those document binaries are not stored directly in PostgreSQL.
 
 ## Accounts and permissions
 
@@ -161,6 +162,7 @@ Authentication is currently app-managed with server sessions; Supabase Auth is n
 - Parent task rows can collapse/expand their subtasks.
 - Follow-up dates on both tasks and subtasks appear in **Action Center → Activities**.
 - Hovering a task/subtask title in **Action Center → Activities** shows its saved description/comments in a quick preview tooltip.
+- Subtasks can store activity evidence: choose files, drag/drop attachments, or paste screenshots with `Ctrl+V`. Evidence is saved privately in Supabase Storage and upload/remove actions are recorded in activity/audit history.
 - Week views run **Sunday through Saturday**.
 
 ## Inbox / Discord inquiries

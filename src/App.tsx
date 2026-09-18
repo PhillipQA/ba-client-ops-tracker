@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Archive,
@@ -17,6 +17,7 @@ import {
   Inbox,
   LayoutDashboard,
   Pencil,
+  Paperclip,
   Plus,
   Search,
   LogOut,
@@ -25,6 +26,7 @@ import {
   Settings2,
   Sparkles,
   Trash2,
+  Upload,
   Users,
   X,
 } from 'lucide-react'
@@ -38,7 +40,8 @@ import Settings from './Settings'
 import type { AISuggestion } from './ai'
 import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems, seedPlannerActivities, seedProjects } from './data'
 import { importPrimaryCalendar } from './googleCalendar'
-import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
+import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
+import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
 import { normalizeAppTheme, THEME_OPTIONS, type AppTheme } from './theme'
 
 type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings'
@@ -161,6 +164,17 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
     dueDate: item.dueDate || '',
     status: item.status || defaultOpenTaskStatus(taskSettings),
     subtaskOrder: item.parentTaskId ? (typeof item.subtaskOrder === 'number' && Number.isFinite(item.subtaskOrder) ? item.subtaskOrder : index) : undefined,
+    evidence: Array.isArray(item.evidence) ? item.evidence.filter((entry) => entry && entry.id && entry.fileName && entry.storagePath).map((entry) => ({
+      id: String(entry.id),
+      fileName: String(entry.fileName),
+      mimeType: String(entry.mimeType || 'application/octet-stream'),
+      fileSize: Number(entry.fileSize || 0),
+      storagePath: String(entry.storagePath),
+      uploadedAt: String(entry.uploadedAt || ''),
+      uploadedBy: String(entry.uploadedBy || ''),
+      uploadedByName: String(entry.uploadedByName || ''),
+      kind: entry.kind === 'Screenshot' ? 'Screenshot' as const : 'File' as const,
+    })) : [],
   }))
   return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, accounts, taskSettings }
 }
@@ -358,6 +372,21 @@ function App() {
       setCloudStatus('error')
       setCloudMessage('Cloud save failed · local cache retained')
     })
+  }
+
+  const applyEvidenceMutation = (result: TaskEvidenceMutationResult) => {
+    const current = storeRef.current
+    const next: Store = {
+      ...current,
+      items: current.items.map((item) => item.id === result.item.id ? result.item : item),
+      activity: result.activity ? [result.activity, ...current.activity.filter((entry) => entry.id !== result.activity?.id)] : current.activity,
+    }
+    storeRef.current = next
+    setStore(next)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    if (result.updatedAt) setLastCloudSync(result.updatedAt)
+    setCloudStatus('synced')
+    setCloudMessage('Supabase synced')
   }
 
   const syncCloudNow = async () => {
@@ -1036,7 +1065,7 @@ function App() {
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
         {modal === 'item' && <TaskForm store={store} preset={taskPreset} onSubmit={(item) => { const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined; persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: parent ? `Created subtask under ${parent.title}: ${item.title}` : `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
-        {modal === 'taskEdit' && editingTask && <TaskEditForm store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} />}
+        {modal === 'taskEdit' && editingTask && <TaskEditForm store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} />}
         {modal === 'client' && <ClientForm onSubmit={(client) => { persist({ ...store, clients: [...store.clients, client] }); setModal(null) }} />}
         {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
         {modal === 'activity' && <ActivityForm clients={store.clients} projects={store.projects} initial={editingActivity} onSubmit={saveActivity} />}
@@ -1347,9 +1376,9 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
       onDrop={isSubtask ? (event) => { event.preventDefault(); dropSubtask(item) } : undefined}
       onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
     >
-      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{canEdit && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small></div></div></td>
+      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{canEdit && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small></div></div></td>
       {columns.map((column) => <td key={column}>{column === 'status' ? (canEdit ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || '—' : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
-      <td><div className="task-row-actions">{canEdit && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{canEdit && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{canEdit && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
+      <td><div className="task-row-actions">{canEdit && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{canEdit && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{canEdit && isSubtask && <button className="icon-button" title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'} onClick={() => onEdit(item.id)}><Paperclip size={17} /></button>}{canEdit && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
   }
 
@@ -1463,7 +1492,7 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
   </form>
 }
 
-function TaskEditForm({ store, item, onSubmit, onDelete }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => void; onDelete: (id: string) => void }) {
+function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => void; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void }) {
   const [type, setType] = useState<ItemType>(item.type)
   const [status, setStatus] = useState(item.status)
   const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined
@@ -1502,8 +1531,108 @@ function TaskEditForm({ store, item, onSubmit, onDelete }: { store: Store; item:
     <label>Follow-up date<input name="followUpDate" type="date" defaultValue={item.followUpDate || ''} /></label>
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>
+    {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
     <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete {parent ? 'subtask' : 'task'}</button><button className="primary">Save changes</button></div>
   </form>
+}
+
+
+function evidenceSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return 'Unknown size'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function evidenceDate(value: string) {
+  const date = value ? new Date(value) : null
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : 'Uploaded'
+}
+
+function SubtaskEvidencePanel({ item, onMutation }: { item: WorkItem; onMutation: (result: TaskEvidenceMutationResult) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const evidence = item.evidence || []
+
+  const uploadFiles = async (files: File[]) => {
+    if (!files.length || busy) return
+    const oversized = files.find((file) => file.size > TASK_EVIDENCE_MAX_BYTES)
+    if (oversized) {
+      setMessage(`${oversized.name} is larger than the 10 MB evidence limit.`)
+      return
+    }
+    setBusy(true)
+    setMessage('')
+    try {
+      let uploaded = 0
+      for (const file of files) {
+        const result = await uploadTaskEvidence(item.id, file)
+        onMutation(result)
+        uploaded += 1
+      }
+      setMessage(`${uploaded} evidence file${uploaded === 1 ? '' : 's'} uploaded.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not upload evidence.')
+    } finally {
+      setBusy(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  const removeEvidence = async (entry: TaskEvidence) => {
+    if (busy || !window.confirm(`Remove evidence "${entry.fileName}" from this subtask?`)) return
+    setBusy(true)
+    setMessage('')
+    try {
+      const result = await deleteTaskEvidence(item.id, entry.id)
+      onMutation(result)
+      setMessage('Evidence removed.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not remove evidence.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const files = Array.from(event.clipboardData.files || [])
+    const images = files.filter((file) => file.type.startsWith('image/'))
+    if (!images.length) return
+    event.preventDefault()
+    const stamped = images.map((file, index) => {
+      if (file.name && file.name !== 'image.png') return file
+      const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png'
+      return new File([file], `screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}${index ? `-${index + 1}` : ''}.${extension}`, { type: file.type })
+    })
+    void uploadFiles(stamped)
+  }
+
+  return <section className="subtask-evidence-panel span-2">
+    <div className="subtask-evidence-heading">
+      <div><strong><Paperclip size={15} /> Activity evidence</strong><span>Attach a file, drag and drop, or paste a screenshot with Ctrl+V. Files are stored privately in Supabase.</span></div>
+      <span className="count-pill">{evidence.length}</span>
+    </div>
+    <div
+      className={`subtask-evidence-dropzone ${busy ? 'is-busy' : ''}`}
+      tabIndex={0}
+      onPaste={handlePaste}
+      onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
+      onDrop={(event) => { event.preventDefault(); void uploadFiles(Array.from(event.dataTransfer.files || [])) }}
+    >
+      <Upload size={20} />
+      <div><b>{busy ? 'Uploading evidence…' : 'Drop evidence here or paste a screenshot'}</b><span>Images, PDF, Office files, TXT/CSV or ZIP · maximum 10 MB each</span></div>
+      <button type="button" className="secondary compact" disabled={busy} onClick={() => inputRef.current?.click()}>Choose files</button>
+      <input ref={inputRef} className="evidence-file-input" type="file" multiple disabled={busy} accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,application/pdf,text/plain,text/csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip" onChange={(event) => void uploadFiles(Array.from(event.target.files || []))} />
+    </div>
+    {message && <div className="subtask-evidence-message">{message}</div>}
+    {evidence.length > 0 && <div className="subtask-evidence-list">
+      {evidence.map((entry) => <div className="subtask-evidence-item" key={entry.id}>
+        <div className="subtask-evidence-file"><Paperclip size={15} /><div><strong>{entry.fileName}</strong><span>{entry.kind} · {evidenceSize(entry.fileSize)} · {evidenceDate(entry.uploadedAt)}{entry.uploadedByName ? ` · ${entry.uploadedByName}` : ''}</span></div></div>
+        <div className="subtask-evidence-actions"><a className="secondary compact" href={taskEvidenceUrl(item.id, entry)} target="_blank" rel="noreferrer">Open</a><button type="button" className="icon-button danger-button" title="Remove evidence" disabled={busy} onClick={() => void removeEvidence(entry)}><Trash2 size={16} /></button></div>
+      </div>)}
+    </div>}
+  </section>
 }
 
 function ClientForm({ onSubmit }: { onSubmit: (client: Client) => void }) {
