@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.4.6",
+  "version": "0.4.8",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -27,7 +27,9 @@
     "discord.js": "^14.22.1",
     "docxtemplater": "latest",
     "pizzip": "latest",
-    "pdf-lib": "latest"
+    "pdf-lib": "latest",
+    "pdfjs-dist": "^5.4.149",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@types/react": "latest",

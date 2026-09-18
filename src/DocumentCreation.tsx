@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { extractCorLocally } from './corOcr'
 import {
   BriefcaseBusiness,
   CheckCircle2,
@@ -29,15 +30,7 @@ type PosRow = {
   model: string
 }
 
-type CorExtraction = {
-  businessName?: string
-  tradeName?: string
-  tin?: string
-  address?: string
-  notes?: string
-}
-
-const COR_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,.doc,.docx'
+const COR_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,.bmp,.docx'
 const TEMPLATE_ACCEPT = '.xlsx'
 const BRD_ACCEPT = '.pdf,.doc,.docx,.rtf,.txt'
 const ATTACHMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.txt,.zip'
@@ -187,20 +180,14 @@ export default function DocumentCreation() {
     if (!corFile) return
     setExtracting(true)
     setDocumentError('')
-    setDocumentMessage('Reading COR and extracting company details…')
+    setDocumentMessage('Preparing private local COR extraction…')
     try {
-      const fileData = await fileToBase64(corFile)
-      const result = await postJson<{ extraction: CorExtraction }>('/api/documents/drf/extract-cor', {
-        fileName: corFile.name,
-        mimeType: corFile.type,
-        fileData,
-      })
-      const extraction = result.extraction || {}
+      const extraction = await extractCorLocally(corFile, (message) => setDocumentMessage(message))
       setBusinessName(extraction.businessName || '')
       setTradeName(extraction.tradeName || '')
       setTin(extraction.tin || '')
       setAddress(extraction.address || '')
-      setDocumentMessage(extraction.notes ? `COR extraction completed. ${extraction.notes}` : 'COR extraction completed. Review the values before generating the DRF.')
+      setDocumentMessage(`COR extraction completed. ${extraction.notes}`)
     } catch (error) {
       setDocumentError(error instanceof Error ? error.message : 'COR extraction failed.')
       setDocumentMessage('')
@@ -298,15 +285,15 @@ export default function DocumentCreation() {
           <div className="document-drf-stack">
             <div className="document-workspace-grid document-source-grid">
               <div className="document-upload-panel">
-                <div className="document-section-title"><ScanLine size={18} /><div><strong>1. Company COR</strong><span>Accepted: PDF, JPEG, PNG, WEBP, TIFF, DOC, DOCX · maximum 12 MB</span></div></div>
+                <div className="document-section-title"><ScanLine size={18} /><div><strong>1. Company COR</strong><span>Private local extraction · PDF, JPEG, PNG, WEBP, TIFF, BMP, DOCX · maximum 12 MB</span></div></div>
                 <label className="document-dropzone document-dropzone-compact">
                   <input type="file" accept={COR_ACCEPT} onChange={handleFiles(setCorFiles, false, MAX_COR_BYTES)} />
                   <Plus size={27} />
                   <strong>{corFiles.length ? 'Replace COR file' : 'Choose a COR file'}</strong>
-                  <span>The COR is sent to the configured AI service only when you click Extract COR details.</span>
+                  <span>The COR stays in your browser. No OpenAI API key is required and the COR file is not uploaded to the server for extraction.</span>
                 </label>
                 <FileSummary files={corFiles} />
-                <button type="button" className="secondary document-wide-button" disabled={!corFile || extracting} onClick={extractCor}><ScanLine size={16} /> {extracting ? 'Extracting…' : 'Extract COR details'}</button>
+                <button type="button" className="secondary document-wide-button" disabled={!corFile || extracting} onClick={extractCor}><ScanLine size={16} /> {extracting ? 'Extracting…' : 'Extract COR details locally'}</button>
               </div>
 
               <div className="document-upload-panel">

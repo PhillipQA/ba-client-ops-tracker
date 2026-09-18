@@ -144,7 +144,11 @@ try {
 
   if (manifest.requiresNpmInstall) {
     console.log('\nDependencies changed. Running npm install...')
-    run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install'], { cwd: root })
+    if (process.platform === 'win32') {
+      run(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm install'], { cwd: root })
+    } else {
+      run('npm', ['install'], { cwd: root })
+    }
   }
 
   const updatedPackage = readJson(packagePath)

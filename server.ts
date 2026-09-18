@@ -736,60 +736,7 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
 app.post('/api/documents/drf/extract-cor', requireAuth, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!documentAccessAllowed(user)) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
-
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) return void res.status(503).json({ error: 'COR extraction requires OPENAI_API_KEY to be configured on the server.' })
-
-  try {
-    const fileName = String(req.body?.fileName || 'cor-document').slice(0, 180)
-    const mimeType = String(req.body?.mimeType || '').slice(0, 120)
-    const fileData = safeDocumentBase64(req.body?.fileData, 12 * 1024 * 1024)
-    const customFields = Array.isArray(req.body?.customFields)
-      ? req.body.customFields.slice(0, 30).map((field: any) => ({
-          key: String(field?.key || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 80),
-          label: String(field?.label || field?.key || '').trim().slice(0, 120),
-        })).filter((field: any) => field.key)
-      : []
-
-    const client = new OpenAI({ apiKey })
-    const model = process.env.OPENAI_MODEL || 'gpt-5.6-terra'
-    const customInstruction = customFields.length
-      ? `Also try to extract these optional fields when clearly present: ${customFields.map((field: any) => `${field.key} (${field.label})`).join(', ')}.`
-      : 'There are no additional custom fields to extract.'
-
-    const response = await client.responses.create({
-      model,
-      instructions: `You extract structured data from Philippine company Certificate of Registration (COR) documents for a Business Analyst.\nReturn JSON only. Never guess or infer a value that is not visible in the source. Use an empty string when the value is not found. Preserve punctuation and official spelling.\n\nReturn exactly this shape:\n{\n  "businessName": "registered business/company name",\n  "tradeName": "registered trade name",\n  "tin": "tax identification number exactly as shown",\n  "address": "registered business address",\n  "customFields": { "field_key": "value" },\n  "notes": "short note only when something is ambiguous or missing"\n}\n\n${customInstruction}`,
-      input: [{
-        role: 'user',
-        content: [
-          ...(mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp'
-            ? [{ type: 'input_image', image_url: `data:${mimeType};base64,${fileData}`, detail: 'high' }]
-            : [{ type: 'input_file', filename: fileName, file_data: fileData }]),
-          { type: 'input_text', text: 'Read this COR and extract the requested fields. Do not invent missing data.' },
-        ],
-      }],
-      reasoning: { effort: 'low' },
-    })
-
-    const parsed = parseModelJson(response.output_text)
-    const rawCustom = parsed.customFields && typeof parsed.customFields === 'object' && !Array.isArray(parsed.customFields)
-      ? parsed.customFields as Record<string, unknown>
-      : {}
-    const extractedCustom: Record<string, string> = {}
-    for (const field of customFields) extractedCustom[field.key] = safeTemplateValue(rawCustom[field.key])
-    res.json({ extraction: {
-      businessName: safeTemplateValue(parsed.businessName),
-      tradeName: safeTemplateValue(parsed.tradeName),
-      tin: safeTemplateValue(parsed.tin),
-      address: safeTemplateValue(parsed.address),
-      customFields: extractedCustom,
-      notes: safeTemplateValue(parsed.notes).slice(0, 500),
-    } })
-  } catch (error) {
-    console.error('COR extraction failed:', error)
-    res.status(500).json({ error: error instanceof Error ? error.message : 'COR extraction failed.' })
-  }
+  res.status(410).json({ error: 'COR extraction now runs privately in the browser. Refresh the app and use Extract COR details locally.' })
 })
 
 app.post('/api/documents/drf/render-template', requireAuth, async (req, res) => {

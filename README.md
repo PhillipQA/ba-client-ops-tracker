@@ -1,3 +1,10 @@
+## v0.4.8 — Local COR OCR build hotfix
+
+- Fixed the `pdfjs-dist` v5 TypeScript render parameters used for scanned-PDF OCR by passing the required canvas element.
+- Hardened the Windows patch updater so dependency installs run through `cmd.exe`, avoiding the `spawnSync npm.cmd EINVAL` failure seen on some Windows/Node setups.
+- No dependency reinstall is required for this hotfix if v0.4.7 dependencies were already installed.
+
+
 ## v0.4.5 — DRF COR extraction and template mapping
 
 - DRF Creation can now send an uploaded COR to the configured OpenAI model and extract Business Name, Trade Name, TIN, Address, and optional user-defined custom fields.
@@ -425,3 +432,7 @@ Mapped fields in the uploaded template:
 - Approved By → label/name/title on `H39:H41`
 
 Request For options are fixed to: POS PERMIT APPLICATION ONLY, BARTER LICENSE, BXI LICENSE, and TEMPORARY LICENSE FOR BXI.
+
+## v0.4.7 private local COR extraction
+
+DRF COR extraction now runs locally in the user browser instead of sending the COR to OpenAI. Images are read with Tesseract.js; PDFs use embedded text when available and fall back to local OCR for scanned pages. DOCX text is read locally. The COR extractor no longer requires `OPENAI_API_KEY`; that environment variable is still used by the separate AI Assistant/Discord AI features when enabled.
