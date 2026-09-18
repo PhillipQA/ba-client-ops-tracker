@@ -160,6 +160,7 @@ Authentication is currently app-managed with server sessions; Supabase Auth is n
 - Subtasks can be reordered by drag-and-drop or Move Up/Move Down controls.
 - Parent task rows can collapse/expand their subtasks.
 - Follow-up dates on both tasks and subtasks appear in **Action Center → Activities**.
+- Hovering a task/subtask title in **Action Center → Activities** shows its saved description/comments in a quick preview tooltip.
 - Week views run **Sunday through Saturday**.
 
 ## Inbox / Discord inquiries

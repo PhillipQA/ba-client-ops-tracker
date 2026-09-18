@@ -1040,3 +1040,58 @@ select option { background: #181818; color: #fff; }
   .inquiry-archive-row { grid-template-columns: 1fr; }
   .inquiry-archive-meta { justify-items: start; }
 }
+
+
+/* v0.5.2 — task/subtask comment hover preview in Action Center activities */
+.dashboard-panel.planner-panel { overflow: visible; }
+.activity-task-title-hover { position: relative; display: inline-block; max-width: 100%; outline: none; }
+.activity-task-title-hover > strong { cursor: help; text-decoration: underline dotted rgba(255,255,255,.42); text-underline-offset: 3px; }
+.activity-comment-tooltip {
+  position: absolute;
+  z-index: 80;
+  left: 0;
+  top: calc(100% + 8px);
+  width: min(360px, calc(100vw - 72px));
+  padding: 11px 12px;
+  border: 1px solid #4b4b4b;
+  border-radius: 10px;
+  background: #111;
+  color: #f5f5f5;
+  box-shadow: 0 14px 34px rgba(0,0,0,.38);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
+  white-space: normal;
+}
+.activity-comment-tooltip::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  background: #111;
+  border-left: 1px solid #4b4b4b;
+  border-top: 1px solid #4b4b4b;
+  transform: rotate(45deg);
+}
+.activity-comment-tooltip b, .activity-comment-tooltip span { display: block; }
+.activity-comment-tooltip b { margin-bottom: 5px; color: #fff; font-size: 10px; letter-spacing: .02em; }
+.activity-comment-tooltip span { color: #d4d4d4; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto; }
+.activity-task-title-hover:hover .activity-comment-tooltip,
+.activity-task-title-hover:focus .activity-comment-tooltip,
+.activity-task-title-hover:focus-within .activity-comment-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
+.app-shell:not(.theme-default) .activity-comment-tooltip {
+  background: var(--theme-card, rgba(20,20,20,.96));
+  border-color: var(--theme-border, rgba(255,255,255,.18));
+  backdrop-filter: blur(14px);
+}
+.app-shell:not(.theme-default) .activity-comment-tooltip::before {
+  background: var(--theme-card, rgba(20,20,20,.96));
+  border-color: var(--theme-border, rgba(255,255,255,.18));
+}
+@media (max-width: 600px) {
+  .activity-comment-tooltip { width: min(300px, calc(100vw - 44px)); }
+}

@@ -1117,6 +1117,19 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
 }
 
 
+
+function ActivityTaskTitle({ item }: { item: WorkItem }) {
+  const comments = item.description?.trim() || ''
+  if (!comments) return <strong>{item.title}</strong>
+  return <span className="activity-task-title-hover" tabIndex={0}>
+    <strong>{item.title}</strong>
+    <span className="activity-comment-tooltip" role="tooltip" aria-label="Task comments">
+      <b>Comments / notes</b>
+      <span>{comments}</span>
+    </span>
+  </span>
+}
+
 function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, projects, onEdit, onToggle, onEditTask, canEdit }: { mode: 'today' | 'week'; items: PlannerActivity[]; followUps: WorkItem[]; allItems: WorkItem[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void; onEditTask: (id: string) => void; canEdit: boolean }) {
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name : ''
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name : ''
@@ -1134,7 +1147,7 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, 
         <div className="dashboard-activity-time">{mode === 'week' && <small>{niceDate(item.followUpDate)}</small>}<strong>Follow-up</strong></div>
         <div className="dashboard-activity-card">
           <div className="dashboard-activity-top">
-            <div><strong>{item.title}</strong>{context && <p>{context}</p>}<small>{item.parentTaskId ? `Subtask${parent ? ` of ${parent.title}` : ''}` : 'Task'} · Waiting on {item.waitingOn} · Priority {item.priority}</small></div>
+            <div><ActivityTaskTitle item={item} />{context && <p>{context}</p>}<small>{item.parentTaskId ? `Subtask${parent ? ` of ${parent.title}` : ''}` : 'Task'} · Waiting on {item.waitingOn} · Priority {item.priority}</small></div>
             <div className="dashboard-activity-badges"><span className="followup-badge">{item.parentTaskId ? 'Subtask follow-up' : 'Task follow-up'}</span></div>
           </div>
           <div className="dashboard-activity-actions">{canEdit && <button className="secondary compact" type="button" onClick={() => onEditTask(item.id)}>Edit {item.parentTaskId ? 'subtask' : 'task'}</button>}</div>
@@ -1445,7 +1458,7 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
     <label>Due date<input name="dueDate" type="date" /></label>
     <label>Follow-up date<input name="followUpDate" type="date" /></label>
     <label>Source<select name="source" defaultValue={type === 'Inquiry' ? 'Chat' : 'Internal'}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
-    <label className="span-2">Description<textarea name="description" rows={4} placeholder="Context, acceptance details, dependencies, or what needs to be done..." /></label>
+    <label className="span-2">Description / comments<textarea name="description" rows={4} placeholder="Context, comments, acceptance details, dependencies, or what needs to be done..." /></label>
     <div className="form-actions span-2"><button className="primary">{parent ? 'Create subtask' : type === 'Inquiry' ? 'Capture inquiry' : 'Create task'}</button></div>
   </form>
 }
@@ -1488,7 +1501,7 @@ function TaskEditForm({ store, item, onSubmit, onDelete }: { store: Store; item:
     <label>Due date<input name="dueDate" type="date" defaultValue={item.dueDate || ''} /></label>
     <label>Follow-up date<input name="followUpDate" type="date" defaultValue={item.followUpDate || ''} /></label>
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
-    <label className="span-2">Description<textarea name="description" rows={4} defaultValue={item.description} /></label>
+    <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>
     <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete {parent ? 'subtask' : 'task'}</button><button className="primary">Save changes</button></div>
   </form>
 }
