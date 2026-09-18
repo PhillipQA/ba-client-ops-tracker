@@ -13,6 +13,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js'
 import { createServer as createViteServer } from 'vite'
 import { normalizeAppTheme } from './src/theme'
+import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './password-recovery-email'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -35,6 +36,17 @@ const loginLimiter = rateLimit({
 })
 
 app.use(express.json({ limit: '24mb' }))
+
+const recoveryRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many recovery requests. Please try again in 15 minutes.' },
+})
+const recoverySubmitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again in 15 minutes.' },
+})
+const sendRecoveryEmail = recoveryMailer()
+app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next() })
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -629,6 +641,67 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   }
 })
 
+app.post('/api/auth/forgot-password', recoveryRequestLimiter, (req, res) => {
+  const account = typeof req.body?.account === 'string' ? req.body.account.trim() : ''
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim() : ''
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : ''
+  if (!account || account.length > 200 || !username || username.length > 200 || !validRecoveryEmail(email)) {
+    return void res.status(400).json({ error: 'Enter your account, user, and registered email address.' })
+  }
+  if (!supabaseAdmin || !sendRecoveryEmail) return void res.status(503).json({ error: recoveryUnavailable })
+  // Respond before lookup/delivery so their timing cannot reveal registered accounts.
+  res.json({ message: recoveryMessage })
+  const database = supabaseAdmin
+  const sendEmail = sendRecoveryEmail
+  void (async () => {
+    const token = randomBytes(32).toString('base64url')
+    const tokenHash = passwordHash(token)
+    const { data, error } = await database.rpc('issue_password_reset_v7', {
+      p_account: account, p_username: username, p_email: email, p_token_hash: tokenHash,
+    })
+    if (error) throw error
+    if (!data) return
+    try {
+      if (!validRecoveryEmail(String(data.email))) throw new Error('Invalid recovery email')
+      await sendEmail(String(data.email), String(data.account), token)
+    } catch (error) {
+      const { error: revokeError } = await database.from('password_reset_tokens').delete().eq('token_hash', tokenHash)
+      if (revokeError) console.error('Could not revoke undelivered recovery token; check database availability.')
+      throw error
+    }
+  })().catch((error: unknown) => {
+    // Never log reset URLs, tokens, recipient addresses, or SMTP credentials.
+    const code = String((error as { code?: string })?.code || 'DELIVERY_ERROR').replace(/[^A-Z0-9_]/gi, '').slice(0, 40)
+    console.error(`Password recovery failed (${code}). Check SMTP settings and schema-v7-password-recovery.sql.`)
+  })
+})
+
+app.post('/api/auth/reset-password', recoverySubmitLimiter, async (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token : ''
+  const password = typeof req.body?.password === 'string' ? req.body.password : ''
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return void res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new link.' })
+  if (password.length < 8 || password.length > 128) return void res.status(400).json({ error: 'Use a password between 8 and 128 characters.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: recoveryUnavailable })
+  try {
+    const { data, error } = await supabaseAdmin.rpc('redeem_password_reset_v7', {
+      p_token_hash: passwordHash(token), p_password_hash: await secureHashPassword(password),
+    })
+    if (error) throw error
+    if (!data) return void res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new link.' })
+    for (const [sessionToken, user] of sessions) {
+      if (user.id === data.userId && user.accountType === data.accountType &&
+        (data.accountType === 'platform' || user.organizationId === data.organizationId)) sessions.delete(sessionToken)
+    }
+    const { token: browserSession } = sessionFromRequest(req)
+    if (browserSession) sessions.delete(browserSession)
+    res.setHeader('Set-Cookie', sessionCookie('', 0))
+    res.json({ message: 'Your password has been reset. Sign in with your new password.' })
+  } catch {
+    console.error('Password reset could not be completed. Check database availability and schema-v7-password-recovery.sql.')
+    res.status(503).json({ error: recoveryUnavailable })
+  }
+})
+
 app.post('/api/auth/logout', requireAuth, (req, res) => {
   const { token } = sessionFromRequest(req)
   if (token) sessions.delete(token)
@@ -1053,6 +1126,29 @@ app.patch('/api/internal-admin/users/:userId', requireAuth, requirePlatformAdmin
     res.json({ ok: true })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Could not update user.' })
+  }
+})
+
+app.post('/api/internal-admin/recovery-email', requireAuth, requirePlatformAdmin, recoverySubmitLimiter, async (req, res) => {
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Account settings are unavailable.' })
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : ''
+  const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : ''
+  if (!validRecoveryEmail(email)) return void res.status(400).json({ error: 'Enter a valid recovery email address.' })
+  try {
+    const { data, error } = await supabaseAdmin.from('platform_users').select('id,password_hash,status').eq('id', user.id).is('deleted_at', null).maybeSingle()
+    if (error) throw error
+    if (!data || data.status !== 'Active' || !await verifyPassword(currentPassword, data.password_hash)) return void res.status(401).json({ error: 'Current password is incorrect.' })
+    const { data: updated, error: updateError } = await supabaseAdmin.from('platform_users').update({ email, updated_at: new Date().toISOString() })
+      .eq('id', user.id).eq('password_hash', data.password_hash).eq('status', 'Active').is('deleted_at', null).select('id').maybeSingle()
+    if (updateError) throw updateError
+    if (!updated) return void res.status(409).json({ error: 'Your account changed. Sign in and try again.' })
+    for (const [token, sessionUser] of sessions) {
+      if (sessionUser.id === user.id && sessionUser.accountType === 'platform') sessions.set(token, { ...sessionUser, email })
+    }
+    res.json({ ok: true, email })
+  } catch {
+    res.status(500).json({ error: 'Could not save your recovery email.' })
   }
 })
 

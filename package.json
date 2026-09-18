@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.3",
+  "version": "0.6.4",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -13,30 +13,32 @@
     "patch:status": "node scripts/patch-status.mjs"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "lucide-react": "latest",
-    "express": "^4.21.2",
-    "openai": "^5.20.0",
-    "dotenv": "^16.6.1",
-    "tsx": "^4.20.5",
     "@supabase/supabase-js": "latest",
+    "@vitejs/plugin-react": "latest",
+    "bcryptjs": "^3.0.2",
     "discord.js": "^14.22.1",
     "docxtemplater": "latest",
-    "pizzip": "latest",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.1",
+    "lucide-react": "latest",
+    "nodemailer": "^10.0.10",
+    "openai": "^5.20.0",
     "pdf-lib": "latest",
     "pdfjs-dist": "^5.4.149",
+    "pizzip": "latest",
+    "react": "latest",
+    "react-dom": "latest",
     "tesseract.js": "^6.0.1",
-    "bcryptjs": "^3.0.2",
-    "express-rate-limit": "^7.5.1"
+    "tsx": "^4.20.5",
+    "typescript": "latest",
+    "vite": "latest"
   },
   "devDependencies": {
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
     "@types/express": "^4.17.21",
-    "@types/node": "^24.3.1"
+    "@types/node": "^24.3.1",
+    "@types/nodemailer": "^8.0.2",
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
   }
 }

@@ -35,6 +35,7 @@ import {
 import AIAssistant from './AIAssistant'
 import DocumentCreation from './DocumentCreation'
 import InternalAdmin from './InternalAdmin'
+import { ForgotPassword, ResetPassword } from './PasswordRecovery'
 import { ALL_MODULES, defaultModulesForRole } from './access'
 import { getAuthSession, hashPassword, login, logout, type AuthUser } from './auth'
 import { loadCloudStore, loadDiscordInquiries, queueCloudStoreSave, type CloudStorageStatus } from './cloudStore'
@@ -264,6 +265,7 @@ function activityTime(activity: PlannerActivity) {
 }
 
 function App() {
+  const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.hash.slice(1)).get('reset-password'))
   const [store, setStore] = useState<Store>(initialStore)
   const [view, setView] = useState<View>('action')
   const [query, setQuery] = useState('')
@@ -301,6 +303,11 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
+    if (resetToken !== null) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      setAuthChecking(false)
+      return
+    }
     void getAuthSession().then((user) => {
       if (!cancelled) setAuthUser(user)
     }).catch((error) => {
@@ -913,6 +920,7 @@ function App() {
     persist({ ...store, accounts: store.accounts.filter((account) => account.id !== id) })
   }
 
+  if (resetToken !== null) return <ResetPassword token={resetToken} onBack={() => { setResetToken(null); setAuthUser(null); setLoginError('') }} />
   if (authChecking) return <AuthSplash />
   if (!authUser || !currentUser) return <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} />
 
@@ -959,7 +967,7 @@ function App() {
 
         {!visibleNavItems.length && currentUser.accountType !== 'platform' && <section className="page-stack"><div className="panel no-access-panel"><LockKeyhole size={24} /><div><h2>No modules assigned</h2><p>Your account is active, but an Administrator has not assigned any modules yet. You can still open My profile or sign out.</p></div></div></section>}
 
-        {!selectedClient && !selectedProject && view === 'internal-admin' && currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && <InternalAdmin mustChangePassword={Boolean(authUser.mustChangePassword)} />}
+        {!selectedClient && !selectedProject && view === 'internal-admin' && currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && <InternalAdmin mustChangePassword={Boolean(authUser.mustChangePassword)} recoveryEmail={authUser.email} onRecoveryEmailChange={(email) => setAuthUser({ ...authUser, email })} />}
 
         {!selectedClient && !selectedProject && view === 'action' && hasModule('action') && (
           <section className="page-stack dashboard-stack">
@@ -1129,6 +1137,10 @@ function AuthSplash() {
 }
 
 function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; onLogin: (account: string, username: string, password: string) => Promise<void> }) {
+  const [forgot, setForgot] = useState(false)
+  const [account, setAccount] = useState('BXI-Core')
+  const [username, setUsername] = useState('Admin')
+  if (forgot) return <ForgotPassword account={account} username={username} onBack={() => setForgot(false)} />
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -1143,16 +1155,13 @@ function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; o
       <div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
       <div className="auth-copy"><span className="auth-icon"><LockKeyhole size={22} /></span><div><h1>Sign in</h1><p>Enter the account workspace first, then your user and password.</p></div></div>
       <form className="auth-form" onSubmit={submit}>
-        <label>Account<input name="account" defaultValue="BXI-Core" autoComplete="organization" placeholder="BXI-Core or customer account" required /></label>
-        <label>User<input name="username" defaultValue="Admin" autoComplete="username" required /></label>
+        <label>Account<input name="account" value={account} onChange={(event) => setAccount(event.target.value)} autoComplete="organization" placeholder="BXI-Core or customer account" required /></label>
+        <label>User<input name="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
         <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
         {error && <div className="auth-error">{error}</div>}
         <button className="primary auth-submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
-      <div className="auth-login-help">
-        <div><strong>Workspace login</strong><span>Account identifies the tenant, for example <b>BXI-Core</b>.</span></div>
-        <div><strong>Internal Admin</strong><span>Account: <b>internal_admin</b> · User: <b>admin</b></span><small>On first secure bootstrap, use the password configured in Render as INTERNAL_ADMIN_BOOTSTRAP_PASSWORD.</small></div>
-      </div>
+      <button className="auth-text-button" type="button" disabled={busy} onClick={() => setForgot(true)}>Forgot password?</button>
     </div>
   </div>
 }

@@ -2,6 +2,10 @@
 
 A client-centric operations workspace for Business Analysts to manage clients, projects, tasks, inquiries, follow-ups, activities, documents, reports, and AI-assisted triage in one place.
 
+## v0.6.4 email password recovery
+
+The sign-in footer now has **Forgot password?** Email recovery requires the additive `supabase/schema-v7-password-recovery.sql` migration, SMTP settings, and a registered email on each user. Follow [PASSWORD-RECOVERY-SETUP.md](PASSWORD-RECOVERY-SETUP.md) when upgrading from v0.6.3. Internal Admin can set its own recovery address under **Security → Recovery email**.
+
 ## What the app covers
 
 - **Action Center** — today/this-week activities and task/subtask follow-ups.

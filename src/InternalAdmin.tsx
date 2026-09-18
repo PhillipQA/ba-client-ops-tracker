@@ -70,7 +70,7 @@ function moduleLabel(module: AppModule) {
   return MODULE_DEFINITIONS.find((candidate) => candidate.id === module)?.label || module
 }
 
-export default function InternalAdmin({ mustChangePassword = false }: { mustChangePassword?: boolean }) {
+export default function InternalAdmin({ mustChangePassword = false, recoveryEmail = '', onRecoveryEmailChange }: { mustChangePassword?: boolean; recoveryEmail?: string; onRecoveryEmailChange?: (email: string) => void }) {
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
@@ -84,6 +84,7 @@ export default function InternalAdmin({ mustChangePassword = false }: { mustChan
   const [newUserModules, setNewUserModules] = useState<AppModule[]>(['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'reports', 'ai'])
   const [showPlatformSecurity, setShowPlatformSecurity] = useState(mustChangePassword)
   const [platformPasswordChanged, setPlatformPasswordChanged] = useState(false)
+  const [savingRecoveryEmail, setSavingRecoveryEmail] = useState(false)
 
   const loadDashboard = async () => {
     setLoading(true)
@@ -218,7 +219,8 @@ export default function InternalAdmin({ mustChangePassword = false }: { mustChan
 
   const changePlatformPassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     const currentPassword = String(form.get('currentPassword') || '')
     const newPassword = String(form.get('newPassword') || '')
     const confirmPassword = String(form.get('confirmPassword') || '')
@@ -228,11 +230,27 @@ export default function InternalAdmin({ mustChangePassword = false }: { mustChan
       await request('/api/internal-admin/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
       setMessage('Internal Admin password changed.')
       setPlatformPasswordChanged(true)
-      event.currentTarget.reset()
+      formElement.reset()
       setShowPlatformSecurity(false)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not change Internal Admin password.')
     }
+  }
+
+  const saveRecoveryEmail = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (savingRecoveryEmail) return
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    setSavingRecoveryEmail(true)
+    try {
+      const result = await request('/api/internal-admin/recovery-email', { method: 'POST', body: JSON.stringify({ email: String(form.get('email') || '').trim(), currentPassword: String(form.get('currentPassword') || '') }) })
+      onRecoveryEmailChange?.(String(result.email))
+      const passwordInput = formElement.elements.namedItem('currentPassword') as HTMLInputElement
+      passwordInput.value = ''
+      setMessage('Recovery email saved. Use Forgot password on the sign-in screen if you need a reset link.')
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not save your recovery email.') }
+    finally { setSavingRecoveryEmail(false) }
   }
 
   return <section className="page-stack internal-admin-page">
@@ -248,6 +266,12 @@ export default function InternalAdmin({ mustChangePassword = false }: { mustChan
       <div className="panel-heading"><div><h2>Internal Admin security</h2><p>Change the password for <b>Account: internal_admin · User: admin</b>. This identity is separate from every tenant workspace.</p></div></div>
       <div className="internal-admin-security-grid"><label>Current password<input name="currentPassword" type="password" required autoComplete="current-password" /></label><label>New password<input name="newPassword" type="password" required minLength={8} autoComplete="new-password" /></label><label>Confirm new password<input name="confirmPassword" type="password" required minLength={8} autoComplete="new-password" /></label></div>
       <div className="dialog-actions"><button type="button" className="secondary" onClick={() => setShowPlatformSecurity(false)}>Cancel</button><button className="primary"><KeyRound size={16} /> Change password</button></div>
+    </form>}
+
+    {showPlatformSecurity && <form className="panel internal-admin-security" onSubmit={(event) => void saveRecoveryEmail(event)}>
+      <div className="panel-heading"><div><h2>Recovery email</h2><p>Password reset links for your Internal Admin account will be sent here.</p></div></div>
+      <div className="internal-admin-security-grid"><label>Recovery email<input name="email" type="email" defaultValue={recoveryEmail} maxLength={254} autoComplete="email" required /></label><label>Current password<input name="currentPassword" type="password" autoComplete="current-password" required /></label></div>
+      <div className="dialog-actions"><button className="primary" disabled={savingRecoveryEmail}>{savingRecoveryEmail ? 'Saving…' : 'Save recovery email'}</button></div>
     </form>}
 
     <div className="internal-admin-metrics">
