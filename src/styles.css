@@ -426,6 +426,34 @@ select option { background: #181818; color: #fff; }
   .top-role-pill { display: none; }
 }
 
+
+/* Discord integration settings */
+.settings-integration-panel .panel-heading { align-items: center; }
+.discord-status { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 5px 10px; border-radius: 999px; border: 1px solid #454545; background: #202020; color: #d7d7d7; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.discord-status.discord-online { border-color: #315f45; background: #19271f; color: #b8f4cc; }
+.discord-status.discord-offline { border-color: #5a4242; background: #2a1d1d; color: #efb3b3; }
+.integration-grid { padding: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.integration-card { min-width: 0; padding: 14px; border: 1px solid #3a3a3a; border-radius: 11px; background: #1b1b1b; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; align-items: start; }
+.integration-card > svg { width: 20px; height: 20px; margin-top: 1px; color: #aeb9e8; }
+.integration-card > div { min-width: 0; display: grid; gap: 5px; }
+.integration-card strong, .integration-card span, .integration-card small { display: block; min-width: 0; overflow-wrap: anywhere; }
+.integration-card strong { color: #f2f2f2; font-size: 11.5px; line-height: 1.35; }
+.integration-card span { color: #c4c4c4; font-size: 10.5px; line-height: 1.5; }
+.integration-card small { color: #8f8f8f; font-size: 9.5px; line-height: 1.55; }
+.integration-status-card { grid-column: 1 / -1; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; }
+.integration-status-card .compact { align-self: center; min-width: 76px; }
+.integration-error { color: #f1a9a9 !important; }
+.settings-integration-panel > .settings-note { margin-top: 0; }
+@media (max-width: 860px) {
+  .integration-grid { grid-template-columns: 1fr; }
+  .integration-status-card { grid-column: auto; }
+}
+@media (max-width: 560px) {
+  .settings-integration-panel .panel-heading { align-items: flex-start; }
+  .integration-status-card { grid-template-columns: 28px minmax(0, 1fr); }
+  .integration-status-card .compact { grid-column: 2; justify-self: start; }
+}
+
 /* Cloud storage */
 .local-note.storage-synced { color: #9fcdb0; }
 .local-note.storage-saving, .local-note.storage-checking { color: #d7c38a; }
