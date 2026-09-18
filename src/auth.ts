@@ -9,6 +9,15 @@ export interface AuthUser {
   role: UserRole
   modules: AppModule[]
   status: 'Active' | 'Disabled'
+  organizationId?: string
+  organizationName?: string
+  organizationSlug?: string
+  organizationModules?: AppModule[]
+  isPlatformAdmin?: boolean
+  accountType?: 'tenant' | 'platform'
+  accountKey?: string
+  mustChangePassword?: boolean
+  lastLoginAt?: string
 }
 
 export async function hashPassword(value: string) {
@@ -34,10 +43,10 @@ export async function getAuthSession(): Promise<AuthUser | null> {
   return (body.user ?? null) as AuthUser | null
 }
 
-export async function login(username: string, password: string): Promise<AuthUser> {
+export async function login(account: string, username: string, password: string): Promise<AuthUser> {
   const { response, body } = await authRequest('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ account, username, password }),
   })
   if (!response.ok) throw new Error(body.error || 'Login failed.')
   return body.user as AuthUser

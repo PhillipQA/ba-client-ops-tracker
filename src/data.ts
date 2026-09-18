@@ -19,15 +19,13 @@ export const defaultTaskSettings: TaskSettings = {
   visibleColumns: ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'dueDate', 'followUpDate'],
 }
 
-// Initial administrator requested for first setup.
-// Username: Admin
-// Password: admin
-// Passwords are stored as SHA-256 hashes in this MVP, never as plaintext.
+// Initial account metadata only. Password material is never seeded in client code;
+// the server/database bootstrap flow owns credential initialization.
 export const seedAccounts: UserAccount[] = [
   {
     id: 'admin',
     username: 'Admin',
-    passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+    passwordHash: '',
     name: 'Administrator',
     email: '',
     phone: '',

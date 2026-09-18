@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.5.4",
+  "version": "0.6.3",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -29,7 +29,9 @@
     "pizzip": "latest",
     "pdf-lib": "latest",
     "pdfjs-dist": "^5.4.149",
-    "tesseract.js": "^6.0.1"
+    "tesseract.js": "^6.0.1",
+    "bcryptjs": "^3.0.2",
+    "express-rate-limit": "^7.5.1"
   },
   "devDependencies": {
     "@types/react": "latest",

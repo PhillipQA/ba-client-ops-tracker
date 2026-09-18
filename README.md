@@ -14,6 +14,8 @@ A client-centric operations workspace for Business Analysts to manage clients, p
 - **Reports** — workload, turnaround time, aging, Gantt/activity views, subtask progress, and CSV export.
 - **Themes** — per-user visual themes saved with the user profile.
 - **Roles & Permissions** — Administrator, Contributor, Viewer, and per-module access.
+- **BXI-Core Internal Admin** — platform-level tenant account creation, module entitlements, cross-tenant user administration, and password recovery.
+- **Multi-tenancy** — each workspace has isolated state and normalized records scoped by `organization_id`.
 
 ## Current operating model
 
@@ -55,14 +57,26 @@ Open:
 http://localhost:5173
 ```
 
-### 2. Initial login
+### 2. Login model
+
+The login screen uses three fields:
 
 ```text
-Username: Admin
-Password: admin
+Account
+User
+Password
 ```
 
-Change the default password immediately from **My profile**.
+The original workspace is the **BXI-Core** tenant. Existing users sign in with `Account: BXI-Core` plus their normal username/password.
+
+The platform control plane has a separate identity:
+
+```text
+Account: internal_admin
+User: admin
+```
+
+There is **no hardcoded default password** in v0.6.2. For first secure bootstrap, set `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` in Render to a unique value of at least 12 characters, then sign in once and change it from **Internal Admin → Security**. The `internal_admin` identity does not belong to a tenant workspace.
 
 ## Environment configuration
 
@@ -84,15 +98,29 @@ OPENAI_MODEL=gpt-5.6-terra
 
 `OPENAI_API_KEY` is **not required for COR extraction**. DRF COR reading runs locally in the browser.
 
+### Secure bootstrap credentials
+
+For a fresh install or when `schema-v5-security-hardening.sql` replaces an unchanged legacy `admin/admin` credential, configure strong one-time bootstrap passwords in Render:
+
+```env
+INTERNAL_ADMIN_BOOTSTRAP_PASSWORD=use-a-unique-12+-character-secret
+BXI_CORE_BOOTSTRAP_PASSWORD=use-a-different-12+-character-secret
+```
+
+After both accounts have successfully bootstrapped and their passwords are changed, these variables are no longer used for normal authentication and can be rotated/removed.
+
 ### Optional — Discord inquiry capture
 
 ```env
 DISCORD_BOT_TOKEN=your-discord-bot-token
 DISCORD_ALLOWED_USER_IDS=123456789012345678
+DISCORD_ORGANIZATION_SLUG=bxi-core
 APP_BASE_URL=https://your-app.onrender.com
 ```
 
-`DISCORD_ALLOWED_USER_IDS` is optional. Separate multiple IDs with commas.
+For production, configure `DISCORD_ALLOWED_USER_IDS`; the server logs a security warning when Discord capture is enabled without an allowlist.
+
+`DISCORD_ALLOWED_USER_IDS` is optional. Separate multiple IDs with commas. `DISCORD_ORGANIZATION_SLUG` selects which tenant receives this bot's inquiries; it defaults to `bxi-core`. A future tenant-specific Discord configuration can support multiple bot/workspace mappings.
 
 ### Optional — Google Calendar import
 
@@ -114,8 +142,20 @@ Run these scripts once in **Supabase → SQL Editor**, in order:
 
 1. `supabase/schema.sql`
 2. `supabase/schema-v2.sql`
+3. `supabase/schema-v3-multitenant.sql`
+4. `supabase/schema-v4-account-login.sql`
+5. `supabase/schema-v5-security-hardening.sql`
+6. `supabase/schema-v6-tenant-save-integrity.sql`
 
-The app currently keeps `tracker_state` as a compatibility/fallback copy while also writing structured records to normalized tables such as:
+`schema-v3-multitenant.sql` creates the first tenant as **BXI-Core**, copies the existing `tracker_state` into `tenant_state`, and assigns existing normalized records to BXI-Core. The original `tracker_state` remains a compatibility copy during the migration window.
+
+`schema-v4-account-login.sql` separates the platform control-plane identity into `platform_users` and changes tenant username uniqueness from global to **per account/workspace**. Fresh bootstrap accounts use a non-login marker rather than a known password.
+
+`schema-v5-security-hardening.sql` safely replaces only the unchanged legacy `admin/admin` hashes with bootstrap markers. Existing users with other legacy SHA-256 hashes are left intact and automatically upgraded to bcrypt after their next successful login.
+
+`schema-v6-tenant-save-integrity.sql` adds a server-only transactional save function. It rejects record IDs owned by another tenant and commits structured records, audit entries, tenant state and the BXI-Core compatibility snapshot together. It does not rewrite existing records or credentials. Install this migration before starting v0.6.3; writes return a clear migration-required error if it is missing.
+
+Structured records include:
 
 - `clients`
 - `projects`
@@ -128,7 +168,7 @@ The app currently keeps `tracker_state` as a compatibility/fallback copy while a
 - `app_settings`
 - `audit_logs`
 
-After the v2 schema is installed, open **Settings → Data Architecture v2 → Migrate / Sync now** once as an Administrator to populate the normalized tables from existing data.
+After the schemas are installed, **Settings → Data Architecture → Migrate / Sync now** can re-synchronize the current workspace's structured tables.
 
 ### Data protection model
 
@@ -137,6 +177,51 @@ After the v2 schema is installed, open **Settings → Data Architecture v2 → M
 - `.env.local`, service-role keys, bot tokens, and API keys must never be committed to Git.
 - Subtask evidence files are stored privately in Supabase Storage (`task-evidence` bucket); only attachment metadata is stored with the subtask record.
 - Supabase Storage for uploaded/generated document-creation files is still planned separately; those document binaries are not stored directly in PostgreSQL.
+
+
+## Multi-tenant model
+
+Each customer/workspace is represented by an `organizations` row. Operational data and the normalized tables carry an `organization_id`, while each workspace has its own JSON compatibility state in `tenant_state`.
+
+```text
+BXI-Core platform
+  ├─ BXI-Core workspace (existing data)
+  ├─ Tenant A
+  │    ├─ users
+  │    ├─ clients
+  │    ├─ projects
+  │    └─ tasks / inquiries / documents
+  └─ Tenant B
+       └─ isolated data
+```
+
+The Node server resolves the signed-in user's organization and only loads/saves that tenant's state. Normalized syncs, audit logs, Discord inquiry reads, and subtask evidence paths are also tenant-scoped. Direct browser table access remains revoked; RLS is enabled and the v3 schema includes a tenant-claim policy foundation for a later Supabase Auth phase.
+
+### BXI-Core Internal Admin
+
+Platform administration is intentionally separate from tenant access. Sign in with:
+
+```text
+Account: internal_admin
+User: admin
+Password: value configured in INTERNAL_ADMIN_BOOTSTRAP_PASSWORD on first bootstrap
+```
+
+After bootstrap, the stored password is bcrypt-protected and the environment bootstrap value is no longer consulted. That session opens the **BXI-Core Internal Admin** control plane only; it does not load BXI-Core tenant data.
+
+Internal Admin can:
+
+- create a new tenant account/workspace and its first Administrator;
+- define the tenant's login Account ID;
+- enable/disable modules at the tenant level;
+- see total and active tenant/user counts;
+- add users inside any tenant;
+- enable/disable tenant users;
+- set a temporary/recovery password for users in any tenant;
+- suspend/reactivate tenant accounts;
+- change the Internal Admin password.
+
+Tenant Administrators still manage users inside their own workspace through **Settings → Accounts & module access**, but they cannot grant modules disabled at the tenant level. Usernames only need to be unique **inside the same tenant**, so different tenants can each have a user named `admin`.
 
 ## Accounts and permissions
 
@@ -150,7 +235,7 @@ After the v2 schema is installed, open **Settings → Data Architecture v2 → M
 
 Administrators can control module access per account. Every user can still access **My profile** to update personal details and theme preferences.
 
-Authentication is currently app-managed with server sessions; Supabase Auth is not yet the login provider.
+Authentication is currently app-managed with server sessions; Supabase Auth is not yet the login provider. Tenant login is resolved by `Account + User + Password`. Passwords are stored using bcrypt (12 rounds) over the existing SHA-256 pre-digest for backward compatibility; legacy SHA-256 records are upgraded automatically after successful login. Platform password recovery sets a new temporary tenant-user password and invalidates that user's active in-memory sessions.
 
 ## Tasks and subtasks
 
@@ -262,6 +347,18 @@ Reports are generated from tracker data and include:
 
 ## Patch updates
 
+### Direct v0.5.4 to v0.6.3 upgrade
+
+Use `ba-client-ops-patch-v0.6.3-from-v0.5.4.zip` when the installed version is v0.5.4. This cumulative patch installs the multi-tenant and account-login changes as well as both security fixes. After applying it, configure the secure bootstrap passwords described above and run schema-v3-multitenant.sql, schema-v4-account-login.sql, schema-v5-security-hardening.sql and schema-v6-tenant-save-integrity.sql in that order before restarting. Existing changed passwords are retained; an unchanged default Admin password is replaced by the secure bootstrap flow. See `INSTALL_FROM_0.5.4.md` inside the ZIP for the exact Windows command and migration steps.
+
+### v0.6.3 upgrade from v0.6.2
+
+Stop the running app, apply `ba-client-ops-patch-v0.6.3-tenant-save-fixes.zip`, then run the new `supabase/schema-v6-tenant-save-integrity.sql` in Supabase SQL Editor. Schemas v1 through v5 must already be installed. `npm run patch` copies the SQL file but does not execute it. Build and restart the app after the migration, then refresh open browser tabs.
+
+This release fixes cross-tenant record overwrites, missing account snapshots on fresh BXI-Core installs, saves in workspaces with restricted modules, and Contributor saves affected by missing theme defaults. Fresh or incomplete snapshots recover missing users from the existing authentication table; operational data and passwords are retained. No new dependencies or environment variables are required.
+
+Tenant saves now fail and roll back when a structured record is invalid; they no longer report success after a normalized-sync failure. If old cached data contains an invalid date or duplicate record ID, correct that field and retry the save.
+
 ### Apply a patch
 
 ```powershell
@@ -302,7 +399,11 @@ ba-client-ops-tracker/
 ├─ src/                     # React UI and client-side logic
 ├─ supabase/
 │  ├─ schema.sql            # compatibility tracker_state schema
-│  └─ schema-v2.sql         # normalized/auditable data tables
+│  ├─ schema-v2.sql         # normalized/auditable data tables
+│  ├─ schema-v3-multitenant.sql # organizations, tenant state, tenant scoping
+│  ├─ schema-v4-account-login.sql # account-aware login / platform identity
+│  ├─ schema-v5-security-hardening.sql # secure bootstrap migration
+│  └─ schema-v6-tenant-save-integrity.sql # atomic tenant-scoped saves
 ├─ server.ts                # Express API, auth, Supabase, Discord, document endpoints
 ├─ package.json
 └─ README.md
@@ -312,4 +413,9 @@ ba-client-ops-tracker/
 
 - Never commit `.env.local` or secret keys/tokens.
 - Rotate credentials immediately if they are exposed.
-- The current login/session system is suitable for the app's present MVP stage, but a future Supabase Auth migration is recommended for stronger production identity management, password recovery, and policy-based authorization.
+- `/api/store` never returns real password hashes to the browser, including Administrator sessions.
+- Password storage uses salted bcrypt with legacy SHA-256 login compatibility and automatic upgrade.
+- Login failures are rate-limited to reduce brute-force attempts.
+- Production session cookies add `Secure`, and all session cookies remain `HttpOnly` + `SameSite=Strict`.
+- Configure `DISCORD_ALLOWED_USER_IDS` when Discord capture is enabled in production.
+- The current login/session system remains app-managed. Multi-tenant data isolation is enforced by the Node server and tenant-scoped storage paths, while direct browser table grants remain revoked. A future Supabase Auth migration is still recommended for stronger identity lifecycle, email-based recovery, and user-scoped JWT/RLS enforcement.

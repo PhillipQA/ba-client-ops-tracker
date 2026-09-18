@@ -4,6 +4,7 @@ import {
   Archive,
   BarChart3,
   BriefcaseBusiness,
+  Building2,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -20,6 +21,7 @@ import {
   Paperclip,
   Plus,
   Search,
+  ShieldCheck,
   LogOut,
   UserRound,
   LockKeyhole,
@@ -32,6 +34,7 @@ import {
 } from 'lucide-react'
 import AIAssistant from './AIAssistant'
 import DocumentCreation from './DocumentCreation'
+import InternalAdmin from './InternalAdmin'
 import { ALL_MODULES, defaultModulesForRole } from './access'
 import { getAuthSession, hashPassword, login, logout, type AuthUser } from './auth'
 import { loadCloudStore, loadDiscordInquiries, queueCloudStoreSave, type CloudStorageStatus } from './cloudStore'
@@ -44,7 +47,7 @@ import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTas
 import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
 import { normalizeAppTheme, THEME_OPTIONS, type AppTheme } from './theme'
 
-type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings'
+type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings' | 'internal-admin'
 
 type Store = {
   schemaVersion: number
@@ -60,6 +63,7 @@ type Store = {
 const STORE_SCHEMA_VERSION = 5
 const STORAGE_KEY = 'ba-client-ops-tracker-v2'
 const LEGACY_STORAGE_KEY = 'ba-client-ops-tracker-v1'
+const organizationStorageKey = (organizationId?: string) => organizationId ? `${STORAGE_KEY}:${organizationId}` : STORAGE_KEY
 function localDateKey(date: Date) {
   const yyyy = date.getFullYear()
   const mm = String(date.getMonth() + 1).padStart(2, '0')
@@ -101,7 +105,7 @@ function normalizeAccount(value: Partial<UserAccount>, index: number): UserAccou
     email: String(value.email || ''),
     phone: String(value.phone || ''),
     role,
-    modules: role === 'Administrator' ? [...ALL_MODULES] : Array.isArray(value.modules) ? value.modules.filter((module): module is AppModule => ALL_MODULES.includes(module as AppModule)) : defaultModulesForRole(role),
+    modules: Array.isArray(value.modules) ? value.modules.filter((module): module is AppModule => ALL_MODULES.includes(module as AppModule)) : defaultModulesForRole(role),
     status: value.status === 'Disabled' ? 'Disabled' : 'Active',
     createdAt: String(value.createdAt || TODAY),
     theme: normalizeAppTheme(value.theme),
@@ -204,9 +208,10 @@ const labels: Record<View, string> = {
   reports: 'Reports',
   ai: 'AI BA Assistant',
   settings: 'Settings',
+  'internal-admin': 'BXI-Core Internal Admin',
 }
 
-const navItems: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
+const navItems: { id: AppModule; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'action', label: 'Action Center', icon: LayoutDashboard },
   { id: 'clients', label: 'Clients', icon: Users },
   { id: 'projects', label: 'Projects', icon: BriefcaseBusiness },
@@ -308,10 +313,24 @@ function App() {
 
   useEffect(() => {
     if (!authUser) return
+    if (authUser.accountType === 'platform') {
+      setStore(seedStore())
+      setCloudStatus('synced')
+      setCloudMessage('Internal Admin · control plane')
+      setLastCloudSync('')
+      return
+    }
     let cancelled = false
     const connectCloud = async () => {
       setCloudStatus('checking')
       setCloudMessage('Checking cloud storage…')
+      const tenantStorageKey = organizationStorageKey(authUser.organizationId)
+      const cached = localStorage.getItem(tenantStorageKey)
+      if (cached) {
+        try { setStore(normalizeStore(JSON.parse(cached), seedStore())) } catch { /* cloud load will replace invalid cache */ }
+      } else {
+        setStore(seedStore())
+      }
       try {
         const result = await loadCloudStore<Store>()
         if (cancelled) return
@@ -324,7 +343,7 @@ function App() {
           const sourceVersion = Number((result.data as Partial<Store>).schemaVersion || 0)
           const cloud = normalizeStore(result.data, initialStore())
           setStore(cloud)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(cloud))
+          localStorage.setItem(tenantStorageKey, JSON.stringify(cloud))
           setLastCloudSync(result.updatedAt || new Date().toISOString())
           setCloudMessage('Supabase synced')
           setCloudStatus('synced')
@@ -333,7 +352,7 @@ function App() {
           }
           return
         }
-        const local = initialStore()
+        const local = cached ? normalizeStore(JSON.parse(cached), seedStore()) : seedStore()
         const saved = await queueCloudStoreSave(local)
         if (cancelled) return
         setLastCloudSync(saved.updatedAt || new Date().toISOString())
@@ -354,7 +373,7 @@ function App() {
     const normalized = { ...next, schemaVersion: STORE_SCHEMA_VERSION }
     storeRef.current = normalized
     setStore(normalized)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(normalized))
     if (cloudStatus === 'local') return
     setCloudStatus('saving')
     setCloudMessage('Saving to Supabase…')
@@ -383,7 +402,7 @@ function App() {
     }
     storeRef.current = next
     setStore(next)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
     if (result.updatedAt) setLastCloudSync(result.updatedAt)
     setCloudStatus('synced')
     setCloudMessage('Supabase synced')
@@ -409,15 +428,21 @@ function App() {
     }
   }
 
-  const handleLogin = async (username: string, password: string) => {
+  const handleLogin = async (account: string, username: string, password: string) => {
     setLoginBusy(true)
     setLoginError('')
     try {
-      const user = await login(username, password)
+      const user = await login(account, username, password)
       setAuthUser(user)
-      setCloudStatus('checking')
-      setCloudMessage('Checking cloud storage…')
-      setView(user.role === 'Administrator' || user.modules.includes('action') ? 'action' : (user.modules[0] as View || 'reports'))
+      if (user.accountType === 'platform' && user.isPlatformAdmin) {
+        setCloudStatus('synced')
+        setCloudMessage('Internal Admin · control plane')
+        setView('internal-admin')
+      } else {
+        setCloudStatus('checking')
+        setCloudMessage('Checking cloud storage…')
+        setView(user.role === 'Administrator' || user.modules.includes('action') ? 'action' : (user.modules[0] as View || 'reports'))
+      }
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Login failed.')
     } finally {
@@ -433,32 +458,49 @@ function App() {
     setSelectedClientId(null)
     setSelectedProjectId(null)
     setNewExternalInquiryIds([])
+    setStore(seedStore())
     setLoginError('')
   }
 
   const accountCurrentUser = authUser ? store.accounts.find((account) => account.id === authUser.id && account.status === 'Active') : null
-  const currentUser: UserAccount | null = authUser ? accountCurrentUser ?? {
-    ...authUser,
-    passwordHash: '',
-    createdAt: TODAY,
-    modules: authUser.role === 'Administrator' ? [...ALL_MODULES] : authUser.modules,
+  const currentUser: UserAccount | null = authUser ? {
+    ...(accountCurrentUser ?? { ...authUser, passwordHash: '', createdAt: TODAY }),
+    modules: authUser.modules,
+    organizationId: authUser.organizationId,
+    organizationName: authUser.organizationName,
+    organizationSlug: authUser.organizationSlug,
+    organizationModules: authUser.organizationModules || authUser.modules,
+    isPlatformAdmin: authUser.isPlatformAdmin,
+    accountType: authUser.accountType,
+    accountKey: authUser.accountKey,
+    lastLoginAt: authUser.lastLoginAt,
   } : null
+  const workspaceModules = currentUser?.organizationModules || currentUser?.modules || []
   const canWrite = Boolean(currentUser && currentUser.role !== 'Viewer')
   const canManageAccounts = currentUser?.role === 'Administrator'
-  const hasModule = (module: AppModule) => Boolean(currentUser && (currentUser.role === 'Administrator' || currentUser.modules.includes(module)))
+  const hasModule = (module: AppModule) => Boolean(currentUser && currentUser.modules.includes(module))
   const canUseAI = Boolean(currentUser && currentUser.role !== 'Viewer' && hasModule('ai'))
   const visibleNavItems = currentUser ? navItems.filter((item) => hasModule(item.id) && (item.id !== 'ai' || canUseAI)) : []
 
   useEffect(() => {
-    if (!currentUser || !visibleNavItems.length) return
+    if (!currentUser) return
+    if (currentUser.accountType === 'platform' && currentUser.isPlatformAdmin) {
+      if (view !== 'internal-admin') {
+        setSelectedClientId(null)
+        setSelectedProjectId(null)
+        setView('internal-admin')
+      }
+      return
+    }
+    if (!visibleNavItems.length) return
     if (!visibleNavItems.some((item) => item.id === view)) {
       setSelectedClientId(null)
       setSelectedProjectId(null)
       setView(visibleNavItems[0].id)
     }
-  }, [currentUser?.id, currentUser?.role, currentUser?.modules.join('|'), view])
+  }, [currentUser?.id, currentUser?.role, currentUser?.accountType, currentUser?.modules.join('|'), view])
 
-  const canSyncExternalInquiries = Boolean(currentUser && (currentUser.role === 'Administrator' || currentUser.modules.includes('inbox') || currentUser.modules.includes('items')))
+  const canSyncExternalInquiries = Boolean(currentUser && currentUser.accountType !== 'platform' && (currentUser.role === 'Administrator' || currentUser.modules.includes('inbox') || currentUser.modules.includes('items')))
 
   useEffect(() => {
     if (!authUser || cloudStatus !== 'synced' || !canSyncExternalInquiries) return
@@ -477,7 +519,7 @@ function App() {
         const merged: Store = { ...current, items: [...missing, ...current.items] }
         storeRef.current = merged
         setStore(merged)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+        localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(merged))
         setNewExternalInquiryIds((previous) => [...new Set([...missing.map((item) => item.id), ...previous])])
         setLastCloudSync(result.updatedAt || new Date().toISOString())
         setCloudMessage(`${missing.length} new Discord ${missing.length === 1 ? 'inquiry' : 'inquiries'} received`)
@@ -497,7 +539,7 @@ function App() {
     if (!currentUser || !authUser) return 'No signed-in account.'
     const patch: Partial<UserAccount> = { name: profile.name.trim(), email: profile.email.trim(), phone: profile.phone.trim(), theme: normalizeAppTheme(profile.theme) }
     if (profile.newPassword) {
-      if (profile.newPassword.length < 4) return 'Use a password with at least 4 characters.'
+      if (profile.newPassword.length < 8) return 'Use a password with at least 8 characters.'
       patch.passwordHash = await hashPassword(profile.newPassword)
     }
     const next = {
@@ -844,7 +886,8 @@ function App() {
   const createAccount = (account: UserAccount) => {
     if (!canManageAccounts) return 'Only Administrators can manage accounts.'
     if (store.accounts.some((candidate) => candidate.username.trim().toLowerCase() === account.username.trim().toLowerCase())) return 'That username is already in use.'
-    persist({ ...store, accounts: [...store.accounts, account] })
+    const modules = account.role === 'Administrator' ? [...workspaceModules] : account.modules.filter((module) => workspaceModules.includes(module))
+    persist({ ...store, accounts: [...store.accounts, { ...account, modules }] })
   }
 
   const updateAccount = (id: string, patch: Partial<UserAccount>) => {
@@ -857,7 +900,7 @@ function App() {
     const disablesAccount = patch.status === 'Disabled'
     const removesLastAdmin = target.role === 'Administrator' && target.status === 'Active' && activeAdmins.length === 1 && (changesRoleAway || disablesAccount)
     if (removesLastAdmin) return 'Keep at least one active Administrator account.'
-    persist({ ...store, accounts: store.accounts.map((account) => account.id === id ? { ...account, ...patch, modules: patch.role === 'Administrator' ? [...ALL_MODULES] : (patch.modules ?? account.modules) } : account) })
+    persist({ ...store, accounts: store.accounts.map((account) => account.id === id ? { ...account, ...patch, modules: patch.role === 'Administrator' ? [...workspaceModules] : (patch.modules ?? account.modules).filter((module) => workspaceModules.includes(module)) } : account) })
   }
 
   const deleteAccount = (id: string) => {
@@ -886,10 +929,14 @@ function App() {
             </button>
           ))}
         </nav>
+        {currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && <div className="platform-admin-nav"><button className={view === 'internal-admin' ? 'nav-button active' : 'nav-button'} onClick={() => { setView('internal-admin'); setSelectedClientId(null); setSelectedProjectId(null) }}><ShieldCheck size={18} /><span>BXI-Core Admin</span></button></div>}
         <div className="sidebar-footer">
-          <button className="session-card session-card-button" type="button" onClick={() => setProfileOpen(true)} title="Edit your profile">
+          {currentUser.organizationName && <div className="workspace-chip"><Building2 size={14} /><span>{currentUser.organizationName}</span></div>}
+          {currentUser.accountType === 'platform' ? <div className="session-card platform-session-card">
+            <div className="session-avatar"><ShieldCheck size={17} /></div><div><strong>{currentUser.name}</strong><span>internal_admin · Platform Admin</span></div>
+          </div> : <button className="session-card session-card-button" type="button" onClick={() => setProfileOpen(true)} title="Edit your profile">
             <div className="session-avatar"><UserRound size={17} /></div><div><strong>{currentUser.name}</strong><span>{currentUser.role} · My profile</span></div><Pencil size={14} />
-          </button>
+          </button>}
           <button className="nav-button signout-button" type="button" onClick={() => void handleLogout()}><LogOut size={18} /><span>Sign out</span></button>
           <div className={`local-note storage-${cloudStatus}`} title={lastCloudSync ? `Last cloud sync: ${lastCloudSync}` : undefined}><CircleDot size={12} /> {cloudMessage}</div>
         </div>
@@ -897,11 +944,11 @@ function App() {
 
       <main>
         <header className="topbar">
-          <div><p className="eyebrow">BA CLIENT OPERATIONS</p><h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1></div>
+          <div><p className="eyebrow">{currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}</p><h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1></div>
           <div className="top-actions">
-            <span className="top-role-pill">{currentUser.role}</span>
-            {canWrite && hasModule('clients') && <button className="secondary" onClick={() => setModal('client')}><Users size={17} /> Add client</button>}
-            {canWrite && (hasModule('items') || hasModule('inbox')) && <button className="primary" onClick={() => {
+            <span className="top-role-pill">{view === 'internal-admin' && currentUser.accountType === 'platform' ? 'Platform Admin' : currentUser.role}</span>
+            {view !== 'internal-admin' && canWrite && hasModule('clients') && <button className="secondary" onClick={() => setModal('client')}><Users size={17} /> Add client</button>}
+            {view !== 'internal-admin' && canWrite && (hasModule('items') || hasModule('inbox')) && <button className="primary" onClick={() => {
               if (selectedClient) setTaskPreset({ clientId: selectedClient.id, type: 'Task' })
               else if (selectedProject) setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' })
               else setTaskPreset(null)
@@ -910,7 +957,9 @@ function App() {
           </div>
         </header>
 
-        {!visibleNavItems.length && <section className="page-stack"><div className="panel no-access-panel"><LockKeyhole size={24} /><div><h2>No modules assigned</h2><p>Your account is active, but an Administrator has not assigned any modules yet. You can still open My profile or sign out.</p></div></div></section>}
+        {!visibleNavItems.length && currentUser.accountType !== 'platform' && <section className="page-stack"><div className="panel no-access-panel"><LockKeyhole size={24} /><div><h2>No modules assigned</h2><p>Your account is active, but an Administrator has not assigned any modules yet. You can still open My profile or sign out.</p></div></div></section>}
+
+        {!selectedClient && !selectedProject && view === 'internal-admin' && currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && <InternalAdmin mustChangePassword={Boolean(authUser.mustChangePassword)} />}
 
         {!selectedClient && !selectedProject && view === 'action' && hasModule('action') && (
           <section className="page-stack dashboard-stack">
@@ -1052,7 +1101,7 @@ function App() {
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} />}
 
-        {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings currentUser={currentUser} accounts={store.accounts} onCreate={createAccount} onUpdate={updateAccount} onDelete={deleteAccount} onThemeChange={updateOwnTheme} cloudStatus={cloudStatus} cloudMessage={cloudMessage} lastCloudSync={lastCloudSync} onSyncNow={syncCloudNow} taskSettings={store.taskSettings} taskStatusUsage={Object.fromEntries(store.taskSettings.statuses.map((status) => [status.label, store.items.filter((item) => item.status === status.label).length]))} onTaskSettingsChange={updateTaskSettings} />}
+        {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings currentUser={currentUser} accounts={store.accounts} organizationModules={workspaceModules} onCreate={createAccount} onUpdate={updateAccount} onDelete={deleteAccount} onThemeChange={updateOwnTheme} cloudStatus={cloudStatus} cloudMessage={cloudMessage} lastCloudSync={lastCloudSync} onSyncNow={syncCloudNow} taskSettings={store.taskSettings} taskStatusUsage={Object.fromEntries(store.taskSettings.statuses.map((status) => [status.label, store.items.filter((item) => item.status === status.label).length]))} onTaskSettingsChange={updateTaskSettings} />}
 
         {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
           <section className="page-stack"><AIAssistant clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
@@ -1070,7 +1119,7 @@ function App() {
         {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
         {modal === 'activity' && <ActivityForm clients={store.clients} projects={store.projects} initial={editingActivity} onSubmit={saveActivity} />}
       </Modal>}
-      {profileOpen && <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />}
+      {profileOpen && currentUser.accountType !== 'platform' && <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />}
     </div>
   )
 }
@@ -1079,23 +1128,31 @@ function AuthSplash() {
   return <div className="auth-shell"><div className="auth-card auth-loading"><div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div><div className="auth-spinner" /><p>Checking your session…</p></div></div>
 }
 
-function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; onLogin: (username: string, password: string) => Promise<void> }) {
+function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; onLogin: (account: string, username: string, password: string) => Promise<void> }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    void onLogin(String(form.get('username') || '').trim(), String(form.get('password') || ''))
+    void onLogin(
+      String(form.get('account') || '').trim(),
+      String(form.get('username') || '').trim(),
+      String(form.get('password') || ''),
+    )
   }
   return <div className="auth-shell">
-    <div className="auth-card">
+    <div className="auth-card account-login-card">
       <div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
-      <div className="auth-copy"><span className="auth-icon"><LockKeyhole size={22} /></span><div><h1>Sign in</h1><p>Access your BA workspace, client records, activities, reports, and AI assistant.</p></div></div>
+      <div className="auth-copy"><span className="auth-icon"><LockKeyhole size={22} /></span><div><h1>Sign in</h1><p>Enter the account workspace first, then your user and password.</p></div></div>
       <form className="auth-form" onSubmit={submit}>
-        <label>Username<input name="username" defaultValue="Admin" autoComplete="username" required /></label>
-        <label>Password<input name="password" type="password" defaultValue="admin" autoComplete="current-password" required /></label>
+        <label>Account<input name="account" defaultValue="BXI-Core" autoComplete="organization" placeholder="BXI-Core or customer account" required /></label>
+        <label>User<input name="username" defaultValue="Admin" autoComplete="username" required /></label>
+        <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
         {error && <div className="auth-error">{error}</div>}
         <button className="primary auth-submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
-      <div className="auth-first-login"><strong>Initial administrator</strong><span>Username: <b>Admin</b> · Password: <b>admin</b></span><small>Change the password from My profile after your first login.</small></div>
+      <div className="auth-login-help">
+        <div><strong>Workspace login</strong><span>Account identifies the tenant, for example <b>BXI-Core</b>.</span></div>
+        <div><strong>Internal Admin</strong><span>Account: <b>internal_admin</b> · User: <b>admin</b></span><small>On first secure bootstrap, use the password configured in Render as INTERNAL_ADMIN_BOOTSTRAP_PASSWORD.</small></div>
+      </div>
     </div>
   </div>
 }
@@ -1135,8 +1192,8 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
         <label>Contact number<input name="phone" defaultValue={user.phone} placeholder="+63 900 000 0000" /></label>
         <label>Theme<select name="theme" defaultValue={normalizeAppTheme(user.theme)}>{THEME_OPTIONS.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select><small>Your theme follows this account across devices after Supabase sync.</small></label>
         <div className="profile-password-grid">
-          <label>New password <small>Optional</small><input name="newPassword" type="password" minLength={4} autoComplete="new-password" /></label>
-          <label>Confirm new password<input name="confirmPassword" type="password" minLength={4} autoComplete="new-password" /></label>
+          <label>New password <small>Optional</small><input name="newPassword" type="password" minLength={8} autoComplete="new-password" /></label>
+          <label>Confirm new password<input name="confirmPassword" type="password" minLength={8} autoComplete="new-password" /></label>
         </div>
         {message && <div className="settings-message">{message}</div>}
         <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Close</button><button className="primary" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</button></div>

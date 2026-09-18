@@ -17,6 +17,7 @@ type DiscordStatus = {
   lastError: string
   dmCapture: boolean
   mentionCapture: boolean
+  workspace?: string
 }
 
 type DataArchitectureStatus = {
@@ -24,17 +25,21 @@ type DataArchitectureStatus = {
   syncedAt?: string
   counts?: Record<string, number>
   error?: string
+  multiTenant?: boolean
+  organizationId?: string
+  organizationName?: string
 }
 
 const roleDescriptions: Record<UserRole, { summary: string; permissions: string[] }> = {
-  Administrator: { summary: 'Full system access.', permissions: ['Can access every module', 'Create, read, update, and delete operational records', 'Use AI and Calendar import', 'Add, update, disable, and delete accounts'] },
+  Administrator: { summary: 'Full access inside the current workspace.', permissions: ['Can access every module enabled for this workspace', 'Create, read, update, and delete operational records', 'Use AI and Calendar import', 'Add, update, disable, and delete accounts'] },
   Contributor: { summary: 'Day-to-day BA delivery access.', permissions: ['CRUD access to modules assigned by an Administrator', 'Can use AI when the AI module is assigned', 'Can view/export Reports when assigned', 'Cannot add or manage other accounts'] },
   Viewer: { summary: 'Read-only access.', permissions: ['Can only view modules assigned by an Administrator', 'Reports can be assigned as the default module', 'Cannot create, edit, delete, import, or approve AI actions', 'Cannot manage accounts'] },
 }
 
-export default function Settings({ currentUser, accounts, onCreate, onUpdate, onDelete, onThemeChange, cloudStatus, cloudMessage, lastCloudSync, onSyncNow, taskSettings, taskStatusUsage, onTaskSettingsChange }: {
+export default function Settings({ currentUser, accounts, organizationModules, onCreate, onUpdate, onDelete, onThemeChange, cloudStatus, cloudMessage, lastCloudSync, onSyncNow, taskSettings, taskStatusUsage, onTaskSettingsChange }: {
   currentUser: UserAccount
   accounts: UserAccount[]
+  organizationModules: AppModule[]
   onCreate: (account: UserAccount) => string | void
   onUpdate: (id: string, patch: Partial<UserAccount>) => string | void
   onDelete: (id: string) => string | void
@@ -52,7 +57,8 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
   const [message, setMessage] = useState('')
   const [themeMessage, setThemeMessage] = useState('')
   const [newRole, setNewRole] = useState<UserRole>('Contributor')
-  const [newModules, setNewModules] = useState<AppModule[]>(defaultModulesForRole('Contributor'))
+  const allowedModuleDefinitions = MODULE_DEFINITIONS.filter((module) => organizationModules.includes(module.id))
+  const [newModules, setNewModules] = useState<AppModule[]>(defaultModulesForRole('Contributor').filter((module) => organizationModules.includes(module)))
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null)
   const [discordStatus, setDiscordStatus] = useState<DiscordStatus | null>(null)
   const [discordLoading, setDiscordLoading] = useState(true)
@@ -87,7 +93,7 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
       const body = await response.json().catch(() => ({})) as DataArchitectureStatus
       if (!response.ok) throw new Error(body.error || 'Migration failed.')
       setDataArchitecture(body)
-      setDataArchitectureMessage('Migration completed. Structured Supabase tables are now synchronized with tracker_state.')
+      setDataArchitectureMessage('Migration completed. Structured Supabase tables are synchronized for this workspace.')
     } catch (error) {
       setDataArchitectureMessage(error instanceof Error ? error.message : 'Migration failed.')
     } finally {
@@ -115,7 +121,7 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
 
   const changeNewRole = (role: UserRole) => {
     setNewRole(role)
-    setNewModules(defaultModulesForRole(role))
+    setNewModules(role === 'Administrator' ? [...organizationModules] : defaultModulesForRole(role).filter((module) => organizationModules.includes(module)))
   }
 
   const toggleNewModule = (module: AppModule) => {
@@ -136,8 +142,8 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
       setMessage('That username is already in use.')
       return
     }
-    if (password.length < 4) {
-      setMessage('Use an initial password with at least 4 characters.')
+    if (password.length < 8) {
+      setMessage('Use an initial password with at least 8 characters.')
       return
     }
     const result = onCreate({
@@ -148,7 +154,7 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
       email,
       phone,
       role: newRole,
-      modules: newRole === 'Administrator' ? defaultModulesForRole('Administrator') : newModules,
+      modules: newRole === 'Administrator' ? [...organizationModules] : newModules.filter((module) => organizationModules.includes(module)),
       status: 'Active',
       createdAt: new Date().toISOString().slice(0, 10),
     })
@@ -158,7 +164,7 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
     }
     event.currentTarget.reset()
     setNewRole('Contributor')
-    setNewModules(defaultModulesForRole('Contributor'))
+    setNewModules(defaultModulesForRole('Contributor').filter((module) => organizationModules.includes(module)))
     setShowAdd(false)
     setMessage('Account added. The user can sign in with the username and initial password you provided.')
   }
@@ -259,15 +265,15 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
     </div>
 
     <div className="panel settings-storage-panel">
-      <div className="panel-heading"><div><h2>Data Architecture v2</h2><p>Normalized Supabase tables for migration, recovery, reporting, soft-delete history, and audit tracking.</p></div><span className={`storage-badge ${dataArchitecture?.ready ? 'storage-synced' : 'storage-local'}`}><Database size={15} /> {dataArchitectureLoading ? 'Checking…' : dataArchitecture?.ready ? 'Ready' : 'Setup required'}</span></div>
+      <div className="panel-heading"><div><h2>Data Architecture</h2><p>Tenant-scoped Supabase tables for migration, recovery, reporting, soft-delete history, and audit tracking.</p></div><span className={`storage-badge ${dataArchitecture?.ready ? 'storage-synced' : 'storage-local'}`}><Database size={15} /> {dataArchitectureLoading ? 'Checking…' : dataArchitecture?.ready ? 'Ready' : 'Setup required'}</span></div>
       <div className="storage-grid">
-        <div className="storage-card"><Database size={20} /><div><strong>Structured tables</strong><span>{dataArchitecture?.ready ? 'Clients, projects, tasks, inquiries, activities, users, statuses, documents, and audit history are available.' : 'Run supabase/schema-v2.sql in the Supabase SQL Editor first.'}</span></div></div>
-        <div className="storage-card"><ArchiveRestore size={20} /><div><strong>Last normalized sync</strong><span>{dataArchitecture?.syncedAt ? new Date(dataArchitecture.syncedAt).toLocaleString() : 'No migration run recorded yet'}</span><small>{dataArchitecture?.counts ? Object.entries(dataArchitecture.counts).map(([key, value]) => `${key}: ${value}`).join(' · ') : 'tracker_state remains the compatibility fallback.'}</small></div></div>
+        <div className="storage-card"><Database size={20} /><div><strong>Structured tables</strong><span>{dataArchitecture?.ready ? 'Clients, projects, tasks, inquiries, activities, users, statuses, documents, and audit history are available.' : 'Run schema-v2.sql, then schema-v3-multitenant.sql in the Supabase SQL Editor.'}</span></div></div>
+        <div className="storage-card"><ArchiveRestore size={20} /><div><strong>Last normalized sync</strong><span>{dataArchitecture?.syncedAt ? new Date(dataArchitecture.syncedAt).toLocaleString() : 'No migration run recorded yet'}</span><small>{dataArchitecture?.counts ? Object.entries(dataArchitecture.counts).map(([key, value]) => `${key}: ${value}`).join(' · ') : dataArchitecture?.multiTenant ? `Workspace: ${dataArchitecture.organizationName || currentUser.organizationName || 'Tenant'}` : 'Legacy tracker_state compatibility is still active.'}</small></div></div>
         {isAdmin && <button type="button" className="secondary storage-sync-button" onClick={() => void migrateDataArchitecture()} disabled={dataArchitectureLoading || !dataArchitecture?.ready}><RefreshCw size={16} /> {dataArchitectureLoading ? 'Working…' : 'Migrate / Sync now'}</button>}
       </div>
       {dataArchitectureMessage && <div className="settings-message">{dataArchitectureMessage}</div>}
-      {!dataArchitecture?.ready && dataArchitecture?.error && <div className="settings-note"><b>Setup note:</b> {dataArchitecture.error.includes('does not exist') || dataArchitecture.error.includes('schema cache') ? 'The v2 tables have not been created yet. Open Supabase SQL Editor and run supabase/schema-v2.sql, then return here and refresh.' : dataArchitecture.error}</div>}
-      <div className="settings-note"><b>Safety:</b> v0.4.0 keeps <code>tracker_state</code> intact. New saves dual-write into normalized tables when v2 is ready. Deleted records are soft-deleted there, and changes are recorded in <code>audit_logs</code>.</div>
+      {!dataArchitecture?.ready && dataArchitecture?.error && <div className="settings-note"><b>Setup note:</b> {dataArchitecture.error.includes('does not exist') || dataArchitecture.error.includes('schema cache') ? 'The required Supabase tables are not ready yet. Run supabase/schema-v2.sql and supabase/schema-v3-multitenant.sql, then refresh.' : dataArchitecture.error}</div>}
+      <div className="settings-note"><b>Safety:</b> BXI-Core keeps the original <code>tracker_state</code> compatibility copy during the multi-tenant migration window. Workspace data is stored in <code>tenant_state</code>, normalized records are tenant-scoped, deletions remain soft-deleted, and changes continue to be recorded in <code>audit_logs</code>.</div>
     </div>
 
     <div className="panel settings-task-panel">
@@ -292,10 +298,10 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
       <div className="panel-heading"><div><h2>Discord Inquiry Capture</h2><p>DM the bot or @mention it in a server to create a cleaned Inquiry in the tracker.</p></div><span className={`discord-status ${discordStatus?.online ? 'discord-online' : 'discord-offline'}`}><Bot size={15} /> {discordLoading ? 'Checking…' : discordStatus?.online ? 'Online' : discordStatus?.configured ? 'Offline' : 'Not configured'}</span></div>
       <div className="integration-grid">
         <div className="integration-card"><MessageCircleMore size={20} /><div><strong>Incoming capture</strong><span>Direct messages: {discordStatus?.dmCapture ? 'Enabled' : 'Unavailable'} · @mentions: {discordStatus?.mentionCapture ? 'Enabled' : 'Unavailable'}</span><small>Each Discord message is de-duplicated, summarized with AI when configured, and saved as an Inquiry.</small></div></div>
-        <div className="integration-card"><Bot size={20} /><div><strong>{discordStatus?.botName || 'BA Inquiry Bot'}</strong><span>{discordStatus?.online ? `Connected to ${discordStatus.guildCount} server${discordStatus.guildCount === 1 ? '' : 's'}` : discordStatus?.configured ? 'Token is configured, but the Gateway is not currently online.' : 'Add DISCORD_BOT_TOKEN to Render Environment.'}</span><small>{discordStatus?.allowedUsersConfigured ? `${discordStatus.allowedUsersConfigured} Discord user ID${discordStatus.allowedUsersConfigured === 1 ? '' : 's'} allowed.` : 'No sender allowlist configured — any user who can DM or mention the bot can create an inquiry.'}</small></div></div>
+        <div className="integration-card"><Bot size={20} /><div><strong>{discordStatus?.botName || 'BA Inquiry Bot'}</strong><span>{discordStatus?.online ? `Connected to ${discordStatus.guildCount} server${discordStatus.guildCount === 1 ? '' : 's'}` : discordStatus?.configured ? 'Token is configured, but the Gateway is not currently online.' : 'Add DISCORD_BOT_TOKEN to Render Environment.'}</span><small>{discordStatus?.allowedUsersConfigured ? `${discordStatus.allowedUsersConfigured} Discord user ID${discordStatus.allowedUsersConfigured === 1 ? '' : 's'} allowed.` : 'No sender allowlist configured — any user who can DM or mention the bot can create an inquiry.'}{discordStatus?.workspace ? ` · Target workspace: ${discordStatus.workspace}` : ''}</small></div></div>
         <div className="integration-card integration-status-card"><RefreshCw size={20} /><div><strong>Last capture</strong><span>{discordStatus?.lastMessageAt ? new Date(discordStatus.lastMessageAt).toLocaleString() : 'No Discord inquiry captured since this server started.'}</span>{discordStatus?.lastError && <small className="integration-error">Last error: {discordStatus.lastError}</small>}</div><button type="button" className="secondary compact" onClick={() => void loadDiscordStatus()} disabled={discordLoading}>{discordLoading ? 'Checking…' : 'Refresh'}</button></div>
       </div>
-      <div className="settings-note"><b>Render setup:</b> add <code>DISCORD_BOT_TOKEN</code>. Optional: <code>DISCORD_ALLOWED_USER_IDS</code> (comma-separated Discord user IDs) and <code>APP_BASE_URL</code> for the confirmation link. The token is never shown in this page.</div>
+      <div className="settings-note"><b>Render setup:</b> add <code>DISCORD_BOT_TOKEN</code>. Optional: <code>DISCORD_ALLOWED_USER_IDS</code> (comma-separated Discord user IDs), <code>DISCORD_ORGANIZATION_SLUG</code> to choose the tenant workspace (defaults to <code>bxi-core</code>), and <code>APP_BASE_URL</code> for the confirmation link. The token is never shown in this page.</div>
     </div>
 
     <div className="panel settings-update-panel">
@@ -320,9 +326,9 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
         <label>Username<input name="username" required placeholder="e.g. jsantos" autoComplete="off" /></label>
         <label>Email<input name="email" type="email" placeholder="name@company.com" /></label>
         <label>Contact number<input name="phone" placeholder="e.g. +63 900 000 0000" /></label>
-        <label>Initial password<input name="password" type="password" required minLength={4} autoComplete="new-password" /></label>
+        <label>Initial password<input name="password" type="password" required minLength={8} autoComplete="new-password" /></label>
         <label>Role<select name="role" value={newRole} onChange={(event) => changeNewRole(event.target.value as UserRole)}><option>Administrator</option><option>Contributor</option><option>Viewer</option></select></label>
-        <div className="module-picker account-form-modules"><strong>Module access</strong><span>{newRole === 'Administrator' ? 'Administrators always have every module.' : 'Select the modules this account can open.'}</span><div className="module-check-grid">{MODULE_DEFINITIONS.map((module) => <label className="module-check" key={module.id}><input type="checkbox" checked={newRole === 'Administrator' || newModules.includes(module.id)} disabled={newRole === 'Administrator'} onChange={() => toggleNewModule(module.id)} /><div><b>{module.label}</b><small>{module.description}</small></div></label>)}</div></div>
+        <div className="module-picker account-form-modules"><strong>Module access</strong><span>{newRole === 'Administrator' ? 'Administrators receive every module enabled for this workspace.' : 'Select the modules this account can open.'}</span><div className="module-check-grid">{allowedModuleDefinitions.map((module) => <label className="module-check" key={module.id}><input type="checkbox" checked={newRole === 'Administrator' || newModules.includes(module.id)} disabled={newRole === 'Administrator'} onChange={() => toggleNewModule(module.id)} /><div><b>{module.label}</b><small>{module.description}</small></div></label>)}</div></div>
         <button className="primary"><KeyRound size={16} /> Create account</button>
       </form>}
 
@@ -331,7 +337,7 @@ export default function Settings({ currentUser, accounts, onCreate, onUpdate, on
       {expandedAccountId && (() => {
         const account = accounts.find((candidate) => candidate.id === expandedAccountId)
         if (!account) return null
-        return <div className="account-module-panel"><div className="account-module-head"><div><strong>{account.name} · Module access</strong><span>{account.role === 'Administrator' ? 'Administrator access cannot be restricted.' : 'Changes take effect for this account after sync/reload.'}</span></div><button className="secondary compact" type="button" onClick={() => setExpandedAccountId(null)}>Close</button></div><div className="module-check-grid">{MODULE_DEFINITIONS.map((module) => <label className="module-check" key={module.id}><input type="checkbox" checked={account.role === 'Administrator' || account.modules.includes(module.id)} disabled={!isAdmin || account.role === 'Administrator'} onChange={() => toggleAccountModule(account, module.id)} /><div><b>{module.label}</b><small>{module.description}</small></div></label>)}</div></div>
+        return <div className="account-module-panel"><div className="account-module-head"><div><strong>{account.name} · Module access</strong><span>{account.role === 'Administrator' ? 'Administrator access follows the modules enabled for this workspace.' : 'Changes take effect for this account after sync/reload.'}</span></div><button className="secondary compact" type="button" onClick={() => setExpandedAccountId(null)}>Close</button></div><div className="module-check-grid">{allowedModuleDefinitions.map((module) => <label className="module-check" key={module.id}><input type="checkbox" checked={account.role === 'Administrator' || account.modules.includes(module.id)} disabled={!isAdmin || account.role === 'Administrator'} onChange={() => toggleAccountModule(account, module.id)} /><div><b>{module.label}</b><small>{module.description}</small></div></label>)}</div></div>
       })()}
 
       {!isAdmin && <div className="read-only-account-note"><Users size={17} /> Account management is read-only for your role.</div>}

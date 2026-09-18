@@ -112,4 +112,13 @@ export interface UserAccount {
   status: 'Active' | 'Disabled'
   createdAt: string
   theme?: AppTheme
+  organizationId?: string
+  organizationName?: string
+  organizationSlug?: string
+  organizationModules?: AppModule[]
+  isPlatformAdmin?: boolean
+  accountType?: 'tenant' | 'platform'
+  accountKey?: string
+  mustChangePassword?: boolean
+  lastLoginAt?: string
 }
