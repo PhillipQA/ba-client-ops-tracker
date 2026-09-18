@@ -1,3 +1,11 @@
+## v0.4.9 — COR field mapping refinement
+
+- Corrected BIR COR mapping so **Name of Taxpayer** is the primary source for **Business / Registered Name**.
+- Refined **Trade Name** detection so it is parsed independently and cannot be swapped with the taxpayer/legal name.
+- Improved **Registered Address** extraction for multiline addresses, inline label values, duplicate lines, and nearby ZIP-code text while stopping before unrelated COR sections.
+- TIN extraction behavior is unchanged.
+
+
 ## v0.4.8 — Local COR OCR build hotfix
 
 - Fixed the `pdfjs-dist` v5 TypeScript render parameters used for scanned-PDF OCR by passing the required canvas element.
