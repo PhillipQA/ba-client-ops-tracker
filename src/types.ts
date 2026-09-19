@@ -112,6 +112,7 @@ export interface UserAccount {
   status: 'Active' | 'Disabled'
   createdAt: string
   theme?: AppTheme
+  clientThemes?: Record<string, AppTheme>
   organizationId?: string
   organizationName?: string
   organizationSlug?: string

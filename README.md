@@ -1,12 +1,12 @@
 # BA Client Ops Tracker
 
-Version **0.6.5** — multi-tenant BA operations with account-owned integrations.
+Version **0.6.6** — account users, permissions, and personal/client themes restored.
 
 Tracks clients, shared projects, tasks/subtasks, follow-ups, inquiries, activities, evidence, communications, reports, and document creation. Built with React, TypeScript, Vite, Express, Discord.js, and Supabase.
 
 ## Upgrade an existing installation
 
-Read [UPGRADE-v0.6.5.md](UPGRADE-v0.6.5.md) before applying the included patch. Patches are provided for v0.6.3 and v0.6.4. Existing database records and environment files are retained.
+Read [UPGRADE-v0.6.6.md](UPGRADE-v0.6.6.md) before applying the v0.6.5 → v0.6.6 patch. No new SQL migration or dependency is required for this update. Earlier installations must complete the [v0.6.5 upgrade](UPGRADE-v0.6.5.md) first.
 
 ## Fresh installation
 
@@ -42,7 +42,7 @@ Set secure `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` and `BXI_CORE_BOOTSTRAP_PASSWORD`
 | OpenAI key and model | Selected-account Supabase sync |
 | Enable/disable and test integrations | Task statuses/columns and integration health |
 
-Personal details, password, and theme are in My Profile. Each tenant’s encrypted keys are separate. No provider credential is returned to the browser after saving. Only Internal Admin can migrate/sync normalized tables manually or manage account access. Normal workspace saves continue automatically.
+Account Administrators can manage their own account users, roles, status, and module assignments in **Users & Permissions**. All users, including Viewers, have **My Themes** for personal themes and per-client overrides. Each choice is saved for that user in that tenant. Personal details and passwords remain in My Profile. Each tenant’s encrypted keys are separate. No provider credential is returned to the browser after saving. Only Internal Admin can migrate/sync normalized tables manually or enable platform modules for a tenant. Account administrators can assign users only the modules enabled for their account. Normal workspace saves continue automatically.
 
 ## Render
 
@@ -76,4 +76,4 @@ npm run patch -- "path/to/matching-patch.zip"
 npm run patch:rollback
 ```
 
-The updater makes source backups and protects environment files, dependencies, Git metadata, and local patch history. Database migrations are run separately. Check [UPGRADE-v0.6.5.md](UPGRADE-v0.6.5.md) for deployment checks and validation limits.
+The updater makes source backups and protects environment files, dependencies, Git metadata, and local patch history. Database migrations are run separately. Check [UPGRADE-v0.6.6.md](UPGRADE-v0.6.6.md) for deployment checks and validation limits.

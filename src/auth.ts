@@ -1,3 +1,4 @@
+import type { AppTheme } from './theme'
 import type { AppModule, UserRole } from './types'
 
 export interface AuthUser {
@@ -17,6 +18,8 @@ export interface AuthUser {
   accountType?: 'tenant' | 'platform'
   accountKey?: string
   mustChangePassword?: boolean
+  theme?: AppTheme
+  clientThemes?: Record<string, AppTheme>
   lastLoginAt?: string
 }
 

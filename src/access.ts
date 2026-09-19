@@ -9,7 +9,7 @@ export const MODULE_DEFINITIONS: { id: AppModule; label: string; description: st
   { id: 'documents', label: 'Document Creation', description: 'Create DRF, FSD, and Sign Off documents from source files.' },
   { id: 'reports', label: 'Reports', description: 'Gantt, turnaround time, workload, and exports.' },
   { id: 'ai', label: 'AI BA Assistant', description: 'Contextual AI assessment and suggested actions.' },
-  { id: 'settings', label: 'Settings', description: 'Storage, roles, and account management.' },
+  { id: 'settings', label: 'Settings', description: 'Account templates and integration credentials.' },
 ]
 
 export const ALL_MODULES = MODULE_DEFINITIONS.map((module) => module.id)

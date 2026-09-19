@@ -55,3 +55,5 @@ export function queueCloudStoreSave<T>(data: T) {
   saveQueue = saveQueue.then(() => saveCloudStoreNow(data), () => saveCloudStoreNow(data))
   return saveQueue as Promise<{ configured: boolean; updatedAt?: string }>
 }
+
+export async function waitForCloudSaves() { await saveQueue }

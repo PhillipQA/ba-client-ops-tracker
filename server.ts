@@ -1,3 +1,4 @@
+import { registerAccountUsers } from './account-users'
 import dotenv from 'dotenv'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
@@ -15,7 +16,7 @@ import { PDFDocument, PDFTextField } from 'pdf-lib'
 import { createClient } from '@supabase/supabase-js'
 import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js'
 import { createServer as createViteServer } from 'vite'
-import { normalizeAppTheme } from './src/theme'
+import { normalizeAppTheme, normalizeClientThemes } from './src/theme'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './password-recovery-email'
 
 dotenv.config({ path: '.env.local' })
@@ -114,6 +115,8 @@ type SessionUser = Omit<typeof defaultAdmin, 'passwordHash' | 'createdAt'> & {
   accountKey?: string
   mustChangePassword?: boolean
   lastLoginAt?: string
+  theme?: string
+  clientThemes?: Record<string, string>
 }
 
 type OrganizationInfo = {
@@ -193,6 +196,8 @@ function safeUser(account: any, organization?: OrganizationInfo | null): Session
     phone: String(account.phone || ''),
     role,
     modules,
+    theme: normalizeAppTheme(account.theme ?? account.raw_data?.theme),
+    clientThemes: normalizeClientThemes(account.clientThemes ?? account.raw_data?.clientThemes),
     status: account.status === 'Disabled' ? 'Disabled' : 'Active',
     createdAt: account.createdAt || account.created_on ? String(account.createdAt || account.created_on) : undefined,
     organizationId: organization?.id || (account.organization_id ? String(account.organization_id) : undefined),
@@ -331,7 +336,7 @@ function accountFromDatabase(row: any) {
     id: String(row.id), username: String(row.username || ''), passwordHash: String(row.password_hash || ''),
     name: String(row.name || row.username || ''), email: String(row.email || ''), phone: String(row.phone || ''),
     role: row.role || 'Contributor', modules: Array.isArray(row.modules) ? row.modules : [], status: row.status || 'Active',
-    createdAt: String(row.created_on || new Date().toISOString().slice(0, 10)), theme: normalizeAppTheme(row.raw_data?.theme),
+    createdAt: String(row.created_on || new Date().toISOString().slice(0, 10)), theme: normalizeAppTheme(row.raw_data?.theme), clientThemes: normalizeClientThemes(row.raw_data?.clientThemes),
   }
 }
 
@@ -742,7 +747,7 @@ function stable(value: unknown): string | undefined {
 }
 
 function accountDefaults(account: any) {
-  return { ...account, theme: normalizeAppTheme(account?.theme) }
+  return { ...account, theme: normalizeAppTheme(account?.theme), clientThemes: normalizeClientThemes(account?.clientThemes) }
 }
 
 async function prepareAccountPasswords(currentAccounts: any[], nextAccounts: any[]) {
@@ -833,7 +838,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     next = { ...next, accounts: nextAccounts }
     const accountsChanged = stable(currentAccounts) !== stable(nextAccounts)
     const selfOnlyAccounts = accountsChanged && accountChangesAreSelfOnly(currentAccounts, nextAccounts, user.id)
-    if (accountsChanged && !selfOnlyAccounts) return void res.status(403).json({ error: 'Manage users and access in Internal Admin.' })
+    if (accountsChanged && !selfOnlyAccounts) return void res.status(403).json({ error: 'Manage users and access in Users & Permissions. Reload if another administrator changed account users.' })
     if (stable(current.taskSettings ?? defaultTaskSettings) !== stable(next.taskSettings ?? defaultTaskSettings)) return void res.status(409).json({ error: 'Task configuration is managed in Internal Admin. Reload this workspace before saving.' })
 
     if (user.role === 'Viewer') {
@@ -1665,6 +1670,16 @@ app.get('/api/integrations/discord/status', requireAuth, requireTenantWorkspace,
   const user = (req as any).authUser
   if (!moduleAllowed(user, 'settings')) return void res.status(403).json({ error: 'Settings access is required.' })
   res.json(discordStatusPayload(user.organizationId))
+})
+registerAccountUsers(app, { requireAuth, requireTenant: requireTenantWorkspace, organizationById,
+  load: loadTenantState, commit: commitTenantState, hashPassword: secureHashPassword,
+  refreshSessions(organizationId, account, organization, passwordChanged) {
+    for (const [token, session] of sessions) {
+      if (session.organizationId !== organizationId || session.id !== account.id) continue
+      if (account.status !== 'Active' || passwordChanged) sessions.delete(token)
+      else sessions.set(token, safeUser(account, organization))
+    }
+  },
 })
 registerPlatformSettings(app, { db: supabaseAdmin, requireAuth, requirePlatformAdmin, organizationById, loadTenantState, normalizedSchemaStatus, defaultTaskSettings, commitTenantState, integrations })
 registerIntegrationRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace,

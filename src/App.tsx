@@ -37,18 +37,20 @@ import DocumentCreation from './DocumentCreation'
 import InternalAdmin from './InternalAdmin'
 import { ForgotPassword, ResetPassword } from './PasswordRecovery'
 import { ALL_MODULES, defaultModulesForRole } from './access'
-import { getAuthSession, hashPassword, login, logout, type AuthUser } from './auth'
-import { loadCloudStore, loadDiscordInquiries, queueCloudStoreSave, type CloudStorageStatus } from './cloudStore'
+import { getAuthSession, login, logout, type AuthUser } from './auth'
+import { loadCloudStore, loadDiscordInquiries, queueCloudStoreSave, waitForCloudSaves, type CloudStorageStatus } from './cloudStore'
 import Reports from './Reports'
-import Settings from './Settings'
+import Settings, { settingsRequest } from './Settings'
+import AccountUsers from './AccountUsers'
+import ThemePreferences from './ThemePreferences'
 import type { AISuggestion } from './ai'
 import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems, seedPlannerActivities, seedProjects } from './data'
 import { importPrimaryCalendar } from './googleCalendar'
 import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
 import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
-import { normalizeAppTheme, THEME_OPTIONS, type AppTheme } from './theme'
+import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTIONS, type AppTheme } from './theme'
 
-type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings' | 'internal-admin'
+type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
 
 type Store = {
   schemaVersion: number
@@ -110,6 +112,7 @@ function normalizeAccount(value: Partial<UserAccount>, index: number): UserAccou
     status: value.status === 'Disabled' ? 'Disabled' : 'Active',
     createdAt: String(value.createdAt || TODAY),
     theme: normalizeAppTheme(value.theme),
+    clientThemes: normalizeClientThemes(value.clientThemes),
   }
 }
 
@@ -209,6 +212,8 @@ const labels: Record<View, string> = {
   reports: 'Reports',
   ai: 'AI BA Assistant',
   settings: 'Settings',
+  users: 'Users & Permissions',
+  themes: 'My Themes',
   'internal-admin': 'BXI-Core Internal Admin',
 }
 
@@ -472,6 +477,7 @@ function App() {
   const accountCurrentUser = authUser ? store.accounts.find((account) => account.id === authUser.id && account.status === 'Active') : null
   const currentUser: UserAccount | null = authUser ? {
     ...(accountCurrentUser ?? { ...authUser, passwordHash: '', createdAt: TODAY }),
+    role: authUser.role,
     modules: authUser.modules,
     organizationId: authUser.organizationId,
     organizationName: authUser.organizationName,
@@ -484,8 +490,9 @@ function App() {
   } : null
   const workspaceModules = currentUser?.organizationModules || currentUser?.modules || []
   const canWrite = Boolean(currentUser && currentUser.role !== 'Viewer')
-  const canManageAccounts = currentUser?.role === 'Administrator'
+  const canManageAccounts = currentUser?.role === 'Administrator' && currentUser.accountType !== 'platform'
   const hasModule = (module: AppModule) => Boolean(currentUser && currentUser.modules.includes(module))
+  const canWriteTasks = canWrite && (hasModule('items') || hasModule('inbox'))
   const canUseAI = Boolean(currentUser && currentUser.role !== 'Viewer' && hasModule('ai'))
   const visibleNavItems = currentUser ? navItems.filter((item) => hasModule(item.id) && (item.id !== 'ai' || canUseAI)) : []
 
@@ -499,7 +506,8 @@ function App() {
       }
       return
     }
-    if (!visibleNavItems.length) return
+    if (view === 'themes' || (view === 'users' && canManageAccounts)) return
+    if (!visibleNavItems.length) { setView('themes'); return }
     if (!visibleNavItems.some((item) => item.id === view)) {
       setSelectedClientId(null)
       setSelectedProjectId(null)
@@ -542,31 +550,47 @@ function App() {
     return () => { cancelled = true; window.clearInterval(interval) }
   }, [authUser?.id, cloudStatus, canSyncExternalInquiries])
 
-  const updateOwnProfile = async (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string }) => {
-    if (!currentUser || !authUser) return 'No signed-in account.'
-    const patch: Partial<UserAccount> = { name: profile.name.trim(), email: profile.email.trim(), phone: profile.phone.trim(), theme: normalizeAppTheme(profile.theme) }
-    if (profile.newPassword) {
-      if (profile.newPassword.length < 8) return 'Use a password with at least 8 characters.'
-      patch.passwordHash = await hashPassword(profile.newPassword)
-    }
-    const next = {
-      ...store,
-      accounts: store.accounts.map((account) => account.id === currentUser.id ? { ...account, ...patch } : account),
-    }
-    persist(next)
-    setAuthUser({ ...authUser, name: patch.name || authUser.name, email: patch.email ?? authUser.email, phone: patch.phone ?? authUser.phone })
-    return 'Profile updated.'
+  const acceptAccountUsers = (users: UserAccount[]) => {
+    const current = storeRef.current
+    const accounts = users.map((account, index) => normalizeAccount(account, index)).filter((account): account is UserAccount => Boolean(account))
+    const next = { ...current, accounts }
+    storeRef.current = next
+    setStore(next)
+    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
   }
 
-  const updateOwnTheme = (theme: AppTheme) => {
-    if (!currentUser) return 'No signed-in account.'
-    const nextTheme = normalizeAppTheme(theme)
-    persist({
-      ...store,
-      accounts: store.accounts.map((account) => account.id === currentUser.id ? { ...account, theme: nextTheme } : account),
-    })
-    return `Theme changed to ${THEME_OPTIONS.find((candidate) => candidate.id === nextTheme)?.name || 'Default'}.`
+  const saveOwnPreferences = async (patch: { name?: string; email?: string; phone?: string; theme?: AppTheme; clientId?: string; clientTheme?: AppTheme | null; newPassword?: string }) => {
+    await waitForCloudSaves()
+    const result = await settingsRequest('/api/account/profile', 'PATCH', patch)
+    const accounts = storeRef.current.accounts
+    acceptAccountUsers(accounts.map(account => account.id === result.user.id ? { ...account, ...result.user } : account))
+    const session = await getAuthSession()
+    setAuthUser(session)
   }
+
+  const updateOwnProfile = async (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string }) => {
+    try {
+      await saveOwnPreferences(profile)
+      return profile.newPassword ? 'Password changed. Sign in with your new password.' : 'Profile updated.'
+    } catch (error) { return error instanceof Error ? error.message : 'Profile save failed.' }
+  }
+
+  // Permission changes take effect on the server immediately and refresh open tabs.
+  useEffect(() => {
+    if (!authUser) return
+    let cancelled = false
+    const refresh = async () => {
+      try {
+        const session = await getAuthSession()
+        if (cancelled) return
+        setAuthUser(session)
+        if (!session) { setStore(seedStore()); setProfileOpen(false); setSelectedClientId(null); setSelectedProjectId(null) }
+      } catch { /* Preserve the current view during temporary network outages. */ }
+    }
+    const interval = window.setInterval(() => void refresh(), 15000)
+    window.addEventListener('focus', refresh)
+    return () => { cancelled = true; window.clearInterval(interval); window.removeEventListener('focus', refresh) }
+  }, [authUser?.id, authUser?.organizationId])
 
   const clientName = (id?: string) => id ? store.clients.find((c) => c.id === id)?.name ?? 'Unknown client' : 'General / no client'
   const projectName = (id?: string) => id ? store.projects.find((p) => p.id === id)?.name ?? 'Unknown project' : 'No project'
@@ -634,7 +658,7 @@ function App() {
   const editingTask = editingTaskId ? store.items.find((item) => item.id === editingTaskId) ?? null : null
 
   const resolveItem = (id: string) => {
-    if (!canWrite) return
+    if (!canWriteTasks) return
     const now = new Date().toISOString().slice(0, 10)
     const target = store.items.find((item) => item.id === id)
     if (!target) return
@@ -655,7 +679,7 @@ function App() {
   }
 
   const updateTaskStatus = (id: string, status: string) => {
-    if (!canWrite) return
+    if (!canWriteTasks) return
     const target = store.items.find((item) => item.id === id)
     if (!target || target.status === status) return
     const closed = isTaskClosed(status, store.taskSettings)
@@ -681,7 +705,7 @@ function App() {
   }
 
   const saveTaskEdit = (updated: WorkItem) => {
-    if (!canWrite) return
+    if (!canWriteTasks) return
     const previous = store.items.find((item) => item.id === updated.id)
     if (!previous) return
     const closed = isTaskClosed(updated.status, store.taskSettings)
@@ -711,7 +735,7 @@ function App() {
   }
 
   const deleteTask = (id: string) => {
-    if (!canWrite) return
+    if (!canWriteTasks) return
     const target = store.items.find((item) => item.id === id)
     if (!target) return
     const childCount = store.items.filter((item) => item.parentTaskId === id).length
@@ -734,13 +758,13 @@ function App() {
   }
 
   const openTaskEditor = (id: string) => {
-    if (!canWrite) return
+    if (!canWriteTasks) return
     setEditingTaskId(id)
     setModal('taskEdit')
   }
 
   const openSubtaskCreator = (parentTaskId: string) => {
-    if (!canWrite) return
+    if (!canWriteTasks) return
     const parent = store.items.find((item) => item.id === parentTaskId)
     if (!parent || parent.parentTaskId) return
     setTaskPreset({ clientId: parent.clientId, projectId: parent.projectId, type: 'Task', parentTaskId: parent.id })
@@ -748,7 +772,7 @@ function App() {
   }
 
   const reorderSubtasks = (parentTaskId: string, orderedIds: string[]) => {
-    if (!canWrite || !orderedIds.length) return
+    if (!canWriteTasks || !orderedIds.length) return
     const valid = new Set(store.items.filter((item) => item.parentTaskId === parentTaskId).map((item) => item.id))
     const normalizedIds = orderedIds.filter((id) => valid.has(id))
     if (normalizedIds.length !== valid.size) return
@@ -760,7 +784,7 @@ function App() {
   }
 
   const convertInquiry = (id: string, type: 'Requirement' | 'Issue') => {
-    if (!canWrite) return
+    if (!canWriteTasks) return
     const target = store.items.find((item) => item.id === id)
     if (!target) return
     persist({
@@ -833,7 +857,7 @@ function App() {
 
 
   const applyAISuggestion = (suggestion: AISuggestion, contextClientId: string, contextProjectId: string) => {
-    if (!canWrite) return 'Your Viewer role is read-only. Ask an Administrator or Contributor to approve tracker changes.'
+    if (!canWriteTasks) return 'Task or Inbox write access is required to apply a suggestion.'
     const clientId = contextClientId || undefined
     const projectId = contextProjectId || undefined
 
@@ -881,50 +905,11 @@ function App() {
     return `Created ${type.toLowerCase()} task: ${suggestion.title}`
   }
 
-  const updateTaskSettings = (taskSettings: TaskSettings) => {
-    if (!canManageAccounts) return 'Only Administrators can change task configuration.'
-    const normalized = normalizeTaskSettings(taskSettings)
-    if (!normalized.statuses.some((status) => !status.closed)) return 'Keep at least one open task status.'
-    if (!normalized.statuses.some((status) => status.closed)) return 'Keep at least one completed task status.'
-    persist({ ...store, taskSettings: normalized })
-  }
-
-
-  const createAccount = (account: UserAccount) => {
-    if (!canManageAccounts) return 'Only Administrators can manage accounts.'
-    if (store.accounts.some((candidate) => candidate.username.trim().toLowerCase() === account.username.trim().toLowerCase())) return 'That username is already in use.'
-    const modules = account.role === 'Administrator' ? [...workspaceModules] : account.modules.filter((module) => workspaceModules.includes(module))
-    persist({ ...store, accounts: [...store.accounts, { ...account, modules }] })
-  }
-
-  const updateAccount = (id: string, patch: Partial<UserAccount>) => {
-    if (!canManageAccounts || !currentUser) return 'Only Administrators can manage accounts.'
-    const target = store.accounts.find((account) => account.id === id)
-    if (!target) return 'Account not found.'
-    if (id === currentUser.id && (patch.role || patch.status)) return 'You cannot change the role or status of your own signed-in account.'
-    const activeAdmins = store.accounts.filter((account) => account.role === 'Administrator' && account.status === 'Active')
-    const changesRoleAway = patch.role !== undefined && patch.role !== 'Administrator'
-    const disablesAccount = patch.status === 'Disabled'
-    const removesLastAdmin = target.role === 'Administrator' && target.status === 'Active' && activeAdmins.length === 1 && (changesRoleAway || disablesAccount)
-    if (removesLastAdmin) return 'Keep at least one active Administrator account.'
-    persist({ ...store, accounts: store.accounts.map((account) => account.id === id ? { ...account, ...patch, modules: patch.role === 'Administrator' ? [...workspaceModules] : (patch.modules ?? account.modules).filter((module) => workspaceModules.includes(module)) } : account) })
-  }
-
-  const deleteAccount = (id: string) => {
-    if (!canManageAccounts || !currentUser) return 'Only Administrators can manage accounts.'
-    if (id === currentUser.id) return 'You cannot delete your own signed-in account.'
-    const target = store.accounts.find((account) => account.id === id)
-    if (!target) return 'Account not found.'
-    const activeAdmins = store.accounts.filter((account) => account.role === 'Administrator' && account.status === 'Active')
-    if (target.role === 'Administrator' && target.status === 'Active' && activeAdmins.length === 1) return 'Keep at least one active Administrator account.'
-    persist({ ...store, accounts: store.accounts.filter((account) => account.id !== id) })
-  }
-
   if (resetToken !== null) return <ResetPassword token={resetToken} onBack={() => { setResetToken(null); setAuthUser(null); setLoginError('') }} />
   if (authChecking) return <AuthSplash />
   if (!authUser || !currentUser) return <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} />
 
-  const currentTheme = normalizeAppTheme(currentUser.theme)
+  const currentTheme = themeForContext(currentUser, selectedProject ? selectedProjectClientId : selectedClient?.id)
 
   return (
     <div className={`app-shell theme-${currentTheme}`} data-theme={currentTheme}>
@@ -936,6 +921,10 @@ function App() {
               <Icon size={18} /><span>{label}</span>{id === 'inbox' && inquiryItems.length > 0 && <b className={newExternalInquiryCount > 0 ? 'has-new' : ''} title={newExternalInquiryCount > 0 ? `${newExternalInquiryCount} new external inquiry${newExternalInquiryCount === 1 ? '' : 'ies'}` : `${inquiryItems.length} open inquiries`}>{newExternalInquiryCount > 0 ? newExternalInquiryCount : openInquiryCount}</b>}
             </button>
           ))}
+          {currentUser.accountType !== 'platform' && <>
+            {canManageAccounts && <button className={view === 'users' ? 'nav-button active' : 'nav-button'} onClick={() => { setView('users'); setSelectedClientId(null); setSelectedProjectId(null) }}><Users size={18} /><span>Users &amp; Permissions</span></button>}
+            <button className={view === 'themes' ? 'nav-button active' : 'nav-button'} onClick={() => { setView('themes'); setSelectedClientId(null); setSelectedProjectId(null) }}><Sparkles size={18} /><span>My Themes</span></button>
+          </>}
         </nav>
         {currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && <div className="platform-admin-nav"><button className={view === 'internal-admin' ? 'nav-button active' : 'nav-button'} onClick={() => { setView('internal-admin'); setSelectedClientId(null); setSelectedProjectId(null) }}><ShieldCheck size={18} /><span>BXI-Core Admin</span></button></div>}
         <div className="sidebar-footer">
@@ -965,7 +954,7 @@ function App() {
           </div>
         </header>
 
-        {!visibleNavItems.length && currentUser.accountType !== 'platform' && <section className="page-stack"><div className="panel no-access-panel"><LockKeyhole size={24} /><div><h2>No modules assigned</h2><p>Your account is active, but an Administrator has not assigned any modules yet. You can still open My profile or sign out.</p></div></div></section>}
+        {!visibleNavItems.length && view !== 'themes' && view !== 'users' && currentUser.accountType !== 'platform' && <section className="page-stack"><div className="panel no-access-panel"><LockKeyhole size={24} /><div><h2>No modules assigned</h2><p>Your account is active, but an Administrator has not assigned any modules yet. You can still open My profile or sign out.</p></div></div></section>}
 
         {!selectedClient && !selectedProject && view === 'internal-admin' && currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && <InternalAdmin mustChangePassword={Boolean(authUser.mustChangePassword)} recoveryEmail={authUser.email} onRecoveryEmailChange={(email) => setAuthUser({ ...authUser, email })} />}
 
@@ -1100,7 +1089,7 @@ function App() {
                 <label>Due / follow-up<select value={taskDateFilter} onChange={(event) => setTaskDateFilter(event.target.value as typeof taskDateFilter)}><option value="All">All dates</option><option value="due-3">Due in next 3 days</option><option value="due-7">Due in next 7 days</option><option value="followup-3">Follow-up in next 3 days</option><option value="followup-7">Follow-up in next 7 days</option><option value="overdue">Overdue due/follow-up</option></select></label>
                 <button className="secondary task-filter-clear" type="button" onClick={() => { setTaskClientFilter(''); setTaskProjectFilter(''); setTaskDateFilter('All'); setWaitingFilter('All'); setQuery('') }}>Clear filters</button>
               </div>
-              <TaskTable items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} canEdit={canWrite} />
+              <TaskTable items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} canEdit={canWriteTasks} />
             </div>
           </section>
         )}
@@ -1109,15 +1098,18 @@ function App() {
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} />}
 
+        {!selectedClient && !selectedProject && view === 'users' && canManageAccounts && <AccountUsers currentUser={currentUser} onChanged={acceptAccountUsers} />}
+        {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && <ThemePreferences user={currentUser} clients={store.clients} onSave={saveOwnPreferences} />}
+
         {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings currentUser={currentUser} />}
 
         {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
           <section className="page-stack"><AIAssistant clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
         )}
 
-        {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWrite} />}
+        {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWriteTasks} />}
 
-        {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} />}
+        {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} canEditTasks={canWriteTasks} />}
       </main>
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
@@ -1199,7 +1191,7 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
         <label>Display name<input name="name" defaultValue={user.name} required /></label>
         <label>Email<input name="email" type="email" defaultValue={user.email} placeholder="name@company.com" /></label>
         <label>Contact number<input name="phone" defaultValue={user.phone} placeholder="+63 900 000 0000" /></label>
-        <label>Theme<select name="theme" defaultValue={normalizeAppTheme(user.theme)}>{THEME_OPTIONS.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select><small>Your theme follows this account across devices after Supabase sync.</small></label>
+        <label>Theme<select name="theme" defaultValue={normalizeAppTheme(user.theme)}>{THEME_OPTIONS.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select><small>Saved for your user in this account. Open My Themes for client-specific choices.</small></label>
         <div className="profile-password-grid">
           <label>New password <small>Optional</small><input name="newPassword" type="password" minLength={8} autoComplete="new-password" /></label>
           <label>Confirm new password<input name="confirmPassword" type="password" minLength={8} autoComplete="new-password" /></label>
@@ -1467,7 +1459,7 @@ function ClientDetail({ client, store, onBack, onOpenProject, onAddTask, onAskAI
   </section>
 }
 
-function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onReorderSubtasks, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite }: { project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean }) {
+function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onReorderSubtasks, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite, canEditTasks }: { project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean; canEditTasks: boolean }) {
   const contextClient = clientContextId ? store.clients.find((client) => client.id === clientContextId) : undefined
   const allProjectTasks = store.items.filter((item) => item.projectId === project.id)
   const tasks = clientContextId ? allProjectTasks.filter((item) => item.clientId === clientContextId) : allProjectTasks
@@ -1489,7 +1481,7 @@ function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAd
     <button className="back-link" onClick={onBack}>{contextClient ? `← Back to ${contextClient.name}` : '← Back to projects'}</button>
     <div className="project-hero">
       <div><div className="row-meta"><StatusChip value={project.status} /><span>{contextClient ? `${contextClient.name} view` : `Global project · ${clientCount} client${clientCount === 1 ? '' : 's'} with tasks`}</span></div><p>{project.summary || 'No project summary yet.'}</p><small>Target {niceDate(project.targetDate)}</small></div>
-      {canWrite && <button className="primary" onClick={onAddTask}><Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}</button>}
+      {canEditTasks && <button className="primary" onClick={onAddTask}><Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}</button>}
     </div>
     {contextClient && <div className="project-context-banner"><strong>{contextClient.name}</strong><span>Only this client's tasks, subtasks, and communications are shown. Work from other clients in {project.name} is hidden.</span></div>}
     <div className="project-stat-grid">
@@ -1498,7 +1490,7 @@ function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAd
       <div className="project-stat"><span>Open work</span><strong>{openTasks.length}</strong></div>
       <div className="project-stat"><span>Due in 7 days</span><strong>{dueSoon.length}</strong></div>
     </div>
-    <div className="panel"><div className="panel-heading"><div><h2>{contextClient ? `${contextClient.name} tasks` : 'Project tasks'}</h2><p>{contextClient ? `Tasks and subtasks for ${contextClient.name} under ${project.name}.` : 'All client and general tasks created under this global project, with subtasks nested below their parent.'}</p></div><span className="count-pill">{parentTasks.length} tasks · {subtasks.length} subtasks</span></div><TaskTable items={tasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} onEdit={onEditTask} onDelete={onDeleteTask} onCreateSubtask={onCreateSubtask} onReorderSubtasks={onReorderSubtasks} canEdit={canWrite} hiddenColumns={contextClient ? ['project', 'client'] : ['project']} /></div>
+    <div className="panel"><div className="panel-heading"><div><h2>{contextClient ? `${contextClient.name} tasks` : 'Project tasks'}</h2><p>{contextClient ? `Tasks and subtasks for ${contextClient.name} under ${project.name}.` : 'All client and general tasks created under this global project, with subtasks nested below their parent.'}</p></div><span className="count-pill">{parentTasks.length} tasks · {subtasks.length} subtasks</span></div><TaskTable items={tasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} onEdit={onEditTask} onDelete={onDeleteTask} onCreateSubtask={onCreateSubtask} onReorderSubtasks={onReorderSubtasks} canEdit={canEditTasks} hiddenColumns={contextClient ? ['project', 'client'] : ['project']} /></div>
     <div className="panel project-communication-panel"><div className="panel-heading"><div><h2>Communication log</h2><p>{contextClient ? `Communication for ${contextClient.name} within this project.` : 'Project notes, decisions, task events, and follow-up context across all clients.'}</p></div></div>{canWrite && <form className="quick-note" onSubmit={addNote}><input value={note} onChange={(event) => setNote(event.target.value)} placeholder={contextClient ? `Add a ${contextClient.name} communication note...` : 'Add a project communication note...'} /><button className="secondary">Add</button></form>}<div className="timeline">{communication.length ? communication.map((entry) => <div key={entry.id}><span>{niceDate(entry.date)}{!clientContextId && entry.clientId ? ` · ${store.clients.find((client) => client.id === entry.clientId)?.name || 'Unknown client'}` : ''}</span><p>{entry.text}</p></div>) : <div className="activity-empty">No communication logged for this view yet.</div>}</div></div>
   </section>
 }

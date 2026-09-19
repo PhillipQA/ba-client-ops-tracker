@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.5",
+  "version": "0.6.6",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -12,7 +12,8 @@
     "patch:rollback": "node scripts/rollback-patch.mjs",
     "patch:status": "node scripts/patch-status.mjs",
     "test:integrations": "node --import tsx --test tests/integrations.test.ts",
-    "typecheck:server": "tsc -p tsconfig.server.json"
+    "typecheck:server": "tsc -p tsconfig.server.json",
+    "test:accounts": "node --import tsx --test tests/account-users.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",
