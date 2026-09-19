@@ -47,7 +47,11 @@ for (const entry of manifest.entries || []) {
 
 if (manifest.requiresNpmInstall) {
   console.log('\nRestored package files. Running npm install...')
-  run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install'])
+  if (process.platform === 'win32') {
+    run(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm install'])
+  } else {
+    run('npm', ['install'])
+  }
 }
 
 console.log('\nRollback completed.')

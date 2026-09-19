@@ -6,6 +6,9 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import OpenAI from 'openai'
+import { requirePlatformAdmin } from './platform-auth'
+import { registerPlatformSettings } from './platform-settings'
+import { createIntegrationStore, registerIntegrationRoutes, encryptionKey, IntegrationError } from './tenant-integrations'
 import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { PDFDocument, PDFTextField } from 'pdf-lib'
@@ -54,41 +57,19 @@ const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
   : null
 
-const discordToken = process.env.DISCORD_BOT_TOKEN?.trim() || ''
-const discordAllowedUserIds = new Set((process.env.DISCORD_ALLOWED_USER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean))
-const discordClient = discordToken ? new DiscordClient({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
-  partials: [Partials.Channel],
-}) : null
-const discordRuntime = {
-  configured: Boolean(discordToken),
-  online: false,
-  botName: '',
-  guildCount: 0,
-  lastEventAt: '',
-  lastEventKind: '',
-  lastEventUserId: '',
-  lastMessageAt: '',
-  lastError: '',
-}
-
+const integrations = createIntegrationStore(supabaseAdmin)
+type DiscordRuntime = { client: DiscordClient; revision: string; online: boolean; botName: string; guildCount: number; lastMessageAt: string; lastError: string }
+const discordRuntimes = new Map<string, DiscordRuntime>()
+const discordReconnections = new Map<string, Promise<void>>()
+const discordCaptures = new Map<string, Promise<any>>()
 const discordUserWindows = new Map<string, { startedAt: number; count: number }>()
-
 function discordUserRateLimited(userId: string) {
   const now = Date.now()
   const current = discordUserWindows.get(userId)
   if (!current || now - current.startedAt >= 60_000) {
-    discordUserWindows.set(userId, { startedAt: now, count: 1 })
-    return false
+    discordUserWindows.set(userId, { startedAt: now, count: 1 }); return false
   }
-  current.count += 1
-  discordUserWindows.set(userId, current)
-  return current.count > 10
-}
-
-if (discordToken && !discordAllowedUserIds.size) {
-  console.warn('WARNING: Discord inquiry capture is enabled without DISCORD_ALLOWED_USER_IDS.')
-  console.warn('Any Discord user who can DM or mention the bot can create inquiries. Configure an allowlist for production.')
+  return ++current.count > 10
 }
 
 const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'reports', 'ai', 'settings']
@@ -710,22 +691,25 @@ app.post('/api/auth/logout', requireAuth, (req, res) => {
 })
 
 
-app.get('/api/data-architecture/status', requireAuth, requireTenantWorkspace, async (req, res) => {
+app.get('/api/data-architecture/status', requireAuth, requirePlatformAdmin, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
-  if (!moduleAllowed(user, 'settings')) return void res.status(403).json({ error: 'Settings access is required.' })
   try {
-    const status = await normalizedSchemaStatus(tenantIdForUser(user))
-    res.json({ ...status, multiTenant: await multiTenantSchemaReady(), organizationId: user.organizationId, organizationName: user.organizationName })
+    const organization = await organizationById(String(req.query.organizationId || ''))
+    if (!organization) return void res.status(400).json({ error: 'Choose an account.' })
+    const status = await normalizedSchemaStatus(organization.id)
+    res.json({ ...status, multiTenant: await multiTenantSchemaReady(), organizationId: organization.id, organizationName: organization.name })
   } catch (error) {
     res.status(500).json({ ready: false, error: error instanceof Error ? error.message : 'Could not check normalized data architecture.' })
   }
 })
 
-app.post('/api/data-architecture/migrate', requireAuth, requireTenantWorkspace, async (req, res) => {
+app.post('/api/data-architecture/migrate', requireAuth, requirePlatformAdmin, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (user.role !== 'Administrator') return void res.status(403).json({ error: 'Administrator access is required.' })
   try {
-    const organizationId = tenantIdForUser(user)
+    const organization = await organizationById(String(req.body?.organizationId || ''))
+    if (!organization) return void res.status(400).json({ error: 'Choose an account.' })
+    const organizationId = organization.id
     const state = await loadTenantState(organizationId)
     if (!state.data) return void res.status(400).json({ error: 'There is no tracker state to migrate yet.' })
     const result = await syncNormalizedState(state.data, user, 'manual-migration', organizationId)
@@ -820,15 +804,6 @@ function requireTenantWorkspace(req: express.Request, res: express.Response, nex
   next()
 }
 
-function requirePlatformAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const user = (req as express.Request & { authUser?: SessionUser }).authUser
-  if (!user?.isPlatformAdmin || user.accountType !== 'platform') {
-    res.status(403).json({ error: 'BXI-Core platform administrator access is required.' })
-    return
-  }
-  next()
-}
-
 app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   if (!supabaseAdmin) {
     res.status(503).json({ configured: false, error: 'Supabase is not configured.' })
@@ -858,6 +833,8 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     next = { ...next, accounts: nextAccounts }
     const accountsChanged = stable(currentAccounts) !== stable(nextAccounts)
     const selfOnlyAccounts = accountsChanged && accountChangesAreSelfOnly(currentAccounts, nextAccounts, user.id)
+    if (accountsChanged && !selfOnlyAccounts) return void res.status(403).json({ error: 'Manage users and access in Internal Admin.' })
+    if (stable(current.taskSettings ?? defaultTaskSettings) !== stable(next.taskSettings ?? defaultTaskSettings)) return void res.status(409).json({ error: 'Task configuration is managed in Internal Admin. Reload this workspace before saving.' })
 
     if (user.role === 'Viewer') {
       const operationalUnchanged = ['clients', 'projects', 'items', 'activity', 'planner'].every((key) => stable(current[key] ?? []) === stable(next[key] ?? []))
@@ -1050,6 +1027,7 @@ app.patch('/api/internal-admin/organizations/:organizationId', requireAuth, requ
     }
     const organization = await organizationById(organizationId)
     if (!organization) throw new Error('Could not reload the account.')
+    if (organization.status !== 'Active') { const runtime = discordRuntimes.get(organizationId); discordRuntimes.delete(organizationId); if (runtime) await runtime.client.destroy() }
     for (const [token, sessionUser] of sessions.entries()) {
       if (sessionUser.organizationId !== organizationId) continue
       if (organization.status !== 'Active') { sessions.delete(token); continue }
@@ -1230,18 +1208,17 @@ function parseModelJson(text: string) {
   }
 }
 
-app.post('/api/assistant', requireAuth, async (req, res) => {
+app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (user.role === 'Viewer' || !moduleAllowed(user, 'ai')) {
     res.status(403).json({ error: 'Your account does not have access to the AI BA Assistant.' })
     return
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
-    res.status(503).json({ error: 'AI is not configured yet. Add OPENAI_API_KEY to .env.local and restart the app.' })
-    return
-  }
+  let ai: Awaited<ReturnType<typeof integrations.active>>
+  try { ai = await integrations.active(tenantIdForUser(user)!, 'openai') } catch { return void res.status(503).json({ error: 'Account AI settings are unavailable.' }) }
+  if (!ai) return void res.status(503).json({ error: 'Enable an AI API key in this account’s Settings.' })
+  const apiKey = ai.secret
 
   const message = typeof req.body?.message === 'string' ? req.body.message.trim() : ''
   if (!message) {
@@ -1250,7 +1227,7 @@ app.post('/api/assistant', requireAuth, async (req, res) => {
   }
 
   const client = new OpenAI({ apiKey })
-  const model = process.env.OPENAI_MODEL || 'gpt-5.6-terra'
+  const model = ai.config.model
   const today = new Date().toISOString().slice(0, 10)
   const context = req.body?.context ?? {}
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
@@ -1294,8 +1271,8 @@ Use at most 5 suggestions. Do not invent client commitments or technical facts. 
     if (!responseMessage) throw new Error('The model returned no assessment.')
     res.json({ message: responseMessage, suggestions: sanitizeSuggestions(parsed.suggestions) })
   } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: error instanceof Error ? error.message : 'AI assistant request failed.' })
+    console.error('Account AI request failed.')
+    res.status(502).json({ error: 'AI request failed. Check this account’s key, selected model, quota, and connection.' })
   }
 })
 
@@ -1546,7 +1523,7 @@ app.post('/api/documents/drf/render-template', requireAuth, async (req, res) => 
   }
 })
 
-function normalizeDiscordContent(content: string) {
+function normalizeDiscordContent(content: string, discordClient: DiscordClient) {
   if (!discordClient?.user) return content.trim()
   return content
     .replace(new RegExp(`<@!?${discordClient.user.id}>`, 'g'), '')
@@ -1561,7 +1538,7 @@ function findNamedContext(text: string, clients: any[], projects: any[]) {
   return { clientId: String(client?.id || ''), projectId: String(project?.id || '') }
 }
 
-async function assessDiscordInquiry(messageText: string, sender: string, state: any) {
+async function assessDiscordInquiry(messageText: string, sender: string, state: any, organizationId: string) {
   const clients = Array.isArray(state?.clients) ? state.clients : []
   const projects = Array.isArray(state?.projects) ? state.projects : []
   const named = findNamedContext(messageText, clients, projects)
@@ -1576,11 +1553,11 @@ async function assessDiscordInquiry(messageText: string, sender: string, state: 
     projectId: named.projectId,
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) return fallback
-
-  const client = new OpenAI({ apiKey })
-  const model = process.env.OPENAI_MODEL || 'gpt-5.6-terra'
+  let ai
+  try { ai = await integrations.active(organizationId, 'openai') } catch { return fallback }
+  if (!ai) return fallback
+  const client = new OpenAI({ apiKey: ai.secret, timeout: 30000, maxRetries: 0 })
+  const model = ai.config.model
   const today = new Date().toISOString().slice(0, 10)
   const clientContext = clients.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
   const projectContext = projects.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
@@ -1622,26 +1599,19 @@ Do not invent commitments, dates, defects, client names, or projects. Only choos
       projectId,
     }
   } catch (error) {
-    console.error('Discord AI assessment failed; using basic capture:', error)
+    console.error('Discord AI assessment failed; using basic capture.')
     return fallback
   }
 }
 
-async function discordTargetOrganization() {
-  if (!await multiTenantSchemaReady()) return { id: BXI_CORE_ORG_ID, name: BXI_CORE_ORG_NAME, slug: BXI_CORE_ORG_SLUG, status: 'Active' as const, enabledModules: [...ALL_MODULES] }
-  const slug = (process.env.DISCORD_ORGANIZATION_SLUG || BXI_CORE_ORG_SLUG).trim().toLowerCase()
-  return await organizationBySlug(slug) || await organizationById(BXI_CORE_ORG_ID)
-}
-
-async function captureDiscordInquiry(discordMessage: any) {
+async function captureDiscordInquiry(discordMessage: any, organizationId: string, discordClient: DiscordClient, revision: string) {
   if (!supabaseAdmin) throw new Error('Supabase is not configured; Discord capture requires persistent cloud storage.')
-  const text = normalizeDiscordContent(String(discordMessage.content || ''))
+  const text = normalizeDiscordContent(String(discordMessage.content || ''), discordClient)
   if (!text) return { created: false, reason: 'empty' }
 
   const externalSourceId = `discord:${discordMessage.id}`
-  const organization = await discordTargetOrganization()
+  const organization = await organizationById(organizationId)
   if (!organization || organization.status !== 'Active') throw new Error('Discord target workspace is unavailable.')
-  const organizationId = organization.id
   const stateResult = await loadTenantState(organizationId)
   const base = stateResult.data && typeof stateResult.data === 'object'
     ? stateResult.data
@@ -1652,7 +1622,7 @@ async function captureDiscordInquiry(discordMessage: any) {
 
   const sender = discordMessage.member?.displayName || discordMessage.author?.globalName || discordMessage.author?.username || 'Discord user'
   const senderTag = discordMessage.author?.username ? `@${discordMessage.author.username}` : ''
-  const assessed = await assessDiscordInquiry(text, sender, base)
+  const assessed = await assessDiscordInquiry(text, sender, base, organizationId)
   const today = new Date().toISOString().slice(0, 10)
   const item = {
     id: crypto.randomUUID(),
@@ -1679,35 +1649,28 @@ async function captureDiscordInquiry(discordMessage: any) {
     items: [item, ...items],
     activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: today, text: `Discord inquiry captured: ${item.title}` }, ...activity],
   }
+  const active = await integrations.row(organizationId, 'discord')
+  const currentOrganization = await organizationById(organizationId)
+  if (!active?.is_enabled || active.updated_at !== revision || currentOrganization?.status !== 'Active') return { created: false, reason: 'disabled' }
   await commitTenantState(organizationId, nextState, null, 'discord-capture', base)
   return { created: true, item, clients: base.clients || [], projects: base.projects || [] }
 }
 
-function discordStatusPayload() {
-  return {
-    configured: discordRuntime.configured,
-    online: discordRuntime.online,
-    botName: discordRuntime.botName,
-    guildCount: discordRuntime.guildCount,
-    allowedUsersConfigured: discordAllowedUserIds.size,
-    lastEventAt: discordRuntime.lastEventAt,
-    lastEventKind: discordRuntime.lastEventKind,
-    lastEventUserId: discordRuntime.lastEventUserId,
-    lastMessageAt: discordRuntime.lastMessageAt,
-    lastError: discordRuntime.lastError,
-    dmCapture: true,
-    mentionCapture: true,
-    workspace: process.env.DISCORD_ORGANIZATION_SLUG || BXI_CORE_ORG_SLUG,
-  }
+function discordStatusPayload(id: string) {
+  const runtime = discordRuntimes.get(id)
+  return { online: runtime?.online || false, botName: runtime?.botName || '', guildCount: runtime?.guildCount || 0,
+    lastMessageAt: runtime?.lastMessageAt || '', lastError: runtime?.lastError || '' }
 }
-
-app.get('/api/integrations/discord/status', requireAuth, (req, res) => {
-  const user = (req as express.Request & { authUser: SessionUser }).authUser
+app.get('/api/integrations/discord/status', requireAuth, requireTenantWorkspace, (req, res) => {
+  const user = (req as any).authUser
   if (!moduleAllowed(user, 'settings')) return void res.status(403).json({ error: 'Settings access is required.' })
-  res.json(discordStatusPayload())
+  res.json(discordStatusPayload(user.organizationId))
 })
+registerPlatformSettings(app, { db: supabaseAdmin, requireAuth, requirePlatformAdmin, organizationById, loadTenantState, normalizedSchemaStatus, defaultTaskSettings, commitTenantState, integrations })
+registerIntegrationRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace,
+  organizationById, store: integrations, reconnect: reconnectDiscord, status: discordStatusPayload })
 
-app.get('/api/integrations/discord/inquiries', requireAuth, async (req, res) => {
+app.get('/api/integrations/discord/inquiries', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!moduleAllowed(user, 'inbox') && !moduleAllowed(user, 'items')) {
     res.status(403).json({ error: 'Inbox or Task module access is required.' })
@@ -1958,96 +1921,65 @@ app.get('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, res)
   }
 })
 
-async function startDiscordBot() {
-  if (!discordClient || !discordToken) {
-    console.log('Discord Inquiry Capture: not configured (DISCORD_BOT_TOKEN is empty).')
-    return
-  }
-
-  discordClient.once('ready', (client) => {
-    discordRuntime.online = true
-    discordRuntime.botName = client.user.tag || client.user.username
-    discordRuntime.guildCount = client.guilds.cache.size
-    discordRuntime.lastError = ''
-    console.log(`Discord Inquiry Capture online as ${discordRuntime.botName}`)
+async function reconnectDiscord(organizationId: string) {
+  const previous = discordReconnections.get(organizationId) || Promise.resolve()
+  const next = previous.catch(() => undefined).then(() => startTenantDiscord(organizationId))
+  discordReconnections.set(organizationId, next)
+  try { await next } finally { if (discordReconnections.get(organizationId) === next) discordReconnections.delete(organizationId) }
+}
+async function startTenantDiscord(organizationId: string) {
+  const previous = discordRuntimes.get(organizationId)
+  if (previous) { discordRuntimes.delete(organizationId); await previous.client.destroy() }
+  const organization = await organizationById(organizationId)
+  if (organization?.status !== 'Active') return
+  const config = await integrations.active(organizationId, 'discord')
+  if (!config) return
+  const client = new DiscordClient({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel] })
+  const runtime: DiscordRuntime = { client, revision: config.revision, online: false, botName: '', guildCount: 0, lastMessageAt: '', lastError: '' }
+  discordRuntimes.set(organizationId, runtime)
+  client.once('ready', ready => { runtime.online = true; runtime.botName = ready.user.tag; runtime.guildCount = ready.guilds.cache.size; runtime.lastError = '' })
+  client.on('shardDisconnect', () => { runtime.online = false })
+  client.on('shardResume', () => { runtime.online = true })
+  client.on('error', () => { runtime.lastError = 'Discord connection error. Check bot permissions and reconnect.' })
+  client.on('shardError', () => { runtime.online = false; runtime.lastError = 'Discord gateway error.' })
+  client.on('messageCreate', message => {
+    if (message.author.bot || !client.user || (message.guildId && !message.mentions.users.has(client.user.id))) return
+    const allowed = config.config.allowedUserIds || []
+    if (allowed.length && !allowed.includes(message.author.id)) return
+    if (discordUserRateLimited(`${organizationId}:${message.author.id}`)) return
+    // Serial capture per tenant preserves message deduplication and independent bot state.
+    const queued = (discordCaptures.get(organizationId) || Promise.resolve()).catch(() => undefined).then(async () => {
+      if (discordRuntimes.get(organizationId) !== runtime) return
+      try {
+        const result = await captureDiscordInquiry(message, organizationId, client, config.revision)
+        if (result.created) {
+          runtime.lastMessageAt = new Date().toISOString(); runtime.lastError = ''
+          await message.reply({ content: '✅ Inquiry added to BA Tracker.', allowedMentions: { parse: [], repliedUser: false } }).catch(() => undefined)
+        }
+      } catch { runtime.lastError = 'Inquiry could not be saved. Check account storage and retry.' }
+    })
+    discordCaptures.set(organizationId, queued)
+    void queued.finally(() => { if (discordCaptures.get(organizationId) === queued) discordCaptures.delete(organizationId) })
   })
-
-  discordClient.on('guildCreate', () => { discordRuntime.guildCount = discordClient.guilds.cache.size })
-  discordClient.on('guildDelete', () => { discordRuntime.guildCount = discordClient.guilds.cache.size })
-  discordClient.on('error', (error) => {
-    discordRuntime.lastError = error.message
-    console.error('Discord client error:', error)
-  })
-  discordClient.on('shardError', (error) => {
-    discordRuntime.lastError = error.message
-    console.error('Discord gateway error:', error)
-  })
-  discordClient.on('messageCreate', async (message) => {
-    if (message.author.bot || !discordClient.user) return
-    const isDm = !message.guildId
-    const mentionsBot = Boolean(message.guildId && message.mentions.users.has(discordClient.user.id))
-    if (!isDm && !mentionsBot) return
-
-    discordRuntime.lastEventAt = new Date().toISOString()
-    discordRuntime.lastEventKind = isDm ? 'DM' : 'Mention'
-    discordRuntime.lastEventUserId = message.author.id
-    console.log(`Discord message received: kind=${discordRuntime.lastEventKind} author=${message.author.id} contentLength=${String(message.content || '').length}`)
-
-    if (discordAllowedUserIds.size && !discordAllowedUserIds.has(message.author.id)) {
-      console.warn(`Discord capture rejected unauthorized user ${message.author.id}`)
-      if (isDm) await message.reply('This Discord account is not authorized for BA Tracker inquiry capture.').catch(() => undefined)
-      return
-    }
-
-    if (discordUserRateLimited(message.author.id)) {
-      console.warn(`Discord capture rate-limited user ${message.author.id}`)
-      if (isDm) await message.reply('Too many inquiry messages were sent in a short time. Please wait a minute and try again.').catch(() => undefined)
-      return
-    }
-
-    const normalizedText = normalizeDiscordContent(String(message.content || ''))
-    if (!normalizedText) {
-      discordRuntime.lastError = 'Discord message event received, but the text content was empty.'
-      console.warn(discordRuntime.lastError)
-      await message.reply({ content: '⚠️ I received your message, but I could not read any text from it. Please send a plain-text message and try again.', allowedMentions: { repliedUser: false } }).catch(() => undefined)
-      return
-    }
-
-    try {
-      const result: any = await captureDiscordInquiry(message)
-      if (!result.created) {
-        if (result.reason === 'duplicate') await message.reply({ content: '✅ This message is already in the BA Tracker.', allowedMentions: { repliedUser: false } }).catch(() => undefined)
-        return
-      }
-      discordRuntime.lastMessageAt = new Date().toISOString()
-      const item = result.item
-      const clientName = result.clients.find((client: any) => String(client.id) === String(item.clientId))?.name || 'Unassigned'
-      const projectName = result.projects.find((project: any) => String(project.id) === String(item.projectId))?.name || 'No project'
-      const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '')
-      const lines = [
-        '✅ **Inquiry added to BA Tracker**',
-        `**${item.title}**`,
-        `Client: ${clientName}${projectName !== 'No project' ? ` · ${projectName}` : ''}`,
-        `Priority: ${item.priority} · Waiting on: ${item.waitingOn}`,
-        item.followUpDate ? `Follow-up: ${item.followUpDate}` : '',
-        baseUrl ? `${baseUrl}` : '',
-      ].filter(Boolean)
-      await message.reply({ content: lines.join('\n').slice(0, 1900), allowedMentions: { repliedUser: false } })
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : 'Discord inquiry capture failed.'
-      discordRuntime.lastError = messageText
-      console.error('Discord inquiry capture failed:', error)
-      await message.reply({ content: `⚠️ I could not add that inquiry: ${messageText}`.slice(0, 1900), allowedMentions: { repliedUser: false } }).catch(() => undefined)
-    }
-  })
-
+  // Saving settings must not wait for the Gateway handshake.
+  void client.login(config.secret).catch(() => { runtime.online = false; runtime.lastError = 'Bot login failed. Check token and Message Content intent.' })
+}
+let reconcilingDiscord = false
+async function reconcileDiscord() {
+  if (!supabaseAdmin || reconcilingDiscord) return
+  reconcilingDiscord = true
   try {
-    await discordClient.login(discordToken)
-  } catch (error) {
-    discordRuntime.online = false
-    discordRuntime.lastError = error instanceof Error ? error.message : 'Discord login failed.'
-    console.error('Discord bot login failed:', error)
-  }
+    const { data, error } = await supabaseAdmin.from('tenant_integrations').select('tenant_id,updated_at').eq('integration_type','discord').eq('is_enabled',true)
+    if (error) throw error
+    const enabled = new Set((data || []).map(row => row.tenant_id))
+    for (const [id, runtime] of discordRuntimes) if (!enabled.has(id)) { discordRuntimes.delete(id); await runtime.client.destroy() }
+    for (const row of data || []) {
+      const organization = await organizationById(row.tenant_id)
+      const runtime = discordRuntimes.get(row.tenant_id)
+      if (organization?.status !== 'Active' || runtime?.revision !== row.updated_at || !runtime?.online) await reconnectDiscord(row.tenant_id).catch(() => undefined)
+    }
+  } catch { console.warn('Tenant Discord connections unavailable. Check schema-v8 and encrypted integration configuration.') }
+  finally { reconcilingDiscord = false }
 }
 
 if (!isProduction) {
@@ -2067,9 +1999,9 @@ app.listen(port, () => {
   if (isProduction && !bootstrapPasswordUsable(bxiCoreBootstrapPassword)) {
     console.warn('SECURITY: BXI_CORE_BOOTSTRAP_PASSWORD is not configured with 12+ characters. It is required only while the initial BXI-Core Admin account is in bootstrap state.')
   }
-  void startDiscordBot()
+  void reconcileDiscord()
 })
 
-process.on('SIGTERM', () => {
-  if (discordClient) discordClient.destroy()
-})
+const discordTimer = setInterval(() => { void reconcileDiscord(); const now = Date.now(); for (const [id, value] of discordUserWindows) if (now - value.startedAt > 60000) discordUserWindows.delete(id) }, 30000)
+discordTimer.unref()
+process.on('SIGTERM', () => { clearInterval(discordTimer); for (const runtime of discordRuntimes.values()) void runtime.client.destroy(); process.exit(0) })

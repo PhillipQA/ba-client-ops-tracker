@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { extractCorLocally } from './corOcr'
 import {
   BriefcaseBusiness,
@@ -128,6 +128,18 @@ export default function DocumentCreation() {
   const [flow, setFlow] = useState<DocumentFlow>('drf')
   const [corFiles, setCorFiles] = useState<File[]>([])
   const [templateFiles, setTemplateFiles] = useState<File[]>([])
+  useEffect(() => {
+    let active = true
+    void fetch('/api/account/templates').then(async response => {
+      if (!response.ok) return
+      const { template } = await response.json()
+      if (!template || !active) return
+      const bytes = Uint8Array.from(atob(template.content_base64), c => c.charCodeAt(0))
+      setTemplateFiles(current => current.length ? current : [new File([bytes], template.name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })])
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
+
   const [brdFiles, setBrdFiles] = useState<File[]>([])
   const [signoffFiles, setSignoffFiles] = useState<File[]>([])
   const [businessName, setBusinessName] = useState('')

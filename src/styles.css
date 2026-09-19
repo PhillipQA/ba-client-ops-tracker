@@ -1289,3 +1289,14 @@ select option { background: #181818; color: #fff; }
 .internal-admin-security-warning strong, .internal-admin-security-warning span { display: block; }
 .internal-admin-security-warning strong { color: #fde68a; font-size: 12px; }
 .internal-admin-security-warning span { margin-top: 3px; color: color-mix(in srgb, #fde68a 72%, var(--muted)); font-size: 11px; line-height: 1.45; }
+
+/* Account-scoped integration and platform controls. */
+.integration-form { display: grid; gap: 16px; max-width: 720px; margin: 18px 0; }
+.integration-form label { display: grid; gap: 7px; }
+.integration-form .checkbox-label, .checkbox-label { display: flex; align-items: center; gap: 8px; }
+.integration-form small, .account-integration-card > small { color: var(--muted, #64748b); line-height: 1.6; }
+.integration-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.platform-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.platform-settings section { min-width: 0; padding: 16px 0; border-bottom: 1px solid #e2e8f0; }
+.platform-settings code { overflow-wrap: anywhere; white-space: normal; }
+@media(max-width: 800px) { .platform-settings-grid { grid-template-columns: 1fr; } }

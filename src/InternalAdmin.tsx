@@ -1,3 +1,4 @@
+import PlatformSettings from './PlatformSettings'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   Building2,
@@ -320,5 +321,6 @@ export default function InternalAdmin({ mustChangePassword = false, recoveryEmai
         </> : <div className="empty-state"><Layers3 size={28} /><p>Select an account to manage modules and users.</p></div>}
       </aside>
     </div>
+    <PlatformSettings key={selectedOrganizationId} organizationId={selectedOrganizationId} organizationName={selectedOrganization?.name || ""} />
   </section>
 }
