@@ -1,3 +1,5 @@
+import LifecycleControls from './LifecycleControls'
+import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from './lifecycle'
 import { FormEvent, type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
@@ -154,6 +156,7 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
   const clients = Array.isArray(parsed.clients) ? parsed.clients.filter((item) => !legacy || !legacyDemoIds.clients.has(item.id)) : fallback.clients
   const rawProjects = Array.isArray(parsed.projects) ? parsed.projects.filter((item) => !legacy || !legacyDemoIds.projects.has(item.id)) : fallback.projects
   const projects: Project[] = rawProjects.map((project) => ({
+    ...project,
     id: String(project.id),
     name: String(project.name || 'Untitled project'),
     status: project.status === 'Active' || project.status === 'UAT' || project.status === 'Closing' || project.status === 'Closed' ? project.status : 'Discovery',
@@ -274,6 +277,9 @@ function App() {
   const [store, setStore] = useState<Store>(initialStore)
   const [view, setView] = useState<View>('action')
   const [query, setQuery] = useState('')
+  const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
+  const [projectArchiveFilter, setProjectArchiveFilter] = useState('active')
+  const [lifecycleSaving, setLifecycleSaving] = useState(false)
   const [waitingFilter, setWaitingFilter] = useState<'All' | WaitingOn>('All')
   const [taskClientFilter, setTaskClientFilter] = useState('')
   const [taskProjectFilter, setTaskProjectFilter] = useState('')
@@ -382,6 +388,9 @@ function App() {
   }, [authUser?.id])
 
   const persist = (next: Store) => {
+    try { assertLifecycleMutation(storeRef.current, next, authUser) }
+    catch (error) { window.alert(error instanceof Error ? error.message : 'This change is not allowed.'); return false }
+
     const normalized = { ...next, schemaVersion: STORE_SCHEMA_VERSION }
     storeRef.current = normalized
     setStore(normalized)
@@ -401,8 +410,31 @@ function App() {
     }).catch((error) => {
       console.error(error)
       setCloudStatus('error')
-      setCloudMessage('Cloud save failed · local cache retained')
+      setCloudMessage(error instanceof Error ? error.message : 'Cloud save failed · local cache retained')
     })
+  }
+
+  const saveLifecycleRecord = async (kind: 'clients' | 'projects', record: Client | Project) => {
+    if (!authUser || authUser.role === 'Viewer' || !authUser.modules.includes(kind)) throw new Error('Edit access is required.')
+    setLifecycleSaving(true)
+    try {
+      await waitForCloudSaves()
+      const current = storeRef.current
+      const old = current[kind].find(r => r.id === record.id)
+      if (!old || (old.lifecycleVersion || 0) !== (record.lifecycleVersion || 0)) throw new Error('This record changed. Close the editor and reopen it.')
+      if (stableRecord(old) === stableRecord(record)) return
+      const updated = { ...record, lifecycleVersion: (old.lifecycleVersion || 0) + 1 }
+      const next = { ...current, [kind]: current[kind].map(r => r.id === record.id ? updated : r) } as Store
+      assertLifecycleMutation(current, next, authUser)
+      if (cloudStatus !== 'local') {
+        const saved = await queueCloudStoreSave(next)
+        if (!saved.configured) throw new Error('The server could not save this change. Retry when storage is available.')
+        setLastCloudSync(saved.updatedAt || new Date().toISOString())
+        setCloudStatus('synced'); setCloudMessage('Supabase synced')
+      }
+      storeRef.current = next; setStore(next)
+      localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(next))
+    } finally { setLifecycleSaving(false) }
   }
 
   const applyEvidenceMutation = (result: TaskEvidenceMutationResult) => {
@@ -489,7 +521,7 @@ function App() {
     lastLoginAt: authUser.lastLoginAt,
   } : null
   const workspaceModules = currentUser?.organizationModules || currentUser?.modules || []
-  const canWrite = Boolean(currentUser && currentUser.role !== 'Viewer')
+  const canWrite = Boolean(currentUser && currentUser.role !== 'Viewer' && !lifecycleSaving)
   const canManageAccounts = currentUser?.role === 'Administrator' && currentUser.accountType !== 'platform'
   const hasModule = (module: AppModule) => Boolean(currentUser && currentUser.modules.includes(module))
   const canWriteTasks = canWrite && (hasModule('items') || hasModule('inbox'))
@@ -759,6 +791,8 @@ function App() {
 
   const openTaskEditor = (id: string) => {
     if (!canWriteTasks) return
+    const target = store.items.find(item => item.id === id)
+    if (target && archivedWorkReason(store, target)) { window.alert(archivedWorkReason(store, target)); return }
     setEditingTaskId(id)
     setModal('taskEdit')
   }
@@ -767,6 +801,7 @@ function App() {
     if (!canWriteTasks) return
     const parent = store.items.find((item) => item.id === parentTaskId)
     if (!parent || parent.parentTaskId) return
+    if (archivedWorkReason(store, parent)) { window.alert(archivedWorkReason(store, parent)); return }
     setTaskPreset({ clientId: parent.clientId, projectId: parent.projectId, type: 'Task', parentTaskId: parent.id })
     setModal('item')
   }
@@ -860,6 +895,8 @@ function App() {
     if (!canWriteTasks) return 'Task or Inbox write access is required to apply a suggestion.'
     const clientId = contextClientId || undefined
     const projectId = contextProjectId || undefined
+    const locked = archivedWorkReason(store, { clientId, projectId })
+    if (locked) return locked
 
     if (suggestion.kind === 'activity') {
       const activity: PlannerActivity = {
@@ -945,7 +982,7 @@ function App() {
           <div className="top-actions">
             <span className="top-role-pill">{view === 'internal-admin' && currentUser.accountType === 'platform' ? 'Platform Admin' : currentUser.role}</span>
             {view !== 'internal-admin' && canWrite && hasModule('clients') && <button className="secondary" onClick={() => setModal('client')}><Users size={17} /> Add client</button>}
-            {view !== 'internal-admin' && canWrite && (hasModule('items') || hasModule('inbox')) && <button className="primary" onClick={() => {
+            {view !== 'internal-admin' && canWrite && !isArchived(selectedClient || undefined) && !isArchived(selectedProject || undefined) && !isArchived(store.clients.find(client => client.id === selectedProjectClientId)) && (hasModule('items') || hasModule('inbox')) && <button className="primary" onClick={() => {
               if (selectedClient) setTaskPreset({ clientId: selectedClient.id, type: 'Task' })
               else if (selectedProject) setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' })
               else setTaskPreset(null)
@@ -1026,15 +1063,16 @@ function App() {
         {!selectedClient && !selectedProject && view === 'clients' && hasModule('clients') && (
           <section className="page-stack">
             <div className="section-actions"><p className="page-intro">Clients hold relationship context. Projects are global; client association happens on each task.</p>{canWrite && <button className="primary" onClick={() => setModal('client')}><Plus size={18} /> New client</button>}</div>
+            <label className="lifecycle-filter">Show clients<select value={clientArchiveFilter} onChange={e => setClientArchiveFilter(e.target.value)}><option value="active">Active</option><option value="archived">Archived / Inactive</option><option value="all">All</option></select></label>
             <div className="client-grid">
-              {store.clients.length === 0 && <div className="panel empty-start-card"><Users size={24} /><div><h3>No clients yet</h3><p>Add a client when you need client-specific context. General projects can be created without a client.</p></div></div>}
-              {store.clients.map((client) => {
+              {store.clients.filter(client => clientArchiveFilter === 'all' || isArchived(client) === (clientArchiveFilter === 'archived')).length === 0 && <div className="panel empty-start-card"><Users size={24} /><div><h3>No clients in this view</h3><p>Choose another filter or add a client.</p></div></div>}
+              {store.clients.filter(client => clientArchiveFilter === 'all' || isArchived(client) === (clientArchiveFilter === 'archived')).map((client) => {
                 const projectIds = new Set(store.items.filter((item) => item.clientId === client.id && item.projectId).map((item) => item.projectId as string))
                 const projects = store.projects.filter((project) => projectIds.has(project.id))
                 const open = openItems.filter((i) => i.clientId === client.id)
                 const next = open.filter((i) => i.followUpDate).sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))[0]
                 return <button key={client.id} className="client-card" onClick={() => setSelectedClientId(client.id)}>
-                  <div className="card-top"><div className="client-avatar">{client.name.slice(0, 2).toUpperCase()}</div><StatusChip value={client.status} /><ChevronRight size={18} /></div>
+                  <div className="card-top"><div className="client-avatar">{client.name.slice(0, 2).toUpperCase()}</div><StatusChip value={isArchived(client) ? 'Archived · Inactive' : client.status} /><ChevronRight size={18} /></div>
                   <h3>{client.name}</h3><p>{client.contact} · {client.email}</p>
                   <div className="card-stats"><span><b>{projects.length}</b> projects</span><span><b>{open.length}</b> open tasks</span></div>
                   <div className="next-line"><Clock3 size={15} /><span>{next ? `Next: ${niceDate(next.followUpDate)} — ${next.title}` : 'No follow-up scheduled'}</span></div>
@@ -1047,10 +1085,10 @@ function App() {
         {!selectedClient && !selectedProject && view === 'projects' && hasModule('projects') && (
           <section className="page-stack">
             <div className="section-actions"><p className="page-intro">Projects are global delivery containers. Client association lives on tasks, so one project can serve multiple clients without mixing their client views.</p>{canWrite && <button className="primary" onClick={() => setModal('project')}><Plus size={18} /> New project</button>}</div>
-            <div className="panel table-panel"><table><thead><tr><th>Project</th><th>Clients with tasks</th><th>Status</th><th>Target</th><th>Open tasks</th></tr></thead><tbody>{store.projects.length === 0 ? <tr><td colSpan={5}><Empty text="No projects yet. Projects are global and can contain tasks for any client." /></td></tr> : store.projects.map((project) => {
+            <label className="lifecycle-filter">Show projects<select value={projectArchiveFilter} onChange={e => setProjectArchiveFilter(e.target.value)}><option value="active">Active</option><option value="archived">Archived / Inactive</option><option value="all">All</option></select></label><div className="panel table-panel"><table><thead><tr><th>Project</th><th>Clients with tasks</th><th>Status</th><th>Target</th><th>Open tasks</th></tr></thead><tbody>{store.projects.filter(project => projectArchiveFilter === 'all' || isArchived(project) === (projectArchiveFilter === 'archived')).length === 0 ? <tr><td colSpan={5}><Empty text="No projects in this view. Choose another filter or create a project." /></td></tr> : store.projects.filter(project => projectArchiveFilter === 'all' || isArchived(project) === (projectArchiveFilter === 'archived')).map((project) => {
               const clientIds = [...new Set(store.items.filter((item) => item.projectId === project.id && item.clientId).map((item) => item.clientId as string))]
               const clientLabel = clientIds.length ? clientIds.map((id) => clientName(id)).join(', ') : 'No client tasks yet'
-              return <tr key={project.id}><td><button className="table-link project-name-link" type="button" onClick={() => { setSelectedProjectClientId(null); setSelectedProjectId(project.id) }}><strong>{project.name}</strong><small>{project.summary || 'Open project dashboard'}</small></button></td><td>{clientLabel}</td><td><StatusChip value={project.status} /></td><td>{niceDate(project.targetDate)}</td><td>{openItems.filter((item) => item.projectId === project.id).length}</td></tr>
+              return <tr key={project.id}><td><button className="table-link project-name-link" type="button" onClick={() => { setSelectedProjectClientId(null); setSelectedProjectId(project.id) }}><strong>{project.name}</strong><small>{project.summary || 'Open project dashboard'}</small></button></td><td>{clientLabel}</td><td><StatusChip value={isArchived(project) ? 'Archived · Inactive' : project.status} /></td><td>{niceDate(project.targetDate)}</td><td>{openItems.filter((item) => item.projectId === project.id).length}</td></tr>
             })}</tbody></table></div>
           </section>
         )}
@@ -1104,12 +1142,12 @@ function App() {
         {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings currentUser={currentUser} />}
 
         {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
-          <section className="page-stack"><AIAssistant clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
+          <section className="page-stack"><AIAssistant clients={store.clients.filter(client => !isArchived(client))} projects={store.projects.filter(project => !isArchived(project))} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
         )}
 
-        {selectedClient && <ClientDetail client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWriteTasks} />}
+        {selectedClient && <ClientDetail controls={<LifecycleControls key={selectedClient.id} kind="clients" record={selectedClient} store={store} canEdit={canWrite && hasModule('clients')} canRenameClient={currentUser.role === 'Administrator'} onSave={record => saveLifecycleRecord('clients', record)} />} client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWriteTasks} />}
 
-        {selectedProject && <ProjectDetail project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} canEditTasks={canWriteTasks} />}
+        {selectedProject && <ProjectDetail controls={<LifecycleControls key={selectedProject.id} kind="projects" record={selectedProject} store={store} canEdit={canWrite && hasModule('projects')} canRenameClient={false} onSave={record => saveLifecycleRecord('projects', record)} />} project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} canEditTasks={canWriteTasks} />}
       </main>
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
@@ -1333,8 +1371,8 @@ function ActivityForm({ clients, projects, initial, onSubmit }: { clients: Clien
     <label>Status<select name="status" defaultValue={initial?.status ?? 'Planned'}><option>Planned</option><option>Done</option><option>Cancelled</option></select></label>
     <label className="checkbox-label"><input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} /> All-day activity</label><div />
     {!allDay && <><label>Start time<input name="startTime" type="time" defaultValue={initial?.startTime ?? ''} /></label><label>End time<input name="endTime" type="time" defaultValue={initial?.endTime ?? ''} /></label></>}
-    <label>Client<select name="clientId" value={clientId} onChange={(e) => setClientId(e.target.value)}><option value="">No client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
-    <label>Project<select name="projectId" defaultValue={initial?.projectId ?? ''}><option value="">No project</option>{linkedProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+    <label>Client<select name="clientId" value={clientId} onChange={(e) => setClientId(e.target.value)}><option value="">No client</option>{clients.filter(client => !isArchived(client) || client.id === initial?.clientId).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+    <label>Project<select name="projectId" defaultValue={initial?.projectId ?? ''}><option value="">No project</option>{linkedProjects.filter(project => !isArchived(project) || project.id === initial?.projectId).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
     <label className="span-2">BA notes<textarea name="notes" rows={4} defaultValue={initial?.notes ?? ''} placeholder="Preparation notes, agenda, follow-up context, decisions..." /></label>
     <div className="form-actions span-2"><button className="primary">{initial ? 'Save local changes' : 'Add activity'}</button></div>
   </form>
@@ -1417,6 +1455,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   }
 
   const renderRow = (item: WorkItem, isSubtask = false) => {
+    const rowEditable = canEdit && !archivedWorkReason({ clients, projects, items: sourceItems, taskSettings }, item)
     const closed = isTaskClosed(item.status, taskSettings)
     const overdue = !closed && Boolean((item.dueDate && item.dueDate < TODAY) || (item.followUpDate && item.followUpDate < TODAY))
     const children = sortedChildren(item.id)
@@ -1427,16 +1466,16 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
     return <tr
       key={item.id}
       className={rowClass}
-      draggable={Boolean(canEdit && isSubtask)}
+      draggable={Boolean(rowEditable && isSubtask)}
       onDragStart={isSubtask ? (event) => { setDraggedSubtaskId(item.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', item.id) } : undefined}
       onDragOver={isSubtask ? (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropTargetId(item.id) } : undefined}
       onDragLeave={isSubtask ? () => { if (dropTargetId === item.id) setDropTargetId(null) } : undefined}
       onDrop={isSubtask ? (event) => { event.preventDefault(); dropSubtask(item) } : undefined}
       onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
     >
-      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{canEdit && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small></div></div></td>
-      {columns.map((column) => <td key={column}>{column === 'status' ? (canEdit ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || '—' : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
-      <td><div className="task-row-actions">{canEdit && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{canEdit && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{canEdit && isSubtask && <button className="icon-button" title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'} onClick={() => onEdit(item.id)}><Paperclip size={17} /></button>}{canEdit && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{canEdit && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{canEdit && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
+      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{rowEditable && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small></div></div></td>
+      {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || '—' : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
+      <td><div className="task-row-actions">{!rowEditable && (item.evidence || []).map(entry => <a key={entry.id} className="secondary compact" href={taskEvidenceUrl(item.id, entry)} target="_blank" rel="noreferrer">{entry.fileName}</a>)}{rowEditable && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{rowEditable && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{rowEditable && isSubtask && <button className="icon-button" title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'} onClick={() => onEdit(item.id)}><Paperclip size={17} /></button>}{rowEditable && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{rowEditable && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{rowEditable && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
   }
 
@@ -1448,18 +1487,18 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   return <div className="task-table-wrap">{parentIdsWithChildren.length > 0 && <div className="task-table-tools"><button className="secondary compact" type="button" onClick={toggleAllParents}>{allVisibleParentsCollapsed ? 'Expand all subtasks' : 'Collapse all subtasks'}</button></div>}<div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task / Subtask</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{rows}</tbody></table></div></div>
 }
 
-function ClientDetail({ client, store, onBack, onOpenProject, onAddTask, onAskAI, canUseAI, canWrite }: { client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAddTask: (clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean; canWrite: boolean }) {
+function ClientDetail({ controls, client, store, onBack, onOpenProject, onAddTask, onAskAI, canUseAI, canWrite }: { controls: React.ReactNode; client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAddTask: (clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean; canWrite: boolean }) {
   const projectTaskCounts = new Map<string, number>()
   store.items.filter((item) => item.clientId === client.id && item.projectId).forEach((item) => projectTaskCounts.set(item.projectId as string, (projectTaskCounts.get(item.projectId as string) || 0) + 1))
   const projects = store.projects.filter((project) => projectTaskCounts.has(project.id))
   return <section className="page-stack">
     <button className="back-link" onClick={onBack}>← Back to clients</button>
-    <div className="client-hero"><div><div className="row-meta"><StatusChip value={client.status} /><HealthChip value={client.health} /></div><p>{client.contact} · {client.email}</p><p>{client.notes}</p></div><div className="client-hero-actions">{canWrite && <button className="primary" onClick={() => onAddTask(client.id)}><Plus size={17} /> Add task</button>}{canUseAI && <button className="secondary" onClick={() => onAskAI(client.id)}><Sparkles size={17} /> Ask AI</button>}</div></div>
-    <div className="panel"><div className="panel-heading"><div><h2>Projects</h2><p>Projects are global. Only projects containing tasks for {client.name} are shown here.</p></div></div>{projects.length ? <div className="client-project-list">{projects.map((project) => <button type="button" className="mini-project mini-project-button" key={project.id} onClick={() => onOpenProject(project.id, client.id)}><div><strong>{project.name}</strong><p>{project.summary || 'Open project dashboard'}</p></div><div><StatusChip value={project.status} /><small>{projectTaskCounts.get(project.id) || 0} task{projectTaskCounts.get(project.id) === 1 ? '' : 's'} · Target {niceDate(project.targetDate)}</small><ChevronRight size={16} /></div></button>)}</div> : <Empty text="No tasks for this client are assigned to a project yet." />}</div>
+    {controls}<div className="client-hero"><div><div className="row-meta"><StatusChip value={client.status} /><HealthChip value={client.health} /></div><p>{client.contact} · {client.email}</p><p>{client.notes}</p></div><div className="client-hero-actions">{canWrite && !isArchived(client) && <button className="primary" onClick={() => onAddTask(client.id)}><Plus size={17} /> Add task</button>}{canUseAI && !isArchived(client) && <button className="secondary" onClick={() => onAskAI(client.id)}><Sparkles size={17} /> Ask AI</button>}</div></div>
+    <div className="panel"><div className="panel-heading"><div><h2>Projects</h2><p>Projects are global. Only projects containing tasks for {client.name} are shown here.</p></div></div>{projects.length ? <div className="client-project-list">{projects.map((project) => <button type="button" className="mini-project mini-project-button" key={project.id} onClick={() => onOpenProject(project.id, client.id)}><div><strong>{project.name}</strong><p>{project.summary || 'Open project dashboard'}</p></div><div><StatusChip value={isArchived(project) ? 'Archived · Inactive' : project.status} /><small>{projectTaskCounts.get(project.id) || 0} task{projectTaskCounts.get(project.id) === 1 ? '' : 's'} · Target {niceDate(project.targetDate)}</small><ChevronRight size={16} /></div></button>)}</div> : <Empty text="No tasks for this client are assigned to a project yet." />}</div>
   </section>
 }
 
-function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onReorderSubtasks, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite, canEditTasks }: { project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean; canEditTasks: boolean }) {
+function ProjectDetail({ controls, project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onReorderSubtasks, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite, canEditTasks }: { controls: React.ReactNode; project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean; canEditTasks: boolean }) {
   const contextClient = clientContextId ? store.clients.find((client) => client.id === clientContextId) : undefined
   const allProjectTasks = store.items.filter((item) => item.projectId === project.id)
   const tasks = clientContextId ? allProjectTasks.filter((item) => item.clientId === clientContextId) : allProjectTasks
@@ -1479,9 +1518,9 @@ function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAd
   }
   return <section className="page-stack project-detail-page">
     <button className="back-link" onClick={onBack}>{contextClient ? `← Back to ${contextClient.name}` : '← Back to projects'}</button>
-    <div className="project-hero">
-      <div><div className="row-meta"><StatusChip value={project.status} /><span>{contextClient ? `${contextClient.name} view` : `Global project · ${clientCount} client${clientCount === 1 ? '' : 's'} with tasks`}</span></div><p>{project.summary || 'No project summary yet.'}</p><small>Target {niceDate(project.targetDate)}</small></div>
-      {canEditTasks && <button className="primary" onClick={onAddTask}><Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}</button>}
+    {controls}<div className="project-hero">
+      <div><div className="row-meta"><StatusChip value={isArchived(project) ? 'Archived · Inactive' : project.status} /><span>{contextClient ? `${contextClient.name} view` : `Global project · ${clientCount} client${clientCount === 1 ? '' : 's'} with tasks`}</span></div><p>{project.summary || 'No project summary yet.'}</p><small>Target {niceDate(project.targetDate)}</small></div>
+      {canEditTasks && !isArchived(project) && !isArchived(contextClient) && <button className="primary" onClick={onAddTask}><Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}</button>}
     </div>
     {contextClient && <div className="project-context-banner"><strong>{contextClient.name}</strong><span>Only this client's tasks, subtasks, and communications are shown. Work from other clients in {project.name} is hidden.</span></div>}
     <div className="project-stat-grid">
@@ -1491,7 +1530,7 @@ function ProjectDetail({ project, clientContextId, store, setStore, onBack, onAd
       <div className="project-stat"><span>Due in 7 days</span><strong>{dueSoon.length}</strong></div>
     </div>
     <div className="panel"><div className="panel-heading"><div><h2>{contextClient ? `${contextClient.name} tasks` : 'Project tasks'}</h2><p>{contextClient ? `Tasks and subtasks for ${contextClient.name} under ${project.name}.` : 'All client and general tasks created under this global project, with subtasks nested below their parent.'}</p></div><span className="count-pill">{parentTasks.length} tasks · {subtasks.length} subtasks</span></div><TaskTable items={tasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={onResolve} onStatusChange={onStatusChange} onEdit={onEditTask} onDelete={onDeleteTask} onCreateSubtask={onCreateSubtask} onReorderSubtasks={onReorderSubtasks} canEdit={canEditTasks} hiddenColumns={contextClient ? ['project', 'client'] : ['project']} /></div>
-    <div className="panel project-communication-panel"><div className="panel-heading"><div><h2>Communication log</h2><p>{contextClient ? `Communication for ${contextClient.name} within this project.` : 'Project notes, decisions, task events, and follow-up context across all clients.'}</p></div></div>{canWrite && <form className="quick-note" onSubmit={addNote}><input value={note} onChange={(event) => setNote(event.target.value)} placeholder={contextClient ? `Add a ${contextClient.name} communication note...` : 'Add a project communication note...'} /><button className="secondary">Add</button></form>}<div className="timeline">{communication.length ? communication.map((entry) => <div key={entry.id}><span>{niceDate(entry.date)}{!clientContextId && entry.clientId ? ` · ${store.clients.find((client) => client.id === entry.clientId)?.name || 'Unknown client'}` : ''}</span><p>{entry.text}</p></div>) : <div className="activity-empty">No communication logged for this view yet.</div>}</div></div>
+    <div className="panel project-communication-panel"><div className="panel-heading"><div><h2>Communication log</h2><p>{contextClient ? `Communication for ${contextClient.name} within this project.` : 'Project notes, decisions, task events, and follow-up context across all clients.'}</p></div></div>{canWrite && !isArchived(project) && !isArchived(contextClient) && <form className="quick-note" onSubmit={addNote}><input value={note} onChange={(event) => setNote(event.target.value)} placeholder={contextClient ? `Add a ${contextClient.name} communication note...` : 'Add a project communication note...'} /><button className="secondary">Add</button></form>}<div className="timeline">{communication.length ? communication.map((entry) => <div key={entry.id}><span>{niceDate(entry.date)}{!clientContextId && entry.clientId ? ` · ${store.clients.find((client) => client.id === entry.clientId)?.name || 'Unknown client'}` : ''}</span><p>{entry.text}</p></div>) : <div className="activity-empty">No communication logged for this view yet.</div>}</div></div>
   </section>
 }
 
@@ -1536,7 +1575,7 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
     {parent && <div className="readonly-notice span-2"><CircleDot size={18} /><div><strong>Subtask of: {parent.title}</strong><span>Client and project are inherited from the parent task so the hierarchy stays consistent.</span></div></div>}
     {!parent && preset?.clientId && <div className="readonly-notice span-2"><CircleDot size={18} /><div><strong>Client context: {clientLabel}</strong><span>This task is being created from the client record, so the client stays fixed. You can assign any global project to it.</span></div></div>}
     <label className="span-2">{parent ? 'Subtask title' : 'Task title'}<input name="title" required placeholder={parent ? 'Enter the work needed under this task...' : 'Rollout, sign-off, client follow-up, QA review...'} /></label>
-    {parent ? <><label>Client<input value={clientLabel} readOnly disabled /></label><label>Project<input value={projectLabel} readOnly disabled /></label></> : <><label>Client{clientLocked ? <input value={clientLabel} readOnly disabled /> : <select value={clientId} required={type !== 'Inquiry'} onChange={(event) => setClientId(event.target.value)}><option value="">{type === 'Inquiry' ? 'Unassigned / select client' : 'Select client'}</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>}</label><label>Project<select value={projectId} disabled={!clientId} onChange={(event) => setProjectId(event.target.value)}><option value="">{clientId ? 'No project' : 'Select a client first'}</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></>}
+    {parent ? <><label>Client<input value={clientLabel} readOnly disabled /></label><label>Project<input value={projectLabel} readOnly disabled /></label></> : <><label>Client{clientLocked ? <input value={clientLabel} readOnly disabled /> : <select value={clientId} required={type !== 'Inquiry'} onChange={(event) => setClientId(event.target.value)}><option value="">{type === 'Inquiry' ? 'Unassigned / select client' : 'Select client'}</option>{store.clients.filter(client => !isArchived(client)).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>}</label><label>Project<select value={projectId} disabled={!clientId} onChange={(event) => setProjectId(event.target.value)}><option value="">{clientId ? 'No project' : 'Select a client first'}</option>{store.projects.filter(project => !isArchived(project)).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></>}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
@@ -1579,7 +1618,7 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation }: {
     <div className="readonly-notice span-2"><LockKeyhole size={18} /><div><strong>{parent ? `Subtask of: ${parent.title}` : 'Task identity is locked'}</strong><span>{parent ? 'Subtask name, client, and parent project stay fixed. You can update its execution fields below.' : 'Task name and client cannot be changed after creation.'}</span></div></div>
     <label className="span-2">{parent ? 'Subtask title' : 'Task title'}<input value={item.title} readOnly disabled /></label>
     <label>Client<input value={clientLabel} readOnly disabled /></label>
-    {parent ? <label>Project<input value={projectLabel} readOnly disabled /></label> : <label>Project<select name="projectId" defaultValue={item.projectId || ''}><option value="">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
+    {parent ? <label>Project<input value={projectLabel} readOnly disabled /></label> : <label>Project<select name="projectId" defaultValue={item.projectId || ''}><option value="">No project</option>{store.projects.filter(project => !isArchived(project)).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue={item.priority}><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>

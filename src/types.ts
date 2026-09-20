@@ -19,6 +19,8 @@ export interface TaskSettings {
 }
 
 export interface Client {
+  archived?: boolean
+  lifecycleVersion?: number
   id: string
   name: string
   contact: string
@@ -29,6 +31,8 @@ export interface Client {
 }
 
 export interface Project {
+  archived?: boolean
+  lifecycleVersion?: number
   id: string
   name: string
   status: 'Discovery' | 'Active' | 'UAT' | 'Closing' | 'Closed'

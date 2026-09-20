@@ -1,3 +1,5 @@
+import { createWorkspaceGuard } from './workspace-guard'
+import { archivedWorkReason, assertLifecycleMutation, LifecycleError, isArchived } from './src/lifecycle'
 import { registerSignoffRoutes } from './signoff-documents'
 import { registerAccountUsers } from './account-users'
 import dotenv from 'dotenv'
@@ -444,7 +446,14 @@ class TenantSaveError extends Error {
   constructor(message: string, public status: number) { super(message) }
 }
 
+const guardWorkspace = createWorkspaceGuard(async id => (await loadTenantState(id)).data, () => emptyTenantData() as any)
+
 async function commitTenantState(organizationId: string | undefined, state: any, actor: SessionUser | null, reason: string, before?: any, synchronize = true): Promise<NormalizedSyncResult> {
+  if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
+  return guardWorkspace(organizationId, state, actor, before, () => writeTenantState(organizationId, state, actor, reason, before, synchronize))
+}
+
+async function writeTenantState(organizationId: string | undefined, state: any, actor: SessionUser | null, reason: string, before?: any, synchronize = true): Promise<NormalizedSyncResult> {
   if (!supabaseAdmin) throw new TenantSaveError('Supabase is not configured.', 503)
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
   const { data, error } = await supabaseAdmin.rpc('save_tenant_state_v6', {
@@ -873,6 +882,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
       }
     }
 
+    assertLifecycleMutation(current, next, user)
     const saved = await commitTenantState(organizationId, next, user, 'tracker-save', current)
     const updatedAt = saved.syncedAt
 
@@ -892,7 +902,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     res.json({ configured: true, saved: true, updatedAt })
   } catch (error) {
     console.error('Supabase save failed:', error)
-    res.status(error instanceof TenantSaveError ? error.status : 500).json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database save failed.' })
+    res.status(error instanceof TenantSaveError || error instanceof LifecycleError ? error.status : 500).json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database save failed.' })
   }
 })
 
@@ -1634,8 +1644,8 @@ async function captureDiscordInquiry(discordMessage: any, organizationId: string
   const today = new Date().toISOString().slice(0, 10)
   const item = {
     id: crypto.randomUUID(),
-    clientId: assessed.clientId,
-    projectId: assessed.projectId,
+    clientId: base.clients?.some((c: any) => c.id === assessed.clientId && !isArchived(c)) ? assessed.clientId : undefined,
+    projectId: base.projects?.some((p: any) => p.id === assessed.projectId && !isArchived(p)) ? assessed.projectId : undefined,
     title: assessed.title,
     type: 'Inquiry',
     priority: assessed.priority,
@@ -1815,6 +1825,8 @@ app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
     const items = Array.isArray(current.items) ? current.items : []
     const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
     if (!task) return void res.status(404).json({ error: 'Subtask was not found.' })
+    const locked = archivedWorkReason(current, task)
+    if (locked) return void res.status(409).json({ error: locked })
     if (!task.parentTaskId) return void res.status(400).json({ error: 'Evidence uploads are currently available for subtasks only.' })
 
     await ensureTaskEvidenceBucket()
@@ -1861,7 +1873,7 @@ app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
     }
   } catch (error) {
     console.error('Task evidence upload failed:', error)
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Task evidence upload failed.' })
+    res.status(error instanceof LifecycleError ? error.status : 500).json({ error: error instanceof Error ? error.message : 'Task evidence upload failed.' })
   }
 })
 
@@ -1879,6 +1891,8 @@ app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, r
     const items = Array.isArray(current.items) ? current.items : []
     const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
     if (!task || !task.parentTaskId) return void res.status(404).json({ error: 'Subtask was not found.' })
+    const locked = archivedWorkReason(current, task)
+    if (locked) return void res.status(409).json({ error: locked })
     const evidence = (Array.isArray(task.evidence) ? task.evidence : []).find((entry: any) => String(entry?.id || '') === evidenceId)
     if (!evidence) return void res.status(404).json({ error: 'Evidence was not found.' })
 
@@ -1902,7 +1916,7 @@ app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, r
     res.json({ item: updatedTask, activity, updatedAt })
   } catch (error) {
     console.error('Task evidence delete failed:', error)
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Task evidence delete failed.' })
+    res.status(error instanceof LifecycleError ? error.status : 500).json({ error: error instanceof Error ? error.message : 'Task evidence delete failed.' })
   }
 })
 

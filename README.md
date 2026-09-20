@@ -1,12 +1,12 @@
 # BA Client Ops Tracker
 
-Version **0.6.7** — Sign Off creation using the iRipple approval form.
+Version **0.6.8** — client/project editing and archive/reactivate controls.
 
 Tracks clients, shared projects, tasks/subtasks, follow-ups, inquiries, activities, evidence, communications, reports, and document creation. Built with React, TypeScript, Vite, Express, Discord.js, and Supabase.
 
 ## Upgrade an existing installation
 
-Read [UPGRADE-v0.6.7.md](UPGRADE-v0.6.7.md) before applying the v0.6.6 → v0.6.7 patch. No new SQL migration or dependency is required for this update. Earlier installations must complete the [v0.6.6 upgrade](UPGRADE-v0.6.6.md) first.
+Read [UPGRADE-v0.6.8.md](UPGRADE-v0.6.8.md) before applying the v0.6.7 → v0.6.8 patch. No new SQL migration or dependency is required for this update. Earlier installations must complete the [v0.6.7 upgrade](UPGRADE-v0.6.7.md) first.
 
 ## Fresh installation
 
@@ -79,3 +79,11 @@ npm run patch:rollback
 ```
 
 The updater makes source backups and protects environment files, dependencies, Git metadata, and local patch history. Database migrations are run separately. Check [UPGRADE-v0.6.6.md](UPGRADE-v0.6.6.md) for deployment checks and validation limits.
+
+## Client and project lifecycle
+
+Open a client or project to edit details or use Archive / Deactivate and Activate. Only Administrators with Clients access can rename existing clients. Administrators and Contributors with the corresponding module can edit other details and manage archive state. Viewers remain read-only. Client/project deletion is rejected by the server.
+
+The Active / Archived / All filters retain access to historical records. Completion status is separate from archive state: Closed means done; Archived means inactive. Complete all tasks and subtasks, mark linked clients and projects Closed, then archive. For a shared project, every linked client must be Closed. Client completion is account-wide, including its work on other projects. The archive control lists any blockers. Activate records before resuming work; activation preserves completion status and history.
+
+Archived work is read-only. New task/project selectors exclude archives, and API writes also enforce the restriction. Evidence remains available for viewing. Existing records default active; archive state and record versions persist in tenant snapshots and normalized raw_data, without new SQL. Keep the existing single-instance server setup for serialized saves.

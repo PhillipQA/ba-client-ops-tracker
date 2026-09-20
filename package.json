@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.7",
+  "version": "0.6.8",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -14,7 +14,8 @@
     "test:integrations": "node --import tsx --test tests/integrations.test.ts",
     "typecheck:server": "tsc -p tsconfig.server.json",
     "test:accounts": "node --import tsx --test tests/account-users.test.ts",
-    "test:signoff": "node --import tsx --test tests/signoff.test.ts"
+    "test:signoff": "node --import tsx --test tests/signoff.test.ts",
+    "test:lifecycle": "node --import tsx --test tests/lifecycle.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",
