@@ -1,3 +1,5 @@
+import SignOffCreation from './SignOffCreation'
+import type { Client } from './types'
 import { useEffect, useMemo, useState } from 'react'
 import { extractCorLocally } from './corOcr'
 import {
@@ -33,7 +35,6 @@ type PosRow = {
 const COR_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,.bmp,.docx'
 const TEMPLATE_ACCEPT = '.xlsx'
 const BRD_ACCEPT = '.pdf,.doc,.docx,.rtf,.txt'
-const ATTACHMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.txt,.zip'
 const MAX_COR_BYTES = 12 * 1024 * 1024
 const MAX_TEMPLATE_BYTES = 12 * 1024 * 1024
 const MAX_POS_ROWS = 17
@@ -124,7 +125,7 @@ const defaultSignatories: Signatory[] = [
   { label: 'Approved By', name: '', title: 'Accounting Head' },
 ]
 
-export default function DocumentCreation() {
+export default function DocumentCreation({ clients, canGenerate }: { clients: Client[]; canGenerate: boolean }) {
   const [flow, setFlow] = useState<DocumentFlow>('drf')
   const [corFiles, setCorFiles] = useState<File[]>([])
   const [templateFiles, setTemplateFiles] = useState<File[]>([])
@@ -141,7 +142,6 @@ export default function DocumentCreation() {
   }, [])
 
   const [brdFiles, setBrdFiles] = useState<File[]>([])
-  const [signoffFiles, setSignoffFiles] = useState<File[]>([])
   const [businessName, setBusinessName] = useState('')
   const [tradeName, setTradeName] = useState('')
   const [tin, setTin] = useState('')
@@ -289,8 +289,8 @@ export default function DocumentCreation() {
 
       <div className="panel document-workspace">
         <div className="panel-heading document-heading">
-          <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and the approved Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'fsd' ? 'Upload the BRD that will serve as the required source document for the FSD.' : 'Add the documents that will be included with or referenced by the sign-off form.'}</p></div>
-          <span className="document-stage-pill">{flow === 'drf' ? (templateFile ? 'Excel template ready' : 'Excel template required') : 'Template pending'}</span>
+          <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and the approved Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'fsd' ? 'Upload the BRD that will serve as the required source document for the FSD.' : 'Complete the deployment details and six signatory slots, then add supporting attachments.'}</p></div>
+          <span className="document-stage-pill">{flow === 'drf' ? (templateFile ? 'Excel template ready' : 'Excel template required') : flow === 'signoff' ? 'iRipple template ready' : 'Template pending'}</span>
         </div>
 
         {flow === 'drf' && (
@@ -420,22 +420,7 @@ export default function DocumentCreation() {
           </div>
         )}
 
-        {flow === 'signoff' && (
-          <div className="document-single-flow">
-            <div className="document-upload-panel">
-              <div className="document-section-title"><FileText size={18} /><div><strong>Supporting documents</strong><span>Add one or more documents that should accompany the sign-off form.</span></div></div>
-              <label className="document-dropzone">
-                <input type="file" multiple accept={ATTACHMENT_ACCEPT} onChange={handleFiles(setSignoffFiles, true)} />
-                <Plus size={30} />
-                <strong>{signoffFiles.length ? 'Replace selected attachments' : 'Choose attachments'}</strong>
-                <span>PDF, Office documents, spreadsheets, presentations, images, text files, and ZIP files are accepted for intake.</span>
-              </label>
-              <FileSummary files={signoffFiles} />
-              <div className="document-action-row document-signoff-actions"><button type="button" className="primary" disabled><CheckCircle2 size={16} /> Create Sign Off Form</button></div>
-              <p className="document-action-help">Attachment storage and final sign-off generation will be enabled when you provide the required sign-off form/output.</p>
-            </div>
-          </div>
-        )}
+        <div hidden={flow !== 'signoff'}><SignOffCreation clients={clients} canGenerate={canGenerate} /></div>
       </div>
     </section>
   )

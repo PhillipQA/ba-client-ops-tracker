@@ -1,12 +1,12 @@
 # BA Client Ops Tracker
 
-Version **0.6.6** — account users, permissions, and personal/client themes restored.
+Version **0.6.7** — Sign Off creation using the iRipple approval form.
 
 Tracks clients, shared projects, tasks/subtasks, follow-ups, inquiries, activities, evidence, communications, reports, and document creation. Built with React, TypeScript, Vite, Express, Discord.js, and Supabase.
 
 ## Upgrade an existing installation
 
-Read [UPGRADE-v0.6.6.md](UPGRADE-v0.6.6.md) before applying the v0.6.5 → v0.6.6 patch. No new SQL migration or dependency is required for this update. Earlier installations must complete the [v0.6.5 upgrade](UPGRADE-v0.6.5.md) first.
+Read [UPGRADE-v0.6.7.md](UPGRADE-v0.6.7.md) before applying the v0.6.6 → v0.6.7 patch. No new SQL migration or dependency is required for this update. Earlier installations must complete the [v0.6.6 upgrade](UPGRADE-v0.6.6.md) first.
 
 ## Fresh installation
 
@@ -55,7 +55,9 @@ Use one application instance. Sessions and Discord connection ownership are curr
 
 ## Document creation and integrations
 
-DRF COR extraction runs locally using browser OCR. Account Settings can save a reusable Excel template up to 5 MB; Document Creation loads it automatically. Existing ad hoc template uploads, DRF custom fields, machine rows, signatories, FSD and sign-off workflows remain available.
+DRF COR extraction runs locally using browser OCR. Account Settings can save a reusable Excel template up to 5 MB; Document Creation loads it automatically. Existing ad hoc template uploads, DRF custom fields, machine rows, signatories, and FSD remain available.
+
+Sign Off generates an editable Word approval form from the bundled iRipple template. One client field updates every client reference; six signatory slots, date, deployment/product dropdowns, and site details are editable. Uploaded images appear in Word; other supported files accompany it in a ZIP. Generation requires an Administrator or Contributor with Document Creation access. No AI service is needed. Form drafts and attachments are session-only; download before leaving or refreshing. Document numbers are manually assigned. Keep `templates/signoff-template.docx` with the deployed source.
 
 Each enabled account runs its own Discord bot for DMs/@mentions. Bot credentials must be distinct across accounts. The bot uses that account’s AI key when available and otherwise falls back to basic inquiry capture. Enable Message Content intent in the Discord Developer Portal. Configure allowed sender IDs in Settings when capture should be limited.
 

@@ -1094,7 +1094,7 @@ function App() {
           </section>
         )}
 
-        {!selectedClient && !selectedProject && view === 'documents' && hasModule('documents') && <DocumentCreation />}
+        {!selectedClient && !selectedProject && view === 'documents' && hasModule('documents') && <DocumentCreation clients={store.clients} canGenerate={canWrite} />}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} />}
 

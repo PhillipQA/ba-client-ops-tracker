@@ -1,3 +1,4 @@
+import { registerSignoffRoutes } from './signoff-documents'
 import { registerAccountUsers } from './account-users'
 import dotenv from 'dotenv'
 import express from 'express'
@@ -1447,6 +1448,8 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
     posRowsWritten: normalizedRows.length,
   }
 }
+
+registerSignoffRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(__dirname, 'templates', 'signoff-template.docx') })
 
 app.post('/api/documents/drf/extract-cor', requireAuth, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
