@@ -1,12 +1,12 @@
 # BA Client Ops Tracker
 
-Version **0.6.8** — client/project editing and archive/reactivate controls.
+Version **0.6.9** — visible client/project Edit controls and an unclipped popup editor.
 
 Tracks clients, shared projects, tasks/subtasks, follow-ups, inquiries, activities, evidence, communications, reports, and document creation. Built with React, TypeScript, Vite, Express, Discord.js, and Supabase.
 
 ## Upgrade an existing installation
 
-Read [UPGRADE-v0.6.8.md](UPGRADE-v0.6.8.md) before applying the v0.6.7 → v0.6.8 patch. No new SQL migration or dependency is required for this update. Earlier installations must complete the [v0.6.7 upgrade](UPGRADE-v0.6.7.md) first.
+Read [UPGRADE-v0.6.9.md](UPGRADE-v0.6.9.md) before applying the v0.6.8 → v0.6.9 patch. No new SQL migration or dependency is required for this update. Earlier installations must complete the [v0.6.8 upgrade](UPGRADE-v0.6.8.md) first.
 
 ## Fresh installation
 
@@ -82,7 +82,7 @@ The updater makes source backups and protects environment files, dependencies, G
 
 ## Client and project lifecycle
 
-Open a client or project to edit details or use Archive / Deactivate and Activate. Only Administrators with Clients access can rename existing clients. Administrators and Contributors with the corresponding module can edit other details and manage archive state. Viewers remain read-only. Client/project deletion is rejected by the server.
+Use the visible Edit client / Edit project buttons on client cards, project rows, or beside the detail-page title. The popup opens above the page with the name first, followed by other details, and Save changes / Cancel controls. Archive / Deactivate and Activate remain in a compact availability bar on the detail page. Only Administrators with Clients access can rename existing clients. Administrators and Contributors with the corresponding module can edit other details and manage archive state. Viewers remain read-only. Client/project deletion is rejected by the server.
 
 The Active / Archived / All filters retain access to historical records. Completion status is separate from archive state: Closed means done; Archived means inactive. Complete all tasks and subtasks, mark linked clients and projects Closed, then archive. For a shared project, every linked client must be Closed. Client completion is account-wide, including its work on other projects. The archive control lists any blockers. Activate records before resuming work; activation preserves completion status and history.
 

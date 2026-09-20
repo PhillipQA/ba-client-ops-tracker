@@ -1,3 +1,4 @@
+import RecordEditDialog from './RecordEditDialog'
 import LifecycleControls from './LifecycleControls'
 import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from './lifecycle'
 import { FormEvent, type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
@@ -280,6 +281,7 @@ function App() {
   const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
   const [projectArchiveFilter, setProjectArchiveFilter] = useState('active')
   const [lifecycleSaving, setLifecycleSaving] = useState(false)
+  const [editingRecord, setEditingRecord] = useState<{ kind: 'clients' | 'projects'; id: string } | null>(null)
   const [waitingFilter, setWaitingFilter] = useState<'All' | WaitingOn>('All')
   const [taskClientFilter, setTaskClientFilter] = useState('')
   const [taskProjectFilter, setTaskProjectFilter] = useState('')
@@ -502,6 +504,7 @@ function App() {
     setSelectedClientId(null)
     setSelectedProjectId(null)
     setNewExternalInquiryIds([])
+    setEditingRecord(null)
     setStore(seedStore())
     setLoginError('')
   }
@@ -978,7 +981,7 @@ function App() {
 
       <main>
         <header className="topbar">
-          <div><p className="eyebrow">{currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}</p><h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1></div>
+          <div><p className="eyebrow">{currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}</p><div className="record-title-line"><h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1>{canWrite && ((selectedClient && hasModule('clients')) || (selectedProject && hasModule('projects'))) && <button className="secondary record-title-edit" onClick={() => setEditingRecord(selectedProject ? { kind: 'projects', id: selectedProject.id } : { kind: 'clients', id: selectedClient!.id })}><Pencil size={16} />{selectedProject ? 'Edit project' : 'Edit client'}</button>}</div></div>
           <div className="top-actions">
             <span className="top-role-pill">{view === 'internal-admin' && currentUser.accountType === 'platform' ? 'Platform Admin' : currentUser.role}</span>
             {view !== 'internal-admin' && canWrite && hasModule('clients') && <button className="secondary" onClick={() => setModal('client')}><Users size={17} /> Add client</button>}
@@ -1071,12 +1074,12 @@ function App() {
                 const projects = store.projects.filter((project) => projectIds.has(project.id))
                 const open = openItems.filter((i) => i.clientId === client.id)
                 const next = open.filter((i) => i.followUpDate).sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))[0]
-                return <button key={client.id} className="client-card" onClick={() => setSelectedClientId(client.id)}>
+                return <div key={client.id} className="client-card-wrap"><button className="client-card" onClick={() => setSelectedClientId(client.id)}>
                   <div className="card-top"><div className="client-avatar">{client.name.slice(0, 2).toUpperCase()}</div><StatusChip value={isArchived(client) ? 'Archived · Inactive' : client.status} /><ChevronRight size={18} /></div>
                   <h3>{client.name}</h3><p>{client.contact} · {client.email}</p>
                   <div className="card-stats"><span><b>{projects.length}</b> projects</span><span><b>{open.length}</b> open tasks</span></div>
                   <div className="next-line"><Clock3 size={15} /><span>{next ? `Next: ${niceDate(next.followUpDate)} — ${next.title}` : 'No follow-up scheduled'}</span></div>
-                </button>
+                </button>{canWrite && hasModule('clients') && <button className="secondary compact client-card-edit" onClick={() => setEditingRecord({ kind: 'clients', id: client.id })}><Pencil size={14} /> Edit client</button>}</div>
               })}
             </div>
           </section>
@@ -1085,10 +1088,10 @@ function App() {
         {!selectedClient && !selectedProject && view === 'projects' && hasModule('projects') && (
           <section className="page-stack">
             <div className="section-actions"><p className="page-intro">Projects are global delivery containers. Client association lives on tasks, so one project can serve multiple clients without mixing their client views.</p>{canWrite && <button className="primary" onClick={() => setModal('project')}><Plus size={18} /> New project</button>}</div>
-            <label className="lifecycle-filter">Show projects<select value={projectArchiveFilter} onChange={e => setProjectArchiveFilter(e.target.value)}><option value="active">Active</option><option value="archived">Archived / Inactive</option><option value="all">All</option></select></label><div className="panel table-panel"><table><thead><tr><th>Project</th><th>Clients with tasks</th><th>Status</th><th>Target</th><th>Open tasks</th></tr></thead><tbody>{store.projects.filter(project => projectArchiveFilter === 'all' || isArchived(project) === (projectArchiveFilter === 'archived')).length === 0 ? <tr><td colSpan={5}><Empty text="No projects in this view. Choose another filter or create a project." /></td></tr> : store.projects.filter(project => projectArchiveFilter === 'all' || isArchived(project) === (projectArchiveFilter === 'archived')).map((project) => {
+            <label className="lifecycle-filter">Show projects<select value={projectArchiveFilter} onChange={e => setProjectArchiveFilter(e.target.value)}><option value="active">Active</option><option value="archived">Archived / Inactive</option><option value="all">All</option></select></label><div className="panel table-panel"><table><thead><tr><th>Project</th><th>Clients with tasks</th><th>Status</th><th>Target</th><th>Open tasks</th><th>Actions</th></tr></thead><tbody>{store.projects.filter(project => projectArchiveFilter === 'all' || isArchived(project) === (projectArchiveFilter === 'archived')).length === 0 ? <tr><td colSpan={6}><Empty text="No projects in this view. Choose another filter or create a project." /></td></tr> : store.projects.filter(project => projectArchiveFilter === 'all' || isArchived(project) === (projectArchiveFilter === 'archived')).map((project) => {
               const clientIds = [...new Set(store.items.filter((item) => item.projectId === project.id && item.clientId).map((item) => item.clientId as string))]
               const clientLabel = clientIds.length ? clientIds.map((id) => clientName(id)).join(', ') : 'No client tasks yet'
-              return <tr key={project.id}><td><button className="table-link project-name-link" type="button" onClick={() => { setSelectedProjectClientId(null); setSelectedProjectId(project.id) }}><strong>{project.name}</strong><small>{project.summary || 'Open project dashboard'}</small></button></td><td>{clientLabel}</td><td><StatusChip value={isArchived(project) ? 'Archived · Inactive' : project.status} /></td><td>{niceDate(project.targetDate)}</td><td>{openItems.filter((item) => item.projectId === project.id).length}</td></tr>
+              return <tr key={project.id}><td><button className="table-link project-name-link" type="button" onClick={() => { setSelectedProjectClientId(null); setSelectedProjectId(project.id) }}><strong>{project.name}</strong><small>{project.summary || 'Open project dashboard'}</small></button></td><td>{clientLabel}</td><td><StatusChip value={isArchived(project) ? 'Archived · Inactive' : project.status} /></td><td>{niceDate(project.targetDate)}</td><td>{openItems.filter((item) => item.projectId === project.id).length}</td><td>{canWrite && hasModule('projects') && <button className="secondary compact" onClick={() => setEditingRecord({ kind: 'projects', id: project.id })}><Pencil size={14} /> Edit project</button>}</td></tr>
             })}</tbody></table></div>
           </section>
         )}
@@ -1145,9 +1148,9 @@ function App() {
           <section className="page-stack"><AIAssistant clients={store.clients.filter(client => !isArchived(client))} projects={store.projects.filter(project => !isArchived(project))} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
         )}
 
-        {selectedClient && <ClientDetail controls={<LifecycleControls key={selectedClient.id} kind="clients" record={selectedClient} store={store} canEdit={canWrite && hasModule('clients')} canRenameClient={currentUser.role === 'Administrator'} onSave={record => saveLifecycleRecord('clients', record)} />} client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWriteTasks} />}
+        {selectedClient && <ClientDetail controls={<LifecycleControls key={selectedClient.id} kind="clients" record={selectedClient} store={store} canEdit={canWrite && hasModule('clients')} onSave={record => saveLifecycleRecord('clients', record)} />} client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWriteTasks} />}
 
-        {selectedProject && <ProjectDetail controls={<LifecycleControls key={selectedProject.id} kind="projects" record={selectedProject} store={store} canEdit={canWrite && hasModule('projects')} canRenameClient={false} onSave={record => saveLifecycleRecord('projects', record)} />} project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} canEditTasks={canWriteTasks} />}
+        {selectedProject && <ProjectDetail controls={<LifecycleControls key={selectedProject.id} kind="projects" record={selectedProject} store={store} canEdit={canWrite && hasModule('projects')} onSave={record => saveLifecycleRecord('projects', record)} />} project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} canEditTasks={canWriteTasks} />}
       </main>
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
@@ -1157,6 +1160,10 @@ function App() {
         {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
         {modal === 'activity' && <ActivityForm clients={store.clients} projects={store.projects} initial={editingActivity} onSubmit={saveActivity} />}
       </Modal>}
+      {editingRecord && currentUser.role !== 'Viewer' && hasModule(editingRecord.kind) && (() => {
+        const record = store[editingRecord.kind].find(row => row.id === editingRecord.id)
+        return record ? <RecordEditDialog key={`${editingRecord.kind}:${record.id}`} kind={editingRecord.kind} record={record} canRenameClient={currentUser.role === 'Administrator'} onClose={() => setEditingRecord(null)} onSave={updated => saveLifecycleRecord(editingRecord.kind, updated)} /> : null
+      })()}
       {profileOpen && currentUser.accountType !== 'platform' && <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />}
     </div>
   )
