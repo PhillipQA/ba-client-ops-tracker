@@ -1,5 +1,6 @@
 import { runTenantAi } from './tenant-ai'
 import { registerFsdRoutes } from './fsd-documents'
+import { registerTestCaseRoutes } from './testcase-documents'
 import { createWorkspaceGuard } from './workspace-guard'
 import { archivedWorkReason, assertLifecycleMutation, LifecycleError, isArchived } from './src/lifecycle'
 import { registerSignoffRoutes } from './signoff-documents'
@@ -1465,6 +1466,8 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
 }
 
 registerFsdRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, integrations, logoPath: path.join(__dirname, 'templates', 'fsd-logo.png') })
+
+registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, integrations })
 
 registerSignoffRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(__dirname, 'templates', 'signoff-template.docx') })
 

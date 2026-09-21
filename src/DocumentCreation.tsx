@@ -1,4 +1,5 @@
 import FsdCreation from './FsdCreation'
+import TestCaseCreation from './TestCaseCreation'
 import SignOffCreation from './SignOffCreation'
 import type { Client } from './types'
 import { useEffect, useMemo, useState } from 'react'
@@ -7,6 +8,7 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   Clipboard,
+  ClipboardCheck,
   Download,
   FileCog,
   FileText,
@@ -17,7 +19,7 @@ import {
   UserRound,
 } from 'lucide-react'
 
-type DocumentFlow = 'drf' | 'fsd' | 'signoff'
+type DocumentFlow = 'drf' | 'fsd' | 'testcase' | 'signoff'
 
 type Signatory = {
   label: string
@@ -126,7 +128,7 @@ const defaultSignatories: Signatory[] = [
 ]
 
 export default function DocumentCreation({ clients, canGenerate, canManageTemplates, draftKey, active }: { clients: Client[]; canGenerate: boolean; canManageTemplates: boolean; draftKey: string; active: boolean }) {
-  const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'fsd' || value === 'signoff') return value } catch {} return 'drf' })
+  const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
   useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
   const [corFiles, setCorFiles] = useState<File[]>([])
   const [templateFiles, setTemplateFiles] = useState<File[]>([])
@@ -198,7 +200,7 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
   const [documentMessage, setDocumentMessage] = useState('')
   const [documentError, setDocumentError] = useState('')
 
-  const selectedTitle = useMemo(() => flow === 'drf' ? 'DRF Creation' : flow === 'fsd' ? 'FSD Creation' : 'Sign Off Form', [flow])
+  const selectedTitle = useMemo(() => flow === 'drf' ? 'DRF Creation' : flow === 'fsd' ? 'FSD Creation' : flow === 'testcase' ? 'Test Case Creation' : 'Sign Off Form', [flow])
   const templateFile = templateFiles[0]
   const corFile = corFiles[0]
 
@@ -373,6 +375,11 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
           <div><strong>FSD Creation</strong><span>Basic and Advance modes with your configured AI.</span></div>
           <small>BRD required</small>
         </button>
+        <button type="button" className={`document-flow-card${flow === 'testcase' ? ' active' : ''}`} onClick={() => setFlow('testcase')}>
+          <div className="document-flow-icon"><ClipboardCheck size={22} /></div>
+          <div><strong>Test Case Creation</strong><span>AI coverage mapping, reusable QA skills, editable test cases, and XLSX export.</span></div>
+          <small>AI + Skills + XLSX</small>
+        </button>
         <button type="button" className={`document-flow-card${flow === 'signoff' ? ' active' : ''}`} onClick={() => setFlow('signoff')}>
           <div className="document-flow-icon"><CheckCircle2 size={22} /></div>
           <div><strong>Sign Off Form</strong><span>Prepare a sign-off package with supporting attachments.</span></div>
@@ -382,8 +389,8 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
 
       <div className="panel document-workspace">
         <div className="panel-heading document-heading">
-          <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and use the account’s saved standard Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'fsd' ? 'Add requirements, choose a preset, then review and export using the iRipple FSD template.' : 'Complete the deployment details and six signatory slots, then add supporting attachments.'}</p></div>
-          <span className="document-stage-pill">{flow === 'drf' ? (templateFile ? 'Excel template ready' : 'Excel template required') : flow === 'signoff' ? 'iRipple template ready' : 'iRipple FSD template ready'}</span>
+          <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and use the account’s saved standard Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'fsd' ? 'Add requirements, choose a preset, then review and export using the iRipple FSD template.' : flow === 'testcase' ? 'Upload requirement sources, select reusable QA skills, review the AI coverage map, then generate editable test cases and export to Excel.' : 'Complete the deployment details and six signatory slots, then add supporting attachments.'}</p></div>
+          <span className="document-stage-pill">{flow === 'drf' ? (templateFile ? 'Excel template ready' : 'Excel template required') : flow === 'signoff' ? 'iRipple template ready' : flow === 'testcase' ? 'AI test suite workflow' : 'iRipple FSD template ready'}</span>
         </div>
 
         {flow === 'drf' && (
@@ -526,6 +533,8 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
         )}
 
         <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'fsd'} /></div>
+
+        <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /></div>
 
         <div hidden={flow !== 'signoff'}><SignOffCreation clients={clients} canGenerate={canGenerate} /></div>
       </div>

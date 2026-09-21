@@ -1,6 +1,6 @@
-# Current release — v0.6.19
+# Current release — v0.6.20
 
-The v0.6.19 login-panel width fix removes the desktop horizontal padding from `main.auth-login-panel` so the panel itself reaches the full width of the right-side column. The white login card keeps a small internal margin for readability. The left hero panel, desktop split ratio, authentication behavior, Themes system, and theme assets remain unchanged.
+v0.6.20 adds **Document Creation → Test Case Creation**, an AI-assisted Basic Mode workflow for requirement sources, reusable testing skills, coverage mapping, editable traceable test cases, AI coverage review, and XLSX export. It reuses each tenant/account's existing AI integration and does not change the existing Themes system or other Document Creation flows.
 
 ## Previous release — v0.6.15
 
