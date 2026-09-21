@@ -147,9 +147,16 @@ export function registerIntegrationRoutes(app: Express, deps: { db: any; require
       const user = (req as any).authUser
       const org = await deps.organizationById(user.organizationId)
       if (!org || org.status !== 'Active') return void res.status(403).json({ error: 'This account is unavailable.' })
-      const templateRead = req.method === 'GET' && req.path.includes('/templates')
-      if (templateRead ? !user.modules.includes('documents') && !user.modules.includes('settings') : user.role !== 'Administrator' || !user.modules.includes('settings')) {
-        return void res.status(403).json({ error: 'Account administrator with Settings access is required.' })
+      const templateRequest = req.path.includes('/templates')
+      const templateRead = req.method === 'GET' && templateRequest
+      const templateWrite = req.method !== 'GET' && templateRequest
+      const denied = templateRead
+        ? !user.modules.includes('documents') && !user.modules.includes('settings')
+        : templateWrite
+          ? user.role !== 'Administrator' || (!user.modules.includes('documents') && !user.modules.includes('settings'))
+          : user.role !== 'Administrator' || !user.modules.includes('settings')
+      if (denied) {
+        return void res.status(403).json({ error: templateRequest ? 'Account Administrator access is required to manage the standard DRF template.' : 'Account administrator with Settings access is required.' })
       }
       res.setHeader('Cache-Control', 'no-store'); next()
     } catch { res.status(503).json({ error: 'Account settings are unavailable.' }) }

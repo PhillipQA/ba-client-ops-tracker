@@ -1,6 +1,6 @@
-# Current release — v0.6.13
+# Current release — v0.6.14
 
-Action Center now includes 10/25/50-item pagination, inline AI assessment with a compact result preview, and a full-result handoff to AI BA Assistant for responses of 200 words or more. This build also includes the adaptive FSD Creator browser/system color-scheme update. See [UPGRADE-v0.6.13.md](UPGRADE-v0.6.13.md) for details.
+DRF Creation now manages a persistent per-account standard Excel template directly inside Document Creation. Account Administrators can upload, replace, or remove the standard template; once saved, it is loaded automatically and reused for all future DRF generation until changed. See [UPGRADE-v0.6.14.md](UPGRADE-v0.6.14.md) for details.
 
 # BA Client Ops Tracker
 

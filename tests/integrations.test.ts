@@ -86,7 +86,7 @@ test('real HTTP routes scope writes from authenticated tenant and deny unauthori
   const auth:any=(req:any,res:any,next:any)=>{
     const role=req.get('x-test-user')
     if (!role) return res.sendStatus(401)
-    req.authUser={id:'user',organizationId:req.get('x-test-tenant')||'a',role:role==='viewer'?'Viewer':'Administrator',modules:role==='no-settings'?[]:['settings','documents'],accountType:role==='platform'?'platform':'tenant',isPlatformAdmin:role==='platform'};next()
+    req.authUser={id:'user',organizationId:req.get('x-test-tenant')||'a',role:role==='viewer'?'Viewer':'Administrator',modules:role==='no-settings'?[]:role==='docs-admin'?['documents']:['settings','documents'],accountType:role==='platform'?'platform':'tenant',isPlatformAdmin:role==='platform'};next()
   }
   const tenant:any=(req:any,res:any,next:any)=>req.authUser.accountType==='tenant'?next():res.sendStatus(403)
   const organizationById=async(id:string)=>({id,name:id,status:id==='suspended'?'Suspended':'Active'})
@@ -108,7 +108,10 @@ test('real HTTP routes scope writes from authenticated tenant and deny unauthori
     assert.equal((await call('/api/internal-admin/organizations/b/task-settings','admin','PUT',{})).status,403)
     const health=await call('/api/internal-admin/system','platform')
     assert.equal(health.status,200);assert(!(await health.text()).includes('encrypted_secret'))
-    assert.equal((await call('/api/account/templates','admin','PUT',{name:'template.xlsx',content_base64:new PizZip().file('[Content_Types].xml','<Types/>').file('xl/workbook.xml','<workbook/>').generate({type:'base64'})})).status,200)
-    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template,null)
+    const templateData=new PizZip().file('[Content_Types].xml','<Types/>').file('xl/workbook.xml','<workbook/>').generate({type:'base64'})
+    assert.equal((await call('/api/account/templates','admin','PUT',{name:'template.xlsx',content_base64:templateData})).status,200)
+    assert.equal((await call('/api/account/templates','docs-admin','PUT',{name:'document-template.xlsx',content_base64:templateData},'b')).status,200)
+    assert.equal((await call('/api/account/integrations','docs-admin')).status,403)
+    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx')
   } finally { await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve())) }
 })
