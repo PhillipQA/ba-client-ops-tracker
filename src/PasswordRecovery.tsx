@@ -11,7 +11,7 @@ async function recoveryRequest(path: string, body: object) {
 }
 
 function RecoveryCard({ title, description, children, email = false }: { title: string; description: string; children: ReactNode; email?: boolean }) {
-  return <div className="auth-shell"><div className="auth-card account-login-card">
+  return <div className="auth-shell auth-shell-recovery"><div className="auth-card account-login-card">
     <div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
     <div className="auth-copy"><span className="auth-icon">{email ? <Mail size={22} /> : <LockKeyhole size={22} />}</span><div><h1>{title}</h1><p>{description}</p></div></div>
     {children}

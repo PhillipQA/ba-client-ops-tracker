@@ -5,6 +5,7 @@ import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord }
 import { FormEvent, type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowRight,
   Archive,
   BarChart3,
   BriefcaseBusiness,
@@ -17,6 +18,8 @@ import {
   CircleDot,
   Clock3,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
   GripVertical,
   Inbox,
@@ -53,6 +56,7 @@ import { importPrimaryCalendar } from './googleCalendar'
 import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
 import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
 import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTIONS, type AppTheme } from './theme'
+import { APP_VERSION } from './version'
 
 type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
 
@@ -1006,7 +1010,7 @@ function App() {
   const currentTheme = themeForContext(currentUser, selectedProject ? selectedProjectClientId : selectedClient?.id)
 
   return (
-    <div className={`app-shell theme-${currentTheme}`} data-theme={currentTheme}>
+    <div className={`app-shell ui-refresh theme-${currentTheme}`} data-theme={currentTheme}>
       <aside className="sidebar">
         <div className="brand"><img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
         <nav>
@@ -1224,36 +1228,53 @@ function App() {
 }
 
 function AuthSplash() {
-  return <div className="auth-shell"><div className="auth-card auth-loading"><div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div><div className="auth-spinner" /><p>Checking your session…</p></div></div>
+  return <div className="auth-shell auth-shell-recovery"><div className="auth-card auth-loading"><div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div><div className="auth-spinner" /><p>Checking your session…</p></div></div>
 }
 
 function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; onLogin: (account: string, username: string, password: string) => Promise<void> }) {
   const [forgot, setForgot] = useState(false)
-  const [account, setAccount] = useState('BXI-Core')
-  const [username, setUsername] = useState('Admin')
+  const [showPassword, setShowPassword] = useState(false)
+  const [remember, setRemember] = useState(() => localStorage.getItem('client-ops-login-remember') === '1')
+  const [account, setAccount] = useState(() => localStorage.getItem('client-ops-login-account') || 'BXI-Core')
+  const [username, setUsername] = useState(() => localStorage.getItem('client-ops-login-user') || 'Admin')
   if (forgot) return <ForgotPassword account={account} username={username} onBack={() => setForgot(false)} />
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    void onLogin(
-      String(form.get('account') || '').trim(),
-      String(form.get('username') || '').trim(),
-      String(form.get('password') || ''),
-    )
+    const nextAccount = String(form.get('account') || '').trim()
+    const nextUsername = String(form.get('username') || '').trim()
+    if (remember) {
+      localStorage.setItem('client-ops-login-remember', '1')
+      localStorage.setItem('client-ops-login-account', nextAccount)
+      localStorage.setItem('client-ops-login-user', nextUsername)
+    } else {
+      localStorage.removeItem('client-ops-login-remember')
+      localStorage.removeItem('client-ops-login-account')
+      localStorage.removeItem('client-ops-login-user')
+    }
+    void onLogin(nextAccount, nextUsername, String(form.get('password') || ''))
   }
-  return <div className="auth-shell">
-    <div className="auth-card account-login-card">
-      <div className="auth-brand"><img className="auth-brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
-      <div className="auth-copy"><span className="auth-icon"><LockKeyhole size={22} /></span><div><h1>Sign in</h1><p>Enter the account workspace first, then your user and password.</p></div></div>
-      <form className="auth-form" onSubmit={submit}>
-        <label>Account<input name="account" value={account} onChange={(event) => setAccount(event.target.value)} autoComplete="organization" placeholder="BXI-Core or customer account" required /></label>
-        <label>User<input name="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
-        <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
-        {error && <div className="auth-error">{error}</div>}
-        <button className="primary auth-submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-      </form>
-      <button className="auth-text-button" type="button" disabled={busy} onClick={() => setForgot(true)}>Forgot password?</button>
-    </div>
+  return <div className="auth-shell auth-shell-login">
+    <aside className="auth-login-visual" aria-hidden="true"><img src="/login-hero.webp" alt="" /></aside>
+    <main className="auth-login-panel">
+      <div className="auth-version">v{APP_VERSION}</div>
+      <div className="auth-card account-login-card auth-card-modern">
+        <div className="auth-brand auth-brand-modern">
+          <img className="auth-app-icon" src="/ba-app-icon.png" alt="" />
+          <div><strong>Client Ops Tracker</strong><span>Sign in to your workspace</span></div>
+        </div>
+        <form className="auth-form auth-form-modern" onSubmit={submit}>
+          <label><span>Account</span><div className="auth-input-shell"><Building2 size={18} /><input name="account" value={account} onChange={(event) => setAccount(event.target.value)} autoComplete="organization" placeholder="BXI-Core or customer account" required /></div></label>
+          <label><span>User</span><div className="auth-input-shell"><UserRound size={18} /><input name="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></div></label>
+          <label><span>Password</span><div className="auth-input-shell"><LockKeyhole size={18} /><input name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required /><button className="auth-password-toggle" type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+          <div className="auth-form-options"><label className="auth-remember"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /><span>Remember me</span></label><button className="auth-inline-link" type="button" disabled={busy} onClick={() => setForgot(true)}>Forgot password?</button></div>
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <button className="primary auth-submit auth-submit-modern" disabled={busy}>{busy ? 'Signing in…' : <><span>Sign in</span><ArrowRight size={18} /></>}</button>
+        </form>
+        <div className="auth-security-note"><ShieldCheck size={21} /><div><strong>Secure. Simple. Productive.</strong><span>Your client operations, always within reach.</span></div></div>
+      </div>
+      <div className="auth-copyright">© 2026 Client Ops Tracker. All rights reserved.</div>
+    </main>
   </div>
 }
 

@@ -1,6 +1,10 @@
-# Current release — v0.6.15
+# Current release — v0.6.16
 
-DRF Creation now offers a COR extraction toggle. **Local Extractor is the default** and continues to run in the browser without AI usage. When the tenant has an enabled AI integration, users with Document Creation write access can switch to **AI Enhanced** extraction; the browser reads/OCRs the COR locally first and sends only the extracted text to the tenant AI provider for field mapping/refinement. See [UPGRADE-v0.6.15.md](UPGRADE-v0.6.15.md) for details.
+The Client Ops Tracker now has a refreshed SaaS interface based on the approved split-screen design: a new responsive login experience, clearer form controls, password visibility and non-password workspace remembering, plus consistent spacing/card/table polish across the application shell. Existing user-selectable themes, theme images, and theme color definitions are preserved. See [UPGRADE-v0.6.16.md](UPGRADE-v0.6.16.md) for details.
+
+## Previous release — v0.6.15
+
+DRF Creation offers a COR extraction toggle. **Local Extractor is the default** and continues to run in the browser without AI usage. When the tenant has an enabled AI integration, users with Document Creation write access can switch to **AI Enhanced** extraction; the browser reads/OCRs the COR locally first and sends only the extracted text to the tenant AI provider for field mapping/refinement. See [UPGRADE-v0.6.15.md](UPGRADE-v0.6.15.md) for details.
 
 # BA Client Ops Tracker
 
