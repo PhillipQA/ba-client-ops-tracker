@@ -1,6 +1,6 @@
-# Current release — v0.6.16
+# Current release — v0.6.17
 
-The Client Ops Tracker now has a refreshed SaaS interface based on the approved split-screen design: a new responsive login experience, clearer form controls, password visibility and non-password workspace remembering, plus consistent spacing/card/table polish across the application shell. Existing user-selectable themes, theme images, and theme color definitions are preserved. See [UPGRADE-v0.6.16.md](UPGRADE-v0.6.16.md) for details.
+The v0.6.17 login fidelity update corrects the deployed split-screen sign-in to match the approved reference more closely: the hero uses the full intended 58/42 composition, the login card is larger and vertically balanced, branding is centered/stacked, and the OR/security sections match the reference structure. Existing themes and all v0.6.16 application UI improvements remain unchanged.
 
 ## Previous release — v0.6.15
 

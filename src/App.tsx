@@ -1261,7 +1261,7 @@ function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; o
       <div className="auth-card account-login-card auth-card-modern">
         <div className="auth-brand auth-brand-modern">
           <img className="auth-app-icon" src="/ba-app-icon.png" alt="" />
-          <div><strong>Client Ops Tracker</strong><span>Sign in to your workspace</span></div>
+          <div className="auth-brand-copy"><strong>Client Ops Tracker</strong><span>Sign in to your workspace</span></div>
         </div>
         <form className="auth-form auth-form-modern" onSubmit={submit}>
           <label><span>Account</span><div className="auth-input-shell"><Building2 size={18} /><input name="account" value={account} onChange={(event) => setAccount(event.target.value)} autoComplete="organization" placeholder="BXI-Core or customer account" required /></div></label>
@@ -1271,6 +1271,7 @@ function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; o
           {error && <div className="auth-error" role="alert">{error}</div>}
           <button className="primary auth-submit auth-submit-modern" disabled={busy}>{busy ? 'Signing in…' : <><span>Sign in</span><ArrowRight size={18} /></>}</button>
         </form>
+        <div className="auth-divider" aria-hidden="true"><span>OR</span></div>
         <div className="auth-security-note"><ShieldCheck size={21} /><div><strong>Secure. Simple. Productive.</strong><span>Your client operations, always within reach.</span></div></div>
       </div>
       <div className="auth-copyright">© 2026 Client Ops Tracker. All rights reserved.</div>
