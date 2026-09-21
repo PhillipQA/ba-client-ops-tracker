@@ -641,6 +641,9 @@ select option { background: #181818; color: #fff; }
   .task-settings-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 620px) {
+  .document-extraction-mode { grid-template-columns: 1fr; }
+  .document-extraction-mode small { grid-column: 1; }
+  .document-ai-toggle { justify-self: start; }
   .task-filter-grid { grid-template-columns: 1fr; }
   .project-hero { flex-direction: column; }
   .project-hero .primary { width: 100%; }
@@ -661,6 +664,9 @@ select option { background: #181818; color: #fff; }
 .project-context-banner span { color: #aebbd3; }
 .form-grid input:disabled, .form-grid input[readonly]:disabled { opacity: .72; cursor: not-allowed; }
 @media (max-width: 620px) {
+  .document-extraction-mode { grid-template-columns: 1fr; }
+  .document-extraction-mode small { grid-column: 1; }
+  .document-ai-toggle { justify-self: start; }
   .task-edit-actions { align-items: stretch; flex-direction: column-reverse; }
   .task-edit-actions button { width: 100%; justify-content: center; }
   .project-context-banner { align-items: flex-start; flex-direction: column; }
@@ -748,6 +754,20 @@ select option { background: #181818; color: #fff; }
 .document-file-check { color: #72c790; }
 .document-info-note { display: flex; gap: 9px; align-items: flex-start; padding: 11px 12px; border: 1px solid #303945; border-radius: 11px; background: #20252d; color: #b9c2cf; font-size: 12px; line-height: 1.45; }
 .document-info-note svg { color: #91acd2; flex: 0 0 auto; margin-top: 1px; }
+.document-extraction-mode { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px 16px; align-items: center; padding: 12px 13px; border: 1px solid #303945; border-radius: 12px; background: #20252d; }
+.document-extraction-mode-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.document-extraction-mode-copy strong { color: #eef1f5; font-size: 12px; }
+.document-extraction-mode-copy span, .document-extraction-mode small { color: #aeb6c2; font-size: 11px; line-height: 1.45; }
+.document-extraction-mode small { grid-column: 1 / -1; }
+.document-ai-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; white-space: nowrap; }
+.document-ai-toggle.disabled { opacity: .55; cursor: not-allowed; }
+.document-ai-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.document-ai-toggle-label { color: #cbd2dc; font-size: 11px; font-weight: 700; }
+.document-toggle-track { width: 42px; height: 23px; border-radius: 999px; padding: 2px; background: #414851; border: 1px solid #59616d; transition: background .16s ease, border-color .16s ease; }
+.document-toggle-track > span { display: block; width: 17px; height: 17px; border-radius: 50%; background: #f4f5f7; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: transform .16s ease; }
+.document-ai-toggle input:checked + .document-toggle-track { background: #4c6f9f; border-color: #6c91c4; }
+.document-ai-toggle input:checked + .document-toggle-track > span { transform: translateX(19px); }
+.document-ai-toggle input:focus-visible + .document-toggle-track { outline: 2px solid #8aa7d0; outline-offset: 2px; }
 .document-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .document-field-grid label { display: flex; flex-direction: column; gap: 7px; color: #c9cdd4; font-size: 12px; }
 .document-field-grid input, .document-field-grid textarea { width: 100%; background: #15171a; border: 1px solid #3a3e45; color: #f1f3f5; }
@@ -768,6 +788,9 @@ select option { background: #181818; color: #fff; }
 }
 
 @media (max-width: 620px) {
+  .document-extraction-mode { grid-template-columns: 1fr; }
+  .document-extraction-mode small { grid-column: 1; }
+  .document-ai-toggle { justify-self: start; }
   .document-field-grid { grid-template-columns: 1fr; }
   .document-field-wide { grid-column: auto; }
   .document-requirement-row { align-items: flex-start; flex-direction: column; }
@@ -932,6 +955,9 @@ select option { background: #181818; color: #fff; }
   .theme-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 620px) {
+  .document-extraction-mode { grid-template-columns: 1fr; }
+  .document-extraction-mode small { grid-column: 1; }
+  .document-ai-toggle { justify-self: start; }
   .theme-picker-grid { grid-template-columns: 1fr; }
   .theme-preview { height: 128px; }
   .app-shell:not(.theme-default) { background-attachment: scroll; }

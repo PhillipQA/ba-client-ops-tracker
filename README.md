@@ -1,6 +1,6 @@
-# Current release — v0.6.14
+# Current release — v0.6.15
 
-DRF Creation now manages a persistent per-account standard Excel template directly inside Document Creation. Account Administrators can upload, replace, or remove the standard template; once saved, it is loaded automatically and reused for all future DRF generation until changed. See [UPGRADE-v0.6.14.md](UPGRADE-v0.6.14.md) for details.
+DRF Creation now offers a COR extraction toggle. **Local Extractor is the default** and continues to run in the browser without AI usage. When the tenant has an enabled AI integration, users with Document Creation write access can switch to **AI Enhanced** extraction; the browser reads/OCRs the COR locally first and sends only the extracted text to the tenant AI provider for field mapping/refinement. See [UPGRADE-v0.6.15.md](UPGRADE-v0.6.15.md) for details.
 
 # BA Client Ops Tracker
 
@@ -59,7 +59,7 @@ Use one application instance. Sessions and Discord connection ownership are curr
 
 ## Document creation and integrations
 
-DRF COR extraction runs locally using browser OCR. Account Settings can save a reusable Excel template up to 5 MB; Document Creation loads it automatically. Existing ad hoc template uploads, DRF custom fields, machine rows, signatories, and FSD remain available.
+DRF COR extraction defaults to the private browser-based Local Extractor. AI Enhanced extraction is optional when the tenant has an enabled AI provider; it sends only locally extracted COR text to the tenant AI for field mapping and never uploads the COR file itself. Account Settings can save a reusable Excel template up to 5 MB, and Document Creation loads it automatically. Existing DRF custom fields, machine rows, signatories, and FSD remain available.
 
 Sign Off generates an editable Word approval form from the bundled iRipple template. One client field updates every client reference; six signatory slots, date, deployment/product dropdowns, and site details are editable. Uploaded images appear in Word; other supported files accompany it in a ZIP. Generation requires an Administrator or Contributor with Document Creation access. No AI service is needed. Form drafts and attachments are session-only; download before leaving or refreshing. Document numbers are manually assigned. Keep `templates/signoff-template.docx` with the deployed source.
 

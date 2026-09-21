@@ -2,7 +2,7 @@ import FsdCreation from './FsdCreation'
 import SignOffCreation from './SignOffCreation'
 import type { Client } from './types'
 import { useEffect, useMemo, useState } from 'react'
-import { extractCorLocally } from './corOcr'
+import { extractCorLocally, extractCorTextLocally } from './corOcr'
 import {
   BriefcaseBusiness,
   CheckCircle2,
@@ -133,6 +133,8 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
   const [savedTemplate, setSavedTemplate] = useState<{ name: string; updatedAt: string } | null>(null)
   const [templateBusy, setTemplateBusy] = useState(false)
   const [templateMessage, setTemplateMessage] = useState('')
+  const [corExtractionMode, setCorExtractionMode] = useState<'local' | 'ai'>('local')
+  const [aiExtractionStatus, setAiExtractionStatus] = useState<{ available: boolean; provider?: string; model?: string; error?: string }>({ available: false })
 
   const loadSavedTemplate = async () => {
     const response = await fetch('/api/account/templates', { credentials: 'same-origin' })
@@ -161,6 +163,17 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
       setTemplateFiles([new File([bytes], template.name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })])
       setSavedTemplate({ name: template.name, updatedAt: template.updated_at || '' })
     }).catch(() => undefined)
+    return () => { alive = false }
+  }, [draftKey])
+
+  useEffect(() => {
+    let alive = true
+    void fetch('/api/documents/drf/ai-status', { credentials: 'same-origin' }).then(async response => {
+      const payload = await response.json().catch(() => ({})) as { available?: boolean; provider?: string; model?: string; error?: string }
+      if (!alive) return
+      setAiExtractionStatus({ available: Boolean(response.ok && payload.available), provider: payload.provider, model: payload.model, error: payload.error })
+      if (!response.ok || !payload.available) setCorExtractionMode('local')
+    }).catch(() => { if (alive) { setAiExtractionStatus({ available: false }); setCorExtractionMode('local') } })
     return () => { alive = false }
   }, [draftKey])
 
@@ -260,9 +273,21 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
     if (!corFile) return
     setExtracting(true)
     setDocumentError('')
-    setDocumentMessage('Preparing private local COR extraction…')
+    setDocumentMessage(corExtractionMode === 'ai' ? 'Reading the COR locally before AI extraction…' : 'Preparing private local COR extraction…')
     try {
-      const extraction = await extractCorLocally(corFile, (message) => setDocumentMessage(message))
+      let extraction: { businessName: string; tradeName: string; tin: string; address: string; notes: string }
+      if (corExtractionMode === 'ai') {
+        if (!aiExtractionStatus.available) throw new Error('AI extraction is unavailable. Configure and enable an AI provider in Account Settings, or use Local Extractor.')
+        const localText = await extractCorTextLocally(corFile, (message) => setDocumentMessage(message))
+        setDocumentMessage(`Local text is ready. Asking ${aiExtractionStatus.provider || 'the account AI provider'} to map the COR fields…`)
+        extraction = await postJson<typeof extraction>('/api/documents/drf/extract-cor-ai', {
+          text: localText.text,
+          sourceMethod: localText.method,
+          fileName: corFile.name,
+        })
+      } else {
+        extraction = await extractCorLocally(corFile, (message) => setDocumentMessage(message))
+      }
       setBusinessName(extraction.businessName || '')
       setTradeName(extraction.tradeName || '')
       setTin(extraction.tin || '')
@@ -365,15 +390,29 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
           <div className="document-drf-stack">
             <div className="document-workspace-grid document-source-grid">
               <div className="document-upload-panel">
-                <div className="document-section-title"><ScanLine size={18} /><div><strong>1. Company COR</strong><span>Private local extraction · PDF, JPEG, PNG, WEBP, TIFF, BMP, DOCX · maximum 12 MB</span></div></div>
+                <div className="document-section-title"><ScanLine size={18} /><div><strong>1. Company COR</strong><span>Local Extractor is the default · optional tenant AI enhancement · PDF, JPEG, PNG, WEBP, TIFF, BMP, DOCX · maximum 12 MB</span></div></div>
+                <div className="document-extraction-mode">
+                  <div className="document-extraction-mode-copy">
+                    <strong>COR Extraction Method</strong>
+                    <span>{corExtractionMode === 'local' ? 'Runs entirely in your browser with no AI API usage.' : `Uses local OCR/text reading first, then ${aiExtractionStatus.provider || 'your account AI'} to map and refine the COR fields.`}</span>
+                  </div>
+                  <label className={`document-ai-toggle ${!aiExtractionStatus.available ? 'disabled' : ''}`}>
+                    <span className="document-ai-toggle-label">Local</span>
+                    <input type="checkbox" checked={corExtractionMode === 'ai'} disabled={!aiExtractionStatus.available || extracting} onChange={(event) => setCorExtractionMode(event.target.checked ? 'ai' : 'local')} aria-label="Use AI Enhanced COR extraction" />
+                    <span className="document-toggle-track"><span /></span>
+                    <span className="document-ai-toggle-label">AI Enhanced</span>
+                  </label>
+                  {!aiExtractionStatus.available && <small>AI Enhanced is unavailable. Configure and enable an AI provider in Account Settings to use it.</small>}
+                  {aiExtractionStatus.available && corExtractionMode === 'ai' && <small>Only locally extracted COR text is sent to {aiExtractionStatus.provider || 'the configured AI provider'}; the COR file itself stays in your browser. AI usage may incur provider charges.</small>}
+                </div>
                 <label className="document-dropzone document-dropzone-compact">
                   <input type="file" accept={COR_ACCEPT} onChange={handleFiles(setCorFiles, false, MAX_COR_BYTES)} />
                   <Plus size={27} />
                   <strong>{corFiles.length ? 'Replace COR file' : 'Choose a COR file'}</strong>
-                  <span>The COR stays in your browser. No OpenAI API key is required and the COR file is not uploaded to the server for extraction.</span>
+                  <span>{corExtractionMode === 'local' ? 'The COR stays in your browser and no AI API key is used.' : 'The COR file stays in your browser; only locally extracted text is sent to the account AI provider.'}</span>
                 </label>
                 <FileSummary files={corFiles} />
-                <button type="button" className="secondary document-wide-button" disabled={!corFile || extracting} onClick={extractCor}><ScanLine size={16} /> {extracting ? 'Extracting…' : 'Extract COR details locally'}</button>
+                <button type="button" className="secondary document-wide-button" disabled={!corFile || extracting} onClick={extractCor}><ScanLine size={16} /> {extracting ? 'Extracting…' : corExtractionMode === 'ai' ? 'Extract COR details with AI' : 'Extract COR details locally'}</button>
               </div>
 
               <div className="document-upload-panel">

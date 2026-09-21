@@ -3,6 +3,11 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 type ProgressCallback = (message: string) => void
 
+export type CorTextExtraction = {
+  text: string
+  method: string
+}
+
 export type LocalCorExtraction = {
   businessName: string
   tradeName: string
@@ -308,7 +313,7 @@ function cleanExtractedValue(value: string) {
     .trim()
 }
 
-function parseCorText(rawText: string, method: string): LocalCorExtraction {
+export function parseCorTextLocally(rawText: string, method: string): LocalCorExtraction {
   const text = normalizeWhitespace(rawText)
   const lines = text.split('\n').map((line) => line.trim()).filter(Boolean)
 
@@ -338,7 +343,7 @@ function parseCorText(rawText: string, method: string): LocalCorExtraction {
   return { businessName, tradeName, tin, address, notes }
 }
 
-export async function extractCorLocally(file: File, onProgress?: ProgressCallback): Promise<LocalCorExtraction> {
+export async function extractCorTextLocally(file: File, onProgress?: ProgressCallback): Promise<CorTextExtraction> {
   const extension = file.name.split('.').pop()?.toLowerCase() || ''
   const mimeType = file.type.toLowerCase()
   let text = ''
@@ -363,6 +368,11 @@ export async function extractCorLocally(file: File, onProgress?: ProgressCallbac
     throw new Error('The local extractor could not read enough text from this COR. Try a clearer scan/photo or a text-based PDF.')
   }
 
+  return { text, method }
+}
+
+export async function extractCorLocally(file: File, onProgress?: ProgressCallback): Promise<LocalCorExtraction> {
+  const result = await extractCorTextLocally(file, onProgress)
   onProgress?.('Matching COR text to Business Name, Trade Name, TIN, and Address…')
-  return parseCorText(text, method)
+  return parseCorTextLocally(result.text, result.method)
 }

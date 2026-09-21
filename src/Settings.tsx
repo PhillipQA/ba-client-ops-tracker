@@ -42,7 +42,7 @@ function IntegrationCard({ value, refresh, runtime }: { value: Integration; refr
     {value.kind === 'discord' && <p>Gateway: {runtime?.online ? `Online — ${runtime.botName}` : 'Offline'}{runtime?.lastMessageAt ? ` · Last capture ${new Date(runtime.lastMessageAt).toLocaleString()}` : ''}{runtime?.lastError ? ` · ${runtime.lastError}` : ''}</p>}
     {message && <p role="status" className="settings-message">{message}</p>}
     <div className="integration-actions"><button className="primary" disabled={busy || (!value.configured && !secret.trim()) || (providerChanged && !secret.trim())} onClick={() => void act('save')}>Save settings</button><button className="secondary" disabled={busy || !value.configured} onClick={() => void act('test')}>Test saved connection</button><button className="secondary danger-button" disabled={busy || !value.configured} onClick={() => void act('remove')}>Remove key</button></div>
-    <small>Saved credentials are encrypted. The full key is never returned after saving.{value.kind === 'discord' ? ' Enable Message Content intent in the Discord Developer Portal.' : ' The selected AI credential is used only by this tenant. COR OCR continues to run locally in your browser.'}</small>
+    <small>Saved credentials are encrypted. The full key is never returned after saving.{value.kind === 'discord' ? ' Enable Message Content intent in the Discord Developer Portal.' : ' The selected AI credential is used only by this tenant. Local COR extraction remains the default; AI Enhanced extraction is optional in DRF Creation.'}</small>
   </div>
 }
 function Templates() {
