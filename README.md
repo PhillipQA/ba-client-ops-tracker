@@ -39,7 +39,7 @@ Set secure `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` and `BXI_CORE_BOOTSTRAP_PASSWORD`
 | --- | --- |
 | Saved Excel DRF template | Accounts, users, roles, module access |
 | Discord bot token and allowed senders | Patch Updater and rollback instructions |
-| OpenAI key and model | Selected-account Supabase sync |
+| Gemini/OpenAI key, provider, and model | Selected-account Supabase sync |
 | Enable/disable and test integrations | Task statuses/columns and integration health |
 
 Account Administrators can manage their own account users, roles, status, and module assignments in **Users & Permissions**. All users, including Viewers, have **My Themes** for personal themes and per-client overrides. Each choice is saved for that user in that tenant. Personal details and passwords remain in My Profile. Each tenant’s encrypted keys are separate. No provider credential is returned to the browser after saving. Only Internal Admin can migrate/sync normalized tables manually or enable platform modules for a tenant. Account administrators can assign users only the modules enabled for their account. Normal workspace saves continue automatically.
@@ -49,7 +49,7 @@ Account Administrators can manage their own account users, roles, status, and mo
 Build command: `npm ci && npm run build`.
 Start command: `npm start`.
 
-Keep Supabase service credentials, the integration encryption key, SMTP, and other infrastructure settings in Render Environment. Discord/OpenAI keys are configured in tenant Settings. Follow the upgrade guide to import existing provider environment credentials into an explicitly selected tenant, verify them, then remove the old environment variables.
+Keep Supabase service credentials, the integration encryption key, SMTP, and other infrastructure settings in Render Environment. Discord and AI provider keys are configured in tenant Settings. Gemini is the default for new AI configurations; existing OpenAI configurations remain compatible. Follow the upgrade guide to import existing provider environment credentials into an explicitly selected tenant, verify them, then remove the old environment variables.
 
 Use one application instance. Sessions and Discord connection ownership are currently process-local; process restarts require signing in again. Persistent data, encrypted integrations, and templates live in Supabase.
 

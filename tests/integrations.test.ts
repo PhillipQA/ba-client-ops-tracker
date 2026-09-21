@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
 import PizZip from 'pizzip'
-import { encryptSecret, decryptSecret, encryptionKey, integrationSummary, createIntegrationStore, registerIntegrationRoutes } from '../tenant-integrations'
+import { encryptSecret, decryptSecret, encryptionKey, integrationSummary, createIntegrationStore, registerIntegrationRoutes, normalizeAiConfig, createAiClient } from '../tenant-integrations'
 import { registerPlatformSettings } from '../platform-settings'
 import { requirePlatformAdmin } from '../platform-auth'
 process.env.TENANT_INTEGRATION_MASTER_KEY = 'ab'.repeat(32)
@@ -43,6 +43,14 @@ test('AES-GCM rejects cross-tenant, cross-provider, wrong-key and tampered ciphe
   const parts=encrypted.split('.');parts[2]=Buffer.alloc(16).toString('base64')
   assert.throws(()=>decryptSecret(parts.join('.'),'a','openai'))
   assert.throws(()=>encryptionKey('short'))
+})
+
+test('AI config defaults new accounts to Gemini and preserves legacy OpenAI model inference',()=>{
+  assert.deepEqual(normalizeAiConfig({}),{provider:'gemini',model:'gemini-3.8-flash'})
+  assert.deepEqual(normalizeAiConfig({model:'gpt-5.6-terra'}),{provider:'openai',model:'gpt-5.6-terra'})
+  assert.deepEqual(normalizeAiConfig({provider:'gemini',model:'gemini-3.8-flash'}),{provider:'gemini',model:'gemini-3.8-flash'})
+  const gemini=createAiClient(secretA,{provider:'gemini',model:'gemini-3.8-flash'})
+  assert.equal(gemini.provider,'gemini');assert.equal(gemini.model,'gemini-3.8-flash')
 })
 test('summaries exclude secrets and encrypted ciphertext',()=>{
   const summary=integrationSummary({encrypted_secret:'sensitive',secret_suffix:'1234',is_enabled:true,config_json:{model:'x'}},'openai')

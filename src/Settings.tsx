@@ -7,21 +7,25 @@ export async function settingsRequest(url: string, method = 'GET', data?: unknow
   if (!response.ok) throw new Error(result.error || 'Settings request failed.')
   return result
 }
-type Integration = { kind: 'discord' | 'openai'; configured: boolean; maskedKey: string; enabled: boolean; config: { model?: string; allowedUserIds?: string[] }; connectionStatus: string; lastTestedAt?: string }
+type Integration = { kind: 'discord' | 'openai'; configured: boolean; maskedKey: string; enabled: boolean; config: { provider?: 'gemini' | 'openai'; model?: string; allowedUserIds?: string[] }; connectionStatus: string; lastTestedAt?: string }
+function providerFor(value: Integration) { return value.config.provider || (value.config.model?.startsWith('gpt-') ? 'openai' : 'gemini') }
+function defaultModel(provider: 'gemini' | 'openai') { return provider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-5.6-terra' }
 function IntegrationCard({ value, refresh, runtime }: { value: Integration; refresh: () => Promise<void>; runtime?: any }) {
   const [secret, setSecret] = useState('')
   const [enabled, setEnabled] = useState(value.enabled)
-  const [model, setModel] = useState(value.config.model || 'gpt-5.6-terra')
+  const [provider, setProvider] = useState<'gemini' | 'openai'>(providerFor(value))
+  const [model, setModel] = useState(value.config.model || defaultModel(providerFor(value)))
   const [ids, setIds] = useState((value.config.allowedUserIds || []).join(', '))
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { setEnabled(value.enabled); setModel(value.config.model || 'gpt-5.6-terra'); setIds((value.config.allowedUserIds || []).join(', ')) }, [value])
+  const providerChanged = value.kind === 'openai' && value.configured && provider !== providerFor(value)
+  useEffect(() => { const nextProvider = providerFor(value); setEnabled(value.enabled); setProvider(nextProvider); setModel(value.config.model || defaultModel(nextProvider)); setIds((value.config.allowedUserIds || []).join(', ')) }, [value])
   const act = async (action: 'save' | 'test' | 'remove') => {
     if (action === 'remove' && !window.confirm(`Remove this account’s ${value.kind === 'discord' ? 'Discord' : 'AI'} credential?`)) return
     setBusy(true); setMessage('')
     try {
       const url = `/api/account/integrations/${value.kind}`
-      const result = await settingsRequest(action === 'test' ? `${url}/test` : url, action === 'test' ? 'POST' : action === 'remove' ? 'DELETE' : 'PUT', action === 'save' ? { secret, enabled, config: value.kind === 'discord' ? { allowedUserIds: ids } : { model } } : undefined)
+      const result = await settingsRequest(action === 'test' ? `${url}/test` : url, action === 'test' ? 'POST' : action === 'remove' ? 'DELETE' : 'PUT', action === 'save' ? { secret, enabled, config: value.kind === 'discord' ? { allowedUserIds: ids } : { provider, model } } : undefined)
       if (action !== 'test') setSecret('')
       setMessage(result.message || (action === 'remove' ? 'Credential removed.' : 'Account integration saved.'))
       await refresh()
@@ -29,16 +33,16 @@ function IntegrationCard({ value, refresh, runtime }: { value: Integration; refr
     finally { setBusy(false) }
   }
   return <div className="panel account-integration-card">
-    <div className="panel-heading"><div><h2>{value.kind === 'discord' ? 'Discord Integration' : 'AI Integration'}</h2><p>{value.kind === 'discord' ? 'Capture DMs and mentions into this account’s Inbox.' : 'Use this account’s OpenAI key for the BA Assistant and Discord inquiry assessment.'}</p></div><span className="role-badge">{value.configured ? value.enabled ? 'Enabled' : 'Disabled' : 'Not configured'}</span></div>
+    <div className="panel-heading"><div><h2>{value.kind === 'discord' ? 'Discord Integration' : 'AI Integration'}</h2><p>{value.kind === 'discord' ? 'Capture DMs and mentions into this account’s Inbox.' : 'Connect this account’s Gemini or OpenAI credential to the BA Assistant and Discord inquiry assessment.'}</p></div><span className="role-badge">{value.configured ? value.enabled ? 'Enabled' : 'Disabled' : 'Not configured'}</span></div>
     <p>Saved key: <b>{value.maskedKey || 'None'}</b> · Connection: {value.connectionStatus.replace(/_/g, ' ')}</p>
     {value.lastTestedAt && <p>Last tested: {new Date(value.lastTestedAt).toLocaleString()}</p>}
-    <div className="integration-form"><label>{value.configured ? 'Replace credential (leave blank to keep it)' : value.kind === 'discord' ? 'Discord bot token' : 'OpenAI API key'}<input type="password" value={secret} autoComplete="new-password" onChange={e => setSecret(e.target.value)} /></label>
-    {value.kind === 'discord' ? <label>Allowed Discord user IDs (comma-separated)<input value={ids} onChange={e => setIds(e.target.value)} /><small>Leave blank to allow anyone who can DM or mention your bot.</small></label> : <label>OpenAI model<input value={model} onChange={e => setModel(e.target.value)} required /></label>}
+    <div className="integration-form"><label>{value.configured ? 'Replace credential (leave blank to keep it)' : value.kind === 'discord' ? 'Discord bot token' : provider === 'gemini' ? 'Gemini API key' : 'OpenAI API key'}<input type="password" value={secret} autoComplete="new-password" onChange={e => setSecret(e.target.value)} /></label>
+    {value.kind === 'discord' ? <label>Allowed Discord user IDs (comma-separated)<input value={ids} onChange={e => setIds(e.target.value)} /><small>Leave blank to allow anyone who can DM or mention your bot.</small></label> : <><label>AI provider<select value={provider} onChange={e => { const next = e.target.value as 'gemini' | 'openai'; setProvider(next); setModel(defaultModel(next)) }}><option value="gemini">Gemini (Google AI Studio)</option><option value="openai">OpenAI</option></select></label><label>{provider === 'gemini' ? 'Gemini model' : 'OpenAI model'}<input value={model} onChange={e => setModel(e.target.value)} required /></label>{provider === 'gemini' && <small>Create the key in Google AI Studio. New Gemini keys should use Google’s current Auth Key flow.</small>}{providerChanged && <small>Changing provider requires a new API key so an existing OpenAI key is never reused as a Gemini key, or vice versa.</small>}</>}
     <label className="checkbox-label"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Enable for this account</label></div>
     {value.kind === 'discord' && <p>Gateway: {runtime?.online ? `Online — ${runtime.botName}` : 'Offline'}{runtime?.lastMessageAt ? ` · Last capture ${new Date(runtime.lastMessageAt).toLocaleString()}` : ''}{runtime?.lastError ? ` · ${runtime.lastError}` : ''}</p>}
     {message && <p role="status" className="settings-message">{message}</p>}
-    <div className="integration-actions"><button className="primary" disabled={busy || (!value.configured && !secret.trim())} onClick={() => void act('save')}>Save settings</button><button className="secondary" disabled={busy || !value.configured} onClick={() => void act('test')}>Test saved connection</button><button className="secondary danger-button" disabled={busy || !value.configured} onClick={() => void act('remove')}>Remove key</button></div>
-    <small>Saved credentials are encrypted. The full key is never returned after saving.{value.kind === 'discord' ? ' Enable Message Content intent in the Discord Developer Portal.' : ' COR OCR continues to run locally in your browser.'}</small>
+    <div className="integration-actions"><button className="primary" disabled={busy || (!value.configured && !secret.trim()) || (providerChanged && !secret.trim())} onClick={() => void act('save')}>Save settings</button><button className="secondary" disabled={busy || !value.configured} onClick={() => void act('test')}>Test saved connection</button><button className="secondary danger-button" disabled={busy || !value.configured} onClick={() => void act('remove')}>Remove key</button></div>
+    <small>Saved credentials are encrypted. The full key is never returned after saving.{value.kind === 'discord' ? ' Enable Message Content intent in the Discord Developer Portal.' : ' The selected AI credential is used only by this tenant. COR OCR continues to run locally in your browser.'}</small>
   </div>
 }
 function Templates() {

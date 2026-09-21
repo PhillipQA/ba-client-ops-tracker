@@ -9,10 +9,9 @@ import bcrypt from 'bcryptjs'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import OpenAI from 'openai'
 import { requirePlatformAdmin } from './platform-auth'
 import { registerPlatformSettings } from './platform-settings'
-import { createIntegrationStore, registerIntegrationRoutes, encryptionKey, IntegrationError } from './tenant-integrations'
+import { createIntegrationStore, registerIntegrationRoutes, encryptionKey, IntegrationError, createAiClient } from './tenant-integrations'
 import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { PDFDocument, PDFTextField } from 'pdf-lib'
@@ -1224,6 +1223,22 @@ function parseModelJson(text: string) {
   }
 }
 
+async function runTenantAi(secret: string, config: any, instructions: string, input: string, timeout = 30000) {
+  const ai = createAiClient(secret, config, timeout)
+  if (ai.provider === 'gemini') {
+    const completion = await ai.client.chat.completions.create({
+      model: ai.model,
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: input },
+      ],
+    })
+    return String(completion.choices[0]?.message?.content || '')
+  }
+  const response = await ai.client.responses.create({ model: ai.model, instructions, input, reasoning: { effort: 'low' } })
+  return response.output_text
+}
+
 app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (user.role === 'Viewer' || !moduleAllowed(user, 'ai')) {
@@ -1233,8 +1248,7 @@ app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res)
 
   let ai: Awaited<ReturnType<typeof integrations.active>>
   try { ai = await integrations.active(tenantIdForUser(user)!, 'openai') } catch { return void res.status(503).json({ error: 'Account AI settings are unavailable.' }) }
-  if (!ai) return void res.status(503).json({ error: 'Enable an AI API key in this account’s Settings.' })
-  const apiKey = ai.secret
+  if (!ai) return void res.status(503).json({ error: 'Enable an AI provider and API key in this account’s Settings.' })
 
   const message = typeof req.body?.message === 'string' ? req.body.message.trim() : ''
   if (!message) {
@@ -1242,8 +1256,6 @@ app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res)
     return
   }
 
-  const client = new OpenAI({ apiKey })
-  const model = ai.config.model
   const today = new Date().toISOString().slice(0, 10)
   const context = req.body?.context ?? {}
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
@@ -1276,19 +1288,26 @@ Return JSON only with this shape:
 Use at most 5 suggestions. Do not invent client commitments or technical facts. If the input is ambiguous, suggest a clarification or follow-up instead of pretending it is a defect.`
 
   try {
-    const response = await client.responses.create({
-      model,
+    const outputText = await runTenantAi(
+      ai.secret,
+      ai.config,
       instructions,
-      input: `TRACKER CONTEXT:\n${JSON.stringify(context, null, 2)}\n\nRECENT CHAT:\n${JSON.stringify(history, null, 2)}\n\nUSER MESSAGE:\n${message}`,
-      reasoning: { effort: 'low' },
-    })
-    const parsed = parseModelJson(response.output_text)
+      `TRACKER CONTEXT:
+${JSON.stringify(context, null, 2)}
+
+RECENT CHAT:
+${JSON.stringify(history, null, 2)}
+
+USER MESSAGE:
+${message}`,
+    )
+    const parsed = parseModelJson(outputText)
     const responseMessage = String(parsed.message || '').trim()
     if (!responseMessage) throw new Error('The model returned no assessment.')
     res.json({ message: responseMessage, suggestions: sanitizeSuggestions(parsed.suggestions) })
   } catch (error) {
     console.error('Account AI request failed.')
-    res.status(502).json({ error: 'AI request failed. Check this account’s key, selected model, quota, and connection.' })
+    res.status(502).json({ error: 'AI request failed. Check this account’s provider, key, selected model, quota, and connection.' })
   }
 })
 
@@ -1574,8 +1593,6 @@ async function assessDiscordInquiry(messageText: string, sender: string, state: 
   let ai
   try { ai = await integrations.active(organizationId, 'openai') } catch { return fallback }
   if (!ai) return fallback
-  const client = new OpenAI({ apiKey: ai.secret, timeout: 30000, maxRetries: 0 })
-  const model = ai.config.model
   const today = new Date().toISOString().slice(0, 10)
   const clientContext = clients.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
   const projectContext = projects.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
@@ -1592,13 +1609,16 @@ Return JSON only:
 }
 Do not invent commitments, dates, defects, client names, or projects. Only choose a client/project when the message clearly identifies it. If the user says follow up tomorrow/Friday, resolve that to a date. This is capture/organization, not final classification: the record remains an Inquiry.`
   try {
-    const response = await client.responses.create({
-      model,
+    const outputText = await runTenantAi(
+      ai.secret,
+      ai.config,
       instructions,
-      input: `SENDER: ${sender}\nCLIENTS: ${JSON.stringify(clientContext)}\nPROJECTS: ${JSON.stringify(projectContext)}\nMESSAGE: ${messageText}`,
-      reasoning: { effort: 'low' },
-    })
-    const parsed = parseModelJson(response.output_text)
+      `SENDER: ${sender}
+CLIENTS: ${JSON.stringify(clientContext)}
+PROJECTS: ${JSON.stringify(projectContext)}
+MESSAGE: ${messageText}`,
+    )
+    const parsed = parseModelJson(outputText)
     const validClientIds = new Set(clientContext.map((item: any) => item.id))
     const validProjectIds = new Set(projectContext.map((item: any) => item.id))
     const projectId = validProjectIds.has(String(parsed.projectId || '')) ? String(parsed.projectId) : fallback.projectId

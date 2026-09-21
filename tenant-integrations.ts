@@ -5,6 +5,34 @@ import PizZip from 'pizzip'
 import rateLimit from 'express-rate-limit'
 
 export type IntegrationKind = 'discord' | 'openai'
+export type AiProvider = 'gemini' | 'openai'
+
+export function normalizeAiConfig(input: any) {
+  const rawProvider = String(input?.provider || '').toLowerCase()
+  const inferredProvider: AiProvider = rawProvider === 'openai' || rawProvider === 'gemini'
+    ? rawProvider as AiProvider
+    : String(input?.model || '').toLowerCase().startsWith('gpt-') ? 'openai' : 'gemini'
+  const fallbackModel = inferredProvider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-5.6-terra'
+  const model = String(input?.model || fallbackModel).trim()
+  if (!/^[a-zA-Z0-9._:-]{1,100}$/.test(model)) throw new IntegrationError('Enter a valid AI model ID.')
+  return { provider: inferredProvider, model }
+}
+
+export function aiProviderName(config: any) { return normalizeAiConfig(config).provider === 'gemini' ? 'Gemini' : 'OpenAI' }
+
+export function createAiClient(secret: string, config: any, timeout = 30000) {
+  const normalized = normalizeAiConfig(config)
+  return {
+    provider: normalized.provider,
+    model: normalized.model,
+    client: new OpenAI({
+      apiKey: secret,
+      baseURL: normalized.provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta/openai/' : undefined,
+      timeout,
+      maxRetries: 0,
+    }),
+  }
+}
 export class IntegrationError extends Error {
   constructor(message: string, public status = 400) { super(message) }
 }
@@ -31,15 +59,11 @@ export function decryptSecret(value: string, tenantId: string, kind: Integration
 }
 export function integrationSummary(row: any, kind: IntegrationKind) {
   return { kind, configured: Boolean(row), maskedKey: row ? `••••••••${row.secret_suffix}` : '', enabled: row?.is_enabled ?? false,
-    config: row?.config_json || (kind === 'openai' ? { model: 'gpt-5.6-terra' } : { allowedUserIds: [] }),
+    config: row?.config_json || (kind === 'openai' ? { provider: 'gemini', model: 'gemini-3.8-flash' } : { allowedUserIds: [] }),
     connectionStatus: row?.connection_status || 'not_configured', lastTestedAt: row?.last_tested_at || null }
 }
 export function cleanIntegrationConfig(kind: IntegrationKind, input: any) {
-  if (kind === 'openai') {
-    const model = String(input?.model || 'gpt-5.6-terra').trim()
-    if (!/^[a-zA-Z0-9._:-]{1,100}$/.test(model)) throw new IntegrationError('Enter a valid OpenAI model ID.')
-    return { model }
-  }
+  if (kind === 'openai') return normalizeAiConfig(input)
   const ids = Array.isArray(input?.allowedUserIds) ? input.allowedUserIds : String(input?.allowedUserIds || '').split(',')
   const allowedUserIds: string[] = [...new Set<string>(ids.map((id: any) => String(id).trim()).filter(Boolean))]
   if (allowedUserIds.length > 200 || allowedUserIds.some(id => !/^\d{15,22}$/.test(id))) throw new IntegrationError('Enter Discord user IDs separated by commas (up to 200).')
@@ -96,14 +120,15 @@ export function createIntegrationStore(db: any) {
       if (kind === 'discord') {
         const response = await fetch('https://discord.com/api/v10/users/@me', { headers: { Authorization: `Bot ${secret}` }, signal: AbortSignal.timeout(15000) }); ok = response.ok
       } else {
-        await new OpenAI({ apiKey: secret, timeout: 15000, maxRetries: 0 }).models.retrieve(record.config_json.model); ok = true
+        const ai = createAiClient(secret, record.config_json, 15000)
+        await ai.client.models.retrieve(ai.model); ok = true
       }
     } catch { ok = false }
     // A late test must never change the health of a replacement credential.
     const { error } = await database().from('tenant_integrations').update({ connection_status: ok ? 'verified' : 'failed', last_tested_at: new Date().toISOString() })
       .eq('tenant_id', tenantId).eq('integration_type', kind).eq('updated_at', record.updated_at).eq('encrypted_secret', record.encrypted_secret)
     check(error)
-    return { ok, message: ok ? (kind === 'openai' ? 'Credential and model access verified. Generation quota is checked when AI runs.' : 'Bot token verified. Gateway status is shown separately.') : 'Connection test failed. Check the credential, model access, and network connection.' }
+    return { ok, message: ok ? (kind === 'openai' ? `${aiProviderName(record.config_json)} credential and model access verified. Generation quota is checked when AI runs.` : 'Bot token verified. Gateway status is shown separately.') : 'Connection test failed. Check the credential, selected provider/model, and network connection.' }
   }
   return { row, active, save, remove, test }
 }
