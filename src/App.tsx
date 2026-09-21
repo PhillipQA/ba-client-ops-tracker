@@ -1,3 +1,4 @@
+import ActivityCommentPreview from './ActivityCommentPreview'
 import RecordEditDialog from './RecordEditDialog'
 import LifecycleControls from './LifecycleControls'
 import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from './lifecycle'
@@ -1250,18 +1251,6 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
 
 
 
-function ActivityTaskTitle({ item }: { item: WorkItem }) {
-  const comments = item.description?.trim() || ''
-  if (!comments) return <strong>{item.title}</strong>
-  return <span className="activity-task-title-hover" tabIndex={0}>
-    <strong>{item.title}</strong>
-    <span className="activity-comment-tooltip" role="tooltip" aria-label="Task comments">
-      <b>Comments / notes</b>
-      <span>{comments}</span>
-    </span>
-  </span>
-}
-
 function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, projects, onEdit, onToggle, onEditTask, canEdit }: { mode: 'today' | 'week'; items: PlannerActivity[]; followUps: WorkItem[]; allItems: WorkItem[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void; onEditTask: (id: string) => void; canEdit: boolean }) {
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name : ''
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name : ''
@@ -1270,39 +1259,39 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, 
     ...followUps.map((item) => ({ kind: 'followup' as const, date: item.followUpDate, sortTime: '99:98', item })),
   ].sort((a, b) => a.date.localeCompare(b.date) || a.sortTime.localeCompare(b.sortTime))
   if (!entries.length) return <div className="activity-empty dashboard-activity-empty">No activities or follow-ups scheduled for this view.</div>
-  return <div className="dashboard-activity-list">{entries.map((entry) => {
+  return <div className="activity-tile-grid" aria-label={mode === 'today' ? "Today's activities" : "This week's activities"}>{entries.map((entry) => {
     if (entry.kind === 'followup') {
       const item = entry.item
       const parent = item.parentTaskId ? allItems.find((candidate) => candidate.id === item.parentTaskId) : undefined
       const context = [clientName(item.clientId), projectName(item.projectId)].filter(Boolean).join(' · ')
-      return <div className="dashboard-activity-row followup-activity-row" key={`followup-${item.id}`}>
-        <div className="dashboard-activity-time">{mode === 'week' && <small>{niceDate(item.followUpDate)}</small>}<strong>Follow-up</strong></div>
-        <div className="dashboard-activity-card">
-          <div className="dashboard-activity-top">
-            <div><ActivityTaskTitle item={item} />{context && <p>{context}</p>}<small>{item.parentTaskId ? `Subtask${parent ? ` of ${parent.title}` : ''}` : 'Task'} · Waiting on {item.waitingOn} · Priority {item.priority}</small></div>
-            <div className="dashboard-activity-badges"><span className="followup-badge">{item.parentTaskId ? 'Subtask follow-up' : 'Task follow-up'}</span></div>
-          </div>
-          <div className="dashboard-activity-actions">{canEdit && <button className="secondary compact" type="button" onClick={() => onEditTask(item.id)}>Edit {item.parentTaskId ? 'subtask' : 'task'}</button>}</div>
-        </div>
-      </div>
+      const overdue = Boolean((item.dueDate && item.dueDate < TODAY) || item.followUpDate < TODAY)
+      return <article className={`activity-tile${overdue ? ' activity-tile-overdue' : ''}`} key={`followup-${item.id}`}>
+        <div className="activity-tile-top"><span className="activity-tile-kind">{item.parentTaskId ? 'Subtask' : 'Task'} follow-up</span>{overdue && <span className="activity-overdue-label">Overdue</span>}</div>
+        <h3>{canEdit ? <button type="button" className="activity-tile-title" onClick={() => onEditTask(item.id)}>{item.title}</button> : item.title}</h3>
+        <p className="activity-tile-context">{context || 'General'}</p>
+        {parent && <p className="activity-tile-parent">Parent task: {parent.title}</p>}
+        <div className="activity-tile-badges"><StatusChip value={item.status} /><PriorityChip value={item.priority} /></div>
+        <div className="activity-tile-details"><span>Follow-up: <b>{niceDate(item.followUpDate)}</b></span>{item.dueDate && <span>Due: <b>{niceDate(item.dueDate)}</b></span>}<span>Waiting on: <b>{item.waitingOn}</b></span></div>
+        <ActivityCommentPreview text={item.description} title={item.title} />
+        {canEdit && <div className="activity-tile-actions"><button className="secondary compact" type="button" onClick={() => onEditTask(item.id)}>Edit {item.parentTaskId ? 'subtask' : 'task'}</button></div>}
+      </article>
     }
     const activity = entry.activity
-    const timeLabel = activity.allDay ? 'All day' : activity.startTime || '—'
     const context = [clientName(activity.clientId), projectName(activity.projectId)].filter(Boolean).join(' · ')
-    return <div className={`dashboard-activity-row ${activity.status === 'Done' ? 'done' : ''}`} key={`activity-${activity.id}`}>
-      <div className="dashboard-activity-time">{mode === 'week' && <small>{niceDate(activity.date)}</small>}<strong>{timeLabel}</strong></div>
-      <div className="dashboard-activity-card">
-        <div className="dashboard-activity-top">
-          <div><strong>{activity.title}</strong>{context && <p>{context}</p>}{activity.notes && <small>{activity.notes}</small>}</div>
-          <div className="dashboard-activity-badges"><span>{activity.source === 'Google Calendar' ? 'Calendar' : 'Tracker'}</span>{activity.source === 'Google Calendar' && <span>Local edit</span>}</div>
-        </div>
-        <div className="dashboard-activity-actions">
-          {canEdit && <button className="secondary compact" type="button" onClick={() => onEdit(activity)}>{activity.source === 'Google Calendar' ? 'Edit local copy' : 'Edit'}</button>}
-          {canEdit && <button className="secondary compact" type="button" onClick={() => onToggle(activity.id)}>{activity.status === 'Done' ? 'Mark planned' : 'Mark done'}</button>}
-          {activity.calendarLink && <a className="secondary compact dashboard-link-button" href={activity.calendarLink} target="_blank" rel="noreferrer">Open original</a>}
-        </div>
+    const overdue = activity.status === 'Planned' && (activity.endDate || activity.date) < TODAY
+    return <article className={`activity-tile${activity.status === 'Done' ? ' activity-tile-done' : ''}${overdue ? ' activity-tile-overdue' : ''}`} key={`activity-${activity.id}`}>
+      <div className="activity-tile-top"><span className="activity-tile-kind">{activity.source === 'Google Calendar' ? 'Calendar' : 'Tracker'}</span>{overdue && <span className="activity-overdue-label">Overdue</span>}</div>
+      <h3>{canEdit ? <button type="button" className="activity-tile-title" onClick={() => onEdit(activity)}>{activity.title}</button> : activity.title}</h3>
+      <p className="activity-tile-context">{context || 'General'}</p>
+      <div className="activity-tile-badges"><StatusChip value={activity.status} /></div>
+      <div className="activity-tile-details"><span><CalendarDays size={14} /> {niceDate(activity.date)}</span><span><Clock3 size={14} /> {activity.allDay ? 'All day' : [activity.startTime, activity.endTime].filter(Boolean).join(' – ') || 'Time not set'}</span></div>
+      <ActivityCommentPreview text={activity.notes} title={activity.title} />
+      <div className="activity-tile-actions">
+        {canEdit && <button className="secondary compact" type="button" onClick={() => onEdit(activity)}>{activity.source === 'Google Calendar' ? 'Edit local copy' : 'Edit'}</button>}
+        {canEdit && <button className="secondary compact" type="button" onClick={() => onToggle(activity.id)}>{activity.status === 'Done' ? 'Mark planned' : 'Mark done'}</button>}
+        {activity.calendarLink && <a className="secondary compact dashboard-link-button" href={activity.calendarLink} target="_blank" rel="noreferrer">Open original</a>}
       </div>
-    </div>
+    </article>
   })}</div>
 }
 

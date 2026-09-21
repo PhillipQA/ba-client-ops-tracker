@@ -1386,3 +1386,37 @@ select option { background: #181818; color: #fff; }
   .record-editor-header, .record-editor-footer { padding: 16px 18px; }
   .record-title-edit { font-size: 12px; }
 }
+
+/* v0.6.10 — Action Center activity tiles */
+.activity-tile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 6px 18px 18px; align-items: stretch; }
+.activity-tile { min-width: 0; display: flex; flex-direction: column; gap: 11px; padding: 17px; border: 1px solid var(--theme-border, #3b3b3b); border-radius: 13px; background: var(--theme-card, #212121); color: inherit; }
+.activity-tile-top, .activity-tile-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.activity-tile-top { justify-content: space-between; }
+.activity-tile-kind { font-size: 10px; font-weight: 700; letter-spacing: .025em; opacity: .8; }
+.activity-overdue-label { color: #ffb4a9; background: #602b25; padding: 3px 7px; border-radius: 6px; font-size: 10px; font-weight: 700; }
+.activity-tile.activity-tile-overdue { border-left: 3px solid #e77d63; }
+.activity-tile h3 { font-size: 15px; line-height: 1.45; margin: 0; overflow-wrap: anywhere; }
+.activity-tile-title { display: block; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.activity-tile-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.activity-tile-title:focus-visible, .activity-comment-preview:focus-visible { outline: 2px solid #55adff; outline-offset: 4px; }
+.activity-tile.activity-tile-done h3 { text-decoration: line-through; opacity: .7; }
+.activity-tile-context, .activity-tile-parent { margin: 0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.activity-tile-parent { opacity: .75; }
+.activity-tile-details { display: flex; flex-wrap: wrap; gap: 7px 12px; font-size: 10.5px; line-height: 1.5; }
+.activity-tile-details > span { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.activity-comment-preview { width: 100%; border: 1px solid var(--theme-border, #414141); border-radius: 9px; background: rgba(127,127,127,.08); color: inherit; padding: 10px; text-align: left; cursor: pointer; font: inherit; }
+.activity-comment-preview:hover { background: rgba(127,127,127,.16); }
+.activity-comment-label, .activity-comment-hint { display: block; font-size: 10px; line-height: 1.5; opacity: .8; }
+.activity-comment-label { font-weight: 700; margin-bottom: 5px; }
+.activity-comment-excerpt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11.5px; line-height: 1.6; }
+.activity-comment-hint { margin-top: 6px; text-decoration: underline; text-underline-offset: 3px; }
+.activity-tile-no-comment { margin: 0; font-size: 11px; opacity: .6; }
+.activity-tile-actions { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 4px; margin-top: auto; }
+.activity-tile-actions .compact { min-height: 34px; padding: 7px 10px; font-size: 10.5px; }
+/* Portaled to the document body so themed panels cannot clip comments. */
+.activity-comment-popover { position: fixed; z-index: 10000; display: flex; flex-direction: column; box-sizing: border-box; border: 1px solid #626b78; border-radius: 12px; background: #171c24; color: #f3f5f7; box-shadow: 0 16px 45px #0008; overflow: hidden; }
+.activity-comment-popover-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #3b4350; font-size: 12px; }
+.activity-comment-popover-head button { display: grid; place-items: center; border: 0; border-radius: 6px; width: 30px; height: 30px; background: #303846; color: #fff; cursor: pointer; }
+.activity-comment-full { min-height: 0; padding: 12px; overflow: auto; overscroll-behavior: contain; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.65; }
+@media (max-width: 1250px) { .activity-tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .activity-tile-grid { grid-template-columns: minmax(0, 1fr); padding: 6px 12px 14px; } }
