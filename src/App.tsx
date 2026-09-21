@@ -47,7 +47,7 @@ import Reports from './Reports'
 import Settings, { settingsRequest } from './Settings'
 import AccountUsers from './AccountUsers'
 import ThemePreferences from './ThemePreferences'
-import type { AISuggestion } from './ai'
+import { askBAAssistant, type AIMessage, type AISuggestion } from './ai'
 import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems, seedPlannerActivities, seedProjects } from './data'
 import { importPrimaryCalendar } from './googleCalendar'
 import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
@@ -301,6 +301,9 @@ function App() {
   const [aiPrompt, setAiPrompt] = useState('')
   const [activityRange, setActivityRange] = useState<'today' | 'week'>('today')
   const [dashboardAiPrompt, setDashboardAiPrompt] = useState('')
+  const [dashboardAiBusy, setDashboardAiBusy] = useState(false)
+  const [dashboardAiError, setDashboardAiError] = useState('')
+  const [dashboardAiResult, setDashboardAiResult] = useState<{ message: string; wordCount: number } | null>(null)
   const [cloudStatus, setCloudStatus] = useState<CloudStorageStatus>('checking')
   const [cloudMessage, setCloudMessage] = useState('Checking cloud storage…')
   const [lastCloudSync, setLastCloudSync] = useState<string>('')
@@ -660,6 +663,15 @@ function App() {
   }, [store.items, query, waitingFilter, store.clients, store.projects])
 
   const actionItems = searchedItems.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+  const dashboardAiContext = useMemo(() => {
+    const client = store.clients.find((value) => value.id === aiClientId)
+    const project = store.projects.find((value) => value.id === aiProjectId)
+    const scopedItems = store.items.filter((item) => (!aiClientId || item.clientId === aiClientId) && (!aiProjectId || item.projectId === aiProjectId))
+    const closedStatuses = new Set(store.taskSettings.statuses.filter((status) => status.closed).map((status) => status.label))
+    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && item.waitingOn !== 'Done').slice(0, 20)
+    const upcomingActivities = store.planner.filter((activity) => (!aiClientId || activity.clientId === aiClientId) && (!aiProjectId || activity.projectId === aiProjectId) && activity.status === 'Planned').slice(0, 15)
+    return { client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities }
+  }, [aiClientId, aiProjectId, store.clients, store.projects, store.items, store.planner, store.taskSettings])
   const inquiryItems = searchedItems.filter((item) => item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings))
   const archivedInquiryItems = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -895,6 +907,47 @@ function App() {
   }
 
 
+  const assessDashboardAI = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const text = dashboardAiPrompt.trim()
+    if (!text || dashboardAiBusy) return
+
+    setDashboardAiBusy(true)
+    setDashboardAiError('')
+    setDashboardAiResult(null)
+
+    const threadKey = `${aiClientId || 'global'}:${aiProjectId || 'all'}`
+    let threads: Record<string, AIMessage[]> = {}
+    try { threads = JSON.parse(localStorage.getItem('ba-client-ops-ai-threads-v1') || '{}') as Record<string, AIMessage[]> } catch { threads = {} }
+    const history = Array.isArray(threads[threadKey]) ? threads[threadKey] : []
+
+    try {
+      const result = await askBAAssistant({ message: text, context: dashboardAiContext, history: history.slice(-8) })
+      const now = new Date().toISOString()
+      const userMessage: AIMessage = { id: crypto.randomUUID(), role: 'user', content: text, createdAt: now }
+      const assistantMessage: AIMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: result.message,
+        suggestions: result.suggestions.map((suggestion) => ({ ...suggestion, id: suggestion.id || crypto.randomUUID() })),
+        createdAt: new Date().toISOString(),
+      }
+      const nextThreads = { ...threads, [threadKey]: [...history, userMessage, assistantMessage] }
+      localStorage.setItem('ba-client-ops-ai-threads-v1', JSON.stringify(nextThreads))
+      const wordCount = result.message.trim().split(/\s+/).filter(Boolean).length
+      setDashboardAiResult({ message: result.message, wordCount })
+    } catch (error) {
+      setDashboardAiError(error instanceof Error ? error.message : 'The AI assistant could not respond.')
+    } finally {
+      setDashboardAiBusy(false)
+    }
+  }
+
+  const openDashboardAiResult = () => {
+    setAiPrompt('')
+    setView('ai')
+  }
+
   const applyAISuggestion = (suggestion: AISuggestion, contextClientId: string, contextProjectId: string) => {
     if (!canWriteTasks) return 'Task or Inbox write access is required to apply a suggestion.'
     const clientId = contextClientId || undefined
@@ -1041,19 +1094,19 @@ function App() {
                 <div><div className="ai-title-line"><Sparkles size={18} /><h2>AI BA Assistant</h2></div><p>Drop a client inquiry, meeting note, or problem here and let AI organize the next steps.</p></div>
                 <button className="secondary" onClick={() => setView('ai')}>Open full assistant <ChevronRight size={16} /></button>
               </div>
-              <form className="dashboard-ai-body" onSubmit={(event) => {
-                event.preventDefault()
-                if (!dashboardAiPrompt.trim()) return
-                setAiPrompt(dashboardAiPrompt.trim())
-                setDashboardAiPrompt('')
-                setView('ai')
-              }}>
+              <form className="dashboard-ai-body" onSubmit={assessDashboardAI}>
                 <div className="dashboard-ai-context">
-                  <label>Client<select value={aiClientId} onChange={(e) => { setAiClientId(e.target.value); setAiProjectId('') }}><option value="">General / all clients</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
-                  <label>Project<select value={aiProjectId} onChange={(e) => setAiProjectId(e.target.value)}><option value="">All projects</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                  <label>Client<select value={aiClientId} onChange={(e) => { setAiClientId(e.target.value); setAiProjectId(''); setDashboardAiResult(null); setDashboardAiError('') }}><option value="">General / all clients</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+                  <label>Project<select value={aiProjectId} onChange={(e) => { setAiProjectId(e.target.value); setDashboardAiResult(null); setDashboardAiError('') }}><option value="">All projects</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 </div>
                 <textarea value={dashboardAiPrompt} onChange={(e) => setDashboardAiPrompt(e.target.value)} rows={3} placeholder="Example: Client says search should support @gmail but it does not. Assess what I should do next." />
-                <div className="dashboard-ai-footer"><span>Suggestions only — nothing is saved until you approve it.</span><button className="primary" disabled={!dashboardAiPrompt.trim()}><Sparkles size={16} /> Assess with AI</button></div>
+                <div className="dashboard-ai-footer"><span>Suggestions only — nothing is saved to tracker records until you approve it.</span><button className="primary" disabled={dashboardAiBusy || !dashboardAiPrompt.trim()}><Sparkles size={16} /> {dashboardAiBusy ? 'Assessing…' : 'Assess with AI'}</button></div>
+                {dashboardAiError && <div className="dashboard-ai-error">{dashboardAiError}</div>}
+                {dashboardAiResult && <div className="dashboard-ai-result">
+                  <div className="dashboard-ai-result-head"><strong>AI assessment</strong><span>{dashboardAiResult.wordCount} words</span></div>
+                  <textarea className="dashboard-ai-result-box" readOnly rows={5} value={dashboardAiResult.wordCount >= 200 ? `${dashboardAiResult.message.trim().split(/\s+/).slice(0, 200).join(' ')}${dashboardAiResult.wordCount > 200 ? '…' : ''}` : dashboardAiResult.message} />
+                  {dashboardAiResult.wordCount >= 200 && <div className="dashboard-ai-result-footer"><span>Showing the first 200 words here.</span><button className="secondary" type="button" onClick={openDashboardAiResult}>View in AI BA Assistant <ChevronRight size={16} /></button></div>}
+                </div>}
               </form>
             </div>}
 
@@ -1296,16 +1349,30 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, 
 }
 
 function DashboardActionTable({ items, clients, projects, planner }: { items: WorkItem[]; clients: Client[]; projects: Project[]; planner: PlannerActivity[] }) {
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown' : 'General'
   const nextActivity = (item: WorkItem) => planner
     .filter((activity) => activity.status === 'Planned' && activity.date >= TODAY && activity.clientId === item.clientId && (!activity.projectId || activity.projectId === item.projectId))
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))[0]
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const start = (safePage - 1) * pageSize
+  const visibleItems = items.slice(start, start + pageSize)
+  useEffect(() => { if (page !== safePage) setPage(safePage) }, [page, safePage])
   if (!items.length) return <Empty text="Nothing needs your attention right now." />
-  return <div className="table-scroll"><table className="dashboard-action-table"><thead><tr><th>Client</th><th>Task</th><th>Waiting on</th><th>Follow-up</th><th>Next activity</th></tr></thead><tbody>{items.map((item) => {
-    const activity = nextActivity(item)
-    const activityLabel = activity ? `${activity.date === TODAY ? activityTime(activity) : `${niceDate(activity.date)} · ${activityTime(activity)}`} — ${activity.title}` : '—'
-    return <tr key={item.id}><td><strong>{clientName(item.clientId)}</strong></td><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < TODAY ? 'overdue-date' : ''}>{item.followUpDate === TODAY ? 'Today' : niceDate(item.followUpDate)}</td><td>{activityLabel}</td></tr>
-  })}</tbody></table></div>
+  return <>
+    <div className="table-scroll"><table className="dashboard-action-table"><thead><tr><th>Client</th><th>Task</th><th>Waiting on</th><th>Follow-up</th><th>Next activity</th></tr></thead><tbody>{visibleItems.map((item) => {
+      const activity = nextActivity(item)
+      const activityLabel = activity ? `${activity.date === TODAY ? activityTime(activity) : `${niceDate(activity.date)} · ${activityTime(activity)}`} — ${activity.title}` : '—'
+      return <tr key={item.id}><td><strong>{clientName(item.clientId)}</strong></td><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < TODAY ? 'overdue-date' : ''}>{item.followUpDate === TODAY ? 'Today' : niceDate(item.followUpDate)}</td><td>{activityLabel}</td></tr>
+    })}</tbody></table></div>
+    <div className="dashboard-action-pagination">
+      <label>Items per page<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1) }}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label>
+      <span>Showing {start + 1}–{Math.min(start + pageSize, items.length)} of {items.length}</span>
+      <div className="dashboard-page-buttons"><button className="secondary compact" type="button" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button><span>Page {safePage} of {totalPages}</span><button className="secondary compact" type="button" disabled={safePage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</button></div>
+    </div>
+  </>
 }
 
 function ActivityColumn({ title, subtitle, items, clients, projects, onEdit, onToggle }: { title: string; subtitle: string; items: PlannerActivity[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void }) {

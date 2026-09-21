@@ -1,6 +1,6 @@
-# Current release — v0.6.12
+# Current release — v0.6.13
 
-FSD Creator now has Basic and Advance modes, account-configured AI generation, editable previews, Word export based on the iRipple FSD template, and draft retention across module navigation. See [UPGRADE-v0.6.12.md](UPGRADE-v0.6.12.md) for installation and usage.
+Action Center now includes 10/25/50-item pagination, inline AI assessment with a compact result preview, and a full-result handoff to AI BA Assistant for responses of 200 words or more. This build also includes the adaptive FSD Creator browser/system color-scheme update. See [UPGRADE-v0.6.13.md](UPGRADE-v0.6.13.md) for details.
 
 # BA Client Ops Tracker
 
