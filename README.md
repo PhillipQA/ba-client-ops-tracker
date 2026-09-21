@@ -1,3 +1,7 @@
+# Current release — v0.6.12
+
+FSD Creator now has Basic and Advance modes, account-configured AI generation, editable previews, Word export based on the iRipple FSD template, and draft retention across module navigation. See [UPGRADE-v0.6.12.md](UPGRADE-v0.6.12.md) for installation and usage.
+
 # BA Client Ops Tracker
 
 Version **0.6.9** — visible client/project Edit controls and an unclipped popup editor.

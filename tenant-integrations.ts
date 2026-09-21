@@ -5,20 +5,21 @@ import PizZip from 'pizzip'
 import rateLimit from 'express-rate-limit'
 
 export type IntegrationKind = 'discord' | 'openai'
-export type AiProvider = 'gemini' | 'openai'
+export type AiProvider = 'gemini' | 'openai' | 'anthropic' | 'deepseek'
 
 export function normalizeAiConfig(input: any) {
   const rawProvider = String(input?.provider || '').toLowerCase()
-  const inferredProvider: AiProvider = rawProvider === 'openai' || rawProvider === 'gemini'
+  const inferredProvider: AiProvider = ['openai', 'gemini', 'anthropic', 'deepseek'].includes(rawProvider)
     ? rawProvider as AiProvider
     : String(input?.model || '').toLowerCase().startsWith('gpt-') ? 'openai' : 'gemini'
-  const fallbackModel = inferredProvider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-5.6-terra'
+  if (rawProvider && !['openai', 'gemini', 'anthropic', 'deepseek'].includes(rawProvider)) throw new IntegrationError('Unsupported AI provider. Select a supported provider in Settings.')
+  const fallbackModel = { gemini: 'gemini-3.8-flash', openai: 'gpt-5.6-terra', anthropic: 'claude-sonnet-5', deepseek: 'deepseek-flash' }[inferredProvider]
   const model = String(input?.model || fallbackModel).trim()
   if (!/^[a-zA-Z0-9._:-]{1,100}$/.test(model)) throw new IntegrationError('Enter a valid AI model ID.')
   return { provider: inferredProvider, model }
 }
 
-export function aiProviderName(config: any) { return normalizeAiConfig(config).provider === 'gemini' ? 'Gemini' : 'OpenAI' }
+export function aiProviderName(config: any) { return { gemini: 'Gemini', openai: 'OpenAI', anthropic: 'Claude', deepseek: 'DeepSeek' }[normalizeAiConfig(config).provider] }
 
 export function createAiClient(secret: string, config: any, timeout = 30000) {
   const normalized = normalizeAiConfig(config)
@@ -27,7 +28,7 @@ export function createAiClient(secret: string, config: any, timeout = 30000) {
     model: normalized.model,
     client: new OpenAI({
       apiKey: secret,
-      baseURL: normalized.provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta/openai/' : undefined,
+      baseURL: normalized.provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta/openai/' : normalized.provider === 'deepseek' ? 'https://api.deepseek.com' : undefined,
       timeout,
       maxRetries: 0,
     }),
@@ -91,6 +92,7 @@ export function createIntegrationStore(db: any) {
     if (!secret && !previous) throw new IntegrationError('Enter a credential first.')
     if (secret && (secret.length < 20 || secret.length > 4096 || /\s/.test(secret))) throw new IntegrationError('The credential format is invalid.')
     const config = cleanIntegrationConfig(kind, input.config ?? previous?.config_json)
+    if (kind === 'openai' && previous && normalizeAiConfig(previous.config_json).provider !== normalizeAiConfig(config).provider && !secret) throw new IntegrationError('Changing AI provider requires a new API key.')
     let identity = previous?.provider_identity || null
     if (secret && kind === 'discord') {
       const response = await fetch('https://discord.com/api/v10/users/@me', { headers: { Authorization: `Bot ${secret}` }, signal: AbortSignal.timeout(15000) })
@@ -121,7 +123,11 @@ export function createIntegrationStore(db: any) {
         const response = await fetch('https://discord.com/api/v10/users/@me', { headers: { Authorization: `Bot ${secret}` }, signal: AbortSignal.timeout(15000) }); ok = response.ok
       } else {
         const ai = createAiClient(secret, record.config_json, 15000)
-        await ai.client.models.retrieve(ai.model); ok = true
+        if (ai.provider === 'anthropic') {
+          const response = await fetch(`https://api.anthropic.com/v1/models/${encodeURIComponent(ai.model)}`, { headers: { 'x-api-key': secret, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(15000), redirect: 'error' }); ok = response.ok
+        } else if (ai.provider === 'deepseek') {
+          const models = await ai.client.models.list(); ok = models.data.some(model => model.id === ai.model)
+        } else { await ai.client.models.retrieve(ai.model); ok = true }
       }
     } catch { ok = false }
     // A late test must never change the health of a replacement credential.

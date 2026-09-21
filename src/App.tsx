@@ -1136,7 +1136,7 @@ function App() {
           </section>
         )}
 
-        {!selectedClient && !selectedProject && view === 'documents' && hasModule('documents') && <DocumentCreation clients={store.clients} canGenerate={canWrite} />}
+        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} canGenerate={canWrite} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} />}
 

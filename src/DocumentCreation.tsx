@@ -1,3 +1,4 @@
+import FsdCreation from './FsdCreation'
 import SignOffCreation from './SignOffCreation'
 import type { Client } from './types'
 import { useEffect, useMemo, useState } from 'react'
@@ -34,7 +35,6 @@ type PosRow = {
 
 const COR_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,.bmp,.docx'
 const TEMPLATE_ACCEPT = '.xlsx'
-const BRD_ACCEPT = '.pdf,.doc,.docx,.rtf,.txt'
 const MAX_COR_BYTES = 12 * 1024 * 1024
 const MAX_TEMPLATE_BYTES = 12 * 1024 * 1024
 const MAX_POS_ROWS = 17
@@ -125,8 +125,9 @@ const defaultSignatories: Signatory[] = [
   { label: 'Approved By', name: '', title: 'Accounting Head' },
 ]
 
-export default function DocumentCreation({ clients, canGenerate }: { clients: Client[]; canGenerate: boolean }) {
-  const [flow, setFlow] = useState<DocumentFlow>('drf')
+export default function DocumentCreation({ clients, canGenerate, draftKey, active }: { clients: Client[]; canGenerate: boolean; draftKey: string; active: boolean }) {
+  const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'fsd' || value === 'signoff') return value } catch {} return 'drf' })
+  useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
   const [corFiles, setCorFiles] = useState<File[]>([])
   const [templateFiles, setTemplateFiles] = useState<File[]>([])
   useEffect(() => {
@@ -141,7 +142,6 @@ export default function DocumentCreation({ clients, canGenerate }: { clients: Cl
     return () => { active = false }
   }, [])
 
-  const [brdFiles, setBrdFiles] = useState<File[]>([])
   const [businessName, setBusinessName] = useState('')
   const [tradeName, setTradeName] = useState('')
   const [tin, setTin] = useState('')
@@ -277,7 +277,7 @@ export default function DocumentCreation({ clients, canGenerate }: { clients: Cl
         </button>
         <button type="button" className={`document-flow-card${flow === 'fsd' ? ' active' : ''}`} onClick={() => setFlow('fsd')}>
           <div className="document-flow-icon"><Clipboard size={22} /></div>
-          <div><strong>FSD Creation</strong><span>Use an approved BRD as the source for an FSD.</span></div>
+          <div><strong>FSD Creation</strong><span>Basic and Advance modes with your configured AI.</span></div>
           <small>BRD required</small>
         </button>
         <button type="button" className={`document-flow-card${flow === 'signoff' ? ' active' : ''}`} onClick={() => setFlow('signoff')}>
@@ -289,8 +289,8 @@ export default function DocumentCreation({ clients, canGenerate }: { clients: Cl
 
       <div className="panel document-workspace">
         <div className="panel-heading document-heading">
-          <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and the approved Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'fsd' ? 'Upload the BRD that will serve as the required source document for the FSD.' : 'Complete the deployment details and six signatory slots, then add supporting attachments.'}</p></div>
-          <span className="document-stage-pill">{flow === 'drf' ? (templateFile ? 'Excel template ready' : 'Excel template required') : flow === 'signoff' ? 'iRipple template ready' : 'Template pending'}</span>
+          <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and the approved Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'fsd' ? 'Add requirements, choose a preset, then review and export using the iRipple FSD template.' : 'Complete the deployment details and six signatory slots, then add supporting attachments.'}</p></div>
+          <span className="document-stage-pill">{flow === 'drf' ? (templateFile ? 'Excel template ready' : 'Excel template required') : flow === 'signoff' ? 'iRipple template ready' : 'iRipple FSD template ready'}</span>
         </div>
 
         {flow === 'drf' && (
@@ -403,22 +403,7 @@ export default function DocumentCreation({ clients, canGenerate }: { clients: Cl
           </div>
         )}
 
-        {flow === 'fsd' && (
-          <div className="document-single-flow">
-            <div className="document-upload-panel">
-              <div className="document-section-title"><FileText size={18} /><div><strong>Business Requirements Document (BRD)</strong><span>A BRD is required before an FSD can be created.</span></div></div>
-              <label className="document-dropzone">
-                <input type="file" accept={BRD_ACCEPT} onChange={handleFiles(setBrdFiles)} />
-                <Plus size={30} />
-                <strong>{brdFiles.length ? 'Replace BRD file' : 'Choose BRD file'}</strong>
-                <span>Accepted: PDF, DOC, DOCX, RTF, TXT</span>
-              </label>
-              <FileSummary files={brdFiles} />
-              <div className="document-requirement-row"><span className={brdFiles.length ? 'requirement-ok' : 'requirement-pending'}>{brdFiles.length ? 'BRD attached' : 'BRD required'}</span><button type="button" className="primary" disabled={!brdFiles.length}>Generate FSD</button></div>
-              <p className="document-action-help">The FSD generator will be wired to the BRD structure and your approved FSD output once you provide them.</p>
-            </div>
-          </div>
-        )}
+        <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'fsd'} /></div>
 
         <div hidden={flow !== 'signoff'}><SignOffCreation clients={clients} canGenerate={canGenerate} /></div>
       </div>

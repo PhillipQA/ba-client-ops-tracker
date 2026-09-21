@@ -1,3 +1,5 @@
+import { runTenantAi } from './tenant-ai'
+import { registerFsdRoutes } from './fsd-documents'
 import { createWorkspaceGuard } from './workspace-guard'
 import { archivedWorkReason, assertLifecycleMutation, LifecycleError, isArchived } from './src/lifecycle'
 import { registerSignoffRoutes } from './signoff-documents'
@@ -11,7 +13,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { requirePlatformAdmin } from './platform-auth'
 import { registerPlatformSettings } from './platform-settings'
-import { createIntegrationStore, registerIntegrationRoutes, encryptionKey, IntegrationError, createAiClient } from './tenant-integrations'
+import { createIntegrationStore, registerIntegrationRoutes, encryptionKey, IntegrationError } from './tenant-integrations'
 import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { PDFDocument, PDFTextField } from 'pdf-lib'
@@ -1223,22 +1225,6 @@ function parseModelJson(text: string) {
   }
 }
 
-async function runTenantAi(secret: string, config: any, instructions: string, input: string, timeout = 30000) {
-  const ai = createAiClient(secret, config, timeout)
-  if (ai.provider === 'gemini') {
-    const completion = await ai.client.chat.completions.create({
-      model: ai.model,
-      messages: [
-        { role: 'system', content: instructions },
-        { role: 'user', content: input },
-      ],
-    })
-    return String(completion.choices[0]?.message?.content || '')
-  }
-  const response = await ai.client.responses.create({ model: ai.model, instructions, input, reasoning: { effort: 'low' } })
-  return response.output_text
-}
-
 app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (user.role === 'Viewer' || !moduleAllowed(user, 'ai')) {
@@ -1477,6 +1463,8 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
     posRowsWritten: normalizedRows.length,
   }
 }
+
+registerFsdRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, integrations, logoPath: path.join(__dirname, 'templates', 'fsd-logo.png') })
 
 registerSignoffRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(__dirname, 'templates', 'signoff-template.docx') })
 

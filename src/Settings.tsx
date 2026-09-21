@@ -7,13 +7,13 @@ export async function settingsRequest(url: string, method = 'GET', data?: unknow
   if (!response.ok) throw new Error(result.error || 'Settings request failed.')
   return result
 }
-type Integration = { kind: 'discord' | 'openai'; configured: boolean; maskedKey: string; enabled: boolean; config: { provider?: 'gemini' | 'openai'; model?: string; allowedUserIds?: string[] }; connectionStatus: string; lastTestedAt?: string }
+type Integration = { kind: 'discord' | 'openai'; configured: boolean; maskedKey: string; enabled: boolean; config: { provider?: 'gemini' | 'openai' | 'anthropic' | 'deepseek'; model?: string; allowedUserIds?: string[] }; connectionStatus: string; lastTestedAt?: string }
 function providerFor(value: Integration) { return value.config.provider || (value.config.model?.startsWith('gpt-') ? 'openai' : 'gemini') }
-function defaultModel(provider: 'gemini' | 'openai') { return provider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-5.6-terra' }
+function defaultModel(provider: 'gemini' | 'openai' | 'anthropic' | 'deepseek') { return { gemini: 'gemini-3.8-flash', openai: 'gpt-5.6-terra', anthropic: 'claude-sonnet-5', deepseek: 'deepseek-flash' }[provider] }
 function IntegrationCard({ value, refresh, runtime }: { value: Integration; refresh: () => Promise<void>; runtime?: any }) {
   const [secret, setSecret] = useState('')
   const [enabled, setEnabled] = useState(value.enabled)
-  const [provider, setProvider] = useState<'gemini' | 'openai'>(providerFor(value))
+  const [provider, setProvider] = useState<'gemini' | 'openai' | 'anthropic' | 'deepseek'>(providerFor(value))
   const [model, setModel] = useState(value.config.model || defaultModel(providerFor(value)))
   const [ids, setIds] = useState((value.config.allowedUserIds || []).join(', '))
   const [message, setMessage] = useState('')
@@ -33,11 +33,11 @@ function IntegrationCard({ value, refresh, runtime }: { value: Integration; refr
     finally { setBusy(false) }
   }
   return <div className="panel account-integration-card">
-    <div className="panel-heading"><div><h2>{value.kind === 'discord' ? 'Discord Integration' : 'AI Integration'}</h2><p>{value.kind === 'discord' ? 'Capture DMs and mentions into this account’s Inbox.' : 'Connect this account’s Gemini or OpenAI credential to the BA Assistant and Discord inquiry assessment.'}</p></div><span className="role-badge">{value.configured ? value.enabled ? 'Enabled' : 'Disabled' : 'Not configured'}</span></div>
+    <div className="panel-heading"><div><h2>{value.kind === 'discord' ? 'Discord Integration' : 'AI Integration'}</h2><p>{value.kind === 'discord' ? 'Capture DMs and mentions into this account’s Inbox.' : 'Use this account’s selected AI for FSD Creator, BA Assistant and Discord inquiry assessment.'}</p></div><span className="role-badge">{value.configured ? value.enabled ? 'Enabled' : 'Disabled' : 'Not configured'}</span></div>
     <p>Saved key: <b>{value.maskedKey || 'None'}</b> · Connection: {value.connectionStatus.replace(/_/g, ' ')}</p>
     {value.lastTestedAt && <p>Last tested: {new Date(value.lastTestedAt).toLocaleString()}</p>}
-    <div className="integration-form"><label>{value.configured ? 'Replace credential (leave blank to keep it)' : value.kind === 'discord' ? 'Discord bot token' : provider === 'gemini' ? 'Gemini API key' : 'OpenAI API key'}<input type="password" value={secret} autoComplete="new-password" onChange={e => setSecret(e.target.value)} /></label>
-    {value.kind === 'discord' ? <label>Allowed Discord user IDs (comma-separated)<input value={ids} onChange={e => setIds(e.target.value)} /><small>Leave blank to allow anyone who can DM or mention your bot.</small></label> : <><label>AI provider<select value={provider} onChange={e => { const next = e.target.value as 'gemini' | 'openai'; setProvider(next); setModel(defaultModel(next)) }}><option value="gemini">Gemini (Google AI Studio)</option><option value="openai">OpenAI</option></select></label><label>{provider === 'gemini' ? 'Gemini model' : 'OpenAI model'}<input value={model} onChange={e => setModel(e.target.value)} required /></label>{provider === 'gemini' && <small>Create the key in Google AI Studio. New Gemini keys should use Google’s current Auth Key flow.</small>}{providerChanged && <small>Changing provider requires a new API key so an existing OpenAI key is never reused as a Gemini key, or vice versa.</small>}</>}
+    <div className="integration-form"><label>{value.configured ? 'Replace credential (leave blank to keep it)' : value.kind === 'discord' ? 'Discord bot token' : 'AI provider API key'}<input type="password" value={secret} autoComplete="new-password" onChange={e => setSecret(e.target.value)} /></label>
+    {value.kind === 'discord' ? <label>Allowed Discord user IDs (comma-separated)<input value={ids} onChange={e => setIds(e.target.value)} /><small>Leave blank to allow anyone who can DM or mention your bot.</small></label> : <><label>AI provider<select value={provider} onChange={e => { const next = e.target.value as 'gemini' | 'openai' | 'anthropic' | 'deepseek'; setProvider(next); setModel(defaultModel(next)) }}><option value="gemini">Gemini (Google AI Studio)</option><option value="openai">OpenAI (ChatGPT models)</option><option value="anthropic">Claude (Anthropic)</option><option value="deepseek">DeepSeek</option></select></label><label>AI model ID<input value={model} onChange={e => setModel(e.target.value)} required /></label>{provider === 'gemini' && <small>Create the key in Google AI Studio. New Gemini keys should use Google’s current Auth Key flow.</small>}{providerChanged && <small>Changing provider requires that provider’s API key.</small>}</>}
     <label className="checkbox-label"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Enable for this account</label></div>
     {value.kind === 'discord' && <p>Gateway: {runtime?.online ? `Online — ${runtime.botName}` : 'Offline'}{runtime?.lastMessageAt ? ` · Last capture ${new Date(runtime.lastMessageAt).toLocaleString()}` : ''}{runtime?.lastError ? ` · ${runtime.lastError}` : ''}</p>}
     {message && <p role="status" className="settings-message">{message}</p>}
