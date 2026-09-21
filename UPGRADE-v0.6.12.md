@@ -19,6 +19,10 @@ For Render, commit and push the updated project through your usual deployment pr
 
 For a new folder using the full build ZIP, restore your existing local environment settings, run `npm ci`, then `npm run build` and `npm run dev`. Use `npm start` for the production server after building.
 
+## Theme behavior
+
+The FSD Creator workspace now follows the browser/operating-system light or dark color preference instead of forcing a white interface. The generated-document preview remains white intentionally so it matches the exported Word document.
+
 ## Use FSD Creator
 
 Open **Document Creation → FSD Creation**.
