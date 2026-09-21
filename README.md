@@ -1,6 +1,6 @@
-# Current release — v0.6.17
+# Current release — v0.6.19
 
-The v0.6.17 login fidelity update corrects the deployed split-screen sign-in to match the approved reference more closely: the hero uses the full intended 58/42 composition, the login card is larger and vertically balanced, branding is centered/stacked, and the OR/security sections match the reference structure. Existing themes and all v0.6.16 application UI improvements remain unchanged.
+The v0.6.19 login-panel width fix removes the desktop horizontal padding from `main.auth-login-panel` so the panel itself reaches the full width of the right-side column. The white login card keeps a small internal margin for readability. The left hero panel, desktop split ratio, authentication behavior, Themes system, and theme assets remain unchanged.
 
 ## Previous release — v0.6.15
 
