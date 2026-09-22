@@ -1831,3 +1831,20 @@ select option { background: #181818; color: #fff; }
   .auth-form-options { align-items: flex-start; flex-direction: column; gap: 10px; }
   .auth-inline-link { align-self: flex-end; margin-top: -32px; }
 }
+.auth-shell-login {
+  grid-template-columns: 58% 42%;
+}
+
+.auth-login-panel {
+  padding: 54px 150px 28px;
+  align-items: stretch;
+}
+
+.auth-card-modern {
+  width: 100%;
+  max-width: none;
+}
+
+.auth-form.auth-form-modern {
+  width: 100%;
+}
