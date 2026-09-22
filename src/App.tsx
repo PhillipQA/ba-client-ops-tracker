@@ -54,7 +54,7 @@ import { askBAAssistant, type AIMessage, type AISuggestion } from './ai'
 import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems, seedPlannerActivities, seedProjects } from './data'
 import { importPrimaryCalendar } from './googleCalendar'
 import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
-import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
+import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkActivityEvent, WorkItem } from './types'
 import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTIONS, type AppTheme } from './theme'
 import { APP_VERSION } from './version'
 
@@ -67,11 +67,12 @@ type Store = {
   items: WorkItem[]
   activity: ActivityLog[]
   planner: PlannerActivity[]
+  workEvents: WorkActivityEvent[]
   accounts: UserAccount[]
   taskSettings: TaskSettings
 }
 
-const STORE_SCHEMA_VERSION = 5
+const STORE_SCHEMA_VERSION = 6
 const STORAGE_KEY = 'ba-client-ops-tracker-v2'
 const LEGACY_STORAGE_KEY = 'ba-client-ops-tracker-v1'
 const organizationStorageKey = (organizationId?: string) => organizationId ? `${STORAGE_KEY}:${organizationId}` : STORAGE_KEY
@@ -91,6 +92,7 @@ const seedStore = (): Store => ({
   items: seedItems,
   activity: seedActivity,
   planner: seedPlannerActivities,
+  workEvents: [],
   accounts: seedAccounts,
   taskSettings: defaultTaskSettings,
 })
@@ -136,11 +138,15 @@ function normalizeTaskSettings(value: Partial<TaskSettings> | undefined): TaskSe
     : []
   const uniqueStatuses = statuses.filter((status, index, all) => all.findIndex((candidate) => candidate.label.toLowerCase() === status.label.toLowerCase()) === index)
   const safeStatuses = uniqueStatuses.length ? uniqueStatuses : defaultTaskSettings.statuses.map((status) => ({ ...status }))
-  const allowedColumns: TaskColumnKey[] = ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'dueDate', 'followUpDate']
+  const allowedColumns: TaskColumnKey[] = ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'startDate', 'dueDate', 'followUpDate']
   const visibleColumns = Array.isArray(value?.visibleColumns)
     ? value!.visibleColumns.filter((column): column is TaskColumnKey => allowedColumns.includes(column as TaskColumnKey))
     : [...defaultTaskSettings.visibleColumns]
   if (!visibleColumns.includes('status')) visibleColumns.unshift('status')
+  if (!visibleColumns.includes('startDate')) {
+    const dueIndex = visibleColumns.indexOf('dueDate')
+    visibleColumns.splice(dueIndex >= 0 ? dueIndex : visibleColumns.length, 0, 'startDate')
+  }
   return { statuses: safeStatuses, visibleColumns: [...new Set(visibleColumns)] }
 }
 
@@ -172,6 +178,7 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
   const items = Array.isArray(parsed.items) ? parsed.items.filter((item) => !legacy || !legacyDemoIds.items.has(item.id)) : fallback.items
   const activity = Array.isArray(parsed.activity) ? parsed.activity.filter((item) => !legacy || !legacyDemoIds.activity.has(item.id)) : fallback.activity
   const planner = Array.isArray(parsed.planner) ? parsed.planner.filter((item) => !legacy || !legacyDemoIds.planner.has(item.id)) : fallback.planner
+  const workEvents = Array.isArray(parsed.workEvents) ? parsed.workEvents.filter((event) => event && event.id && event.taskId && event.actorUserId) : []
   const migratedAccounts = Array.isArray(parsed.accounts) ? parsed.accounts.map((account, index) => normalizeAccount(account, index)).filter((account): account is UserAccount => Boolean(account)) : []
   const accounts = migratedAccounts.length ? migratedAccounts : [...seedAccounts]
   if (!accounts.some((account) => account.role === 'Administrator' && account.status === 'Active')) accounts.unshift(seedAccounts[0])
@@ -179,6 +186,8 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
   const migratedItems = items.map((item, index) => ({
     ...item,
     dueDate: item.dueDate || '',
+    startDate: item.startDate || '',
+    assignedToUserId: item.assignedToUserId || undefined,
     status: item.status || defaultOpenTaskStatus(taskSettings),
     subtaskOrder: item.parentTaskId ? (typeof item.subtaskOrder === 'number' && Number.isFinite(item.subtaskOrder) ? item.subtaskOrder : index) : undefined,
     evidence: Array.isArray(item.evidence) ? item.evidence.filter((entry) => entry && entry.id && entry.fileName && entry.storagePath).map((entry) => ({
@@ -193,7 +202,7 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
       kind: entry.kind === 'Screenshot' ? 'Screenshot' as const : 'File' as const,
     })) : [],
   }))
-  return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, accounts, taskSettings }
+  return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, workEvents, accounts, taskSettings }
 }
 
 const initialStore = (): Store => {
@@ -209,6 +218,48 @@ const initialStore = (): Store => {
     }
   }
   return seedStore()
+}
+
+function workEventsForItemChanges(current: Store, next: Store, actor: AuthUser | null): WorkActivityEvent[] {
+  if (!actor || actor.accountType === 'platform') return []
+  const occurredAt = new Date().toISOString()
+  const date = occurredAt.slice(0, 10)
+  const before = new Map(current.items.map((item) => [item.id, item]))
+  const after = new Map(next.items.map((item) => [item.id, item]))
+  const assigneeName = (id?: string) => id ? next.accounts.find((user) => user.id === id)?.name || current.accounts.find((user) => user.id === id)?.name || 'Unknown user' : undefined
+  const make = (item: WorkItem, action: WorkActivityEvent['action'], summary: string, field?: string, oldValue?: string, newValue?: string): WorkActivityEvent => ({
+    id: crypto.randomUUID(), occurredAt, date, actorUserId: actor.id, actorName: actor.name, actorRole: actor.role,
+    assignedToUserId: item.assignedToUserId, assignedToName: assigneeName(item.assignedToUserId), clientId: item.clientId,
+    projectId: item.projectId, taskId: item.id, parentTaskId: item.parentTaskId, itemTitle: item.title,
+    itemKind: item.parentTaskId ? 'Subtask' : 'Task', action, summary, field, oldValue, newValue,
+  })
+  const events: WorkActivityEvent[] = []
+  for (const [id, item] of after) {
+    const previous = before.get(id)
+    if (!previous) {
+      events.push(make(item, 'created', `${actor.name} created ${item.parentTaskId ? 'subtask' : 'task'} “${item.title}”.`))
+      if (item.assignedToUserId) events.push(make(item, 'assigned', `${actor.name} assigned “${item.title}” to ${assigneeName(item.assignedToUserId)}.`, 'assignedToUserId', '', item.assignedToUserId))
+      continue
+    }
+    if (previous.assignedToUserId !== item.assignedToUserId) {
+      const action = previous.assignedToUserId ? 'reassigned' : 'assigned'
+      const from = assigneeName(previous.assignedToUserId)
+      const to = assigneeName(item.assignedToUserId)
+      events.push(make(item, action, item.assignedToUserId ? `${actor.name} ${action === 'reassigned' ? `reassigned “${item.title}” from ${from} to` : `assigned “${item.title}” to`} ${to}.` : `${actor.name} removed the assignee from “${item.title}”.`, 'assignedToUserId', previous.assignedToUserId || '', item.assignedToUserId || ''))
+    }
+    if (previous.startDate !== item.startDate && item.startDate) events.push(make(item, 'started', `${actor.name} set the start date of “${item.title}” to ${item.startDate}.`, 'startDate', previous.startDate || '', item.startDate))
+    if (previous.status !== item.status) {
+      const wasClosed = isTaskClosed(previous.status, next.taskSettings)
+      const isClosed = isTaskClosed(item.status, next.taskSettings)
+      const action: WorkActivityEvent['action'] = isClosed ? 'completed' : wasClosed ? 'reopened' : item.status === 'In Progress' ? 'started' : 'status_changed'
+      events.push(make(item, action, `${actor.name} changed “${item.title}” from ${previous.status} to ${item.status}.`, 'status', previous.status, item.status))
+    }
+    for (const [field, label] of [['priority', 'priority'], ['waitingOn', 'waiting on'], ['dueDate', 'due date'], ['followUpDate', 'follow-up date']] as const) {
+      if (String(previous[field] || '') !== String(item[field] || '')) events.push(make(item, 'updated', `${actor.name} changed the ${label} for “${item.title}”.`, field, String(previous[field] || ''), String(item[field] || '')))
+    }
+  }
+  for (const [id, item] of before) if (!after.has(id)) events.push(make(item, 'deleted', `${actor.name} deleted ${item.parentTaskId ? 'subtask' : 'task'} “${item.title}”.`))
+  return events
 }
 
 const labels: Record<View, string> = {
@@ -401,7 +452,8 @@ function App() {
     try { assertLifecycleMutation(storeRef.current, next, authUser) }
     catch (error) { window.alert(error instanceof Error ? error.message : 'This change is not allowed.'); return false }
 
-    const normalized = { ...next, schemaVersion: STORE_SCHEMA_VERSION }
+    const generatedEvents = workEventsForItemChanges(storeRef.current, next, authUser)
+    const normalized = { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...(storeRef.current.workEvents || [])].slice(0, 10000) }
     storeRef.current = normalized
     setStore(normalized)
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(normalized))
@@ -449,10 +501,24 @@ function App() {
 
   const applyEvidenceMutation = (result: TaskEvidenceMutationResult) => {
     const current = storeRef.current
+    const previous = current.items.find((item) => item.id === result.item.id)
+    const previousEvidence = previous?.evidence?.length || 0
+    const nextEvidence = result.item.evidence?.length || 0
+    const evidenceEvent = authUser && previousEvidence !== nextEvidence ? workEventsForItemChanges(current, { ...current, items: current.items.map((item) => item.id === result.item.id ? result.item : item) }, authUser)[0] : undefined
+    const explicitEvidenceEvent: WorkActivityEvent | undefined = authUser && previousEvidence !== nextEvidence ? {
+      id: crypto.randomUUID(), occurredAt: new Date().toISOString(), date: TODAY, actorUserId: authUser.id, actorName: authUser.name,
+      actorRole: authUser.role, assignedToUserId: result.item.assignedToUserId,
+      assignedToName: current.accounts.find((account) => account.id === result.item.assignedToUserId)?.name,
+      clientId: result.item.clientId, projectId: result.item.projectId, taskId: result.item.id, parentTaskId: result.item.parentTaskId,
+      itemTitle: result.item.title, itemKind: result.item.parentTaskId ? 'Subtask' : 'Task',
+      action: nextEvidence > previousEvidence ? 'evidence_uploaded' : 'evidence_deleted',
+      summary: `${authUser.name} ${nextEvidence > previousEvidence ? 'uploaded evidence to' : 'removed evidence from'} “${result.item.title}”.`,
+    } : evidenceEvent
     const next: Store = {
       ...current,
       items: current.items.map((item) => item.id === result.item.id ? result.item : item),
       activity: result.activity ? [result.activity, ...current.activity.filter((entry) => entry.id !== result.activity?.id)] : current.activity,
+      workEvents: explicitEvidenceEvent ? [explicitEvidenceEvent, ...current.workEvents].slice(0, 10000) : current.workEvents,
     }
     storeRef.current = next
     setStore(next)
@@ -639,8 +705,8 @@ function App() {
   const projectName = (id?: string) => id ? store.projects.find((p) => p.id === id)?.name ?? 'Unknown project' : 'No project'
 
   const openItems = useMemo(
-    () => store.items.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done'),
-    [store.items, store.taskSettings],
+    () => store.items.filter((item) => (currentUser?.role !== 'Contributor' || item.assignedToUserId === currentUser.id) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done'),
+    [store.items, store.taskSettings, currentUser],
   )
 
   const overdue = openItems.filter((item) => item.followUpDate && item.followUpDate < TODAY)
@@ -666,7 +732,7 @@ function App() {
       })
   }, [store.items, query, waitingFilter, store.clients, store.projects])
 
-  const actionItems = searchedItems.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+  const actionItems = searchedItems.filter((item) => (currentUser?.role !== 'Contributor' || item.assignedToUserId === currentUser.id) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
   const dashboardAiContext = useMemo(() => {
     const client = store.clients.find((value) => value.id === aiClientId)
     const project = store.projects.find((value) => value.id === aiProjectId)
@@ -674,8 +740,9 @@ function App() {
     const closedStatuses = new Set(store.taskSettings.statuses.filter((status) => status.closed).map((status) => status.label))
     const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && item.waitingOn !== 'Done').slice(0, 20)
     const upcomingActivities = store.planner.filter((activity) => (!aiClientId || activity.clientId === aiClientId) && (!aiProjectId || activity.projectId === aiProjectId) && activity.status === 'Planned').slice(0, 15)
-    return { client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities }
-  }, [aiClientId, aiProjectId, store.clients, store.projects, store.items, store.planner, store.taskSettings])
+    const contextUser = currentUser || seedAccounts[0]
+    return { currentUser: { id: contextUser.id, name: contextUser.name, role: contextUser.role, modules: contextUser.modules }, client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities, myAssignments: scopedItems.filter((item) => item.assignedToUserId === contextUser.id).slice(0, 40), myRecentActivity: store.workEvents.filter((event) => event.actorUserId === contextUser.id || event.assignedToUserId === contextUser.id || (event.field === 'assignedToUserId' && event.oldValue === contextUser.id)).slice(0, 40) }
+  }, [aiClientId, aiProjectId, store.clients, store.projects, store.items, store.planner, store.taskSettings, store.workEvents, currentUser])
   const inquiryItems = searchedItems.filter((item) => item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings))
   const archivedInquiryItems = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -746,6 +813,7 @@ function App() {
       items: store.items.map((item) => item.id === id ? {
         ...item,
         status,
+        startDate: status === 'In Progress' && !item.startDate ? TODAY : item.startDate,
         resolvedDate: closed ? (item.resolvedDate || TODAY) : undefined,
         waitingOn: closed ? 'Done' : reopened && item.waitingOn === 'Done' ? 'Me' : item.waitingOn,
       } : item),
@@ -772,6 +840,7 @@ function App() {
       clientId: previous.clientId,
       projectId: previous.parentTaskId ? previous.projectId : updated.projectId,
       waitingOn: closed ? 'Done' : updated.waitingOn === 'Done' ? 'Me' : updated.waitingOn,
+      startDate: updated.status === 'In Progress' && !updated.startDate ? TODAY : updated.startDate,
       resolvedDate: closed ? (previous.resolvedDate || TODAY) : undefined,
     }
     persist({
@@ -920,7 +989,7 @@ function App() {
     setDashboardAiError('')
     setDashboardAiResult(null)
 
-    const threadKey = `${aiClientId || 'global'}:${aiProjectId || 'all'}`
+    const threadKey = `${currentUser?.id || 'unknown'}:${aiClientId || 'global'}:${aiProjectId || 'all'}`
     let threads: Record<string, AIMessage[]> = {}
     try { threads = JSON.parse(localStorage.getItem('ba-client-ops-ai-threads-v1') || '{}') as Record<string, AIMessage[]> } catch { threads = {} }
     const history = Array.isArray(threads[threadKey]) ? threads[threadKey] : []
@@ -987,8 +1056,10 @@ function App() {
       priority: suggestion.priority || 'Medium',
       status: defaultOpenTaskStatus(store.taskSettings),
       waitingOn: suggestion.waitingOn || 'Me',
-      owner: 'Me',
+      assignedToUserId: currentUser?.id,
+      owner: currentUser?.name || '',
       dateRaised: TODAY,
+      startDate: '',
       dueDate: '',
       followUpDate: suggestion.followUpDate || '',
       description: suggestion.description || suggestion.rationale,
@@ -1195,7 +1266,7 @@ function App() {
 
         {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} canGenerate={canWrite} canManageTemplates={currentUser?.role === 'Administrator'} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
 
-        {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} />}
+        {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} />}
 
         {!selectedClient && !selectedProject && view === 'users' && canManageAccounts && <AccountUsers currentUser={currentUser} onChanged={acceptAccountUsers} />}
         {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && <ThemePreferences user={currentUser} clients={store.clients} onSave={saveOwnPreferences} />}
@@ -1203,7 +1274,7 @@ function App() {
         {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings currentUser={currentUser} />}
 
         {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
-          <section className="page-stack"><AIAssistant clients={store.clients.filter(client => !isArchived(client))} projects={store.projects.filter(project => !isArchived(project))} items={store.items} planner={store.planner} taskSettings={store.taskSettings} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
+          <section className="page-stack"><AIAssistant clients={store.clients.filter(client => !isArchived(client))} projects={store.projects.filter(project => !isArchived(project))} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
         )}
 
         {selectedClient && <ClientDetail controls={<LifecycleControls key={selectedClient.id} kind="clients" record={selectedClient} store={store} canEdit={canWrite && hasModule('clients')} onSave={record => saveLifecycleRecord('clients', record)} />} client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWriteTasks} />}
@@ -1479,7 +1550,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(() => new Set())
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown client' : 'General / no client'
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name ?? 'Unknown project' : 'No project'
-  const labels: Record<TaskColumnKey, string> = { status: 'Status', client: 'Client', project: 'Project', type: 'Type', waitingOn: 'Waiting on', priority: 'Priority', owner: 'Owner / Assigned', dueDate: 'Due date', followUpDate: 'Follow-up' }
+  const labels: Record<TaskColumnKey, string> = { status: 'Status', client: 'Client', project: 'Project', type: 'Type', waitingOn: 'Waiting on', priority: 'Priority', owner: 'Assigned to', startDate: 'Start date', dueDate: 'Due date', followUpDate: 'Follow-up' }
   const columns = taskSettings.visibleColumns.filter((column) => !hiddenColumns.includes(column))
   if (!items.length) return <Empty text="No tasks match this view." />
 
@@ -1559,7 +1630,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
       onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
     >
       <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{rowEditable && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small></div></div></td>
-      {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || '—' : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
+      {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || 'Unassigned' : column === 'startDate' ? niceDate(item.startDate || '') : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
       <td><div className="task-row-actions">{!rowEditable && (item.evidence || []).map(entry => <a key={entry.id} className="secondary compact" href={taskEvidenceUrl(item.id, entry)} target="_blank" rel="noreferrer">{entry.fileName}</a>)}{rowEditable && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{rowEditable && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{rowEditable && isSubtask && <button className="icon-button" title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'} onClick={() => onEdit(item.id)}><Paperclip size={17} /></button>}{rowEditable && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{rowEditable && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{rowEditable && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
   }
@@ -1630,9 +1701,14 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
   const clientLocked = Boolean(parent || preset?.clientId)
   const [type, setType] = useState<ItemType>(preset?.type || 'Task')
   const [status, setStatus] = useState(defaultOpenTaskStatus(store.taskSettings))
+  const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
+  const workloadFor = (userId: string) => { const active = store.items.filter((item) => item.assignedToUserId === userId && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((item) => Boolean(item.dueDate && item.dueDate < TODAY)).length} overdue` }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const startDate = String(form.get('startDate') || '')
+    const dueDate = String(form.get('dueDate') || '')
+    if (startDate && dueDate && dueDate < startDate) { window.alert('Due Date cannot be earlier than Start Date.'); return }
     onSubmit({
       id: crypto.randomUUID(),
       clientId: parent?.clientId || clientId || undefined,
@@ -1644,9 +1720,11 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
       priority: form.get('priority') as Priority,
       status,
       waitingOn: form.get('waitingOn') as WaitingOn,
-      owner: String(form.get('owner') || 'Me'),
+      assignedToUserId: String(form.get('assignedToUserId') || '') || undefined,
+      owner: assignableUsers.find((account) => account.id === String(form.get('assignedToUserId') || ''))?.name || '',
       dateRaised: TODAY,
-      dueDate: String(form.get('dueDate') || ''),
+      startDate,
+      dueDate,
       followUpDate: String(form.get('followUpDate') || ''),
       description: String(form.get('description') || ''),
       resolution: '',
@@ -1665,7 +1743,8 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
     <label>Waiting on<select name="waitingOn" defaultValue="Me"><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
-    <label>Owner / Assigned task<input name="owner" defaultValue="Me" placeholder="Person responsible" /></label>
+    <label>Assigned to<select name="assignedToUserId" defaultValue=""><option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select></label>
+    <label>Start date<input name="startDate" type="date" /></label>
     <label>Due date<input name="dueDate" type="date" /></label>
     <label>Follow-up date<input name="followUpDate" type="date" /></label>
     <label>Source<select name="source" defaultValue={type === 'Inquiry' ? 'Chat' : 'Internal'}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
@@ -1678,9 +1757,14 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation }: {
   const [type, setType] = useState<ItemType>(item.type)
   const [status, setStatus] = useState(item.status)
   const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined
+  const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
+  const workloadFor = (userId: string) => { const active = store.items.filter((candidate) => candidate.assignedToUserId === userId && !isTaskClosed(candidate.status, store.taskSettings) && candidate.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((candidate) => Boolean(candidate.dueDate && candidate.dueDate < TODAY)).length} overdue` }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const startDate = String(form.get('startDate') || '')
+    const dueDate = String(form.get('dueDate') || '')
+    if (startDate && dueDate && dueDate < startDate) { window.alert('Due Date cannot be earlier than Start Date.'); return }
     onSubmit({
       ...item,
       title: item.title,
@@ -1690,8 +1774,10 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation }: {
       status,
       priority: form.get('priority') as Priority,
       waitingOn: form.get('waitingOn') as WaitingOn,
-      owner: String(form.get('owner') || ''),
-      dueDate: String(form.get('dueDate') || ''),
+      assignedToUserId: String(form.get('assignedToUserId') || '') || undefined,
+      owner: assignableUsers.find((account) => account.id === String(form.get('assignedToUserId') || ''))?.name || '',
+      startDate,
+      dueDate,
       followUpDate: String(form.get('followUpDate') || ''),
       source: form.get('source') as WorkItem['source'],
       description: String(form.get('description') || ''),
@@ -1708,7 +1794,8 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation }: {
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue={item.priority}><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
     <label>Waiting on<select name="waitingOn" defaultValue={item.waitingOn}><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
-    <label>Owner / Assigned task<input name="owner" defaultValue={item.owner} /></label>
+    <label>Assigned to<select name="assignedToUserId" defaultValue={item.assignedToUserId || ''}><option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select></label>
+    <label>Start date<input name="startDate" type="date" defaultValue={item.startDate || ''} /></label>
     <label>Due date<input name="dueDate" type="date" defaultValue={item.dueDate || ''} /></label>
     <label>Follow-up date<input name="followUpDate" type="date" defaultValue={item.followUpDate || ''} /></label>
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Bot, CalendarPlus, CheckCircle2, Clipboard, FileText, Loader2, MessageSquareText, PlusCircle, Sparkles, TicketCheck } from 'lucide-react'
 import { askBAAssistant, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
-import type { Client, PlannerActivity, Project, TaskSettings, WorkItem } from './types'
+import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
 
 const THREAD_STORAGE_KEY = 'ba-client-ops-ai-threads-v1'
 
@@ -37,6 +37,9 @@ export default function AIAssistant({
   items,
   planner,
   taskSettings,
+  accounts,
+  workEvents,
+  currentUser,
   initialClientId = '',
   initialProjectId = '',
   initialPrompt = '',
@@ -48,6 +51,9 @@ export default function AIAssistant({
   items: WorkItem[]
   planner: PlannerActivity[]
   taskSettings: TaskSettings
+  accounts: UserAccount[]
+  workEvents: WorkActivityEvent[]
+  currentUser: UserAccount
   initialClientId?: string
   initialProjectId?: string
   initialPrompt?: string
@@ -68,7 +74,7 @@ export default function AIAssistant({
 
   const linkedProjects = useMemo(() => projects, [projects])
   const resolvedProjectId = linkedProjects.some((project) => project.id === projectId) ? projectId : ''
-  const threadKey = `${clientId || 'global'}:${resolvedProjectId || 'all'}`
+  const threadKey = `${currentUser.id}:${clientId || 'global'}:${resolvedProjectId || 'all'}`
   const messages = threads[threadKey] ?? []
 
   const context = useMemo(() => {
@@ -78,8 +84,10 @@ export default function AIAssistant({
     const closedStatuses = new Set(taskSettings.statuses.filter((status) => status.closed).map((status) => status.label))
     const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && item.waitingOn !== 'Done').slice(0, 20)
     const upcomingActivities = planner.filter((activity) => (!clientId || activity.clientId === clientId) && (!resolvedProjectId || activity.projectId === resolvedProjectId) && activity.status === 'Planned').slice(0, 15)
-    return { client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities }
-  }, [clientId, resolvedProjectId, clients, projects, items, planner, taskSettings])
+    const myAssignments = scopedItems.filter((item) => item.assignedToUserId === currentUser.id).slice(0, 40)
+    const myRecentActivity = workEvents.filter((event) => (event.actorUserId === currentUser.id || event.assignedToUserId === currentUser.id || (event.field === 'assignedToUserId' && event.oldValue === currentUser.id)) && (!clientId || event.clientId === clientId) && (!resolvedProjectId || event.projectId === resolvedProjectId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, 40)
+    return { currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role, modules: currentUser.modules }, client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities, myAssignments, myRecentActivity }
+  }, [clientId, resolvedProjectId, clients, projects, items, planner, taskSettings, currentUser, workEvents, accounts])
 
   const updateContext = (nextClientId: string, nextProjectId: string) => {
     setClientId(nextClientId)
@@ -150,8 +158,10 @@ export default function AIAssistant({
         <label>Client<select value={clientId} onChange={(e) => updateContext(e.target.value, '')}><option value="">All clients / general</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name}</option>)}</select></label>
         <label>Project<select value={resolvedProjectId} onChange={(e) => updateContext(clientId, e.target.value)}><option value="">All projects</option>{linkedProjects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
       </div>
+      <div className="ai-user-context"><strong>{currentUser.name}</strong><span>{currentUser.role} · AI understands “I”, “me”, and “my” as this user.</span></div>
       <div className="ai-context-summary">
         <div><strong>{context.openItems.length}</strong><span>open tasks</span></div>
+        <div><strong>{context.myAssignments.length}</strong><span>my assignments</span></div>
         <div><strong>{context.upcomingActivities.length}</strong><span>planned activities</span></div>
         <div><strong>{context.client ? context.client.status : 'Global'}</strong><span>context</span></div>
       </div>
@@ -160,6 +170,7 @@ export default function AIAssistant({
         <span>Try asking:</span>
         <button type="button" onClick={() => setInput('Assess this client inquiry and tell me what I should do next: ')}>Assess an inquiry</button>
         <button type="button" onClick={() => setInput('Review the open tasks in this context. What should I prioritize and follow up on?')}>Review open work</button>
+        <button type="button" onClick={() => setInput('Summarize what I accomplished this week and what is still outstanding.')}>My weekly summary</button>
         <button type="button" onClick={() => setInput('Draft a concise client update based on the current project context.')}>Draft client update</button>
       </div>
     </div>

@@ -384,6 +384,52 @@ function changedFields(before: any, after: any) {
   return [...keys].filter((key) => stable(before?.[key]) !== stable(after?.[key]))
 }
 
+function authoritativeWorkEvents(current: any, next: any, actor: SessionUser) {
+  const existing = Array.isArray(current?.workEvents) ? current.workEvents : []
+  const beforeItems = new Map<string, any>((Array.isArray(current?.items) ? current.items : []).map((item: any) => [String(item?.id || ''), item]))
+  const afterItems = new Map<string, any>((Array.isArray(next?.items) ? next.items : []).map((item: any) => [String(item?.id || ''), item]))
+  const accounts = [...(Array.isArray(next?.accounts) ? next.accounts : []), ...(Array.isArray(current?.accounts) ? current.accounts : [])]
+  const assigneeName = (id?: string) => id ? accounts.find((account: any) => String(account?.id || '') === id)?.name || 'Unknown user' : undefined
+  const closedStatuses = new Set((Array.isArray(next?.taskSettings?.statuses) ? next.taskSettings.statuses : defaultTaskSettings.statuses).filter((status: any) => status?.closed).map((status: any) => String(status.label)))
+  const occurredAt = new Date().toISOString()
+  const date = occurredAt.slice(0, 10)
+  const created: any[] = []
+  const make = (item: any, action: string, summary: string, field?: string, oldValue?: string, newValue?: string) => ({
+    id: crypto.randomUUID(), occurredAt, date, actorUserId: actor.id, actorName: actor.name, actorRole: actor.role,
+    assignedToUserId: item.assignedToUserId || undefined, assignedToName: assigneeName(item.assignedToUserId),
+    clientId: item.clientId || undefined, projectId: item.projectId || undefined, taskId: String(item.id),
+    parentTaskId: item.parentTaskId || undefined, itemTitle: String(item.title || 'Untitled work item'),
+    itemKind: item.parentTaskId ? 'Subtask' : 'Task', action, summary, field, oldValue, newValue,
+  })
+  for (const [id, item] of afterItems) {
+    const before = beforeItems.get(id)
+    if (!before) {
+      created.push(make(item, 'created', `${actor.name} created ${item.parentTaskId ? 'subtask' : 'task'} “${item.title}”.`))
+      if (item.assignedToUserId) created.push(make(item, 'assigned', `${actor.name} assigned “${item.title}” to ${assigneeName(item.assignedToUserId)}.`, 'assignedToUserId', '', String(item.assignedToUserId)))
+      continue
+    }
+    if (String(before.assignedToUserId || '') !== String(item.assignedToUserId || '')) {
+      const action = before.assignedToUserId ? 'reassigned' : 'assigned'
+      created.push(make(item, action, item.assignedToUserId ? `${actor.name} ${action === 'reassigned' ? `reassigned “${item.title}” from ${assigneeName(before.assignedToUserId)} to` : `assigned “${item.title}” to`} ${assigneeName(item.assignedToUserId)}.` : `${actor.name} removed the assignee from “${item.title}”.`, 'assignedToUserId', String(before.assignedToUserId || ''), String(item.assignedToUserId || '')))
+    }
+    if (String(before.startDate || '') !== String(item.startDate || '') && item.startDate) created.push(make(item, 'started', `${actor.name} set the start date of “${item.title}” to ${item.startDate}.`, 'startDate', String(before.startDate || ''), String(item.startDate)))
+    if (String(before.status || '') !== String(item.status || '')) {
+      const wasClosed = closedStatuses.has(String(before.status)) || ['Resolved', 'Closed'].includes(String(before.status))
+      const isClosed = closedStatuses.has(String(item.status)) || ['Resolved', 'Closed'].includes(String(item.status))
+      const action = isClosed ? 'completed' : wasClosed ? 'reopened' : item.status === 'In Progress' ? 'started' : 'status_changed'
+      created.push(make(item, action, `${actor.name} changed “${item.title}” from ${before.status} to ${item.status}.`, 'status', String(before.status || ''), String(item.status || '')))
+    }
+    for (const [field, label] of [['priority', 'priority'], ['waitingOn', 'waiting on'], ['dueDate', 'due date'], ['followUpDate', 'follow-up date']] as const) {
+      if (String(before[field] || '') !== String(item[field] || '')) created.push(make(item, 'updated', `${actor.name} changed the ${label} for “${item.title}”.`, field, String(before[field] || ''), String(item[field] || '')))
+    }
+    const beforeEvidence = Array.isArray(before.evidence) ? before.evidence.length : 0
+    const afterEvidence = Array.isArray(item.evidence) ? item.evidence.length : 0
+    if (beforeEvidence !== afterEvidence) created.push(make(item, afterEvidence > beforeEvidence ? 'evidence_uploaded' : 'evidence_deleted', `${actor.name} ${afterEvidence > beforeEvidence ? 'uploaded evidence to' : 'removed evidence from'} “${item.title}”.`))
+  }
+  for (const [id, item] of beforeItems) if (!afterItems.has(id)) created.push(make(item, 'deleted', `${actor.name} deleted ${item.parentTaskId ? 'subtask' : 'task'} “${item.title}”.`))
+  return [...created, ...existing].slice(0, 10000)
+}
+
 function auditEntriesForChanges(current: any, next: any, actor: SessionUser | null, source = 'tracker', organizationId?: string) {
   const tenantReady = Boolean(organizationId)
   const groups = [
@@ -836,7 +882,9 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   const organizationId = tenantIdForUser(user)
   try {
     const currentState = await loadTenantState(organizationId)
-    const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { schemaVersion: 5, clients: [], projects: [], items: [], activity: [], planner: [], accounts: [], taskSettings: defaultTaskSettings }
+    const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], accounts: [], taskSettings: defaultTaskSettings }
+
+    next = { ...next, schemaVersion: Math.max(6, Number(next.schemaVersion || 0)) }
 
     const currentItems = Array.isArray(current.items) ? current.items : []
     const nextItems = Array.isArray(next.items) ? next.items : []
@@ -847,7 +895,21 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     const currentAccounts = Array.isArray(current.accounts) ? current.accounts.map(accountDefaults) : []
     const incomingAccounts = Array.isArray(next.accounts) ? next.accounts.map(accountDefaults) : []
     const nextAccounts = await prepareAccountPasswords(currentAccounts, incomingAccounts)
-    next = { ...next, accounts: nextAccounts }
+    const assignableUsers = new Map(nextAccounts.filter((account: any) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor')).map((account: any) => [String(account.id), account]))
+    const normalizedItems = (Array.isArray(next.items) ? next.items : []).map((item: any) => {
+      const assignedToUserId = String(item?.assignedToUserId || '')
+      if (assignedToUserId && !assignableUsers.has(assignedToUserId)) throw new TenantSaveError(`Task “${String(item?.title || 'Untitled')}” must be assigned to an active Administrator or Contributor in this workspace.`, 400)
+      const startDate = String(item?.startDate || '')
+      const dueDate = String(item?.dueDate || '')
+      if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new TenantSaveError('Task Start Date must use YYYY-MM-DD.', 400)
+      if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) throw new TenantSaveError('Task Due Date must use YYYY-MM-DD.', 400)
+      if (startDate && dueDate && dueDate < startDate) throw new TenantSaveError(`Task “${String(item?.title || 'Untitled')}” cannot be due before its Start Date.`, 400)
+      return { ...item, assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
+    })
+    // Work history is derived on the server from the authenticated actor. Browser-supplied
+    // event identities are never trusted, so assignment and action reports remain auditable.
+    const candidateNext = { ...next, accounts: nextAccounts, items: normalizedItems }
+    next = { ...candidateNext, workEvents: authoritativeWorkEvents(current, candidateNext, user) }
     const accountsChanged = stable(currentAccounts) !== stable(nextAccounts)
     const selfOnlyAccounts = accountsChanged && accountChangesAreSelfOnly(currentAccounts, nextAccounts, user.id)
     if (accountsChanged && !selfOnlyAccounts) return void res.status(403).json({ error: 'Manage users and access in Users & Permissions. Reload if another administrator changed account users.' })
@@ -910,7 +972,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
 
 
 function emptyTenantData(accounts: any[] = []) {
-  return { schemaVersion: 5, clients: [], projects: [], items: [], activity: [], planner: [], accounts, taskSettings: defaultTaskSettings }
+  return { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], accounts, taskSettings: defaultTaskSettings }
 }
 
 function cleanSlug(value: unknown) {
@@ -939,7 +1001,7 @@ async function updateTenantAccountSnapshot(organizationId: string, accountId: st
   const nextAccounts = updated
     ? existing ? accounts.map((account: any) => String(account.id) === accountId ? updated : account) : [...accounts, updated]
     : accounts.filter((account: any) => String(account.id) !== accountId)
-  const next = { ...base, schemaVersion: 5, accounts: nextAccounts, taskSettings: base.taskSettings || defaultTaskSettings }
+  const next = { ...base, schemaVersion: 6, workEvents: Array.isArray(base.workEvents) ? base.workEvents : [], accounts: nextAccounts, taskSettings: base.taskSettings || defaultTaskSettings }
   await saveTenantState(organizationId, next)
   return next
 }
@@ -1244,13 +1306,48 @@ app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res)
   }
 
   const today = new Date().toISOString().slice(0, 10)
-  const context = req.body?.context ?? {}
+  const requestedContext: any = req.body?.context && typeof req.body.context === 'object' ? req.body.context : {}
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
+
+  // Resolve AI context from the authenticated tenant snapshot. The browser may request a
+  // client/project focus, but it cannot supply records or impersonate another current user.
+  let context: any
+  try {
+    const state = (await loadTenantState(tenantIdForUser(user))).data || emptyTenantData()
+    const allItems = Array.isArray(state.items) ? state.items : []
+    const allClients = Array.isArray(state.clients) ? state.clients : []
+    const allProjects = Array.isArray(state.projects) ? state.projects : []
+    const allPlanner = Array.isArray(state.planner) ? state.planner : []
+    const allEvents = Array.isArray(state.workEvents) ? state.workEvents : []
+    const requestedClientId = String(requestedContext?.client?.id || '')
+    const requestedProjectId = String(requestedContext?.project?.id || '')
+    const canSeeItems = moduleAllowed(user, 'items') || moduleAllowed(user, 'inbox')
+    const client = moduleAllowed(user, 'clients') ? allClients.find((entry: any) => String(entry.id) === requestedClientId) : undefined
+    const project = moduleAllowed(user, 'projects') ? allProjects.find((entry: any) => String(entry.id) === requestedProjectId) : undefined
+    const scopedItems = canSeeItems ? allItems.filter((item: any) => (!requestedClientId || String(item.clientId || '') === requestedClientId) && (!requestedProjectId || String(item.projectId || '') === requestedProjectId)) : []
+    const closed = new Set((Array.isArray(state.taskSettings?.statuses) ? state.taskSettings.statuses : defaultTaskSettings.statuses).filter((status: any) => status?.closed).map((status: any) => String(status.label)))
+    const ownAssignments = scopedItems.filter((item: any) => String(item.assignedToUserId || '') === user.id)
+    const ownActivity = allEvents.filter((event: any) => (String(event.actorUserId || '') === user.id || String(event.assignedToUserId || '') === user.id || (String(event.field || '') === 'assignedToUserId' && String(event.oldValue || '') === user.id)) && (!requestedClientId || String(event.clientId || '') === requestedClientId) && (!requestedProjectId || String(event.projectId || '') === requestedProjectId)).slice(0, 80)
+    context = {
+      currentUser: { id: user.id, name: user.name, role: user.role, modules: user.modules },
+      pronounRule: `When the user says I, me, or my, they mean ${user.name} (${user.id}).`,
+      client, project,
+      openItems: scopedItems.filter((item: any) => !closed.has(String(item.status)) && item.waitingOn !== 'Done').slice(0, 50),
+      recentItems: scopedItems.slice(0, 50),
+      upcomingActivities: moduleAllowed(user, 'action') ? allPlanner.filter((activity: any) => activity.status === 'Planned' && (!requestedClientId || String(activity.clientId || '') === requestedClientId) && (!requestedProjectId || String(activity.projectId || '') === requestedProjectId)).slice(0, 30) : [],
+      myAssignments: ownAssignments.slice(0, 60), myRecentActivity: ownActivity,
+      teamActivity: user.role === 'Administrator' ? allEvents.filter((event: any) => (!requestedClientId || String(event.clientId || '') === requestedClientId) && (!requestedProjectId || String(event.projectId || '') === requestedProjectId)).slice(0, 100) : undefined,
+    }
+  } catch (error) {
+    console.error('AI context load failed:', error)
+    return void res.status(503).json({ error: 'The assistant could not load your authorized workspace context.' })
+  }
 
   const instructions = `You are an embedded Business Analyst assistant inside a client operations tracker.
 Your job is to assess messy client input and help the BA organize work without making decisions silently.
 Be concise, practical, and evidence-aware. Distinguish what is known from what needs confirmation.
 Never claim a ticket, activity, email, or requirement was created or sent. You only propose actions for the human to approve.
+The authenticated current user is authoritative. Interpret I/me/my as that user. Respect the supplied role and permission-filtered context. Never infer or request hidden tenant data.
 Today is ${today}.
 
 Return JSON only with this shape:
@@ -1705,7 +1802,7 @@ async function captureDiscordInquiry(discordMessage: any, organizationId: string
   const stateResult = await loadTenantState(organizationId)
   const base = stateResult.data && typeof stateResult.data === 'object'
     ? stateResult.data
-    : { schemaVersion: 3, clients: [], projects: [], items: [], activity: [], planner: [], accounts: [], taskSettings: defaultTaskSettings }
+    : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], accounts: [], taskSettings: defaultTaskSettings }
   const items = Array.isArray(base.items) ? base.items : []
   const existing = items.find((item: any) => item?.externalSourceId === externalSourceId)
   if (existing) return { created: false, reason: 'duplicate', item: existing }
@@ -1869,7 +1966,8 @@ async function ensureTaskEvidenceBucket() {
 }
 
 async function saveEvidenceState(current: any, next: any, actor: SessionUser, source: string) {
-  const saved = await commitTenantState(tenantIdForUser(actor), next, actor, source, current)
+  const withWorkEvents = { ...next, schemaVersion: Math.max(6, Number(next?.schemaVersion || 0)), workEvents: authoritativeWorkEvents(current, next, actor) }
+  const saved = await commitTenantState(tenantIdForUser(actor), withWorkEvents, actor, source, current)
   return saved.syncedAt
 }
 

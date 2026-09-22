@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.20**
+**Current release: v0.6.21**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,27 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.20
+## Current release — v0.6.21
+
+v0.6.21 adds **User Work Tracking & User-Aware AI** on top of the v0.6.20 Test Case Creator baseline.
+
+### User work tracking highlights
+
+- Tasks and Subtasks can be assigned to one specific active tenant Administrator or Contributor.
+- Assignment dropdowns show each user's active and overdue workload.
+- Tasks and Subtasks now include an optional **Start Date**; moving an item to In Progress fills an empty Start Date automatically.
+- The system records server-verified work events with the authenticated actor, current assignee, task/subtask, client, project, change, and timestamp.
+- Reassignment history preserves both who is responsible now and who acted historically.
+- Contributor Action Center and report views use the signed-in user's assignments.
+- Reports add user filters, factual workload metrics, contribution history, and a Task/Subtask User Gantt.
+- AI context is rebuilt on the server from the authenticated tenant and user, so “I / me / my” refers to the signed-in user and app permissions are applied before data reaches the AI provider.
+- Internal Admin remains outside tenant productivity reporting.
+
+No new environment variable or npm dependency is required for v0.6.21. Existing v0.6.20 data is migrated in place when the upgraded app saves the tenant snapshot.
+
+---
+
+## Previous release — v0.6.20
 
 v0.6.20 adds **Document Creation → Test Case Creation (Basic Mode)**.
 
@@ -95,7 +115,7 @@ The Action Center combines activities, follow-ups, and AI-assisted assessment wi
 
 ### Tasks and subtasks
 
-Track work with configurable fields such as status, type, waiting on, priority, owner, due date, and follow-up date.
+Track work with configurable fields such as status, type, waiting on, priority, assigned tenant user, start date, due date, and follow-up date.
 
 Subtasks support activity tracking, comments, follow-up dates, reordering, and evidence uploads. Completion and archive state remain separate concepts so historical work can stay available after closure.
 
@@ -113,11 +133,11 @@ Client/project communications can be logged for historical reference and follow-
 
 ### Reports
 
-Reports include project/task activity views and other operational reporting available to the signed-in tenant according to module permissions.
+Reports include project/task activity plus user workload, contribution history, completed/open work, and Task/Subtask User Gantt views. Administrators can report across tracked users; Contributors are scoped to their own work.
 
 ### AI BA Assistant
 
-The AI BA Assistant accepts client inquiries, meeting notes, problems, and other working context and returns organized assessment and suggested next actions using the tenant's configured AI provider.
+The AI BA Assistant accepts client inquiries, meeting notes, problems, and other working context and returns organized assessment and suggested next actions using the tenant's configured AI provider. Its server-built context includes the authenticated user, role, permitted data, assignments, and activity history.
 
 ---
 
@@ -382,7 +402,7 @@ Apply the SQL files in this order for a fresh environment:
 7. `supabase/schema-v7-password-recovery.sql`
 8. `supabase/schema-v8-tenant-integrations.sql`
 
-v0.6.12 through v0.6.20 do not add another Supabase migration beyond the migrations already required by the current build.
+v0.6.12 through v0.6.21 do not add another Supabase migration beyond the migrations already required by the current build.
 
 ### Bootstrap credentials
 
@@ -403,10 +423,10 @@ Always check the current version first:
 npm run patch:status
 ```
 
-For the current release, upgrade **v0.6.19 → v0.6.20** with the matching patch package:
+For the current release, upgrade **v0.6.20 → v0.6.21** with the matching patch package:
 
 ```bash
-npm run patch -- "path/to/ba-client-ops-patch-v0.6.20-test-case-creator.zip"
+npm run patch -- "path/to/ba-client-ops-patch-v0.6.21-user-work-tracking.zip"
 npm run patch:status
 npm run build
 ```
@@ -489,6 +509,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.21** | Tenant-user Task/Subtask assignment, Start Date, authenticated work history, user reports, User Gantt, and user-aware AI |
 | **0.6.20** | AI Test Case Creator with Skills, Coverage Map, editable cases, Coverage Review, and XLSX export |
 | **0.6.19** | Login panel edge-to-edge width correction |
 | **0.6.18** | Login card width refinement |
@@ -505,4 +526,4 @@ For detailed release-specific instructions, see the matching `UPGRADE-v0.6.x.md`
 
 ## Current version
 
-**BA Client Ops Tracker v0.6.20**
+**BA Client Ops Tracker v0.6.21**

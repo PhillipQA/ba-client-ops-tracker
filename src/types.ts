@@ -5,7 +5,7 @@ export type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
 export type UserRole = 'Administrator' | 'Contributor' | 'Viewer'
 export type AppModule = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings'
 
-export type TaskColumnKey = 'status' | 'client' | 'project' | 'type' | 'waitingOn' | 'priority' | 'owner' | 'dueDate' | 'followUpDate'
+export type TaskColumnKey = 'status' | 'client' | 'project' | 'type' | 'waitingOn' | 'priority' | 'owner' | 'startDate' | 'dueDate' | 'followUpDate'
 
 export interface TaskStatusDefinition {
   id: string
@@ -64,7 +64,9 @@ export interface WorkItem {
   status: string
   waitingOn: WaitingOn
   owner: string
+  assignedToUserId?: string
   dateRaised: string
+  startDate?: string
   dueDate?: string
   followUpDate: string
   description: string
@@ -74,6 +76,30 @@ export interface WorkItem {
   externalSourceId?: string
   sourceSender?: string
   evidence?: TaskEvidence[]
+}
+
+export type WorkActivityAction = 'created' | 'assigned' | 'reassigned' | 'started' | 'status_changed' | 'updated' | 'completed' | 'reopened' | 'deleted' | 'evidence_uploaded' | 'evidence_deleted'
+
+export interface WorkActivityEvent {
+  id: string
+  occurredAt: string
+  date: string
+  actorUserId: string
+  actorName: string
+  actorRole: UserRole
+  assignedToUserId?: string
+  assignedToName?: string
+  clientId?: string
+  projectId?: string
+  taskId: string
+  parentTaskId?: string
+  itemTitle: string
+  itemKind: 'Task' | 'Subtask'
+  action: WorkActivityAction
+  summary: string
+  field?: string
+  oldValue?: string
+  newValue?: string
 }
 
 export interface ActivityLog {

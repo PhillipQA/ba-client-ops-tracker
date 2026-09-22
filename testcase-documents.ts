@@ -40,7 +40,7 @@ function validateCoverage(value: any, knownSources?: Set<string>): Pick<Coverage
     const title = clean(raw?.title, 'requirement title', 500, true)
     if (!Array.isArray(raw?.sourceIds) || !raw.sourceIds.length || raw.sourceIds.length > 20) throw new IntegrationError(`Coverage item ${id} must cite at least one source.`, 422)
     const sourceIds = raw.sourceIds.map((v:any)=>clean(v,'source ID',80,true))
-    if (knownSources && sourceIds.some(id => !knownSources.has(id))) throw new IntegrationError(`Coverage item ${id} cited an unknown source.`, 422)
+    if (knownSources && sourceIds.some((sourceId: string) => !knownSources.has(sourceId))) throw new IntegrationError(`Coverage item ${id} cited an unknown source.`, 422)
     if (!Array.isArray(raw?.scenarios) || !raw.scenarios.length || raw.scenarios.length > 30) throw new IntegrationError(`Coverage item ${id} is missing test scenarios.`, 422)
     const scenarios = raw.scenarios.map((v:any)=>clean(v,'scenario',1000,true))
     return { id, title, sourceIds, scenarios }

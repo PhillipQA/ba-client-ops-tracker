@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, CalendarRange, CheckCircle2, Clock3, Download, ListTodo, UsersRound } from 'lucide-react'
-import type { Client, PlannerActivity, Project, TaskSettings, WorkItem } from './types'
+import { Activity, AlertTriangle, CalendarRange, CheckCircle2, Clock3, Download, ListTodo, UsersRound } from 'lucide-react'
+import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
 
 function localDateKey(date: Date) {
   const yyyy = date.getFullYear()
@@ -51,12 +51,15 @@ function csvEscape(value: unknown) {
   return `"${text.replace(/"/g, '""')}"`
 }
 
-export default function Reports({ clients, projects, items, planner, taskSettings }: { clients: Client[]; projects: Project[]; items: WorkItem[]; planner: PlannerActivity[]; taskSettings: TaskSettings }) {
+export default function Reports({ clients, projects, items, planner, taskSettings, accounts, workEvents, currentUser }: { clients: Client[]; projects: Project[]; items: WorkItem[]; planner: PlannerActivity[]; taskSettings: TaskSettings; accounts: UserAccount[]; workEvents: WorkActivityEvent[]; currentUser: UserAccount }) {
   const [from, setFrom] = useState(startOfMonthKey())
   const [to, setTo] = useState(endOfMonthKey())
   const [clientId, setClientId] = useState('')
   const [projectId, setProjectId] = useState('')
+  const [userId, setUserId] = useState(currentUser.role === 'Administrator' ? '' : currentUser.id)
   const today = localDateKey(new Date())
+  const trackedUsers = useMemo(() => accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor')), [accounts])
+  const effectiveUserId = currentUser.role === 'Administrator' ? userId : currentUser.id
 
   const contextProjects = useMemo(() => projects, [projects])
   const contextItems = useMemo(() => items.filter((item) => (!clientId || item.clientId === clientId) && (!projectId || item.projectId === projectId)), [items, clientId, projectId])
@@ -121,6 +124,18 @@ export default function Reports({ clients, projects, items, planner, taskSetting
     return { offset: dayOffset, label: niceDate(localDateKey(d)) }
   })
   const ganttActivities = [...periodActivities].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
+  const userItems = useMemo(() => items.filter((item) => (!effectiveUserId || item.assignedToUserId === effectiveUserId) && (!clientId || item.clientId === clientId) && (!projectId || item.projectId === projectId)), [items, effectiveUserId, clientId, projectId])
+  const userEvents = useMemo(() => workEvents.filter((event) => event.date >= from && event.date <= to && (!effectiveUserId || event.actorUserId === effectiveUserId || event.assignedToUserId === effectiveUserId || (event.field === 'assignedToUserId' && event.oldValue === effectiveUserId)) && (!clientId || event.clientId === clientId) && (!projectId || event.projectId === projectId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [workEvents, from, to, effectiveUserId, clientId, projectId])
+  const userOpen = userItems.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done')
+  const userCompleted = userEvents.filter((event) => event.action === 'completed' && (!effectiveUserId || event.assignedToUserId === effectiveUserId || event.actorUserId === effectiveUserId))
+  const userStarted = userEvents.filter((event) => event.action === 'started')
+  const userOverdue = userOpen.filter((item) => Boolean(item.dueDate && item.dueDate < today))
+  const userGanttItems = userItems.filter((item) => item.startDate && (item.dueDate || item.startDate) >= from && item.startDate! <= to).sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
+  const teamWorkload = trackedUsers.map((user) => {
+    const assigned = items.filter((item) => item.assignedToUserId === user.id)
+    const active = assigned.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done')
+    return { user, active: active.length, waiting: active.filter((item) => item.waitingOn !== 'Me').length, overdue: active.filter((item) => Boolean(item.dueDate && item.dueDate < today)).length, completed: workEvents.filter((event) => event.assignedToUserId === user.id && event.action === 'completed' && event.date >= from && event.date <= to).length }
+  }).filter((row) => currentUser.role === 'Administrator' || row.user.id === currentUser.id)
 
   const exportCsv = () => {
     const rows = [
@@ -163,7 +178,32 @@ export default function Reports({ clients, projects, items, planner, taskSetting
         <label>To<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
         <label>Client<select value={clientId} onChange={(event) => { setClientId(event.target.value); setProjectId('') }}><option value="">All clients</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
         <label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">All projects</option>{contextProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <label>User<select value={effectiveUserId} disabled={currentUser.role !== 'Administrator'} onChange={(event) => setUserId(event.target.value)}>{currentUser.role === 'Administrator' && <option value="">All tracked users</option>}{trackedUsers.map((user) => <option key={user.id} value={user.id}>{user.name}{user.id === currentUser.id ? ' · You' : ''}</option>)}</select></label>
       </div>
+    </div>
+
+    <div className="panel report-panel user-work-report">
+      <div className="panel-heading"><div><h2>User work tracking</h2><p>{effectiveUserId ? `Assignment, contribution, and activity for ${trackedUsers.find((user) => user.id === effectiveUserId)?.name || 'this user'}.` : 'Team assignment, contribution, and activity across tracked users.'}</p></div><Activity size={19} /></div>
+      <div className="subtask-report-summary user-report-summary"><div><strong>{userItems.length}</strong><span>Assigned items</span></div><div><strong>{userStarted.length}</strong><span>Started in range</span></div><div><strong>{userCompleted.length}</strong><span>Completed in range</span></div><div><strong>{userOpen.length}</strong><span>Open now</span></div><div><strong>{userOverdue.length}</strong><span>Overdue now</span></div><div><strong>{userEvents.length}</strong><span>Work events</span></div></div>
+      <div className="report-grid-two user-report-grid">
+        <div>
+          <h3>Workload by user</h3>
+          <div className="table-scroll"><table className="report-table"><thead><tr><th>User</th><th>Active</th><th>Waiting</th><th>Overdue</th><th>Completed</th></tr></thead><tbody>{teamWorkload.map((row) => <tr key={row.user.id}><td><strong>{row.user.name}</strong><small>{row.user.role}</small></td><td>{row.active}</td><td>{row.waiting}</td><td className={row.overdue ? 'overdue-date' : ''}>{row.overdue}</td><td>{row.completed}</td></tr>)}</tbody></table></div>
+        </div>
+        <div>
+          <h3>Recent contribution</h3>
+          <div className="user-activity-timeline">{userEvents.slice(0, 10).map((event) => <div key={event.id}><span>{new Date(event.occurredAt).toLocaleString()}</span><strong>{event.actorName}</strong><p>{event.summary}</p></div>)}{!userEvents.length && <div className="report-empty">No tracked user activity in this range.</div>}</div>
+        </div>
+      </div>
+    </div>
+
+    <div className="panel report-panel">
+      <div className="panel-heading"><div><h2>User Gantt</h2><p>Task and subtask timelines use Start Date through Due Date.</p></div><span className="count-pill">{userGanttItems.length} scheduled</span></div>
+      <div className="gantt-scroll"><div className="gantt-chart" style={{ minWidth: ganttDays > 21 ? 980 : 760 }}>
+        <div className="gantt-header"><div className="gantt-label-head">User · Work</div><div className="gantt-axis">{ganttTicks.map((tick) => <span key={`user-${tick.offset}-${tick.label}`} style={{ left: `${(tick.offset / Math.max(1, ganttDays - 1)) * 100}%` }}>{tick.label}</span>)}</div></div>
+        {!userGanttItems.length && <div className="report-empty">Add a Start Date and Due Date to assigned tasks to see them here.</div>}
+        {userGanttItems.map((item) => { const visibleStart = item.startDate! < from ? from : item.startDate!; const rawEnd = item.dueDate || item.startDate!; const visibleEnd = rawEnd > to ? to : rawEnd; const left = (daysBetween(from, visibleStart) / ganttDays) * 100; const width = Math.max(1.4, ((daysBetween(visibleStart, visibleEnd) + 1) / ganttDays) * 100); const assigned = trackedUsers.find((user) => user.id === item.assignedToUserId)?.name || 'Unassigned'; return <div className="gantt-row" key={`user-work-${item.id}`}><div className="gantt-label"><strong>{item.title}</strong><small>{assigned} · {item.parentTaskId ? 'Subtask' : 'Task'} · {item.status}</small></div><div className="gantt-track" style={{ backgroundSize: `${100 / ganttDays}% 100%` }}><div className={`gantt-bar local ${isClosed(item.status) ? 'done' : ''}`} style={{ left: `${left}%`, width: `${width}%` }} title={`${assigned}: ${item.startDate} to ${rawEnd}`}><span>{ganttDays <= 21 ? assigned : ''}</span></div></div></div> })}
+      </div></div>
     </div>
 
     <div className="metric-grid dashboard-metrics">

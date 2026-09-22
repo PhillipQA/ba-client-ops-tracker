@@ -16,7 +16,7 @@ export const defaultTaskSettings: TaskSettings = {
     { id: 'resolved', label: 'Resolved', closed: true },
     { id: 'closed', label: 'Closed', closed: true },
   ],
-  visibleColumns: ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'dueDate', 'followUpDate'],
+  visibleColumns: ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'startDate', 'dueDate', 'followUpDate'],
 }
 
 // Initial account metadata only. Password material is never seeded in client code;

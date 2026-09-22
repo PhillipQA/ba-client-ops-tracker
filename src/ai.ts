@@ -1,4 +1,4 @@
-import type { Client, PlannerActivity, Priority, Project, WaitingOn, WorkItem } from './types'
+import type { Client, PlannerActivity, Priority, Project, UserAccount, WaitingOn, WorkActivityEvent, WorkItem } from './types'
 
 export type AISuggestionKind = 'issue' | 'requirement' | 'follow_up' | 'activity' | 'draft_reply'
 
@@ -25,11 +25,14 @@ export interface AIMessage {
 }
 
 export interface AssistantContext {
+  currentUser: Pick<UserAccount, 'id' | 'name' | 'role' | 'modules'>
   client?: Client
   project?: Project
   openItems: WorkItem[]
   recentItems: WorkItem[]
   upcomingActivities: PlannerActivity[]
+  myAssignments: WorkItem[]
+  myRecentActivity: WorkActivityEvent[]
 }
 
 export async function askBAAssistant(args: {
