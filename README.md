@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.21**
+**Current release: v0.6.22**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,9 +8,9 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.21
+## Current release — v0.6.22
 
-v0.6.21 adds **User Work Tracking & User-Aware AI** on top of the v0.6.20 Test Case Creator baseline.
+v0.6.22 is a focused visibility hotfix for **Task and Subtask Start Date** on top of the v0.6.21 User Work Tracking release.
 
 ### User work tracking highlights
 
@@ -23,8 +23,11 @@ v0.6.21 adds **User Work Tracking & User-Aware AI** on top of the v0.6.20 Test C
 - Reports add user filters, factual workload metrics, contribution history, and a Task/Subtask User Gantt.
 - AI context is rebuilt on the server from the authenticated tenant and user, so “I / me / my” refers to the signed-in user and app permissions are applied before data reaches the AI provider.
 - Internal Admin remains outside tenant productivity reporting.
+- Create and Edit forms now group Start Date, Due Date, and Follow-up Date in a clearly labeled Task/Subtask Schedule section.
+- Subtask rows show Start and Due dates directly below the title, without requiring horizontal scrolling.
+- Start Date remains present in the table even when an older saved column preference predates the field.
 
-No new environment variable or npm dependency is required for v0.6.21. Existing v0.6.20 data is migrated in place when the upgraded app saves the tenant snapshot.
+No new environment variable, npm dependency, or Supabase migration is required for v0.6.22.
 
 ---
 
@@ -402,7 +405,7 @@ Apply the SQL files in this order for a fresh environment:
 7. `supabase/schema-v7-password-recovery.sql`
 8. `supabase/schema-v8-tenant-integrations.sql`
 
-v0.6.12 through v0.6.21 do not add another Supabase migration beyond the migrations already required by the current build.
+v0.6.12 through v0.6.22 do not add another Supabase migration beyond the migrations already required by the current build.
 
 ### Bootstrap credentials
 
@@ -423,10 +426,10 @@ Always check the current version first:
 npm run patch:status
 ```
 
-For the current release, upgrade **v0.6.20 → v0.6.21** with the matching patch package:
+For the current release, upgrade **v0.6.21 → v0.6.22** with the matching patch package:
 
 ```bash
-npm run patch -- "path/to/ba-client-ops-patch-v0.6.21-user-work-tracking.zip"
+npm run patch -- "path/to/ba-client-ops-patch-v0.6.22-subtask-start-date-hotfix.zip"
 npm run patch:status
 npm run build
 ```
@@ -509,6 +512,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.22** | Subtask Start Date visibility hotfix for create, edit, inline rows, and legacy column preferences |
 | **0.6.21** | Tenant-user Task/Subtask assignment, Start Date, authenticated work history, user reports, User Gantt, and user-aware AI |
 | **0.6.20** | AI Test Case Creator with Skills, Coverage Map, editable cases, Coverage Review, and XLSX export |
 | **0.6.19** | Login panel edge-to-edge width correction |
@@ -526,4 +530,4 @@ For detailed release-specific instructions, see the matching `UPGRADE-v0.6.x.md`
 
 ## Current version
 
-**BA Client Ops Tracker v0.6.21**
+**BA Client Ops Tracker v0.6.22**
