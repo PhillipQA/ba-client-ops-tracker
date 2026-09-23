@@ -1,6 +1,7 @@
 import FsdCreation from './FsdCreation'
 import TestCaseCreation from './TestCaseCreation'
 import SignOffCreation from './SignOffCreation'
+import DocumentProcessingPanel from './DocumentProcessingPanel'
 import type { Client } from './types'
 import { useEffect, useMemo, useState } from 'react'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
@@ -523,7 +524,7 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
               </div>
             </div>
 
-            {(documentMessage || documentError) && <div className={`document-status-message${documentError ? ' error' : ''}`}>{documentError || documentMessage}</div>}
+            <DocumentProcessingPanel state={documentError ? 'error' : (extracting || generating) ? 'working' : documentMessage ? 'success' : 'idle'} title={documentError ? 'Document processing failed' : generating ? 'Generating your DRF…' : extracting ? 'Reading your COR…' : 'Document is ready'} detail={documentError || documentMessage} stages={extracting ? ['Uploading document','Reading and extracting content','Mapping COR fields','Finalizing extracted values'] : ['Preparing template','Mapping reviewed information','Generating document','Starting download']} activeStage={generating ? 2 : extracting ? (documentMessage.toLowerCase().includes('asking') ? 2 : 1) : 3} onRetry={documentError ? () => void (corFile && !generating ? extractCor() : generateDrf()) : undefined}/>
 
             <div className="document-generate-bar">
               <div><strong>6. Generate DRF</strong><span>The reviewed values are written into the saved standard Excel template and downloaded as a new .xlsx file.</span></div>

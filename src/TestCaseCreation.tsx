@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ClipboardCheck, Copy, Download, FileSearch, FileText, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { readFsdSource } from './fsd-sources'
+import DocumentProcessingPanel from './DocumentProcessingPanel'
 import { TEST_CASE_COLUMNS, TEST_CASE_SKILLS, type CoverageMap, type TestCasePreview, type TestCaseRow, type TestCaseSkill, type TestCaseSource, type TestCaseSourceKind } from './testcase-model'
 import './testcase.css'
 
@@ -76,7 +77,7 @@ export default function TestCaseCreation({canGenerate,draftKey,active}:{canGener
   return <div className="tc-creator">
     <div className="tc-topline"><div><span className="tc-eyebrow">DOCUMENT CREATION · BASIC MODE</span><h2>Test Case Creator</h2><p>Turn requirements into traceable, editable QA and UAT test cases with AI-assisted coverage review.</p></div><span className="tc-badge"><ClipboardCheck size={17}/>AI + Skills + XLSX</span></div>
     <div className="tc-status"><span>{provider?.enabled?`AI: ${provider.name} · ${provider.model}`:providerError||'Configure and enable AI in Account Settings.'}</span><span>{saveError||'Draft retained in this browser tab'}</span></div>
-    {error&&<div className="tc-error" role="alert">{error}</div>}{busy&&<div className="tc-busy" role="status"><Sparkles size={16}/>{busy}</div>}
+    <DocumentProcessingPanel state={error?'error':busy?'working':draft.preview?'success':'idle'} title={error?'Test Case processing failed':busy||'Test cases are ready'} detail={error||(!busy&&draft.preview?'Review the editable cases below, then download the Excel file.':'')} stages={busy.includes('Reading')?['Uploading documents','Reading and extracting content','Adding sources','Ready for coverage mapping']:busy.includes('Excel')?['Validating test cases','Mapping rows to workbook','Generating Excel file','Starting download']:['Preparing requirements','Mapping test coverage','Generating test cases','Ready for review']} activeStage={busy.includes('Reading')?1:busy.includes('Excel')?2:2}/>
     <fieldset disabled={!canGenerate||Boolean(busy)}>
       <div className="tc-grid">
         <section className="tc-card"><div className="tc-step"><span>1</span><div><h3>Requirement sources</h3><p>Upload BRD, FSD, stories, meeting notes, screenshots, or supporting files. You can combine up to 20 sources.</p></div></div>

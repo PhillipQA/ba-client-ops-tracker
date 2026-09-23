@@ -4,6 +4,7 @@ import type { Client } from './types'
 import { emptyFsdDraft, fsdReference, FSD_MODULES, FSD_NOTICE, FSD_PRESETS, FSD_SECTIONS, FSD_TEMPLATE_NAME, type FsdDraft, type FsdDetails, type FsdPreview, type FsdSource } from './fsd-model'
 import { readFsdSource } from './fsd-sources'
 import './fsd.css'
+import DocumentProcessingPanel from './DocumentProcessingPanel'
 function sourceId(sources: FsdSource[]) { return `SRC-${String(Math.max(0,...sources.map(s=>Number(s.id.replace(/^SRC-/,''))||0))+1).padStart(3,'0')}` }
 type Provider = { enabled: boolean; provider?: string; name?: string; model?: string }
 async function request<T>(path: string, body?: unknown): Promise<T> {
@@ -118,8 +119,7 @@ export default function FsdCreation({ clients, canGenerate, draftKey, active }: 
     <div className="fsd-status"><span>{provider?.enabled?`AI: ${provider.name} · ${provider.model}`:providerError||'Configure and enable AI in account Settings.'}</span><span>{saveError?'Draft held in this page':'Draft retained in this browser tab'}</span></div>
     {presetSaveError&&<p className="fsd-warning" role="status">{presetSaveError}</p>}
     {saveError&&<p className="fsd-warning" role="status">{saveError}</p>}
-    {error&&<div className="fsd-error" role="alert">{error}</div>}
-    {busy&&<p className="fsd-busy" role="status"><Sparkles size={16}/>{busy} You can visit another module while this finishes.</p>}
+    <DocumentProcessingPanel state={error?'error':busy?'working':draft.preview?'success':'idle'} title={error?'FSD processing failed':busy||'FSD preview is ready'} detail={error||(!busy&&draft.preview?'Review the preview below, then generate the Word document.':'')} stages={busy.includes('Reading')?['Uploading documents','Reading and extracting content','Adding sources','Ready for mapping']:busy.includes('Word')?['Validating reviewed preview','Mapping information to template','Generating Word document','Starting download']:['Preparing source content','Mapping information to template','Generating preview','Ready for review']} activeStage={busy.includes('Reading')?1:busy.includes('Word')?2:2} onRetry={error&&draft.preview&&draft.reviewed&&!stale?()=>void exportFsd():error?()=>void generatePreview():undefined}/>
     <fieldset disabled={!canGenerate||Boolean(busy)} className="fsd-fieldset">
       <div className="fsd-columns">
         <div className="fsd-input-column">

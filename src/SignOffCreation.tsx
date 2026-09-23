@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowDown, ArrowUp, Download, Trash2 } from 'lucide-react'
+import DocumentProcessingPanel from './DocumentProcessingPanel'
 import type { Client } from './types'
 import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, SIGNOFF_TITLE, SIGNOFF_PURPOSE, SIGNOFF_SCOPE, SIGNOFF_AUTHORIZATION, formatDeploymentDate, signoffReference, type SignoffInput, type SignoffAttachment } from './signoff'
 
@@ -89,6 +90,6 @@ export default function SignOffCreation({ clients, canGenerate }: { clients: Cli
       </div>
       <div className="document-generate-bar"><div><strong>5. Generate Sign Off</strong><span>{files.some(f => !f.image) ? 'Downloads a ZIP containing the Word form and supporting files.' : 'Downloads an editable Word form with your uploaded images.'}</span></div><button className="primary" type="submit"><Download size={16} />{busy ? 'Generating…' : uploading ? 'Preparing attachments…' : 'Generate & Download Sign Off'}</button></div>
     </fieldset>
-    {error && <p className="document-status-message error" role="alert">{error}</p>}{message && <p className="document-status-message" role="status">{message}</p>}
+    <DocumentProcessingPanel state={error?'error':(busy||uploading)?'working':message?'success':'idle'} title={error?'Sign Off processing failed':busy?'Generating your Sign Off…':uploading?'Preparing attachments…':'Sign Off package is ready'} detail={error||message} stages={['Preparing attachments','Mapping form information','Generating document package','Starting download']} activeStage={uploading?0:busy?2:3}/>
   </form>
 }

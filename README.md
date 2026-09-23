@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.31**
+**Current release: v0.6.32**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,11 +8,9 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.31
+## Current release — v0.6.32
 
-The Clients page now offers **Tiles**, **List**, and **Table** layouts. Search clients by name, contact, email, or notes; sort by name, open tasks, or next follow-up. The chosen layout is remembered for each signed-in user in that browser.
-
-The existing client records and Active / Archived / All filter work in every layout. No database migration, new npm dependency, or environment change is required. See `UPGRADE-v0.6.31.md`.
+Document Creation now displays consistent processing feedback for DRF, FSD, Test Case, and Sign Off workflows: a spinner, progress stages, long-running guidance, success/error states, and safe retry actions. No database migration, new npm dependency, or environment change is required. See `UPGRADE-v0.6.32.md`.
 
 ## Previous release — v0.6.30
 
@@ -592,6 +590,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.32** | Document Creation processing panel, stages, long-running guidance, and retry feedback |
 | **0.6.31** | Client Tiles, List, and Table views with search and sorting |
 | **0.6.30** | Login card width and form dimensions match password recovery |
 | **0.6.29** | Blank Account and User fields by default on the login screen |
