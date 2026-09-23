@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.27**
+**Current release: v0.6.28**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,20 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.27
+## Current release — v0.6.28
+
+Subtasks now inherit the assignee of their main task while still supporting intentional per-subtask ownership.
+
+- A new subtask always starts with the main task's current assignee.
+- Reassigning or unassigning a main task updates subtasks that still follow it.
+- Editing a subtask and selecting another user creates a persistent override.
+- **Same as main task** restores inheritance after an override.
+- Existing matching assignments are treated as inherited; existing differing assignments remain overrides.
+- Server-side normalization keeps the rule consistent for older browser sessions.
+
+No database migration, new npm dependency, or environment change is required. See `UPGRADE-v0.6.28.md`.
+
+## Previous release — v0.6.27
 
 Google Calendar now uses account-level OAuth credentials and separate, private user connections.
 
@@ -553,6 +566,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.28** | Main-task assignee inheritance for subtasks with persistent per-subtask overrides |
 | **0.6.27** | Account-level Google OAuth credentials, private user connections and read-only schedules |
 | **0.6.26** | Confirmed Task/Subtask saves and server-managed Task settings compatibility |
 | **0.6.25** | Action Center views for My work, all tenant users, or a selected user |

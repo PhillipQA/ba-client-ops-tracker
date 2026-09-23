@@ -27,6 +27,7 @@ import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps, type FollowUpRolloverC
 import { markAllNotificationsReadForUser, reconcileNotifications, updateNotificationForUser } from './notification-engine'
 import { preserveTaskSettings } from './tenant-save-settings'
 import { registerGoogleCalendarRoutes } from './google-calendar'
+import { applySubtaskAssignmentInheritance } from './src/subtaskAssignment'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -1002,7 +1003,8 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     const nextAccounts = await prepareAccountPasswords(currentAccounts, incomingAccounts)
     const assignableUsers = new Map(nextAccounts.filter((account: any) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor')).map((account: any) => [String(account.id), account]))
     const currentItemMap = new Map(currentItems.map((item: any) => [String(item?.id || ''), item]))
-    const normalizedItems = (Array.isArray(next.items) ? next.items : []).map((item: any) => {
+    const inheritedItems = applySubtaskAssignmentInheritance<any>(currentItems, Array.isArray(next.items) ? next.items : [])
+    const normalizedItems = inheritedItems.map((item: any) => {
       const assignedToUserId = String(item?.assignedToUserId || '')
       if (assignedToUserId && !assignableUsers.has(assignedToUserId)) throw new TenantSaveError(`Task “${String(item?.title || 'Untitled')}” must be assigned to an active Administrator or Contributor in this workspace.`, 400)
       const startDate = String(item?.startDate || '')

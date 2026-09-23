@@ -4,6 +4,7 @@ import RecordEditDialog from './RecordEditDialog'
 import LifecycleControls from './LifecycleControls'
 import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from './lifecycle'
 import { canBrowseTeamActionCenter, itemMatchesActionCenterScope, resolveActionCenterScope, trackedActionCenterUsers, type ActionCenterScopeSelection } from './actionCenterScope'
+import { applySubtaskAssignmentInheritance, normalizeSubtaskAssignmentInheritance } from './subtaskAssignment'
 import { FormEvent, type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
@@ -199,7 +200,7 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
   const accounts = migratedAccounts.length ? migratedAccounts : [...seedAccounts]
   if (!accounts.some((account) => account.role === 'Administrator' && account.status === 'Active')) accounts.unshift(seedAccounts[0])
   const taskSettings = normalizeTaskSettings(parsed.taskSettings)
-  const migratedItems = items.map((item, index) => ({
+  const migratedItems = normalizeSubtaskAssignmentInheritance(items.map((item, index) => ({
     ...item,
     dueDate: item.dueDate || '',
     startDate: item.startDate || '',
@@ -229,7 +230,7 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
       nextFollowUpDate: comment.nextFollowUpDate ? String(comment.nextFollowUpDate) : undefined,
       daysMoved: Number.isFinite(comment.daysMoved) ? Number(comment.daysMoved) : undefined,
     })) : [],
-  }))
+  })))
   return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, workEvents, notifications, accounts, taskSettings }
 }
 
@@ -1028,9 +1029,14 @@ function App() {
       startDate: updated.status === 'In Progress' && !updated.startDate ? TODAY : updated.startDate,
       resolvedDate: closed ? (previous.resolvedDate || TODAY) : undefined,
     }
+    const editedItems = current.items.map((item) => item.id === updated.id ? normalized : item.parentTaskId === updated.id ? { ...item, projectId: normalized.projectId } : item)
+    const inheritedItems = applySubtaskAssignmentInheritance(current.items, editedItems)
     const next: Store = {
       ...current,
-      items: current.items.map((item) => item.id === updated.id ? normalized : item.parentTaskId === updated.id ? { ...item, projectId: normalized.projectId } : item),
+      items: inheritedItems.map((item) => ({
+        ...item,
+        owner: item.assignedToUserId ? current.accounts.find((account) => account.id === item.assignedToUserId)?.name || item.owner : '',
+      })),
       activity: [
         { id: crypto.randomUUID(), clientId: previous.clientId, projectId: normalized.projectId, date: TODAY, text: `Updated task: ${previous.title}` },
         ...current.activity,
@@ -1915,6 +1921,7 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
     const form = new FormData(event.currentTarget)
     const startDate = String(form.get('startDate') || '')
     const dueDate = String(form.get('dueDate') || '')
+    const assignedToUserId = parent?.assignedToUserId || String(form.get('assignedToUserId') || '') || undefined
     if (startDate && dueDate && dueDate < startDate) { window.alert('Due Date cannot be earlier than Start Date.'); return }
     onSubmit({
       id: crypto.randomUUID(),
@@ -1927,8 +1934,9 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
       priority: form.get('priority') as Priority,
       status,
       waitingOn: form.get('waitingOn') as WaitingOn,
-      assignedToUserId: String(form.get('assignedToUserId') || '') || undefined,
-      owner: assignableUsers.find((account) => account.id === String(form.get('assignedToUserId') || ''))?.name || '',
+      assignedToUserId,
+      assignmentInherited: parent ? true : undefined,
+      owner: assignedToUserId ? assignableUsers.find((account) => account.id === assignedToUserId)?.name || parent?.owner || '' : '',
       dateRaised: TODAY,
       startDate,
       dueDate,
@@ -1950,7 +1958,9 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
     <label>Waiting on<select name="waitingOn" defaultValue="Me"><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
-    <label>Assigned to<select name="assignedToUserId" defaultValue=""><option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select></label>
+    {parent
+      ? <label>Assigned to<input value={assignableUsers.find((account) => account.id === parent.assignedToUserId)?.name || 'Unassigned'} readOnly disabled /><small>Inherited from the main task. You can override it after creating the subtask.</small></label>
+      : <label>Assigned to<select name="assignedToUserId" defaultValue=""><option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select></label>}
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} />
     <label>Source<select name="source" defaultValue={type === 'Inquiry' ? 'Chat' : 'Internal'}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} placeholder="Context, comments, acceptance details, dependencies, or what needs to be done..." /></label>
@@ -1964,6 +1974,8 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined
+  const inheritAssignmentValue = '__inherit_parent_assignment__'
+  const inheritsParentAssignment = Boolean(parent && (typeof item.assignmentInherited === 'boolean' ? item.assignmentInherited : String(item.assignedToUserId || '') === String(parent.assignedToUserId || '')))
   const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
   const workloadFor = (userId: string) => { const active = store.items.filter((candidate) => candidate.assignedToUserId === userId && !isTaskClosed(candidate.status, store.taskSettings) && candidate.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((candidate) => Boolean(candidate.dueDate && candidate.dueDate < TODAY)).length} overdue` }
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1972,6 +1984,8 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
     const form = new FormData(event.currentTarget)
     const startDate = String(form.get('startDate') || '')
     const dueDate = String(form.get('dueDate') || '')
+    const assignmentSelection = String(form.get('assignedToUserId') || '')
+    const assignedToUserId = parent && assignmentSelection === inheritAssignmentValue ? parent.assignedToUserId : assignmentSelection || undefined
     if (startDate && dueDate && dueDate < startDate) { window.alert('Due Date cannot be earlier than Start Date.'); return }
     const changes: WorkItem = {
       ...item,
@@ -1982,8 +1996,9 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
       status,
       priority: form.get('priority') as Priority,
       waitingOn: form.get('waitingOn') as WaitingOn,
-      assignedToUserId: String(form.get('assignedToUserId') || '') || undefined,
-      owner: assignableUsers.find((account) => account.id === String(form.get('assignedToUserId') || ''))?.name || '',
+      assignedToUserId,
+      assignmentInherited: parent ? assignmentSelection === inheritAssignmentValue : undefined,
+      owner: assignedToUserId ? assignableUsers.find((account) => account.id === assignedToUserId)?.name || '' : '',
       startDate,
       dueDate,
       followUpDate: String(form.get('followUpDate') || ''),
@@ -2007,7 +2022,7 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue={item.priority}><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
     <label>Waiting on<select name="waitingOn" defaultValue={item.waitingOn}><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
-    <label>Assigned to<select name="assignedToUserId" defaultValue={item.assignedToUserId || ''}><option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select></label>
+    <label>Assigned to<select name="assignedToUserId" defaultValue={parent && inheritsParentAssignment ? inheritAssignmentValue : item.assignedToUserId || ''}>{parent && <option value={inheritAssignmentValue}>Same as main task · {assignableUsers.find((account) => account.id === parent.assignedToUserId)?.name || 'Unassigned'}</option>}<option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select>{parent && <small>{inheritsParentAssignment ? 'This subtask follows main-task assignment changes.' : 'This subtask has its own assignee override.'}</small>}</label>
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} startDate={item.startDate || ''} dueDate={item.dueDate || ''} followUpDate={item.followUpDate || ''} />
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>

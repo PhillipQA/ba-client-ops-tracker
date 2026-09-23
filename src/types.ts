@@ -78,6 +78,7 @@ export interface WorkItem {
   waitingOn: WaitingOn
   owner: string
   assignedToUserId?: string
+  assignmentInherited?: boolean
   dateRaised: string
   startDate?: string
   dueDate?: string
