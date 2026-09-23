@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.29**
+**Current release: v0.6.30**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,18 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.29
+## Current release — v0.6.30
+
+The login card now uses the password-recovery card's compact dimensions.
+
+- Shared 470px maximum card width and 28px padding (20px on small screens).
+- Matching 42px input/button heights, 13px form spacing, and 22px card corners.
+- Height remains content-driven; the card shrinks to fit narrow screens and login options can wrap.
+- The existing login colors, desktop illustration, authentication, and v0.6.29 blank-field behavior are retained.
+
+No database migration, new npm dependency, or environment change is required. See `UPGRADE-v0.6.30.md`.
+
+## Previous release — v0.6.29
 
 The login screen no longer pre-fills the Account and User fields with built-in values.
 
@@ -574,6 +585,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.30** | Login card width and form dimensions match password recovery |
 | **0.6.29** | Blank Account and User fields by default on the login screen |
 | **0.6.28** | Main-task assignee inheritance for subtasks with persistent per-subtask overrides |
 | **0.6.27** | Account-level Google OAuth credentials, private user connections and read-only schedules |
