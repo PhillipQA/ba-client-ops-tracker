@@ -55,7 +55,7 @@ import AccountUsers from './AccountUsers'
 import ThemePreferences from './ThemePreferences'
 import { askBAAssistant, type AIMessage, type AISuggestion } from './ai'
 import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems, seedPlannerActivities, seedProjects } from './data'
-import { importPrimaryCalendar } from './googleCalendar'
+import GoogleCalendarPanel from './GoogleCalendarPanel'
 import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
 import { loadNotifications, markAllNotificationsRead, updateNotification } from './notifications'
 import { addTaskComment, type TaskCommentMutationResult } from './taskComments'
@@ -378,8 +378,6 @@ function App() {
   const [taskPreset, setTaskPreset] = useState<{ clientId?: string; projectId?: string; type?: ItemType; parentTaskId?: string } | null>(null)
   const [modal, setModal] = useState<'item' | 'taskEdit' | 'client' | 'project' | 'activity' | null>(null)
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null)
-  const [calendarMessage, setCalendarMessage] = useState('')
-  const [calendarBusy, setCalendarBusy] = useState(false)
   const [aiClientId, setAiClientId] = useState('')
   const [aiProjectId, setAiProjectId] = useState('')
   const [aiPrompt, setAiPrompt] = useState('')
@@ -1164,33 +1162,6 @@ function App() {
     persist({ ...store, planner: store.planner.map((item) => item.id === id ? { ...item, status: item.status === 'Done' ? 'Planned' : 'Done' } : item) })
   }
 
-  const importCalendar = async () => {
-    if (!canWrite) return
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
-    if (!clientId) {
-      setCalendarMessage('Add VITE_GOOGLE_CLIENT_ID in .env.local to enable Google Calendar import. See README.')
-      return
-    }
-    setCalendarBusy(true)
-    setCalendarMessage('')
-    try {
-      const start = dateFromKey(TODAY)
-      start.setHours(0, 0, 0, 0)
-      const end = dateFromKey(addDays(weekEnd, 1))
-      end.setHours(0, 0, 0, 0)
-      const imported = await importPrimaryCalendar(clientId, start.toISOString(), end.toISOString())
-      const existingIds = new Set(store.planner.map((item) => item.calendarEventId).filter(Boolean))
-      const fresh = imported.filter((item) => !item.calendarEventId || !existingIds.has(item.calendarEventId))
-      persist({ ...store, planner: [...fresh, ...store.planner] })
-      setCalendarMessage(`${fresh.length} new calendar event${fresh.length === 1 ? '' : 's'} imported as local read-only copies.`)
-    } catch (error) {
-      setCalendarMessage(error instanceof Error ? error.message : 'Calendar import failed.')
-    } finally {
-      setCalendarBusy(false)
-    }
-  }
-
-
   const assessDashboardAI = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const text = dashboardAiPrompt.trim()
@@ -1350,19 +1321,17 @@ function App() {
 
             <div className="panel planner-panel dashboard-panel">
               <div className="panel-heading planner-heading dashboard-panel-heading">
-                <div><h2>Activities</h2><p>Account-shared calendar events plus follow-ups for {resolvedActionCenterScope.kind === 'all' ? 'all users' : resolvedActionCenterScope.kind === 'user' ? actionCenterUsers.find((account) => account.id === resolvedActionCenterScope.userId)?.name || 'the selected user' : 'you'}.</p></div>
+                <div><h2>Activities</h2><p>Shared tracker activities and legacy calendar copies, plus follow-ups for {resolvedActionCenterScope.kind === 'all' ? 'all users' : resolvedActionCenterScope.kind === 'user' ? actionCenterUsers.find((account) => account.id === resolvedActionCenterScope.userId)?.name || 'the selected user' : 'you'}.</p></div>
                 <div className="planner-actions dashboard-tabs">
                   <button className={activityRange === 'today' ? 'secondary active-tab' : 'secondary'} onClick={() => setActivityRange('today')}>Today</button>
                   <button className={activityRange === 'week' ? 'secondary active-tab' : 'secondary'} onClick={() => setActivityRange('week')}>This Week</button>
                   {currentUser.role !== 'Viewer' && canBrowseTeamActionCenter(currentUser.role) && <label className="action-center-scope"><Users size={15} /><span>Work view</span><select aria-label="Action Center work view" value={actionCenterScope} onChange={(event) => setActionCenterScope(event.target.value as ActionCenterScopeSelection)}><option value="mine">My Action Center</option><option value="all">View all users</option>{actionCenterUsers.filter((account) => account.id !== currentUser.id).map((account) => <option key={account.id} value={`user:${account.id}`}>View {account.name}</option>)}</select></label>}
-                  {canWrite && <button className="secondary" onClick={importCalendar} disabled={calendarBusy}><CalendarDays size={16} /> {calendarBusy ? 'Importing…' : 'Import Calendar'}</button>}
                   {canWrite && <button className="secondary" onClick={() => openActivityModal()}><Plus size={16} /> Add activity</button>}
                 </div>
               </div>
               <div className="activity-legend">
-                <span>Calendar = shared schedule</span><span>Tracker = shared, local only</span><span>Follow-up = assigned task/subtask</span><span>Week = Sunday–Saturday</span>{actionCenterScope === 'all' && <span>All users includes unassigned work</span>}
+                <span>Legacy calendar copies = shared</span><span>Tracker = shared, local only</span><span>Follow-up = assigned task/subtask</span><span>Week = Sunday–Saturday</span>{actionCenterScope === 'all' && <span>All users includes unassigned work</span>}
               </div>
-              {calendarMessage && <div className="calendar-message">{calendarMessage}</div>}
               <DashboardActivityTimeline
                 mode={activityRange}
                 items={activityRange === 'today' ? todayActivities : weekActivities}
@@ -1378,6 +1347,8 @@ function App() {
                 canEditTask={canEditActionItem}
               />
             </div>
+
+            <GoogleCalendarPanel key={`${currentUser.organizationId}:${currentUser.id}`} />
 
             {canUseAI && <div className="panel dashboard-panel dashboard-ai-card">
               <div className="panel-heading dashboard-panel-heading">

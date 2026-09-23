@@ -1,0 +1,15 @@
+.calendar-card { display: grid; gap: 14px; min-width: 0; }
+.calendar-card h2 { display: flex; align-items: center; gap: 8px; }
+.calendar-card p { margin: 0; }
+.calendar-card label { display: grid; gap: 6px; min-width: 0; }
+.calendar-card label.checkbox-label { display: flex; align-items: center; gap: 8px; }
+.calendar-card details { display: grid; gap: 10px; }
+.calendar-card summary { cursor: pointer; margin-bottom: 10px; }
+.calendar-card input:not([type=checkbox]) { width: 100%; min-width: 0; }
+.calendar-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.calendar-toolbar > span { margin-right: auto; overflow-wrap: anywhere; }
+.calendar-picker { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border, #ddd); border-radius: 10px; }
+.calendar-picker > button { justify-self: start; }
+.calendar-card .activity-tile { overflow-wrap: anywhere; }
+.calendar-break { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .calendar-toolbar > span { width: 100%; } .calendar-toolbar button { flex: 1 1 auto; } }

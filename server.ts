@@ -26,6 +26,7 @@ import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmai
 import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps, type FollowUpRolloverChange } from './follow-up-rollover'
 import { markAllNotificationsReadForUser, reconcileNotifications, updateNotificationForUser } from './notification-engine'
 import { preserveTaskSettings } from './tenant-save-settings'
+import { registerGoogleCalendarRoutes } from './google-calendar'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -1976,6 +1977,8 @@ registerAccountUsers(app, { requireAuth, requireTenant: requireTenantWorkspace, 
 registerPlatformSettings(app, { db: supabaseAdmin, requireAuth, requirePlatformAdmin, organizationById, loadTenantState, normalizedSchemaStatus, defaultTaskSettings, commitTenantState, integrations })
 registerIntegrationRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace,
   organizationById, store: integrations, reconnect: reconnectDiscord, status: discordStatusPayload })
+registerGoogleCalendarRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, requirePlatformAdmin,
+  organizationById, sessionFromRequest, sessionByToken: token => sessions.get(token) || null })
 
 app.get('/api/integrations/discord/inquiries', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser

@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.26**
+**Current release: v0.6.27**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,20 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.26
+## Current release — v0.6.27
+
+Google Calendar now uses account-level OAuth credentials and separate, private user connections.
+
+- Internal Admin enables Calendar for each tenant (disabled by default).
+- Account administrators upload the Google OAuth Web application JSON in Settings.
+- Users connect/disconnect their own Google account and select up to 10 calendars in Action Center → My Google Calendar.
+- Today and This Week (Sunday–Saturday) show read-only schedules, with recurring occurrences, all-day/multi-day events, and browser-local time zones.
+- Google credentials and user tokens are encrypted in Supabase, outside shared workspace data. Google schedules are not sent to AI or added to shared planner copies.
+- Existing activities and v0.6.26 save fixes are retained. The old browser-only Calendar importer is removed.
+
+**Apply the new `supabase/schema-v9-google-calendar.sql` migration.** No new npm dependency or Google credential environment variable is required. See `UPGRADE-v0.6.27.md` for setup and validation limits.
+
+## Previous release — v0.6.26
 
 v0.6.26 fixes Task and Subtask edits appearing to save in Action Center but disappearing after refresh.
 
@@ -374,7 +387,13 @@ Each enabled tenant can run its own Discord bot for supported DMs and @mentions.
 
 ## Google Calendar
 
-Google Calendar remains a **read-only browser OAuth integration** configured through `VITE_GOOGLE_CLIENT_ID`.
+Google Calendar uses **read-only server-side OAuth**, configured separately for each account. Internal Admin must enable the integration, then a tenant Administrator uploads its OAuth Web application JSON in Settings → Google Calendar. Each user connects from Action Center → My Google Calendar.
+
+The account setup screen shows the exact callback address: `https://YOUR-APP/api/integrations/google-calendar/callback`. Register that address on the Google OAuth Web client. The Client ID and Client Secret belong in the account configuration, **not Render environment variables**. `VITE_GOOGLE_CLIENT_ID` is no longer used.
+
+The existing server-side `TENANT_INTEGRATION_MASTER_KEY` encrypts both account credentials and user tokens. Do not replace an existing key or expose it to the browser. Tables are restricted to Supabase's service role, and every Calendar request checks current tenant/user permissions. Like the existing session system, OAuth pending states are in memory: run one application instance and restart the Connect flow after a deployment.
+
+New Google schedules remain private to the signed-in user even in team work views. They are fetched on opening the panel, changing date range, or choosing Refresh, and are not stored in shared planner state or sent to AI. Legacy imported planner copies remain shared as before; no ownership is guessed and no historical records are removed.
 
 Activities managed inside BA Client Ops Tracker do **not** write changes back to Google Calendar.
 
@@ -425,8 +444,9 @@ Apply the SQL files in this order for a fresh environment:
 6. `supabase/schema-v6-tenant-save-integrity.sql`
 7. `supabase/schema-v7-password-recovery.sql`
 8. `supabase/schema-v8-tenant-integrations.sql`
+9. `supabase/schema-v9-google-calendar.sql`
 
-v0.6.12 through v0.6.26 do not add another Supabase migration beyond the migrations already required by the current build.
+For an existing v0.6.26 installation, run only the new v9 migration for this upgrade. Do not rerun old data migrations on an existing tenant database.
 
 ### Bootstrap credentials
 
@@ -447,15 +467,15 @@ Always check the current version first:
 npm run patch:status
 ```
 
-For the current release, upgrade **v0.6.25 → v0.6.26** with the matching patch package:
+For the current release, upgrade **v0.6.26 → v0.6.27** with the matching patch package:
 
 ```bash
-npm run patch -- "path/to/ba-client-ops-patch-v0.6.26-action-center-save-hotfix.zip"
+npm run patch -- "path/to/ba-client-ops-patch-v0.6.27-google-calendar.zip"
 npm run patch:status
 npm run build
 ```
 
-Apply patches sequentially when starting from an older release. Each `UPGRADE-v0.6.x.md` file documents its expected starting version and validation steps.
+Apply `supabase/schema-v9-google-calendar.sql` before using Calendar, then restart/redeploy the server. Apply patches sequentially when starting from an older release. Each `UPGRADE-v0.6.x.md` file documents its expected starting version and validation steps.
 
 The patch updater creates rollback backups and protects environment files, dependencies, Git metadata, and local patch history.
 
@@ -485,7 +505,7 @@ npm start
 
 Keep infrastructure/server secrets such as Supabase service credentials, the integration encryption key, SMTP configuration, and other platform-level environment values in Render Environment.
 
-Tenant Discord and AI provider credentials are configured through tenant Account Settings rather than shared Render environment variables.
+Tenant Discord, AI provider and Google Calendar OAuth credentials are configured through tenant Account Settings rather than shared Render environment variables.
 
 Use one application instance unless the process-local session/Discord ownership behavior has been redesigned for multi-instance operation. Persistent tenant data, encrypted integrations, and saved templates live in Supabase; process restarts can still affect process-local sessions and connection ownership.
 
@@ -533,6 +553,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.27** | Account-level Google OAuth credentials, private user connections and read-only schedules |
 | **0.6.26** | Confirmed Task/Subtask saves and server-managed Task settings compatibility |
 | **0.6.25** | Action Center views for My work, all tenant users, or a selected user |
 | **0.6.24** | Per-user notifications, Admin team escalations, unread controls, deep links, and user comments |
@@ -555,4 +576,4 @@ For detailed release-specific instructions, see the matching `UPGRADE-v0.6.x.md`
 
 ## Current version
 
-**BA Client Ops Tracker v0.6.26**
+**BA Client Ops Tracker v0.6.27**
