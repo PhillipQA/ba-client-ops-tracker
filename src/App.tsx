@@ -1,7 +1,9 @@
 import ActivityCommentPreview from './ActivityCommentPreview'
+import NotificationCenter from './NotificationCenter'
 import RecordEditDialog from './RecordEditDialog'
 import LifecycleControls from './LifecycleControls'
 import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from './lifecycle'
+import { canBrowseTeamActionCenter, itemMatchesActionCenterScope, resolveActionCenterScope, trackedActionCenterUsers, type ActionCenterScopeSelection } from './actionCenterScope'
 import { FormEvent, type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
@@ -55,7 +57,9 @@ import { askBAAssistant, type AIMessage, type AISuggestion } from './ai'
 import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems, seedPlannerActivities, seedProjects } from './data'
 import { importPrimaryCalendar } from './googleCalendar'
 import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
-import type { ActivityLog, AppModule, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkActivityEvent, WorkItem } from './types'
+import { loadNotifications, markAllNotificationsRead, updateNotification } from './notifications'
+import { addTaskComment, type TaskCommentMutationResult } from './taskComments'
+import type { ActivityLog, AppModule, AppNotification, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkActivityEvent, WorkItem } from './types'
 import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTIONS, type AppTheme } from './theme'
 import { APP_VERSION } from './version'
 
@@ -69,6 +73,7 @@ type Store = {
   activity: ActivityLog[]
   planner: PlannerActivity[]
   workEvents: WorkActivityEvent[]
+  notifications: AppNotification[]
   accounts: UserAccount[]
   taskSettings: TaskSettings
 }
@@ -94,6 +99,7 @@ const seedStore = (): Store => ({
   activity: seedActivity,
   planner: seedPlannerActivities,
   workEvents: [],
+  notifications: [],
   accounts: seedAccounts,
   taskSettings: defaultTaskSettings,
 })
@@ -180,6 +186,15 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
   const activity = Array.isArray(parsed.activity) ? parsed.activity.filter((item) => !legacy || !legacyDemoIds.activity.has(item.id)) : fallback.activity
   const planner = Array.isArray(parsed.planner) ? parsed.planner.filter((item) => !legacy || !legacyDemoIds.planner.has(item.id)) : fallback.planner
   const workEvents = Array.isArray(parsed.workEvents) ? parsed.workEvents.filter((event) => event && event.id && event.taskId && event.actorUserId) : []
+  const notifications = Array.isArray(parsed.notifications) ? parsed.notifications.filter((notification) => notification && notification.id && notification.recipientUserId && notification.createdAt).map((notification) => ({
+    ...notification,
+    id: String(notification.id),
+    dedupeKey: String(notification.dedupeKey || notification.id),
+    recipientUserId: String(notification.recipientUserId),
+    createdAt: String(notification.createdAt),
+    title: String(notification.title || 'Notification'),
+    message: String(notification.message || ''),
+  })) as AppNotification[] : []
   const migratedAccounts = Array.isArray(parsed.accounts) ? parsed.accounts.map((account, index) => normalizeAccount(account, index)).filter((account): account is UserAccount => Boolean(account)) : []
   const accounts = migratedAccounts.length ? migratedAccounts : [...seedAccounts]
   if (!accounts.some((account) => account.role === 'Administrator' && account.status === 'Active')) accounts.unshift(seedAccounts[0])
@@ -215,7 +230,7 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
       daysMoved: Number.isFinite(comment.daysMoved) ? Number(comment.daysMoved) : undefined,
     })) : [],
   }))
-  return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, workEvents, accounts, taskSettings }
+  return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, workEvents, notifications, accounts, taskSettings }
 }
 
 const initialStore = (): Store => {
@@ -368,6 +383,7 @@ function App() {
   const [aiProjectId, setAiProjectId] = useState('')
   const [aiPrompt, setAiPrompt] = useState('')
   const [activityRange, setActivityRange] = useState<'today' | 'week'>('today')
+  const [actionCenterScope, setActionCenterScope] = useState<ActionCenterScopeSelection>('mine')
   const [dashboardAiPrompt, setDashboardAiPrompt] = useState('')
   const [dashboardAiBusy, setDashboardAiBusy] = useState(false)
   const [dashboardAiError, setDashboardAiError] = useState('')
@@ -381,6 +397,7 @@ function App() {
   const [loginBusy, setLoginBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [newExternalInquiryIds, setNewExternalInquiryIds] = useState<string[]>([])
+  const [notificationBusy, setNotificationBusy] = useState(false)
   const storeRef = useRef(store)
   const discordPollBusy = useRef(false)
 
@@ -402,6 +419,8 @@ function App() {
     })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => { setActionCenterScope('mine') }, [authUser?.id, authUser?.organizationId])
 
   useEffect(() => {
     if (!authUser) return
@@ -500,6 +519,40 @@ function App() {
     }
   }, [authUser?.id])
 
+  useEffect(() => {
+    if (!authUser || authUser.accountType === 'platform') return
+    let cancelled = false
+    let busy = false
+    const refreshNotifications = async () => {
+      if (busy) return
+      busy = true
+      try {
+        const result = await loadNotifications()
+        if (cancelled) return
+        const current = storeRef.current
+        const next = { ...current, notifications: result.notifications }
+        storeRef.current = next
+        setStore(next)
+        localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(next))
+        if (result.updatedAt) setLastCloudSync(result.updatedAt)
+      } catch (error) {
+        if (!cancelled) console.error('Notification refresh failed:', error)
+      } finally {
+        busy = false
+      }
+    }
+    const initial = window.setTimeout(() => void refreshNotifications(), 1500)
+    const timer = window.setInterval(() => void refreshNotifications(), 60_000)
+    const onFocus = () => void refreshNotifications()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.clearTimeout(initial)
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [authUser?.id])
+
   const persist = (next: Store) => {
     try { assertLifecycleMutation(storeRef.current, next, authUser) }
     catch (error) { window.alert(error instanceof Error ? error.message : 'This change is not allowed.'); return false }
@@ -551,6 +604,15 @@ function App() {
     } finally { setLifecycleSaving(false) }
   }
 
+  const acceptNotificationPayload = (notifications: AppNotification[], updatedAt?: string) => {
+    const current = storeRef.current
+    const next = { ...current, notifications }
+    storeRef.current = next
+    setStore(next)
+    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
+    if (updatedAt) setLastCloudSync(updatedAt)
+  }
+
   const applyEvidenceMutation = (result: TaskEvidenceMutationResult) => {
     const current = storeRef.current
     const previous = current.items.find((item) => item.id === result.item.id)
@@ -571,6 +633,7 @@ function App() {
       items: current.items.map((item) => item.id === result.item.id ? result.item : item),
       activity: result.activity ? [result.activity, ...current.activity.filter((entry) => entry.id !== result.activity?.id)] : current.activity,
       workEvents: explicitEvidenceEvent ? [explicitEvidenceEvent, ...current.workEvents].slice(0, 10000) : current.workEvents,
+      notifications: result.notifications || current.notifications,
     }
     storeRef.current = next
     setStore(next)
@@ -578,6 +641,21 @@ function App() {
     if (result.updatedAt) setLastCloudSync(result.updatedAt)
     setCloudStatus('synced')
     setCloudMessage('Supabase synced')
+  }
+
+  const applyCommentMutation = (result: TaskCommentMutationResult) => {
+    const current = storeRef.current
+    const next: Store = {
+      ...current,
+      items: current.items.map((item) => item.id === result.item.id ? result.item : item),
+      notifications: result.notifications || current.notifications,
+    }
+    storeRef.current = next
+    setStore(next)
+    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
+    if (result.updatedAt) setLastCloudSync(result.updatedAt)
+    setCloudStatus('synced')
+    setCloudMessage('Comment saved · Supabase synced')
   }
 
   const syncCloudNow = async () => {
@@ -656,6 +734,45 @@ function App() {
   const canWriteTasks = canWrite && (hasModule('items') || hasModule('inbox'))
   const canUseAI = Boolean(currentUser && currentUser.role !== 'Viewer' && hasModule('ai'))
   const visibleNavItems = currentUser ? navItems.filter((item) => hasModule(item.id) && (item.id !== 'ai' || canUseAI)) : []
+
+  const handleNotificationAction = async (notification: AppNotification, action: 'read' | 'unread' | 'dismiss') => {
+    if (notificationBusy) return
+    setNotificationBusy(true)
+    try {
+      const result = await updateNotification(notification.id, action)
+      acceptNotificationPayload(result.notifications, result.updatedAt)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Notification could not be updated.')
+    } finally {
+      setNotificationBusy(false)
+    }
+  }
+
+  const handleReadAllNotifications = async () => {
+    if (notificationBusy) return
+    setNotificationBusy(true)
+    try {
+      const result = await markAllNotificationsRead()
+      acceptNotificationPayload(result.notifications, result.updatedAt)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Notifications could not be updated.')
+    } finally {
+      setNotificationBusy(false)
+    }
+  }
+
+  const openNotification = (notification: AppNotification) => {
+    if (!notification.readAt) void handleNotificationAction(notification, 'read')
+    const item = notification.taskId ? storeRef.current.items.find((candidate) => candidate.id === notification.taskId) : undefined
+    if (!item) return
+    setSelectedClientId(null)
+    setSelectedProjectId(null)
+    setView(hasModule('items') ? 'items' : 'inbox')
+    if (canWriteTasks) {
+      setEditingTaskId(item.id)
+      setModal('taskEdit')
+    }
+  }
 
   useEffect(() => {
     if (!currentUser) return
@@ -784,7 +901,20 @@ function App() {
       })
   }, [store.items, query, waitingFilter, store.clients, store.projects])
 
-  const actionItems = searchedItems.filter((item) => (currentUser?.role !== 'Contributor' || item.assignedToUserId === currentUser.id) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+  const actionCenterUsers = trackedActionCenterUsers(store.accounts)
+  const resolvedActionCenterScope = resolveActionCenterScope(actionCenterScope, currentUser?.id || '', currentUser?.role || 'Viewer', store.accounts)
+  const actionCenterScopeLabel = resolvedActionCenterScope.kind === 'all' ? 'All Users’ Action Center' : resolvedActionCenterScope.kind === 'user' ? `${actionCenterUsers.find((account) => account.id === resolvedActionCenterScope.userId)?.name || 'User'}’s Action Center` : 'My Action Center'
+  const matchesActionCenterScope = (item: WorkItem) => itemMatchesActionCenterScope(item, resolvedActionCenterScope)
+  const actionCenterWorkItems = store.items.filter((item) => matchesActionCenterScope(item) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+  const actionItems = searchedItems.filter((item) => matchesActionCenterScope(item) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+  const canEditActionItem = (item: WorkItem) => canWriteTasks && (currentUser?.role === 'Administrator' || item.assignedToUserId === currentUser?.id)
+  const actionCenterWaitingDev = actionCenterWorkItems.filter((item) => item.waitingOn === 'Developer')
+  const actionCenterClientCount = new Set(actionCenterWorkItems.map((item) => item.clientId).filter(Boolean)).size
+  const actionCenterWaitingDevOverdue = actionCenterWaitingDev.filter((item) => item.followUpDate && item.followUpDate < TODAY).length
+  const actionCenterInquiryCount = actionCenterWorkItems.filter((item) => item.type === 'Inquiry').length
+  useEffect(() => {
+    if (actionCenterScope.startsWith('user:') && !actionCenterUsers.some((account) => account.id === actionCenterScope.slice('user:'.length))) setActionCenterScope('mine')
+  }, [actionCenterScope, store.accounts])
   const dashboardAiContext = useMemo(() => {
     const client = store.clients.find((value) => value.id === aiClientId)
     const project = store.projects.find((value) => value.id === aiProjectId)
@@ -978,10 +1108,10 @@ function App() {
   const sortedPlanner = [...store.planner].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
   const todayActivities = sortedPlanner.filter((item) => item.date === TODAY && item.status !== 'Cancelled')
   const weekActivities = sortedPlanner.filter((item) => item.date >= weekStart && item.date <= weekEnd && item.status !== 'Cancelled')
-  const todayFollowUps = openItems
+  const todayFollowUps = actionCenterWorkItems
     .filter((item) => item.followUpDate === TODAY)
     .sort((a, b) => priorityRank[b.priority] - priorityRank[a.priority] || a.title.localeCompare(b.title))
-  const weekFollowUps = openItems
+  const weekFollowUps = actionCenterWorkItems
     .filter((item) => item.followUpDate && item.followUpDate >= weekStart && item.followUpDate <= weekEnd)
     .sort((a, b) => a.followUpDate.localeCompare(b.followUpDate) || priorityRank[b.priority] - priorityRank[a.priority] || a.title.localeCompare(b.title))
   const editingActivity = editingActivityId ? store.planner.find((item) => item.id === editingActivityId) ?? null : null
@@ -1164,6 +1294,7 @@ function App() {
         <header className="topbar">
           <div><p className="eyebrow">{currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}</p><div className="record-title-line"><h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1>{canWrite && ((selectedClient && hasModule('clients')) || (selectedProject && hasModule('projects'))) && <button className="secondary record-title-edit" onClick={() => setEditingRecord(selectedProject ? { kind: 'projects', id: selectedProject.id } : { kind: 'clients', id: selectedClient!.id })}><Pencil size={16} />{selectedProject ? 'Edit project' : 'Edit client'}</button>}</div></div>
           <div className="top-actions">
+            {currentUser.accountType !== 'platform' && <NotificationCenter notifications={store.notifications} clients={store.clients} projects={store.projects} isAdmin={currentUser.role === 'Administrator'} busy={notificationBusy} onOpen={openNotification} onAction={handleNotificationAction} onReadAll={handleReadAllNotifications} />}
             <span className="top-role-pill">{view === 'internal-admin' && currentUser.accountType === 'platform' ? 'Platform Admin' : currentUser.role}</span>
             {view !== 'internal-admin' && canWrite && hasModule('clients') && <button className="secondary" onClick={() => setModal('client')}><Users size={17} /> Add client</button>}
             {view !== 'internal-admin' && canWrite && !isArchived(selectedClient || undefined) && !isArchived(selectedProject || undefined) && !isArchived(store.clients.find(client => client.id === selectedProjectClientId)) && (hasModule('items') || hasModule('inbox')) && <button className="primary" onClick={() => {
@@ -1182,24 +1313,25 @@ function App() {
         {!selectedClient && !selectedProject && view === 'action' && hasModule('action') && (
           <section className="page-stack dashboard-stack">
             <div className="metric-grid dashboard-metrics">
-              <Metric title="Needs attention" value={openItems.length} detail={`Across ${attentionClientCount} client${attentionClientCount === 1 ? '' : 's'}`} icon={<AlertTriangle size={18} />} />
-              <Metric title="Waiting on Dev" value={waitingDev.length} detail={`${waitingDevOverdue} overdue`} icon={<Settings2 size={18} />} />
+              <Metric title="Needs attention" value={actionCenterWorkItems.length} detail={`Across ${actionCenterClientCount} client${actionCenterClientCount === 1 ? '' : 's'}`} icon={<AlertTriangle size={18} />} />
+              <Metric title="Waiting on Dev" value={actionCenterWaitingDev.length} detail={`${actionCenterWaitingDevOverdue} overdue`} icon={<Settings2 size={18} />} />
               <Metric title="Activities today" value={todayActivities.length + todayFollowUps.length} detail={`${todayActivities.filter((item) => item.source === 'Google Calendar').length} meetings · ${todayActivities.filter((item) => item.source === 'Local').length} tracker activities · ${todayFollowUps.length} follow-ups`} icon={<CalendarDays size={18} />} />
-              <Metric title="Open inquiries" value={openInquiryCount} detail="Need classification" icon={<Inbox size={18} />} />
+              <Metric title="Open inquiries" value={actionCenterInquiryCount} detail="Need classification" icon={<Inbox size={18} />} />
             </div>
 
             <div className="panel planner-panel dashboard-panel">
               <div className="panel-heading planner-heading dashboard-panel-heading">
-                <div><h2>Activities</h2><p>Meetings, tracker activities, and task/subtask follow-ups in one place.</p></div>
+                <div><h2>Activities</h2><p>Account-shared calendar events plus follow-ups for {resolvedActionCenterScope.kind === 'all' ? 'all users' : resolvedActionCenterScope.kind === 'user' ? actionCenterUsers.find((account) => account.id === resolvedActionCenterScope.userId)?.name || 'the selected user' : 'you'}.</p></div>
                 <div className="planner-actions dashboard-tabs">
                   <button className={activityRange === 'today' ? 'secondary active-tab' : 'secondary'} onClick={() => setActivityRange('today')}>Today</button>
                   <button className={activityRange === 'week' ? 'secondary active-tab' : 'secondary'} onClick={() => setActivityRange('week')}>This Week</button>
+                  {currentUser.role !== 'Viewer' && canBrowseTeamActionCenter(currentUser.role) && <label className="action-center-scope"><Users size={15} /><span>Work view</span><select aria-label="Action Center work view" value={actionCenterScope} onChange={(event) => setActionCenterScope(event.target.value as ActionCenterScopeSelection)}><option value="mine">My Action Center</option><option value="all">View all users</option>{actionCenterUsers.filter((account) => account.id !== currentUser.id).map((account) => <option key={account.id} value={`user:${account.id}`}>View {account.name}</option>)}</select></label>}
                   {canWrite && <button className="secondary" onClick={importCalendar} disabled={calendarBusy}><CalendarDays size={16} /> {calendarBusy ? 'Importing…' : 'Import Calendar'}</button>}
                   {canWrite && <button className="secondary" onClick={() => openActivityModal()}><Plus size={16} /> Add activity</button>}
                 </div>
               </div>
               <div className="activity-legend">
-                <span>Calendar = imported</span><span>Tracker = local only</span><span>Follow-up = task/subtask date</span><span>Week = Sunday–Saturday</span>
+                <span>Calendar = shared schedule</span><span>Tracker = shared, local only</span><span>Follow-up = assigned task/subtask</span><span>Week = Sunday–Saturday</span>{actionCenterScope === 'all' && <span>All users includes unassigned work</span>}
               </div>
               {calendarMessage && <div className="calendar-message">{calendarMessage}</div>}
               <DashboardActivityTimeline
@@ -1207,12 +1339,14 @@ function App() {
                 items={activityRange === 'today' ? todayActivities : weekActivities}
                 followUps={activityRange === 'today' ? todayFollowUps : weekFollowUps}
                 allItems={store.items}
+                accounts={store.accounts}
                 clients={store.clients}
                 projects={store.projects}
                 onEdit={openActivityModal}
                 onToggle={toggleActivityDone}
                 onEditTask={openTaskEditor}
                 canEdit={canWrite}
+                canEditTask={canEditActionItem}
               />
             </div>
 
@@ -1238,8 +1372,8 @@ function App() {
             </div>}
 
             <div className="panel dashboard-panel action-center-panel">
-              <div className="panel-heading dashboard-panel-heading"><div><h2>My Action Center</h2><p>Activities and follow-ups stay connected, but remain different concepts.</p></div>{hasModule('items') && <button className="secondary" onClick={() => setView('items')}>View all tasks</button>}</div>
-              <DashboardActionTable items={actionItems} clients={store.clients} projects={store.projects} planner={store.planner} />
+              <div className="panel-heading dashboard-panel-heading"><div><h2>{actionCenterScopeLabel}</h2><p>Open tasks and subtasks for the selected user view. {resolvedActionCenterScope.kind === 'all' ? 'Unassigned work is included.' : ''}</p></div>{hasModule('items') && <button className="secondary" onClick={() => setView('items')}>View all tasks</button>}</div>
+              <DashboardActionTable key={actionCenterScope} items={actionItems} accounts={store.accounts} clients={store.clients} projects={store.projects} planner={store.planner} />
             </div>
           </section>
         )}
@@ -1336,7 +1470,7 @@ function App() {
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
         {modal === 'item' && <TaskForm store={store} preset={taskPreset} onSubmit={(item) => { const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined; persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: parent ? `Created subtask under ${parent.title}: ${item.title}` : `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
-        {modal === 'taskEdit' && editingTask && <TaskEditForm store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} />}
+        {modal === 'taskEdit' && editingTask && <TaskEditForm store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} onCommentMutation={applyCommentMutation} />}
         {modal === 'client' && <ClientForm onSubmit={(client) => { persist({ ...store, clients: [...store.clients, client] }); setModal(null) }} />}
         {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
         {modal === 'activity' && <ActivityForm clients={store.clients} projects={store.projects} initial={editingActivity} onSubmit={saveActivity} />}
@@ -1449,7 +1583,7 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
 
 
 
-function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, projects, onEdit, onToggle, onEditTask, canEdit }: { mode: 'today' | 'week'; items: PlannerActivity[]; followUps: WorkItem[]; allItems: WorkItem[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void; onEditTask: (id: string) => void; canEdit: boolean }) {
+function DashboardActivityTimeline({ mode, items, followUps, allItems, accounts, clients, projects, onEdit, onToggle, onEditTask, canEdit, canEditTask }: { mode: 'today' | 'week'; items: PlannerActivity[]; followUps: WorkItem[]; allItems: WorkItem[]; accounts: UserAccount[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void; onEditTask: (id: string) => void; canEdit: boolean; canEditTask: (item: WorkItem) => boolean }) {
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name : ''
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name : ''
   const entries = [
@@ -1463,15 +1597,17 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, 
       const parent = item.parentTaskId ? allItems.find((candidate) => candidate.id === item.parentTaskId) : undefined
       const context = [clientName(item.clientId), projectName(item.projectId)].filter(Boolean).join(' · ')
       const overdue = Boolean((item.dueDate && item.dueDate < TODAY) || item.followUpDate < TODAY)
+      const assignedTo = accounts.find((account) => account.id === item.assignedToUserId)?.name || 'Unassigned'
+      const canEditThisItem = canEditTask(item)
       return <article className={`activity-tile${overdue ? ' activity-tile-overdue' : ''}`} key={`followup-${item.id}`}>
         <div className="activity-tile-top"><span className="activity-tile-kind">{item.parentTaskId ? 'Subtask' : 'Task'} follow-up</span>{overdue && <span className="activity-overdue-label">Overdue</span>}</div>
-        <h3>{canEdit ? <button type="button" className="activity-tile-title" onClick={() => onEditTask(item.id)}>{item.title}</button> : item.title}</h3>
+        <h3>{canEditThisItem ? <button type="button" className="activity-tile-title" onClick={() => onEditTask(item.id)}>{item.title}</button> : item.title}</h3>
         <p className="activity-tile-context">{context || 'General'}</p>
         {parent && <p className="activity-tile-parent">Parent task: {parent.title}</p>}
         <div className="activity-tile-badges"><StatusChip value={item.status} /><PriorityChip value={item.priority} /></div>
-        <div className="activity-tile-details"><span>Follow-up: <b>{niceDate(item.followUpDate)}</b></span>{item.dueDate && <span>Due: <b>{niceDate(item.dueDate)}</b></span>}<span>Waiting on: <b>{item.waitingOn}</b></span></div>
+        <div className="activity-tile-details"><span>Assigned to: <b>{assignedTo}</b></span><span>Follow-up: <b>{niceDate(item.followUpDate)}</b></span>{item.dueDate && <span>Due: <b>{niceDate(item.dueDate)}</b></span>}<span>Waiting on: <b>{item.waitingOn}</b></span></div>
         <ActivityCommentPreview text={[item.description, ...(item.comments || []).slice(-3).map((comment) => `${comment.createdByName}: ${comment.text}`)].filter(Boolean).join('\n\n')} title={item.title} />
-        {canEdit && <div className="activity-tile-actions"><button className="secondary compact" type="button" onClick={() => onEditTask(item.id)}>Edit {item.parentTaskId ? 'subtask' : 'task'}</button></div>}
+        {canEditThisItem && <div className="activity-tile-actions"><button className="secondary compact" type="button" onClick={() => onEditTask(item.id)}>Edit {item.parentTaskId ? 'subtask' : 'task'}</button></div>}
       </article>
     }
     const activity = entry.activity
@@ -1493,7 +1629,7 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, 
   })}</div>
 }
 
-function DashboardActionTable({ items, clients, projects, planner }: { items: WorkItem[]; clients: Client[]; projects: Project[]; planner: PlannerActivity[] }) {
+function DashboardActionTable({ items, accounts, clients, projects, planner }: { items: WorkItem[]; accounts: UserAccount[]; clients: Client[]; projects: Project[]; planner: PlannerActivity[] }) {
   const [pageSize, setPageSize] = useState(10)
   const [page, setPage] = useState(1)
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown' : 'General'
@@ -1507,10 +1643,11 @@ function DashboardActionTable({ items, clients, projects, planner }: { items: Wo
   useEffect(() => { if (page !== safePage) setPage(safePage) }, [page, safePage])
   if (!items.length) return <Empty text="Nothing needs your attention right now." />
   return <>
-    <div className="table-scroll"><table className="dashboard-action-table"><thead><tr><th>Client</th><th>Task</th><th>Waiting on</th><th>Follow-up</th><th>Next activity</th></tr></thead><tbody>{visibleItems.map((item) => {
+    <div className="table-scroll"><table className="dashboard-action-table"><thead><tr><th>Client</th><th>Task</th><th>Assigned to</th><th>Waiting on</th><th>Follow-up</th><th>Next activity</th></tr></thead><tbody>{visibleItems.map((item) => {
       const activity = nextActivity(item)
       const activityLabel = activity ? `${activity.date === TODAY ? activityTime(activity) : `${niceDate(activity.date)} · ${activityTime(activity)}`} — ${activity.title}` : '—'
-      return <tr key={item.id}><td><strong>{clientName(item.clientId)}</strong></td><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < TODAY ? 'overdue-date' : ''}>{item.followUpDate === TODAY ? 'Today' : niceDate(item.followUpDate)}</td><td>{activityLabel}</td></tr>
+      const assignee = accounts.find((account) => account.id === item.assignedToUserId)?.name || 'Unassigned'
+      return <tr key={item.id}><td><strong>{clientName(item.clientId)}</strong></td><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{assignee}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < TODAY ? 'overdue-date' : ''}>{item.followUpDate === TODAY ? 'Today' : niceDate(item.followUpDate)}</td><td>{activityLabel}</td></tr>
     })}</tbody></table></div>
     <div className="dashboard-action-pagination">
       <label>Items per page<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1) }}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label>
@@ -1821,7 +1958,7 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
   </form>
 }
 
-function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => void; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void }) {
+function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => void; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void }) {
   const [type, setType] = useState<ItemType>(item.type)
   const [status, setStatus] = useState(item.status)
   const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined
@@ -1866,20 +2003,41 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation }: {
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} startDate={item.startDate || ''} dueDate={item.dueDate || ''} followUpDate={item.followUpDate || ''} />
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>
-    {parent && <SubtaskCommentTrail item={item} />}
+    <WorkCommentTrail item={item} onMutation={onCommentMutation} />
     {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
     <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete {parent ? 'subtask' : 'task'}</button><button className="primary">Save changes</button></div>
   </form>
 }
 
-function SubtaskCommentTrail({ item }: { item: WorkItem }) {
+function WorkCommentTrail({ item, onMutation }: { item: WorkItem; onMutation: (result: TaskCommentMutationResult) => void }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
   const comments = [...(item.comments || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const submitComment = async () => {
+    const trimmed = text.trim()
+    if (!trimmed || busy) return
+    setBusy(true)
+    setMessage('')
+    try {
+      const result = await addTaskComment(item.id, trimmed)
+      onMutation(result)
+      setText('')
+      setMessage('Comment added.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Comment could not be saved.')
+    } finally {
+      setBusy(false)
+    }
+  }
   return <section className="subtask-comment-trail span-2">
-    <div className="subtask-comment-heading"><div><strong><MessageSquareText size={15} /> Follow-up history</strong><span>System entries are permanent and identify every automatic rollover.</span></div><span className="count-pill">{comments.length}</span></div>
+    <div className="subtask-comment-heading"><div><strong><MessageSquareText size={15} /> Activity comments</strong><span>User notes and permanent System follow-up entries.</span></div><span className="count-pill">{comments.length}</span></div>
+    <div className="task-comment-composer"><textarea value={text} maxLength={2000} rows={2} placeholder="Add a comment for the assignee or team…" onChange={(event) => setText(event.target.value)} /><button className="secondary" type="button" disabled={!text.trim() || busy} onClick={() => void submitComment()}>{busy ? 'Adding…' : 'Add comment'}</button></div>
+    {message && <div className={`task-comment-message${message === 'Comment added.' ? ' success' : ''}`}>{message}</div>}
     {comments.length ? <div className="subtask-comment-list">{comments.map((comment) => <article key={comment.id} className="subtask-comment-entry">
-      <div><span className="system-comment-badge">System</span><time>{evidenceDate(comment.createdAt)}</time></div>
+      <div><span className={comment.kind === 'System' ? 'system-comment-badge' : 'user-comment-badge'}>{comment.kind === 'System' ? 'System' : comment.createdByName || 'User'}</span><time>{evidenceDate(comment.createdAt)}</time></div>
       <p>{comment.text}</p>
-    </article>)}</div> : <div className="subtask-comment-empty">No automatic follow-up changes yet.</div>}
+    </article>)}</div> : <div className="subtask-comment-empty">No comments yet.</div>}
   </section>
 }
 

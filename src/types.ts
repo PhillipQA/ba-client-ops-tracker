@@ -92,7 +92,7 @@ export interface WorkItem {
   comments?: TaskComment[]
 }
 
-export type WorkActivityAction = 'created' | 'assigned' | 'reassigned' | 'started' | 'status_changed' | 'updated' | 'completed' | 'reopened' | 'deleted' | 'evidence_uploaded' | 'evidence_deleted' | 'follow_up_auto_moved'
+export type WorkActivityAction = 'created' | 'assigned' | 'reassigned' | 'started' | 'status_changed' | 'updated' | 'completed' | 'reopened' | 'deleted' | 'evidence_uploaded' | 'evidence_deleted' | 'follow_up_auto_moved' | 'comment_added'
 
 export interface WorkActivityEvent {
   id: string
@@ -114,6 +114,29 @@ export interface WorkActivityEvent {
   field?: string
   oldValue?: string
   newValue?: string
+}
+
+export type NotificationType = 'assigned' | 'reassigned' | 'due_today' | 'overdue' | 'follow_up_today' | 'follow_up_moved' | 'completed' | 'reopened' | 'evidence_uploaded' | 'comment_added'
+export type NotificationSeverity = 'info' | 'warning' | 'urgent' | 'success'
+
+export interface AppNotification {
+  id: string
+  dedupeKey: string
+  recipientUserId: string
+  createdAt: string
+  type: NotificationType
+  scope: 'personal' | 'team'
+  severity: NotificationSeverity
+  title: string
+  message: string
+  taskId?: string
+  parentTaskId?: string
+  clientId?: string
+  projectId?: string
+  actorUserId?: string
+  actorName?: string
+  readAt?: string
+  dismissedAt?: string
 }
 
 export interface ActivityLog {

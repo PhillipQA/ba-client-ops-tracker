@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.23**
+**Current release: v0.6.25**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,24 +8,33 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.23
+## Current release — v0.6.25
 
-v0.6.23 adds **Automatic Subtask Follow-up Rollover** on top of the v0.6.22 scheduling UI.
+v0.6.25 adds multi-user views to the Action Center for shared tenant work.
 
-### Automatic follow-up highlights
+### Action Center visibility highlights
 
-- An open Subtask whose Follow-up Date has passed automatically moves to the current calendar day.
-- Done, Resolved, Closed, configured closed statuses, and Waiting on Done do not roll forward.
-- Every automatic change creates a permanent System comment and `follow_up_auto_moved` activity event.
-- System comments cannot be created, edited, or deleted by browser-submitted workspace data.
-- The Edit Subtask screen includes a read-only Follow-up History panel.
-- Action Center comment previews include recent System rollover entries.
-- Processing is idempotent and runs at startup, every five minutes while the server is active, and when tenant data is loaded.
-- After downtime, the date catches up once with the number of missed calendar days recorded in the trail.
-- The default rollover timezone is `Asia/Manila`; deployments can override it with the optional `FOLLOW_UP_TIME_ZONE` environment variable.
-- AI context and user reports receive the System activity event and updated Follow-up Date.
+- Active Administrators and Contributors can switch Action Center work views between **My Action Center**, **View all users**, and a selected user.
+- “My” shows Tasks/Subtasks assigned to the signed-in user. Selecting another user shows only work assigned to that user.
+- “View all users” shows open assigned and unassigned work across every client in the tenant.
+- Follow-up tiles, Action Center rows, and the dashboard workload metrics all follow the selected view.
+- Team rows show the assignee. Contributors can view other users’ assigned work without opening its edit controls; Administrators retain edit access.
+- Viewers do not receive the cross-user selector and remain excluded from work reporting.
+- Calendar and tracker schedule entries remain shared account-wide because those records do not have an individual owner.
 
-No new required environment variable, npm dependency, or Supabase migration is required for v0.6.23.
+No new required environment variable, npm dependency, or Supabase migration is required for v0.6.25.
+
+---
+
+## Previous release — v0.6.24
+
+v0.6.24 added the Notifications & Escalation Center, per-user alert controls, and user comment trails.
+
+---
+
+## Previous release — v0.6.23
+
+v0.6.23 added automatic open-Subtask follow-up rollover with permanent System comments and activity history.
 
 ---
 
@@ -124,7 +133,7 @@ The Action Center combines activities, follow-ups, and AI-assisted assessment wi
 
 Track work with configurable fields such as status, type, waiting on, priority, assigned tenant user, start date, due date, and follow-up date.
 
-Subtasks support activity tracking, comments, follow-up dates, reordering, and evidence uploads. Completion and archive state remain separate concepts so historical work can stay available after closure.
+Tasks and Subtasks support activity tracking and immutable user comments. Subtasks additionally support follow-up dates, reordering, and evidence uploads. Completion and archive state remain separate concepts so historical work can stay available after closure.
 
 ### Inbox / Inquiries
 
@@ -409,7 +418,7 @@ Apply the SQL files in this order for a fresh environment:
 7. `supabase/schema-v7-password-recovery.sql`
 8. `supabase/schema-v8-tenant-integrations.sql`
 
-v0.6.12 through v0.6.23 do not add another Supabase migration beyond the migrations already required by the current build.
+v0.6.12 through v0.6.25 do not add another Supabase migration beyond the migrations already required by the current build.
 
 ### Bootstrap credentials
 
@@ -430,10 +439,10 @@ Always check the current version first:
 npm run patch:status
 ```
 
-For the current release, upgrade **v0.6.22 → v0.6.23** with the matching patch package:
+For the current release, upgrade **v0.6.24 → v0.6.25** with the matching patch package:
 
 ```bash
-npm run patch -- "path/to/ba-client-ops-patch-v0.6.23-follow-up-rollover.zip"
+npm run patch -- "path/to/ba-client-ops-patch-v0.6.25-action-center-views.zip"
 npm run patch:status
 npm run build
 ```
@@ -516,6 +525,8 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.25** | Action Center views for My work, all tenant users, or a selected user |
+| **0.6.24** | Per-user notifications, Admin team escalations, unread controls, deep links, and user comments |
 | **0.6.23** | Automatic open-Subtask follow-up rollover with permanent System comments and activity history |
 | **0.6.22** | Subtask Start Date visibility hotfix for create, edit, inline rows, and legacy column preferences |
 | **0.6.21** | Tenant-user Task/Subtask assignment, Start Date, authenticated work history, user reports, User Gantt, and user-aware AI |
@@ -535,4 +546,4 @@ For detailed release-specific instructions, see the matching `UPGRADE-v0.6.x.md`
 
 ## Current version
 
-**BA Client Ops Tracker v0.6.23**
+**BA Client Ops Tracker v0.6.25**

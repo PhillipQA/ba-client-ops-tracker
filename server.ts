@@ -24,6 +24,7 @@ import { createServer as createViteServer } from 'vite'
 import { normalizeAppTheme, normalizeClientThemes } from './src/theme'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './password-recovery-email'
 import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps, type FollowUpRolloverChange } from './follow-up-rollover'
+import { markAllNotificationsReadForUser, reconcileNotifications, updateNotificationForUser } from './notification-engine'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -180,13 +181,16 @@ function sessionCookie(token: string, maxAge: number) {
   return `ba_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${isProduction ? '; Secure' : ''}`
 }
 
-function sanitizeStateForClient(state: any) {
+function sanitizeStateForClient(state: any, user: SessionUser) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return state
   return {
     ...state,
     accounts: Array.isArray(state.accounts)
       ? state.accounts.map((account: any) => ({ ...account, passwordHash: '' }))
       : state.accounts,
+    notifications: Array.isArray(state.notifications)
+      ? state.notifications.filter((notification: any) => String(notification?.recipientUserId || '') === user.id)
+      : [],
   }
 }
 
@@ -508,23 +512,28 @@ type TenantRolloverResult = {
   data: any
   updatedAt?: string
   changes: FollowUpRolloverChange[]
+  notificationCount: number
 }
 
 async function ensureTenantFollowUpsCurrent(organizationId: string): Promise<TenantRolloverResult> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const current = await loadTenantState(organizationId)
     const rollover = rollOverOpenSubtaskFollowUps(current.data || emptyTenantData(), { timeZone: followUpTimeZone })
-    if (!rollover.changed) return { ...current, changes: [] }
+    const existingEventIds = new Set((Array.isArray(current.data?.workEvents) ? current.data.workEvents : []).map((event: any) => String(event?.id || '')))
+    const newEventIds = (Array.isArray(rollover.state?.workEvents) ? rollover.state.workEvents : []).filter((event: any) => !existingEventIds.has(String(event?.id || ''))).map((event: any) => String(event.id))
+    const notifications = reconcileNotifications(rollover.state, { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds })
+    if (!rollover.changed && !notifications.changed) return { ...current, changes: [], notificationCount: 0 }
     try {
-      const saved = await commitTenantState(organizationId, rollover.state, null, 'follow-up-auto-rollover', current.data)
-      return { configured: true, data: rollover.state, updatedAt: saved.syncedAt, changes: rollover.changes }
+      const reason = rollover.changed ? 'follow-up-auto-rollover' : 'notification-reconcile'
+      const saved = await commitTenantState(organizationId, notifications.state, null, reason, current.data, rollover.changed)
+      return { configured: true, data: notifications.state, updatedAt: saved.syncedAt, changes: rollover.changes, notificationCount: notifications.created.length }
     } catch (error) {
       if (attempt === 0 && error instanceof LifecycleError) continue
       throw error
     }
   }
   const current = await loadTenantState(organizationId)
-  return { ...current, changes: [] }
+  return { ...current, changes: [], notificationCount: 0 }
 }
 
 let reconcilingFollowUps = false
@@ -833,10 +842,57 @@ app.get('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try {
     const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
-    res.json({ configured: true, data: sanitizeStateForClient(state.data), updatedAt: state.updatedAt, organizationId: user.organizationId, organizationName: user.organizationName })
+    res.json({ configured: true, data: sanitizeStateForClient(state.data, user), updatedAt: state.updatedAt, organizationId: user.organizationId, organizationName: user.organizationName })
   } catch (error) {
     console.error('Supabase load failed:', error)
     res.status(500).json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database load failed.' })
+  }
+})
+
+function notificationsForUser(state: any, userId: string) {
+  return (Array.isArray(state?.notifications) ? state.notifications : [])
+    .filter((notification: any) => String(notification?.recipientUserId || '') === userId && !notification?.dismissedAt)
+    .sort((a: any, b: any) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+}
+
+app.get('/api/notifications', requireAuth, requireTenantWorkspace, async (req, res) => {
+  if (!supabaseAdmin) return void res.status(503).json({ configured: false, notifications: [], error: 'Supabase is not configured.' })
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  try {
+    const current = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
+    res.json({ configured: true, notifications: notificationsForUser(current.data, user.id), updatedAt: current.updatedAt })
+  } catch (error) {
+    res.status(500).json({ configured: true, notifications: [], error: error instanceof Error ? error.message : 'Notifications could not be loaded.' })
+  }
+})
+
+app.put('/api/notifications/:notificationId', requireAuth, requireTenantWorkspace, async (req, res) => {
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  const action = String(req.body?.action || '') as 'read' | 'unread' | 'dismiss'
+  if (!['read', 'unread', 'dismiss'].includes(action)) return void res.status(400).json({ error: 'Choose read, unread, or dismiss.' })
+  try {
+    const current = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
+    const updated = updateNotificationForUser(current.data, String(req.params.notificationId || ''), user.id, action)
+    if (!updated.matched) return void res.status(404).json({ error: 'Notification was not found.' })
+    const saved = await commitTenantState(tenantIdForUser(user), updated.state, user, `notification-${action}`, current.data, false)
+    res.json({ notifications: notificationsForUser(updated.state, user.id), updatedAt: saved.syncedAt })
+  } catch (error) {
+    res.status(error instanceof LifecycleError ? error.status : 500).json({ error: error instanceof Error ? error.message : 'Notification could not be updated.' })
+  }
+})
+
+app.post('/api/notifications/read-all', requireAuth, requireTenantWorkspace, async (req, res) => {
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  try {
+    const current = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
+    const updated = markAllNotificationsReadForUser(current.data, user.id)
+    if (!updated.changed) return void res.json({ notifications: notificationsForUser(current.data, user.id), updatedAt: current.updatedAt })
+    const saved = await commitTenantState(tenantIdForUser(user), updated.state, user, 'notification-read-all', current.data, false)
+    res.json({ notifications: notificationsForUser(updated.state, user.id), updatedAt: saved.syncedAt })
+  } catch (error) {
+    res.status(error instanceof LifecycleError ? error.status : 500).json({ error: error instanceof Error ? error.message : 'Notifications could not be updated.' })
   }
 })
 
@@ -927,7 +983,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
       res.status(409).json({ configured: true, refreshRequired: true, error: `${currentState.changes.length} open Subtask follow-up${currentState.changes.length === 1 ? '' : 's'} rolled forward automatically. Reload to preserve the System trail before saving your change.` })
       return
     }
-    const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], accounts: [], taskSettings: defaultTaskSettings }
+    const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], notifications: [], accounts: [], taskSettings: defaultTaskSettings }
 
     next = { ...next, schemaVersion: Math.max(6, Number(next.schemaVersion || 0)) }
 
@@ -956,8 +1012,11 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     })
     // Work history is derived on the server from the authenticated actor. Browser-supplied
     // event identities are never trusted, so assignment and action reports remain auditable.
-    const candidateNext = { ...next, accounts: nextAccounts, items: normalizedItems }
-    next = { ...candidateNext, workEvents: authoritativeWorkEvents(current, candidateNext, user) }
+    const candidateNext = { ...next, accounts: nextAccounts, items: normalizedItems, notifications: Array.isArray(current.notifications) ? current.notifications : [], notificationState: current.notificationState }
+    const workEvents = authoritativeWorkEvents(current, candidateNext, user)
+    const existingEventIds = new Set((Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event?.id || '')))
+    const newEventIds = workEvents.filter((event: any) => !existingEventIds.has(String(event?.id || ''))).map((event: any) => String(event.id))
+    next = reconcileNotifications({ ...candidateNext, workEvents }, { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds }).state
     const accountsChanged = stable(currentAccounts) !== stable(nextAccounts)
     const selfOnlyAccounts = accountsChanged && accountChangesAreSelfOnly(currentAccounts, nextAccounts, user.id)
     if (accountsChanged && !selfOnlyAccounts) return void res.status(403).json({ error: 'Manage users and access in Users & Permissions. Reload if another administrator changed account users.' })
@@ -1020,7 +1079,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
 
 
 function emptyTenantData(accounts: any[] = []) {
-  return { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], accounts, taskSettings: defaultTaskSettings }
+  return { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], notifications: [], accounts, taskSettings: defaultTaskSettings }
 }
 
 function cleanSlug(value: unknown) {
@@ -1850,7 +1909,7 @@ async function captureDiscordInquiry(discordMessage: any, organizationId: string
   const stateResult = await loadTenantState(organizationId)
   const base = stateResult.data && typeof stateResult.data === 'object'
     ? stateResult.data
-    : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], accounts: [], taskSettings: defaultTaskSettings }
+    : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], notifications: [], accounts: [], taskSettings: defaultTaskSettings }
   const items = Array.isArray(base.items) ? base.items : []
   const existing = items.find((item: any) => item?.externalSourceId === externalSourceId)
   if (existing) return { created: false, reason: 'duplicate', item: existing }
@@ -2014,10 +2073,56 @@ async function ensureTaskEvidenceBucket() {
 }
 
 async function saveEvidenceState(current: any, next: any, actor: SessionUser, source: string) {
-  const withWorkEvents = { ...next, schemaVersion: Math.max(6, Number(next?.schemaVersion || 0)), workEvents: authoritativeWorkEvents(current, next, actor) }
-  const saved = await commitTenantState(tenantIdForUser(actor), withWorkEvents, actor, source, current)
-  return saved.syncedAt
+  const workEvents = authoritativeWorkEvents(current, next, actor)
+  const existingEventIds = new Set((Array.isArray(current?.workEvents) ? current.workEvents : []).map((event: any) => String(event?.id || '')))
+  const newEventIds = workEvents.filter((event: any) => !existingEventIds.has(String(event?.id || ''))).map((event: any) => String(event.id))
+  const reconciled = reconcileNotifications({ ...next, schemaVersion: Math.max(6, Number(next?.schemaVersion || 0)), workEvents, notifications: Array.isArray(current?.notifications) ? current.notifications : [], notificationState: current?.notificationState }, { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds })
+  const saved = await commitTenantState(tenantIdForUser(actor), reconciled.state, actor, source, current)
+  return { updatedAt: saved.syncedAt, state: reconciled.state }
 }
+
+async function saveCommentState(current: any, next: any, actor: SessionUser, event: any) {
+  const workEvents = [event, ...(Array.isArray(current?.workEvents) ? current.workEvents : [])].slice(0, 10_000)
+  const reconciled = reconcileNotifications({ ...next, schemaVersion: Math.max(6, Number(next?.schemaVersion || 0)), workEvents, notifications: Array.isArray(current?.notifications) ? current.notifications : [], notificationState: current?.notificationState }, { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds: [String(event.id)] })
+  const saved = await commitTenantState(tenantIdForUser(actor), reconciled.state, actor, 'task-comment-add', current)
+  return { updatedAt: saved.syncedAt, state: reconciled.state }
+}
+
+app.post('/api/tasks/:taskId/comments', requireAuth, requireTenantWorkspace, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to add comments.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
+  if (!text) return void res.status(400).json({ error: 'Comment text is required.' })
+  if (text.length > 2000) return void res.status(400).json({ error: 'Comments must be 2,000 characters or fewer.' })
+  try {
+    const taskId = String(req.params.taskId || '')
+    const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
+    const current = state.data && typeof state.data === 'object' ? state.data : null
+    if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
+    const items = Array.isArray(current.items) ? current.items : []
+    const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+    if (!task) return void res.status(404).json({ error: 'Task or Subtask was not found.' })
+    const locked = archivedWorkReason(current, task)
+    if (locked) return void res.status(409).json({ error: locked })
+    const occurredAt = new Date().toISOString()
+    const comment = { id: randomUUID(), text, createdAt: occurredAt, createdBy: user.id, createdByName: user.name || user.username, kind: 'User' }
+    const updatedTask = { ...task, comments: [...(Array.isArray(task.comments) ? task.comments : []), comment].slice(-500) }
+    const event = {
+      id: randomUUID(), occurredAt, date: dateKeyInTimeZone(new Date(occurredAt), followUpTimeZone), actorUserId: user.id, actorName: user.name, actorRole: user.role,
+      assignedToUserId: task.assignedToUserId || undefined, assignedToName: (Array.isArray(current.accounts) ? current.accounts : []).find((account: any) => String(account?.id || '') === String(task.assignedToUserId || ''))?.name,
+      clientId: task.clientId || undefined, projectId: task.projectId || undefined, taskId: String(task.id), parentTaskId: task.parentTaskId || undefined,
+      itemTitle: String(task.title || 'Untitled work item'), itemKind: task.parentTaskId ? 'Subtask' : 'Task', action: 'comment_added',
+      summary: `${user.name} commented on “${String(task.title || 'Untitled work item')}”: ${text.slice(0, 240)}`,
+    }
+    const next = { ...current, items: items.map((candidate: any) => String(candidate?.id || '') === taskId ? updatedTask : candidate) }
+    const saved = await saveCommentState(current, next, user, event)
+    res.json({ item: updatedTask, notifications: notificationsForUser(saved.state, user.id), updatedAt: saved.updatedAt })
+  } catch (error) {
+    console.error('Task comment save failed:', error)
+    res.status(error instanceof LifecycleError ? error.status : 500).json({ error: error instanceof Error ? error.message : 'Comment could not be saved.' })
+  }
+})
 
 app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
@@ -2083,8 +2188,8 @@ app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
     }
 
     try {
-      const updatedAt = await saveEvidenceState(current, next, user, 'task-evidence-upload')
-      res.json({ item: updatedTask, activity, updatedAt })
+      const saved = await saveEvidenceState(current, next, user, 'task-evidence-upload')
+      res.json({ item: updatedTask, activity, notifications: notificationsForUser(saved.state, user.id), updatedAt: saved.updatedAt })
     } catch (saveError) {
       await supabaseAdmin.storage.from(TASK_EVIDENCE_BUCKET).remove([storagePath]).catch(() => undefined)
       throw saveError
@@ -2128,10 +2233,10 @@ app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, r
       items: items.map((candidate: any) => String(candidate?.id || '') === taskId ? updatedTask : candidate),
       activity: [activity, ...(Array.isArray(current.activity) ? current.activity : [])],
     }
-    const updatedAt = await saveEvidenceState(current, next, user, 'task-evidence-delete')
+    const saved = await saveEvidenceState(current, next, user, 'task-evidence-delete')
     const { error: removeError } = await supabaseAdmin.storage.from(TASK_EVIDENCE_BUCKET).remove([String(evidence.storagePath || '')])
     if (removeError) console.warn('Task evidence storage cleanup warning:', removeError.message)
-    res.json({ item: updatedTask, activity, updatedAt })
+    res.json({ item: updatedTask, activity, notifications: notificationsForUser(saved.state, user.id), updatedAt: saved.updatedAt })
   } catch (error) {
     console.error('Task evidence delete failed:', error)
     res.status(error instanceof LifecycleError ? error.status : 500).json({ error: error instanceof Error ? error.message : 'Task evidence delete failed.' })

@@ -1,10 +1,11 @@
-import type { ActivityLog, TaskEvidence, WorkItem } from './types'
+import type { ActivityLog, AppNotification, TaskEvidence, WorkItem } from './types'
 
 export const TASK_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
 
 export type TaskEvidenceMutationResult = {
   item: WorkItem
   activity?: ActivityLog
+  notifications?: AppNotification[]
   updatedAt?: string
 }
 

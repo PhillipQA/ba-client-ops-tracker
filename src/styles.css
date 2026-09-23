@@ -1191,6 +1191,13 @@ select option { background: #181818; color: #fff; }
 .subtask-comment-empty { padding: 12px; border: 1px dashed #344158; border-radius: 9px; color: #8390a5; font-size: 10px; text-align: center; }
 .app-shell:not(.theme-default) .subtask-comment-trail { border-color: var(--theme-border, rgba(255,255,255,.16)); background: var(--theme-card, rgba(18,18,18,.82)); }
 .app-shell:not(.theme-default) .subtask-comment-entry { border-color: var(--theme-border, rgba(255,255,255,.14)); background: rgba(10,12,15,.66); }
+.task-comment-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.task-comment-composer textarea { min-height: 62px; border-color: #344158 !important; background: #10151d !important; color: #e5edf8 !important; }
+.task-comment-composer .secondary { align-self: stretch; color: #dce7f7; border-color: #3b4a62; background: #202a38; }
+.task-comment-composer .secondary:disabled { opacity: .5; cursor: not-allowed; }
+.task-comment-message { padding: 7px 9px; border-radius: 8px; background: #37232b; color: #ffbecb; font-size: 10px; }
+.task-comment-message.success { background: #17362a; color: #9fe7c1; }
+.user-comment-badge { display: inline-flex; align-items: center; min-height: 20px; padding: 2px 7px; border-radius: 999px; background: #273b31; color: #a9e5c4; font-size: 9px; font-weight: 800; }
 .subtask-evidence-panel { display: grid; gap: 10px; padding: 13px; border: 1px solid #3a3a3a; border-radius: 11px; background: #181818; }
 .subtask-evidence-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .subtask-evidence-heading > div { min-width: 0; }
@@ -1220,10 +1227,59 @@ select option { background: #181818; color: #fff; }
 .app-shell:not(.theme-default) .subtask-evidence-item,
 .app-shell:not(.theme-default) .subtask-evidence-dropzone { background: rgba(10,12,15,.66); backdrop-filter: blur(10px); }
 @media (max-width: 600px) {
+  .task-comment-composer { grid-template-columns: 1fr; }
   .subtask-evidence-dropzone { grid-template-columns: auto 1fr; }
   .subtask-evidence-dropzone .secondary { grid-column: 1 / -1; justify-self: stretch; }
   .subtask-evidence-item { align-items: flex-start; flex-direction: column; }
   .subtask-evidence-actions { width: 100%; justify-content: flex-end; }
+}
+
+/* v0.6.24 — notifications and escalation center */
+.notification-center { position: relative; flex: 0 0 auto; }
+.notification-bell { position: relative; width: 39px; height: 39px; display: grid; place-items: center; border: 1px solid #3a3a3a; border-radius: 11px; background: #202020; color: #c8c8c8; }
+.notification-bell:hover, .notification-bell.active { border-color: #596b8b; background: #293345; color: #fff; }
+.notification-bell > span { position: absolute; top: -6px; right: -7px; min-width: 19px; height: 19px; padding: 0 5px; display: grid; place-items: center; border: 2px solid #141414; border-radius: 999px; background: #e5485d; color: #fff; font-size: 9px; font-weight: 850; }
+.notification-popover { position: absolute; top: calc(100% + 11px); right: 0; width: min(420px, calc(100vw - 28px)); overflow: hidden; border: 1px solid #364257; border-radius: 15px; background: #151a22; color: #e8edf5; box-shadow: 0 24px 70px rgba(0,0,0,.46); z-index: 60; }
+.notification-head { min-height: 64px; padding: 13px 14px 12px 16px; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #2b3443; }
+.notification-head strong, .notification-head span { display: block; }
+.notification-head strong { font-size: 14px; }
+.notification-head span { margin-top: 3px; color: #8f9bae; font-size: 10px; }
+.notification-toolbar { padding: 9px 11px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #2b3443; background: #12171f; }
+.notification-tabs { display: flex; align-items: center; gap: 3px; }
+.notification-tabs button, .notification-read-all { min-height: 28px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 7px; background: transparent; color: #93a0b3; font-size: 10px; font-weight: 750; }
+.notification-tabs button:hover, .notification-tabs button.active { background: #293448; color: #dce9ff; }
+.notification-read-all { color: #9fc2ff; }
+.notification-read-all:disabled { opacity: .42; cursor: not-allowed; }
+.notification-list { max-height: min(520px, calc(100vh - 190px)); overflow: auto; }
+.notification-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; border-bottom: 1px solid #29313f; background: #171c24; }
+.notification-row:last-child { border-bottom: 0; }
+.notification-row.unread { background: #1c2635; box-shadow: inset 3px 0 0 #73a5ff; }
+.notification-main { padding: 13px 10px 13px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; border: 0; background: transparent; color: inherit; text-align: left; }
+.notification-main:hover { background: rgba(255,255,255,.025); }
+.notification-icon { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 9px; background: #243147; color: #9fc0ff; }
+.severity-warning .notification-icon { background: #3d3320; color: #f3c469; }
+.severity-urgent .notification-icon { background: #45252b; color: #ff94a4; }
+.severity-success .notification-icon { background: #1f392e; color: #81dbae; }
+.notification-copy { min-width: 0; display: block; }
+.notification-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.notification-title-line strong { color: #edf3fc; font-size: 11.5px; line-height: 1.35; }
+.notification-title-line em { padding: 2px 5px; border-radius: 999px; background: #3d3154; color: #d3b9ff; font-size: 8px; font-style: normal; font-weight: 850; text-transform: uppercase; letter-spacing: .05em; }
+.notification-message { display: block; margin-top: 4px; color: #bbc5d4; font-size: 10.5px; line-height: 1.45; }
+.notification-context { display: block; margin-top: 6px; overflow: hidden; color: #91a4c2; font-size: 9.5px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.notification-copy time { display: block; margin-top: 4px; color: #748197; font-size: 9px; }
+.notification-actions { padding: 10px 9px 0 0; display: flex; gap: 2px; align-items: flex-start; }
+.notification-actions button { width: 27px; height: 27px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #8290a5; }
+.notification-actions button:hover { background: #2a3546; color: #fff; }
+.notification-actions button:disabled { opacity: .45; cursor: wait; }
+.notification-empty { min-height: 190px; padding: 30px; display: grid; place-items: center; align-content: center; gap: 6px; color: #6f7c90; text-align: center; }
+.notification-empty strong { color: #bcc6d4; font-size: 12px; }
+.notification-empty span { font-size: 10px; line-height: 1.45; }
+.app-shell:not(.theme-default) .notification-popover { border-color: var(--theme-border, rgba(255,255,255,.18)); background: var(--theme-card, rgba(18,20,25,.97)); backdrop-filter: blur(18px); }
+@media (max-width: 600px) {
+  .notification-popover { position: fixed; top: 76px; right: 12px; left: 12px; width: auto; }
+  .notification-row { grid-template-columns: minmax(0, 1fr); }
+  .notification-actions { position: absolute; top: 4px; right: 4px; }
+  .notification-main { padding-right: 68px; }
 }
 
 /* v0.6.0 — BXI-Core multi-tenant / Internal Admin */
@@ -1850,6 +1906,19 @@ select option { background: #181818; color: #fff; }
 .user-activity-timeline span { display: block; color: var(--muted); font-size: 11px; }
 .user-activity-timeline strong { display: block; margin-top: 2px; font-size: 13px; }
 .user-activity-timeline p { margin: 3px 0 0; font-size: 12px; line-height: 1.45; }
+
+/* v0.6.25 — multi-user Action Center views */
+.action-center-scope { min-height: 34px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #3c4657; border-radius: 8px; background: #1c222c; color: #b7c4d8; font-size: 10px; font-weight: 750; white-space: nowrap; }
+.action-center-scope svg { color: #9bb7e1; flex: 0 0 auto; }
+.action-center-scope select { max-width: 175px; min-width: 124px; padding: 5px 25px 5px 7px; border: 0; outline: 0; background: transparent; color: #eef3fc; font-size: 10px; font-weight: 750; cursor: pointer; }
+.action-center-scope select option { background: #1b2029; color: #eef3fc; }
+.action-center-scope:focus-within { border-color: #7896c6; box-shadow: 0 0 0 2px rgba(120,150,198,.18); }
+.dashboard-action-table { min-width: 860px; }
+.app-shell:not(.theme-default) .action-center-scope { border-color: var(--theme-border, rgba(255,255,255,.2)); background: var(--theme-card, rgba(20,22,28,.8)); }
+@media (max-width: 600px) {
+  .action-center-scope { flex: 1 1 100%; justify-content: flex-start; }
+  .action-center-scope select { max-width: none; flex: 1; }
+}
 
 @media (max-width: 1100px) {
   .auth-shell-login { grid-template-columns: 52% 48%; }
