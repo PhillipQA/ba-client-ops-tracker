@@ -25,8 +25,10 @@ import {
   EyeOff,
   FileText,
   GripVertical,
+  LayoutGrid,
   Inbox,
   LayoutDashboard,
+  List,
   Pencil,
   Paperclip,
   Plus,
@@ -38,6 +40,7 @@ import {
   MessageSquareText,
   Settings2,
   Sparkles,
+  Table2,
   Trash2,
   Upload,
   Users,
@@ -65,6 +68,7 @@ import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTION
 import { APP_VERSION } from './version'
 
 type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
+type ClientLayout = 'tiles' | 'list' | 'table'
 
 type Store = {
   schemaVersion: number
@@ -364,6 +368,9 @@ function App() {
   const [view, setView] = useState<View>('action')
   const [query, setQuery] = useState('')
   const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
+  const [clientLayout, setClientLayout] = useState<ClientLayout>('tiles')
+  const [clientSearch, setClientSearch] = useState('')
+  const [clientSort, setClientSort] = useState('name')
   const [projectArchiveFilter, setProjectArchiveFilter] = useState('active')
   const [lifecycleSaving, setLifecycleSaving] = useState(false)
   const [editingRecord, setEditingRecord] = useState<{ kind: 'clients' | 'projects'; id: string } | null>(null)
@@ -421,6 +428,14 @@ function App() {
   }, [])
 
   useEffect(() => { setActionCenterScope('mine') }, [authUser?.id, authUser?.organizationId])
+
+  useEffect(() => {
+    if (!authUser) { setClientLayout('tiles'); return }
+    try {
+      const saved = localStorage.getItem(`ba-client-layout:${authUser.organizationId}:${authUser.id}`)
+      setClientLayout(saved === 'list' || saved === 'table' ? saved : 'tiles')
+    } catch { setClientLayout('tiles') }
+  }, [authUser?.id, authUser?.organizationId])
 
   useEffect(() => {
     if (!authUser) return
@@ -877,6 +892,31 @@ function App() {
     () => store.items.filter((item) => (currentUser?.role !== 'Contributor' || item.assignedToUserId === currentUser.id) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done'),
     [store.items, store.taskSettings, currentUser],
   )
+
+  const chooseClientLayout = (layout: ClientLayout) => {
+    setClientLayout(layout)
+    if (!authUser) return
+    try { localStorage.setItem(`ba-client-layout:${authUser.organizationId}:${authUser.id}`, layout) } catch { /* Keep the view usable when storage is unavailable. */ }
+  }
+
+  const visibleClients = useMemo(() => {
+    const search = clientSearch.trim().toLocaleLowerCase()
+    return store.clients
+      .filter((client) => clientArchiveFilter === 'all' || isArchived(client) === (clientArchiveFilter === 'archived'))
+      .filter((client) => !search || [client.name, client.contact, client.email, client.notes || ''].some((part) => part.toLocaleLowerCase().includes(search)))
+      .map((client) => {
+        const projects = new Set(store.items.filter((item) => item.clientId === client.id && item.projectId).map((item) => item.projectId))
+        const tasks = openItems.filter((item) => item.clientId === client.id)
+        const next = tasks.filter((item) => item.followUpDate).sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))[0]
+        return { client, projectCount: projects.size, openTaskCount: tasks.length, next }
+      })
+      .sort((a, b) => {
+        if (clientSort === 'name-desc') return b.client.name.localeCompare(a.client.name)
+        if (clientSort === 'open-tasks') return b.openTaskCount - a.openTaskCount || a.client.name.localeCompare(b.client.name)
+        if (clientSort === 'follow-up') return (a.next?.followUpDate || '9999-12-31').localeCompare(b.next?.followUpDate || '9999-12-31') || a.client.name.localeCompare(b.client.name)
+        return a.client.name.localeCompare(b.client.name)
+      })
+  }, [store.clients, store.items, openItems, clientArchiveFilter, clientSearch, clientSort])
 
   const overdue = openItems.filter((item) => item.followUpDate && item.followUpDate < TODAY)
   const dueToday = openItems.filter((item) => item.followUpDate === TODAY)
@@ -1387,22 +1427,36 @@ function App() {
         {!selectedClient && !selectedProject && view === 'clients' && hasModule('clients') && (
           <section className="page-stack">
             <div className="section-actions"><p className="page-intro">Clients hold relationship context. Projects are global; client association happens on each task.</p>{canWrite && <button className="primary" onClick={() => setModal('client')}><Plus size={18} /> New client</button>}</div>
-            <label className="lifecycle-filter">Show clients<select value={clientArchiveFilter} onChange={e => setClientArchiveFilter(e.target.value)}><option value="active">Active</option><option value="archived">Archived / Inactive</option><option value="all">All</option></select></label>
-            <div className="client-grid">
-              {store.clients.filter(client => clientArchiveFilter === 'all' || isArchived(client) === (clientArchiveFilter === 'archived')).length === 0 && <div className="panel empty-start-card"><Users size={24} /><div><h3>No clients in this view</h3><p>Choose another filter or add a client.</p></div></div>}
-              {store.clients.filter(client => clientArchiveFilter === 'all' || isArchived(client) === (clientArchiveFilter === 'archived')).map((client) => {
-                const projectIds = new Set(store.items.filter((item) => item.clientId === client.id && item.projectId).map((item) => item.projectId as string))
-                const projects = store.projects.filter((project) => projectIds.has(project.id))
-                const open = openItems.filter((i) => i.clientId === client.id)
-                const next = open.filter((i) => i.followUpDate).sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))[0]
-                return <div key={client.id} className="client-card-wrap"><button className="client-card" onClick={() => setSelectedClientId(client.id)}>
-                  <div className="card-top"><div className="client-avatar">{client.name.slice(0, 2).toUpperCase()}</div><StatusChip value={isArchived(client) ? 'Archived · Inactive' : client.status} /><ChevronRight size={18} /></div>
-                  <h3>{client.name}</h3><p>{client.contact} · {client.email}</p>
-                  <div className="card-stats"><span><b>{projects.length}</b> projects</span><span><b>{open.length}</b> open tasks</span></div>
-                  <div className="next-line"><Clock3 size={15} /><span>{next ? `Next: ${niceDate(next.followUpDate)} — ${next.title}` : 'No follow-up scheduled'}</span></div>
-                </button>{canWrite && hasModule('clients') && <button className="secondary compact client-card-edit" onClick={() => setEditingRecord({ kind: 'clients', id: client.id })}><Pencil size={14} /> Edit client</button>}</div>
-              })}
+            <div className="client-controls">
+              <label className="lifecycle-filter">Show clients<select value={clientArchiveFilter} onChange={e => setClientArchiveFilter(e.target.value)}><option value="active">Active</option><option value="archived">Archived / Inactive</option><option value="all">All</option></select></label>
+              <label className="client-search"><Search size={16} /><input type="search" value={clientSearch} onChange={e => setClientSearch(e.target.value)} placeholder="Search clients, contacts, email" aria-label="Search clients" /></label>
+              <label className="lifecycle-filter">Sort by<select value={clientSort} onChange={e => setClientSort(e.target.value)}><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="open-tasks">Most open tasks</option><option value="follow-up">Next follow-up</option></select></label>
+              <div className="client-layout-switch" role="group" aria-label="Client layout">
+                <button type="button" aria-pressed={clientLayout === 'tiles'} onClick={() => chooseClientLayout('tiles')} title="Tiles"><LayoutGrid size={16} /><span>Tiles</span></button>
+                <button type="button" aria-pressed={clientLayout === 'list'} onClick={() => chooseClientLayout('list')} title="List"><List size={16} /><span>List</span></button>
+                <button type="button" aria-pressed={clientLayout === 'table'} onClick={() => chooseClientLayout('table')} title="Table"><Table2 size={16} /><span>Table</span></button>
+              </div>
             </div>
+            <p className="client-result-count">{visibleClients.length} client{visibleClients.length === 1 ? '' : 's'} shown</p>
+            {visibleClients.length === 0 ? <div className="panel empty-start-card"><Users size={24} /><div><h3>No clients found</h3><p>Try another search or status filter.</p></div></div> : clientLayout === 'table' ? (
+              <div className="panel table-panel client-table-panel"><table><thead><tr><th>Client</th><th>Contact</th><th>Status</th><th>Projects</th><th>Open tasks</th><th>Next follow-up</th><th>Actions</th></tr></thead><tbody>
+                {visibleClients.map(({ client, projectCount, openTaskCount, next }) => <tr key={client.id}>
+                  <td><button type="button" className="table-link" onClick={() => setSelectedClientId(client.id)}><strong>{client.name}</strong></button></td>
+                  <td><span>{client.contact}</span><small className="client-table-email">{client.email}</small></td>
+                  <td><StatusChip value={isArchived(client) ? 'Archived · Inactive' : client.status} /></td>
+                  <td>{projectCount}</td><td>{openTaskCount}</td>
+                  <td>{next ? <span title={next.title}>{niceDate(next.followUpDate)}<small className="client-table-email">{next.title}</small></span> : '—'}</td>
+                  <td>{canWrite && <button type="button" className="secondary compact" onClick={() => setEditingRecord({ kind: 'clients', id: client.id })}><Pencil size={14} /> Edit</button>}</td>
+                </tr>)}
+              </tbody></table></div>
+            ) : <div className={`client-grid ${clientLayout === 'list' ? 'client-grid-list' : ''}`}>
+              {visibleClients.map(({ client, projectCount, openTaskCount, next }) => <div key={client.id} className="client-card-wrap"><button className="client-card" onClick={() => setSelectedClientId(client.id)}>
+                  <div className="card-top"><div className="client-avatar">{client.name.slice(0, 2).toUpperCase()}</div><StatusChip value={isArchived(client) ? 'Archived · Inactive' : client.status} /><ChevronRight size={18} /></div>
+                  <div className="client-identity"><h3>{client.name}</h3><p>{client.contact} · {client.email}</p></div>
+                  <div className="card-stats"><span><b>{projectCount}</b> projects</span><span><b>{openTaskCount}</b> open tasks</span></div>
+                  <div className="next-line"><Clock3 size={15} /><span>{next ? `Next: ${niceDate(next.followUpDate)} — ${next.title}` : 'No follow-up scheduled'}</span></div>
+                </button>{canWrite && <button className="secondary compact client-card-edit" onClick={() => setEditingRecord({ kind: 'clients', id: client.id })}><Pencil size={14} /> Edit client</button>}</div>)}
+            </div>}
           </section>
         )}
 

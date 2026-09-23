@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.30**
+**Current release: v0.6.31**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,13 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.30
+## Current release — v0.6.31
+
+The Clients page now offers **Tiles**, **List**, and **Table** layouts. Search clients by name, contact, email, or notes; sort by name, open tasks, or next follow-up. The chosen layout is remembered for each signed-in user in that browser.
+
+The existing client records and Active / Archived / All filter work in every layout. No database migration, new npm dependency, or environment change is required. See `UPGRADE-v0.6.31.md`.
+
+## Previous release — v0.6.30
 
 The login card now uses the password-recovery card's compact dimensions.
 
@@ -170,6 +176,7 @@ The Action Center combines activities, follow-ups, and AI-assisted assessment wi
 ### Clients
 
 - Maintain tenant client records and client details.
+- Choose Tiles, List, or Table; search and sort the visible clients. Layout preference is saved per user and account in the browser.
 - Visible edit controls are available from client cards and detail views.
 - Active / Archived / All lifecycle filters preserve historical visibility.
 - Archived records remain read-only until reactivated.
@@ -585,6 +592,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.31** | Client Tiles, List, and Table views with search and sorting |
 | **0.6.30** | Login card width and form dimensions match password recovery |
 | **0.6.29** | Blank Account and User fields by default on the login screen |
 | **0.6.28** | Main-task assignee inheritance for subtasks with persistent per-subtask overrides |
