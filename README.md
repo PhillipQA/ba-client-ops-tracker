@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.28**
+**Current release: v0.6.29**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,15 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.28
+## Current release — v0.6.29
+
+The login screen no longer pre-fills the Account and User fields with built-in values.
+
+- New and non-remembered login sessions open with both fields blank.
+- **Remember me** continues to restore the user's own saved Account and User values.
+- No database migration, dependency, or environment change is required.
+
+## Previous release — v0.6.28
 
 Subtasks now inherit the assignee of their main task while still supporting intentional per-subtask ownership.
 
@@ -566,6 +574,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.29** | Blank Account and User fields by default on the login screen |
 | **0.6.28** | Main-task assignee inheritance for subtasks with persistent per-subtask overrides |
 | **0.6.27** | Account-level Google OAuth credentials, private user connections and read-only schedules |
 | **0.6.26** | Confirmed Task/Subtask saves and server-managed Task settings compatibility |

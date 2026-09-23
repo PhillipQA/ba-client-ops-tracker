@@ -1497,9 +1497,10 @@ function AuthSplash() {
 function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; onLogin: (account: string, username: string, password: string) => Promise<void> }) {
   const [forgot, setForgot] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [remember, setRemember] = useState(() => localStorage.getItem('client-ops-login-remember') === '1')
-  const [account, setAccount] = useState(() => localStorage.getItem('client-ops-login-account') || 'BXI-Core')
-  const [username, setUsername] = useState(() => localStorage.getItem('client-ops-login-user') || 'Admin')
+  const rememberedLogin = localStorage.getItem('client-ops-login-remember') === '1'
+  const [remember, setRemember] = useState(rememberedLogin)
+  const [account, setAccount] = useState(() => rememberedLogin ? localStorage.getItem('client-ops-login-account') || '' : '')
+  const [username, setUsername] = useState(() => rememberedLogin ? localStorage.getItem('client-ops-login-user') || '' : '')
   if (forgot) return <ForgotPassword account={account} username={username} onBack={() => setForgot(false)} />
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
