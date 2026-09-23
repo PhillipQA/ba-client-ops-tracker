@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.25**
+**Current release: v0.6.26**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,15 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.25
+## Current release — v0.6.26
+
+v0.6.26 fixes Task and Subtask edits appearing to save in Action Center but disappearing after refresh.
+
+- Ordinary workspace saves preserve server-managed Task configuration, even when an older workspace receives a newly displayed Start Date column.
+- Task and Subtask editors wait for the server to accept the change before closing. On rejection, the editor stays open and shows the reason.
+- No database migration, new dependency, or environment change is required.
+
+## Previous release — v0.6.25
 
 v0.6.25 adds multi-user views to the Action Center for shared tenant work.
 
@@ -418,7 +426,7 @@ Apply the SQL files in this order for a fresh environment:
 7. `supabase/schema-v7-password-recovery.sql`
 8. `supabase/schema-v8-tenant-integrations.sql`
 
-v0.6.12 through v0.6.25 do not add another Supabase migration beyond the migrations already required by the current build.
+v0.6.12 through v0.6.26 do not add another Supabase migration beyond the migrations already required by the current build.
 
 ### Bootstrap credentials
 
@@ -439,10 +447,10 @@ Always check the current version first:
 npm run patch:status
 ```
 
-For the current release, upgrade **v0.6.24 → v0.6.25** with the matching patch package:
+For the current release, upgrade **v0.6.25 → v0.6.26** with the matching patch package:
 
 ```bash
-npm run patch -- "path/to/ba-client-ops-patch-v0.6.25-action-center-views.zip"
+npm run patch -- "path/to/ba-client-ops-patch-v0.6.26-action-center-save-hotfix.zip"
 npm run patch:status
 npm run build
 ```
@@ -525,6 +533,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.26** | Confirmed Task/Subtask saves and server-managed Task settings compatibility |
 | **0.6.25** | Action Center views for My work, all tenant users, or a selected user |
 | **0.6.24** | Per-user notifications, Admin team escalations, unread controls, deep links, and user comments |
 | **0.6.23** | Automatic open-Subtask follow-up rollover with permanent System comments and activity history |
@@ -546,4 +555,4 @@ For detailed release-specific instructions, see the matching `UPGRADE-v0.6.x.md`
 
 ## Current version
 
-**BA Client Ops Tracker v0.6.25**
+**BA Client Ops Tracker v0.6.26**

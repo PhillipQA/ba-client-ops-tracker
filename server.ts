@@ -25,6 +25,7 @@ import { normalizeAppTheme, normalizeClientThemes } from './src/theme'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './password-recovery-email'
 import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps, type FollowUpRolloverChange } from './follow-up-rollover'
 import { markAllNotificationsReadForUser, reconcileNotifications, updateNotificationForUser } from './notification-engine'
+import { preserveTaskSettings } from './tenant-save-settings'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -985,7 +986,9 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     }
     const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], notifications: [], accounts: [], taskSettings: defaultTaskSettings }
 
-    next = { ...next, schemaVersion: Math.max(6, Number(next.schemaVersion || 0)) }
+    // The browser may add default display columns while loading old tenant
+    // data. Ordinary workspace saves cannot edit platform-managed settings.
+    next = preserveTaskSettings(current, { ...next, schemaVersion: Math.max(6, Number(next.schemaVersion || 0)) })
 
     const currentItems = Array.isArray(current.items) ? current.items : []
     const nextItems = Array.isArray(next.items) ? next.items : []

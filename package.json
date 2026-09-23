@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.25",
+  "version": "0.6.26",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -18,7 +18,8 @@
     "test:lifecycle": "node --import tsx --test tests/lifecycle.test.ts",
     "test:followups": "node --import tsx --test tests/follow-up-rollover.test.ts",
     "test:notifications": "node --import tsx --test tests/notification-engine.test.ts",
-    "test:action-center-scope": "node --import tsx --test tests/action-center-scope.test.ts"
+    "test:action-center-scope": "node --import tsx --test tests/action-center-scope.test.ts",
+    "test:tenant-save-settings": "node --import tsx --test tests/tenant-save-settings.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",

@@ -374,6 +374,7 @@ function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedProjectClientId, setSelectedProjectClientId] = useState<string | null>(null)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [taskEditSaving, setTaskEditSaving] = useState(false)
   const [taskPreset, setTaskPreset] = useState<{ clientId?: string; projectId?: string; type?: ItemType; parentTaskId?: string } | null>(null)
   const [modal, setModal] = useState<'item' | 'taskEdit' | 'client' | 'project' | 'activity' | null>(null)
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null)
@@ -1006,15 +1007,19 @@ function App() {
     })
   }
 
-  const saveTaskEdit = (updated: WorkItem) => {
-    if (!canWriteTasks) return
-    const previous = store.items.find((item) => item.id === updated.id)
-    if (!previous) return
-    const closed = isTaskClosed(updated.status, store.taskSettings)
-    const openSubtasks = closed ? store.items.filter((item) => item.parentTaskId === updated.id && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done') : []
+  const saveTaskEdit = async (updated: WorkItem) => {
+    if (!canWriteTasks) throw new Error('You do not have permission to edit this task.')
+    setTaskEditSaving(true)
+    try {
+    // A prior optimistic save may have failed. Allow this confirmed edit to retry.
+    await waitForCloudSaves().catch(() => undefined)
+    const current = storeRef.current
+    const previous = current.items.find((item) => item.id === updated.id)
+    if (!previous) throw new Error('This task is no longer available. Reload the workspace and try again.')
+    const closed = isTaskClosed(updated.status, current.taskSettings)
+    const openSubtasks = closed ? current.items.filter((item) => item.parentTaskId === updated.id && !isTaskClosed(item.status, current.taskSettings) && item.waitingOn !== 'Done') : []
     if (openSubtasks.length) {
-      window.alert(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`)
-      return
+      throw new Error(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`)
     }
     const normalized: WorkItem = {
       ...updated,
@@ -1025,16 +1030,40 @@ function App() {
       startDate: updated.status === 'In Progress' && !updated.startDate ? TODAY : updated.startDate,
       resolvedDate: closed ? (previous.resolvedDate || TODAY) : undefined,
     }
-    persist({
-      ...store,
-      items: store.items.map((item) => item.id === updated.id ? normalized : item.parentTaskId === updated.id ? { ...item, projectId: normalized.projectId } : item),
+    const next: Store = {
+      ...current,
+      items: current.items.map((item) => item.id === updated.id ? normalized : item.parentTaskId === updated.id ? { ...item, projectId: normalized.projectId } : item),
       activity: [
         { id: crypto.randomUUID(), clientId: previous.clientId, projectId: normalized.projectId, date: TODAY, text: `Updated task: ${previous.title}` },
-        ...store.activity,
+        ...current.activity,
       ],
-    })
+    }
+    assertLifecycleMutation(current, next, authUser)
+    const generatedEvents = workEventsForItemChanges(current, next, authUser)
+    const candidate = { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...current.workEvents].slice(0, 10000) }
+    if (cloudStatus !== 'local') {
+      setCloudStatus('saving')
+      setCloudMessage('Saving to Supabase…')
+      try {
+        const result = await queueCloudStoreSave(candidate)
+        if (!result.configured) throw new Error('Cloud storage is unavailable. Your edit was not saved; please retry when Supabase is connected.')
+        setLastCloudSync(result.updatedAt || new Date().toISOString())
+        setCloudStatus('synced')
+        setCloudMessage('Supabase synced')
+      } catch (error) {
+        setCloudStatus('error')
+        setCloudMessage(error instanceof Error ? error.message : 'Cloud save failed')
+        throw error
+      }
+    }
+    storeRef.current = candidate
+    setStore(candidate)
+    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(candidate))
     setEditingTaskId(null)
     setModal(null)
+    } finally {
+      setTaskEditSaving(false)
+    }
   }
 
   const deleteTask = (id: string) => {
@@ -1468,7 +1497,7 @@ function App() {
         {selectedProject && <ProjectDetail controls={<LifecycleControls key={selectedProject.id} kind="projects" record={selectedProject} store={store} canEdit={canWrite && hasModule('projects')} onSave={record => saveLifecycleRecord('projects', record)} />} project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} canEditTasks={canWriteTasks} />}
       </main>
 
-      {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
+      {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} closeDisabled={modal === 'taskEdit' && taskEditSaving} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
         {modal === 'item' && <TaskForm store={store} preset={taskPreset} onSubmit={(item) => { const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined; persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: parent ? `Created subtask under ${parent.title}: ${item.title}` : `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
         {modal === 'taskEdit' && editingTask && <TaskEditForm store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} onCommentMutation={applyCommentMutation} />}
         {modal === 'client' && <ClientForm onSubmit={(client) => { persist({ ...store, clients: [...store.clients, client] }); setModal(null) }} />}
@@ -1885,8 +1914,8 @@ function ProjectDetail({ controls, project, clientContextId, store, setStore, on
   </section>
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><h2>{title}</h2><button className="icon-button" onClick={onClose}><X size={20} /></button></div>{children}</div></div>
+function Modal({ title, onClose, closeDisabled = false, children }: { title: string; onClose: () => void; closeDisabled?: boolean; children: React.ReactNode }) {
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (!closeDisabled && event.currentTarget === event.target) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><h2>{title}</h2><button className="icon-button" disabled={closeDisabled} onClick={onClose}><X size={20} /></button></div>{children}</div></div>
 }
 
 function WorkScheduleFields({ itemKind, startDate = '', dueDate = '', followUpDate = '' }: { itemKind: 'Task' | 'Subtask'; startDate?: string; dueDate?: string; followUpDate?: string }) {
@@ -1958,19 +1987,22 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
   </form>
 }
 
-function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => void; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void }) {
+function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => Promise<void>; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void }) {
   const [type, setType] = useState<ItemType>(item.type)
   const [status, setStatus] = useState(item.status)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined
   const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
   const workloadFor = (userId: string) => { const active = store.items.filter((candidate) => candidate.assignedToUserId === userId && !isTaskClosed(candidate.status, store.taskSettings) && candidate.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((candidate) => Boolean(candidate.dueDate && candidate.dueDate < TODAY)).length} overdue` }
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (saving) return
     const form = new FormData(event.currentTarget)
     const startDate = String(form.get('startDate') || '')
     const dueDate = String(form.get('dueDate') || '')
     if (startDate && dueDate && dueDate < startDate) { window.alert('Due Date cannot be earlier than Start Date.'); return }
-    onSubmit({
+    const changes: WorkItem = {
       ...item,
       title: item.title,
       clientId: item.clientId,
@@ -1986,11 +2018,16 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
       followUpDate: String(form.get('followUpDate') || ''),
       source: form.get('source') as WorkItem['source'],
       description: String(form.get('description') || ''),
-    })
+    }
+    setSaveError('')
+    setSaving(true)
+    try { await onSubmit(changes) }
+    catch (error) { setSaveError(error instanceof Error ? error.message : 'Your changes could not be saved. Please try again.') }
+    finally { setSaving(false) }
   }
   const clientLabel = item.clientId ? store.clients.find((client) => client.id === item.clientId)?.name || 'Unknown client' : 'General / no client'
   const projectLabel = item.projectId ? store.projects.find((project) => project.id === item.projectId)?.name || 'Unknown project' : 'No project'
-  return <form className="form-grid" onSubmit={submit}>
+  return <form className="form-grid" onSubmit={(event) => void submit(event)}>
     <div className="readonly-notice span-2"><LockKeyhole size={18} /><div><strong>{parent ? `Subtask of: ${parent.title}` : 'Task identity is locked'}</strong><span>{parent ? 'Subtask name, client, and parent project stay fixed. You can update its execution fields below.' : 'Task name and client cannot be changed after creation.'}</span></div></div>
     <label className="span-2">{parent ? 'Subtask title' : 'Task title'}<input value={item.title} readOnly disabled /></label>
     <label>Client<input value={clientLabel} readOnly disabled /></label>
@@ -2005,7 +2042,8 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>
     <WorkCommentTrail item={item} onMutation={onCommentMutation} />
     {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
-    <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete {parent ? 'subtask' : 'task'}</button><button className="primary">Save changes</button></div>
+    {saveError && <p className="record-editor-error span-2" role="alert">{saveError}</p>}
+    <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" disabled={saving} onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete {parent ? 'subtask' : 'task'}</button><button className="primary" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button></div>
   </form>
 }
 
