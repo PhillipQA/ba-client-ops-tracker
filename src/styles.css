@@ -1177,6 +1177,20 @@ select option { background: #181818; color: #fff; }
 }
 
 /* v0.5.3 — subtask activity evidence uploads */
+.subtask-comment-trail { display: grid; gap: 10px; padding: 13px; border: 1px solid #35435c; border-radius: 11px; background: #171c25; }
+.subtask-comment-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.subtask-comment-heading > div { min-width: 0; }
+.subtask-comment-heading strong { display: flex; align-items: center; gap: 7px; color: #edf4ff; font-size: 11.5px; }
+.subtask-comment-heading span:not(.count-pill) { display: block; margin-top: 3px; color: #91a1bb; font-size: 10px; font-weight: 400; line-height: 1.45; }
+.subtask-comment-list { display: grid; gap: 8px; }
+.subtask-comment-entry { padding: 10px 11px; border: 1px solid #303c50; border-radius: 9px; background: #131821; }
+.subtask-comment-entry > div { display: flex; align-items: center; gap: 8px; }
+.subtask-comment-entry time { color: #8996aa; font-size: 9.5px; }
+.subtask-comment-entry p { margin: 7px 0 0; color: #d9e3f2; font-size: 10.5px; line-height: 1.5; }
+.system-comment-badge { display: inline-flex; align-items: center; min-height: 20px; padding: 2px 7px; border-radius: 999px; background: #223454; color: #b9d3ff; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.subtask-comment-empty { padding: 12px; border: 1px dashed #344158; border-radius: 9px; color: #8390a5; font-size: 10px; text-align: center; }
+.app-shell:not(.theme-default) .subtask-comment-trail { border-color: var(--theme-border, rgba(255,255,255,.16)); background: var(--theme-card, rgba(18,18,18,.82)); }
+.app-shell:not(.theme-default) .subtask-comment-entry { border-color: var(--theme-border, rgba(255,255,255,.14)); background: rgba(10,12,15,.66); }
 .subtask-evidence-panel { display: grid; gap: 10px; padding: 13px; border: 1px solid #3a3a3a; border-radius: 11px; background: #181818; }
 .subtask-evidence-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .subtask-evidence-heading > div { min-width: 0; }

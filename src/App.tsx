@@ -32,6 +32,7 @@ import {
   LogOut,
   UserRound,
   LockKeyhole,
+  MessageSquareText,
   Settings2,
   Sparkles,
   Trash2,
@@ -200,6 +201,18 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
       uploadedBy: String(entry.uploadedBy || ''),
       uploadedByName: String(entry.uploadedByName || ''),
       kind: entry.kind === 'Screenshot' ? 'Screenshot' as const : 'File' as const,
+    })) : [],
+    comments: Array.isArray(item.comments) ? item.comments.filter((comment) => comment && comment.id && comment.text).map((comment) => ({
+      id: String(comment.id),
+      text: String(comment.text),
+      createdAt: String(comment.createdAt || ''),
+      createdBy: String(comment.createdBy || 'system'),
+      createdByName: String(comment.createdByName || 'System'),
+      kind: comment.kind === 'User' ? 'User' as const : 'System' as const,
+      eventType: comment.eventType === 'FOLLOW_UP_AUTO_MOVED' ? 'FOLLOW_UP_AUTO_MOVED' as const : undefined,
+      previousFollowUpDate: comment.previousFollowUpDate ? String(comment.previousFollowUpDate) : undefined,
+      nextFollowUpDate: comment.nextFollowUpDate ? String(comment.nextFollowUpDate) : undefined,
+      daysMoved: Number.isFinite(comment.daysMoved) ? Number(comment.daysMoved) : undefined,
     })) : [],
   }))
   return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, workEvents, accounts, taskSettings }
@@ -446,6 +459,45 @@ function App() {
     }
     void connectCloud()
     return () => { cancelled = true }
+  }, [authUser?.id])
+
+  useEffect(() => {
+    if (!authUser || authUser.accountType === 'platform') return
+    let cancelled = false
+    let busy = false
+    const refreshAutomaticFollowUps = async () => {
+      if (busy) return
+      busy = true
+      try {
+        await waitForCloudSaves()
+        const result = await loadCloudStore<Store>()
+        if (cancelled || !result.configured || !result.data) return
+        const refreshed = normalizeStore(result.data, seedStore())
+        const knownComments = new Set(storeRef.current.items.flatMap((item) => (item.comments || []).map((comment) => comment.id)))
+        const newSystemComments = refreshed.items.flatMap((item) => item.comments || []).filter((comment) => comment.kind === 'System' && !knownComments.has(comment.id)).length
+        storeRef.current = refreshed
+        setStore(refreshed)
+        localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(refreshed))
+        setLastCloudSync(result.updatedAt || new Date().toISOString())
+        setCloudStatus('synced')
+        setCloudMessage(newSystemComments ? `${newSystemComments} Subtask follow-up${newSystemComments === 1 ? '' : 's'} rolled forward automatically` : 'Supabase synced')
+      } catch (error) {
+        if (!cancelled) console.error('Automatic follow-up refresh failed:', error)
+      } finally {
+        busy = false
+      }
+    }
+    const timer = window.setInterval(() => { void refreshAutomaticFollowUps() }, 5 * 60_000)
+    const onFocus = () => { void refreshAutomaticFollowUps() }
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refreshAutomaticFollowUps() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [authUser?.id])
 
   const persist = (next: Store) => {
@@ -1418,7 +1470,7 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, clients, 
         {parent && <p className="activity-tile-parent">Parent task: {parent.title}</p>}
         <div className="activity-tile-badges"><StatusChip value={item.status} /><PriorityChip value={item.priority} /></div>
         <div className="activity-tile-details"><span>Follow-up: <b>{niceDate(item.followUpDate)}</b></span>{item.dueDate && <span>Due: <b>{niceDate(item.dueDate)}</b></span>}<span>Waiting on: <b>{item.waitingOn}</b></span></div>
-        <ActivityCommentPreview text={item.description} title={item.title} />
+        <ActivityCommentPreview text={[item.description, ...(item.comments || []).slice(-3).map((comment) => `${comment.createdByName}: ${comment.text}`)].filter(Boolean).join('\n\n')} title={item.title} />
         {canEdit && <div className="activity-tile-actions"><button className="secondary compact" type="button" onClick={() => onEditTask(item.id)}>Edit {item.parentTaskId ? 'subtask' : 'task'}</button></div>}
       </article>
     }
@@ -1635,7 +1687,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
       onDrop={isSubtask ? (event) => { event.preventDefault(); dropSubtask(item) } : undefined}
       onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
     >
-      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{rowEditable && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small>{isSubtask && <span className="subtask-schedule-summary">Start: {item.startDate ? niceDate(item.startDate) : 'Not set'} · Due: {item.dueDate ? niceDate(item.dueDate) : 'Not set'}</span>}</div></div></td>
+      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{rowEditable && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{isSubtask && item.comments?.length ? ` · ${item.comments.length} system update${item.comments.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small>{isSubtask && <span className="subtask-schedule-summary">Start: {item.startDate ? niceDate(item.startDate) : 'Not set'} · Due: {item.dueDate ? niceDate(item.dueDate) : 'Not set'}</span>}</div></div></td>
       {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || 'Unassigned' : column === 'startDate' ? niceDate(item.startDate || '') : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
       <td><div className="task-row-actions">{!rowEditable && (item.evidence || []).map(entry => <a key={entry.id} className="secondary compact" href={taskEvidenceUrl(item.id, entry)} target="_blank" rel="noreferrer">{entry.fileName}</a>)}{rowEditable && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{rowEditable && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{rowEditable && isSubtask && <button className="icon-button" title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'} onClick={() => onEdit(item.id)}><Paperclip size={17} /></button>}{rowEditable && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{rowEditable && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{rowEditable && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
@@ -1814,9 +1866,21 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation }: {
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} startDate={item.startDate || ''} dueDate={item.dueDate || ''} followUpDate={item.followUpDate || ''} />
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>
+    {parent && <SubtaskCommentTrail item={item} />}
     {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
     <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete {parent ? 'subtask' : 'task'}</button><button className="primary">Save changes</button></div>
   </form>
+}
+
+function SubtaskCommentTrail({ item }: { item: WorkItem }) {
+  const comments = [...(item.comments || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return <section className="subtask-comment-trail span-2">
+    <div className="subtask-comment-heading"><div><strong><MessageSquareText size={15} /> Follow-up history</strong><span>System entries are permanent and identify every automatic rollover.</span></div><span className="count-pill">{comments.length}</span></div>
+    {comments.length ? <div className="subtask-comment-list">{comments.map((comment) => <article key={comment.id} className="subtask-comment-entry">
+      <div><span className="system-comment-badge">System</span><time>{evidenceDate(comment.createdAt)}</time></div>
+      <p>{comment.text}</p>
+    </article>)}</div> : <div className="subtask-comment-empty">No automatic follow-up changes yet.</div>}
+  </section>
 }
 
 

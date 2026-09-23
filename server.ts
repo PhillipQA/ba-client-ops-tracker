@@ -23,6 +23,7 @@ import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js
 import { createServer as createViteServer } from 'vite'
 import { normalizeAppTheme, normalizeClientThemes } from './src/theme'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './password-recovery-email'
+import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps, type FollowUpRolloverChange } from './follow-up-rollover'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -31,6 +32,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const port = Number(process.env.PORT || 5173)
 const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('--production')
+const followUpTimeZone = process.env.FOLLOW_UP_TIME_ZONE || 'Asia/Manila'
 
 // Render and similar hosts terminate TLS at a trusted reverse proxy.
 app.set('trust proxy', 1)
@@ -501,6 +503,45 @@ async function commitTenantState(organizationId: string | undefined, state: any,
   return guardWorkspace(organizationId, state, actor, before, () => writeTenantState(organizationId, state, actor, reason, before, synchronize))
 }
 
+type TenantRolloverResult = {
+  configured: boolean
+  data: any
+  updatedAt?: string
+  changes: FollowUpRolloverChange[]
+}
+
+async function ensureTenantFollowUpsCurrent(organizationId: string): Promise<TenantRolloverResult> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const current = await loadTenantState(organizationId)
+    const rollover = rollOverOpenSubtaskFollowUps(current.data || emptyTenantData(), { timeZone: followUpTimeZone })
+    if (!rollover.changed) return { ...current, changes: [] }
+    try {
+      const saved = await commitTenantState(organizationId, rollover.state, null, 'follow-up-auto-rollover', current.data)
+      return { configured: true, data: rollover.state, updatedAt: saved.syncedAt, changes: rollover.changes }
+    } catch (error) {
+      if (attempt === 0 && error instanceof LifecycleError) continue
+      throw error
+    }
+  }
+  const current = await loadTenantState(organizationId)
+  return { ...current, changes: [] }
+}
+
+let reconcilingFollowUps = false
+async function reconcileFollowUpRollovers() {
+  if (!supabaseAdmin || reconcilingFollowUps) return
+  reconcilingFollowUps = true
+  try {
+    const { data, error } = await supabaseAdmin.from('organizations').select('id').eq('status', 'Active').is('deleted_at', null)
+    if (error) throw error
+    for (const organization of data || []) await ensureTenantFollowUpsCurrent(String(organization.id)).catch((rolloverError) => console.warn(`Follow-up rollover failed for tenant ${String(organization.id)}:`, rolloverError instanceof Error ? rolloverError.message : rolloverError))
+  } catch (error) {
+    console.warn('Automatic Subtask follow-up rollover is unavailable:', error instanceof Error ? error.message : error)
+  } finally {
+    reconcilingFollowUps = false
+  }
+}
+
 async function writeTenantState(organizationId: string | undefined, state: any, actor: SessionUser | null, reason: string, before?: any, synchronize = true): Promise<NormalizedSyncResult> {
   if (!supabaseAdmin) throw new TenantSaveError('Supabase is not configured.', 503)
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
@@ -791,7 +832,7 @@ app.get('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   }
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try {
-    const state = await loadTenantState(tenantIdForUser(user))
+    const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
     res.json({ configured: true, data: sanitizeStateForClient(state.data), updatedAt: state.updatedAt, organizationId: user.organizationId, organizationName: user.organizationName })
   } catch (error) {
     console.error('Supabase load failed:', error)
@@ -881,7 +922,11 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   const organizationId = tenantIdForUser(user)
   try {
-    const currentState = await loadTenantState(organizationId)
+    const currentState = await ensureTenantFollowUpsCurrent(String(organizationId))
+    if (currentState.changes.length) {
+      res.status(409).json({ configured: true, refreshRequired: true, error: `${currentState.changes.length} open Subtask follow-up${currentState.changes.length === 1 ? '' : 's'} rolled forward automatically. Reload to preserve the System trail before saving your change.` })
+      return
+    }
     const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], accounts: [], taskSettings: defaultTaskSettings }
 
     next = { ...next, schemaVersion: Math.max(6, Number(next.schemaVersion || 0)) }
@@ -896,6 +941,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     const incomingAccounts = Array.isArray(next.accounts) ? next.accounts.map(accountDefaults) : []
     const nextAccounts = await prepareAccountPasswords(currentAccounts, incomingAccounts)
     const assignableUsers = new Map(nextAccounts.filter((account: any) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor')).map((account: any) => [String(account.id), account]))
+    const currentItemMap = new Map(currentItems.map((item: any) => [String(item?.id || ''), item]))
     const normalizedItems = (Array.isArray(next.items) ? next.items : []).map((item: any) => {
       const assignedToUserId = String(item?.assignedToUserId || '')
       if (assignedToUserId && !assignableUsers.has(assignedToUserId)) throw new TenantSaveError(`Task “${String(item?.title || 'Untitled')}” must be assigned to an active Administrator or Contributor in this workspace.`, 400)
@@ -904,7 +950,9 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
       if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new TenantSaveError('Task Start Date must use YYYY-MM-DD.', 400)
       if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) throw new TenantSaveError('Task Due Date must use YYYY-MM-DD.', 400)
       if (startDate && dueDate && dueDate < startDate) throw new TenantSaveError(`Task “${String(item?.title || 'Untitled')}” cannot be due before its Start Date.`, 400)
-      return { ...item, assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
+      const currentItem = currentItemMap.get(String(item?.id || '')) as any
+      const comments = Array.isArray(currentItem?.comments) ? currentItem.comments : []
+      return { ...item, comments, assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
     })
     // Work history is derived on the server from the authenticated actor. Browser-supplied
     // event identities are never trusted, so assignment and action reports remain auditable.
@@ -1305,7 +1353,7 @@ app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res)
     return
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = dateKeyInTimeZone(new Date(), followUpTimeZone)
   const requestedContext: any = req.body?.context && typeof req.body.context === 'object' ? req.body.context : {}
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
 
@@ -1313,7 +1361,7 @@ app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res)
   // client/project focus, but it cannot supply records or impersonate another current user.
   let context: any
   try {
-    const state = (await loadTenantState(tenantIdForUser(user))).data || emptyTenantData()
+    const state = (await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))).data || emptyTenantData()
     const allItems = Array.isArray(state.items) ? state.items : []
     const allClients = Array.isArray(state.clients) ? state.clients : []
     const allProjects = Array.isArray(state.projects) ? state.projects : []
@@ -2202,8 +2250,11 @@ app.listen(port, () => {
     console.warn('SECURITY: BXI_CORE_BOOTSTRAP_PASSWORD is not configured with 12+ characters. It is required only while the initial BXI-Core Admin account is in bootstrap state.')
   }
   void reconcileDiscord()
+  void reconcileFollowUpRollovers()
 })
 
 const discordTimer = setInterval(() => { void reconcileDiscord(); const now = Date.now(); for (const [id, value] of discordUserWindows) if (now - value.startedAt > 60000) discordUserWindows.delete(id) }, 30000)
 discordTimer.unref()
-process.on('SIGTERM', () => { clearInterval(discordTimer); for (const runtime of discordRuntimes.values()) void runtime.client.destroy(); process.exit(0) })
+const followUpRolloverTimer = setInterval(() => { void reconcileFollowUpRollovers() }, 5 * 60_000)
+followUpRolloverTimer.unref()
+process.on('SIGTERM', () => { clearInterval(discordTimer); clearInterval(followUpRolloverTimer); for (const runtime of discordRuntimes.values()) void runtime.client.destroy(); process.exit(0) })

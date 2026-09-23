@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.22**
+**Current release: v0.6.23**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,26 +8,30 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.22
+## Current release — v0.6.23
 
-v0.6.22 is a focused visibility hotfix for **Task and Subtask Start Date** on top of the v0.6.21 User Work Tracking release.
+v0.6.23 adds **Automatic Subtask Follow-up Rollover** on top of the v0.6.22 scheduling UI.
 
-### User work tracking highlights
+### Automatic follow-up highlights
 
-- Tasks and Subtasks can be assigned to one specific active tenant Administrator or Contributor.
-- Assignment dropdowns show each user's active and overdue workload.
-- Tasks and Subtasks now include an optional **Start Date**; moving an item to In Progress fills an empty Start Date automatically.
-- The system records server-verified work events with the authenticated actor, current assignee, task/subtask, client, project, change, and timestamp.
-- Reassignment history preserves both who is responsible now and who acted historically.
-- Contributor Action Center and report views use the signed-in user's assignments.
-- Reports add user filters, factual workload metrics, contribution history, and a Task/Subtask User Gantt.
-- AI context is rebuilt on the server from the authenticated tenant and user, so “I / me / my” refers to the signed-in user and app permissions are applied before data reaches the AI provider.
-- Internal Admin remains outside tenant productivity reporting.
-- Create and Edit forms now group Start Date, Due Date, and Follow-up Date in a clearly labeled Task/Subtask Schedule section.
-- Subtask rows show Start and Due dates directly below the title, without requiring horizontal scrolling.
-- Start Date remains present in the table even when an older saved column preference predates the field.
+- An open Subtask whose Follow-up Date has passed automatically moves to the current calendar day.
+- Done, Resolved, Closed, configured closed statuses, and Waiting on Done do not roll forward.
+- Every automatic change creates a permanent System comment and `follow_up_auto_moved` activity event.
+- System comments cannot be created, edited, or deleted by browser-submitted workspace data.
+- The Edit Subtask screen includes a read-only Follow-up History panel.
+- Action Center comment previews include recent System rollover entries.
+- Processing is idempotent and runs at startup, every five minutes while the server is active, and when tenant data is loaded.
+- After downtime, the date catches up once with the number of missed calendar days recorded in the trail.
+- The default rollover timezone is `Asia/Manila`; deployments can override it with the optional `FOLLOW_UP_TIME_ZONE` environment variable.
+- AI context and user reports receive the System activity event and updated Follow-up Date.
 
-No new environment variable, npm dependency, or Supabase migration is required for v0.6.22.
+No new required environment variable, npm dependency, or Supabase migration is required for v0.6.23.
+
+---
+
+## Previous release — v0.6.22
+
+v0.6.22 made Task and Subtask Start Date clearly visible in create, edit, and table views.
 
 ---
 
@@ -405,7 +409,7 @@ Apply the SQL files in this order for a fresh environment:
 7. `supabase/schema-v7-password-recovery.sql`
 8. `supabase/schema-v8-tenant-integrations.sql`
 
-v0.6.12 through v0.6.22 do not add another Supabase migration beyond the migrations already required by the current build.
+v0.6.12 through v0.6.23 do not add another Supabase migration beyond the migrations already required by the current build.
 
 ### Bootstrap credentials
 
@@ -426,10 +430,10 @@ Always check the current version first:
 npm run patch:status
 ```
 
-For the current release, upgrade **v0.6.21 → v0.6.22** with the matching patch package:
+For the current release, upgrade **v0.6.22 → v0.6.23** with the matching patch package:
 
 ```bash
-npm run patch -- "path/to/ba-client-ops-patch-v0.6.22-subtask-start-date-hotfix.zip"
+npm run patch -- "path/to/ba-client-ops-patch-v0.6.23-follow-up-rollover.zip"
 npm run patch:status
 npm run build
 ```
@@ -512,6 +516,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.23** | Automatic open-Subtask follow-up rollover with permanent System comments and activity history |
 | **0.6.22** | Subtask Start Date visibility hotfix for create, edit, inline rows, and legacy column preferences |
 | **0.6.21** | Tenant-user Task/Subtask assignment, Start Date, authenticated work history, user reports, User Gantt, and user-aware AI |
 | **0.6.20** | AI Test Case Creator with Skills, Coverage Map, editable cases, Coverage Review, and XLSX export |
@@ -530,4 +535,4 @@ For detailed release-specific instructions, see the matching `UPGRADE-v0.6.x.md`
 
 ## Current version
 
-**BA Client Ops Tracker v0.6.22**
+**BA Client Ops Tracker v0.6.23**

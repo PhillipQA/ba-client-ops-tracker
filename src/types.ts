@@ -52,6 +52,19 @@ export interface TaskEvidence {
   kind: 'Screenshot' | 'File'
 }
 
+export interface TaskComment {
+  id: string
+  text: string
+  createdAt: string
+  createdBy: string
+  createdByName: string
+  kind: 'System' | 'User'
+  eventType?: 'FOLLOW_UP_AUTO_MOVED'
+  previousFollowUpDate?: string
+  nextFollowUpDate?: string
+  daysMoved?: number
+}
+
 export interface WorkItem {
   id: string
   clientId?: string
@@ -76,9 +89,10 @@ export interface WorkItem {
   externalSourceId?: string
   sourceSender?: string
   evidence?: TaskEvidence[]
+  comments?: TaskComment[]
 }
 
-export type WorkActivityAction = 'created' | 'assigned' | 'reassigned' | 'started' | 'status_changed' | 'updated' | 'completed' | 'reopened' | 'deleted' | 'evidence_uploaded' | 'evidence_deleted'
+export type WorkActivityAction = 'created' | 'assigned' | 'reassigned' | 'started' | 'status_changed' | 'updated' | 'completed' | 'reopened' | 'deleted' | 'evidence_uploaded' | 'evidence_deleted' | 'follow_up_auto_moved'
 
 export interface WorkActivityEvent {
   id: string
@@ -86,7 +100,7 @@ export interface WorkActivityEvent {
   date: string
   actorUserId: string
   actorName: string
-  actorRole: UserRole
+  actorRole: UserRole | 'System'
   assignedToUserId?: string
   assignedToName?: string
   clientId?: string
