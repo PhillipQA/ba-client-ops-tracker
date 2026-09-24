@@ -45,7 +45,16 @@ app.set('trust proxy', 1)
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
+  // Keep failed-login counters isolated per tenant/user even when several people share one public IP.
+  keyGenerator: (req) => {
+    const account = typeof req.body?.account === 'string' ? req.body.account.trim().toLowerCase() : ''
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : ''
+    return `${req.ip || req.socket.remoteAddress || 'unknown'}:${account}:${username}`
+  },
+  // Only a credential rejection (401) counts as a failed login. Network aborts, validation errors,
+  // server/configuration errors, and successful logins are removed from the counter.
   skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode !== 401,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many failed login attempts. Please try again in 15 minutes.' },

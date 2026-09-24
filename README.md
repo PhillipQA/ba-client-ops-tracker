@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.33**
+**Current release: v0.6.34**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,11 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.33
+## Current release — v0.6.34
+
+Login rate-limit hotfix. Failed-login counters are now isolated by **client IP + Account + User**, so unrelated users behind the same office/home public IP do not consume one another's five-attempt allowance. Only actual credential rejections (`401`) count; successful logins, aborted/network requests, validation failures, and server/configuration errors do not. The five-failed-attempt / 15-minute protection remains in place. No database migration, new dependency, or environment change is required. See `UPGRADE-v0.6.34.md`.
+
+## Previous release — v0.6.33
 
 DocHub signing preparation for DRF and Sign-Off forms, using a separate API key managed by each account's Administrator. Link a generated document to an existing Task/Subtask; signing changes appear in its comments and signature completion creates an in-app notification. Documents remain unsent for manual signature-field placement and review in DocHub. Task completion stays manual.
 
