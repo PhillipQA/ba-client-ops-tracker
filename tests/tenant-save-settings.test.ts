@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { preserveTaskSettings } from '../tenant-save-settings'
+import { preserveTaskSettings } from '../server/services/tenant-save-settings'
 
 test('ordinary task edits preserve server task settings when the browser inserted a display column', () => {
   const serverSettings = { statuses: [{ id: 'open', label: 'Open', closed: false }], visibleColumns: ['status', 'dueDate'] }

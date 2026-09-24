@@ -3,7 +3,7 @@ import PizZip from 'pizzip'
 import Docxtemplater from 'docxtemplater'
 import { PDFDocument } from 'pdf-lib'
 import type { Express, RequestHandler } from 'express'
-import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, formatDeploymentDate, signoffReference } from './src/signoff'
+import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, formatDeploymentDate, signoffReference } from '../../src/signoff'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const supported = new Set(['png', 'jpg', 'jpeg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'zip'])

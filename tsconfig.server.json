@@ -10,9 +10,14 @@
   },
   "include": [
     "server.ts",
-    "password-recovery-email.ts",
-    "tenant-integrations.ts",
-    "platform-settings.ts",
-    "platform-auth.ts"
+    "server/**/*.ts",
+    "src/lifecycle.ts",
+    "src/theme.ts",
+    "src/signoff.ts",
+    "src/fsd-model.ts",
+    "src/testcase-model.ts",
+    "src/version.ts",
+    "src/subtaskAssignment.ts",
+    "src/types.ts"
   ]
 }

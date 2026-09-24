@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
 import PizZip from 'pizzip'
-import { encryptSecret, decryptSecret, encryptionKey, integrationSummary, createIntegrationStore, registerIntegrationRoutes, normalizeAiConfig, createAiClient } from '../tenant-integrations'
-import { registerPlatformSettings } from '../platform-settings'
-import { requirePlatformAdmin } from '../platform-auth'
+import { encryptSecret, decryptSecret, encryptionKey, integrationSummary, createIntegrationStore, registerIntegrationRoutes, normalizeAiConfig, createAiClient } from '../server/integrations/tenant-integrations'
+import { registerPlatformSettings } from '../server/platform/platform-settings'
+import { requirePlatformAdmin } from '../server/platform/platform-auth'
 process.env.TENANT_INTEGRATION_MASTER_KEY = 'ab'.repeat(32)
 const secretA = 'sk-test-account-a-credential-1234', secretB = 'sk-test-account-b-credential-5678'
 function memoryDatabase() {

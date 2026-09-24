@@ -1,10 +1,10 @@
 import type { Express, RequestHandler } from 'express'
 import rateLimit from 'express-rate-limit'
 import PizZip from 'pizzip'
-import { aiProviderName, IntegrationError, normalizeAiConfig } from './tenant-integrations'
-import type { createAiAgentManager } from './ai-agent-manager'
-import { runTenantAi } from './tenant-ai'
-import { TEST_CASE_COLUMNS, type CoverageMap, type CoverageRequirement, type TestCasePreview, type TestCaseRow, type TestCaseSource } from './src/testcase-model'
+import { aiProviderName, IntegrationError, normalizeAiConfig } from '../integrations/tenant-integrations'
+import type { createAiAgentManager } from '../ai/ai-agent-manager'
+import { runTenantAi } from '../ai/tenant-ai'
+import { TEST_CASE_COLUMNS, type CoverageMap, type CoverageRequirement, type TestCasePreview, type TestCaseRow, type TestCaseSource } from '../../src/testcase-model'
 
 function clean(value: unknown, label: string, max: number, required = false) {
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) throw new IntegrationError(`Invalid ${label}.`)

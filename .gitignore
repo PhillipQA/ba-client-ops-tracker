@@ -1,11 +1,29 @@
-node_modules
-dist
-.DS_Store
-*.local
+# Dependencies and generated builds
+node_modules/
+dist/
+*.tsbuildinfo
+*.zip
+
+# Local environment / secrets
 .env
 .env.*
 !.env.example
 
-*.tsbuildinfo
+# Patch updater runtime state
 .patch-backups/
 .patch-tmp/
+
+# Logs, temp files and editor/OS noise
+*.log
+logs/
+tmp/
+temp/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local uploads / generated working files
+uploads/
+build-output/
+patch-output/

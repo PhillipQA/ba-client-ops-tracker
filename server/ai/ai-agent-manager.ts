@@ -9,7 +9,7 @@ import {
   normalizeAiConfig,
   type AiProvider,
   type createIntegrationStore,
-} from './tenant-integrations'
+} from '../integrations/tenant-integrations'
 
 export type AiAgentId = 'ba_assistant' | 'document'
 

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import express from 'express'
-import { authRequestDiagnostics, configureHttpServer } from '../auth-transport'
+import { authRequestDiagnostics, configureHttpServer } from '../server/auth/auth-transport'
 import { getAuthSession, login, logout } from '../src/auth'
 
 const originalFetch = globalThis.fetch

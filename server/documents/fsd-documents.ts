@@ -1,11 +1,11 @@
 import type { Express, RequestHandler } from 'express'
 import { readFile } from 'node:fs/promises'
 import rateLimit from 'express-rate-limit'
-import { aiProviderName, IntegrationError, normalizeAiConfig } from './tenant-integrations'
-import type { createAiAgentManager } from './ai-agent-manager'
-import { runTenantAi } from './tenant-ai'
+import { aiProviderName, IntegrationError, normalizeAiConfig } from '../integrations/tenant-integrations'
+import type { createAiAgentManager } from '../ai/ai-agent-manager'
+import { runTenantAi } from '../ai/tenant-ai'
 import { renderFsdDocx } from './fsd-export'
-import { FSD_SECTIONS, FSD_MODULES, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource } from './src/fsd-model'
+import { FSD_SECTIONS, FSD_MODULES, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource } from '../../src/fsd-model'
 
 function text(value: unknown, label: string, max = 200, required = false) {
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) throw new IntegrationError(`Invalid ${label} (maximum ${max} characters).`)

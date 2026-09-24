@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import PizZip from 'pizzip'
 import { encryptSecret, decryptSecret, encryptionKey } from './tenant-integrations'
 import { apiClient, DocHubError, docHubId, docHubUrl, storageUrl, verifyDocHubWebhook, draftPacket, signingStatus } from './dochub-api'
-import { archivedWorkReason, workContext, LifecycleError } from './src/lifecycle'
+import { archivedWorkReason, workContext, LifecycleError } from '../../src/lifecycle'
 
 type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; organizationById: (id: string) => Promise<any>; load: (id: string) => Promise<any>; commit: (id: string, state: any, actor: any, reason: string, before: any, sync?: boolean) => Promise<any>; request?: typeof fetch }
 const terminal = new Set(['COMPLETED','REJECTED','VOIDED','EXPIRED'])

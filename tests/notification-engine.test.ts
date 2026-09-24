@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { markAllNotificationsReadForUser, reconcileNotifications, updateNotificationForUser } from '../notification-engine'
+import { markAllNotificationsReadForUser, reconcileNotifications, updateNotificationForUser } from '../server/services/notification-engine'
 
 const accounts = [
   { id: 'admin', name: 'Phillip', role: 'Administrator', status: 'Active' },

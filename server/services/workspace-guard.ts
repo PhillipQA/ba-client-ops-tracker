@@ -1,4 +1,4 @@
-import { assertLifecycleMutation, LifecycleError, stableRecord, type LifecycleActor, type LifecycleStore } from './src/lifecycle'
+import { assertLifecycleMutation, LifecycleError, stableRecord, type LifecycleActor, type LifecycleStore } from '../../src/lifecycle'
 
 /** Serialize snapshot commits per tenant and recheck the authoritative state immediately before saving. */
 export function createWorkspaceGuard(load: (id: string) => Promise<LifecycleStore | null>, fallback: () => LifecycleStore) {

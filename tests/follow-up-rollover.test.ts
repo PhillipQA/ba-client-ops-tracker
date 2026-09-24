@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps } from '../follow-up-rollover'
+import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps } from '../server/services/follow-up-rollover'
 
 function state(items: any[], statuses: any[] = [
   { id: 'open', label: 'Open', closed: false },

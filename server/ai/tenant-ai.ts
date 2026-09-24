@@ -1,4 +1,4 @@
-import { createAiClient, IntegrationError } from './tenant-integrations'
+import { createAiClient, IntegrationError } from '../integrations/tenant-integrations'
 
 /** Shared generation adapter. Credentials and provider selection stay on the server. */
 export async function runTenantAi(secret: string, config: unknown, instructions: string, input: string, timeout = 30000, maxTokens = 8000) {

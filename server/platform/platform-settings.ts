@@ -1,6 +1,6 @@
 import type { Express } from 'express'
-import { APP_VERSION } from './src/version'
-import { encryptionKey, IntegrationError } from './tenant-integrations'
+import { APP_VERSION } from '../../src/version'
+import { encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
 
 export function registerPlatformSettings(app: Express, d: any) {
   const scope = [d.requireAuth, d.requirePlatformAdmin]

@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import express from 'express'
-import { CALENDAR_CALLBACK, CALENDAR_SCOPES, calendarRange, createCalendarStore, mapCalendarEvent, openCalendar, registerGoogleCalendarRoutes, sealCalendar, validateCredentials } from '../google-calendar'
+import { CALENDAR_CALLBACK, CALENDAR_SCOPES, calendarRange, createCalendarStore, mapCalendarEvent, openCalendar, registerGoogleCalendarRoutes, sealCalendar, validateCredentials } from '../server/integrations/google-calendar'
 import { scheduleRange } from '../src/googleCalendar'
-import { requirePlatformAdmin } from '../platform-auth'
+import { requirePlatformAdmin } from '../server/platform/platform-auth'
 
 process.env.TENANT_INTEGRATION_MASTER_KEY = 'ab'.repeat(32)
 delete process.env.APP_BASE_URL

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
-import { registerAccountUsers } from '../account-users'
+import { registerAccountUsers } from '../server/accounts/account-users'
 import { normalizeClientThemes, themeForContext } from '../src/theme'
 
 async function fixture(run: (f: any) => Promise<void>) {

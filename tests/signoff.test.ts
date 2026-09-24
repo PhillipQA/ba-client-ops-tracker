@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import express from 'express'
 import PizZip from 'pizzip'
-import { renderSignoff, registerSignoffRoutes, validateSignoff } from '../signoff-documents'
+import { renderSignoff, registerSignoffRoutes, validateSignoff } from '../server/documents/signoff-documents'
 import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_PURPOSE, SIGNOFF_MAX_FILE_BYTES, formatDeploymentDate } from '../src/signoff'
 
 const templatePath = new URL('../templates/signoff-template.docx', import.meta.url).pathname
