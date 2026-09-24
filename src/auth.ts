@@ -30,13 +30,29 @@ export async function hashPassword(value: string) {
 }
 
 async function authRequest(path: string, options?: RequestInit) {
-  const response = await fetch(path, {
-    ...options,
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
-  })
-  const body = await response.json().catch(() => ({}))
-  return { response, body }
+  const requestId = crypto.randomUUID()
+  const headers = new Headers(options?.headers)
+  headers.set('Content-Type', 'application/json')
+  headers.set('X-Auth-Request-Id', requestId)
+  try {
+    const response = await fetch(path, {
+      ...options,
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers,
+    })
+    // The connection can also close while receiving the response body.
+    const text = await response.text()
+    let body: any = {}
+    try {
+      const parsed: unknown = JSON.parse(text)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed
+    } catch { /* A proxy can return HTML. Use the HTTP fallback below. */ }
+    return { response, body, requestId }
+  } catch {
+    console.warn('Authentication connection interrupted', { requestId, path })
+    throw new Error(`The connection was interrupted. Please try again. Reference: ${requestId}`)
+  }
 }
 
 export async function getAuthSession(): Promise<AuthUser | null> {
@@ -47,14 +63,18 @@ export async function getAuthSession(): Promise<AuthUser | null> {
 }
 
 export async function login(account: string, username: string, password: string): Promise<AuthUser> {
-  const { response, body } = await authRequest('/api/auth/login', {
+  const { response, body, requestId } = await authRequest('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ account, username, password }),
   })
-  if (!response.ok) throw new Error(body.error || 'Login failed.')
+  if (!response.ok) throw new Error(body.error || `Login failed (HTTP ${response.status}). Reference: ${requestId}`)
+  if (!body.user || typeof body.user.id !== 'string') throw new Error(`The server returned an incomplete login response. Please refresh and try again. Reference: ${requestId}`)
   return body.user as AuthUser
 }
 
 export async function logout() {
-  await authRequest('/api/auth/logout', { method: 'POST', body: '{}' })
+  const { response, body, requestId } = await authRequest('/api/auth/logout', { method: 'POST', body: '{}' })
+  // An expired/revoked session is already signed out. Show other failures.
+  if (response.status === 401) return
+  if (!response.ok || body.ok !== true) throw new Error(body.error || `Sign out could not be confirmed (HTTP ${response.status}). Reference: ${requestId}`)
 }

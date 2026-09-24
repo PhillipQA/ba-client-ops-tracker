@@ -29,6 +29,7 @@ import { markAllNotificationsReadForUser, reconcileNotifications, updateNotifica
 import { preserveTaskSettings } from './tenant-save-settings'
 import { registerGoogleCalendarRoutes } from './google-calendar'
 import { applySubtaskAssignmentInheritance } from './src/subtaskAssignment'
+import { authRequestDiagnostics, configureHttpServer } from './auth-transport'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -105,7 +106,7 @@ const recoverySubmitLimiter = rateLimit({
   message: { error: 'Too many attempts. Please try again in 15 minutes.' },
 })
 const sendRecoveryEmail = recoveryMailer()
-app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next() })
+app.use('/api/auth', authRequestDiagnostics)
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -2406,8 +2407,9 @@ if (!isProduction) {
   app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
 }
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`BA Client Ops Tracker running on http://localhost:${port}`)
+  console.log(`HTTP timeouts: keepAlive=${server.keepAliveTimeout}ms, headers=${server.headersTimeout}ms`)
   if (isProduction && !bootstrapPasswordUsable(internalAdminBootstrapPassword)) {
     console.warn('SECURITY: INTERNAL_ADMIN_BOOTSTRAP_PASSWORD is not configured with 12+ characters. It is required only while the Internal Admin account is in bootstrap state.')
   }
@@ -2417,6 +2419,7 @@ app.listen(port, () => {
   void reconcileDiscord()
   void reconcileFollowUpRollovers()
 })
+configureHttpServer(server)
 
 const discordTimer = setInterval(() => { void reconcileDiscord(); const now = Date.now(); for (const [id, value] of discordUserWindows) if (now - value.startedAt > 60000) discordUserWindows.delete(id) }, 30000)
 discordTimer.unref()

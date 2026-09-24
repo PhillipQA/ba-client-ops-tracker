@@ -407,6 +407,7 @@ function App() {
   const [authChecking, setAuthChecking] = useState(true)
   const [loginError, setLoginError] = useState('')
   const [loginBusy, setLoginBusy] = useState(false)
+  const [logoutBusy, setLogoutBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [newExternalInquiryIds, setNewExternalInquiryIds] = useState<string[]>([])
   const [notificationBusy, setNotificationBusy] = useState(false)
@@ -724,15 +725,24 @@ function App() {
   }
 
   const handleLogout = async () => {
-    try { await logout() } catch (error) { console.error(error) }
-    setAuthUser(null)
-    setProfileOpen(false)
-    setSelectedClientId(null)
-    setSelectedProjectId(null)
-    setNewExternalInquiryIds([])
-    setEditingRecord(null)
-    setStore(seedStore())
-    setLoginError('')
+    if (logoutBusy) return
+    setLogoutBusy(true)
+    try {
+      await logout()
+      setAuthUser(null)
+      setProfileOpen(false)
+      setSelectedClientId(null)
+      setSelectedProjectId(null)
+      setNewExternalInquiryIds([])
+      setEditingRecord(null)
+      setStore(seedStore())
+      setLoginError('')
+    } catch (error) {
+      console.error('Sign out could not be confirmed:', error)
+      window.alert(error instanceof Error ? error.message : 'Sign out could not be confirmed. Please try again.')
+    } finally {
+      setLogoutBusy(false)
+    }
   }
 
   const accountCurrentUser = authUser ? store.accounts.find((account) => account.id === authUser.id && account.status === 'Active') : null
@@ -1342,7 +1352,7 @@ function App() {
           </div> : <button className="session-card session-card-button" type="button" onClick={() => setProfileOpen(true)} title="Edit your profile">
             <div className="session-avatar"><UserRound size={17} /></div><div><strong>{currentUser.name}</strong><span>{currentUser.role} · My profile</span></div><Pencil size={14} />
           </button>}
-          <button className="nav-button signout-button" type="button" onClick={() => void handleLogout()}><LogOut size={18} /><span>Sign out</span></button>
+          <button className="nav-button signout-button" type="button" disabled={logoutBusy} onClick={() => void handleLogout()}><LogOut size={18} /><span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span></button>
           <div className={`local-note storage-${cloudStatus}`} title={lastCloudSync ? `Last cloud sync: ${lastCloudSync}` : undefined}><CircleDot size={12} /> {cloudMessage}</div>
         </div>
       </aside>

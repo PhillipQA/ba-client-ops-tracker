@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.35",
+  "version": "0.6.36",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -23,7 +23,8 @@
     "test:calendar": "node --import tsx --test tests/google-calendar.test.ts",
     "test:subtask-assignment": "node --import tsx --test tests/subtask-assignment.test.ts",
     "test:auth-layout": "node --test tests/auth-layout.test.mjs",
-    "test:dochub": "node --import tsx --test tests/dochub.test.ts"
+    "test:dochub": "node --import tsx --test tests/dochub.test.ts",
+    "test:auth-transport": "node --import tsx --test tests/auth-transport.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",
