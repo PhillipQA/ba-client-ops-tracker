@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, ExternalLink, RefreshCw, FileSignature } from 'lucide-react'
+import { Archive, CheckCircle2, ExternalLink, FileSignature, FolderOpen, RefreshCw, UserRound, X } from 'lucide-react'
 import type { Client, Project, WorkItem } from './types'
-import { dochubRequest, docHubLabels, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
+import { dochubRequest, docHubLabels, isArchivedDocHubStatus, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
 import './dochub.css'
+
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
+const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
+
 export function useDocHubDraft(kind:'DRF'|'Sign-Off') {
   const [available,setAvailable]=useState(false),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const [doc,setDoc]=useState<DocHubDocument|null>(null)
@@ -16,6 +19,7 @@ export function useDocHubDraft(kind:'DRF'|'Sign-Off') {
   useEffect(()=>{if(!doc||!['IMPORTING','UPLOADING','UPLOADED'].includes(doc.status))return;const timer=window.setTimeout(()=>void refresh(),5000);return()=>window.clearTimeout(timer)},[doc,busy])
   return {available,enabled,setEnabled,busy,error,canRetry:Boolean(pending.current),doc,options,setOptions,prepare,refresh,retry:()=>pending.current?submit(pending.current):Promise.resolve(),validate:(signers:DocHubSigner[])=>{if(enabled)validateSigners(signers)}}
 }
+
 type Draft=ReturnType<typeof useDocHubDraft>
 export function DocHubOptions({draft,clients,projects,items,disabled=false}:{draft:Draft;clients:Client[];projects:Project[];items:WorkItem[];disabled?:boolean}) {
   const [projectId,setProjectId]=useState('')
@@ -33,28 +37,53 @@ export function DocHubOptions({draft,clients,projects,items,disabled=false}:{dra
     {draft.enabled&&<p className="dochub-note">You will place and assign signature fields in DocHub, then review and send there. Generation does not send invitations.</p>}
   </section>
 }
+
 export function DocHubResult({draft}:{draft:Draft}) {return <div className="dochub-result" aria-live="polite">{draft.busy&&<p className="dochub-progress"><RefreshCw size={16} className="dochub-spin"/> Preparing DocHub document…</p>}{draft.error&&<div role="alert"><p>{draft.error}</p>{draft.canRetry&&<button type="button" className="secondary" disabled={draft.busy} onClick={()=>void draft.retry()}>Retry same preparation</button>}</div>}{draft.doc&&<DocHubCard doc={draft.doc} refresh={draft.refresh} busy={draft.busy}/>}</div>}
+
 function DocHubCard({doc,refresh,busy=false}:{doc:DocHubDocument;refresh:()=>Promise<void>;busy?:boolean}) {
   const [recoverId,setRecoverId]=useState(''),[recoverError,setRecoverError]=useState(''),[recoverBusy,setRecoverBusy]=useState(false)
   const signers=doc.signers.filter(s=>!s.removed),signed=signers.filter(s=>s.signedAt||s.status==='FINALIZED').length
   return <article className={`dochub-card${doc.status==='COMPLETED'?' complete':''}`}><div className="dochub-card-head"><div><strong>{doc.title}</strong><span>{docHubLabels[doc.status] || doc.status}</span></div><span className="count-pill">{signed}/{signers.length} signed</span></div>
+    {doc.createdByName&&<div className="dochub-created-by"><UserRound size={14}/><span>Created by <strong>{doc.createdByName}</strong> · {dateTime(doc.createdAt)}</span></div>}
     {doc.error&&<p className="dochub-error" role="alert">{doc.error}</p>}{doc.setupNote&&<p>{doc.setupNote}</p>}
     <div className="dochub-actions">{doc.documentUrl&&<a className="secondary" href={doc.documentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15}/> Open in DocHub</a>}<button type="button" className="secondary" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={15}/>{busy?'Refreshing…':'Refresh status'}</button>{doc.status==='COMPLETED'&&<a className="secondary" href={`/api/dochub/documents/${doc.id}/pdf`} target="_blank" rel="noopener noreferrer">View signed PDF</a>}</div>
-    <small>Last checked: {doc.checkedAt?new Date(doc.checkedAt).toLocaleString():'Pending'}{doc.followUpDate?` · Follow-up: ${doc.followUpDate}`:''}</small>
-    <details><summary>Signatories and activity</summary><ul className="dochub-signers">{signers.map((s,i)=><li key={s.id||i}><strong>{s.name}</strong><span>{s.email}</span><span>{s.signedAt||s.status==='FINALIZED'?'Signed':s.viewedAt?'Viewed':s.status || 'Prepared'}{s.signedAt?` · ${new Date(s.signedAt).toLocaleString()}`:''}</span></li>)}</ul><ol className="dochub-timeline">{doc.events.map(e=><li key={e.id}><time>{new Date(e.createdAt).toLocaleString()}</time>{e.message}</li>)}</ol></details>
+    <small>Last checked: {dateTime(doc.checkedAt)}{doc.followUpDate?` · Follow-up: ${doc.followUpDate}`:''}</small>
+    <details><summary>Signatories and activity</summary><ul className="dochub-signers">{signers.map((s,i)=><li key={s.id||i}><strong>{s.name}</strong><span>{s.email}</span><span>{s.signedAt||s.status==='FINALIZED'?'Signed':s.viewedAt?'Viewed':s.status || 'Prepared'}{s.signedAt?` · ${dateTime(s.signedAt)}`:''}</span></li>)}</ul><ol className="dochub-timeline">{doc.events.map(e=><li key={e.id}><time>{dateTime(e.createdAt)}</time>{e.message}</li>)}</ol></details>
     {doc.status==='REVIEW_REQUIRED'&&!doc.documentId&&<div><p>After confirming the matching file in DocHub, enter its document ID to resume this preparation.</p><input aria-label="Existing DocHub document ID" value={recoverId} onChange={e=>setRecoverId(e.target.value)}/><button type="button" className="secondary" disabled={!recoverId||recoverBusy} onClick={async()=>{setRecoverBusy(true);try{await dochubRequest(`/api/dochub/documents/${doc.id}/recover`,'POST',{documentId:recoverId});await refresh()}catch(e){setRecoverError((e as Error).message)}finally{setRecoverBusy(false)}}}>Link existing document</button>{recoverError&&<p role="alert">{recoverError}</p>}</div>}
   </article>
 }
+
+function DocHubTile({doc,busy,onRefresh,onOpen,archived}:{doc:DocHubDocument;busy:boolean;onRefresh:()=>Promise<void>;onOpen:()=>void;archived:boolean}) {
+  const signers=doc.signers.filter(s=>!s.removed),signed=signers.filter(s=>s.signedAt||s.status==='FINALIZED').length
+  return <article className={`dochub-tile${archived?' archived':''}`}>
+    <div className="dochub-tile-head"><div><span className="dochub-kind">{doc.kind}</span><strong title={doc.title}>{doc.title}</strong></div><span className={`dochub-status${archived?' archived':''}`}>{docHubLabels[doc.status] || doc.status}</span></div>
+    <div className="dochub-tile-facts">
+      <span><UserRound size={13}/><b>{doc.createdByName || 'Unknown user'}</b></span>
+      <span>Created {dateTime(doc.createdAt)}</span>
+      <span>Signatures <b>{signed}/{signers.length}</b></span>
+      {doc.followUpDate&&<span>Follow-up <b>{doc.followUpDate}</b></span>}
+    </div>
+    <div className="dochub-tile-actions"><button type="button" className="secondary compact" onClick={onOpen}>Details</button>{doc.documentUrl&&<a className="secondary compact" href={doc.documentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/> Open</a>}{!archived&&<button type="button" className="secondary compact" disabled={busy} onClick={()=>void onRefresh()}><RefreshCw size={14} className={busy?'dochub-spin':''}/>{busy?'Refreshing':'Refresh'}</button>}{doc.status==='COMPLETED'&&<a className="secondary compact" href={`/api/dochub/documents/${doc.id}/pdf`} target="_blank" rel="noopener noreferrer">Signed PDF</a>}</div>
+  </article>
+}
+
 export function DocHubHistory({active=true,taskId,canCreate=false,onComplete}:{active?:boolean;taskId?:string;canCreate?:boolean;onComplete?:()=>void}) {
-  const [docs,setDocs]=useState<DocHubDocument[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState('')
-  const load=async()=>{try{const r=await dochubRequest(`/api/dochub/documents${taskId?`?taskId=${encodeURIComponent(taskId)}`:''}`);setDocs(r.documents);setError('')}catch(e){setError((e as Error).message)}}
+  const [docs,setDocs]=useState<DocHubDocument[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(''),[view,setView]=useState<'active'|'archive'>('active'),[selected,setSelected]=useState<DocHubDocument|null>(null)
+  const load=async()=>{try{const r=await dochubRequest(`/api/dochub/documents${taskId?`?taskId=${encodeURIComponent(taskId)}`:''}`);setDocs(r.documents);setSelected(current=>current?((r.documents as DocHubDocument[]).find(d=>d.id===current.id)||null):null);setError('')}catch(e){setError((e as Error).message)}}
+  const refreshOne=async(id:string)=>{setBusy(id);try{await dochubRequest(`/api/dochub/documents/${id}/refresh`,'POST');await load();updated()}catch(e){setError((e as Error).message)}finally{setBusy('')}}
   useEffect(()=>{if(!active)return;let live=true;const refresh=()=>{if(live)void load()};refresh();const timer=window.setInterval(refresh,30_000);window.addEventListener('dochub-updated',refresh);return()=>{live=false;window.clearInterval(timer);window.removeEventListener('dochub-updated',refresh)}},[active,taskId])
-  return <section className={`panel dochub-history${taskId?' span-2':''}`}><div className="panel-heading"><div><h3>{taskId?'Linked documents':'Document history'}</h3><p>{taskId?'Signing updates are added to this work item’s activity comments.':'DRFs and Sign-Offs prepared in DocHub. Linked tasks remain your work records.'}</p></div><button type="button" className="secondary" onClick={()=>void load()}>Reload history</button></div>
+  const archivedDocs=docs.filter(d=>isArchivedDocHubStatus(d.status)),activeDocs=docs.filter(d=>!isArchivedDocHubStatus(d.status)),visibleDocs=taskId?docs:(view==='archive'?archivedDocs:activeDocs)
+  return <section className={`panel dochub-history${taskId?' span-2':''}`}><div className="panel-heading"><div><h3>{taskId?'Linked documents':'Document history'}</h3><p>{taskId?'Signing updates are added to this work item’s activity comments.':'Active documents stay here while they are being prepared, routed, or signed. Done, completed, and voided documents move to Archive automatically.'}</p></div><button type="button" className="secondary" onClick={()=>void load()}>Reload history</button></div>
+    {!taskId&&<div className="dochub-history-tabs" role="tablist" aria-label="Document history folders"><button type="button" className={view==='active'?'active':''} role="tab" aria-selected={view==='active'} onClick={()=>setView('active')}><FolderOpen size={16}/> Active <span>{activeDocs.length}</span></button><button type="button" className={view==='archive'?'active':''} role="tab" aria-selected={view==='archive'} onClick={()=>setView('archive')}><Archive size={16}/> Archive <span>{archivedDocs.length}</span></button></div>}
     {taskId&&canCreate&&<div className="dochub-actions">{(['drf','signoff'] as const).map(flow=><button key={flow} type="button" className="secondary" onClick={()=>window.dispatchEvent(new CustomEvent('dochub-create',{detail:{taskId,flow}}))}>Create {flow==='drf'?'DRF':'Sign-Off'} for this work</button>)}</div>}
-    {error&&<p role="alert">{error}</p>}{!docs.length&&!error&&<p>No documents linked yet.</p>}{docs.map(doc=><DocHubCard key={doc.id} doc={doc} busy={busy===doc.id} refresh={async()=>{setBusy(doc.id);try{await dochubRequest(`/api/dochub/documents/${doc.id}/refresh`,'POST');await load();updated()}catch(e){setError((e as Error).message)}finally{setBusy('')}}}/>)}
+    {error&&<p className="dochub-history-message" role="alert">{error}</p>}
+    {!visibleDocs.length&&!error&&<div className="dochub-history-empty">{taskId?'No documents linked yet.':view==='archive'?'Archive is empty. Completed and voided documents will appear here for tracking.':'No active documents. New or in-route documents will appear here.'}</div>}
+    {taskId?visibleDocs.map(doc=><DocHubCard key={doc.id} doc={doc} busy={busy===doc.id} refresh={()=>refreshOne(doc.id)}/>):<div className="dochub-history-grid">{visibleDocs.map(doc=><DocHubTile key={doc.id} doc={doc} archived={view==='archive'} busy={busy===doc.id} onOpen={()=>setSelected(doc)} onRefresh={()=>refreshOne(doc.id)}/>)}</div>}
     {onComplete&&docs.some(d=>d.status==='COMPLETED')&&<div className="dochub-completion"><CheckCircle2 size={18}/><span>Signatures complete. Mark this task/subtask completed?</span><button className="secondary" type="button" onClick={onComplete}>Set completed status</button><small>Review and save your task changes to confirm.</small></div>}
+    {selected&&<div className="modal-backdrop dochub-detail-backdrop" role="presentation" onMouseDown={event=>{if(event.currentTarget===event.target)setSelected(null)}}><div className="modal dochub-detail-modal" role="dialog" aria-modal="true" aria-label={`Document details for ${selected.title}`}><div className="modal-head"><div><h2>Document details</h2><p>{selected.kind} · {docHubLabels[selected.status] || selected.status}</p></div><button className="icon-button" type="button" aria-label="Close document details" onClick={()=>setSelected(null)}><X size={20}/></button></div><div className="dochub-detail-body"><DocHubCard doc={selected} busy={busy===selected.id} refresh={()=>refreshOne(selected.id)}/></div></div></div>}
   </section>
 }
+
 export function DocHubSettings() {
   const [data,setData]=useState<any>(null),[key,setKey]=useState(''),[secret,setSecret]=useState(''),[enabled,setEnabled]=useState(true),[busy,setBusy]=useState(false),[message,setMessage]=useState('')
   const load=async()=>{const value=await dochubRequest('/api/account/dochub');setData(value);setEnabled(value.configured?value.enabled:true)}

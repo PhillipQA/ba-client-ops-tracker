@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.37**
+**Current release: v0.6.38**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,11 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.37
+## Current release — v0.6.38
+
+Document History is now split into compact **Active** and **Archive** folders. Done/completed/voided documents automatically leave the Active view without being deleted, while creator tracking, signing progress, follow-up, and full activity remain available. The global history uses responsive tiles with a details modal to save vertical space. See `UPGRADE-v0.6.38.md`.
+
+## Previous release — v0.6.37
 
 AI Agent Manager. BA Assistant and Document Agent can now use separate per-tenant providers, models and encrypted API credentials. BA Assistant handles conversational workspace analysis and Discord inquiry assessment. Document Agent handles FSD generation, Test Case Creator AI workflows, and optional DRF AI Enhanced extraction. Existing shared tenant AI credentials remain as a compatibility fallback until dedicated agents are configured. Run `supabase/schema-v11-ai-agent-manager.sql` before saving dedicated agent credentials. See `UPGRADE-v0.6.37.md`.
 
@@ -608,6 +612,7 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.38** | Compact Document History with Active/Archive folders, automatic terminal-status archiving, creator tracking, and details modal |
 | **0.6.37** | AI Agent Manager with separate BA Assistant and Document Agent credentials, models, providers, routing, and legacy fallback |
 | **0.6.36** | Authentication connection handling and diagnostics |
 | **0.6.35** | Multi-browser login lockout correction |
@@ -641,4 +646,4 @@ For detailed release-specific instructions, see the matching `UPGRADE-v0.6.x.md`
 
 ## Current version
 
-**BA Client Ops Tracker v0.6.37**
+**BA Client Ops Tracker v0.6.38**
