@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { requirePlatformAdmin } from './platform-auth'
 import { registerPlatformSettings } from './platform-settings'
 import { createIntegrationStore, registerIntegrationRoutes, encryptionKey, IntegrationError, aiProviderName } from './tenant-integrations'
+import { createAiAgentManager, registerAiAgentRoutes } from './ai-agent-manager'
 import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { PDFDocument, PDFTextField } from 'pdf-lib'
@@ -115,6 +116,7 @@ const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
   : null
 
 const integrations = createIntegrationStore(supabaseAdmin)
+const aiAgents = createAiAgentManager(supabaseAdmin, integrations)
 const docHubDeps = { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, organizationById, load: loadTenantState, commit: commitTenantState }
 const docHubService = createDocHubService(docHubDeps)
 registerDocHubWebhook(app, docHubDeps, docHubService)
@@ -1461,8 +1463,8 @@ app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res)
   }
 
   let ai: Awaited<ReturnType<typeof integrations.active>>
-  try { ai = await integrations.active(tenantIdForUser(user)!, 'openai') } catch { return void res.status(503).json({ error: 'Account AI settings are unavailable.' }) }
-  if (!ai) return void res.status(503).json({ error: 'Enable an AI provider and API key in this account’s Settings.' })
+  try { ai = await aiAgents.active(tenantIdForUser(user)!, 'ba_assistant') } catch { return void res.status(503).json({ error: 'BA Assistant settings are unavailable.' }) }
+  if (!ai) return void res.status(503).json({ error: 'Enable and configure the BA Assistant in Account Settings → AI Agent Manager.' })
 
   const message = typeof req.body?.message === 'string' ? req.body.message.trim() : ''
   if (!message) {
@@ -1556,7 +1558,7 @@ ${message}`,
     res.json({ message: responseMessage, suggestions: sanitizeSuggestions(parsed.suggestions) })
   } catch (error) {
     console.error('Account AI request failed.')
-    res.status(502).json({ error: 'AI request failed. Check this account’s provider, key, selected model, quota, and connection.' })
+    res.status(502).json({ error: 'BA Assistant request failed. Check this account’s BA Assistant provider, key, selected model, quota, and connection.' })
   }
 })
 
@@ -1727,9 +1729,9 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
   }
 }
 
-registerFsdRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, integrations, logoPath: path.join(__dirname, 'templates', 'fsd-logo.png') })
+registerFsdRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, logoPath: path.join(__dirname, 'templates', 'fsd-logo.png') })
 
-registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, integrations })
+registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
 
 registerSignoffRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(__dirname, 'templates', 'signoff-template.docx') })
 
@@ -1737,7 +1739,7 @@ app.get('/api/documents/drf/ai-status', requireAuth, requireTenantWorkspace, asy
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!documentAccessAllowed(user)) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
   try {
-    const ai = await integrations.active(tenantIdForUser(user)!, 'openai')
+    const ai = await aiAgents.active(tenantIdForUser(user)!, 'document')
     if (!ai) return void res.json({ available: false })
     res.setHeader('Cache-Control', 'no-store')
     res.json({ available: true, provider: aiProviderName(ai.config), model: String((ai.config as any)?.model || '') })
@@ -1757,8 +1759,8 @@ app.post('/api/documents/drf/extract-cor-ai', requireAuth, requireTenantWorkspac
   if (text.length > 60000) return void res.status(400).json({ error: 'The extracted COR text is too large for AI extraction. Use Local Extractor or a smaller COR file.' })
 
   let ai: Awaited<ReturnType<typeof integrations.active>>
-  try { ai = await integrations.active(tenantIdForUser(user)!, 'openai') } catch { return void res.status(503).json({ error: 'Account AI settings are unavailable.' }) }
-  if (!ai) return void res.status(503).json({ error: 'Enable an AI provider and API key in this account’s Settings, or use Local Extractor.' })
+  try { ai = await aiAgents.active(tenantIdForUser(user)!, 'document') } catch { return void res.status(503).json({ error: 'Document Agent settings are unavailable.' }) }
+  if (!ai) return void res.status(503).json({ error: 'Enable and configure the Document Agent in Account Settings → AI Agent Manager, or use Local Extractor.' })
 
   const instructions = `You extract four exact fields from a Philippine BIR Certificate of Registration (COR) for a DRF.
 Return JSON only with this exact shape:
@@ -1790,7 +1792,7 @@ Rules:
     })
   } catch (error) {
     console.error('AI COR extraction failed.')
-    res.status(502).json({ error: 'AI COR extraction failed. Check this account’s AI provider, key, selected model, quota, and connection, or switch back to Local Extractor.' })
+    res.status(502).json({ error: 'AI COR extraction failed. Check this account’s Document Agent provider, key, selected model, quota, and connection, or switch back to Local Extractor.' })
   }
 })
 
@@ -1905,7 +1907,7 @@ async function assessDiscordInquiry(messageText: string, sender: string, state: 
   }
 
   let ai
-  try { ai = await integrations.active(organizationId, 'openai') } catch { return fallback }
+  try { ai = await aiAgents.active(organizationId, 'ba_assistant') } catch { return fallback }
   if (!ai) return fallback
   const today = new Date().toISOString().slice(0, 10)
   const clientContext = clients.map((item: any) => ({ id: String(item.id), name: String(item.name) }))
@@ -2032,6 +2034,7 @@ registerPlatformSettings(app, { db: supabaseAdmin, requireAuth, requirePlatformA
 registerDocHubRoutes(app, docHubDeps, docHubService)
 registerIntegrationRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace,
   organizationById, store: integrations, reconnect: reconnectDiscord, status: discordStatusPayload })
+registerAiAgentRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, organizationById, manager: aiAgents })
 registerGoogleCalendarRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, requirePlatformAdmin,
   organizationById, sessionFromRequest, sessionByToken: token => sessions.get(token) || null })
 

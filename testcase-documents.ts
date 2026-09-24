@@ -1,7 +1,8 @@
 import type { Express, RequestHandler } from 'express'
 import rateLimit from 'express-rate-limit'
 import PizZip from 'pizzip'
-import { aiProviderName, IntegrationError, normalizeAiConfig, type createIntegrationStore } from './tenant-integrations'
+import { aiProviderName, IntegrationError, normalizeAiConfig } from './tenant-integrations'
+import type { createAiAgentManager } from './ai-agent-manager'
 import { runTenantAi } from './tenant-ai'
 import { TEST_CASE_COLUMNS, type CoverageMap, type CoverageRequirement, type TestCasePreview, type TestCaseRow, type TestCaseSource } from './src/testcase-model'
 
@@ -121,26 +122,26 @@ function renderXlsx(cases: TestCaseRow[]) {
   return zip.generate({ type:'nodebuffer', compression:'DEFLATE' }) as Buffer
 }
 
-export function registerTestCaseRoutes(app: Express, deps: { requireAuth: RequestHandler; requireTenant: RequestHandler; integrations: ReturnType<typeof createIntegrationStore> }) {
+export function registerTestCaseRoutes(app: Express, deps: { requireAuth: RequestHandler; requireTenant: RequestHandler; aiAgents: ReturnType<typeof createAiAgentManager> }) {
   const guard: RequestHandler = (req,res,next) => { const user=(req as any).authUser; if(!user.modules?.includes('documents') || req.method==='POST' && user.role==='Viewer') return void res.status(403).json({error:'Document Creation access with write permission is required.'}); res.setHeader('Cache-Control','no-store'); next() }
   const scope=[deps.requireAuth,deps.requireTenant,guard]
-  const active=(req:any)=>deps.integrations.active(req.authUser.organizationId,'openai')
+  const active=(req:any)=>deps.aiAgents.active(req.authUser.organizationId,'document')
   const limiter=rateLimit({windowMs:60000,limit:8,standardHeaders:true,legacyHeaders:false,message:{error:'Too many Test Case AI requests. Wait a minute and retry.'}})
   app.get('/api/documents/test-cases/provider',...scope,async(req,res)=>{try{const ai=await active(req);res.json(ai?{enabled:true,...normalizeAiConfig(ai.config),name:aiProviderName(ai.config)}:{enabled:false})}catch{res.status(503).json({error:'Account AI settings are unavailable.'})}})
   app.post('/api/documents/test-cases/coverage',...scope,limiter,async(req,res)=>{try{
     const sources=validateSources(req.body?.sources),skills=validateSkills(req.body?.skills),ai=await active(req)
-    if(!ai) throw new IntegrationError('Enable an AI provider in this account’s Settings before creating test cases.',503)
+    if(!ai) throw new IntegrationError('Enable and configure the Document Agent in Account Settings → AI Agent Manager before creating test cases.',503)
     const result=await runTenantAi(ai.secret,ai.config,coverageInstructions,JSON.stringify({skills,sources}),180000,16000)
     const coverage=validateCoverage(parseJson(result),new Set(sources.map(s=>s.id))),normalized=normalizeAiConfig(ai.config)
     res.json({...coverage,provider:aiProviderName(ai.config),model:normalized.model,generatedAt:new Date().toISOString()})
-  }catch(e){res.status(e instanceof IntegrationError?e.status:502).json({error:e instanceof IntegrationError?e.message:'Coverage mapping failed. Check the saved AI key, model access, quota and connection.'})}})
+  }catch(e){res.status(e instanceof IntegrationError?e.status:502).json({error:e instanceof IntegrationError?e.message:'Coverage mapping failed. Check the Document Agent key, model access, quota and connection.'})}})
   app.post('/api/documents/test-cases/generate',...scope,limiter,async(req,res)=>{try{
     const sources=validateSources(req.body?.sources),skills=validateSkills(req.body?.skills),coverage=validateCoverage(req.body?.coverage,new Set(sources.map(s=>s.id))),ai=await active(req)
-    if(!ai) throw new IntegrationError('Enable an AI provider in this account’s Settings before creating test cases.',503)
+    if(!ai) throw new IntegrationError('Enable and configure the Document Agent in Account Settings → AI Agent Manager before creating test cases.',503)
     const result=await runTenantAi(ai.secret,ai.config,generationInstructions,JSON.stringify({skills,sources,coverage}),180000,24000)
     const preview=validatePreview(parseJson(result),coverage),normalized=normalizeAiConfig(ai.config)
     res.json({...preview,provider:aiProviderName(ai.config),model:normalized.model,generatedAt:new Date().toISOString()})
-  }catch(e){res.status(e instanceof IntegrationError?e.status:502).json({error:e instanceof IntegrationError?e.message:'Test case generation failed. Check the saved AI key, model access, quota and connection.'})}})
+  }catch(e){res.status(e instanceof IntegrationError?e.status:502).json({error:e instanceof IntegrationError?e.message:'Test case generation failed. Check the Document Agent key, model access, quota and connection.'})}})
   app.post('/api/documents/test-cases/export',...scope,async(req,res)=>{try{
     const preview=validatePreview({cases:req.body?.cases,coverageReview:req.body?.coverageReview})
     const file=renderXlsx(preview.cases),base=clean(req.body?.suiteName || 'Test-Case-Suite','suite name',120).replace(/[^a-z0-9_-]+/gi,'-').replace(/^-+|-+$/g,'') || 'Test-Case-Suite'

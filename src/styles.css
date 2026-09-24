@@ -1983,3 +1983,22 @@ select option { background: #181818; color: #fff; }
   .client-grid-list .next-line { grid-column: auto; border-top: 1px solid #39404a; padding-top: 9px; }
   .client-grid-list .client-card-edit { bottom: 14px; transform: none; }
 }
+
+/* v0.6.37 — AI Agent Manager */
+.ai-agent-manager { display: grid; gap: 14px; }
+.ai-agent-manager-head { display: grid; gap: 10px; }
+.ai-agent-architecture { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid #3c4657; border-radius: 10px; background: #1c222c; color: #dce7f8; font-size: 12px; font-weight: 700; }
+.ai-agent-architecture b { color: #8fb3e8; }
+.ai-agent-architecture .architecture-divider { color: #64758d; }
+.settings-helper { margin: 0; color: #aebbd0; font-size: 12px; line-height: 1.55; }
+.ai-agent-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ai-agent-card { min-width: 0; }
+.ai-agent-card h3 { margin: 0; }
+.ai-agent-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; margin: 4px 0 12px; color: #b9c4d5; font-size: 11px; }
+.ai-agent-route { display: grid; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid #394352; border-radius: 9px; background: rgba(255,255,255,.025); }
+.ai-agent-route div { display: grid; gap: 3px; }
+.ai-agent-route strong { color: #e8eef8; font-size: 11px; }
+.ai-agent-route span { color: #aab6c8; font-size: 11px; line-height: 1.45; }
+.app-shell:not(.theme-default) .ai-agent-architecture,
+.app-shell:not(.theme-default) .ai-agent-route { background: var(--theme-card, rgba(20,22,28,.8)); border-color: var(--theme-border, rgba(255,255,255,.2)); }
+@media (max-width: 900px) { .ai-agent-grid { grid-template-columns: 1fr; } }

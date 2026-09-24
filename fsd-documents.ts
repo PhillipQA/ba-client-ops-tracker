@@ -1,7 +1,8 @@
 import type { Express, RequestHandler } from 'express'
 import { readFile } from 'node:fs/promises'
 import rateLimit from 'express-rate-limit'
-import { aiProviderName, IntegrationError, normalizeAiConfig, type createIntegrationStore } from './tenant-integrations'
+import { aiProviderName, IntegrationError, normalizeAiConfig } from './tenant-integrations'
+import type { createAiAgentManager } from './ai-agent-manager'
 import { runTenantAi } from './tenant-ai'
 import { renderFsdDocx } from './fsd-export'
 import { FSD_SECTIONS, FSD_MODULES, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource } from './src/fsd-model'
@@ -82,14 +83,14 @@ Follow the supplied preset, section guidance, source mapping and selected module
 - Keep all four Software Features sections. If a module is explicitly excluded, say Out of scope — excluded by user. If applicability is not established by evidence, say TBD — applicability requires confirmation, and list the gap. Do not generate unsupported features.
 - Assumptions and Limitations: dependencies, preconditions, constraints and exclusions separated. Never claim an FSD is approved or signatures are present.
 Cover, proprietary notice, contents and document history are rendered by the application. Do not duplicate these in other sections. Aim for complete, specific content rather than generic guidance.`
-export function registerFsdRoutes(app: Express, deps: { requireAuth: RequestHandler; requireTenant: RequestHandler; integrations: ReturnType<typeof createIntegrationStore>; logoPath: string }) {
+export function registerFsdRoutes(app: Express, deps: { requireAuth: RequestHandler; requireTenant: RequestHandler; aiAgents: ReturnType<typeof createAiAgentManager>; logoPath: string }) {
   const guard: RequestHandler = (req,res,next) => {
     const user = (req as any).authUser
     if (!user.modules?.includes('documents') || req.method === 'POST' && user.role === 'Viewer') return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
     res.setHeader('Cache-Control','no-store'); next()
   }
   const scope = [deps.requireAuth, deps.requireTenant, guard]
-  const active = (req: any) => deps.integrations.active(req.authUser.organizationId, 'openai')
+  const active = (req: any) => deps.aiAgents.active(req.authUser.organizationId, 'document')
   app.get('/api/documents/fsd/provider', ...scope, async (req,res) => {
     try { const ai = await active(req); res.json(ai ? { enabled: true, ...normalizeAiConfig(ai.config), name: aiProviderName(ai.config) } : { enabled: false }) }
     catch { res.status(503).json({ error: 'Account AI settings are unavailable.' }) }
@@ -99,7 +100,7 @@ export function registerFsdRoutes(app: Express, deps: { requireAuth: RequestHand
     try {
       const input = validateInput(req.body)
       const ai = await active(req)
-      if (!ai) throw new IntegrationError('Enable an AI provider in this account’s Settings before generating an FSD.', 503)
+      if (!ai) throw new IntegrationError('Enable and configure the Document Agent in Account Settings → AI Agent Manager before generating an FSD.', 503)
       const result = await runTenantAi(ai.secret, ai.config, instructions, JSON.stringify(input), 180000, 24000)
       let parsed: any
       try { parsed = JSON.parse(result.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')) }
@@ -112,7 +113,7 @@ export function registerFsdRoutes(app: Express, deps: { requireAuth: RequestHand
       preview.sections.find(s => s.id === 'references')!.blocks = [{ type: 'table', headers: ['Source ID','Document / Source','Type'], rows: input.sources.map(s => [s.id,s.name,s.kind]) }]
       const normalized = normalizeAiConfig(ai.config)
       res.json({ ...preview, provider: aiProviderName(ai.config), model: normalized.model, generatedAt: new Date().toISOString() })
-    } catch (e) { res.status(e instanceof IntegrationError ? e.status : 502).json({ error: e instanceof IntegrationError ? e.message : 'FSD generation failed. Check the saved AI key, model access, quota and connection. Your draft is retained.' }) }
+    } catch (e) { res.status(e instanceof IntegrationError ? e.status : 502).json({ error: e instanceof IntegrationError ? e.message : 'FSD generation failed. Check the Document Agent key, model access, quota and connection. Your draft is retained.' }) }
   })
   app.post('/api/documents/fsd/generate', ...scope, limiter, async (req,res) => {
     try {

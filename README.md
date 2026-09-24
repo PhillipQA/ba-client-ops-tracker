@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.36**
+**Current release: v0.6.37**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,11 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.36
+## Current release — v0.6.37
+
+AI Agent Manager. BA Assistant and Document Agent can now use separate per-tenant providers, models and encrypted API credentials. BA Assistant handles conversational workspace analysis and Discord inquiry assessment. Document Agent handles FSD generation, Test Case Creator AI workflows, and optional DRF AI Enhanced extraction. Existing shared tenant AI credentials remain as a compatibility fallback until dedicated agents are configured. Run `supabase/schema-v11-ai-agent-manager.sql` before saving dedicated agent credentials. See `UPGRADE-v0.6.37.md`.
+
+## Previous release — v0.6.36
 
 Authentication connection handling and diagnostics. Adds Render-recommended HTTP timeout settings, reports logout failures instead of silently returning to login, and correlates authentication connection errors with credential-free server logs. This is a candidate mitigation for the reported login → logout → login connection failure; the production cause is not yet confirmed. See `UPGRADE-v0.6.36.md`. No database migration, new dependency, or environment change is required.
 
@@ -229,7 +233,7 @@ Reports include project/task activity plus user workload, contribution history, 
 
 ### AI BA Assistant
 
-The AI BA Assistant accepts client inquiries, meeting notes, problems, and other working context and returns organized assessment and suggested next actions using the tenant's configured AI provider. Its server-built context includes the authenticated user, role, permitted data, assignments, and activity history.
+The AI BA Assistant accepts client inquiries, meeting notes, problems, and other working context and returns organized assessment and suggested next actions using the tenant's **BA Assistant agent**. Its server-built context includes the authenticated user, role, permitted data, assignments, and activity history. The BA Assistant can use a different provider/model/API key from Document Creation.
 
 ---
 
@@ -403,7 +407,7 @@ Themes remain user-selectable and continue to control the application's themed b
 | --- | --- |
 | Saved Excel DRF template | Accounts, users, roles, and enabled modules |
 | Discord bot token and allowed senders | Patch Updater / rollback controls |
-| AI provider, model, and API credentials | Selected-account platform sync/administration |
+| AI Agent Manager credentials, providers, and models | Selected-account platform sync/administration |
 | Enable/disable and test tenant integrations | Platform/system settings |
 | User/theme preferences where applicable | Cross-tenant administration |
 
@@ -411,20 +415,16 @@ Tenant integration credentials are stored separately per account. Provider crede
 
 ---
 
-## AI integrations
+## AI Agent Manager
 
-FSD Creator, Test Case Creator, AI BA Assistant, optional DRF AI Enhanced extraction, and supported Discord inquiry assessment reuse the **enabled AI integration for the current tenant/account**.
+Each tenant can configure separate AI roles rather than forcing every AI workflow through one shared model:
 
-Supported provider integrations in the current project include:
+- **BA Assistant** — conversational Business Analyst support, workspace assessment, suggested next actions, and supported Discord inquiry assessment.
+- **Document Agent** — requirement/document processing for FSD Creator, Test Case Creator, and optional DRF AI Enhanced extraction.
 
-- Gemini
-- OpenAI
-- Claude / Anthropic
-- DeepSeek
+Each agent can have its own provider, model, encrypted API key, enable/disable state, and connection test. Supported providers include Gemini, OpenAI, Claude / Anthropic, and DeepSeek. Agent credentials belong to the tenant/account and are never shared globally across tenants.
 
-Provider availability and model access depend on the tenant's own provider account and configured credentials.
-
-AI keys belong to the tenant/account rather than being shared globally across all tenants.
+For backward compatibility, an existing **Legacy Shared AI** integration is used only when a dedicated agent has not been configured. Saving a dedicated agent makes that agent independent. The server enforces separate context boundaries: BA Assistant receives permission-filtered tracker context, while Document Agent receives only the document workflow inputs required for generation.
 
 ---
 
@@ -560,7 +560,7 @@ npm start
 
 Keep infrastructure/server secrets such as Supabase service credentials, the integration encryption key, SMTP configuration, and other platform-level environment values in Render Environment.
 
-Tenant Discord, AI provider and Google Calendar OAuth credentials are configured through tenant Account Settings rather than shared Render environment variables.
+Tenant Discord, AI Agent, legacy AI fallback, and Google Calendar OAuth credentials are configured through tenant Account Settings rather than shared Render environment variables.
 
 Use one application instance unless the process-local session/Discord ownership behavior has been redesigned for multi-instance operation. Persistent tenant data, encrypted integrations, and saved templates live in Supabase; process restarts can still affect process-local sessions and connection ownership.
 
@@ -608,6 +608,11 @@ For shared projects, linked client/project completion rules are validated before
 
 | Version | Highlight |
 | --- | --- |
+| **0.6.37** | AI Agent Manager with separate BA Assistant and Document Agent credentials, models, providers, routing, and legacy fallback |
+| **0.6.36** | Authentication connection handling and diagnostics |
+| **0.6.35** | Multi-browser login lockout correction |
+| **0.6.34** | Account/User/IP-scoped login rate-limit hotfix |
+| **0.6.33** | DocHub signing preparation and tenant integration |
 | **0.6.32** | Document Creation processing panel, stages, long-running guidance, and retry feedback |
 | **0.6.31** | Client Tiles, List, and Table views with search and sorting |
 | **0.6.30** | Login card width and form dimensions match password recovery |
@@ -636,4 +641,4 @@ For detailed release-specific instructions, see the matching `UPGRADE-v0.6.x.md`
 
 ## Current version
 
-**BA Client Ops Tracker v0.6.27**
+**BA Client Ops Tracker v0.6.37**

@@ -284,9 +284,9 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     try {
       let extraction: { businessName: string; tradeName: string; tin: string; address: string; notes: string }
       if (corExtractionMode === 'ai') {
-        if (!aiExtractionStatus.available) throw new Error('AI extraction is unavailable. Configure and enable an AI provider in Account Settings, or use Local Extractor.')
+        if (!aiExtractionStatus.available) throw new Error('AI extraction is unavailable. Configure and enable the Document Agent in Account Settings, or use Local Extractor.')
         const localText = await extractCorTextLocally(corFile, (message) => setDocumentMessage(message))
-        setDocumentMessage(`Local text is ready. Asking ${aiExtractionStatus.provider || 'the account AI provider'} to map the COR fields…`)
+        setDocumentMessage(`Local text is ready. Asking ${aiExtractionStatus.provider || 'the Document Agent'} to map the COR fields…`)
         extraction = await postJson<typeof extraction>('/api/documents/drf/extract-cor-ai', {
           text: localText.text,
           sourceMethod: localText.method,
@@ -408,7 +408,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
                 <div className="document-extraction-mode">
                   <div className="document-extraction-mode-copy">
                     <strong>COR Extraction Method</strong>
-                    <span>{corExtractionMode === 'local' ? 'Runs entirely in your browser with no AI API usage.' : `Uses local OCR/text reading first, then ${aiExtractionStatus.provider || 'your account AI'} to map and refine the COR fields.`}</span>
+                    <span>{corExtractionMode === 'local' ? 'Runs entirely in your browser with no AI API usage.' : `Uses local OCR/text reading first, then ${aiExtractionStatus.provider || 'your Document Agent'} to map and refine the COR fields.`}</span>
                   </div>
                   <label className={`document-ai-toggle ${!aiExtractionStatus.available ? 'disabled' : ''}`}>
                     <span className="document-ai-toggle-label">Local</span>
@@ -416,14 +416,14 @@ export default function DocumentCreation({ clients, projects, items, launch, can
                     <span className="document-toggle-track"><span /></span>
                     <span className="document-ai-toggle-label">AI Enhanced</span>
                   </label>
-                  {!aiExtractionStatus.available && <small>AI Enhanced is unavailable. Configure and enable an AI provider in Account Settings to use it.</small>}
-                  {aiExtractionStatus.available && corExtractionMode === 'ai' && <small>Only locally extracted COR text is sent to {aiExtractionStatus.provider || 'the configured AI provider'}; the COR file itself stays in your browser. AI usage may incur provider charges.</small>}
+                  {!aiExtractionStatus.available && <small>AI Enhanced is unavailable. Configure and enable the Document Agent in Account Settings to use it.</small>}
+                  {aiExtractionStatus.available && corExtractionMode === 'ai' && <small>Only locally extracted COR text is sent to {aiExtractionStatus.provider || 'the configured Document Agent'}; the COR file itself stays in your browser. AI usage may incur provider charges.</small>}
                 </div>
                 <label className="document-dropzone document-dropzone-compact">
                   <input type="file" accept={COR_ACCEPT} onChange={handleFiles(setCorFiles, false, MAX_COR_BYTES)} />
                   <Plus size={27} />
                   <strong>{corFiles.length ? 'Replace COR file' : 'Choose a COR file'}</strong>
-                  <span>{corExtractionMode === 'local' ? 'The COR stays in your browser and no AI API key is used.' : 'The COR file stays in your browser; only locally extracted text is sent to the account AI provider.'}</span>
+                  <span>{corExtractionMode === 'local' ? 'The COR stays in your browser and no AI API key is used.' : 'The COR file stays in your browser; only locally extracted text is sent to the Document Agent.'}</span>
                 </label>
                 <FileSummary files={corFiles} />
                 <button type="button" className="secondary document-wide-button" disabled={!corFile || extracting} onClick={extractCor}><ScanLine size={16} /> {extracting ? 'Extracting…' : corExtractionMode === 'ai' ? 'Extract COR details with AI' : 'Extract COR details locally'}</button>
