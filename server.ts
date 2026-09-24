@@ -42,23 +42,57 @@ const followUpTimeZone = process.env.FOLLOW_UP_TIME_ZONE || 'Asia/Manila'
 // Render and similar hosts terminate TLS at a trusted reverse proxy.
 app.set('trust proxy', 1)
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  // Keep failed-login counters isolated per tenant/user even when several people share one public IP.
-  keyGenerator: (req) => {
-    const account = typeof req.body?.account === 'string' ? req.body.account.trim().toLowerCase() : ''
-    const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : ''
-    return `${req.ip || req.socket.remoteAddress || 'unknown'}:${account}:${username}`
-  },
-  // Only a credential rejection (401) counts as a failed login. Network aborts, validation errors,
-  // server/configuration errors, and successful logins are removed from the counter.
-  skipSuccessfulRequests: true,
-  requestWasSuccessful: (_req, res) => res.statusCode !== 401,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many failed login attempts. Please try again in 15 minutes.' },
-})
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000
+const MAX_LOGIN_FAILURES = 5
+type LoginFailureEntry = { count: number; resetAt: number }
+const loginFailures = new Map<string, LoginFailureEntry>()
+
+function loginFailureKey(req: express.Request) {
+  const account = typeof req.body?.account === 'string' ? req.body.account.trim().toLowerCase() : ''
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : ''
+  return `${req.ip || req.socket.remoteAddress || 'unknown'}:${account}:${username}`
+}
+
+function activeLoginFailure(req: express.Request) {
+  const key = loginFailureKey(req)
+  const current = loginFailures.get(key)
+  if (current && current.resetAt > Date.now()) return { key, current }
+  if (current) loginFailures.delete(key)
+  return { key, current: null }
+}
+
+function setLoginRateHeaders(res: express.Response, count: number, resetAt: number) {
+  res.setHeader('RateLimit-Limit', String(MAX_LOGIN_FAILURES))
+  res.setHeader('RateLimit-Remaining', String(Math.max(0, MAX_LOGIN_FAILURES - count)))
+  res.setHeader('RateLimit-Reset', String(Math.ceil(resetAt / 1000)))
+}
+
+function enforceLoginFailureLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const { current } = activeLoginFailure(req)
+  if (!current || current.count < MAX_LOGIN_FAILURES) {
+    if (current) setLoginRateHeaders(res, current.count, current.resetAt)
+    next()
+    return
+  }
+  const retryAfter = Math.max(1, Math.ceil((current.resetAt - Date.now()) / 1000))
+  setLoginRateHeaders(res, current.count, current.resetAt)
+  res.setHeader('Retry-After', String(retryAfter))
+  res.status(429).json({ error: `Too many failed login attempts. Please try again in ${Math.ceil(retryAfter / 60)} minute${retryAfter > 60 ? 's' : ''}.` })
+}
+
+function rejectInvalidLogin(req: express.Request, res: express.Response) {
+  const { key, current } = activeLoginFailure(req)
+  const next: LoginFailureEntry = current
+    ? { count: current.count + 1, resetAt: current.resetAt }
+    : { count: 1, resetAt: Date.now() + LOGIN_FAILURE_WINDOW_MS }
+  loginFailures.set(key, next)
+  setLoginRateHeaders(res, next.count, next.resetAt)
+  res.status(401).json({ error: 'Invalid account, user, or password.' })
+}
+
+function clearLoginFailures(req: express.Request) {
+  loginFailures.delete(loginFailureKey(req))
+}
 
 
 
@@ -604,7 +638,7 @@ app.get('/api/auth/session', (req, res) => {
   res.json({ user })
 })
 
-app.post('/api/auth/login', loginLimiter, async (req, res) => {
+app.post('/api/auth/login', enforceLoginFailureLimit, async (req, res) => {
   const account = typeof req.body?.account === 'string' ? req.body.account.trim() : ''
   const username = typeof req.body?.username === 'string' ? req.body.username.trim() : ''
   const password = typeof req.body?.password === 'string' ? req.body.password : ''
@@ -632,7 +666,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
         .maybeSingle()
       if (platformError) throw platformError
       if (!platformAccount || platformAccount.status === 'Disabled') {
-        res.status(401).json({ error: 'Invalid account, user, or password.' })
+        rejectInvalidLogin(req, res)
         return
       }
 
@@ -643,14 +677,14 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
           return
         }
         if (!safeEqualText(password, internalAdminBootstrapPassword)) {
-          res.status(401).json({ error: 'Invalid account, user, or password.' })
+          rejectInvalidLogin(req, res)
           return
         }
         storedHash = await secureHashPassword(password)
         const { error: bootstrapError } = await supabaseAdmin.from('platform_users').update({ password_hash: storedHash, must_change_password: true, updated_at: new Date().toISOString() }).eq('id', platformAccount.id)
         if (bootstrapError) throw bootstrapError
       } else if (!await verifyPassword(password, storedHash)) {
-        res.status(401).json({ error: 'Invalid account, user, or password.' })
+        rejectInvalidLogin(req, res)
         return
       } else if (!isBcryptHash(storedHash)) {
         storedHash = await secureHashPassword(password)
@@ -663,6 +697,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       const user = safePlatformUser({ ...platformAccount, password_hash: storedHash, last_login_at: loggedInAt })
       const token = randomBytes(32).toString('hex')
       sessions.set(token, user)
+      clearLoginFailures(req)
       res.setHeader('Set-Cookie', sessionCookie(token, 28800))
       res.json({ user, cloudConfigured: true, multiTenant: true })
       return
@@ -671,7 +706,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     if (supabaseAdmin && await multiTenantSchemaReady()) {
       const organization = await organizationByLoginKey(account)
       if (!organization || organization.status !== 'Active') {
-        res.status(401).json({ error: 'Invalid account, user, or password.' })
+        rejectInvalidLogin(req, res)
         return
       }
       const { data: normalizedAccount, error: accountError } = await supabaseAdmin
@@ -683,7 +718,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
         .maybeSingle()
       if (accountError) throw accountError
       if (!normalizedAccount || normalizedAccount.status === 'Disabled') {
-        res.status(401).json({ error: 'Invalid account, user, or password.' })
+        rejectInvalidLogin(req, res)
         return
       }
 
@@ -695,7 +730,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
           return
         }
         if (!safeEqualText(password, bxiCoreBootstrapPassword)) {
-          res.status(401).json({ error: 'Invalid account, user, or password.' })
+          rejectInvalidLogin(req, res)
           return
         }
         storedHash = await secureHashPassword(password)
@@ -703,7 +738,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
         if (bootstrapError) throw bootstrapError
         await updateTenantAccountSnapshot(organization.id, String(normalizedAccount.id), (entry) => entry ? { ...entry, passwordHash: storedHash } : entry)
       } else if (!await verifyPassword(password, storedHash)) {
-        res.status(401).json({ error: 'Invalid account, user, or password.' })
+        rejectInvalidLogin(req, res)
         return
       } else if (!isBcryptHash(storedHash)) {
         storedHash = await secureHashPassword(password)
@@ -717,6 +752,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       const user = safeUser({ ...normalizedAccount, password_hash: storedHash, last_login_at: loggedInAt }, organization)
       const token = randomBytes(32).toString('hex')
       sessions.set(token, user)
+      clearLoginFailures(req)
       res.setHeader('Set-Cookie', sessionCookie(token, 28800))
       res.json({ user, cloudConfigured: true, multiTenant: true })
       return
@@ -724,14 +760,14 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 
     // Legacy BXI-Core compatibility. Existing SHA-256 hashes are accepted once and upgraded.
     if (![BXI_CORE_ORG_SLUG, BXI_CORE_ORG_NAME.toLowerCase()].includes(account.trim().toLowerCase())) {
-      res.status(401).json({ error: 'Invalid account, user, or password.' })
+      rejectInvalidLogin(req, res)
       return
     }
     const state = await loadLegacyTrackerState()
     const accounts = Array.isArray(state.data?.accounts) ? state.data.accounts : []
     const legacyAccount = accounts.find((candidate: any) => String(candidate.username || '').toLowerCase() === username.toLowerCase())
     if (!legacyAccount || legacyAccount.status === 'Disabled' || !await verifyPassword(password, legacyAccount.passwordHash)) {
-      res.status(401).json({ error: 'Invalid account, user, or password.' })
+      rejectInvalidLogin(req, res)
       return
     }
     if (!isBcryptHash(legacyAccount.passwordHash)) {
@@ -744,6 +780,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const user = safeUser(legacyAccount, legacyOrganization)
     const token = randomBytes(32).toString('hex')
     sessions.set(token, user)
+    clearLoginFailures(req)
     res.setHeader('Set-Cookie', sessionCookie(token, 28800))
     res.json({ user, cloudConfigured: state.configured, multiTenant: false })
   } catch (error) {
