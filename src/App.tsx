@@ -1,3 +1,5 @@
+import { DocHubHistory } from './DocHubPanel'
+import { docHubLabels } from './dochub'
 import ActivityCommentPreview from './ActivityCommentPreview'
 import NotificationCenter from './NotificationCenter'
 import RecordEditDialog from './RecordEditDialog'
@@ -229,7 +231,8 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
       createdBy: String(comment.createdBy || 'system'),
       createdByName: String(comment.createdByName || 'System'),
       kind: comment.kind === 'User' ? 'User' as const : 'System' as const,
-      eventType: comment.eventType === 'FOLLOW_UP_AUTO_MOVED' ? 'FOLLOW_UP_AUTO_MOVED' as const : undefined,
+      eventType: comment.eventType === 'DOCHUB' ? 'DOCHUB' as const : comment.eventType === 'FOLLOW_UP_AUTO_MOVED' ? 'FOLLOW_UP_AUTO_MOVED' as const : undefined,
+      documentId: comment.documentId,
       previousFollowUpDate: comment.previousFollowUpDate ? String(comment.previousFollowUpDate) : undefined,
       nextFollowUpDate: comment.nextFollowUpDate ? String(comment.nextFollowUpDate) : undefined,
       daysMoved: Number.isFinite(comment.daysMoved) ? Number(comment.daysMoved) : undefined,
@@ -363,6 +366,8 @@ function activityTime(activity: PlannerActivity) {
 }
 
 function App() {
+  const [documentLaunch,setDocumentLaunch]=useState<{taskId:string;flow:'drf'|'signoff';nonce:number}>()
+
   const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.hash.slice(1)).get('reset-password'))
   const [store, setStore] = useState<Store>(initialStore)
   const [view, setView] = useState<View>('action')
@@ -514,7 +519,7 @@ function App() {
         localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(refreshed))
         setLastCloudSync(result.updatedAt || new Date().toISOString())
         setCloudStatus('synced')
-        setCloudMessage(newSystemComments ? `${newSystemComments} Subtask follow-up${newSystemComments === 1 ? '' : 's'} rolled forward automatically` : 'Supabase synced')
+        setCloudMessage(newSystemComments ? `${newSystemComments} new system update${newSystemComments === 1 ? '' : 's'}` : 'Supabase synced')
       } catch (error) {
         if (!cancelled) console.error('Automatic follow-up refresh failed:', error)
       } finally {
@@ -525,11 +530,13 @@ function App() {
     const onFocus = () => { void refreshAutomaticFollowUps() }
     const onVisibility = () => { if (document.visibilityState === 'visible') void refreshAutomaticFollowUps() }
     window.addEventListener('focus', onFocus)
+    window.addEventListener('dochub-updated', onFocus)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       cancelled = true
       window.clearInterval(timer)
       window.removeEventListener('focus', onFocus)
+      window.removeEventListener('dochub-updated', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [authUser?.id])
@@ -776,10 +783,14 @@ function App() {
     }
   }
 
+  useEffect(()=>{
+    const open=(event:Event)=>{const detail=(event as CustomEvent).detail;if(!authUser?.modules?.includes('documents')||!detail?.taskId)return;setModal(null);setSelectedClientId(null);setSelectedProjectId(null);setDocumentLaunch({...detail,nonce:Date.now()});setView('documents')}
+    window.addEventListener('dochub-create',open);return()=>window.removeEventListener('dochub-create',open)
+  },[authUser?.id])
   const openNotification = (notification: AppNotification) => {
     if (!notification.readAt) void handleNotificationAction(notification, 'read')
     const item = notification.taskId ? storeRef.current.items.find((candidate) => candidate.id === notification.taskId) : undefined
-    if (!item) return
+    if (!item) { if(notification.documentId && hasModule('documents')){setSelectedClientId(null);setSelectedProjectId(null);setView('documents')} return }
     setSelectedClientId(null)
     setSelectedProjectId(null)
     setView(hasModule('items') ? 'items' : 'inbox')
@@ -1485,7 +1496,7 @@ function App() {
                   const closed = isTaskClosed(item.status, store.taskSettings) || item.waitingOn === 'Done'
                   const outcome = item.type !== 'Inquiry' ? `Converted to ${item.type}` : closed ? item.status : 'Archived'
                   return <div className="inquiry-archive-row" key={`archive-${item.id}`}>
-                    <div><div className="row-meta"><InquirySourceBadge source={item.source} /><span>{outcome}</span><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span>{item.sourceSender && <span>From: {item.sourceSender}</span>}</div><strong>{item.title}</strong><small>{item.description || 'No description'}</small></div>
+                    <div><div className="row-meta"><InquirySourceBadge source={item.source} /><span>{outcome}</span><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span>{item.sourceSender && <span>From: {item.sourceSender}</span>}</div><strong>{item.title}</strong>{item.docHubDocuments?.map(d=><span className="dochub-task-badge" key={d.id}>DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}</span>)}<small>{item.description || 'No description'}</small></div>
                     <div className="inquiry-archive-meta"><StatusChip value={item.status} /><span>{item.resolvedDate ? `Resolved ${niceDate(item.resolvedDate)}` : `Received ${niceDate(item.dateRaised)}`}</span></div>
                   </div>
                 })}</div> : <Empty text="No archived Discord inquiries yet." />}
@@ -1510,7 +1521,7 @@ function App() {
           </section>
         )}
 
-        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} canGenerate={canWrite} canManageTemplates={currentUser?.role === 'Administrator'} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
+        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} items={store.items} launch={documentLaunch} canGenerate={canWrite} canManageTemplates={currentUser?.role === 'Administrator'} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} />}
 
@@ -1667,6 +1678,7 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, accounts,
         {parent && <p className="activity-tile-parent">Parent task: {parent.title}</p>}
         <div className="activity-tile-badges"><StatusChip value={item.status} /><PriorityChip value={item.priority} /></div>
         <div className="activity-tile-details"><span>Assigned to: <b>{assignedTo}</b></span><span>Follow-up: <b>{niceDate(item.followUpDate)}</b></span>{item.dueDate && <span>Due: <b>{niceDate(item.dueDate)}</b></span>}<span>Waiting on: <b>{item.waitingOn}</b></span></div>
+        {item.docHubDocuments?.map(d=><span className="dochub-task-badge" key={d.id}>DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}</span>)}
         <ActivityCommentPreview text={[item.description, ...(item.comments || []).slice(-3).map((comment) => `${comment.createdByName}: ${comment.text}`)].filter(Boolean).join('\n\n')} title={item.title} />
         {canEditThisItem && <div className="activity-tile-actions"><button className="secondary compact" type="button" onClick={() => onEditTask(item.id)}>Edit {item.parentTaskId ? 'subtask' : 'task'}</button></div>}
       </article>
@@ -1885,7 +1897,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
       onDrop={isSubtask ? (event) => { event.preventDefault(); dropSubtask(item) } : undefined}
       onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
     >
-      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{rowEditable && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong><small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{isSubtask && item.comments?.length ? ` · ${item.comments.length} system update${item.comments.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small>{isSubtask && <span className="subtask-schedule-summary">Start: {item.startDate ? niceDate(item.startDate) : 'Not set'} · Due: {item.dueDate ? niceDate(item.dueDate) : 'Not set'}</span>}</div></div></td>
+      <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{rowEditable && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong>{item.docHubDocuments?.map(d=><span className="dochub-task-badge" key={d.id}>DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}</span>)}<small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{isSubtask && item.comments?.length ? ` · ${item.comments.length} system update${item.comments.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small>{isSubtask && <span className="subtask-schedule-summary">Start: {item.startDate ? niceDate(item.startDate) : 'Not set'} · Due: {item.dueDate ? niceDate(item.dueDate) : 'Not set'}</span>}</div></div></td>
       {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || 'Unassigned' : column === 'startDate' ? niceDate(item.startDate || '') : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
       <td><div className="task-row-actions">{!rowEditable && (item.evidence || []).map(entry => <a key={entry.id} className="secondary compact" href={taskEvidenceUrl(item.id, entry)} target="_blank" rel="noreferrer">{entry.fileName}</a>)}{rowEditable && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{rowEditable && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{rowEditable && isSubtask && <button className="icon-button" title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'} onClick={() => onEdit(item.id)}><Paperclip size={17} /></button>}{rowEditable && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{rowEditable && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{rowEditable && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
@@ -2081,6 +2093,7 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} startDate={item.startDate || ''} dueDate={item.dueDate || ''} followUpDate={item.followUpDate || ''} />
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>
+    <DocHubHistory taskId={item.id} canCreate onComplete={() => { const closed=store.taskSettings.statuses.find(s=>s.closed); if(closed)setStatus(closed.label) }} />
     <WorkCommentTrail item={item} onMutation={onCommentMutation} />
     {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
     {saveError && <p className="record-editor-error span-2" role="alert">{saveError}</p>}

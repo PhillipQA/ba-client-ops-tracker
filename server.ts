@@ -1,3 +1,4 @@
+import { createDocHubService, registerDocHubRoutes, registerDocHubWebhook } from './dochub'
 import { runTenantAi } from './tenant-ai'
 import { registerFsdRoutes } from './fsd-documents'
 import { registerTestCaseRoutes } from './testcase-documents'
@@ -50,7 +51,7 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many failed login attempts. Please try again in 15 minutes.' },
 })
 
-app.use(express.json({ limit: '24mb' }))
+
 
 const recoveryRequestLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,
@@ -70,6 +71,10 @@ const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
   : null
 
 const integrations = createIntegrationStore(supabaseAdmin)
+const docHubDeps = { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, organizationById, load: loadTenantState, commit: commitTenantState }
+const docHubService = createDocHubService(docHubDeps)
+registerDocHubWebhook(app, docHubDeps, docHubService)
+app.use(express.json({ limit: '24mb' }))
 type DiscordRuntime = { client: DiscordClient; revision: string; online: boolean; botName: string; guildCount: number; lastMessageAt: string; lastError: string }
 const discordRuntimes = new Map<string, DiscordRuntime>()
 const discordReconnections = new Map<string, Promise<void>>()
@@ -1014,7 +1019,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
       if (startDate && dueDate && dueDate < startDate) throw new TenantSaveError(`Task “${String(item?.title || 'Untitled')}” cannot be due before its Start Date.`, 400)
       const currentItem = currentItemMap.get(String(item?.id || '')) as any
       const comments = Array.isArray(currentItem?.comments) ? currentItem.comments : []
-      return { ...item, comments, assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
+      return { ...item, comments, docHubDocuments: currentItem?.docHubDocuments || [], assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
     })
     // Work history is derived on the server from the authenticated actor. Browser-supplied
     // event identities are never trusted, so assignment and action reports remain auditable.
@@ -1977,6 +1982,7 @@ registerAccountUsers(app, { requireAuth, requireTenant: requireTenantWorkspace, 
   },
 })
 registerPlatformSettings(app, { db: supabaseAdmin, requireAuth, requirePlatformAdmin, organizationById, loadTenantState, normalizedSchemaStatus, defaultTaskSettings, commitTenantState, integrations })
+registerDocHubRoutes(app, docHubDeps, docHubService)
 registerIntegrationRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace,
   organizationById, store: integrations, reconnect: reconnectDiscord, status: discordStatusPayload })
 registerGoogleCalendarRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, requirePlatformAdmin,

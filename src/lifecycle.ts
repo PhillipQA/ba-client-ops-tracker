@@ -88,6 +88,12 @@ export function assertLifecycleMutation(current: LifecycleStore, next: Lifecycle
     for (const id of new Set([...oldMap.keys(), ...newMap.keys()])) {
       const old = oldMap.get(id), row = newMap.get(id)
       if (stableRecord(old) === stableRecord(row)) continue
+      // Remote signing history may arrive after a client/project was archived.
+      // Only the trusted server actor may append signing metadata to otherwise unchanged work.
+      if (!actor && key === 'items' && old && row) {
+        const strip = (item: any) => ({ ...item, comments: undefined, docHubDocuments: undefined })
+        if (stableRecord(strip(old)) === stableRecord(strip(row))) continue
+      }
       const reason = (old && archivedWorkReason(current, old)) || (row && archivedWorkReason(next, row))
       if (reason) throw new LifecycleError(reason)
       if (row && key !== 'activity') {

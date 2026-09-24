@@ -126,7 +126,7 @@ export async function renderSignoff(template: Buffer, input: unknown, attachment
   if (files.some(file => !file.image)) {
     const bundle = new PizZip(); bundle.file(`${stem}.docx`, output)
     files.forEach((file, index) => bundle.file(`attachments/${String(index + 1).padStart(2, '0')}-${file.name}`, file.bytes))
-    return { output: bundle.generate({ type: 'nodebuffer', compression: 'DEFLATE' }), fileName: `${stem}.zip`, mimeType: 'application/zip', imageCount: files.filter(f => f.image).length, attachmentCount: files.length }
+    return { signingFile: { fileData: output.toString('base64'), fileName: `${stem}.docx`, mimeType: DOCX_MIME }, output: bundle.generate({ type: 'nodebuffer', compression: 'DEFLATE' }), fileName: `${stem}.zip`, mimeType: 'application/zip', imageCount: files.filter(f => f.image).length, attachmentCount: files.length }
   }
   return { output, fileName: `${stem}.docx`, mimeType: DOCX_MIME, imageCount: files.length, attachmentCount: files.length }
 }
@@ -140,7 +140,7 @@ export function registerSignoffRoutes(app: Express, deps: { requireAuth: Request
     catch { return void res.status(503).json({ error: 'Sign Off template is unavailable. Reapply the complete release package.' }) }
     try {
       const result = await renderSignoff(template, req.body?.details, req.body?.attachments)
-      res.json({ fileData: result.output.toString('base64'), fileName: result.fileName, mimeType: result.mimeType, imageCount: result.imageCount, attachmentCount: result.attachmentCount })
+      res.json({ signingFile: result.signingFile, fileData: result.output.toString('base64'), fileName: result.fileName, mimeType: result.mimeType, imageCount: result.imageCount, attachmentCount: result.attachmentCount })
     } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Could not generate the Sign Off form.' }) }
   })
 }

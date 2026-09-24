@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.32**
+**Current release: v0.6.33**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, shared projects, tasks and subtasks, follow-ups, inquiries, activities, communications, evidence, reports, AI-assisted BA workflows, and document creation.
 
@@ -8,7 +8,13 @@ The application is built with **React, TypeScript, Vite, Express, Discord.js, Su
 
 ---
 
-## Current release — v0.6.32
+## Current release — v0.6.33
+
+DocHub signing preparation for DRF and Sign-Off forms, using a separate API key managed by each account's Administrator. Link a generated document to an existing Task/Subtask; signing changes appear in its comments and signature completion creates an in-app notification. Documents remain unsent for manual signature-field placement and review in DocHub. Task completion stays manual.
+
+Run **`supabase/schema-v10-dochub.sql`** before enabling the integration. Setup, upgrade commands, draft behavior, webhook configuration and verification limits are in **[UPGRADE-v0.6.33.md](UPGRADE-v0.6.33.md)**. No new npm dependency. Full keys stay encrypted in the server database; no global DocHub key is needed.
+
+## Previous release — v0.6.32
 
 Document Creation now displays consistent processing feedback for DRF, FSD, Test Case, and Sign Off workflows: a spinner, progress stages, long-running guidance, success/error states, and safe retry actions. No database migration, new npm dependency, or environment change is required. See `UPGRADE-v0.6.32.md`.
 

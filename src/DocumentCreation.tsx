@@ -2,7 +2,8 @@ import FsdCreation from './FsdCreation'
 import TestCaseCreation from './TestCaseCreation'
 import SignOffCreation from './SignOffCreation'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
-import type { Client } from './types'
+import type { Client, Project, WorkItem } from './types'
+import { DocHubOptions, DocHubResult, DocHubHistory, useDocHubDraft } from './DocHubPanel'
 import { useEffect, useMemo, useState } from 'react'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
 import {
@@ -23,6 +24,7 @@ import {
 type DocumentFlow = 'drf' | 'fsd' | 'testcase' | 'signoff'
 
 type Signatory = {
+  email?: string
   label: string
   name: string
   title: string
@@ -128,7 +130,9 @@ const defaultSignatories: Signatory[] = [
   { label: 'Approved By', name: '', title: 'Accounting Head' },
 ]
 
-export default function DocumentCreation({ clients, canGenerate, canManageTemplates, draftKey, active }: { clients: Client[]; canGenerate: boolean; canManageTemplates: boolean; draftKey: string; active: boolean }) {
+export default function DocumentCreation({ clients, projects, items, launch, canGenerate, canManageTemplates, draftKey, active }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; canManageTemplates: boolean; draftKey: string; active: boolean }) {
+  const docHub = useDocHubDraft('DRF')
+  useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
   const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
   useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
   const [corFiles, setCorFiles] = useState<File[]>([])
@@ -305,7 +309,8 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
   }
 
   const generateDrf = async () => {
-    if (!templateFile) return
+    if (!templateFile || !canGenerate || docHub.busy) return
+    try { docHub.validate(signatories) } catch(e) { setDocumentError((e as Error).message); return }
     setGenerating(true)
     setDocumentError('')
     setDocumentMessage('Placing DRF values into the uploaded Excel template…')
@@ -344,6 +349,7 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
         posRows: posRows.map(({ computerName, serialNo, brand, model }) => ({ computerName, serialNo, brand, model })),
       })
       downloadBase64File(result.fileData, result.mimeType, result.fileName)
+      await docHub.prepare(result, signatories)
       const matched = result.matchedFields?.length ? ` ${result.matchedFields.length} DRF fields were populated.` : ''
       const rows = result.posRowsWritten ? ` ${result.posRowsWritten} POS row${result.posRowsWritten === 1 ? '' : 's'} added.` : ''
       setDocumentMessage(`DRF generated successfully.${matched}${rows}`)
@@ -487,6 +493,7 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
                       <div className="document-signatory-fields">
                         <label>Label<input value={signatory.label} onChange={(event) => updateSignatory(index, { label: event.target.value })} placeholder="Prepared By" /></label>
                         <label>Name<input value={signatory.name} onChange={(event) => updateSignatory(index, { name: event.target.value })} placeholder="Signatory name" /></label>
+                        <label>Email (DocHub only)<input type="email" value={signatory.email || ''} onChange={event => updateSignatory(index, { email: event.target.value })} placeholder="signer@company.com" /></label>
                         <label>Title / Position<input value={signatory.title} onChange={(event) => updateSignatory(index, { title: event.target.value })} placeholder="Account Manager" /></label>
                       </div>
                     </div>
@@ -526,9 +533,11 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
 
             <DocumentProcessingPanel state={documentError ? 'error' : (extracting || generating) ? 'working' : documentMessage ? 'success' : 'idle'} title={documentError ? 'Document processing failed' : generating ? 'Generating your DRF…' : extracting ? 'Reading your COR…' : 'Document is ready'} detail={documentError || documentMessage} stages={extracting ? ['Uploading document','Reading and extracting content','Mapping COR fields','Finalizing extracted values'] : ['Preparing template','Mapping reviewed information','Generating document','Starting download']} activeStage={generating ? 2 : extracting ? (documentMessage.toLowerCase().includes('asking') ? 2 : 1) : 3} onRetry={documentError ? () => void (corFile && !generating ? extractCor() : generateDrf()) : undefined}/>
 
+            <DocHubOptions draft={docHub} clients={clients} projects={projects} items={items} disabled={!canGenerate || generating} />
+            <DocHubResult draft={docHub} />
             <div className="document-generate-bar">
               <div><strong>6. Generate DRF</strong><span>The reviewed values are written into the saved standard Excel template and downloaded as a new .xlsx file.</span></div>
-              <button type="button" className="primary" disabled={!templateFile || generating} onClick={generateDrf}><Download size={16} /> {generating ? 'Generating…' : 'Generate & Download DRF'}</button>
+              <button type="button" className="primary" disabled={!canGenerate || !templateFile || generating || docHub.busy} onClick={generateDrf}><Download size={16} /> {generating || docHub.busy ? 'Processing…' : docHub.enabled ? 'Generate & Prepare in DocHub' : 'Generate & Download DRF'}</button>
             </div>
           </div>
         )}
@@ -537,8 +546,9 @@ export default function DocumentCreation({ clients, canGenerate, canManageTempla
 
         <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /></div>
 
-        <div hidden={flow !== 'signoff'}><SignOffCreation clients={clients} canGenerate={canGenerate} /></div>
+        <div hidden={flow !== 'signoff'}><SignOffCreation clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} /></div>
       </div>
+      <DocHubHistory active={active} />
     </section>
   )
 }

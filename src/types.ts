@@ -59,13 +59,15 @@ export interface TaskComment {
   createdBy: string
   createdByName: string
   kind: 'System' | 'User'
-  eventType?: 'FOLLOW_UP_AUTO_MOVED'
+  eventType?: 'FOLLOW_UP_AUTO_MOVED' | 'DOCHUB'
+  documentId?: string
   previousFollowUpDate?: string
   nextFollowUpDate?: string
   daysMoved?: number
 }
 
 export interface WorkItem {
+  docHubDocuments?: import('./dochub').DocHubLink[]
   id: string
   clientId?: string
   projectId?: string
@@ -117,10 +119,11 @@ export interface WorkActivityEvent {
   newValue?: string
 }
 
-export type NotificationType = 'assigned' | 'reassigned' | 'due_today' | 'overdue' | 'follow_up_today' | 'follow_up_moved' | 'completed' | 'reopened' | 'evidence_uploaded' | 'comment_added'
+export type NotificationType = 'signature_completed' | 'assigned' | 'reassigned' | 'due_today' | 'overdue' | 'follow_up_today' | 'follow_up_moved' | 'completed' | 'reopened' | 'evidence_uploaded' | 'comment_added'
 export type NotificationSeverity = 'info' | 'warning' | 'urgent' | 'success'
 
 export interface AppNotification {
+  documentId?: string
   id: string
   dedupeKey: string
   recipientUserId: string

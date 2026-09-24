@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { UserAccount } from './types'
+import { DocHubSettings } from './DocHubPanel'
 import { CalendarAccountSettings } from './GoogleCalendarPanel'
 
 export async function settingsRequest(url: string, method = 'GET', data?: unknown) {
@@ -66,5 +67,5 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
   const load = async () => { setData(await settingsRequest('/api/account/integrations')); setError('') }
   useEffect(() => { if (currentUser.role === 'Administrator') void load().catch(e => setError(e.message)) }, [currentUser.id])
   if (currentUser.role !== 'Administrator') return <div className="panel"><h2>Account settings</h2><p>Your account administrator manages templates and integration credentials. Personal details and themes are available in My Profile.</p></div>
-  return <section className="page-stack settings-page"><div className="page-heading"><div><h1>Account settings</h1><p>{currentUser.organizationName} · Templates and integrations</p></div><button className="secondary" onClick={() => void load().catch(e => setError(e.message))}>Refresh status</button></div>{error && <p role="alert" className="settings-message">{error}</p>}{data && !data.encryptionReady && <p role="alert">Integration storage needs setup by Internal Admin.</p>}<Templates />{data?.integrations.map((value: Integration) => <IntegrationCard key={value.kind} value={value} runtime={data.discord} refresh={load} />)}<CalendarAccountSettings key={currentUser.organizationId} /></section>
+  return <section className="page-stack settings-page"><div className="page-heading"><div><h1>Account settings</h1><p>{currentUser.organizationName} · Templates and integrations</p></div><button className="secondary" onClick={() => void load().catch(e => setError(e.message))}>Refresh status</button></div>{error && <p role="alert" className="settings-message">{error}</p>}{data && !data.encryptionReady && <p role="alert">Integration storage needs setup by Internal Admin.</p>}<Templates />{data?.integrations.map((value: Integration) => <IntegrationCard key={value.kind} value={value} runtime={data.discord} refresh={load} />)}<DocHubSettings key={`dochub:${currentUser.organizationId}`} /><CalendarAccountSettings key={currentUser.organizationId} /></section>
 }
