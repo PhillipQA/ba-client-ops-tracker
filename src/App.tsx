@@ -60,6 +60,7 @@ import { getAuthSession, login, logout, type AuthUser } from './auth'
 import { loadCloudStore, loadDiscordInquiries, queueCloudStoreSave, waitForCloudSaves, type CloudStorageStatus } from './cloudStore'
 import Reports from './Reports'
 import Settings, { settingsRequest } from './Settings'
+import CommunicationsHub from './CommunicationsHub'
 import AccountUsers from './AccountUsers'
 import ThemePreferences from './ThemePreferences'
 import { askBAAssistant, type AIMessage, type AISuggestion } from './ai'
@@ -310,7 +311,7 @@ const labels: Record<View, string> = {
   action: 'My Action Center',
   clients: 'Clients',
   projects: 'Projects',
-  inbox: 'Inbox / Inquiries',
+  inbox: 'Communications Hub',
   items: 'Tasks',
   documents: 'Document Creation',
   reports: 'Reports',
@@ -325,7 +326,7 @@ const navItems: { id: AppModule; label: string; icon: typeof LayoutDashboard }[]
   { id: 'action', label: 'Action Center', icon: LayoutDashboard },
   { id: 'clients', label: 'Clients', icon: Users },
   { id: 'projects', label: 'Projects', icon: BriefcaseBusiness },
-  { id: 'inbox', label: 'Inbox / Inquiries', icon: Inbox },
+  { id: 'inbox', label: 'Communications Hub', icon: Inbox },
   { id: 'items', label: 'Tasks', icon: Archive },
   { id: 'requirements', label: 'Requirements & Traceability', icon: Table2 },
   { id: 'documents', label: 'Document Creation', icon: FileText },
@@ -1528,9 +1529,10 @@ function App() {
 
         {!selectedClient && !selectedProject && view === 'inbox' && hasModule('inbox') && (
           <section className="page-stack">
+            <CommunicationsHub clients={store.clients} projects={store.projects} accounts={store.accounts} currentUser={currentUser} onTaskCreated={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
             <div className="callout"><Inbox size={22} /><div><strong>Capture first, classify later.</strong><p>Client questions can stay here until you know whether they should become a requirement, issue, decision, or simply be answered.</p></div></div>
             <div className="panel">
-              <div className="panel-heading"><div><h2>Open inquiries</h2><p>Convert an inquiry once its real nature is clear. Discord captures appear here automatically while this page is open.</p></div><div className="inquiry-heading-actions">{newExternalInquiryCount > 0 && <button className="secondary" type="button" onClick={() => setNewExternalInquiryIds([])}>{newExternalInquiryCount} new · Mark seen</button>}{canWrite && <button className="primary" onClick={() => { setTaskPreset({ type: 'Inquiry' }); setModal('item') }}><Plus size={18} /> Capture inquiry</button>}</div></div>
+              <div className="panel-heading"><div><h2>Existing shared inquiries</h2><p>Continue managing inquiries created in the earlier shared workspace workflow.</p></div><div className="inquiry-heading-actions">{newExternalInquiryCount > 0 && <button className="secondary" type="button" onClick={() => setNewExternalInquiryIds([])}>{newExternalInquiryCount} new · Mark seen</button>}{canWrite && <button className="primary" onClick={() => { setTaskPreset({ type: 'Inquiry' }); setModal('item') }}><Plus size={18} /> Capture inquiry</button>}</div></div>
               <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} />
               {inquiryItems.length ? <div className="inquiry-list">{inquiryItems.map((item) => { const isNewDiscord = item.source === 'Discord' && newExternalInquiryIds.includes(item.id); return <div className={`inquiry-card${item.source === 'Discord' ? ' inquiry-discord' : ''}${isNewDiscord ? ' inquiry-new' : ''}`} key={item.id}><div><div className="row-meta"><PriorityChip value={item.priority} /><InquirySourceBadge source={item.source} isNew={isNewDiscord} /><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span></div><h3>{item.title}</h3><p>{item.description}</p><div className="row-meta"><span>Waiting on <b>{item.waitingOn}</b></span><span>Follow-up {niceDate(item.followUpDate)}</span>{item.sourceSender && <span>From: {item.sourceSender}</span>}</div></div><div className="inquiry-actions">{canUseAI && <button className="secondary" onClick={() => { setAiClientId(item.clientId ?? ''); setAiProjectId(item.projectId ?? ''); setAiPrompt(`Assess this client inquiry and recommend what I should do next.\n\nTitle: ${item.title}\nDetails: ${item.description}`); setView('ai') }}><Sparkles size={15} /> Ask AI</button>}{canWrite && <><button className="secondary" onClick={() => convertInquiry(item.id, 'Requirement')}>→ Requirement</button><button className="secondary" onClick={() => convertInquiry(item.id, 'Issue')}>→ Issue</button><button className="success" onClick={() => resolveItem(item.id)}><CheckCircle2 size={16} /> Answered</button></>}</div></div> })}</div> : <Empty text="No open inquiries match your filters." />}
               <details className="inquiry-archive">

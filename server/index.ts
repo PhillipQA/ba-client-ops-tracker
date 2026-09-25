@@ -33,6 +33,7 @@ import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps, type FollowUpRolloverC
 import { markAllNotificationsReadForUser, reconcileNotifications, updateNotificationForUser } from './services/notification-engine'
 import { preserveTaskSettings } from './services/tenant-save-settings'
 import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
+import { registerCommunications } from './integrations/communications'
 import { applySubtaskAssignmentInheritance } from '../src/subtaskAssignment'
 import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transport'
 
@@ -245,6 +246,8 @@ function sanitizeStateForClient(state: any, user: SessionUser) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return state
   return {
     ...state,
+    items: Array.isArray(state.items) ? state.items.filter((item: any) => !(item?.source === 'Discord' && item?.externalSourceId)) : [],
+    activity: Array.isArray(state.activity) ? state.activity.filter((item: any) => !String(item?.text || '').startsWith('Discord inquiry captured:')) : [],
     accounts: Array.isArray(state.accounts)
       ? state.accounts.map((account: any) => ({ ...account, passwordHash: '' }))
       : state.accounts,
@@ -1063,8 +1066,10 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     const currentItems = Array.isArray(current.items) ? current.items : []
     const nextItems = Array.isArray(next.items) ? next.items : []
     const nextIds = new Set(nextItems.map((item: any) => String(item?.id || '')))
-    const missingDiscordItems = currentItems.filter((item: any) => item?.source === 'Discord' && item?.externalSourceId && !nextIds.has(String(item.id || '')))
-    if (missingDiscordItems.length) next = { ...next, items: [...missingDiscordItems, ...nextItems] }
+    const legacyDiscordItems = currentItems.filter((item: any) => item?.source === 'Discord' && item?.externalSourceId)
+    // Quarantine captures created before user ownership existed; clients cannot alter or read them.
+    next = { ...next, items: [...nextItems.filter((item: any) => !legacyDiscordItems.some((old: any) => old.id === item.id)), ...legacyDiscordItems] }
+    const missingDiscordItems = legacyDiscordItems.filter((item: any) => !nextIds.has(String(item.id || '')))
 
     const currentAccounts = Array.isArray(current.accounts) ? current.accounts.map(accountDefaults) : []
     const incomingAccounts = preserveInterfaceModes(currentAccounts, Array.isArray(next.accounts) ? next.accounts.map(accountDefaults) : [])
@@ -2053,6 +2058,15 @@ registerAiAgentRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace,
 registerGoogleCalendarRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, requirePlatformAdmin,
   organizationById, sessionFromRequest, sessionByToken: token => sessions.get(token) || null })
 
+const communications = registerCommunications(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, sessionFromRequest, load: loadTenantState,
+  commit: (id, next, user, reason, current) => {
+    const workEvents = authoritativeWorkEvents(current, next, user)
+    const priorIds = new Set((Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event.id)))
+    const newEventIds = workEvents.filter((event: any) => !priorIds.has(String(event.id))).map((event: any) => String(event.id))
+    const notified = reconcileNotifications({ ...next, workEvents }, { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds }).state
+    return commitTenantState(id, notified, user, reason, current)
+  }, openStatus: openTaskStatus })
+
 app.get('/api/integrations/discord/inquiries', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!moduleAllowed(user, 'inbox') && !moduleAllowed(user, 'items')) {
@@ -2067,7 +2081,7 @@ app.get('/api/integrations/discord/inquiries', requireAuth, requireTenantWorkspa
     const state = await loadTenantState(tenantIdForUser(user))
     const items = Array.isArray(state.data?.items) ? state.data.items : []
     const discordInquiries = items.filter((item: any) => item?.type === 'Inquiry' && item?.source === 'Discord' && item?.externalSourceId)
-    res.json({ configured: true, items: discordInquiries, updatedAt: state.updatedAt })
+    res.json({ configured: true, items: [], updatedAt: state.updatedAt })
   } catch (error) {
     console.error('Discord inquiry sync failed:', error)
     res.status(500).json({ configured: true, items: [], error: error instanceof Error ? error.message : 'Discord inquiry sync failed.' })
@@ -2377,7 +2391,7 @@ async function startTenantDiscord(organizationId: string) {
   client.on('error', () => { runtime.lastError = 'Discord connection error. Check bot permissions and reconnect.' })
   client.on('shardError', () => { runtime.online = false; runtime.lastError = 'Discord gateway error.' })
   client.on('messageCreate', message => {
-    if (message.author.bot || !client.user || (message.guildId && !message.mentions.users.has(client.user.id))) return
+    if (message.author.bot || !client.user || (message.guildId && message.mentions.users.size === 0)) return
     const allowed = config.config.allowedUserIds || []
     if (allowed.length && !allowed.includes(message.author.id)) return
     if (discordUserRateLimited(`${organizationId}:${message.author.id}`)) return
@@ -2385,11 +2399,8 @@ async function startTenantDiscord(organizationId: string) {
     const queued = (discordCaptures.get(organizationId) || Promise.resolve()).catch(() => undefined).then(async () => {
       if (discordRuntimes.get(organizationId) !== runtime) return
       try {
-        const result = await captureDiscordInquiry(message, organizationId, client, config.revision)
-        if (result.created) {
-          runtime.lastMessageAt = new Date().toISOString(); runtime.lastError = ''
-          await message.reply({ content: '✅ Inquiry added to BA Tracker.', allowedMentions: { parse: [], repliedUser: false } }).catch(() => undefined)
-        }
+        const count = await communications.captureDiscord(message, organizationId)
+        if (count) { runtime.lastMessageAt = new Date().toISOString(); runtime.lastError = '' }
       } catch { runtime.lastError = 'Inquiry could not be saved. Check account storage and retry.' }
     })
     discordCaptures.set(organizationId, queued)

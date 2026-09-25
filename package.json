@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.43",
+  "version": "0.6.44",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -11,6 +11,7 @@
     "patch": "node scripts/apply-patch.mjs",
     "patch:rollback": "node scripts/rollback-patch.mjs",
     "patch:status": "node scripts/patch-status.mjs",
+    "test:communications": "node --import tsx --test tests/communications.test.ts",
     "test:integrations": "node --import tsx --test tests/integrations.test.ts",
     "typecheck:server": "tsc -p tsconfig.server.json",
     "test:accounts": "node --import tsx --test tests/account-users.test.ts",
