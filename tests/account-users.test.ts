@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import express from 'express'
 import { registerAccountUsers } from '../server/accounts/account-users'
 import { normalizeClientThemes, themeForContext } from '../src/theme'
+import { normalizeInterfaceMode } from '../src/appearance'
+import { preserveInterfaceModes } from '../server/accounts/preferences'
 
 async function fixture(run: (f: any) => Promise<void>) {
   const account = (id: string, role: string) => ({ id, username: id, name: id, email: '', phone: '', role, modules: ['clients', 'items', 'reports'], status: 'Active', passwordHash: 'private-password-hash', createdAt: '2026-09-19', theme: 'blue-sky', clientThemes: {} })
@@ -123,4 +125,57 @@ test('theme normalization retains existing personal theme and ignores invalid ov
   assert.deepEqual(normalizeClientThemes({ a: 'dark-geek', b: 'invalid', c: 7 }), { a: 'dark-geek' })
   assert.equal(themeForContext({ theme: 'blue-sky' }, 'client-a'), 'blue-sky')
   assert.equal(themeForContext({}, 'client-a'), 'default')
+})
+
+test('personal interface modes persist for every role without changing backgrounds, work, or other users', async () => fixture(async ({ call, states, sessions }: any) => {
+  for (const userId of ['admin-a', 'contributor-a', 'viewer-a']) {
+    const account = states.a.accounts.find((a: any) => a.id === userId)
+    account.clientThemes = { 'client-a': 'busy-city' }
+    const original = structuredClone(states)
+    for (const interfaceMode of ['dark', 'light', 'gray']) {
+      const result = await call('/api/account/profile', userId, 'PATCH', { interfaceMode })
+      assert.equal(result.status, 200)
+      assert.equal(result.data.user.interfaceMode, interfaceMode)
+      assert.equal(states.a.accounts.find((a: any) => a.id === userId).interfaceMode, interfaceMode)
+      assert.equal(sessions[userId].interfaceMode, interfaceMode)
+      assert(!result.text.includes('passwordHash'))
+      assert.deepEqual(states.b, original.b)
+      assert.deepEqual(states.a.items, original.a.items)
+      for (const user of states.a.accounts) {
+        const before = original.a.accounts.find((a: any) => a.id === user.id)
+        assert.deepEqual(user, user.id === userId ? { ...before, interfaceMode } : before)
+      }
+    }
+    const reset = await call('/api/account/profile', userId, 'PATCH', { interfaceMode: null })
+    assert.equal(reset.status, 200)
+    // Explicit null clears the previously selected mode in cached clients too.
+    assert.equal(reset.data.user.interfaceMode, null)
+    assert.equal(sessions[userId].interfaceMode, null)
+    assert.equal(themeForContext(states.a.accounts.find((a: any) => a.id === userId), 'client-a'), 'busy-city')
+  }
+}))
+
+test('invalid or targeted interface preference writes fail without changing stored appearance', async () => fixture(async ({ call, states, sessions, fail }: any) => {
+  await call('/api/account/profile', 'viewer-a', 'PATCH', { interfaceMode: 'gray' })
+  const original = structuredClone({ states, sessions })
+  for (const interfaceMode of ['system', '', 'LIGHT', 1, false, {}, ['dark']]) {
+    assert.equal((await call('/api/account/profile', 'viewer-a', 'PATCH', { interfaceMode })).status, 400)
+  }
+  for (const target of [{ id: 'admin-a' }, { organizationId: 'b' }, { role: 'Administrator' }]) {
+    assert.equal((await call('/api/account/profile', 'viewer-a', 'PATCH', { interfaceMode: 'light', ...target })).status, 403)
+  }
+  fail()
+  assert.equal((await call('/api/account/profile', 'viewer-a', 'PATCH', { interfaceMode: 'light' })).status, 500)
+  assert.deepEqual({ states, sessions }, original)
+}))
+
+test('ordinary workspace saves retain current interface modes despite stale or modified snapshots', () => {
+  const current = [{ id: 'a', interfaceMode: 'light', name: 'A' }, { id: 'b', interfaceMode: null }, { id: 'c' }]
+  const incoming = [{ id: 'a', interfaceMode: 'dark', name: 'Updated' }, { id: 'b', interfaceMode: 'gray' }, { id: 'c' }, { id: 'new', interfaceMode: 'gray' }]
+  assert.deepEqual(preserveInterfaceModes(current, incoming), [
+    { id: 'a', interfaceMode: 'light', name: 'Updated' }, { id: 'b', interfaceMode: null }, { id: 'c', interfaceMode: null }, { id: 'new', interfaceMode: null },
+  ])
+  assert.equal(incoming[0].interfaceMode, 'dark')
+  assert.equal(current[0].name, 'A')
+  for (const value of [undefined, null, 'system', 'invalid']) assert.equal(normalizeInterfaceMode(value), null)
 })

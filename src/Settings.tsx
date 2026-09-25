@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { UserAccount } from './types'
+import type { Client, UserAccount } from './types'
+import ThemePreferences, { type AppearancePatch } from './ThemePreferences'
 import { DocHubSettings } from './DocHubPanel'
 import { CalendarAccountSettings } from './GoogleCalendarPanel'
 
@@ -124,10 +125,35 @@ function Templates() {
   }
   return <div className="panel"><div className="panel-heading"><div><h2>Templates</h2><p>Save the account’s Excel DRF template for Document Creation.</p></div></div><p>{name || 'No saved template'}</p><label>Upload or replace template<input type="file" accept=".xlsx" disabled={busy} onChange={e => { void upload(e.target.files?.[0]); e.target.value = '' }} /></label><button className="secondary" disabled={busy || !name} onClick={async () => { if (!window.confirm('Remove the saved account template?')) return; setBusy(true); try { await settingsRequest('/api/account/templates','DELETE'); await load(); setMessage('Template removed.') } catch(e) { setMessage((e as Error).message) } finally { setBusy(false) } }}>Remove template</button>{message && <p role="status">{message}</p>}</div>
 }
-export default function Settings({ currentUser }: { currentUser: UserAccount }) {
+export default function Settings({ currentUser, clients, onSaveAppearance }: { currentUser: UserAccount; clients: Client[]; onSaveAppearance: (patch: AppearancePatch) => Promise<void> }) {
   const [data,setData] = useState<any>(null), [error,setError] = useState('')
+  const [activeTab, setActiveTab] = useState('appearance')
+  const isAdmin = currentUser.role === 'Administrator'
+  const tabs = [{ id: 'appearance', label: 'Appearance' }, ...(isAdmin ? [{ id: 'templates', label: 'Templates' }, { id: 'agents', label: 'AI Agents' }, { id: 'integrations', label: 'Integrations' }] : [])]
   const load = async () => { setData(await settingsRequest('/api/account/integrations')); setError('') }
-  useEffect(() => { if (currentUser.role === 'Administrator') void load().catch(e => setError(e.message)) }, [currentUser.id])
-  if (currentUser.role !== 'Administrator') return <div className="panel"><h2>Account settings</h2><p>Your account administrator manages templates and integration credentials. Personal details and themes are available in My Profile.</p></div>
-  return <section className="page-stack settings-page"><div className="page-heading"><div><h1>Account settings</h1><p>{currentUser.organizationName} · Templates, AI agents and integrations</p></div><button className="secondary" onClick={() => void load().catch(e => setError(e.message))}>Refresh status</button></div>{error && <p role="alert" className="settings-message">{error}</p>}{data && !data.encryptionReady && <p role="alert">Integration storage needs setup by Internal Admin.</p>}<Templates /><AIAgentManager />{data?.integrations.map((value: Integration) => <IntegrationCard key={value.kind} value={value} runtime={data.discord} refresh={load} />)}<DocHubSettings key={`dochub:${currentUser.organizationId}`} /><CalendarAccountSettings key={currentUser.organizationId} /></section>
+  useEffect(() => { if (currentUser.role === 'Administrator') void load().catch(e => setError(e.message)) }, [currentUser.id, currentUser.organizationId, currentUser.role])
+  useEffect(() => { if (!isAdmin) setActiveTab('appearance') }, [isAdmin])
+  return <section className="page-stack settings-page">
+    <div className="page-heading"><div><h1>Settings</h1><p>{currentUser.organizationName} · Personal appearance{isAdmin ? ' and account preferences' : ''}</p></div></div>
+    <div className="settings-tabs" role="tablist" aria-label="Settings sections">{tabs.map((tab, index) => <button type="button" key={tab.id} id={`settings-tab-${tab.id}`} role="tab" aria-selected={activeTab === tab.id} aria-controls={`settings-section-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)} onKeyDown={event => {
+      const nextIndex = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
+      if (nextIndex < 0) return
+      event.preventDefault(); setActiveTab(tabs[nextIndex].id)
+      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus()
+    }}>{tab.label}</button>)}</div>
+    <div className="settings-tab-content" id="settings-section-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance" hidden={activeTab !== 'appearance'} tabIndex={0}>
+      <ThemePreferences embedded user={currentUser} clients={clients} onSave={onSaveAppearance} />
+      {!isAdmin && <p className="settings-helper">Your account administrator manages templates, AI agents, and integrations.</p>}
+    </div>
+    {isAdmin && <>
+      <div className="settings-tab-content" id="settings-section-templates" role="tabpanel" aria-labelledby="settings-tab-templates" hidden={activeTab !== 'templates'} tabIndex={0}><Templates /></div>
+      <div className="settings-tab-content" id="settings-section-agents" role="tabpanel" aria-labelledby="settings-tab-agents" hidden={activeTab !== 'agents'} tabIndex={0}><AIAgentManager /></div>
+      <div className="settings-tab-content" id="settings-section-integrations" role="tabpanel" aria-labelledby="settings-tab-integrations" hidden={activeTab !== 'integrations'} tabIndex={0}>
+        <div className="settings-section-heading"><div><h2>Account integrations</h2><p>Manage connections used by your account.</p></div><button type="button" className="secondary" onClick={() => void load().catch(e => setError(e.message))}>Refresh status</button></div>
+        {error && <p role="alert" className="settings-message">{error}</p>}{data && !data.encryptionReady && <p role="alert" className="settings-message">Integration storage needs setup by Internal Admin.</p>}
+        {data?.integrations.map((value: Integration) => <IntegrationCard key={value.kind} value={value} runtime={data.discord} refresh={load} />)}
+        <DocHubSettings key={`dochub:${currentUser.organizationId}`} /><CalendarAccountSettings key={currentUser.organizationId} />
+      </div>
+    </>}
+  </section>
 }

@@ -1,4 +1,5 @@
 import type { AppTheme } from './theme'
+import type { InterfaceMode } from './appearance'
 import type { AppModule, UserRole } from './types'
 
 export interface AuthUser {
@@ -19,6 +20,7 @@ export interface AuthUser {
   accountKey?: string
   mustChangePassword?: boolean
   theme?: AppTheme
+  interfaceMode?: InterfaceMode | null
   clientThemes?: Record<string, AppTheme>
   lastLoginAt?: string
 }

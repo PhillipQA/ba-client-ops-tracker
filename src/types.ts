@@ -1,4 +1,5 @@
 import type { AppTheme } from './theme'
+import type { InterfaceMode } from './appearance'
 export type ItemType = 'Task' | 'Requirement' | 'Issue' | 'Inquiry' | 'Decision' | 'Follow-up'
 export type WaitingOn = 'Me' | 'Developer' | 'Client' | 'QA' | 'Design' | 'Done'
 export type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
@@ -185,6 +186,7 @@ export interface UserAccount {
   status: 'Active' | 'Disabled'
   createdAt: string
   theme?: AppTheme
+  interfaceMode?: InterfaceMode | null
   clientThemes?: Record<string, AppTheme>
   organizationId?: string
   organizationName?: string

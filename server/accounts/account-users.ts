@@ -1,6 +1,7 @@
 import type { Express, Request, RequestHandler } from 'express'
 import { randomUUID } from 'node:crypto'
 import { normalizeAppTheme, THEME_IDS } from '../../src/theme'
+import { normalizeInterfaceMode } from '../../src/appearance'
 
 type Dependencies = {
   requireAuth: RequestHandler
@@ -17,7 +18,7 @@ class AccountError extends Error {
 const roles = ['Administrator', 'Contributor', 'Viewer']
 // Deliberately return only public fields, never stored password material.
 export function publicAccount(account: any) {
-  return Object.fromEntries(['id', 'username', 'name', 'email', 'phone', 'role', 'modules', 'status', 'createdAt', 'theme', 'clientThemes'].map(key => [key, account[key]]))
+  return { ...Object.fromEntries(['id', 'username', 'name', 'email', 'phone', 'role', 'modules', 'status', 'createdAt', 'theme', 'clientThemes'].map(key => [key, account[key]])), interfaceMode: normalizeInterfaceMode(account.interfaceMode) }
 }
 export function registerAccountUsers(app: Express, deps: Dependencies) {
   const queues = new Map<string, Promise<unknown>>()
@@ -89,9 +90,13 @@ export function registerAccountUsers(app: Express, deps: Dependencies) {
   }))
   app.patch('/api/account/profile', ...middleware, route(false, async (req, user, organization, state) => {
     const body = req.body || {}
-    if (Object.keys(body).some(key => !['name', 'email', 'phone', 'theme', 'clientId', 'clientTheme', 'newPassword'].includes(key))) throw new AccountError('Only your own profile and theme preferences can be changed.', 403)
+    if (Object.keys(body).some(key => !['name', 'email', 'phone', 'theme', 'interfaceMode', 'clientId', 'clientTheme', 'newPassword'].includes(key))) throw new AccountError('Only your own profile and appearance preferences can be changed.', 403)
     const existing = state.accounts.find((a: any) => a.id === user.id)
     const account = fields(body, existing)
+    if (body.interfaceMode !== undefined) {
+      if (body.interfaceMode !== null && !normalizeInterfaceMode(body.interfaceMode)) throw new AccountError('Choose Dark, Light, or Gray interface mode.')
+      account.interfaceMode = normalizeInterfaceMode(body.interfaceMode)
+    }
     if (body.theme !== undefined) {
       if (!THEME_IDS.has(body.theme)) throw new AccountError('Choose a valid theme.')
       account.theme = normalizeAppTheme(body.theme)

@@ -70,6 +70,7 @@ import { loadNotifications, markAllNotificationsRead, updateNotification } from 
 import { addTaskComment, type TaskCommentMutationResult } from './taskComments'
 import type { ActivityLog, AppModule, AppNotification, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkActivityEvent, WorkItem } from './types'
 import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTIONS, type AppTheme } from './theme'
+import { normalizeInterfaceMode, type InterfaceMode } from './appearance'
 import { APP_VERSION } from './version'
 
 type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
@@ -141,6 +142,7 @@ function normalizeAccount(value: Partial<UserAccount>, index: number): UserAccou
     status: value.status === 'Disabled' ? 'Disabled' : 'Active',
     createdAt: String(value.createdAt || TODAY),
     theme: normalizeAppTheme(value.theme),
+    interfaceMode: normalizeInterfaceMode(value.interfaceMode),
     clientThemes: normalizeClientThemes(value.clientThemes),
   }
 }
@@ -787,6 +789,7 @@ function App() {
     isPlatformAdmin: authUser.isPlatformAdmin,
     accountType: authUser.accountType,
     accountKey: authUser.accountKey,
+    interfaceMode: normalizeInterfaceMode(authUser.interfaceMode),
     lastLoginAt: authUser.lastLoginAt,
   } : null
   const workspaceModules = currentUser?.organizationModules || currentUser?.modules || []
@@ -903,13 +906,13 @@ function App() {
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
   }
 
-  const saveOwnPreferences = async (patch: { name?: string; email?: string; phone?: string; theme?: AppTheme; clientId?: string; clientTheme?: AppTheme | null; newPassword?: string }) => {
+  const saveOwnPreferences = async (patch: { name?: string; email?: string; phone?: string; theme?: AppTheme; interfaceMode?: InterfaceMode | null; clientId?: string; clientTheme?: AppTheme | null; newPassword?: string }) => {
     await waitForCloudSaves()
     const result = await settingsRequest('/api/account/profile', 'PATCH', patch)
     const accounts = storeRef.current.accounts
     acceptAccountUsers(accounts.map(account => account.id === result.user.id ? { ...account, ...result.user } : account))
-    const session = await getAuthSession()
-    setAuthUser(session)
+    if (patch.newPassword) setAuthUser(await getAuthSession())
+    else setAuthUser(current => current && current.id === result.user.id ? { ...current, ...result.user } : current)
   }
 
   const updateOwnProfile = async (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string }) => {
@@ -1361,7 +1364,7 @@ function App() {
   const currentTheme = themeForContext(currentUser, selectedProject ? selectedProjectClientId : selectedClient?.id)
 
   return (
-    <div className={`app-shell ui-refresh theme-${currentTheme}`} data-theme={currentTheme}>
+    <div className={`app-shell ui-refresh theme-${currentTheme}`} data-theme={currentTheme} data-interface-mode={normalizeInterfaceMode(currentUser.interfaceMode) || undefined}>
       <aside className="sidebar">
         <div className="brand"><img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
         <nav>
@@ -1570,7 +1573,7 @@ function App() {
         {!selectedClient && !selectedProject && view === 'users' && canManageAccounts && <AccountUsers currentUser={currentUser} onChanged={acceptAccountUsers} />}
         {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && <ThemePreferences user={currentUser} clients={store.clients} onSave={saveOwnPreferences} />}
 
-        {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings currentUser={currentUser} />}
+        {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings key={`${currentUser.organizationId}:${currentUser.id}`} currentUser={currentUser} clients={store.clients} onSaveAppearance={saveOwnPreferences} />}
 
         {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
           <section className="page-stack"><AIAssistant clients={store.clients.filter(client => !isArchived(client))} projects={store.projects.filter(project => !isArchived(project))} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
@@ -1683,7 +1686,7 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
         <label>Display name<input name="name" defaultValue={user.name} required /></label>
         <label>Email<input name="email" type="email" defaultValue={user.email} placeholder="name@company.com" /></label>
         <label>Contact number<input name="phone" defaultValue={user.phone} placeholder="+63 900 000 0000" /></label>
-        <label>Theme<select name="theme" defaultValue={normalizeAppTheme(user.theme)}>{THEME_OPTIONS.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select><small>Saved for your user in this account. Open My Themes for client-specific choices.</small></label>
+        <label>Background theme<select name="theme" defaultValue={normalizeAppTheme(user.theme)}>{THEME_OPTIONS.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select><small>Open My Themes for Dark, Light, or Gray interface modes and client-specific backgrounds.</small></label>
         <div className="profile-password-grid">
           <label>New password <small>Optional</small><input name="newPassword" type="password" minLength={8} autoComplete="new-password" /></label>
           <label>Confirm new password<input name="confirmPassword" type="password" minLength={8} autoComplete="new-password" /></label>

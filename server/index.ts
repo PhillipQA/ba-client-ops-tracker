@@ -26,6 +26,8 @@ import { createClient } from '@supabase/supabase-js'
 import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js'
 import { createServer as createViteServer } from 'vite'
 import { normalizeAppTheme, normalizeClientThemes } from '../src/theme'
+import { normalizeInterfaceMode, type InterfaceMode } from '../src/appearance'
+import { preserveInterfaceModes } from './accounts/preferences'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './auth/password-recovery-email'
 import { dateKeyInTimeZone, rollOverOpenSubtaskFollowUps, type FollowUpRolloverChange } from './services/follow-up-rollover'
 import { markAllNotificationsReadForUser, reconcileNotifications, updateNotificationForUser } from './services/notification-engine'
@@ -181,6 +183,7 @@ type SessionUser = Omit<typeof defaultAdmin, 'passwordHash' | 'createdAt'> & {
   mustChangePassword?: boolean
   lastLoginAt?: string
   theme?: string
+  interfaceMode?: InterfaceMode | null
   clientThemes?: Record<string, string>
 }
 
@@ -265,6 +268,7 @@ function safeUser(account: any, organization?: OrganizationInfo | null): Session
     role,
     modules,
     theme: normalizeAppTheme(account.theme ?? account.raw_data?.theme),
+    interfaceMode: normalizeInterfaceMode(account.interfaceMode === undefined ? account.raw_data?.interfaceMode : account.interfaceMode),
     clientThemes: normalizeClientThemes(account.clientThemes ?? account.raw_data?.clientThemes),
     status: account.status === 'Disabled' ? 'Disabled' : 'Active',
     createdAt: account.createdAt || account.created_on ? String(account.createdAt || account.created_on) : undefined,
@@ -405,6 +409,7 @@ function accountFromDatabase(row: any) {
     name: String(row.name || row.username || ''), email: String(row.email || ''), phone: String(row.phone || ''),
     role: row.role || 'Contributor', modules: Array.isArray(row.modules) ? row.modules : [], status: row.status || 'Active',
     createdAt: String(row.created_on || new Date().toISOString().slice(0, 10)), theme: normalizeAppTheme(row.raw_data?.theme), clientThemes: normalizeClientThemes(row.raw_data?.clientThemes),
+    interfaceMode: normalizeInterfaceMode(row.raw_data?.interfaceMode),
   }
 }
 
@@ -968,7 +973,7 @@ function stable(value: unknown): string | undefined {
 }
 
 function accountDefaults(account: any) {
-  return { ...account, theme: normalizeAppTheme(account?.theme), clientThemes: normalizeClientThemes(account?.clientThemes) }
+  return { ...account, theme: normalizeAppTheme(account?.theme), clientThemes: normalizeClientThemes(account?.clientThemes), interfaceMode: normalizeInterfaceMode(account?.interfaceMode) }
 }
 
 async function prepareAccountPasswords(currentAccounts: any[], nextAccounts: any[]) {
@@ -1062,7 +1067,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     if (missingDiscordItems.length) next = { ...next, items: [...missingDiscordItems, ...nextItems] }
 
     const currentAccounts = Array.isArray(current.accounts) ? current.accounts.map(accountDefaults) : []
-    const incomingAccounts = Array.isArray(next.accounts) ? next.accounts.map(accountDefaults) : []
+    const incomingAccounts = preserveInterfaceModes(currentAccounts, Array.isArray(next.accounts) ? next.accounts.map(accountDefaults) : [])
     const nextAccounts = await prepareAccountPasswords(currentAccounts, incomingAccounts)
     const assignableUsers = new Map(nextAccounts.filter((account: any) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor')).map((account: any) => [String(account.id), account]))
     const currentItemMap = new Map(currentItems.map((item: any) => [String(item?.id || ''), item]))

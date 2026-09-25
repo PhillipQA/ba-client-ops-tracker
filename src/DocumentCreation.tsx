@@ -372,7 +372,7 @@ export default function DocumentCreation({ onOpenRtm, clients, projects, items, 
       </div>
 
       <div className="document-flow-grid">
-        {onOpenRtm && <button type="button" className="document-flow-card" onClick={onOpenRtm}><div className="document-flow-icon"><ClipboardCheck size={22} /></div><strong>Create / Import RTM</strong><p>Open Requirements & Traceability to manage client matrices and linked work.</p></button>}
+        {onOpenRtm && <button type="button" className="document-flow-card" onClick={onOpenRtm}><div className="document-flow-icon"><ClipboardCheck size={22} /></div><div><strong>Create / Import RTM</strong><span>Manage client matrices and linked work in Requirements & Traceability.</span></div><small>Requirements + coverage</small></button>}
         <button type="button" className={`document-flow-card${flow === 'drf' ? ' active' : ''}`} onClick={() => setFlow('drf')}>
           <div className="document-flow-icon"><BriefcaseBusiness size={22} /></div>
           <div><strong>DRF Creation</strong><span>Extract COR details and populate the Excel DRF form.</span></div>
