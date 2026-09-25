@@ -165,6 +165,7 @@ export function createDocHubService(deps: Deps) {
             doc.fieldsReady=doc.signers.length>0 && doc.signers.every((s: any)=>doc.fields.some((f: any)=>f.roleId===s.roleId && f.type==='dhSignature' && f.required))
             if (doc.fieldsReady) doc.status='READY_TO_REVIEW'
           }
+          if (doc.signRequestId || !['PREPARING','SETUP_REQUIRED'].includes(doc.status)) delete doc.setupNote
           if (['SENT','VIEWED','PARTIALLY_SIGNED'].includes(doc.status) && !doc.sentObservedAt) {
             doc.sentObservedAt=new Date().toISOString()
             if (doc.followUpDays) {const day=new Date();day.setUTCDate(day.getUTCDate()+doc.followUpDays);doc.followUpDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(day)}

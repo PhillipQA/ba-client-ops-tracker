@@ -6,6 +6,7 @@ import { encryptSecret, decryptSecret } from '../server/integrations/tenant-inte
 import { apiClient, DocHubError, docHubUrl, storageUrl, verifyDocHubWebhook, draftPacket, signingStatus } from '../server/integrations/dochub-api'
 import { applyDocumentToWorkspace, createDocHubService, publicDocument, registerDocHubRoutes, registerDocHubWebhook, validatePreparation } from '../server/integrations/dochub'
 import { assertLifecycleMutation } from '../src/lifecycle'
+import { docHubGuidance } from '../src/dochub'
 process.env.TENANT_INTEGRATION_MASTER_KEY='ab'.repeat(32)
 const tenantA='11111111-1111-4111-8111-111111111111',tenantB='22222222-2222-4222-8222-222222222222'
 const keyA='account-a-api-key-1234567890',keyB='account-b-api-key-1234567890'
@@ -59,6 +60,27 @@ test('upload -> async import -> unsent draft -> completed: single comment/notifi
  await assert.rejects(()=>f.service.prepare(tenantA,f.user,{...f.input,signers:[{name:'Other',email:'other@example.com'}]}),(e:any)=>e.status===409)
 })
 test('draft validation failure preserves unsent recipient roles without granting free editing',async()=>{const f=fixture({rejectDraft:true});f.remote.importComplete=true;const doc=await f.service.prepare(tenantA,f.user,f.input);assert.equal(doc.status,'SETUP_REQUIRED');assert(doc.setupNote);await f.service.refresh(tenantA,doc.id,true);assert.equal(f.calls.filter(c=>c.url.endsWith('/sign-requests')&&c.method==='POST').length,1);assert(!f.calls.some(c=>c.url.endsWith('/send')))})
+test('a request created in DocHub clears obsolete setup guidance when signing starts',async()=>{
+ const f=fixture({rejectDraft:true});f.remote.importComplete=true
+ let doc=await f.service.prepare(tenantA,f.user,f.input)
+ assert.equal(doc.status,'SETUP_REQUIRED');assert(doc.setupNote)
+ f.remote.signRequestId='sr1';f.remote.status='IN_PROGRESS';f.remote.signed=true
+ doc=await f.service.refresh(tenantA,doc.id,true)
+ assert.equal(doc.status,'PARTIALLY_SIGNED');assert.equal(doc.setupNote,undefined)
+ assert.equal((await f.service.load(tenantA,doc.id)).setupNote,undefined)
+ f.remote.status='FINALIZED';doc=await f.service.refresh(tenantA,doc.id,true)
+ assert.equal(doc.status,'COMPLETED');assert.equal(doc.setupNote,undefined)
+ assert.equal(f.states.get(tenantA).items[0].status,'In Progress')
+ assert(!f.calls.some(c=>c.url.endsWith('/send')))
+})
+test('document cards use current signing guidance even for saved records with stale setup notes',()=>{
+ const setupNote='Place fields before creating the signing draft.'
+ assert.equal(docHubGuidance({status:'SETUP_REQUIRED',setupNote}),setupNote)
+ assert.match(docHubGuidance({status:'READY_TO_REVIEW',setupNote}),/review and send/)
+ assert.match(docHubGuidance({status:'PARTIALLY_SIGNED',setupNote}),/Remaining signatures are pending/)
+ assert.match(docHubGuidance({status:'COMPLETED',setupNote}),/Signing is complete/)
+ for(const status of ['SENT','VIEWED','PARTIALLY_SIGNED','COMPLETED','VOIDED','REJECTED','EXPIRED','UNKNOWN'])assert(!docHubGuidance({status,setupNote}).includes(setupNote))
+})
 test('lost import response does not automatically duplicate the import',async()=>{const f=fixture({lostImport:true});const doc=await f.service.prepare(tenantA,f.user,f.input);assert.equal(doc.status,'REVIEW_REQUIRED');await f.service.refresh(tenantA,doc.id,true);assert.equal(f.calls.filter(c=>c.url.endsWith('/documents/imports')&&c.method==='POST').length,1)})
 test('completion projection preserves existing follow-up and can append to archived work',()=>{const f=fixture(),state=f.states.get(tenantA);state.items[0].followUpDate='2026-10-01';const doc={id:'d1',title:'DRF',taskId:'task',createdBy:'admin',clientId:'client',status:'COMPLETED',signers:[],events:[{id:'e1',key:'complete',message:'Signature complete',createdAt:new Date().toISOString(),complete:true}],followUpDate:'2026-09-30'};const r=applyDocumentToWorkspace(state,doc);assert.equal(r.next.items[0].followUpDate,'2026-10-01');state.clients[0].archived=true;state.clients[0].status='Closed';r.next.clients=state.clients;assert.doesNotThrow(()=>assertLifecycleMutation(state,r.next,null));assert.throws(()=>assertLifecycleMutation(state,r.next,{role:'Administrator',modules:['items']}))})
 test('status mapping requires DocHub FINALIZED for overall completion',()=>{assert.equal(signingStatus({status:'IN_PROGRESS',signersData:[{status:'FINALIZED'}]}),'PARTIALLY_SIGNED');assert.equal(signingStatus({status:'FINALIZED'}),'COMPLETED');assert.equal(signingStatus({status:'PREPARING'}),'PREPARING')})

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Archive, CheckCircle2, ExternalLink, FileSignature, FolderOpen, RefreshCw, UserRound, X } from 'lucide-react'
 import type { Client, Project, WorkItem } from './types'
-import { dochubRequest, docHubLabels, isArchivedDocHubStatus, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
+import { dochubRequest, docHubGuidance, docHubLabels, isArchivedDocHubStatus, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
 import './dochub.css'
 
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
@@ -43,9 +43,10 @@ export function DocHubResult({draft}:{draft:Draft}) {return <div className="doch
 function DocHubCard({doc,refresh,busy=false}:{doc:DocHubDocument;refresh:()=>Promise<void>;busy?:boolean}) {
   const [recoverId,setRecoverId]=useState(''),[recoverError,setRecoverError]=useState(''),[recoverBusy,setRecoverBusy]=useState(false)
   const signers=doc.signers.filter(s=>!s.removed),signed=signers.filter(s=>s.signedAt||s.status==='FINALIZED').length
+  const guidance=docHubGuidance(doc)
   return <article className={`dochub-card${doc.status==='COMPLETED'?' complete':''}`}><div className="dochub-card-head"><div><strong>{doc.title}</strong><span>{docHubLabels[doc.status] || doc.status}</span></div><span className="count-pill">{signed}/{signers.length} signed</span></div>
     {doc.createdByName&&<div className="dochub-created-by"><UserRound size={14}/><span>Created by <strong>{doc.createdByName}</strong> · {dateTime(doc.createdAt)}</span></div>}
-    {doc.error&&<p className="dochub-error" role="alert">{doc.error}</p>}{doc.setupNote&&<p>{doc.setupNote}</p>}
+    {doc.error&&<p className="dochub-error" role="alert">{doc.error}</p>}{guidance&&<p className="dochub-guidance">{guidance}</p>}
     <div className="dochub-actions">{doc.documentUrl&&<a className="secondary" href={doc.documentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15}/> Open in DocHub</a>}<button type="button" className="secondary" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={15}/>{busy?'Refreshing…':'Refresh status'}</button>{doc.status==='COMPLETED'&&<a className="secondary" href={`/api/dochub/documents/${doc.id}/pdf`} target="_blank" rel="noopener noreferrer">View signed PDF</a>}</div>
     <small>Last checked: {dateTime(doc.checkedAt)}{doc.followUpDate?` · Follow-up: ${doc.followUpDate}`:''}</small>
     <details><summary>Signatories and activity</summary><ul className="dochub-signers">{signers.map((s,i)=><li key={s.id||i}><strong>{s.name}</strong><span>{s.email}</span><span>{s.signedAt||s.status==='FINALIZED'?'Signed':s.viewedAt?'Viewed':s.status || 'Prepared'}{s.signedAt?` · ${dateTime(s.signedAt)}`:''}</span></li>)}</ul><ol className="dochub-timeline">{doc.events.map(e=><li key={e.id}><time>{dateTime(e.createdAt)}</time>{e.message}</li>)}</ol></details>
@@ -67,6 +68,35 @@ function DocHubTile({doc,busy,onRefresh,onOpen,archived}:{doc:DocHubDocument;bus
   </article>
 }
 
+function DocHubDetails({doc,busy,refresh,onClose}:{doc:DocHubDocument;busy:boolean;refresh:()=>Promise<void>;onClose:()=>void}) {
+  const dialog=useRef<HTMLDialogElement>(null)
+  const titleId=useId()
+  useEffect(()=>{
+    const element=dialog.current
+    if(!element)return
+    const returnFocus=document.activeElement
+    const previousOverflow=document.body.style.overflow
+    // The native top layer escapes themed panels' backdrop-filter and clipping.
+    element.showModal()
+    document.body.style.overflow='hidden'
+    return()=>{
+      element.close()
+      document.body.style.overflow=previousOverflow
+      if(returnFocus instanceof HTMLElement&&returnFocus.isConnected)returnFocus.focus({preventScroll:true})
+    }
+  },[])
+  return <dialog ref={dialog} className="modal dochub-detail-modal" aria-labelledby={titleId} aria-modal="true"
+    onCancel={event=>{event.preventDefault();onClose()}}
+    onMouseDown={event=>{
+      if(event.button!==0||event.target!==event.currentTarget)return
+      const bounds=event.currentTarget.getBoundingClientRect()
+      if(event.clientX<bounds.left||event.clientX>bounds.right||event.clientY<bounds.top||event.clientY>bounds.bottom)onClose()
+    }}>
+    <div className="modal-head"><div><h2 id={titleId}>Document details</h2><p>{doc.kind} · {docHubLabels[doc.status] || doc.status}</p></div><button autoFocus className="icon-button" type="button" aria-label="Close document details" onClick={onClose}><X size={20}/></button></div>
+    <div className="dochub-detail-body" tabIndex={0} role="region" aria-label="Document information and signing activity"><DocHubCard doc={doc} busy={busy} refresh={refresh}/></div>
+  </dialog>
+}
+
 export function DocHubHistory({active=true,taskId,canCreate=false,onComplete}:{active?:boolean;taskId?:string;canCreate?:boolean;onComplete?:()=>void}) {
   const [docs,setDocs]=useState<DocHubDocument[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(''),[view,setView]=useState<'active'|'archive'>('active'),[selected,setSelected]=useState<DocHubDocument|null>(null)
   const load=async()=>{try{const r=await dochubRequest(`/api/dochub/documents${taskId?`?taskId=${encodeURIComponent(taskId)}`:''}`);setDocs(r.documents);setSelected(current=>current?((r.documents as DocHubDocument[]).find(d=>d.id===current.id)||null):null);setError('')}catch(e){setError((e as Error).message)}}
@@ -80,7 +110,7 @@ export function DocHubHistory({active=true,taskId,canCreate=false,onComplete}:{a
     {!visibleDocs.length&&!error&&<div className="dochub-history-empty">{taskId?'No documents linked yet.':view==='archive'?'Archive is empty. Completed and voided documents will appear here for tracking.':'No active documents. New or in-route documents will appear here.'}</div>}
     {taskId?visibleDocs.map(doc=><DocHubCard key={doc.id} doc={doc} busy={busy===doc.id} refresh={()=>refreshOne(doc.id)}/>):<div className="dochub-history-grid">{visibleDocs.map(doc=><DocHubTile key={doc.id} doc={doc} archived={view==='archive'} busy={busy===doc.id} onOpen={()=>setSelected(doc)} onRefresh={()=>refreshOne(doc.id)}/>)}</div>}
     {onComplete&&docs.some(d=>d.status==='COMPLETED')&&<div className="dochub-completion"><CheckCircle2 size={18}/><span>Signatures complete. Mark this task/subtask completed?</span><button className="secondary" type="button" onClick={onComplete}>Set completed status</button><small>Review and save your task changes to confirm.</small></div>}
-    {selected&&<div className="modal-backdrop dochub-detail-backdrop" role="presentation" onMouseDown={event=>{if(event.currentTarget===event.target)setSelected(null)}}><div className="modal dochub-detail-modal" role="dialog" aria-modal="true" aria-label={`Document details for ${selected.title}`}><div className="modal-head"><div><h2>Document details</h2><p>{selected.kind} · {docHubLabels[selected.status] || selected.status}</p></div><button className="icon-button" type="button" aria-label="Close document details" onClick={()=>setSelected(null)}><X size={20}/></button></div><div className="dochub-detail-body"><DocHubCard doc={selected} busy={busy===selected.id} refresh={()=>refreshOne(selected.id)}/></div></div></div>}
+    {active&&selected&&<DocHubDetails key={selected.id} doc={selected} busy={busy===selected.id} refresh={()=>refreshOne(selected.id)} onClose={()=>setSelected(null)}/>}
   </section>
 }
 
