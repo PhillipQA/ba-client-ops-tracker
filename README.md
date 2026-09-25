@@ -1,18 +1,18 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.40**
+**Current release: v0.6.41**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
 Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
 
-Upgrade details and activation steps: [v0.6.40 release notes](docs/releases/v0.6.40.md).
+Upgrade details: [v0.6.41 release notes](docs/releases/v0.6.41.md). For initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
 
 ## Main modules
 
 - **Action Center** — assigned work, follow-ups, activities and workload views.
 - **Clients & Projects** — shared project structure with tenant/client history.
-- **Requirements & Traceability** — client-specific RTMs, task/subtask progress, coverage, impact review and Excel export.
+- **Requirements & Traceability** — client-specific RTMs, optional Document Agent mapping from your BRD/FSD/test cases, reviewed source references, task/subtask progress, coverage, impact review and Excel export. Assignment and task linking stay manual.
 - **Tasks & Subtasks** — assignment, dates, follow-up, comments, evidence and lifecycle tracking.
 - **Inbox / Inquiries** — tenant Discord capture and inquiry handling.
 - **Document Creation** — DRF, FSD, Test Case and Sign-Off workflows.

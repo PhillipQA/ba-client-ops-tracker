@@ -3,6 +3,7 @@ import { createDocHubService, registerDocHubRoutes, registerDocHubWebhook } from
 import { runTenantAi } from './ai/tenant-ai'
 import { registerFsdRoutes } from './documents/fsd-documents'
 import { registerTestCaseRoutes } from './documents/testcase-documents'
+import { registerRtmAiRoutes } from './documents/rtm-ai'
 import { createWorkspaceGuard } from './services/workspace-guard'
 import { archivedWorkReason, assertLifecycleMutation, LifecycleError, isArchived } from '../src/lifecycle'
 import { registerSignoffRoutes } from './documents/signoff-documents'
@@ -1740,6 +1741,7 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
 registerFsdRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, logoPath: path.join(projectRoot, 'templates', 'fsd-logo.png') })
 
 registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
+registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
 
 registerSignoffRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx') })
 

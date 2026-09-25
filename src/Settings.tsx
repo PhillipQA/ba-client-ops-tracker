@@ -101,7 +101,7 @@ function AIAgentManager() {
   return <section className="ai-agent-manager">
     <div className="panel ai-agent-manager-head"><div className="panel-heading"><div><h2>AI Agent Manager</h2><p>Run separate AI roles with independent providers, models, credentials and context boundaries.</p></div><span className="role-badge">2 agents</span></div>
       <div className="ai-agent-architecture"><span>BA Client Ops Tracker</span><b>→</b><span>AI Agent Manager</span><b>→</b><span>BA Assistant</span><span className="architecture-divider">|</span><span>Document Agent</span></div>
-      <p className="settings-helper">BA Assistant handles conversational workspace support. Document Agent handles Document Creation workflows such as BRD/FSD processing and AI test-case generation.</p>
+      <p className="settings-helper">BA Assistant handles conversational workspace support. Document Agent handles BRD/FSD processing, AI test-case generation, and reviewed RTM requirement/reference mapping. RTM task linking and assignment remain manual.</p>
       {data && !data.encryptionReady && <p role="alert" className="settings-message">TENANT_INTEGRATION_MASTER_KEY must be configured before agent credentials can be encrypted.</p>}
       {error && <p role="alert" className="settings-message">{error}</p>}
     </div>

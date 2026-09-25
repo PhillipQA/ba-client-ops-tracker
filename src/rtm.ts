@@ -8,7 +8,8 @@ export const RTM_STATUSES = ['Not Started', 'In Progress', 'Blocked', 'Failed', 
 export type RtmStatus = typeof RTM_STATUSES[number]
 export type RtmLink = { matrixId: string; requirementId: string; stage: RtmStage; includeSubtasks: boolean }
 export type RtmPhase = { status: RtmStatus; code: string; gap: string; documentUrl: string; section: string; override?: { status: RtmStatus; reason: string } }
-export type Requirement = { id: string; code: string; parentId: string; title: string; description: string; environment: string; priority: Priority; revision: number; needsReview: boolean; phases: Record<RtmStage, RtmPhase> }
+export type RtmEvidence = { sourceId: string; name: string; kind: 'BRD' | 'FSD' | 'Test cases'; reference: string; excerpt: string }
+export type Requirement = { id: string; code: string; parentId: string; title: string; description: string; environment: string; priority: Priority; revision: number; needsReview: boolean; phases: Record<RtmStage, RtmPhase>; sourceEvidence?: RtmEvidence[] }
 export type RtmEvent = { id: string; at: string; actorId: string; actorName: string; requirementId?: string; stage?: RtmStage; summary: string; taskIds?: string[] }
 export type RtmMatrix = { id: string; name: string; clientId: string; projectId: string; enhancement: string; contract: string; version: string; ownerId: string; environment: string; status: 'Draft' | 'Active' | 'Completed' | 'Archived'; revision: number; nextRequirementNumber: number; createdAt: string; updatedAt: string; requirements: Requirement[]; history: RtmEvent[] }
 export type RtmStore = { clients: Client[]; projects: Project[]; items: WorkItem[]; taskSettings: TaskSettings; accounts?: UserAccount[]; rtms?: RtmMatrix[] }
@@ -74,7 +75,7 @@ export function orderedRequirements(requirements: Requirement[]): { requirement:
   walk('', 0)
   return output
 }
-const content = (req: Requirement) => ({ title: req.title, description: req.description, environment: req.environment, priority: req.priority, parentId: req.parentId })
+const content = (req: Requirement) => ({ title: req.title, description: req.description, environment: req.environment, priority: req.priority, parentId: req.parentId, sourceEvidence: req.sourceEvidence })
 const matrixEditable = (matrix: RtmMatrix) => ({ ...matrix, revision: undefined, history: undefined, createdAt: undefined, updatedAt: undefined, requirements: matrix.requirements.map(req => ({ ...req, revision: undefined })) })
 function assert(value: unknown, message: string, status = 400): asserts value { if (!value) throw new LifecycleError(message, status) }
 const textField = (value: unknown, max: number) => typeof value === 'string' && value.length <= max
@@ -109,6 +110,10 @@ export function assertRtmMutation(current: RtmStore, next: RtmStore, actor: RtmA
       assert(textField(req.code, 80) && req.code.trim() && !codes.has(req.code.toLowerCase()), 'Requirement codes must be unique within an RTM.'); codes.add(req.code.toLowerCase())
       assert(textField(req.title, 500) && req.title.trim() && textField(req.description, 20000) && textField(req.environment, 500), 'Requirement title is required; check field lengths.')
       assert(['Low', 'Medium', 'High', 'Urgent'].includes(req.priority) && typeof req.needsReview === 'boolean', 'Invalid requirement priority or review state.')
+      if (req.sourceEvidence !== undefined) {
+        assert(Array.isArray(req.sourceEvidence) && req.sourceEvidence.length <= 100, 'A requirement supports up to 100 source references.')
+        for (const source of req.sourceEvidence) assert(source && ['BRD', 'FSD', 'Test cases'].includes(source.kind) && textField(source.sourceId, 100) && textField(source.name, 200) && source.name.trim() && textField(source.reference, 250) && textField(source.excerpt, 1500) && source.excerpt.trim(), 'Invalid requirement source evidence.')
+      }
       const prior = old?.requirements.find(r => r.id === req.id)
       if (prior) assert(prior.code === req.code, 'A permanent requirement code cannot be changed.')
       const seen = new Set([req.id]); let parent = req.parentId
@@ -153,7 +158,7 @@ export function reconcileRtm<T extends RtmStore>(current: RtmStore, next: T, act
     const requirements = matrix.requirements.map(req => {
       const prior = old?.requirements.find(r => r.id === req.id), changed = prior && stableRecord(content(prior)) !== stableRecord(content(req))
       const result = { ...req, revision: prior ? prior.revision + (changed ? 1 : 0) : 1, needsReview: Boolean(changed || req.needsReview) }
-      if (!prior) event(`Added ${req.code}: ${req.title}`, req.id)
+      if (!prior) event(`Added ${req.code}: ${req.title}${req.sourceEvidence?.length ? ' (document mapping with source evidence)' : ''}`, req.id)
       else if (changed) event(`${req.code} changed (revision ${result.revision}); review FSD, development, testing, UAT and approval links`, req.id)
       else if (prior.needsReview && !req.needsReview) event(`${req.code}: impact review completed`, req.id)
       for (const stage of RTM_STAGES) {
