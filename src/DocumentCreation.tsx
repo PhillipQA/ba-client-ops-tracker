@@ -130,7 +130,7 @@ const defaultSignatories: Signatory[] = [
   { label: 'Approved By', name: '', title: 'Accounting Head' },
 ]
 
-export default function DocumentCreation({ clients, projects, items, launch, canGenerate, canManageTemplates, draftKey, active }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; canManageTemplates: boolean; draftKey: string; active: boolean }) {
+export default function DocumentCreation({ onOpenRtm, clients, projects, items, launch, canGenerate, canManageTemplates, draftKey, active }: { onOpenRtm?: () => void; clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; canManageTemplates: boolean; draftKey: string; active: boolean }) {
   const docHub = useDocHubDraft('DRF')
   useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
   const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
@@ -372,6 +372,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       </div>
 
       <div className="document-flow-grid">
+        {onOpenRtm && <button type="button" className="document-flow-card" onClick={onOpenRtm}><div className="document-flow-icon"><ClipboardCheck size={22} /></div><strong>Create / Import RTM</strong><p>Open Requirements & Traceability to manage client matrices and linked work.</p></button>}
         <button type="button" className={`document-flow-card${flow === 'drf' ? ' active' : ''}`} onClick={() => setFlow('drf')}>
           <div className="document-flow-icon"><BriefcaseBusiness size={22} /></div>
           <div><strong>DRF Creation</strong><span>Extract COR details and populate the Excel DRF form.</span></div>

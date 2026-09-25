@@ -1,0 +1,14 @@
+import { useState } from 'react'
+import type { RtmLink, RtmStore, RtmStage } from './rtm'
+import { RTM_STAGES, STAGE_LABELS } from './rtm'
+
+export default function RtmTaskLinks({ store, clientId, projectId, value, onChange, disabled = false }: { store: RtmStore; clientId?: string; projectId?: string; value: RtmLink[]; onChange: (links: RtmLink[]) => void; disabled?: boolean }) {
+  const [selection, setSelection] = useState(''), [stage, setStage] = useState<RtmStage>('development'), [includeSubtasks, setIncludeSubtasks] = useState(true)
+  const matrices = (store.rtms || []).filter(m => m.clientId === clientId && m.projectId === projectId && m.status !== 'Archived')
+  const choices = matrices.flatMap(matrix => matrix.requirements.map(req => ({ key: `${matrix.id}/${req.id}`, matrix, req })))
+  return <fieldset className="rtm-task-links span-2" disabled={disabled}><legend>Requirements & Traceability</legend>
+    <p>Link this work to one or more requirement stages. Progress updates automatically.</p>
+    {value.map((link, index) => { const matrix = store.rtms?.find(m => m.id === link.matrixId), req = matrix?.requirements.find(r => r.id === link.requirementId); return <div className="rtm-link-row" key={`${link.matrixId}-${link.requirementId}-${link.stage}`}><span><strong>{req?.code || 'Missing requirement'}</strong> · {req?.title} <small>{matrix?.name} · {STAGE_LABELS[link.stage]}{link.includeSubtasks ? ' · Includes subtasks' : ''}</small></span>{!disabled && <button type="button" className="secondary compact" onClick={() => onChange(value.filter((_, i) => i !== index))}>Unlink</button>}</div> })}
+    {!disabled && <div className="rtm-link-picker"><label>Requirement<select value={selection} onChange={e => setSelection(e.target.value)}><option value="">{!clientId || !projectId ? 'Select client and project first' : 'Select a requirement'}</option>{choices.map(c => <option key={c.key} value={c.key}>{c.matrix.name} · {c.req.code} — {c.req.title}</option>)}</select></label><label>Stage<select value={stage} onChange={e => setStage(e.target.value as RtmStage)}>{RTM_STAGES.map(s => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}</select></label><label className="rtm-checkbox"><input type="checkbox" checked={includeSubtasks} onChange={e => setIncludeSubtasks(e.target.checked)} />Include subtasks</label><button className="secondary" type="button" disabled={!choices.some(c => c.key === selection)} onClick={() => { const chosen = choices.find(c => c.key === selection); if (!chosen) return; if (!value.some(l => l.matrixId === chosen.matrix.id && l.requirementId === chosen.req.id && l.stage === stage)) onChange([...value, { matrixId: chosen.matrix.id, requirementId: chosen.req.id, stage, includeSubtasks }]); setSelection('') }}>Link work</button></div>}
+  </fieldset>
+}

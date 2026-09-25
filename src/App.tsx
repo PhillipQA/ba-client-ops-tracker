@@ -1,3 +1,6 @@
+import RequirementsTraceability from './RequirementsTraceability'
+import RtmTaskLinks from './RtmTaskLinks'
+import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
 import { DocHubHistory } from './DocHubPanel'
 import { docHubLabels } from './dochub'
 import ActivityCommentPreview from './ActivityCommentPreview'
@@ -69,11 +72,12 @@ import type { ActivityLog, AppModule, AppNotification, Client, ItemType, Planner
 import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTIONS, type AppTheme } from './theme'
 import { APP_VERSION } from './version'
 
-type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
+type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
 type ClientLayout = 'tiles' | 'list' | 'table'
 
 type Store = {
   schemaVersion: number
+  rtms: RtmMatrix[]
   clients: Client[]
   projects: Project[]
   items: WorkItem[]
@@ -100,6 +104,7 @@ const TODAY = localDateKey(new Date())
 
 const seedStore = (): Store => ({
   schemaVersion: STORE_SCHEMA_VERSION,
+  rtms: [],
   clients: seedClients,
   projects: seedProjects,
   items: seedItems,
@@ -238,7 +243,7 @@ const normalizeStore = (value: unknown, fallback: Store = seedStore()): Store =>
       daysMoved: Number.isFinite(comment.daysMoved) ? Number(comment.daysMoved) : undefined,
     })) : [],
   })))
-  return { schemaVersion: STORE_SCHEMA_VERSION, clients, projects, items: migratedItems, activity, planner, workEvents, notifications, accounts, taskSettings }
+  return { schemaVersion: STORE_SCHEMA_VERSION, rtms: Array.isArray(parsed.rtms) ? parsed.rtms : [], clients, projects, items: migratedItems, activity, planner, workEvents, notifications, accounts, taskSettings }
 }
 
 const initialStore = (): Store => {
@@ -299,6 +304,7 @@ function workEventsForItemChanges(current: Store, next: Store, actor: AuthUser |
 }
 
 const labels: Record<View, string> = {
+  requirements: 'Requirements & Traceability',
   action: 'My Action Center',
   clients: 'Clients',
   projects: 'Projects',
@@ -319,6 +325,7 @@ const navItems: { id: AppModule; label: string; icon: typeof LayoutDashboard }[]
   { id: 'projects', label: 'Projects', icon: BriefcaseBusiness },
   { id: 'inbox', label: 'Inbox / Inquiries', icon: Inbox },
   { id: 'items', label: 'Tasks', icon: Archive },
+  { id: 'requirements', label: 'Requirements & Traceability', icon: Table2 },
   { id: 'documents', label: 'Document Creation', icon: FileText },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'ai', label: 'AI BA Assistant', icon: Sparkles },
@@ -411,6 +418,7 @@ function App() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [newExternalInquiryIds, setNewExternalInquiryIds] = useState<string[]>([])
   const [notificationBusy, setNotificationBusy] = useState(false)
+  const [rtmContext, setRtmContext] = useState<{ clientId?: string; projectId?: string }>({})
   const storeRef = useRef(store)
   const discordPollBusy = useRef(false)
 
@@ -577,11 +585,11 @@ function App() {
   }, [authUser?.id])
 
   const persist = (next: Store) => {
-    try { assertLifecycleMutation(storeRef.current, next, authUser) }
+    try { assertLifecycleMutation(storeRef.current, next, authUser); assertRtmMutation(storeRef.current, next, authUser) }
     catch (error) { window.alert(error instanceof Error ? error.message : 'This change is not allowed.'); return false }
 
     const generatedEvents = workEventsForItemChanges(storeRef.current, next, authUser)
-    const normalized = { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...(storeRef.current.workEvents || [])].slice(0, 10000) }
+    const normalized = reconcileRtm(storeRef.current, { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...(storeRef.current.workEvents || [])].slice(0, 10000) }, authUser)
     storeRef.current = normalized
     setStore(normalized)
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(normalized))
@@ -602,6 +610,28 @@ function App() {
       setCloudStatus('error')
       setCloudMessage(error instanceof Error ? error.message : 'Cloud save failed · local cache retained')
     })
+  }
+
+  const saveRtms = async (rtms: RtmMatrix[], items = storeRef.current.items) => {
+    await waitForCloudSaves()
+    const current = storeRef.current
+    const next = { ...current, rtms, items }
+    assertLifecycleMutation(current, next, authUser)
+    assertRtmMutation(current, next, authUser)
+    let savedState = reconcileRtm(current, next, authUser)
+    if (cloudStatus !== 'local') {
+      const saved = await queueCloudStoreSave(savedState)
+      if (!saved.configured) throw new Error('Cloud storage is unavailable. Your RTM was not saved.')
+      setLastCloudSync(saved.updatedAt || new Date().toISOString())
+      setCloudStatus('synced'); setCloudMessage('Supabase synced')
+      const refreshed = await loadCloudStore<Store>().catch(() => null)
+      if (refreshed?.data) savedState = normalizeStore(refreshed.data)
+    }
+    storeRef.current = savedState; setStore(savedState)
+    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(savedState))
+  }
+  const openRtms = (clientId?: string, projectId?: string) => {
+    setRtmContext({ clientId, projectId }); setSelectedClientId(null); setSelectedProjectId(null); setView('requirements')
   }
 
   const saveLifecycleRecord = async (kind: 'clients' | 'projects', record: Client | Project) => {
@@ -1105,7 +1135,8 @@ function App() {
     }
     assertLifecycleMutation(current, next, authUser)
     const generatedEvents = workEventsForItemChanges(current, next, authUser)
-    const candidate = { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...current.workEvents].slice(0, 10000) }
+    assertRtmMutation(current, next, authUser)
+    const candidate = reconcileRtm(current, { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...current.workEvents].slice(0, 10000) }, authUser)
     if (cloudStatus !== 'local') {
       setCloudStatus('saving')
       setCloudMessage('Saving to Supabase…')
@@ -1335,7 +1366,7 @@ function App() {
         <div className="brand"><img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
         <nav>
           {visibleNavItems.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={view === id ? 'nav-button active' : 'nav-button'} onClick={() => { setView(id); setSelectedClientId(null); setSelectedProjectId(null) }}>
+            <button key={id} className={view === id ? 'nav-button active' : 'nav-button'} onClick={() => { setView(id); if (id === 'requirements') setRtmContext({}); setSelectedClientId(null); setSelectedProjectId(null) }}>
               <Icon size={18} /><span>{label}</span>{id === 'inbox' && inquiryItems.length > 0 && <b className={newExternalInquiryCount > 0 ? 'has-new' : ''} title={newExternalInquiryCount > 0 ? `${newExternalInquiryCount} new external inquiry${newExternalInquiryCount === 1 ? '' : 'ies'}` : `${inquiryItems.length} open inquiries`}>{newExternalInquiryCount > 0 ? newExternalInquiryCount : openInquiryCount}</b>}
             </button>
           ))}
@@ -1531,7 +1562,8 @@ function App() {
           </section>
         )}
 
-        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} items={store.items} launch={documentLaunch} canGenerate={canWrite} canManageTemplates={currentUser?.role === 'Administrator'} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
+        {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && <RequirementsTraceability key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`} store={store} canEdit={canWrite} canLink={canWrite && hasModule('items')} canOverride={currentUser?.role === 'Administrator'} context={rtmContext} onSave={saveRtms} onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined} />}
+        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation onOpenRtm={hasModule('requirements') ? () => openRtms() : undefined} key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} items={store.items} launch={documentLaunch} canGenerate={canWrite} canManageTemplates={currentUser?.role === 'Administrator'} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} />}
 
@@ -1544,14 +1576,14 @@ function App() {
           <section className="page-stack"><AIAssistant clients={store.clients.filter(client => !isArchived(client))} projects={store.projects.filter(project => !isArchived(project))} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>
         )}
 
-        {selectedClient && <ClientDetail controls={<LifecycleControls key={selectedClient.id} kind="clients" record={selectedClient} store={store} canEdit={canWrite && hasModule('clients')} onSave={record => saveLifecycleRecord('clients', record)} />} client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWriteTasks} />}
+        {selectedClient && <ClientDetail onOpenRtms={hasModule('requirements') ? () => openRtms(selectedClient.id) : undefined} controls={<LifecycleControls key={selectedClient.id} kind="clients" record={selectedClient} store={store} canEdit={canWrite && hasModule('clients')} onSave={record => saveLifecycleRecord('clients', record)} />} client={selectedClient} store={store} onBack={() => setSelectedClientId(null)} onOpenProject={(projectId, clientId) => { setSelectedClientId(null); setSelectedProjectClientId(clientId); setSelectedProjectId(projectId) }} onAddTask={(clientId) => { setTaskPreset({ clientId, type: 'Task' }); setModal('item') }} onAskAI={(clientId, projectId = '') => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt(''); setSelectedClientId(null); setView('ai') }} canUseAI={canUseAI} canWrite={canWriteTasks} />}
 
-        {selectedProject && <ProjectDetail controls={<LifecycleControls key={selectedProject.id} kind="projects" record={selectedProject} store={store} canEdit={canWrite && hasModule('projects')} onSave={record => saveLifecycleRecord('projects', record)} />} project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} canEditTasks={canWriteTasks} />}
+        {selectedProject && <ProjectDetail onOpenRtms={hasModule('requirements') ? () => openRtms(selectedProjectClientId || undefined, selectedProject.id) : undefined} controls={<LifecycleControls key={selectedProject.id} kind="projects" record={selectedProject} store={store} canEdit={canWrite && hasModule('projects')} onSave={record => saveLifecycleRecord('projects', record)} />} project={selectedProject} clientContextId={selectedProjectClientId} store={store} setStore={persist} onBack={() => { const clientId = selectedProjectClientId; setSelectedProjectId(null); setSelectedProjectClientId(null); if (clientId) setSelectedClientId(clientId) }} onAddTask={() => { setTaskPreset({ clientId: selectedProjectClientId || undefined, projectId: selectedProject.id, type: 'Task' }); setModal('item') }} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} onStatusChange={updateTaskStatus} onResolve={resolveItem} onEditTask={openTaskEditor} onDeleteTask={deleteTask} canWrite={canWrite} canEditTasks={canWriteTasks} />}
       </main>
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} closeDisabled={modal === 'taskEdit' && taskEditSaving} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
-        {modal === 'item' && <TaskForm store={store} preset={taskPreset} onSubmit={(item) => { const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined; persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: parent ? `Created subtask under ${parent.title}: ${item.title}` : `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
-        {modal === 'taskEdit' && editingTask && <TaskEditForm store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} onCommentMutation={applyCommentMutation} />}
+        {modal === 'item' && <TaskForm canLinkRtm={hasModule('requirements') && hasModule('items')} store={store} preset={taskPreset} onSubmit={(item) => { const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined; persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: parent ? `Created subtask under ${parent.title}: ${item.title}` : `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
+        {modal === 'taskEdit' && editingTask && <TaskEditForm canLinkRtm={hasModule('requirements') && hasModule('items')} store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} onCommentMutation={applyCommentMutation} />}
         {modal === 'client' && <ClientForm onSubmit={(client) => { persist({ ...store, clients: [...store.clients, client] }); setModal(null) }} />}
         {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
         {modal === 'activity' && <ActivityForm clients={store.clients} projects={store.projects} initial={editingActivity} onSubmit={saveActivity} />}
@@ -1921,18 +1953,19 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   return <div className="task-table-wrap">{parentIdsWithChildren.length > 0 && <div className="task-table-tools"><button className="secondary compact" type="button" onClick={toggleAllParents}>{allVisibleParentsCollapsed ? 'Expand all subtasks' : 'Collapse all subtasks'}</button></div>}<div className="table-scroll"><table className="item-table task-table"><thead><tr><th>Task / Subtask</th>{columns.map((column) => <th key={column}>{labels[column]}</th>)}<th>Actions</th></tr></thead><tbody>{rows}</tbody></table></div></div>
 }
 
-function ClientDetail({ controls, client, store, onBack, onOpenProject, onAddTask, onAskAI, canUseAI, canWrite }: { controls: React.ReactNode; client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAddTask: (clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean; canWrite: boolean }) {
+function ClientDetail({ onOpenRtms, controls, client, store, onBack, onOpenProject, onAddTask, onAskAI, canUseAI, canWrite }: { onOpenRtms?: () => void; controls: React.ReactNode; client: Client; store: Store; onBack: () => void; onOpenProject: (projectId: string, clientId: string) => void; onAddTask: (clientId: string) => void; onAskAI: (clientId: string, projectId?: string) => void; canUseAI: boolean; canWrite: boolean }) {
   const projectTaskCounts = new Map<string, number>()
   store.items.filter((item) => item.clientId === client.id && item.projectId).forEach((item) => projectTaskCounts.set(item.projectId as string, (projectTaskCounts.get(item.projectId as string) || 0) + 1))
   const projects = store.projects.filter((project) => projectTaskCounts.has(project.id))
   return <section className="page-stack">
     <button className="back-link" onClick={onBack}>← Back to clients</button>
+    {onOpenRtms && <button className="secondary" onClick={onOpenRtms}><Table2 size={17} /> RTMs ({store.rtms.filter(m => m.clientId === client.id).length})</button>}
     {controls}<div className="client-hero"><div><div className="row-meta"><StatusChip value={client.status} /><HealthChip value={client.health} /></div><p>{client.contact} · {client.email}</p><p>{client.notes}</p></div><div className="client-hero-actions">{canWrite && !isArchived(client) && <button className="primary" onClick={() => onAddTask(client.id)}><Plus size={17} /> Add task</button>}{canUseAI && !isArchived(client) && <button className="secondary" onClick={() => onAskAI(client.id)}><Sparkles size={17} /> Ask AI</button>}</div></div>
     <div className="panel"><div className="panel-heading"><div><h2>Projects</h2><p>Projects are global. Only projects containing tasks for {client.name} are shown here.</p></div></div>{projects.length ? <div className="client-project-list">{projects.map((project) => <button type="button" className="mini-project mini-project-button" key={project.id} onClick={() => onOpenProject(project.id, client.id)}><div><strong>{project.name}</strong><p>{project.summary || 'Open project dashboard'}</p></div><div><StatusChip value={isArchived(project) ? 'Archived · Inactive' : project.status} /><small>{projectTaskCounts.get(project.id) || 0} task{projectTaskCounts.get(project.id) === 1 ? '' : 's'} · Target {niceDate(project.targetDate)}</small><ChevronRight size={16} /></div></button>)}</div> : <Empty text="No tasks for this client are assigned to a project yet." />}</div>
   </section>
 }
 
-function ProjectDetail({ controls, project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onReorderSubtasks, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite, canEditTasks }: { controls: React.ReactNode; project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean; canEditTasks: boolean }) {
+function ProjectDetail({ onOpenRtms, controls, project, clientContextId, store, setStore, onBack, onAddTask, onCreateSubtask, onReorderSubtasks, onStatusChange, onResolve, onEditTask, onDeleteTask, canWrite, canEditTasks }: { onOpenRtms?: () => void; controls: React.ReactNode; project: Project; clientContextId: string | null; store: Store; setStore: (store: Store) => void; onBack: () => void; onAddTask: () => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; onStatusChange: (id: string, status: string) => void; onResolve: (id: string) => void; onEditTask: (id: string) => void; onDeleteTask: (id: string) => void; canWrite: boolean; canEditTasks: boolean }) {
   const contextClient = clientContextId ? store.clients.find((client) => client.id === clientContextId) : undefined
   const allProjectTasks = store.items.filter((item) => item.projectId === project.id)
   const tasks = clientContextId ? allProjectTasks.filter((item) => item.clientId === clientContextId) : allProjectTasks
@@ -1952,6 +1985,7 @@ function ProjectDetail({ controls, project, clientContextId, store, setStore, on
   }
   return <section className="page-stack project-detail-page">
     <button className="back-link" onClick={onBack}>{contextClient ? `← Back to ${contextClient.name}` : '← Back to projects'}</button>
+    {onOpenRtms && <button className="secondary" onClick={onOpenRtms}><Table2 size={17} /> Requirements / RTMs ({store.rtms.filter(m => m.projectId === project.id && (!clientContextId || m.clientId === clientContextId)).length})</button>}
     {controls}<div className="project-hero">
       <div><div className="row-meta"><StatusChip value={isArchived(project) ? 'Archived · Inactive' : project.status} /><span>{contextClient ? `${contextClient.name} view` : `Global project · ${clientCount} client${clientCount === 1 ? '' : 's'} with tasks`}</span></div><p>{project.summary || 'No project summary yet.'}</p><small>Target {niceDate(project.targetDate)}</small></div>
       {canEditTasks && !isArchived(project) && !isArchived(contextClient) && <button className="primary" onClick={onAddTask}><Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}</button>}
@@ -1984,11 +2018,12 @@ function WorkScheduleFields({ itemKind, startDate = '', dueDate = '', followUpDa
   </fieldset>
 }
 
-function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientId?: string; projectId?: string; type?: ItemType; parentTaskId?: string } | null; onSubmit: (item: WorkItem) => void }) {
+function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean; store: Store; preset: { clientId?: string; projectId?: string; type?: ItemType; parentTaskId?: string } | null; onSubmit: (item: WorkItem) => void }) {
   const parent = preset?.parentTaskId ? store.items.find((item) => item.id === preset.parentTaskId) : undefined
   const [clientId, setClientId] = useState(parent?.clientId || preset?.clientId || '')
   const [projectId, setProjectId] = useState(parent?.projectId || preset?.projectId || '')
   const clientLocked = Boolean(parent || preset?.clientId)
+  const [rtmLinks, setRtmLinks] = useState<RtmLink[]>([])
   const [type, setType] = useState<ItemType>(preset?.type || 'Task')
   const [status, setStatus] = useState(defaultOpenTaskStatus(store.taskSettings))
   const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
@@ -2004,6 +2039,8 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
       id: crypto.randomUUID(),
       clientId: parent?.clientId || clientId || undefined,
       projectId: parent?.projectId || projectId || undefined,
+      rtmLinks,
+      qaResult: String(form.get('qaResult') || 'Not Run') as WorkItem['qaResult'],
       parentTaskId: parent?.id,
       subtaskOrder: parent ? Math.max(-1, ...store.items.filter((item) => item.parentTaskId === parent.id).map((item) => item.subtaskOrder ?? -1)) + 1 : undefined,
       title: String(form.get('title') || '').trim(),
@@ -2038,6 +2075,8 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
     {parent
       ? <label>Assigned to<input value={assignableUsers.find((account) => account.id === parent.assignedToUserId)?.name || 'Unassigned'} readOnly disabled /><small>Inherited from the main task. You can override it after creating the subtask.</small></label>
       : <label>Assigned to<select name="assignedToUserId" defaultValue=""><option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select></label>}
+    {canLinkRtm && <RtmTaskLinks store={store} clientId={clientId} projectId={projectId} value={rtmLinks} onChange={setRtmLinks} />}
+    <label>QA result<select name="qaResult" defaultValue="Not Run"><option>Not Run</option><option>Passed</option><option>Failed</option><option>Blocked</option></select><small>Used by linked Testing stages. Passed requires completed work.</small></label>
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} />
     <label>Source<select name="source" defaultValue={type === 'Inquiry' ? 'Chat' : 'Internal'}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} placeholder="Context, comments, acceptance details, dependencies, or what needs to be done..." /></label>
@@ -2045,7 +2084,9 @@ function TaskForm({ store, preset, onSubmit }: { store: Store; preset: { clientI
   </form>
 }
 
-function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation }: { store: Store; item: WorkItem; onSubmit: (item: WorkItem) => Promise<void>; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void }) {
+function TaskEditForm({ canLinkRtm, store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation }: { canLinkRtm: boolean; store: Store; item: WorkItem; onSubmit: (item: WorkItem) => Promise<void>; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void }) {
+  const [rtmLinks, setRtmLinks] = useState<RtmLink[]>(item.rtmLinks || [])
+  const [editProjectId, setEditProjectId] = useState(item.projectId || '')
   const [type, setType] = useState<ItemType>(item.type)
   const [status, setStatus] = useState(item.status)
   const [saving, setSaving] = useState(false)
@@ -2066,9 +2107,11 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
     if (startDate && dueDate && dueDate < startDate) { window.alert('Due Date cannot be earlier than Start Date.'); return }
     const changes: WorkItem = {
       ...item,
+      rtmLinks,
+      qaResult: String(form.get('qaResult') || 'Not Run') as WorkItem['qaResult'],
       title: item.title,
       clientId: item.clientId,
-      projectId: parent ? item.projectId : String(form.get('projectId') || '') || undefined,
+      projectId: parent ? item.projectId : editProjectId || undefined,
       type,
       status,
       priority: form.get('priority') as Priority,
@@ -2094,12 +2137,14 @@ function TaskEditForm({ store, item, onSubmit, onDelete, onEvidenceMutation, onC
     <div className="readonly-notice span-2"><LockKeyhole size={18} /><div><strong>{parent ? `Subtask of: ${parent.title}` : 'Task identity is locked'}</strong><span>{parent ? 'Subtask name, client, and parent project stay fixed. You can update its execution fields below.' : 'Task name and client cannot be changed after creation.'}</span></div></div>
     <label className="span-2">{parent ? 'Subtask title' : 'Task title'}<input value={item.title} readOnly disabled /></label>
     <label>Client<input value={clientLabel} readOnly disabled /></label>
-    {parent ? <label>Project<input value={projectLabel} readOnly disabled /></label> : <label>Project<select name="projectId" defaultValue={item.projectId || ''}><option value="">No project</option>{store.projects.filter(project => !isArchived(project)).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
+    {parent ? <label>Project<input value={projectLabel} readOnly disabled /></label> : <label>Project<select name="projectId" value={editProjectId} onChange={e => setEditProjectId(e.target.value)}><option value="">No project</option>{store.projects.filter(project => !isArchived(project)).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue={item.priority}><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
     <label>Waiting on<select name="waitingOn" defaultValue={item.waitingOn}><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
     <label>Assigned to<select name="assignedToUserId" defaultValue={parent && inheritsParentAssignment ? inheritAssignmentValue : item.assignedToUserId || ''}>{parent && <option value={inheritAssignmentValue}>Same as main task · {assignableUsers.find((account) => account.id === parent.assignedToUserId)?.name || 'Unassigned'}</option>}<option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select>{parent && <small>{inheritsParentAssignment ? 'This subtask follows main-task assignment changes.' : 'This subtask has its own assignee override.'}</small>}</label>
+    {canLinkRtm && <RtmTaskLinks store={store} clientId={item.clientId || parent?.clientId} projectId={editProjectId || parent?.projectId} value={rtmLinks} onChange={setRtmLinks} />}
+    <label>QA result<select name="qaResult" defaultValue={item.qaResult || 'Not Run'}><option>Not Run</option><option>Passed</option><option>Failed</option><option>Blocked</option></select><small>Completed work without an explicit pass shows Done, not Passed.</small></label>
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} startDate={item.startDate || ''} dueDate={item.dueDate || ''} followUpDate={item.followUpDate || ''} />
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>

@@ -1,3 +1,4 @@
+import { assertRtmMutation, reconcileRtm } from '../src/rtm'
 import { createDocHubService, registerDocHubRoutes, registerDocHubWebhook } from './integrations/dochub'
 import { runTenantAi } from './ai/tenant-ai'
 import { registerFsdRoutes } from './documents/fsd-documents'
@@ -136,7 +137,7 @@ function discordUserRateLimited(userId: string) {
   return ++current.count > 10
 }
 
-const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'reports', 'ai', 'settings']
+const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'requirements', 'reports', 'ai', 'settings']
 const BXI_CORE_ORG_ID = '00000000-0000-0000-0000-000000000001'
 const BXI_CORE_ORG_NAME = 'BXI-Core'
 const BXI_CORE_ORG_SLUG = 'bxi-core'
@@ -559,7 +560,13 @@ const guardWorkspace = createWorkspaceGuard(async id => (await loadTenantState(i
 
 async function commitTenantState(organizationId: string | undefined, state: any, actor: SessionUser | null, reason: string, before?: any, synchronize = true): Promise<NormalizedSyncResult> {
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
-  return guardWorkspace(organizationId, state, actor, before, () => writeTenantState(organizationId, state, actor, reason, before, synchronize))
+  return guardWorkspace(organizationId, state, actor, before, async (current) => {
+    // Older clients must preserve RTMs; all writes use server-derived history.
+    if (state.rtms === undefined) state = { ...state, rtms: current.rtms || [] }
+    assertRtmMutation(current, state, actor)
+    const reconciled = reconcileRtm(current, state, actor)
+    return writeTenantState(organizationId, reconciled, actor, reason, before, synchronize)
+  })
 }
 
 type TenantRolloverResult = {
@@ -1073,7 +1080,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     })
     // Work history is derived on the server from the authenticated actor. Browser-supplied
     // event identities are never trusted, so assignment and action reports remain auditable.
-    const candidateNext = { ...next, accounts: nextAccounts, items: normalizedItems, notifications: Array.isArray(current.notifications) ? current.notifications : [], notificationState: current.notificationState }
+    const candidateNext = { ...next, rtms: next.rtms === undefined ? current.rtms || [] : next.rtms, accounts: nextAccounts, items: normalizedItems, notifications: Array.isArray(current.notifications) ? current.notifications : [], notificationState: current.notificationState }
     const workEvents = authoritativeWorkEvents(current, candidateNext, user)
     const existingEventIds = new Set((Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event?.id || '')))
     const newEventIds = workEvents.filter((event: any) => !existingEventIds.has(String(event?.id || ''))).map((event: any) => String(event.id))
@@ -1084,7 +1091,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     if (stable(current.taskSettings ?? defaultTaskSettings) !== stable(next.taskSettings ?? defaultTaskSettings)) return void res.status(409).json({ error: 'Task configuration is managed in Internal Admin. Reload this workspace before saving.' })
 
     if (user.role === 'Viewer') {
-      const operationalUnchanged = ['clients', 'projects', 'items', 'activity', 'planner'].every((key) => stable(current[key] ?? []) === stable(next[key] ?? []))
+      const operationalUnchanged = ['clients', 'projects', 'items', 'activity', 'planner', 'rtms'].every((key) => stable(current[key] ?? []) === stable(next[key] ?? []))
         && stable(current.taskSettings ?? defaultTaskSettings) === stable(next.taskSettings ?? defaultTaskSettings)
       if (!operationalUnchanged || (accountsChanged && !selfOnlyAccounts)) return void res.status(403).json({ configured: true, error: 'Viewer accounts are read-only except for their own profile.' })
     }
