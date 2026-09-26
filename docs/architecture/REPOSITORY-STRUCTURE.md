@@ -26,7 +26,7 @@ ba-client-ops-tracker/
 
 1. Keep the repository root limited to project entry/configuration files.
 2. Put backend features in the appropriate `server/` responsibility folder.
-3. Put database migrations only in `database/migrations/`.
+3. Put incremental database migrations in `database/migrations/`. Regenerate the fresh-install entry point, `database/setup.sql`, with `npm run db:bundle`; verify it with `npm run db:check`.
 4. Put release notes in `docs/releases/`; do not add new `UPGRADE-*.md` files to the root.
 5. Generated full-build and patch ZIP files belong in release artifacts, not Git source control.
 6. Never commit `.env`, secrets, local patch backups, `dist/`, `node_modules/`, logs or TypeScript build-info files.
