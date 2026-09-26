@@ -2058,7 +2058,7 @@ registerAiAgentRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace,
 registerGoogleCalendarRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, requirePlatformAdmin,
   organizationById, sessionFromRequest, sessionByToken: token => sessions.get(token) || null })
 
-const communications = registerCommunications(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, sessionFromRequest, load: loadTenantState,
+const communications = registerCommunications(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, sessionFromRequest, sessionByToken: token => sessions.get(token) || null, requirePlatformAdmin, organizationById, load: loadTenantState,
   commit: (id, next, user, reason, current) => {
     const workEvents = authoritativeWorkEvents(current, next, user)
     const priorIds = new Set((Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event.id)))

@@ -3,6 +3,7 @@ import type { Client, UserAccount } from './types'
 import ThemePreferences, { type AppearancePatch } from './ThemePreferences'
 import { DocHubSettings } from './DocHubPanel'
 import { CalendarAccountSettings } from './GoogleCalendarPanel'
+import { GmailAccountSettings } from './GmailAccountSettings'
 
 export async function settingsRequest(url: string, method = 'GET', data?: unknown) {
   const response = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) })
@@ -152,7 +153,7 @@ export default function Settings({ currentUser, clients, onSaveAppearance }: { c
         <div className="settings-section-heading"><div><h2>Account integrations</h2><p>Manage connections used by your account.</p></div><button type="button" className="secondary" onClick={() => void load().catch(e => setError(e.message))}>Refresh status</button></div>
         {error && <p role="alert" className="settings-message">{error}</p>}{data && !data.encryptionReady && <p role="alert" className="settings-message">Integration storage needs setup by Internal Admin.</p>}
         {data?.integrations.map((value: Integration) => <IntegrationCard key={value.kind} value={value} runtime={data.discord} refresh={load} />)}
-        <DocHubSettings key={`dochub:${currentUser.organizationId}`} /><CalendarAccountSettings key={currentUser.organizationId} />
+        <DocHubSettings key={`dochub:${currentUser.organizationId}`} /><CalendarAccountSettings key={currentUser.organizationId} /><GmailAccountSettings key={`gmail:${currentUser.organizationId}`} />
       </div>
     </>}
   </section>

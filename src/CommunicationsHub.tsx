@@ -3,7 +3,7 @@ import type { Client, Project, UserAccount } from './types'
 import './communications.css'
 
 type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;thread_id?:string;attachments?:string[];status:string;received_at:string;linked_task_id?:string }
-type Settings = { discordUserId:string;captureMentions:boolean;gmailEmail:string;gmailLabels:string[];gmailConnected:boolean;gmailAvailable:boolean;callbackUrl:string }
+type Settings = { discordUserId:string;captureMentions:boolean;gmailEmail:string;gmailLabels:string[];gmailConnected:boolean;gmailReconnectRequired:boolean;gmailAvailable:boolean;gmailPlatformEnabled:boolean;callbackUrl:string }
 type Label = {id:string;name:string}
 async function request(url:string,method='GET',body?:unknown) {
   const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:body===undefined ? undefined : JSON.stringify(body)})
@@ -17,7 +17,11 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
   const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[clientId,setClientId]=useState(''),[projectId,setProjectId]=useState(''),[assignee,setAssignee]=useState(currentUser.id)
   const [message,setMessage]=useState(''),[busy,setBusy]=useState(false)
   const load=async()=>{const [list,prefs]=await Promise.all([request('/api/communications'),request('/api/communications/settings')]);setItems(list.items);setSettings(prefs)}
-  useEffect(()=>{void load().catch(e=>setMessage(e.message))},[currentUser.id])
+  useEffect(()=>{
+    const result=new URLSearchParams(window.location.hash.slice(1)).get('gmail')
+    if(result){setMessage(result==='connected'?'Your Gmail account is connected. Refresh labels, select the ones to monitor, save settings, then sync.':result==='denied'?'Gmail authorization was cancelled.':'Gmail connection did not complete. Check the account OAuth settings, redirect URI, and your Google test-user access.');window.history.replaceState(null,'',window.location.pathname+window.location.search)}
+    void load().catch(e=>setMessage(e.message))
+  },[currentUser.id])
   const act=async(fn:()=>Promise<void>)=>{setBusy(true);setMessage('');try{await fn()}catch(e){setMessage(e instanceof Error?e.message:'Request failed.')}finally{setBusy(false)}}
   const saveSettings=()=>act(async()=>{await request('/api/communications/settings','PUT',settings);await load();setMessage('Your communication preferences were saved.')})
   const beginGmail=()=>act(async()=>{const result=await request('/api/communications/gmail/connect');window.location.assign(result.url)})
@@ -32,7 +36,7 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
     {message && <p className="settings-message" role="status">{message}</p>}
     {config && settings && <div className="panel communication-settings"><div className="panel-heading"><h2>My integration settings</h2></div>
       <div className="communication-settings-grid"><div><h3>Gmail</h3><p>{settings.gmailConnected ? `Connected: ${settings.gmailEmail}` : 'Connect your own Google account to import messages from selected Gmail labels.'}</p>
-        {settings.gmailAvailable ? settings.gmailConnected ? <><button className="secondary" disabled={busy} onClick={fetchLabels}>Refresh Gmail labels</button><button className="secondary" disabled={busy} onClick={sync}>Sync selected labels</button><button className="secondary danger-button" disabled={busy} onClick={()=>{if(window.confirm('Disconnect your Gmail account? Imported private messages remain in your Hub.'))void act(async()=>{await request('/api/communications/gmail','DELETE');await load()})}}>Disconnect</button></> : <button className="primary" disabled={busy} onClick={beginGmail}>Connect Gmail</button> : <small>Gmail OAuth must be configured by the application operator. Callback: {settings.callbackUrl}</small>}
+        {settings.gmailAvailable ? settings.gmailConnected ? <><button className="secondary" disabled={busy} onClick={fetchLabels}>Refresh Gmail labels</button><button className="secondary" disabled={busy} onClick={sync}>Sync selected labels</button><button className="secondary danger-button" disabled={busy} onClick={()=>{if(window.confirm('Disconnect your Gmail account? Imported private messages remain in your Hub.'))void act(async()=>{await request('/api/communications/gmail','DELETE');await load()})}}>Disconnect</button></> : <button className="primary" disabled={busy} onClick={beginGmail}>{settings.gmailReconnectRequired?'Reconnect Gmail':'Connect Gmail'}</button> : <small>{settings.gmailPlatformEnabled?'Ask your account administrator to configure Gmail in Settings → Integrations.':'Internal Admin must enable Gmail for this account first.'}</small>}
         {labels.length>0 && <div className="communication-labels">{labels.map(label=><label key={label.id}><input type="checkbox" checked={settings.gmailLabels.includes(label.id)} onChange={e=>setSettings({...settings,gmailLabels:e.target.checked?[...settings.gmailLabels,label.id]:settings.gmailLabels.filter(id=>id!==label.id)})}/>{label.name}</label>)}</div>}
         {settings.gmailLabels.length>0 && !labels.length && <p>Monitoring {settings.gmailLabels.length} saved label{settings.gmailLabels.length===1?'':'s'}. Refresh labels to change them.</p>}
       </div><div><h3>Discord</h3><p>Link your personal Discord user ID. The existing workspace bot routes mentions of you and your DMs to the bot into your private Hub.</p><label>My Discord user ID<input value={settings.discordUserId} onChange={e=>setSettings({...settings,discordUserId:e.target.value})} placeholder="Numeric Discord user ID" /></label><label className="checkbox-label"><input type="checkbox" checked={settings.captureMentions} onChange={e=>setSettings({...settings,captureMentions:e.target.checked})}/>Capture mentions of me</label><small>Personal person-to-person DMs cannot be captured by the bot. The bot needs access to the server channel and message content.</small></div></div>

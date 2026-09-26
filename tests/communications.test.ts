@@ -5,6 +5,8 @@ import { registerCommunications } from '../server/integrations/communications'
 
 function fixture() {
   const records:any[]=[{id:'11111111-1111-4111-8111-111111111111',tenant_id:'tenant',owner_user_id:'user-a',source:'Gmail',external_id:'secret-mail',thread_id:'thread-a',subject:'Private subject',body:'Private full email thread',sender:'private@example.com',status:'New',received_at:new Date().toISOString()}]
+  const gmailAccounts:any[]=[]
+  const users:any[]=[{id:'user-a',role:'Contributor',status:'Active',modules:['inbox','items'],organization_id:'tenant'},{id:'user-b',role:'Contributor',status:'Active',modules:['inbox','items'],organization_id:'tenant'}]
   const prefs:any[]=[{tenant_id:'tenant',user_id:'user-a',discord_user_id:'123456789012345678',discord_capture_mentions:true},{tenant_id:'tenant',user_id:'user-b',discord_user_id:'234567890123456789',discord_capture_mentions:true}]
   let saved:any
   const state={clients:[{id:'client',name:'Client'}],projects:[{id:'project',name:'Project'}],accounts:[{id:'user-a',name:'Alice',status:'Active',role:'Contributor'},{id:'user-b',name:'Bob',status:'Active',role:'Contributor'}],items:[]}
@@ -13,6 +15,7 @@ function fixture() {
     constructor(public table:string) {}
     select(_columns='*') {return this}
     eq(key:string,value:any){this.conditions.push(x=>x[key]===value);return this}
+    is(key:string,value:any){this.conditions.push(x=>x[key]===value || (value===null && x[key]===undefined));return this}
     in(key:string,values:any[]){this.conditions.push(x=>values.includes(x[key]));return this}
     order(){return this}
     limit(){return this}
@@ -22,7 +25,7 @@ function fixture() {
     maybeSingle(){this.many=false;return this.run()}
     single(){this.many=false;return this.run()}
     then(resolve:any,reject:any){return this.run().then(resolve,reject)}
-    async run(){const rows=this.table==='user_communications'?records:prefs
+    async run(){const rows=this.table==='user_communications'?records:this.table==='user_communication_settings'?prefs:this.table==='gmail_accounts'?gmailAccounts:users
       if(this.action==='insert'){const record={id:crypto.randomUUID(),...this.value};rows.push(record);return {data:this.many?null:record,error:null}}
       if(this.action==='update'){const found=rows.filter(x=>this.conditions.every(c=>c(x)));for(const row of found)Object.assign(row,this.value);return {data:this.many?null:found[0]||null,error:null}}
       if(this.action==='upsert'){const found=rows.find(x=>x.tenant_id===this.value.tenant_id && x.user_id===this.value.user_id);if(found)Object.assign(found,this.value);else rows.push(this.value);return {data:null,error:null}}
@@ -30,8 +33,8 @@ function fixture() {
     }
   }
   const app=express();app.use(express.json());app.use((req:any,_res,next)=>{const id=String(req.headers['x-test-user']||'user-a');req.authUser={id,organizationId:'tenant',name:id,role:String(req.headers['x-test-role']||'Contributor'),modules:['inbox','items'],status:'Active'};next()})
-  const hub=registerCommunications(app,{db:{from:(table:string)=>new Query(table)},requireAuth:(_req,_res,next)=>next(),requireTenant:(_req,_res,next)=>next(),sessionFromRequest:()=>({token:'',user:null}),load:async()=>({data:state}),commit:async(_tenant,next)=>{saved=next},openStatus:()=> 'Open'})
-  return {app,records,hub,getSaved:()=>saved}
+  const hub=registerCommunications(app,{db:{from:(table:string)=>new Query(table)},requireAuth:(_req,_res,next)=>next(),requireTenant:(_req,_res,next)=>next(),sessionFromRequest:()=>({token:'session-a',user:null}),sessionByToken:(token:string)=>token==='session-a'?{id:'user-a',organizationId:'tenant',status:'Active'}:null,requirePlatformAdmin:(_req,_res,next)=>next(),organizationById:async()=>({id:'tenant',status:'Active',enabledModules:['inbox','items','settings']}),load:async()=>({data:state}),commit:async(_tenant,next)=>{saved=next},openStatus:()=> 'Open'})
+  return {app,records,users,gmailAccounts,hub,getSaved:()=>saved}
 }
 
 test('private communications reject cross-user reads and task conversion',async()=>{
@@ -53,4 +56,34 @@ test('private communications reject cross-user reads and task conversion',async(
 test('one Discord mention of two linked users produces two private records',async()=>{
   const {hub,records}=fixture();const count=await hub.captureDiscord({id:'discord-message',guildId:'server',channelId:'channel',channel:{name:'project'},mentions:{users:new Map([['123456789012345678',{}],['234567890123456789',{}]])},author:{id:'sender',username:'Jaime'},content:'@Alice @Bob please check',createdTimestamp:Date.now()},'tenant')
   assert.equal(count,2);assert.deepEqual(records.filter(x=>x.source==='Discord').map(x=>x.owner_user_id).sort(),['user-a','user-b'])
+})
+
+
+test('account OAuth setup is gated; Gmail callback uses its dedicated Lax cookie',async()=>{
+  const previousKey=process.env.TENANT_INTEGRATION_MASTER_KEY
+  process.env.TENANT_INTEGRATION_MASTER_KEY='a'.repeat(64)
+  const {app,users}=fixture();users[0].role='Administrator';users[0].modules.push('settings')
+  const server=app.listen(0),originalFetch=globalThis.fetch
+  try{
+    const address=server.address();if(!address || typeof address==='string')throw new Error('No test port')
+    const base=`http://127.0.0.1:${address.port}`
+    const local=(path:string,method='GET',body?:any,user='user-a',cookie='')=>originalFetch(base+path,{method,headers:{'x-test-user':user,'content-type':'application/json',...(cookie?{cookie}:{})},body:body?JSON.stringify(body):undefined,redirect:'manual'})
+    assert.equal((await local('/api/account/gmail','PUT',{enabled:true,clientId:'test.apps.googleusercontent.com',clientSecret:'a-long-client-secret'})).status,403)
+    assert.equal((await local('/api/internal-admin/organizations/tenant/gmail','PUT',{enabled:true})).status,200)
+    assert.equal((await local('/api/account/gmail','PUT',{enabled:true,clientId:'test.apps.googleusercontent.com',clientSecret:'a-long-client-secret'})).status,200)
+    assert.equal((await local('/api/account/gmail','PUT',{enabled:false},'user-b')).status,403)
+    const connect=await local('/api/communications/gmail/connect');assert.equal(connect.status,200)
+    const cookie=connect.headers.get('set-cookie') || '';assert.match(cookie,/ba_gmail_oauth=.*SameSite=Lax/i)
+    const url=new URL((await connect.json()).url),state=url.searchParams.get('state')
+    assert.equal(url.searchParams.get('client_id'),'test.apps.googleusercontent.com')
+    globalThis.fetch=(async(input:any,init:any)=>{
+      const address=String(input)
+      if(address==='https://oauth2.googleapis.com/token')return new Response(JSON.stringify({access_token:'access',refresh_token:'refresh',scope:'https://www.googleapis.com/auth/gmail.readonly'}),{status:200,headers:{'Content-Type':'application/json'}})
+      if(address==='https://www.googleapis.com/oauth2/v3/userinfo')return new Response(JSON.stringify({email:'alice@example.com',email_verified:true}),{status:200,headers:{'Content-Type':'application/json'}})
+      return originalFetch(input,init)
+    }) as typeof fetch
+    const callback=await local(`/api/communications/gmail/callback?state=${state}&code=authorization-code`,'GET',undefined,'user-a',cookie.split(';')[0])
+    assert.equal(callback.status,303);assert.equal(callback.headers.get('location'),' /#gmail=connected'.trim())
+    const status=await local('/api/communications/settings');assert.equal((await status.json()).gmailConnected,true)
+  }finally{globalThis.fetch=originalFetch;server.close();if(previousKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=previousKey}
 })

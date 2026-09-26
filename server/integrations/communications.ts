@@ -1,24 +1,38 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
-import { encryptSecret, decryptSecret, IntegrationError } from './tenant-integrations'
+import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 const CALLBACK = '/api/communications/gmail/callback'
-const oauthStates = new Map<string, { token: string; userId: string; tenantId: string; verifier: string; expires: number }>()
+const COOKIE = 'ba_gmail_oauth'
+const oauthStates = new Map<string, { token: string; userId: string; tenantId: string; verifier: string; cookie: string; revision: string; expires: number }>()
 const gmailKind = 'gmail-refresh' as const
+type GmailCredentials = { clientId: string; clientSecret: string; redirectUri: string }
 const google = async (url: string, init: RequestInit) => {
   const response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(20000) })
   const data: any = await response.json()
   if (!response.ok) throw new IntegrationError(data.error_description || data.error?.message || 'Gmail request failed.', 502)
   return data
 }
-function credentials() {
-  const clientId = process.env.GMAIL_OAUTH_CLIENT_ID || ''
-  const clientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET || ''
-  if (!clientId || !clientSecret) throw new IntegrationError('Gmail OAuth is not configured on the server.', 503)
-  return { clientId, clientSecret }
+function origin(req: Request) {
+  const url = new URL(process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`)
+  if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(url.hostname)))) throw new IntegrationError('Use an HTTPS application URL for Gmail.',503)
+  return url.origin
 }
-function origin(req: Request) { return `${req.protocol}://${req.get('host')}` }
+function validateCredentials(input: any, appOrigin: string): GmailCredentials {
+  let source = input || {}
+  if (input?.oauthJson) {
+    if (JSON.stringify(input.oauthJson).length > 32768) throw new IntegrationError('Choose an OAuth JSON file under 32 KB.')
+    try { source = (typeof input.oauthJson === 'string' ? JSON.parse(input.oauthJson) : input.oauthJson).web } catch { throw new IntegrationError('Choose a Google OAuth Web application JSON file.') }
+    if (!source) throw new IntegrationError('Use a Web application OAuth client.')
+  }
+  const clientId = String(source.client_id ?? source.clientId ?? '').trim()
+  const clientSecret = String(source.client_secret ?? source.clientSecret ?? '').trim()
+  const redirectUri = `${appOrigin}${CALLBACK}`
+  if (!/^[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(clientId) || clientId.length > 256) throw new IntegrationError('Enter a valid Google OAuth Client ID.')
+  if (clientSecret.length < 10 || clientSecret.length > 4096 || /\s/.test(clientSecret)) throw new IntegrationError('Enter the Google OAuth Client Secret.')
+  return { clientId, clientSecret, redirectUri }
+}
 function requireText(input: unknown, field: string, max = 4000) {
   if (typeof input !== 'string' || input.trim().length > max) throw new IntegrationError(`${field} is invalid.`)
   return input.trim()
@@ -36,21 +50,52 @@ function decodeBody(payload: any): string {
   return encoded ? Buffer.from(encoded, 'base64url').toString('utf8').slice(0, 30000) : ''
 }
 export function registerCommunications(app: Express, deps: {
-  db: any; requireAuth: Middleware; requireTenant: Middleware;
+  db: any; requireAuth: Middleware; requireTenant: Middleware; requirePlatformAdmin: Middleware;
   sessionFromRequest: (req: Request) => { token: string; user: any };
+  sessionByToken: (token: string) => any;
+  organizationById: (id: string) => Promise<any>;
   load: (id: string) => Promise<any>; commit: (id: string, next: any, user: any, source: string, current: any) => Promise<any>;
   openStatus: (state: any) => string;
 }) {
   const { db } = deps
   const auth = [deps.requireAuth, deps.requireTenant]
   const current = (req: Request) => (req as any).authUser
-  const allowed = (user: any) => user.role === 'Administrator' || user.modules?.includes('inbox')
-  const guard: Middleware = (req, res, next) => { if (!allowed(current(req))) return void res.status(403).json({ error: 'Communications access is required.' }); res.setHeader('Cache-Control','no-store'); next() }
+  const guard: Middleware = async (req, res, next) => {
+    try { await liveUser(current(req)); res.setHeader('Cache-Control','no-store'); next() }
+    catch(e) { res.status(e instanceof IntegrationError ? e.status : 503).json({error:e instanceof Error ? e.message : 'Communications unavailable.'}) }
+  }
   const wrap = (fn: (req: Request, res: Response) => Promise<any>): Middleware => async (req,res) => {
     try { if (!db) throw new IntegrationError('Cloud storage is required for private communications.',503); await fn(req,res) }
     catch (error) { res.status(error instanceof IntegrationError ? error.status : 503).json({ error: error instanceof IntegrationError ? error.message : 'Communications are unavailable. Apply schema-v12-communications.sql and retry.' }) }
   }
-  const scoped = (req: Request) => ({ tenant_id: current(req).organizationId as string, owner_user_id: current(req).id as string })
+  const account = async (tenantId: string) => {
+    const { data, error } = await db.from('gmail_accounts').select('*').eq('tenant_id',tenantId).maybeSingle()
+    if (error) throw new IntegrationError('Apply schema-v13-gmail-accounts.sql before configuring Gmail.',503)
+    return data
+  }
+  const saveAccount = async (tenantId: string, patch: any) => {
+    const previous = await account(tenantId)
+    const record = { ...patch,updated_at:new Date().toISOString() }
+    const { error } = previous ? await db.from('gmail_accounts').update(record).eq('tenant_id',tenantId) : await db.from('gmail_accounts').insert({tenant_id:tenantId,...record})
+    if (error) throw new IntegrationError('Could not save account Gmail settings.',503)
+  }
+  const activeAccount = async (tenantId: string) => {
+    const row = await account(tenantId)
+    if (!row?.platform_enabled) throw new IntegrationError('Internal Admin has not enabled Gmail for this account.',403)
+    if (!row.account_enabled || !row.encrypted_config) throw new IntegrationError('Ask your account administrator to configure Gmail in Settings.',409)
+    const credentials = JSON.parse(decryptSecret(row.encrypted_config,tenantId,'gmail-oauth')) as GmailCredentials
+    return {row,credentials}
+  }
+  const liveUser = async (user: any, settingsAccess = false) => {
+    const org = await deps.organizationById(user.organizationId)
+    if (!org || org.status !== 'Active' || !org.enabledModules.includes('inbox')) throw new IntegrationError('Communications is disabled for this account.',403)
+    const {data,error}=await db.from('app_users').select('id,role,status,modules').eq('organization_id',user.organizationId).eq('id',user.id).is('deleted_at',null).maybeSingle()
+    if (error || !data || data.status !== 'Active') throw new IntegrationError('This user is unavailable.',403)
+    if (settingsAccess ? data.role !== 'Administrator' || !org.enabledModules.includes('settings') : data.role !== 'Administrator' && !data.modules?.includes('inbox')) throw new IntegrationError(settingsAccess ? 'Account Administrator with Settings access is required.' : 'Communications access is required.',403)
+    return user.organizationId as string
+  }
+  const gmailGate: Middleware = async (req,res,next) => { try { await liveUser(current(req)); next() } catch(e) { res.status(e instanceof IntegrationError ? e.status : 503).json({error:e instanceof Error ? e.message : 'Gmail access unavailable.'}) } }
+  const accountGate: Middleware = async (req,res,next) => { try { await liveUser(current(req),true); next() } catch(e) { res.status(e instanceof IntegrationError ? e.status : 503).json({error:e instanceof Error ? e.message : 'Gmail settings unavailable.'}) } }
   const settings = async (tenant: string, user: string) => {
     const { data, error } = await db.from('user_communication_settings').select('*').eq('tenant_id',tenant).eq('user_id',user).maybeSingle()
     if (error) throw error
@@ -62,6 +107,46 @@ export function registerCommunications(app: Express, deps: {
     if (!data) throw new IntegrationError('Communication not found.',404)
     return data
   }
+  app.get('/api/internal-admin/organizations/:organizationId/gmail', deps.requireAuth, deps.requirePlatformAdmin, wrap(async (req,res) => {
+    const id=String(req.params.organizationId)
+    if (!await deps.organizationById(id)) throw new IntegrationError('Account not found.',404)
+    const row=await account(id)
+    res.json({enabled:Boolean(row?.platform_enabled),configured:Boolean(row?.encrypted_config)})
+  }))
+  app.put('/api/internal-admin/organizations/:organizationId/gmail', deps.requireAuth, deps.requirePlatformAdmin, wrap(async (req,res) => {
+    const id=String(req.params.organizationId)
+    if (!await deps.organizationById(id)) throw new IntegrationError('Account not found.',404)
+    if (typeof req.body?.enabled !== 'boolean') throw new IntegrationError('Specify whether Gmail is enabled.')
+    await saveAccount(id,{platform_enabled:req.body.enabled})
+    res.json({ok:true})
+  }))
+  app.get('/api/account/gmail', ...auth, accountGate, wrap(async (req,res) => {
+    const user=current(req),row=await account(user.organizationId)
+    let encryptionReady=true;try{encryptionKey()}catch{encryptionReady=false}
+    const credentials=row?.encrypted_config && encryptionReady ? JSON.parse(decryptSecret(row.encrypted_config,user.organizationId,'gmail-oauth')) as GmailCredentials : null
+    res.json({platformEnabled:Boolean(row?.platform_enabled),configured:Boolean(row?.encrypted_config),enabled:Boolean(row?.account_enabled),encryptionReady,
+      clientId:credentials?.clientId || '',redirectUri:credentials?.redirectUri || '',expectedRedirectUri:`${origin(req)}${CALLBACK}`})
+  }))
+  app.put('/api/account/gmail', ...auth, accountGate, wrap(async (req,res) => {
+    if (typeof req.body?.enabled !== 'boolean') throw new IntegrationError('Specify whether Gmail is enabled for this account.')
+    const user=current(req),previous=await account(user.organizationId)
+    if (!previous?.platform_enabled) throw new IntegrationError('Internal Admin must enable Gmail for this account first.',403)
+    const replacing=Boolean(req.body?.oauthJson || req.body?.clientId || req.body?.clientSecret)
+    if (!replacing && !previous.encrypted_config) throw new IntegrationError('Upload a Google Web OAuth JSON file or enter both credentials.')
+    const patch:any={account_enabled:req.body.enabled}
+    if (replacing) {
+      const credentials=validateCredentials(req.body,origin(req))
+      patch.encrypted_config=encryptSecret(JSON.stringify(credentials),user.organizationId,'gmail-oauth')
+      patch.revision=randomUUID()
+    }
+    await saveAccount(user.organizationId,patch)
+    res.json({ok:true,reconnectRequired:replacing})
+  }))
+  app.delete('/api/account/gmail', ...auth, accountGate, wrap(async (req,res) => {
+    const user=current(req)
+    await saveAccount(user.organizationId,{encrypted_config:null,account_enabled:false,revision:randomUUID()})
+    res.json({ok:true})
+  }))
   app.get('/api/communications', ...auth, guard, wrap(async (req,res) => {
     const user = current(req)
     const { data, error } = await db.from('user_communications').select('*').eq('tenant_id',user.organizationId).eq('owner_user_id',user.id).order('received_at',{ ascending:false }).limit(200)
@@ -69,10 +154,13 @@ export function registerCommunications(app: Express, deps: {
     res.json({ items:data || [] })
   }))
   app.get('/api/communications/settings', ...auth, guard, wrap(async (req,res) => {
-    const row = await settings(current(req).organizationId,current(req).id)
+    const user=current(req),row = await settings(user.organizationId,user.id),config=await account(user.organizationId)
+    const enabled=Boolean(config?.platform_enabled && config?.account_enabled && config?.encrypted_config)
+    const connected=Boolean(row?.gmail_refresh_token && row.gmail_config_revision===config?.revision)
     res.json({ discordUserId:row?.discord_user_id || '', captureMentions:row?.discord_capture_mentions ?? true,
-      gmailEmail:row?.gmail_email || '', gmailLabels:row?.gmail_labels || [], gmailConnected:Boolean(row?.gmail_refresh_token),
-      gmailAvailable:Boolean(process.env.GMAIL_OAUTH_CLIENT_ID && process.env.GMAIL_OAUTH_CLIENT_SECRET), callbackUrl:`${origin(req)}${CALLBACK}` })
+      gmailEmail:connected ? row.gmail_email || '' : '', gmailLabels:row?.gmail_labels || [], gmailConnected:connected,
+      gmailReconnectRequired:Boolean(row?.gmail_refresh_token && !connected),gmailAvailable:enabled,
+      gmailPlatformEnabled:Boolean(config?.platform_enabled), callbackUrl:`${origin(req)}${CALLBACK}` })
   }))
   app.put('/api/communications/settings', ...auth, guard, wrap(async (req,res) => {
     const user=current(req), id=String(req.body?.discordUserId || '').trim()
@@ -83,6 +171,7 @@ export function registerCommunications(app: Express, deps: {
     const { error }=await db.from('user_communication_settings').upsert({ tenant_id:user.organizationId,user_id:user.id,
       discord_user_id:id || null,discord_capture_mentions:req.body?.captureMentions !== false,
       gmail_labels:[...new Set(labels)],gmail_email:previous?.gmail_email || null,gmail_refresh_token:previous?.gmail_refresh_token || null,
+      gmail_config_revision:previous?.gmail_config_revision || null,
       updated_at:new Date().toISOString() },{ onConflict:'tenant_id,user_id' })
     if (error) throw new IntegrationError(error.code === '23505' ? 'This Discord account is already linked to another user in this workspace.' : 'Could not save communication settings.',error.code === '23505' ? 409 : 503)
     res.json({ saved:true })
@@ -125,31 +214,52 @@ export function registerCommunications(app: Express, deps: {
     if(error) throw error
     res.status(201).json({ task:item })
   }))
-  app.get('/api/communications/gmail/connect', ...auth, guard, wrap(async (req,res) => {
-    const {clientId}=credentials(),user=current(req),session=deps.sessionFromRequest(req),verifier=randomBytes(32).toString('base64url'),state=randomBytes(24).toString('base64url')
-    oauthStates.set(state,{token:session.token,userId:user.id,tenantId:user.organizationId,verifier,expires:Date.now()+600000})
-    const redirectUri=`${origin(req)}${CALLBACK}`
-    const query=new URLSearchParams({client_id:clientId,redirect_uri:redirectUri,response_type:'code',scope:'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email',access_type:'offline',prompt:'consent select_account',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
+  app.get('/api/communications/gmail/connect', ...auth, guard, gmailGate, wrap(async (req,res) => {
+    const user=current(req),session=deps.sessionFromRequest(req),config=await activeAccount(user.organizationId)
+    if (!session.token || config.credentials.redirectUri!==`${origin(req)}${CALLBACK}`) throw new IntegrationError('Gmail callback or session changed. Ask your account administrator to update the OAuth client.',409)
+    const verifier=randomBytes(32).toString('base64url'),state=randomBytes(32).toString('hex'),cookie=randomBytes(32).toString('hex')
+    for(const [key,value] of oauthStates) if(value.userId===user.id && value.tenantId===user.organizationId) oauthStates.delete(key)
+    if(oauthStates.size>1000) throw new IntegrationError('Too many pending Gmail connections. Try again shortly.',429)
+    oauthStates.set(state,{token:session.token,userId:user.id,tenantId:user.organizationId,verifier,cookie,revision:config.row.revision,expires:Date.now()+600000})
+    res.cookie(COOKIE,cookie,{httpOnly:true,secure:origin(req).startsWith('https:'),sameSite:'lax',path:CALLBACK,maxAge:600000})
+    const query=new URLSearchParams({client_id:config.credentials.clientId,redirect_uri:config.credentials.redirectUri,response_type:'code',scope:'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email',access_type:'offline',prompt:'consent select_account',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
     res.json({url:`https://accounts.google.com/o/oauth2/v2/auth?${query}`})
   }))
   app.get(CALLBACK, async (req,res) => {
-    const state=String(req.query.state || ''),saved=oauthStates.get(state); oauthStates.delete(state)
-    const session=deps.sessionFromRequest(req)
-    if(!saved || saved.expires<Date.now() || !session.user || session.token!==saved.token || session.user.id!==saved.userId || session.user.organizationId!==saved.tenantId || typeof req.query.code !== 'string') return void res.status(403).send('Gmail connection expired. Return to settings and try again.')
+    res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer')
+    let result='error'
     try {
-      const {clientId,clientSecret}=credentials(),redirectUri=`${origin(req)}${CALLBACK}`
-      const grant=await google('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code:req.query.code,client_id:clientId,client_secret:clientSecret,redirect_uri:redirectUri,code_verifier:saved.verifier,grant_type:'authorization_code'})})
-      if(!grant.refresh_token || !String(grant.scope || '').includes('gmail.readonly')) throw new Error('Gmail did not grant offline read access.')
+      const state=typeof req.query.state==='string' ? req.query.state : '',saved=oauthStates.get(state)
+      const cookie=(req.headers.cookie || '').split(';').map(x=>x.trim()).find(x=>x.startsWith(`${COOKIE}=`))?.slice(COOKIE.length+1) || ''
+      if(!saved || saved.expires<Date.now() || !/^[a-f0-9]{64}$/.test(cookie) || !timingSafeEqual(Buffer.from(cookie),Buffer.from(saved.cookie))) throw new Error('Invalid state')
+      oauthStates.delete(state)
+      const user=deps.sessionByToken(saved.token)
+      if(!user || user.id!==saved.userId || user.organizationId!==saved.tenantId) throw new Error('Session expired')
+      await liveUser(user)
+      const config=await activeAccount(saved.tenantId)
+      if(config.row.revision!==saved.revision || config.credentials.redirectUri!==`${origin(req)}${CALLBACK}`) throw new Error('Account OAuth settings changed')
+      if(req.query.error) {result='denied';throw new Error('Denied')}
+      if(typeof req.query.code!=='string' || req.query.code.length>4096) throw new Error('Missing code')
+      const grant=await google('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code:req.query.code,client_id:config.credentials.clientId,client_secret:config.credentials.clientSecret,redirect_uri:config.credentials.redirectUri,code_verifier:saved.verifier,grant_type:'authorization_code'})})
+      if(!grant.access_token || !grant.refresh_token || !String(grant.scope || '').split(' ').includes('https://www.googleapis.com/auth/gmail.readonly')) throw new Error('Gmail did not grant offline read access')
       const identity=await google('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:`Bearer ${grant.access_token}`}})
+      if(!identity.email || identity.email_verified!==true) throw new Error('Google identity is unverified')
+      const stillSignedIn=deps.sessionByToken(saved.token)
+      if(!stillSignedIn || stillSignedIn.id!==saved.userId || stillSignedIn.organizationId!==saved.tenantId) throw new Error('Session expired')
+      await liveUser(stillSignedIn)
+      if((await activeAccount(saved.tenantId)).row.revision!==saved.revision) throw new Error('Account OAuth settings changed')
       const previous=await settings(saved.tenantId,saved.userId)
       const {error}=await db.from('user_communication_settings').upsert({tenant_id:saved.tenantId,user_id:saved.userId,
         discord_user_id:previous?.discord_user_id || null,discord_capture_mentions:previous?.discord_capture_mentions ?? true,
-        gmail_email:String(identity.email || ''),gmail_refresh_token:encryptSecret(grant.refresh_token,`${saved.tenantId}:${saved.userId}`,gmailKind),gmail_labels:previous?.gmail_labels || [],updated_at:new Date().toISOString()},{onConflict:'tenant_id,user_id'})
+        gmail_email:String(identity.email),gmail_refresh_token:encryptSecret(grant.refresh_token,`${saved.tenantId}:${saved.userId}`,gmailKind),
+        gmail_config_revision:saved.revision,gmail_labels:previous?.gmail_labels || [],updated_at:new Date().toISOString()},{onConflict:'tenant_id,user_id'})
       if(error) throw error
-      res.redirect(303,'/?gmail=connected')
-    } catch { res.redirect(303,'/?gmail=error') }
+      result='connected'
+    } catch { /* Never log authorization codes, tokens, or provider details. */ }
+    res.clearCookie(COOKIE,{path:CALLBACK,httpOnly:true,sameSite:'lax'})
+    res.redirect(303,`/#gmail=${result}`)
   })
-  app.get('/api/communications/gmail/labels', ...auth, guard, wrap(async (req,res) => {
+  app.get('/api/communications/gmail/labels', ...auth, guard, gmailGate, wrap(async (req,res) => {
     const token=await accessToken(req),result=await google('https://gmail.googleapis.com/gmail/v1/users/me/labels',{headers:{Authorization:`Bearer ${token}`}})
     res.json({labels:(result.labels || []).filter((x:any)=>x.type==='user').map((x:any)=>({id:x.id,name:x.name}))})
   }))
@@ -165,7 +275,7 @@ export function registerCommunications(app: Express, deps: {
     if(error) throw error
     res.json({disconnected:true})
   }))
-  app.post('/api/communications/gmail/sync', ...auth, guard, wrap(async (req,res) => {
+  app.post('/api/communications/gmail/sync', ...auth, guard, gmailGate, wrap(async (req,res) => {
     const user=current(req),row=await settings(user.organizationId,user.id),labels=Array.isArray(row?.gmail_labels) ? row.gmail_labels : []
     if(!labels.length) throw new IntegrationError('Select monitored Gmail labels in settings first.')
     const token=await accessToken(req)
@@ -188,9 +298,10 @@ export function registerCommunications(app: Express, deps: {
   }))
   async function accessToken(req: Request) {
     const user=current(req),row=await settings(user.organizationId,user.id)
-    if(!row?.gmail_refresh_token) throw new IntegrationError('Connect your Gmail account first.',409)
-    const {clientId,clientSecret}=credentials(),refresh=decryptSecret(row.gmail_refresh_token,`${user.organizationId}:${user.id}`,gmailKind)
-    const grant=await google('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:clientId,client_secret:clientSecret,refresh_token:refresh,grant_type:'refresh_token'})})
+    const config=await activeAccount(user.organizationId)
+    if(!row?.gmail_refresh_token || row.gmail_config_revision!==config.row.revision) throw new IntegrationError('Connect your Gmail account again. The account OAuth configuration changed.',409)
+    const refresh=decryptSecret(row.gmail_refresh_token,`${user.organizationId}:${user.id}`,gmailKind)
+    const grant=await google('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:config.credentials.clientId,client_secret:config.credentials.clientSecret,refresh_token:refresh,grant_type:'refresh_token'})})
     return String(grant.access_token)
   }
   const timer=setInterval(()=>{const now=Date.now();for(const [key,value] of oauthStates) if(value.expires<now) oauthStates.delete(key)},60000);timer.unref()
