@@ -149,9 +149,41 @@ export function registerCommunications(app: Express, deps: {
   }))
   app.get('/api/communications', ...auth, guard, wrap(async (req,res) => {
     const user = current(req)
-    const { data, error } = await db.from('user_communications').select('*').eq('tenant_id',user.organizationId).eq('owner_user_id',user.id).order('received_at',{ ascending:false }).limit(200)
+    // Keep the old response for older clients while the new Hub uses bounded pages.
+    const paginated = req.query.page !== undefined || req.query.pageSize !== undefined
+    const page = Number(req.query.page ?? 1), pageSize = Number(req.query.pageSize ?? 10)
+    const tab = String(req.query.tab ?? 'All'), label = String(req.query.label ?? '')
+    if (!Number.isSafeInteger(page) || page < 1 || page > 1000000 || ![5,10,15].includes(pageSize) || !['All','Gmail','Discord','Manual','Archived'].includes(tab) || label.length > 128) throw new IntegrationError('Choose a valid communication view and page.')
+    const filtered = (head=false) => {
+      let query = db.from('user_communications').select('*', paginated ? {count:'exact',head} : {}).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id)
+      if (paginated) {
+        query = tab === 'Archived' ? query.eq('status','Archived') : query.neq('status','Archived')
+        if (['Gmail','Discord','Manual'].includes(tab)) query = query.eq('source',tab)
+        if (tab === 'Gmail' && label) query = query.eq('source_label',label)
+      }
+      return query
+    }
+    const query = filtered().order('received_at',{ascending:false}).order('id',{ascending:false})
+    const { data, count, error } = await (paginated ? query.range((page-1)*pageSize,page*pageSize-1) : query.limit(200))
+    // PostgREST can return 416 when the last item on a page was archived.
+    if (paginated && error?.code === 'PGRST103') {
+      const latest = await filtered(true)
+      if (latest.error) throw latest.error
+      res.json({items:[],total:latest.count || 0,page,pageSize}); return
+    }
     if (error) throw error
-    res.json({ items:data || [] })
+    res.json({ items:data || [], ...(paginated ? {total:count || 0,page,pageSize} : {}) })
+  }))
+  app.get('/api/communications/:id/thread', ...auth, guard, wrap(async (req,res) => {
+    const selected = await own(req,String(req.params.id)), user = current(req)
+    const page = Number(req.query.page ?? 1), pageSize = 50
+    if (!Number.isSafeInteger(page) || page < 1 || page > 1000000) throw new IntegrationError('Choose a valid thread page.')
+    if (!selected.thread_id) { res.json({items:[selected],total:1}); return }
+    const {data,count,error} = await db.from('user_communications').select('*',{count:'exact'})
+      .eq('tenant_id',user.organizationId).eq('owner_user_id',user.id).eq('source',selected.source).eq('thread_id',selected.thread_id)
+      .order('received_at',{ascending:true}).order('id',{ascending:true}).range((page-1)*pageSize,page*pageSize-1)
+    if (error) throw error
+    res.json({items:data || [],total:count || 0})
   }))
   app.get('/api/communications/settings', ...auth, guard, wrap(async (req,res) => {
     const user=current(req),row = await settings(user.organizationId,user.id),config=await account(user.organizationId)

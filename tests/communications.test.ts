@@ -12,13 +12,16 @@ function fixture() {
   const state={clients:[{id:'client',name:'Client'}],projects:[{id:'project',name:'Project'}],accounts:[{id:'user-a',name:'Alice',status:'Active',role:'Contributor'},{id:'user-b',name:'Bob',status:'Active',role:'Contributor'}],items:[]}
   class Query {
     conditions:((x:any)=>boolean)[]=[]; action='read'; value:any; many=true
+    orders:{key:string;ascending:boolean}[]=[]; start=0; end=Infinity; head=false
     constructor(public table:string) {}
-    select(_columns='*') {return this}
+    select(_columns='*',options?:any) {this.head=Boolean(options?.head);return this}
     eq(key:string,value:any){this.conditions.push(x=>x[key]===value);return this}
+    neq(key:string,value:any){this.conditions.push(x=>x[key]!==value);return this}
     is(key:string,value:any){this.conditions.push(x=>x[key]===value || (value===null && x[key]===undefined));return this}
     in(key:string,values:any[]){this.conditions.push(x=>values.includes(x[key]));return this}
-    order(){return this}
-    limit(){return this}
+    order(key:string,options:{ascending:boolean}){this.orders.push({key,ascending:options.ascending});return this}
+    limit(count:number){this.end=count-1;return this}
+    range(start:number,end:number){this.start=start;this.end=end;return this}
     insert(value:any){this.action='insert';this.value=value;return this}
     update(value:any){this.action='update';this.value=value;return this}
     upsert(value:any){this.action='upsert';this.value=value;return this}
@@ -29,7 +32,9 @@ function fixture() {
       if(this.action==='insert'){const record={id:crypto.randomUUID(),...this.value};rows.push(record);return {data:this.many?null:record,error:null}}
       if(this.action==='update'){const found=rows.filter(x=>this.conditions.every(c=>c(x)));for(const row of found)Object.assign(row,this.value);return {data:this.many?null:found[0]||null,error:null}}
       if(this.action==='upsert'){const found=rows.find(x=>x.tenant_id===this.value.tenant_id && x.user_id===this.value.user_id);if(found)Object.assign(found,this.value);else rows.push(this.value);return {data:null,error:null}}
-      const matched=rows.filter(x=>this.conditions.every(c=>c(x)));return {data:this.many?matched:matched[0]||null,error:null}
+      const matched=rows.filter(x=>this.conditions.every(c=>c(x))).sort((a,b)=>{for(const {key,ascending} of this.orders){const result=String(a[key]).localeCompare(String(b[key]));if(result)return ascending?result:-result}return 0})
+      if(this.start>0 && this.start>=matched.length)return {data:null,count:null,error:{code:'PGRST103'}}
+      return {data:this.head?null:this.many?matched.slice(this.start,this.end+1):matched[0]||null,count:matched.length,error:null}
     }
   }
   const app=express();app.use(express.json());app.use((req:any,_res,next)=>{const id=String(req.headers['x-test-user']||'user-a');req.authUser={id,organizationId:'tenant',name:id,role:String(req.headers['x-test-role']||'Contributor'),modules:['inbox','items'],status:'Active'};next()})
@@ -86,4 +91,39 @@ test('account OAuth setup is gated; Gmail callback uses its dedicated Lax cookie
     assert.equal(callback.status,303);assert.equal(callback.headers.get('location'),' /#gmail=connected'.trim())
     const status=await local('/api/communications/settings');assert.equal((await status.json()).gmailConnected,true)
   }finally{globalThis.fetch=originalFetch;server.close();if(previousKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=previousKey}
+})
+
+test('pagination filters before counting, reaches older records and isolates threads by owner and tenant',async()=>{
+  const {app,records}=fixture(),sample=records[0]
+  records.splice(0,records.length,...Array.from({length:217},(_,i)=>({...sample,id:`message-${String(i).padStart(4,'0')}`,source:i<210?'Gmail':'Discord',source_label:i<210?'pos':'',received_at:new Date(2026,0,1,0,i).toISOString()})))
+  records.push({...sample,id:'archived',status:'Archived'}, {...sample,id:'other-user',owner_user_id:'user-b'}, {...sample,id:'other-tenant',tenant_id:'other-tenant'})
+  const server=app.listen(0)
+  try {
+    const address=server.address();if(!address || typeof address==='string')throw new Error('No test port')
+    const base=`http://127.0.0.1:${address.port}`
+    const get=async(path:string,user='user-a')=>{const result=await fetch(base+path,{headers:{'x-test-user':user}});return {status:result.status,body:await result.json()}}
+    for(const size of [5,10,15]){
+      const first=await get(`/api/communications?page=1&pageSize=${size}&tab=Gmail&label=pos`)
+      const second=await get(`/api/communications?page=2&pageSize=${size}&tab=Gmail&label=pos`)
+      assert.equal(first.body.total,210);assert.equal(first.body.items.length,size)
+      assert.ok(second.body.items.every((x:any)=>!first.body.items.some((y:any)=>x.id===y.id)))
+    }
+    const older=await get('/api/communications?page=42&pageSize=5&tab=Gmail&label=pos')
+    assert.equal(older.body.items.length,5);assert.equal(older.body.items.at(-1).id,'message-0000')
+    const beyond=await get('/api/communications?page=43&pageSize=5&tab=Gmail&label=pos')
+    assert.equal(beyond.status,200);assert.equal(beyond.body.total,210);assert.deepEqual(beyond.body.items,[])
+    const discord=await get('/api/communications?page=1&pageSize=10&tab=Discord&label=pos')
+    assert.equal(discord.body.total,7);assert.ok(discord.body.items.every((x:any)=>x.source==='Discord'))
+    assert.equal((await get('/api/communications?page=1&pageSize=5&tab=Archived')).body.total,1)
+    assert.equal((await get('/api/communications?page=1&pageSize=5&tab=Gmail&label=missing')).body.total,0)
+    assert.equal((await get('/api/communications?page=1&pageSize=5&tab=All','user-b')).body.total,1)
+    for(const query of ['page=0','page=1.5','page=bad','pageSize=200','tab=Unknown'])assert.equal((await get(`/api/communications?${query}`)).status,400)
+    const thread=await get('/api/communications/message-0000/thread')
+    assert.equal(thread.body.total,211);assert.equal(thread.body.items.length,50)
+    assert.ok(thread.body.items.every((x:any)=>x.owner_user_id==='user-a' && x.tenant_id==='tenant' && x.source==='Gmail'))
+    const next=await get('/api/communications/message-0000/thread?page=2')
+    assert.ok(next.body.items.every((x:any)=>!thread.body.items.some((y:any)=>x.id===y.id)))
+    assert.equal((await get('/api/communications/message-0000/thread','user-b')).status,404)
+    assert.equal((await get('/api/communications/other-tenant/thread')).status,404)
+  } finally {server.close()}
 })
