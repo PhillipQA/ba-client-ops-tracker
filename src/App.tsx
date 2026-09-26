@@ -1362,7 +1362,7 @@ function App() {
   if (authChecking) return <AuthSplash />
   if (!authUser || !currentUser) return <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} />
 
-  const currentTheme = themeForContext(currentUser, selectedProject ? selectedProjectClientId : selectedClient?.id)
+  const currentTheme = themeForContext(currentUser)
 
   return (
     <div className={`app-shell ui-refresh theme-${currentTheme}`} data-theme={currentTheme} data-interface-mode={normalizeInterfaceMode(currentUser.interfaceMode) || undefined}>
@@ -1568,14 +1568,14 @@ function App() {
         )}
 
         {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && <RequirementsTraceability key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`} store={store} canEdit={canWrite} canLink={canWrite && hasModule('items')} canOverride={currentUser?.role === 'Administrator'} context={rtmContext} onSave={saveRtms} onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined} />}
-        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation onOpenRtm={hasModule('requirements') ? () => openRtms() : undefined} key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} items={store.items} launch={documentLaunch} canGenerate={canWrite} canManageTemplates={currentUser?.role === 'Administrator'} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
+        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} items={store.items} launch={documentLaunch} canGenerate={canWrite} canManageTemplates={currentUser?.role === 'Administrator'} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} />}
 
         {!selectedClient && !selectedProject && view === 'users' && canManageAccounts && <AccountUsers currentUser={currentUser} onChanged={acceptAccountUsers} />}
-        {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && <ThemePreferences user={currentUser} clients={store.clients} onSave={saveOwnPreferences} />}
+        {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && <ThemePreferences user={currentUser} onSave={saveOwnPreferences} />}
 
-        {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings key={`${currentUser.organizationId}:${currentUser.id}`} currentUser={currentUser} clients={store.clients} onSaveAppearance={saveOwnPreferences} />}
+        {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && <Settings key={`${currentUser.organizationId}:${currentUser.id}`} currentUser={currentUser} />}
 
         {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
           <section className="page-stack"><AIAssistant clients={store.clients.filter(client => !isArchived(client))} projects={store.projects.filter(project => !isArchived(project))} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} initialClientId={aiClientId} initialProjectId={aiProjectId} initialPrompt={aiPrompt} onContextChange={(clientId, projectId) => { setAiClientId(clientId); setAiProjectId(projectId); setAiPrompt('') }} onApplySuggestion={applyAISuggestion} /></section>

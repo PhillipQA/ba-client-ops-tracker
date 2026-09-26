@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Archive, CheckCircle2, ExternalLink, FileSignature, FolderOpen, RefreshCw, UserRound, X } from 'lucide-react'
+import { Archive, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FileSignature, FolderOpen, LayoutGrid, List, RefreshCw, UserRound, X } from 'lucide-react'
 import type { Client, Project, WorkItem } from './types'
 import { dochubRequest, docHubGuidance, docHubLabels, isArchivedDocHubStatus, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
 import './dochub.css'
@@ -68,6 +68,17 @@ function DocHubTile({doc,busy,onRefresh,onOpen,archived}:{doc:DocHubDocument;bus
   </article>
 }
 
+function DocHubRow({doc,busy,onRefresh,onOpen,archived}:{doc:DocHubDocument;busy:boolean;onRefresh:()=>Promise<void>;onOpen:()=>void;archived:boolean}) {
+  const signers=doc.signers.filter(s=>!s.removed),signed=signers.filter(s=>s.signedAt||s.status==='FINALIZED').length
+  return <article className={`dochub-row${archived?' archived':''}`}>
+    <div className="dochub-row-document"><span className="dochub-kind">{doc.kind}</span><button type="button" className="dochub-row-title" title={doc.title} onClick={onOpen}>{doc.title}</button><small>{doc.createdByName || 'Unknown user'} · {dateTime(doc.createdAt)}</small></div>
+    <div className="dochub-row-status"><span className={`dochub-status${archived?' archived':''}`}>{docHubLabels[doc.status] || doc.status}</span></div>
+    <div className="dochub-row-signatures"><strong>{signed}/{signers.length}</strong><small>Signed</small></div>
+    <div className="dochub-row-followup"><strong>{doc.followUpDate || '—'}</strong><small>Follow-up</small></div>
+    <div className="dochub-tile-actions dochub-row-actions"><button type="button" className="secondary compact" onClick={onOpen}>Details</button>{doc.documentUrl&&<a className="secondary compact" href={doc.documentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/> Open</a>}{!archived&&<button type="button" className="secondary compact" disabled={busy} onClick={()=>void onRefresh()}><RefreshCw size={14} className={busy?'dochub-spin':''}/>{busy?'Refreshing':'Refresh'}</button>}{doc.status==='COMPLETED'&&<a className="secondary compact" href={`/api/dochub/documents/${doc.id}/pdf`} target="_blank" rel="noopener noreferrer">Signed PDF</a>}</div>
+  </article>
+}
+
 function DocHubDetails({doc,busy,refresh,onClose}:{doc:DocHubDocument;busy:boolean;refresh:()=>Promise<void>;onClose:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null)
   const titleId=useId()
@@ -99,18 +110,25 @@ function DocHubDetails({doc,busy,refresh,onClose}:{doc:DocHubDocument;busy:boole
 
 export function DocHubHistory({active=true,taskId,canCreate=false,onComplete}:{active?:boolean;taskId?:string;canCreate?:boolean;onComplete?:()=>void}) {
   const [docs,setDocs]=useState<DocHubDocument[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(''),[view,setView]=useState<'active'|'archive'>('active'),[selected,setSelected]=useState<DocHubDocument|null>(null)
+  const [layout,setLayout]=useState<'row'|'tile'>('row'),[pageSize,setPageSize]=useState<3|5|10>(5),[page,setPage]=useState(1)
   const load=async()=>{try{const r=await dochubRequest(`/api/dochub/documents${taskId?`?taskId=${encodeURIComponent(taskId)}`:''}`);setDocs(r.documents);setSelected(current=>current?((r.documents as DocHubDocument[]).find(d=>d.id===current.id)||null):null);setError('')}catch(e){setError((e as Error).message)}}
   const refreshOne=async(id:string)=>{setBusy(id);try{await dochubRequest(`/api/dochub/documents/${id}/refresh`,'POST');await load();updated()}catch(e){setError((e as Error).message)}finally{setBusy('')}}
   useEffect(()=>{if(!active)return;let live=true;const refresh=()=>{if(live)void load()};refresh();const timer=window.setInterval(refresh,30_000);window.addEventListener('dochub-updated',refresh);return()=>{live=false;window.clearInterval(timer);window.removeEventListener('dochub-updated',refresh)}},[active,taskId])
   const archivedDocs=docs.filter(d=>isArchivedDocHubStatus(d.status)),activeDocs=docs.filter(d=>!isArchivedDocHubStatus(d.status)),visibleDocs=taskId?docs:(view==='archive'?archivedDocs:activeDocs)
+  const totalPages=Math.max(1,Math.ceil(visibleDocs.length/pageSize))
+  useEffect(()=>{setPage(current=>Math.min(current,totalPages))},[totalPages])
+  const pageStart=(page-1)*pageSize
+  const pagedDocs=taskId?visibleDocs:visibleDocs.slice(pageStart,pageStart+pageSize)
   return <section className={`panel dochub-history${taskId?' span-2':''}`}><div className="panel-heading"><div><h3>{taskId?'Linked documents':'Document history'}</h3><p>{taskId?'Signing updates are added to this work item’s activity comments.':'Active documents stay here while they are being prepared, routed, or signed. Done, completed, and voided documents move to Archive automatically.'}</p></div><button type="button" className="secondary" onClick={()=>void load()}>Reload history</button></div>
-    {!taskId&&<div className="dochub-history-tabs" role="tablist" aria-label="Document history folders"><button type="button" className={view==='active'?'active':''} role="tab" aria-selected={view==='active'} onClick={()=>setView('active')}><FolderOpen size={16}/> Active <span>{activeDocs.length}</span></button><button type="button" className={view==='archive'?'active':''} role="tab" aria-selected={view==='archive'} onClick={()=>setView('archive')}><Archive size={16}/> Archive <span>{archivedDocs.length}</span></button></div>}
+    {!taskId&&<><div className="dochub-history-tabs" role="tablist" aria-label="Document history folders"><button type="button" className={view==='active'?'active':''} role="tab" aria-selected={view==='active'} onClick={()=>{setView('active');setPage(1)}}><FolderOpen size={16}/> Active <span>{activeDocs.length}</span></button><button type="button" className={view==='archive'?'active':''} role="tab" aria-selected={view==='archive'} onClick={()=>{setView('archive');setPage(1)}}><Archive size={16}/> Archive <span>{archivedDocs.length}</span></button></div>
+    <div className="dochub-history-toolbar"><div className="dochub-layout-switch" role="group" aria-label="Document history layout"><button type="button" className={layout==='row'?'active':''} aria-pressed={layout==='row'} onClick={()=>setLayout('row')}><List size={15}/> Row</button><button type="button" className={layout==='tile'?'active':''} aria-pressed={layout==='tile'} onClick={()=>setLayout('tile')}><LayoutGrid size={15}/> Tile</button></div><label>Items per page<select value={pageSize} onChange={event=>{setPageSize(Number(event.target.value) as 3|5|10);setPage(1)}}><option value={3}>3</option><option value={5}>5</option><option value={10}>10</option></select></label></div></>}
     {taskId&&canCreate&&<div className="dochub-actions">{(['drf','signoff'] as const).map(flow=><button key={flow} type="button" className="secondary" onClick={()=>window.dispatchEvent(new CustomEvent('dochub-create',{detail:{taskId,flow}}))}>Create {flow==='drf'?'DRF':'Sign-Off'} for this work</button>)}</div>}
     {error&&<p className="dochub-history-message" role="alert">{error}</p>}
     {!visibleDocs.length&&!error&&<div className="dochub-history-empty">{taskId?'No documents linked yet.':view==='archive'?'Archive is empty. Completed and voided documents will appear here for tracking.':'No active documents. New or in-route documents will appear here.'}</div>}
-    {taskId?visibleDocs.map(doc=><DocHubCard key={doc.id} doc={doc} busy={busy===doc.id} refresh={()=>refreshOne(doc.id)}/>):<div className="dochub-history-grid">{visibleDocs.map(doc=><DocHubTile key={doc.id} doc={doc} archived={view==='archive'} busy={busy===doc.id} onOpen={()=>setSelected(doc)} onRefresh={()=>refreshOne(doc.id)}/>)}</div>}
+    {taskId?pagedDocs.map(doc=><DocHubCard key={doc.id} doc={doc} busy={busy===doc.id} refresh={()=>refreshOne(doc.id)}/>):layout==='tile'?<div className="dochub-history-grid">{pagedDocs.map(doc=><DocHubTile key={doc.id} doc={doc} archived={view==='archive'} busy={busy===doc.id} onOpen={()=>setSelected(doc)} onRefresh={()=>refreshOne(doc.id)}/>)}</div>:<div className="dochub-history-list">{pagedDocs.map(doc=><DocHubRow key={doc.id} doc={doc} archived={view==='archive'} busy={busy===doc.id} onOpen={()=>setSelected(doc)} onRefresh={()=>refreshOne(doc.id)}/>)}</div>}
+    {!taskId&&visibleDocs.length>0&&<div className="dochub-pagination"><span>{pageStart+1}–{Math.min(pageStart+pageSize,visibleDocs.length)} of {visibleDocs.length}</span><div><button type="button" className="secondary compact" aria-label="Previous page" disabled={page<=1} onClick={()=>setPage(current=>Math.max(1,current-1))}><ChevronLeft size={15}/> Previous</button><span>Page {page} of {totalPages}</span><button type="button" className="secondary compact" aria-label="Next page" disabled={page>=totalPages} onClick={()=>setPage(current=>Math.min(totalPages,current+1))}>Next <ChevronRight size={15}/></button></div></div>}
     {onComplete&&docs.some(d=>d.status==='COMPLETED')&&<div className="dochub-completion"><CheckCircle2 size={18}/><span>Signatures complete. Mark this task/subtask completed?</span><button className="secondary" type="button" onClick={onComplete}>Set completed status</button><small>Review and save your task changes to confirm.</small></div>}
-    {active&&selected&&<DocHubDetails key={selected.id} doc={selected} busy={busy===selected.id} refresh={()=>refreshOne(selected.id)} onClose={()=>setSelected(null)}/>}
+    {active&&selected&&<DocHubDetails key={selected.id} doc={selected} busy={busy===selected.id} refresh={()=>refreshOne(selected.id)} onClose={()=>setSelected(null)}/>}  
   </section>
 }
 
