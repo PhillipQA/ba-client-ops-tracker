@@ -190,7 +190,7 @@ export function registerCommunications(app: Express, deps: {
     const enabled=Boolean(config?.platform_enabled && config?.account_enabled && config?.encrypted_config)
     const connected=Boolean(row?.gmail_refresh_token && row.gmail_config_revision===config?.revision)
     res.json({ discordUserId:row?.discord_user_id || '', captureMentions:row?.discord_capture_mentions ?? true,
-      gmailEmail:connected ? row.gmail_email || '' : '', gmailLabels:row?.gmail_labels || [], gmailConnected:connected,
+      gmailEmail:connected ? row.gmail_email || '' : '', gmailLabels:row?.gmail_labels || [], gmailLabelCatalog:row?.gmail_label_catalog || [], gmailConnected:connected,
       gmailReconnectRequired:Boolean(row?.gmail_refresh_token && !connected),gmailAvailable:enabled,
       gmailPlatformEnabled:Boolean(config?.platform_enabled), callbackUrl:`${origin(req)}${CALLBACK}` })
   }))
@@ -203,6 +203,7 @@ export function registerCommunications(app: Express, deps: {
     const { error }=await db.from('user_communication_settings').upsert({ tenant_id:user.organizationId,user_id:user.id,
       discord_user_id:id || null,discord_capture_mentions:req.body?.captureMentions !== false,
       gmail_labels:[...new Set(labels)],gmail_email:previous?.gmail_email || null,gmail_refresh_token:previous?.gmail_refresh_token || null,
+      gmail_label_catalog:previous?.gmail_label_catalog || [],
       gmail_config_revision:previous?.gmail_config_revision || null,
       updated_at:new Date().toISOString() },{ onConflict:'tenant_id,user_id' })
     if (error) throw new IntegrationError(error.code === '23505' ? 'This Discord account is already linked to another user in this workspace.' : 'Could not save communication settings.',error.code === '23505' ? 409 : 503)
@@ -281,10 +282,12 @@ export function registerCommunications(app: Express, deps: {
       await liveUser(stillSignedIn)
       if((await activeAccount(saved.tenantId)).row.revision!==saved.revision) throw new Error('Account OAuth settings changed')
       const previous=await settings(saved.tenantId,saved.userId)
+      const sameMailbox=previous?.gmail_email?.toLowerCase()===String(identity.email).toLowerCase()
       const {error}=await db.from('user_communication_settings').upsert({tenant_id:saved.tenantId,user_id:saved.userId,
         discord_user_id:previous?.discord_user_id || null,discord_capture_mentions:previous?.discord_capture_mentions ?? true,
         gmail_email:String(identity.email),gmail_refresh_token:encryptSecret(grant.refresh_token,`${saved.tenantId}:${saved.userId}`,gmailKind),
-        gmail_config_revision:saved.revision,gmail_labels:previous?.gmail_labels || [],updated_at:new Date().toISOString()},{onConflict:'tenant_id,user_id'})
+        gmail_config_revision:saved.revision,gmail_labels:sameMailbox?previous?.gmail_labels || []:[],
+        gmail_label_catalog:sameMailbox?previous?.gmail_label_catalog || []:[],updated_at:new Date().toISOString()},{onConflict:'tenant_id,user_id'})
       if(error) throw error
       result='connected'
     } catch { /* Never log authorization codes, tokens, or provider details. */ }
@@ -293,7 +296,11 @@ export function registerCommunications(app: Express, deps: {
   })
   app.get('/api/communications/gmail/labels', ...auth, guard, gmailGate, wrap(async (req,res) => {
     const token=await accessToken(req),result=await google('https://gmail.googleapis.com/gmail/v1/users/me/labels',{headers:{Authorization:`Bearer ${token}`}})
-    res.json({labels:(result.labels || []).filter((x:any)=>x.type==='user').map((x:any)=>({id:x.id,name:x.name}))})
+    const labels=(result.labels || []).filter((x:any)=>x.type==='user' && typeof x.id==='string' && typeof x.name==='string').map((x:any)=>({id:x.id,name:x.name}))
+    const user=current(req)
+    const {error}=await db.from('user_communication_settings').update({gmail_label_catalog:labels,updated_at:new Date().toISOString()}).eq('tenant_id',user.organizationId).eq('user_id',user.id)
+    if(error) throw new IntegrationError('Could not save Gmail label names. Apply schema-v14-gmail-label-catalog.sql and retry.',503)
+    res.json({labels})
   }))
   app.delete('/api/communications/gmail', ...auth, guard, wrap(async (req,res) => {
     const user=current(req),previous=await settings(user.organizationId,user.id)
@@ -303,7 +310,7 @@ export function registerCommunications(app: Express, deps: {
         await fetch('https://oauth2.googleapis.com/revoke',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({token}),signal:AbortSignal.timeout(10000),redirect:'error'})
       } catch { /* Disconnect locally even if revocation is temporarily unavailable. */ }
     }
-    const {error}=await db.from('user_communication_settings').update({gmail_email:null,gmail_refresh_token:null,gmail_labels:[],updated_at:new Date().toISOString()}).eq('tenant_id',user.organizationId).eq('user_id',user.id)
+    const {error}=await db.from('user_communication_settings').update({gmail_email:null,gmail_refresh_token:null,gmail_labels:[],gmail_label_catalog:[],updated_at:new Date().toISOString()}).eq('tenant_id',user.organizationId).eq('user_id',user.id)
     if(error) throw error
     res.json({disconnected:true})
   }))

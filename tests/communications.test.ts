@@ -64,7 +64,7 @@ test('one Discord mention of two linked users produces two private records',asyn
 })
 
 
-test('account OAuth setup is gated; Gmail callback uses its dedicated Lax cookie',async()=>{
+test('account OAuth setup is gated; Gmail callback and persisted label names stay private',async()=>{
   const previousKey=process.env.TENANT_INTEGRATION_MASTER_KEY
   process.env.TENANT_INTEGRATION_MASTER_KEY='a'.repeat(64)
   const {app,users}=fixture();users[0].role='Administrator';users[0].modules.push('settings')
@@ -81,15 +81,34 @@ test('account OAuth setup is gated; Gmail callback uses its dedicated Lax cookie
     const cookie=connect.headers.get('set-cookie') || '';assert.match(cookie,/ba_gmail_oauth=.*SameSite=Lax/i)
     const url=new URL((await connect.json()).url),state=url.searchParams.get('state')
     assert.equal(url.searchParams.get('client_id'),'test.apps.googleusercontent.com')
+    let labelName='POS Registration',labelsUnavailable=false,labelCalls=0
     globalThis.fetch=(async(input:any,init:any)=>{
       const address=String(input)
       if(address==='https://oauth2.googleapis.com/token')return new Response(JSON.stringify({access_token:'access',refresh_token:'refresh',scope:'https://www.googleapis.com/auth/gmail.readonly'}),{status:200,headers:{'Content-Type':'application/json'}})
       if(address==='https://www.googleapis.com/oauth2/v3/userinfo')return new Response(JSON.stringify({email:'alice@example.com',email_verified:true}),{status:200,headers:{'Content-Type':'application/json'}})
+      if(address==='https://gmail.googleapis.com/gmail/v1/users/me/labels'){
+        labelCalls++
+        return new Response(JSON.stringify(labelsUnavailable?{error:{message:'Google temporarily unavailable'}}:{labels:[{id:'Label_123',name:labelName,type:'user'},{id:'INBOX',name:'INBOX',type:'system'}]}),{status:labelsUnavailable?503:200,headers:{'Content-Type':'application/json'}})
+      }
+      if(address==='https://oauth2.googleapis.com/revoke')return new Response('{}',{status:200})
       return originalFetch(input,init)
     }) as typeof fetch
     const callback=await local(`/api/communications/gmail/callback?state=${state}&code=authorization-code`,'GET',undefined,'user-a',cookie.split(';')[0])
     assert.equal(callback.status,303);assert.equal(callback.headers.get('location'),' /#gmail=connected'.trim())
     const status=await local('/api/communications/settings');assert.equal((await status.json()).gmailConnected,true)
+    assert.equal((await local('/api/communications/gmail/labels')).status,200)
+    assert.deepEqual((await (await local('/api/communications/settings')).json()).gmailLabelCatalog,[{id:'Label_123',name:'POS Registration'}])
+    assert.equal(labelCalls,1,'Reloading settings must use stored label names without calling Google')
+    assert.deepEqual((await (await local('/api/communications/settings','GET',undefined,'user-b')).json()).gmailLabelCatalog,[])
+    await local('/api/communications/settings','PUT',{discordUserId:'123456789012345678',captureMentions:true,gmailLabels:['Label_123'],gmailLabelCatalog:[{id:'Label_123',name:'Client supplied name'}]})
+    assert.equal((await (await local('/api/communications/settings')).json()).gmailLabelCatalog[0].name,'POS Registration')
+    labelName='POS Registration — updated'
+    await local('/api/communications/gmail/labels')
+    labelsUnavailable=true
+    assert.equal((await local('/api/communications/gmail/labels')).status,502)
+    assert.equal((await (await local('/api/communications/settings')).json()).gmailLabelCatalog[0].name,labelName)
+    assert.equal((await local('/api/communications/gmail','DELETE')).status,200)
+    assert.deepEqual((await (await local('/api/communications/settings')).json()).gmailLabelCatalog,[])
   }finally{globalThis.fetch=originalFetch;server.close();if(previousKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=previousKey}
 })
 

@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Client, Project, UserAccount } from './types'
 import './communications.css'
 
 type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;thread_id?:string;attachments?:string[];status:string;received_at:string;linked_task_id?:string }
-type Settings = { discordUserId:string;captureMentions:boolean;gmailEmail:string;gmailLabels:string[];gmailConnected:boolean;gmailReconnectRequired:boolean;gmailAvailable:boolean;gmailPlatformEnabled:boolean;callbackUrl:string }
+type Settings = { discordUserId:string;captureMentions:boolean;gmailEmail:string;gmailLabels:string[];gmailLabelCatalog:Label[];gmailConnected:boolean;gmailReconnectRequired:boolean;gmailAvailable:boolean;gmailPlatformEnabled:boolean;callbackUrl:string }
 type Label = {id:string;name:string}
 type ViewPreferences = {layout:'cards'|'rows';pageSize:5|10|15}
 function readView(key:string):ViewPreferences {
-  try { const value=JSON.parse(localStorage.getItem(key) || '{}');return {layout:value.layout==='rows'?'rows':'cards',pageSize:[5,10,15].includes(value.pageSize)?value.pageSize:10} }
-  catch { return {layout:'cards',pageSize:10} }
+  try { const value=JSON.parse(localStorage.getItem(key) || '{}');return {layout:value.layout==='rows'?'rows':'cards',pageSize:value.pageSizeVersion===2 && [5,10,15].includes(value.pageSize)?value.pageSize:5} }
+  catch { return {layout:'cards',pageSize:5} }
 }
 async function request(url:string,method='GET',body?:unknown) {
   const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:body===undefined ? undefined : JSON.stringify(body)})
@@ -22,12 +22,36 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
   const [tab,setTab]=useState('All'),[labelFilter,setLabelFilter]=useState(''),[selected,setSelected]=useState<Message|null>(null),[compose,setCompose]=useState(false),[config,setConfig]=useState(false)
   const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[clientId,setClientId]=useState(''),[projectId,setProjectId]=useState(''),[assignee,setAssignee]=useState(currentUser.id)
   const [message,setMessage]=useState(''),[busy,setBusy]=useState(false)
+  const detailRef=useRef<HTMLDivElement>(null)
+  const [openCount,setOpenCount]=useState(0),[labelsLoading,setLabelsLoading]=useState(false)
   const viewKey=`communications-view:${currentUser.organizationId || ''}:${currentUser.id}`
   const [view,setView]=useState<ViewPreferences>(()=>readView(viewKey))
   const [page,setPage]=useState(1),[total,setTotal]=useState(0),[loading,setLoading]=useState(true),[listError,setListError]=useState(''),[refresh,setRefresh]=useState(0)
   const [selectedThread,setSelectedThread]=useState<Message[]>([]),[threadPage,setThreadPage]=useState(1),[threadTotal,setThreadTotal]=useState(0),[threadLoading,setThreadLoading]=useState(false),[threadError,setThreadError]=useState(''),[threadRetry,setThreadRetry]=useState(0)
-  const changeView=(next:ViewPreferences)=>{setView(next);if(next.pageSize!==view.pageSize)setPage(1);try{localStorage.setItem(viewKey,JSON.stringify(next))}catch{/* Preferences still work when browser storage is unavailable. */}}
-  const load=async()=>{setSettings(await request('/api/communications/settings'));setRefresh(value=>value+1)}
+  const changeView=(next:ViewPreferences)=>{setView(next);if(next.pageSize!==view.pageSize)setPage(1);try{localStorage.setItem(viewKey,JSON.stringify({...next,pageSizeVersion:2}))}catch{/* Preferences still work when browser storage is unavailable. */}}
+  const load=async()=>{
+    const prefs:Settings=await request('/api/communications/settings')
+    const catalog=prefs.gmailLabelCatalog || []
+    setSettings(prefs);setLabels(catalog);setRefresh(value=>value+1)
+    if(prefs.gmailConnected && prefs.gmailAvailable && (!catalog.length || prefs.gmailLabels.some(id=>!catalog.some(label=>label.id===id)))) {
+      setLabelsLoading(true)
+      try { const result=await request('/api/communications/gmail/labels');setLabels(result.labels) }
+      catch(e){setMessage(e instanceof Error?e.message:'Could not refresh Gmail label names. Saved names remain available.')}
+      finally {setLabelsLoading(false)}
+    }
+  }
+  useEffect(()=>{
+    if(!openCount)return
+    const frame=requestAnimationFrame(()=>{
+      const detail=detailRef.current
+      if(!detail)return
+      const topbar=detail.closest('.app-shell')?.querySelector('.topbar')
+      detail.style.scrollMarginTop=`${(topbar?.getBoundingClientRect().height || 0)+16}px`
+      detail.focus({preventScroll:true})
+      detail.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})
+    })
+    return()=>cancelAnimationFrame(frame)
+  },[openCount])
   useEffect(()=>{setView(readView(viewKey));setPage(1);setSelected(null);setItems([])},[viewKey])
   useEffect(()=>{
     let active=true;setLoading(true);setListError('')
@@ -56,12 +80,12 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
   const act=async(fn:()=>Promise<void>)=>{setBusy(true);setMessage('');try{await fn()}catch(e){setMessage(e instanceof Error?e.message:'Request failed.')}finally{setBusy(false)}}
   const saveSettings=()=>act(async()=>{await request('/api/communications/settings','PUT',settings);await load();setMessage('Your communication preferences were saved.')})
   const beginGmail=()=>act(async()=>{const result=await request('/api/communications/gmail/connect');window.location.assign(result.url)})
-  const fetchLabels=()=>act(async()=>{const result=await request('/api/communications/gmail/labels');setLabels(result.labels)})
+  const fetchLabels=()=>act(async()=>{setLabelsLoading(true);try{const result=await request('/api/communications/gmail/labels');setLabels(result.labels)}finally{setLabelsLoading(false)}})
   const sync=()=>act(async()=>{const result=await request('/api/communications/gmail/sync','POST');await load();setMessage(`${result.imported} Gmail messages imported.`)})
   const update=(status:string)=>act(async()=>{if(!selected)return;await request(`/api/communications/${selected.id}`,'PATCH',{status});await load();setSelected(null)})
   const createTask=()=>act(async()=>{if(!selected)return;await request(`/api/communications/${selected.id}/create-task`,'POST',{title,description,clientId,projectId,assignedToUserId:assignee});await onTaskCreated();await load();setSelected(null);setCompose(false);setMessage('Task created. The original communication remains private to you.')})
   const pages=Math.max(1,Math.ceil(total/view.pageSize))
-  const openMessage=(item:Message)=>{setSelected(item);setSelectedThread([]);setThreadPage(1);setThreadTotal(0);setThreadError('');setThreadRetry(value=>value+1);setCompose(false);setTitle(item.subject || 'Follow up');setDescription('');setClientId('');setProjectId('');setAssignee(currentUser.id)}
+  const openMessage=(item:Message)=>{setSelected(item);setOpenCount(value=>value+1);setSelectedThread([]);setThreadPage(1);setThreadTotal(0);setThreadError('');setThreadRetry(value=>value+1);setCompose(false);setTitle(item.subject || 'Follow up');setDescription('');setClientId('');setProjectId('');setAssignee(currentUser.id)}
   return <section className="communications-hub page-stack">
     <div className="panel communications-heading"><div><h2>My Communications</h2><p>Your Gmail and Discord messages are private. Only details you type into a project task are shared with its assignee.</p></div><div className="integration-actions"><button className="secondary" onClick={()=>setConfig(!config)}>My integration settings</button><button className="primary" disabled={currentUser.role==='Viewer'} onClick={()=>{setSelected(null);setCompose(true);setTitle('');setDescription('')}}>+ New communication</button></div></div>
     {message && <p className="settings-message" role="status">{message}</p>}
@@ -76,7 +100,7 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
     <div className="panel communication-results">
       <div className="communication-tabs" role="group" aria-label="Communication source">{['All','Gmail','Discord','Manual','Archived'].map(value=><button key={value} className={tab===value?'active':''} aria-pressed={tab===value} onClick={()=>{setTab(value);setPage(1);setSelected(null);setCompose(false)}}>{value}</button>)}</div>
       <div className="communication-toolbar">
-        {tab==='Gmail' && settings?.gmailLabels.length ? <label className="communication-label-filter">Gmail label <select value={labelFilter} onChange={e=>{setLabelFilter(e.target.value);setPage(1)}}><option value="">All monitored labels</option>{settings.gmailLabels.map(id=><option key={id} value={id}>{labels.find(x=>x.id===id)?.name || id}</option>)}</select></label> : <span className="communication-view-title">{tab==='All'?'All communications':tab==='Archived'?'Archived communications':`${tab} communications`}</span>}
+        {tab==='Gmail' && settings?.gmailLabels.length ? <label className="communication-label-filter">Gmail label <select value={labelFilter} onChange={e=>{setLabelFilter(e.target.value);setPage(1)}}><option value="">All monitored labels</option>{settings.gmailLabels.map((id,index)=><option key={id} value={id}>{labels.find(x=>x.id===id)?.name || (labelsLoading?`Loading label ${index+1}…`:`Unavailable label ${index+1}`)}</option>)}</select></label> : <span className="communication-view-title">{tab==='All'?'All communications':tab==='Archived'?'Archived communications':`${tab} communications`}</span>}
         <div className="communication-view-controls"><div className="communication-layout" role="group" aria-label="Communication layout">
           <button aria-pressed={view.layout==='cards'} onClick={()=>changeView({...view,layout:'cards'})}><LayoutGrid size={16} aria-hidden="true"/>Cards</button>
           <button aria-pressed={view.layout==='rows'} onClick={()=>changeView({...view,layout:'rows'})}><List size={16} aria-hidden="true"/>Rows</button>
@@ -91,7 +115,7 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
       </div>
       <div className="communication-pagination"><span role="status">{loading?'Loading…':listError?'Unable to load communications':total?`Showing ${(page-1)*view.pageSize+1}–${Math.min(page*view.pageSize,total)} of ${total}`:'Showing 0 communications'}</span><div className="communication-page-buttons"><button className="secondary" aria-label="Previous page" disabled={loading || Boolean(listError) || page<=1} onClick={()=>setPage(value=>value-1)}><ChevronLeft size={16} aria-hidden="true"/>Previous</button><span>Page {page} of {pages}</span><button className="secondary" aria-label="Next page" disabled={loading || Boolean(listError) || page>=pages} onClick={()=>setPage(value=>value+1)}>Next<ChevronRight size={16} aria-hidden="true"/></button></div></div>
     </div>
-    {(selected || compose) && <div className="panel communication-detail"><div className="panel-heading"><div><h2>{selected ? selected.subject || 'Communication' : 'New private communication'}</h2><p>{selected ? `${selected.source} · ${selected.sender} · ${selected.status}` : 'Visible only to your account'}</p></div><button className="secondary" onClick={()=>{setSelected(null);setCompose(false)}}>Close</button></div>
+    {(selected || compose) && <div className="panel communication-detail" ref={detailRef} tabIndex={-1} role="region" aria-label="Message details"><div className="panel-heading"><div><h2>{selected ? selected.subject || 'Communication' : 'New private communication'}</h2><p>{selected ? `${selected.source} · ${selected.sender} · ${selected.status}` : 'Visible only to your account'}</p></div><button className="secondary" onClick={()=>{setSelected(null);setCompose(false)}}>Close</button></div>
       {selected ? <><div className="communication-body">{threadLoading && !selectedThread.length ? <p role="status">Loading thread…</p> : threadError && !selectedThread.length ? <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p> : selectedThread.length > 1 ? selectedThread.map(entry=><article key={entry.id} className="communication-thread-message"><strong>{entry.sender} · {new Date(entry.received_at).toLocaleString()}</strong><p>{entry.body || 'No plain text body available.'}</p>{entry.attachments?.length ? <small>Attachments: {entry.attachments.join(', ')}</small> : null}</article>) : <>{selected.body || 'No plain text body available.'}{selected.attachments?.length ? <p>Attachments: {selected.attachments.join(', ')}</p> : null}</>}{threadError && selectedThread.length>0 && <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p>}{!threadError && selectedThread.length>0 && selectedThread.length<threadTotal && <button className="secondary" disabled={threadLoading} onClick={()=>setThreadPage(value=>value+1)}>{threadLoading?'Loading…':`Load more thread messages (${selectedThread.length} of ${threadTotal})`}</button>}</div><div className="integration-actions">{selected.status!=='Resolved' && <button className="secondary" disabled={busy} onClick={()=>update('Resolved')}>Resolve</button>}{selected.status!=='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Archived')}>Archive</button>}{selected.status==='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Open')}>Restore</button>}</div></>:null}
       {!selected && compose ? <><label>Subject<input value={title} onChange={e=>setTitle(e.target.value)} /></label><label>Message<textarea value={description} onChange={e=>setDescription(e.target.value)} /></label><button className="primary" disabled={busy} onClick={()=>void act(async()=>{await request('/api/communications','POST',{subject:title,body:description});await load();setCompose(false)})}>Save private communication</button></>:null}
       {selected && currentUser.role!=='Viewer' && <div className="communication-task-form"><h3>Create a project task</h3><p>Enter only the information User B should see. The email or Discord thread and sender are never copied into the task.</p><div className="communication-fields"><label>Task title<input value={title} maxLength={200} onChange={e=>setTitle(e.target.value)} /></label><label>Client<select value={clientId} onChange={e=>setClientId(e.target.value)}><option value="">Select client</option>{clients.filter(x=>!x.archived).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Project<select value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Select project</option>{projects.filter(x=>!x.archived).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Assign to<select value={assignee} onChange={e=>setAssignee(e.target.value)}>{accounts.filter(x=>x.status!=='Disabled' && x.role!=='Viewer').map(x=><option key={x.id} value={x.id}>{x.name || x.username}</option>)}</select></label></div><label>Shared task description<textarea value={description} maxLength={5000} onChange={e=>setDescription(e.target.value)} placeholder="Write a summary for the assignee. The private message is not included." /></label><button className="primary" disabled={busy || !title.trim() || !clientId || !projectId || !assignee} onClick={createTask}>Create task without sharing thread</button></div>}
