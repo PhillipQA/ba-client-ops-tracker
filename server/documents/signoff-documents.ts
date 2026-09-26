@@ -3,6 +3,7 @@ import PizZip from 'pizzip'
 import Docxtemplater from 'docxtemplater'
 import { PDFDocument } from 'pdf-lib'
 import type { Express, RequestHandler } from 'express'
+import { documentTemplateRow, IntegrationError } from '../integrations/tenant-integrations'
 import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, formatDeploymentDate, signoffReference } from '../../src/signoff'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -130,14 +131,19 @@ export async function renderSignoff(template: Buffer, input: unknown, attachment
   }
   return { output, fileName: `${stem}.docx`, mimeType: DOCX_MIME, imageCount: files.length, attachmentCount: files.length }
 }
-export function registerSignoffRoutes(app: Express, deps: { requireAuth: RequestHandler; requireTenant: RequestHandler; templatePath: string }) {
+export function registerSignoffRoutes(app: Express, deps: { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; templatePath: string }) {
   app.post('/api/documents/signoff/generate', deps.requireAuth, deps.requireTenant, async (req, res) => {
     const user = (req as any).authUser
     if (user.role === 'Viewer' || !user.modules?.includes('documents')) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
     res.setHeader('Cache-Control', 'no-store')
     let template: Buffer
-    try { template = await readFile(deps.templatePath) }
-    catch { return void res.status(503).json({ error: 'Sign Off template is unavailable. Reapply the complete release package.' }) }
+    try {
+      const row = await documentTemplateRow(deps.db, user.organizationId, 'signoff')
+      if (row && !row.is_enabled) throw new IntegrationError('The Sign Off template is not configured. Add or restore it in Settings → Templates.', 503)
+      template = row?.is_enabled && row.content_base64 ? Buffer.from(row.content_base64, 'base64') : await readFile(deps.templatePath)
+    } catch (error) {
+      return void res.status(error instanceof IntegrationError ? error.status : 503).json({ error: error instanceof Error ? error.message : 'Sign Off template is unavailable.' })
+    }
     try {
       const result = await renderSignoff(template, req.body?.details, req.body?.attachments)
       res.json({ signingFile: result.signingFile, fileData: result.output.toString('base64'), fileName: result.fileName, mimeType: result.mimeType, imageCount: result.imageCount, attachmentCount: result.attachmentCount })

@@ -39,9 +39,7 @@ type PosRow = {
 }
 
 const COR_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,.bmp,.docx'
-const TEMPLATE_ACCEPT = '.xlsx'
 const MAX_COR_BYTES = 12 * 1024 * 1024
-const MAX_TEMPLATE_BYTES = 5 * 1024 * 1024
 const MAX_POS_ROWS = 17
 const REQUEST_FOR_OPTIONS = [
   'POS PERMIT APPLICATION ONLY',
@@ -65,18 +63,6 @@ function todayMmDdYyyy() {
   return `${mm}/${dd}/${date.getFullYear()}`
 }
 
-function fileToBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = String(reader.result || '')
-      const comma = result.indexOf(',')
-      resolve(comma >= 0 ? result.slice(comma + 1) : result)
-    }
-    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`))
-    reader.readAsDataURL(file)
-  })
-}
 
 function downloadBase64File(base64: string, mimeType: string, filename: string) {
   const binary = atob(base64)
@@ -130,45 +116,21 @@ const defaultSignatories: Signatory[] = [
   { label: 'Approved By', name: '', title: 'Accounting Head' },
 ]
 
-export default function DocumentCreation({ clients, projects, items, launch, canGenerate, canManageTemplates, draftKey, active }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; canManageTemplates: boolean; draftKey: string; active: boolean }) {
+export default function DocumentCreation({ clients, projects, items, launch, canGenerate, draftKey, active }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; draftKey: string; active: boolean }) {
   const docHub = useDocHubDraft('DRF')
   useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
   const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
   useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
   const [corFiles, setCorFiles] = useState<File[]>([])
-  const [templateFiles, setTemplateFiles] = useState<File[]>([])
-  const [savedTemplate, setSavedTemplate] = useState<{ name: string; updatedAt: string } | null>(null)
-  const [templateBusy, setTemplateBusy] = useState(false)
-  const [templateMessage, setTemplateMessage] = useState('')
+  const [documentTemplates, setDocumentTemplates] = useState<{ type: 'drf' | 'fsd' | 'signoff'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[]>([])
   const [corExtractionMode, setCorExtractionMode] = useState<'local' | 'ai'>('local')
   const [aiExtractionStatus, setAiExtractionStatus] = useState<{ available: boolean; provider?: string; model?: string; error?: string }>({ available: false })
-
-  const loadSavedTemplate = async () => {
-    const response = await fetch('/api/account/templates', { credentials: 'same-origin' })
-    const payload = await response.json().catch(() => ({})) as { template?: { name: string; content_base64: string; updated_at?: string } | null; error?: string }
-    if (!response.ok) throw new Error(payload.error || 'Could not load the standard DRF template.')
-    const template = payload.template
-    if (!template) {
-      setSavedTemplate(null)
-      setTemplateFiles([])
-      return
-    }
-    const bytes = Uint8Array.from(atob(template.content_base64), c => c.charCodeAt(0))
-    setTemplateFiles([new File([bytes], template.name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })])
-    setSavedTemplate({ name: template.name, updatedAt: template.updated_at || '' })
-  }
 
   useEffect(() => {
     let alive = true
     void fetch('/api/account/templates', { credentials: 'same-origin' }).then(async response => {
-      const payload = await response.json().catch(() => ({})) as { template?: { name: string; content_base64: string; updated_at?: string } | null }
-      if (!response.ok || !alive) return
-      const template = payload.template
-      if (!template) { setSavedTemplate(null); setTemplateFiles([]); return }
-      const bytes = Uint8Array.from(atob(template.content_base64), c => c.charCodeAt(0))
-      if (!alive) return
-      setTemplateFiles([new File([bytes], template.name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })])
-      setSavedTemplate({ name: template.name, updatedAt: template.updated_at || '' })
+      const payload = await response.json().catch(() => ({})) as { templates?: { type: 'drf' | 'fsd' | 'signoff'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[] }
+      if (response.ok && alive) setDocumentTemplates(Array.isArray(payload.templates) ? payload.templates : [])
     }).catch(() => undefined)
     return () => { alive = false }
   }, [draftKey])
@@ -206,7 +168,9 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const [documentError, setDocumentError] = useState('')
 
   const selectedTitle = useMemo(() => flow === 'drf' ? 'DRF Creation' : flow === 'fsd' ? 'FSD Creation' : flow === 'testcase' ? 'Test Case Creation' : 'Sign Off Form', [flow])
-  const templateFile = templateFiles[0]
+  const drfTemplate = documentTemplates.find(template => template.type === 'drf')
+  const fsdTemplate = documentTemplates.find(template => template.type === 'fsd')
+  const signoffTemplate = documentTemplates.find(template => template.type === 'signoff')
   const corFile = corFiles[0]
 
   const handleFiles = (setter: (files: File[]) => void, multiple = false, maxBytes?: number) => (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -228,52 +192,6 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
   const updatePosRow = (id: string, patch: Partial<PosRow>) => {
     setPosRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row))
-  }
-
-  const saveStandardTemplate = async (file?: File) => {
-    if (!file) return
-    setTemplateMessage('')
-    setDocumentError('')
-    if (!/\.xlsx$/i.test(file.name)) { setTemplateMessage('Choose an Excel .xlsx DRF template.'); return }
-    if (file.size > MAX_TEMPLATE_BYTES) { setTemplateMessage(`Template is too large. Maximum allowed size is ${formatBytes(MAX_TEMPLATE_BYTES)}.`); return }
-    if (savedTemplate && !window.confirm(`Replace the current standard DRF template “${savedTemplate.name}”? All future DRFs for this account will use the new template.`)) return
-    setTemplateBusy(true)
-    try {
-      const content_base64 = await fileToBase64(file)
-      const response = await fetch('/api/account/templates', {
-        method: 'PUT',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: file.name, content_base64 }),
-      })
-      const payload = await response.json().catch(() => ({})) as { error?: string }
-      if (!response.ok) throw new Error(payload.error || 'Could not save the standard DRF template.')
-      await loadSavedTemplate()
-      setTemplateMessage(savedTemplate ? 'Standard DRF template replaced. Future DRFs will use the new template.' : 'Standard DRF template saved for this account. It will be used automatically for future DRFs.')
-    } catch (error) {
-      setTemplateMessage(error instanceof Error ? error.message : 'Could not save the standard DRF template.')
-    } finally {
-      setTemplateBusy(false)
-    }
-  }
-
-  const removeStandardTemplate = async () => {
-    if (!savedTemplate || !window.confirm(`Remove the standard DRF template “${savedTemplate.name}”? DRF generation will be unavailable until a new template is uploaded.`)) return
-    setTemplateBusy(true)
-    setTemplateMessage('')
-    setDocumentError('')
-    try {
-      const response = await fetch('/api/account/templates', { method: 'DELETE', credentials: 'same-origin' })
-      const payload = await response.json().catch(() => ({})) as { error?: string }
-      if (!response.ok) throw new Error(payload.error || 'Could not remove the standard DRF template.')
-      setSavedTemplate(null)
-      setTemplateFiles([])
-      setTemplateMessage('Standard DRF template removed. Upload a new template before generating another DRF.')
-    } catch (error) {
-      setTemplateMessage(error instanceof Error ? error.message : 'Could not remove the standard DRF template.')
-    } finally {
-      setTemplateBusy(false)
-    }
   }
 
   const extractCor = async () => {
@@ -309,11 +227,11 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   }
 
   const generateDrf = async () => {
-    if (!templateFile || !canGenerate || docHub.busy) return
+    if (!drfTemplate?.active || !canGenerate || docHub.busy) return
     try { docHub.validate(signatories) } catch(e) { setDocumentError((e as Error).message); return }
     setGenerating(true)
     setDocumentError('')
-    setDocumentMessage('Placing DRF values into the uploaded Excel template…')
+    setDocumentMessage('Placing DRF values into the account’s saved Excel template…')
     try {
       const signatoryValues = Object.fromEntries(signatories.flatMap((signatory, index) => {
         const number = index + 1
@@ -340,11 +258,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
         pos_setup: posSetup.trim(),
         ...signatoryValues,
       }
-      const templateData = await fileToBase64(templateFile)
       const result = await postJson<{ fileData: string; fileName: string; mimeType: string; matchedFields?: string[]; posRowsWritten?: number }>('/api/documents/drf/render-template', {
-        templateName: templateFile.name,
-        mimeType: templateFile.type,
-        templateData,
         values,
         posRows: posRows.map(({ computerName, serialNo, brand, model }) => ({ computerName, serialNo, brand, model })),
       })
@@ -397,7 +311,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       <div className="panel document-workspace">
         <div className="panel-heading document-heading">
           <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and use the account’s saved standard Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'fsd' ? 'Add requirements, choose a preset, then review and export using the iRipple FSD template.' : flow === 'testcase' ? 'Upload requirement sources, select reusable QA skills, review the AI coverage map, then generate editable test cases and export to Excel.' : 'Complete the deployment details and six signatory slots, then add supporting attachments.'}</p></div>
-          <span className="document-stage-pill">{flow === 'drf' ? (templateFile ? 'Excel template ready' : 'Excel template required') : flow === 'signoff' ? 'iRipple template ready' : flow === 'testcase' ? 'AI test suite workflow' : 'iRipple FSD template ready'}</span>
+          <span className="document-stage-pill">{flow === 'drf' ? (drfTemplate?.active ? 'DRF template ready' : 'DRF template required') : flow === 'signoff' ? (signoffTemplate?.active ? 'Sign Off template ready' : 'Sign Off template required') : flow === 'testcase' ? 'AI test suite workflow' : (fsdTemplate?.active ? 'FSD template ready' : 'FSD template required')}</span>
         </div>
 
         {flow === 'drf' && (
@@ -430,30 +344,16 @@ export default function DocumentCreation({ clients, projects, items, launch, can
               </div>
 
               <div className="document-upload-panel">
-                <div className="document-section-title"><FileCog size={18} /><div><strong>2. Standard DRF Excel Template</strong><span>Saved permanently for this account · approved iRipple .xlsx template · maximum 5 MB</span></div></div>
-                {savedTemplate ? (
+                <div className="document-section-title"><FileCog size={18} /><div><strong>2. Standard DRF Excel Template</strong><span>Managed centrally in Settings → Templates · approved iRipple .xlsx template</span></div></div>
+                {drfTemplate?.active ? (
                   <div className="document-standard-template">
-                    <div className="document-standard-template-status"><CheckCircle2 size={18} /><div><strong>Standard template active</strong><span>{savedTemplate.name}{savedTemplate.updatedAt ? ` · Updated ${new Date(savedTemplate.updatedAt).toLocaleString()}` : ''}</span></div></div>
-                    <p>This template is loaded automatically whenever DRF Creation is opened. Future DRFs use it until an administrator replaces or removes it.</p>
+                    <div className="document-standard-template-status"><CheckCircle2 size={18} /><div><strong>Standard template active</strong><span>{drfTemplate.name}{drfTemplate.updated_at ? ` · Updated ${new Date(drfTemplate.updated_at).toLocaleString()}` : ''}</span></div></div>
+                    <p>DRF Creation loads this account template automatically. To replace or remove it, use <strong>Settings → Templates</strong>.</p>
                   </div>
                 ) : (
-                  <div className="document-standard-template empty"><FileCog size={18} /><div><strong>No standard DRF template configured</strong><span>Upload one before generating a DRF. Once saved, it remains the account default until removed or replaced.</span></div></div>
+                  <div className="document-standard-template empty"><FileCog size={18} /><div><strong>No DRF template configured</strong><span>An account Administrator must add the DRF template under Settings → Templates before a DRF can be generated.</span></div></div>
                 )}
-                {canManageTemplates ? (
-                  <>
-                    <label className="document-dropzone document-dropzone-compact">
-                      <input type="file" accept={TEMPLATE_ACCEPT} disabled={templateBusy} onChange={(event) => { const file = event.target.files?.[0]; void saveStandardTemplate(file); event.target.value = '' }} />
-                      <Plus size={27} />
-                      <strong>{savedTemplate ? 'Upload a new standard template' : 'Upload standard DRF template'}</strong>
-                      <span>{savedTemplate ? 'Selecting a valid workbook lets you confirm replacement of the saved account template.' : 'The uploaded workbook is saved for this account and reused automatically for every future DRF.'}</span>
-                    </label>
-                    {savedTemplate && <button type="button" className="secondary danger-button document-wide-button" disabled={templateBusy} onClick={() => void removeStandardTemplate()}><Trash2 size={16} /> Remove standard template</button>}
-                  </>
-                ) : (
-                  <div className="document-info-note"><Inbox size={16} /><span>Only an account Administrator can replace or remove the saved standard template. You can continue using the active template.</span></div>
-                )}
-                {templateMessage && <div className="document-template-message" role="status">{templateMessage}</div>}
-                <div className="document-info-note"><Inbox size={16} /><span>The generated DRF stays in Excel format and keeps the saved template layout, formatting, logo, merged cells, and untouched iRipple-only columns.</span></div>
+                <div className="document-info-note"><Inbox size={16} /><span>Template upload controls were removed from Document Creation. The generated DRF keeps the centrally managed template layout, formatting, logo, merged cells, and untouched iRipple-only columns.</span></div>
               </div>
             </div>
 
@@ -537,16 +437,16 @@ export default function DocumentCreation({ clients, projects, items, launch, can
             <DocHubResult draft={docHub} />
             <div className="document-generate-bar">
               <div><strong>6. Generate DRF</strong><span>The reviewed values are written into the saved standard Excel template and downloaded as a new .xlsx file.</span></div>
-              <button type="button" className="primary" disabled={!canGenerate || !templateFile || generating || docHub.busy} onClick={generateDrf}><Download size={16} /> {generating || docHub.busy ? 'Processing…' : docHub.enabled ? 'Generate & Prepare in DocHub' : 'Generate & Download DRF'}</button>
+              <button type="button" className="primary" disabled={!canGenerate || !drfTemplate?.active || generating || docHub.busy} onClick={generateDrf}><Download size={16} /> {generating || docHub.busy ? 'Processing…' : docHub.enabled ? 'Generate & Prepare in DocHub' : 'Generate & Download DRF'}</button>
             </div>
           </div>
         )}
 
-        <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'fsd'} /></div>
+        <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} canGenerate={canGenerate} templateReady={Boolean(fsdTemplate?.active)} draftKey={draftKey} active={active && flow === 'fsd'} /></div>
 
         <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /></div>
 
-        <div hidden={flow !== 'signoff'}><SignOffCreation clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} /></div>
+        <div hidden={flow !== 'signoff'}><SignOffCreation clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} templateReady={Boolean(signoffTemplate?.active)} /></div>
       </div>
       <DocHubHistory active={active} />
     </section>

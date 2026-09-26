@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v0.6.50: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 14. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v0.6.52: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 15. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1163,6 +1163,35 @@ grant all on public.gmail_accounts to service_role;
 alter table public.user_communication_settings
   add column if not exists gmail_label_catalog jsonb not null default '[]'::jsonb;
 
+-- Included source: migrations/schema-v15-document-templates.sql
+-- SHA-256: 0123d087e48cda8b4f8bcab9d569e353f8a616bbd864645788b8df77b80ec74b
+-- v0.6.51: consolidate DRF, FSD, and Sign Off templates under account Settings.
+-- Existing tenant_templates rows are retained as DRF templates.
+
+
+alter table public.tenant_templates
+  add column if not exists template_type text not null default 'drf';
+
+alter table public.tenant_templates
+  add column if not exists is_enabled boolean not null default true;
+
+alter table public.tenant_templates
+  drop constraint if exists tenant_templates_template_type_check;
+
+alter table public.tenant_templates
+  add constraint tenant_templates_template_type_check
+  check (template_type in ('drf','fsd','signoff'));
+
+alter table public.tenant_templates
+  drop constraint if exists tenant_templates_pkey;
+
+alter table public.tenant_templates
+  add constraint tenant_templates_pkey primary key (tenant_id, template_type);
+
+alter table public.tenant_templates enable row level security;
+revoke all on public.tenant_templates from public, anon, authenticated;
+grant all on public.tenant_templates to service_role;
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1186,4 +1215,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 14 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 15 as schema_version;

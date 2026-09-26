@@ -70,6 +70,59 @@ export function cleanIntegrationConfig(kind: IntegrationKind, input: any) {
   if (allowedUserIds.length > 200 || allowedUserIds.some(id => !/^\d{15,22}$/.test(id))) throw new IntegrationError('Enter Discord user IDs separated by commas (up to 200).')
   return { allowedUserIds }
 }
+
+export type DocumentTemplateKind = 'drf' | 'fsd' | 'signoff'
+const documentTemplateKinds = ['drf', 'fsd', 'signoff'] as const
+const builtInTemplateNames: Partial<Record<DocumentTemplateKind, string>> = {
+  fsd: 'Built-in iRipple FSD layout',
+  signoff: 'Built-in iRipple Sign Off template',
+}
+export function documentTemplateKind(value: unknown): DocumentTemplateKind {
+  const kind = String(value || '').toLowerCase()
+  if (!documentTemplateKinds.includes(kind as DocumentTemplateKind)) throw new IntegrationError('Unknown document template type.', 404)
+  return kind as DocumentTemplateKind
+}
+export async function documentTemplateRow(db: any, tenantId: string, kind: DocumentTemplateKind) {
+  if (!db) throw new IntegrationError('Supabase is not configured.', 503)
+  const { data, error } = await db.from('tenant_templates').select('template_type,name,content_base64,is_enabled,updated_at').eq('tenant_id', tenantId).eq('template_type', kind).maybeSingle()
+  if (error) throw new IntegrationError('Document template storage is unavailable. Apply schema-v15-document-templates.sql.', 503)
+  return data
+}
+export function documentTemplateSummary(kind: DocumentTemplateKind, row: any) {
+  if (row) return {
+    type: kind,
+    active: Boolean(row.is_enabled && row.content_base64),
+    source: row.is_enabled && row.content_base64 ? 'custom' : 'none',
+    name: row.is_enabled && row.content_base64 ? String(row.name || '') : '',
+    updated_at: row.updated_at || null,
+  }
+  const builtIn = builtInTemplateNames[kind]
+  return { type: kind, active: Boolean(builtIn), source: builtIn ? 'built-in' : 'none', name: builtIn || '', updated_at: null }
+}
+function decodeTemplateUpload(kind: DocumentTemplateKind, nameValue: unknown, contentValue: unknown) {
+  const name = String(nameValue || '').replace(/[\\/]/g, '_').slice(0, 180)
+  const content = String(contentValue || '')
+  const expected = kind === 'drf' ? '.xlsx' : '.docx'
+  if (!name.toLowerCase().endsWith(expected) || !/^[A-Za-z0-9+/]+={0,2}$/.test(content) || content.length > 7 * 1024 * 1024) throw new IntegrationError(`Upload a ${expected} ${kind === 'drf' ? 'DRF' : kind === 'fsd' ? 'FSD' : 'Sign Off'} template up to 5 MB.`)
+  const bytes = Buffer.from(content, 'base64')
+  if (!bytes.length || bytes.length > 5 * 1024 * 1024 || bytes.subarray(0,2).toString() !== 'PK') throw new IntegrationError(`Upload a valid ${expected} template up to 5 MB.`)
+  let zip: PizZip
+  try { zip = new PizZip(bytes) } catch { throw new IntegrationError(`The file is not a valid ${expected} template.`) }
+  if (kind === 'drf') {
+    if (!zip.file('[Content_Types].xml') || !zip.file('xl/workbook.xml')) throw new IntegrationError('The file is not a valid Excel workbook.')
+  } else {
+    const document = zip.file('word/document.xml')?.asText() || ''
+    if (!zip.file('[Content_Types].xml') || !document) throw new IntegrationError('The file is not a valid Word document.')
+    const xmlText = zip.file(/\.xml$/).map(file => file.asText()).join('').replace(/<[^>]+>/g, '')
+    if (kind === 'fsd' && !document.includes('{{FSD_BODY}}')) throw new IntegrationError('The FSD template must contain the {{FSD_BODY}} marker where generated FSD content should be inserted.')
+    if (kind === 'signoff') {
+      const required = ['{client_name}','{document_reference}','{deployment_date}','{deployment_type}','{product}','{site}','{iripple_name_1}','{iripple_title_1}','{iripple_name_2}','{iripple_title_2}','{iripple_name_3}','{iripple_title_3}','{client_name_1}','{client_title_1}','{client_name_2}','{client_title_2}','{client_name_3}','{client_title_3}','{@attachments}']
+      if (required.some(marker => !xmlText.includes(marker))) throw new IntegrationError('The Sign Off template is missing required placeholders. Keep the standard Sign Off mapping fields when changing the template.')
+    }
+  }
+  return { name, content, bytes }
+}
+
 export function createIntegrationStore(db: any) {
   function database() { if (!db) throw new IntegrationError('Supabase is not configured.', 503); return db }
   function check(error: any) {
@@ -156,7 +209,7 @@ export function registerIntegrationRoutes(app: Express, deps: { db: any; require
           ? user.role !== 'Administrator' || (!user.modules.includes('documents') && !user.modules.includes('settings'))
           : user.role !== 'Administrator' || !user.modules.includes('settings')
       if (denied) {
-        return void res.status(403).json({ error: templateRequest ? 'Account Administrator access is required to manage the standard DRF template.' : 'Account administrator with Settings access is required.' })
+        return void res.status(403).json({ error: templateRequest ? 'Account Administrator access is required to manage document templates.' : 'Account administrator with Settings access is required.' })
       }
       res.setHeader('Cache-Control', 'no-store'); next()
     } catch { res.status(503).json({ error: 'Account settings are unavailable.' }) }
@@ -186,24 +239,41 @@ export function registerIntegrationRoutes(app: Express, deps: { db: any; require
     res.json({ ok: true })
   }))
   app.post('/api/account/integrations/:kind/test', ...scope, wrap(async (req, res) => { res.json(await store.test(tenant(req), kind(req))) }))
+  const loadTemplateCatalog = async (tenantId: string) => Promise.all(documentTemplateKinds.map(async type => documentTemplateSummary(type, await documentTemplateRow(db, tenantId, type))))
+  const saveTemplate = async (tenantId: string, type: DocumentTemplateKind, body: any) => {
+    const validated = decodeTemplateUpload(type, body?.name, body?.content_base64)
+    const { error } = await db.from('tenant_templates').upsert({ tenant_id: tenantId, template_type: type, name: validated.name, content_base64: validated.content, is_enabled: true, updated_at: new Date().toISOString() }, { onConflict: 'tenant_id,template_type' })
+    if (error) throw new IntegrationError('Could not save the account document template.', 503)
+  }
+  const disableTemplate = async (tenantId: string, type: DocumentTemplateKind) => {
+    const { error } = await db.from('tenant_templates').upsert({ tenant_id: tenantId, template_type: type, name: '', content_base64: '', is_enabled: false, updated_at: new Date().toISOString() }, { onConflict: 'tenant_id,template_type' })
+    if (error) throw new IntegrationError('Could not remove the account document template.', 503)
+  }
   app.get('/api/account/templates', ...scope, wrap(async (req, res) => {
-    const { data, error } = await db.from('tenant_templates').select('name,content_base64,updated_at').eq('tenant_id', tenant(req)).maybeSingle()
-    if (error) throw new IntegrationError('Apply schema-v8-tenant-integrations.sql to enable saved templates.', 503)
-    res.json({ template: data })
+    const templates = await loadTemplateCatalog(tenant(req))
+    res.json({ templates, template: templates.find(item => item.type === 'drf') || null })
   }))
-  app.put('/api/account/templates', ...scope, wrap(async (req, res) => {
-    const name = String(req.body?.name || '').replace(/[\\/]/g, '_').slice(0,180)
-    const content = String(req.body?.content_base64 || '')
-    if (!/\.xlsx$/i.test(name) || !/^[A-Za-z0-9+/]+={0,2}$/.test(content) || content.length > 7 * 1024 * 1024) throw new IntegrationError('Upload an Excel .xlsx DRF template up to 5 MB.')
-    const bytes = Buffer.from(content, 'base64')
-    if (bytes.length > 5 * 1024 * 1024 || bytes.subarray(0,2).toString() !== 'PK') throw new IntegrationError('Upload a valid Excel workbook up to 5 MB.')
-    try { const zip = new PizZip(bytes); if (!zip.file('[Content_Types].xml') || !zip.file('xl/workbook.xml')) throw new Error() } catch { throw new IntegrationError('The file is not a valid Excel workbook.') }
-    const { error } = await db.from('tenant_templates').upsert({ tenant_id: tenant(req), name, content_base64: content, updated_at: new Date().toISOString() })
-    if (error) throw new IntegrationError('Could not save the account template.', 503)
+  app.get('/api/account/templates/:type', ...scope, wrap(async (req, res) => {
+    const type = documentTemplateKind(req.params.type)
+    res.json({ template: documentTemplateSummary(type, await documentTemplateRow(db, tenant(req), type)) })
+  }))
+  app.put('/api/account/templates/:type', ...scope, wrap(async (req, res) => {
+    const type = documentTemplateKind(req.params.type)
+    await saveTemplate(tenant(req), type, req.body || {})
     res.json({ ok: true })
   }))
-  app.delete('/api/account/templates', ...scope, wrap(async (req, res) => {
-    const { error } = await db.from('tenant_templates').delete().eq('tenant_id', tenant(req)); if (error) throw new IntegrationError('Could not remove the account template.', 503)
+  app.delete('/api/account/templates/:type', ...scope, wrap(async (req, res) => {
+    await disableTemplate(tenant(req), documentTemplateKind(req.params.type))
     res.json({ ok: true })
   }))
+  app.post('/api/account/templates/:type/restore-default', ...scope, wrap(async (req, res) => {
+    const type = documentTemplateKind(req.params.type)
+    if (!builtInTemplateNames[type]) throw new IntegrationError('This template does not have a built-in default.', 400)
+    const { error } = await db.from('tenant_templates').delete().eq('tenant_id', tenant(req)).eq('template_type', type)
+    if (error) throw new IntegrationError('Could not restore the built-in document template.', 503)
+    res.json({ ok: true })
+  }))
+  // Backward-compatible DRF aliases for older patch clients.
+  app.put('/api/account/templates', ...scope, wrap(async (req, res) => { await saveTemplate(tenant(req), 'drf', req.body || {}); res.json({ ok: true }) }))
+  app.delete('/api/account/templates', ...scope, wrap(async (req, res) => { await disableTemplate(tenant(req), 'drf'); res.json({ ok: true }) }))
 }

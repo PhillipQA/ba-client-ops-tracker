@@ -1,7 +1,7 @@
 import type { Express, RequestHandler } from 'express'
 import { readFile } from 'node:fs/promises'
 import rateLimit from 'express-rate-limit'
-import { aiProviderName, IntegrationError, normalizeAiConfig } from '../integrations/tenant-integrations'
+import { aiProviderName, documentTemplateRow, IntegrationError, normalizeAiConfig } from '../integrations/tenant-integrations'
 import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
 import { renderFsdDocx } from './fsd-export'
@@ -83,7 +83,7 @@ Follow the supplied preset, section guidance, source mapping and selected module
 - Keep all four Software Features sections. If a module is explicitly excluded, say Out of scope — excluded by user. If applicability is not established by evidence, say TBD — applicability requires confirmation, and list the gap. Do not generate unsupported features.
 - Assumptions and Limitations: dependencies, preconditions, constraints and exclusions separated. Never claim an FSD is approved or signatures are present.
 Cover, proprietary notice, contents and document history are rendered by the application. Do not duplicate these in other sections. Aim for complete, specific content rather than generic guidance.`
-export function registerFsdRoutes(app: Express, deps: { requireAuth: RequestHandler; requireTenant: RequestHandler; aiAgents: ReturnType<typeof createAiAgentManager>; logoPath: string }) {
+export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; aiAgents: ReturnType<typeof createAiAgentManager>; logoPath: string }) {
   const guard: RequestHandler = (req,res,next) => {
     const user = (req as any).authUser
     if (!user.modules?.includes('documents') || req.method === 'POST' && user.role === 'Viewer') return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
@@ -119,8 +119,11 @@ export function registerFsdRoutes(app: Express, deps: { requireAuth: RequestHand
     try {
       if (req.body?.reviewed !== true) throw new IntegrationError('Review the preview before generating the Word document.')
       const details = validateFsdDetails(req.body.details), preview = validateFsdPreview(req.body.preview)
+      const templateRow = await documentTemplateRow(deps.db, (req as any).authUser.organizationId, 'fsd')
+      if (templateRow && !templateRow.is_enabled) throw new IntegrationError('The FSD template is not configured. Add or restore it in Settings → Templates.', 503)
+      const customTemplate = templateRow?.is_enabled && templateRow.content_base64 ? Buffer.from(templateRow.content_base64, 'base64') : undefined
       const logo = await readFile(deps.logoPath)
-      const output = renderFsdDocx(details, preview, logo)
+      const output = renderFsdDocx(details, preview, logo, customTemplate)
       res.json({ fileData: output.toString('base64'), fileName: `${details.reference || 'FSD-'+details.client+'-'+details.feature}`.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,150)+'.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
     } catch (e) { res.status(e instanceof IntegrationError ? e.status : 500).json({ error: e instanceof IntegrationError ? e.message : 'Could not export the FSD. Confirm the FSD template assets are installed.' }) }
   })

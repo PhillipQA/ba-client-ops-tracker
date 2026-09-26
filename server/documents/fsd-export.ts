@@ -12,7 +12,7 @@ function table(headers: string[], rows: string[][], process = false, plain = fal
 }
 function block(b: FsdBlock) { return b.type === 'table' ? table(b.headers,b.rows,b.headers.length === 2) : b.text.split('\n\n').map(s => p(s, /^5\.[1-4]\.\d+[. ]/.test(s) && s.length < 150 ? 'Heading3' : '')).join('') }
 function drawing() { return `<w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="1250000" cy="454545"/><wp:docPr id="1" name="iRipple logo"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="1" name="iRipple"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="logo"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1250000" cy="454545"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>` }
-export function renderFsdDocx(d: FsdDetails, preview: Pick<FsdPreview,'sections'|'gaps'|'conflicts'>, logo: Buffer) {
+export function renderFsdDocx(d: FsdDetails, preview: Pick<FsdPreview,'sections'|'gaps'|'conflicts'>, logo: Buffer, template?: Buffer) {
   const reference = fsdReference(d)
   const sign = (name: string, title: string) => `\n\n________________________  __________\n${name || 'Name'}                                      (Date)\n${title || 'Position'}`
   let body = p(d.product,'Title')+p(d.feature,'Title')+p('Agreed and Approved by:')
@@ -34,6 +34,31 @@ export function renderFsdDocx(d: FsdDetails, preview: Pick<FsdPreview,'sections'
     body += p('Review Items — Pending Confirmation','Heading1',true)
     if (preview.gaps.length) body += p('Missing information','Heading2')+preview.gaps.map((v,i)=>p(`${i+1}. ${v}`)).join('')
     if (preview.conflicts.length) body += p('Conflicting sources','Heading2')+preview.conflicts.map((v,i)=>p(`${i+1}. ${v}`)).join('')
+  }
+  if (template) {
+    const zip = new PizZip(template)
+    const documentFile = zip.file('word/document.xml')
+    if (!documentFile) throw new Error('The FSD template is missing word/document.xml.')
+    const documentXml = documentFile.asText()
+    const markerParagraph = /<w:p(?=[ >])(?:(?!<\/w:p>)[\s\S])*?\{\{FSD_BODY\}\}(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/
+    if (!markerParagraph.test(documentXml)) throw new Error('The FSD template must contain the {{FSD_BODY}} marker in its own paragraph.')
+    zip.file('word/document.xml', documentXml.replace(markerParagraph, body))
+    const replacements: Record<string,string> = {
+      '{{FSD_REFERENCE}}': reference,
+      '{{FSD_PRODUCT}}': d.product,
+      '{{FSD_FEATURE}}': d.feature,
+      '{{FSD_CLIENT}}': d.client,
+    }
+    for (const file of zip.file(/^word\/.*\.xml$/)) {
+      let content = file.asText()
+      let changed = false
+      for (const [marker, value] of Object.entries(replacements)) {
+        if (!content.includes(marker)) continue
+        content = content.split(marker).join(xml(value)); changed = true
+      }
+      if (changed) zip.file(file.name, content)
+    }
+    return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' })
   }
   body += '<w:sectPr><w:headerReference w:type="default" r:id="header"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1900" w:right="1440" w:bottom="1080" w:left="1440" w:header="720" w:footer="720"/></w:sectPr>'
   const header = `<w:hdr xmlns:w="${W}" xmlns:r="${R}"><w:tbl><w:tblPr><w:tblW w:w="9360" w:type="dxa"/><w:tblBorders>${['top','left','bottom','right','insideV'].map(s=>`<w:${s} w:val="single" w:sz="4"/>`).join('')}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2160"/><w:gridCol w:w="4000"/><w:gridCol w:w="3200"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2160" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p>${drawing()}</w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr>${run('FEATURE SPECIFICATION\nDOCUMENT',true,25)}</w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="3200" w:type="dxa"/></w:tcPr><w:p>${run('Document Version:\n'+reference,true,16)}</w:p><w:p>${run('Page No: ',false,16)}<w:fldSimple w:instr="PAGE"/>${run(' of ',false,16)}<w:fldSimple w:instr="NUMPAGES"/></w:p></w:tc></w:tr></w:tbl>${p('')}</w:hdr>`

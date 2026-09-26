@@ -2002,3 +2002,24 @@ select option { background: #181818; color: #fff; }
 .app-shell:not(.theme-default) .ai-agent-architecture,
 .app-shell:not(.theme-default) .ai-agent-route { background: var(--theme-card, rgba(20,22,28,.8)); border-color: var(--theme-border, rgba(255,255,255,.2)); }
 @media (max-width: 900px) { .ai-agent-grid { grid-template-columns: 1fr; } }
+
+/* v0.6.51 — centralized document template manager */
+.template-manager { display: grid; gap: 14px; }
+.template-manager-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+.template-manager-card { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 16px; border: 1px solid #3a4351; border-radius: 12px; background: rgba(255,255,255,.025); }
+.template-manager-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.template-manager-card-head h3 { margin: 0 0 3px; }
+.template-manager-card-head > div > span { color: #9facc0; font-size: 11px; }
+.template-manager-card > p { margin: 0; color: #bcc6d5; font-size: 12px; line-height: 1.55; }
+.template-current { display: grid; gap: 4px; min-height: 58px; padding: 11px 12px; border: 1px solid #425065; border-radius: 9px; background: #1c232e; }
+.template-current strong { color: #eef4fd; font-size: 12px; overflow-wrap: anywhere; }
+.template-current span { color: #99a7ba; font-size: 10.5px; }
+.template-current.empty { border-style: dashed; opacity: .78; }
+.template-manager-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.template-upload-button { position: relative; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.template-upload-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.template-upload-button.disabled { opacity: .55; pointer-events: none; }
+.role-badge.template-inactive { opacity: .7; }
+.app-shell:not(.theme-default) .template-manager-card,
+.app-shell:not(.theme-default) .template-current { background: var(--theme-card, rgba(20,22,28,.8)); border-color: var(--theme-border, rgba(255,255,255,.2)); }
+@media (max-width: 1050px) { .template-manager-grid { grid-template-columns: 1fr; } }

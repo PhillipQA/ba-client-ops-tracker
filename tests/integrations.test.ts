@@ -20,7 +20,7 @@ function memoryDatabase() {
         try {
           const rows = tables.get(table)!, matches = (r: any) => filters.every(([k,v]) => r[k] === v)
           if (op === 'insert' || op === 'upsert') {
-            const index = rows.findIndex(r => r.tenant_id === payload.tenant_id && r.integration_type === payload.integration_type)
+            const index = rows.findIndex(r => table === 'tenant_templates' ? r.tenant_id === payload.tenant_id && r.template_type === payload.template_type : r.tenant_id === payload.tenant_id && r.integration_type === payload.integration_type)
             if ((index >= 0 && op === 'insert') || (payload.integration_type === 'discord' && rows.some(r => r.tenant_id !== payload.tenant_id && r.provider_identity === payload.provider_identity))) return resolve({ data:null,error:{code:'23505'} })
             if(index >= 0) rows[index] = {...payload}; else rows.push({...payload})
           }
@@ -112,6 +112,10 @@ test('real HTTP routes scope writes from authenticated tenant and deny unauthori
     assert.equal((await call('/api/account/templates','admin','PUT',{name:'template.xlsx',content_base64:templateData})).status,200)
     assert.equal((await call('/api/account/templates','docs-admin','PUT',{name:'document-template.xlsx',content_base64:templateData},'b')).status,200)
     assert.equal((await call('/api/account/integrations','docs-admin')).status,403)
-    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx')
+    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx');assert.equal(other.templates.length,3);assert.equal(other.templates.find((item:any)=>item.type==='fsd').source,'built-in')
+    assert.equal((await call('/api/account/templates/fsd','admin','DELETE',undefined,'b')).status,200)
+    const removed=await (await call('/api/account/templates/fsd','admin','GET',undefined,'b')).json();assert.equal(removed.template.active,false)
+    assert.equal((await call('/api/account/templates/fsd/restore-default','admin','POST',undefined,'b')).status,200)
+    const restored=await (await call('/api/account/templates/fsd','admin','GET',undefined,'b')).json();assert.equal(restored.template.source,'built-in')
   } finally { await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve())) }
 })

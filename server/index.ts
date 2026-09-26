@@ -17,7 +17,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { requirePlatformAdmin } from './platform/platform-auth'
 import { registerPlatformSettings } from './platform/platform-settings'
-import { createIntegrationStore, registerIntegrationRoutes, encryptionKey, IntegrationError, aiProviderName } from './integrations/tenant-integrations'
+import { createIntegrationStore, documentTemplateRow, registerIntegrationRoutes, encryptionKey, IntegrationError, aiProviderName } from './integrations/tenant-integrations'
 import { createAiAgentManager, registerAiAgentRoutes } from './ai/ai-agent-manager'
 import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
@@ -1748,12 +1748,12 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
   }
 }
 
-registerFsdRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, logoPath: path.join(projectRoot, 'templates', 'fsd-logo.png') })
+registerFsdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, aiAgents, logoPath: path.join(projectRoot, 'templates', 'fsd-logo.png') })
 
 registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
 registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
 
-registerSignoffRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx') })
+registerSignoffRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx') })
 
 app.get('/api/documents/drf/ai-status', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
@@ -1822,16 +1822,17 @@ app.post('/api/documents/drf/extract-cor', requireAuth, async (req, res) => {
   res.status(410).json({ error: 'COR extraction now runs through the browser. Use Local Extractor or AI Enhanced extraction from DRF Creation.' })
 })
 
-app.post('/api/documents/drf/render-template', requireAuth, async (req, res) => {
+app.post('/api/documents/drf/render-template', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!documentAccessAllowed(user)) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
 
   try {
-    const templateName = String(req.body?.templateName || 'drf-template').slice(0, 180)
-    const templateData = safeDocumentBase64(req.body?.templateData, 12 * 1024 * 1024)
+    const templateRow = await documentTemplateRow(supabaseAdmin, tenantIdForUser(user)!, 'drf')
+    if (!templateRow?.is_enabled || !templateRow.content_base64) throw new Error('The DRF template is not configured. Add it in Settings → Templates.')
+    const templateName = String(templateRow.name || 'drf-template.xlsx').slice(0, 180)
     const values = normalizeTemplateValues(req.body?.values)
     const extension = templateName.split('.').pop()?.toLowerCase() || ''
-    const source = Buffer.from(templateData, 'base64')
+    const source = Buffer.from(String(templateRow.content_base64), 'base64')
     let output: Buffer
     let mimeType = 'application/octet-stream'
     let matchedFields: string[] = []

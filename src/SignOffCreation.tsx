@@ -38,7 +38,7 @@ async function prepareUpload(file: File): Promise<Upload> {
   if (content.size > SIGNOFF_MAX_FILE_BYTES) throw new Error(`${file.name}: prepared image exceeds 5 MB. Choose a smaller image.`)
   return { id: crypto.randomUUID(), name, data: await base64(content), caption: '', size: content.size, image }
 }
-export default function SignOffCreation({ clients, projects, items, launch, canGenerate }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: {taskId:string;flow:'drf'|'signoff';nonce:number}; canGenerate: boolean }) {
+export default function SignOffCreation({ clients, projects, items, launch, canGenerate, templateReady }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: {taskId:string;flow:'drf'|'signoff';nonce:number}; canGenerate: boolean; templateReady: boolean }) {
   const docHub=useDocHubDraft('Sign-Off')
   const [emails,setEmails]=useState({irippleSignatories:['','',''],clientSignatories:['','','']})
   useEffect(()=>{if(launch?.flow!=='signoff')return;const task=items.find(i=>i.id===launch.taskId);docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:task?.clientId || ''}));const client=clients.find(c=>c.id===task?.clientId);if(client)setDetails(d=>({...d,clientName:client.name}))},[launch])
@@ -60,7 +60,7 @@ export default function SignOffCreation({ clients, projects, items, launch, canG
   }
   const move = (index: number, delta: number) => setFiles(previous => { const next = [...previous]; [next[index], next[index + delta]] = [next[index + delta], next[index]]; return next })
   const generate = async (event: FormEvent) => {
-    event.preventDefault(); if (!canGenerate || busy || uploading || docHub.busy) return
+    event.preventDefault(); if (!canGenerate || !templateReady || busy || uploading || docHub.busy) return
     const signers=(['irippleSignatories','clientSignatories'] as const).flatMap(side=>details[side].map((p,i)=>({...p,email:emails[side][i],label:side==='irippleSignatories'?'iRipple':'Client'})))
     try { docHub.validate(signers) } catch(e) { setError((e as Error).message); return }
     setBusy(true); setError(''); setMessage('')
@@ -79,7 +79,8 @@ export default function SignOffCreation({ clients, projects, items, launch, canG
   try { shownDate = formatDeploymentDate(details.deploymentDate) } catch { /* Browser date input can be empty while editing. */ }
   return <form className="signoff-form document-drf-stack" onSubmit={generate}>
     {!canGenerate && <p role="status">Your role can view this form. An Administrator or Contributor with Document Creation access can generate it.</p>}
-    <fieldset disabled={!canGenerate || busy || uploading || docHub.busy}>
+    {!templateReady && <p role="status">The Sign Off template is not configured. An Administrator can add or restore it in Settings → Templates.</p>}
+    <fieldset disabled={!canGenerate || !templateReady || busy || uploading || docHub.busy}>
       <div className="document-extraction-panel"><h3>1. Client and deployment details</h3><div className="document-field-grid">
         <label className="document-field-wide">Client name<input required maxLength={150} list="signoff-clients" value={details.clientName} onChange={e => update('clientName', e.target.value)} placeholder="Choose an existing client or enter a client name" /><datalist id="signoff-clients">{clients.map(c => <option key={c.id} value={c.name} />)}</datalist><small>Used in the header reference, client heading, client approval section, and Client Name row.</small></label>
         <label>Target Deployment Date (MM/DD/YYYY)<input type="date" required min="1900-01-01" max="9999-12-31" value={details.deploymentDate} onChange={e => update('deploymentDate', e.target.value)} /><small>Document date: {shownDate || 'Select a date'}</small></label>

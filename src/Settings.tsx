@@ -110,21 +110,71 @@ function AIAgentManager() {
   </section>
 }
 
-function Templates() {
-  const [name, setName] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false)
-  const load = async () => { const result = await settingsRequest('/api/account/templates'); setName(result.template?.name || '') }
-  useEffect(() => { void load().catch(e => setMessage(e.message)) }, [])
-  const upload = async (file?: File) => {
-    if (!file) return
-    if (!/\.xlsx$/i.test(file.name) || file.size > 5 * 1024 * 1024) return setMessage('Choose an .xlsx file up to 5 MB.')
-    setBusy(true)
-    try {
-      const content_base64 = await new Promise<string>((resolve,reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(file) })
-      await settingsRequest('/api/account/templates', 'PUT', { name: file.name, content_base64 }); await load(); setMessage('Template saved for this account.')
-    } catch(e) { setMessage(e instanceof Error ? e.message : 'Upload failed.') } finally { setBusy(false) }
-  }
-  return <div className="panel"><div className="panel-heading"><div><h2>Templates</h2><p>Save the account’s Excel DRF template for Document Creation.</p></div></div><p>{name || 'No saved template'}</p><label>Upload or replace template<input type="file" accept=".xlsx" disabled={busy} onChange={e => { void upload(e.target.files?.[0]); e.target.value = '' }} /></label><button className="secondary" disabled={busy || !name} onClick={async () => { if (!window.confirm('Remove the saved account template?')) return; setBusy(true); try { await settingsRequest('/api/account/templates','DELETE'); await load(); setMessage('Template removed.') } catch(e) { setMessage((e as Error).message) } finally { setBusy(false) } }}>Remove template</button>{message && <p role="status">{message}</p>}</div>
+type TemplateKind = 'drf' | 'fsd' | 'signoff'
+type TemplateInfo = { type: TemplateKind; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }
+const TEMPLATE_SPECS: { type: TemplateKind; title: string; format: string; accept: string; description: string; note?: string }[] = [
+  { type: 'drf', title: 'DRF Template', format: 'Excel (.xlsx)', accept: '.xlsx', description: 'Standard Excel template used by DRF Creation. The generated DRF keeps its layout, formatting, logo, merged cells, and mapped fields.' },
+  { type: 'fsd', title: 'FSD Template', format: 'Word (.docx)', accept: '.docx', description: 'Word layout used when exporting an FSD.', note: 'Custom FSD templates must keep {{FSD_BODY}} in its own paragraph. Optional markers: {{FSD_REFERENCE}}, {{FSD_PRODUCT}}, {{FSD_FEATURE}}, {{FSD_CLIENT}}.' },
+  { type: 'signoff', title: 'Sign Off Template', format: 'Word (.docx)', accept: '.docx', description: 'Word template used to generate the deployment Sign Off form.', note: 'Keep the standard Sign Off placeholders such as {client_name}, {document_reference}, deployment fields, and signatory fields.' },
+]
+function templateFileBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`))
+    reader.readAsDataURL(file)
+  })
 }
+function Templates() {
+  const [templates, setTemplates] = useState<TemplateInfo[]>([])
+  const [messages, setMessages] = useState<Partial<Record<TemplateKind,string>>>({})
+  const [busy, setBusy] = useState<TemplateKind | null>(null)
+  const load = async () => { const result = await settingsRequest('/api/account/templates'); setTemplates(Array.isArray(result.templates) ? result.templates : []) }
+  useEffect(() => { void load().catch(e => setMessages({ drf: e instanceof Error ? e.message : 'Could not load templates.' })) }, [])
+  const current = (type: TemplateKind) => templates.find(template => template.type === type) || { type, active: false, source: 'none' as const, name: '' }
+  const upload = async (type: TemplateKind, file?: File) => {
+    if (!file) return
+    const spec = TEMPLATE_SPECS.find(item => item.type === type)!
+    if (!file.name.toLowerCase().endsWith(spec.accept) || file.size > 5 * 1024 * 1024) return setMessages(value => ({ ...value, [type]: `Choose a ${spec.accept} file up to 5 MB.` }))
+    setBusy(type); setMessages(value => ({ ...value, [type]: '' }))
+    try {
+      const content_base64 = await templateFileBase64(file)
+      await settingsRequest(`/api/account/templates/${type}`, 'PUT', { name: file.name, content_base64 })
+      await load(); setMessages(value => ({ ...value, [type]: `${spec.title} saved. Document Creation will use it automatically.` }))
+    } catch (e) { setMessages(value => ({ ...value, [type]: e instanceof Error ? e.message : 'Template upload failed.' })) }
+    finally { setBusy(null) }
+  }
+  const remove = async (type: TemplateKind) => {
+    const info = current(type), spec = TEMPLATE_SPECS.find(item => item.type === type)!
+    if (!info.active || !window.confirm(`Remove the active ${spec.title}? ${spec.title.replace('Template','').trim()} generation will be unavailable until a template is uploaded${type === 'drf' ? '.' : ' or the built-in default is restored.'}`)) return
+    setBusy(type); setMessages(value => ({ ...value, [type]: '' }))
+    try { await settingsRequest(`/api/account/templates/${type}`, 'DELETE'); await load(); setMessages(value => ({ ...value, [type]: `${spec.title} removed.` })) }
+    catch (e) { setMessages(value => ({ ...value, [type]: e instanceof Error ? e.message : 'Could not remove template.' })) }
+    finally { setBusy(null) }
+  }
+  const restoreDefault = async (type: Exclude<TemplateKind,'drf'>) => {
+    const spec = TEMPLATE_SPECS.find(item => item.type === type)!
+    setBusy(type); setMessages(value => ({ ...value, [type]: '' }))
+    try { await settingsRequest(`/api/account/templates/${type}/restore-default`, 'POST'); await load(); setMessages(value => ({ ...value, [type]: `Built-in ${spec.title} restored.` })) }
+    catch (e) { setMessages(value => ({ ...value, [type]: e instanceof Error ? e.message : 'Could not restore the built-in template.' })) }
+    finally { setBusy(null) }
+  }
+  return <div className="panel template-manager"><div className="panel-heading"><div><h2>Document Templates</h2><p>Manage the account-wide templates used by Document Creation. Uploading and replacing templates is handled here only.</p></div></div>
+    <div className="template-manager-grid">{TEMPLATE_SPECS.map(spec => { const info = current(spec.type); const working = busy === spec.type; const restorableType = spec.type === 'fsd' || spec.type === 'signoff' ? spec.type : null; return <article className="template-manager-card" key={spec.type}>
+      <div className="template-manager-card-head"><div><h3>{spec.title}</h3><span>{spec.format}</span></div><span className={`role-badge ${info.active ? '' : 'template-inactive'}`}>{info.active ? info.source === 'built-in' ? 'Built-in default' : 'Active' : 'Not configured'}</span></div>
+      <p>{spec.description}</p>
+      <div className={`template-current ${info.active ? '' : 'empty'}`}><strong>{info.active ? info.name : 'No active template'}</strong>{info.updated_at && <span>Updated {new Date(info.updated_at).toLocaleString()}</span>}</div>
+      {spec.note && <small className="settings-helper">{spec.note}</small>}
+      <div className="template-manager-actions">
+        <label className={`secondary template-upload-button${working ? ' disabled' : ''}`}>{info.source === 'custom' ? 'Change / Replace' : 'Upload template'}<input type="file" accept={spec.accept} disabled={Boolean(busy)} onChange={event => { void upload(spec.type, event.target.files?.[0]); event.target.value = '' }} /></label>
+        <button type="button" className="secondary danger-button" disabled={Boolean(busy) || !info.active} onClick={() => void remove(spec.type)}>Remove</button>
+        {restorableType && info.source !== 'built-in' && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void restoreDefault(restorableType)}>Restore built-in</button>}
+      </div>
+      {messages[spec.type] && <p role="status" className="settings-message">{messages[spec.type]}</p>}
+    </article> })}</div>
+  </div>
+}
+
 export default function Settings({ currentUser }: { currentUser: UserAccount }) {
   const [data,setData] = useState<any>(null), [error,setError] = useState('')
   const isAdmin = currentUser.role === 'Administrator'
