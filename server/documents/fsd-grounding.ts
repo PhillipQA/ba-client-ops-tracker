@@ -14,8 +14,8 @@ export function rejectExcludedMentions(text: string, modules: readonly FsdModule
   if (excluded) throw new IntegrationError(`Generated content refers to excluded ${excluded[0]}. Refine source mapping or scope and regenerate.`, 422)
 }
 
-export function interpretRequirements(value: any, sources: FsdSource[], modules: FsdModule[]) {
-  if (!Array.isArray(value?.requirements) || !value.requirements.length || value.requirements.length > 120) throw new IntegrationError('AI did not produce a usable requirement map. Refine the sources and retry.', 422)
+export function interpretRequirements(value: any, sources: FsdSource[], modules: FsdModule[], allowEmpty = false) {
+  if (!Array.isArray(value?.requirements) || (!allowEmpty && !value.requirements.length) || value.requirements.length > 120) throw new IntegrationError('AI did not produce a usable requirement map. Refine the sources and retry.', 422)
   const ids = new Set<string>()
   const requirements: FsdRequirement[] = []
   for (const raw of value.requirements) {
@@ -31,7 +31,7 @@ export function interpretRequirements(value: any, sources: FsdSource[], modules:
     rejectExcludedMentions(raw.requirement + '\n' + evidence.map(e => e.quote).join('\n'), modules)
     requirements.push({ id: raw.id, requirement: raw.requirement.trim(), module: raw.module, evidence })
   }
-  if (!requirements.length) throw new IntegrationError('No supported requirements remain in the selected scope. Review sources and module mapping.', 422)
+  if (!allowEmpty && !requirements.length) throw new IntegrationError('No supported requirements remain in the selected scope. Review sources and module mapping.', 422)
   const gaps = Array.isArray(value.gaps) ? value.gaps.filter((g: unknown) => typeof g === 'string').map((g: string) => g.slice(0, 2000)).slice(0, 100) : []
   return { requirements, gaps }
 }

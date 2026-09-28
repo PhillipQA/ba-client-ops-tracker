@@ -62,7 +62,7 @@ export async function readFsdSource(file: File, progress: (message: string) => v
       if (media.length || Object.keys(zip.files).some(name => /^word\/(charts|diagrams)\//.test(name))) extracted.unshift('[Extraction warning: this Word document contains visuals. OCR text is included where supported; review image placement, charts and relationships in the original.]')
       text = extracted.join('\n\n')
     } else if (ext === 'pdf') {
-      const pdfjs = await import('pdfjs-dist')
+      const pdfjs = await import('pdfjs-dist').catch(()=>{throw new Error('The PDF reader could not load. Save any unsaved inputs, refresh this page, then select the PDF again. If it still fails, check the deployed app assets.')})
       pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
       const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise
       try {

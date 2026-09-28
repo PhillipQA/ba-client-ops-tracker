@@ -11,8 +11,10 @@ export const FSD_MODULE_SECTION: Record<FsdModule, 'mms' | 'report' | 'lynexus' 
 export const FSD_MODULE_SECTION_IDS = Object.values(FSD_MODULE_SECTION) as Array<(typeof FSD_MODULE_SECTION)[FsdModule]>
 export type FsdBlock = ({ type: 'paragraph'; text: string } | { type: 'table'; headers: string[]; rows: string[][] }) & { requirementIds?: string[] }
 export type FsdSection = { id: string; title: string; blocks: FsdBlock[]; sourceIds: string[] }
-export type FsdPreview = { sections: FsdSection[]; gaps: string[]; conflicts: string[]; provider: string; model: string; generatedAt: string; interpretationGaps?: string[]; requirements?: { id: string; requirement: string; module: FsdModule | 'General'; evidence: {sourceId: string; quote: string}[] }[] }
-export type FsdSource = { id: string; name: string; kind: 'BRD' | 'Meeting notes' | 'Supporting document' | 'Chat'; text: string; target: string }
+export type FsdRequirement = { id: string; requirement: string; module: FsdModule | 'General'; evidence: { sourceId: string; quote: string }[] }
+export type FsdSourceAnalysis = { fingerprint: string; readability: 'readable' | 'partial' | 'unreadable'; summary: string; requirements: FsdRequirement[]; gaps: string[]; complete: boolean; provider: string; model: string; analyzedAt: string }
+export type FsdPreview = { sections: FsdSection[]; gaps: string[]; conflicts: string[]; provider: string; model: string; generatedAt: string; interpretationGaps?: string[]; requirements?: FsdRequirement[] }
+export type FsdSource = { id: string; name: string; kind: 'BRD' | 'Meeting notes' | 'Supporting document' | 'Chat'; text: string; target: string; analysis?: FsdSourceAnalysis; analysisError?: string }
 export type FsdPreset = { id: string; name: string; instructions: string }
 export const FSD_PRESETS: FsdPreset[] = [
   { id: 'standard', name: 'Standard Business Analyst', instructions: 'Use clear, formal business language. Translate supported business needs into implementable requirements and measurable acceptance criteria. Cover normal, alternate, error and cancellation paths.' },

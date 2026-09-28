@@ -78,6 +78,15 @@
 .fsd-source-actions button {margin-bottom:14px;}
 .fsd-paste>textarea {margin-bottom:10px;}
 .fsd-save-preset {margin-top:20px;display:flex;gap:10px;align-items:end;flex-wrap:wrap;}
+.fsd-analysis-status,.fsd-source-review-heading {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.fsd-analysis-status {margin-top:14px;font-size:13px;}
+.fsd-source-review {margin:16px 0;padding:16px;border:1px solid var(--fsd-border);border-radius:12px;background:var(--fsd-surface-panel);}
+.fsd-source-review p,.fsd-source-review li,.fsd-source-review blockquote {white-space:pre-wrap;overflow-wrap:anywhere;}
+.fsd-source-review article {padding:12px 0;border-bottom:1px solid var(--fsd-border);}
+.fsd-source-review blockquote {margin:8px 0;padding:8px 12px;border-left:3px solid var(--fsd-border);font-size:13px;}
+.fsd-source-review-label {font-weight:600;}
+.fsd-source-questions {margin:16px 0;}
+.fsd-source-questions ul {padding-left:20px;}
 .fsd-save-preset label {flex:1;min-width:130px;}
 .fsd-save-preset button {margin-bottom:14px;}
 .fsd-module-checks {display:grid;grid-template-columns:1fr 1fr;gap:8px;}

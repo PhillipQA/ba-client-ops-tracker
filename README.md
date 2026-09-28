@@ -1,12 +1,12 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.56**
+**Current release: v0.6.57**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
 Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
 
-Upgrade details: [v0.6.56 release notes](docs/releases/v0.6.56.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
+Upgrade details: [v0.6.57 release notes](docs/releases/v0.6.57.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
 
 ## Main modules
 
@@ -121,6 +121,8 @@ Patch runtime backups are stored locally under `.patch-backups/` and are ignored
 Keep Git focused on source code and documentation. Full-build and patch ZIPs should be published as **GitHub Release assets**, not committed into the repository.
 
 ## Current release highlights
+
+**v0.6.57** adds automatic AI source review when uploading FSD files or adding pasted notes. Each source shows readability, interpreted facts with original excerpts, and clarification questions. FSD generation combines the current reviewed sources, preset, guidance and checked scope. Source changes require reanalysis; unchanged reviews are reused.
 
 **v0.6.56** hard-enforces Advanced Mode FSD module scope. Unchecked software modules are removed from the AI section schema, omitted from preview and Word export, and sources mapped only to unchecked modules are excluded from FSD AI generation.
 
