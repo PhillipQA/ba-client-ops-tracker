@@ -10,6 +10,7 @@ import { registerRtmAiRoutes } from './documents/rtm-ai'
 import { createWorkspaceGuard } from './services/workspace-guard'
 import { archivedWorkReason, assertLifecycleMutation, LifecycleError, isArchived } from '../src/lifecycle'
 import { registerSignoffRoutes } from './documents/signoff-documents'
+import { isDrfStage, recordDrfError } from './documents/drf-diagnostics'
 import { registerAccountUsers } from './accounts/account-users'
 import dotenv from 'dotenv'
 import express from 'express'
@@ -1749,6 +1750,30 @@ registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, a
 
 registerSignoffRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx') })
 
+async function sendDrfFailure(res: express.Response, user: SessionUser, stage: 'cor_ai' | 'template_render', status: number, message: string, cause: unknown, context: Record<string, any> = {}) {
+  const diagnosticId = await recordDrfError(supabaseAdmin, {tenantId:tenantIdForUser(user)!,userId:user.id}, stage, 'server', cause, context)
+  res.status(status).json({error:message,diagnosticId,loggingUnavailable:!diagnosticId})
+}
+
+const drfReportLimiter = rateLimit({windowMs:15*60*1000,max:30,standardHeaders:true,legacyHeaders:false})
+app.post('/api/documents/drf/errors', requireAuth, requireTenantWorkspace, drfReportLimiter, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!documentAccessAllowed(user)) return void res.status(403).json({error:'Document Creation access is required.'})
+  if (!isDrfStage(req.body?.stage) || typeof req.body?.message !== 'string' || req.body.message.length > 2000) return void res.status(400).json({error:'A DRF error stage and short message are required.'})
+  const diagnosticId = await recordDrfError(supabaseAdmin, {tenantId:tenantIdForUser(user)!,userId:user.id}, req.body.stage, 'browser', req.body.message, req.body.context || {})
+  if (!diagnosticId) return void res.status(503).json({error:'DRF error could not be saved. Apply schema-v18-drf-error-logs.sql and check Supabase connectivity.'})
+  res.status(201).json({diagnosticId})
+})
+app.get('/api/documents/drf/errors', requireAuth, requireTenantWorkspace, async (req, res) => {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!documentAccessAllowed(user)) return void res.status(403).json({error:'Document Creation access is required.'})
+  if (!supabaseAdmin) return void res.status(503).json({error:'Supabase is not configured.'})
+  const {data,error} = await supabaseAdmin.from('drf_error_logs').select('id,stage,source,message,error_code,context,created_at')
+    .eq('tenant_id',tenantIdForUser(user)!).eq('user_id',user.id).order('created_at',{ascending:false}).limit(20)
+  if (error) return void res.status(503).json({error:'DRF logs are unavailable. Apply schema-v18-drf-error-logs.sql and retry.'})
+  res.json({items:data || []})
+})
+
 app.get('/api/documents/drf/ai-status', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!documentAccessAllowed(user)) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
@@ -1769,12 +1794,12 @@ app.post('/api/documents/drf/extract-cor-ai', requireAuth, requireTenantWorkspac
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
   const sourceMethod = typeof req.body?.sourceMethod === 'string' ? req.body.sourceMethod.trim().slice(0, 80) : 'local text extraction'
   const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName.trim().slice(0, 180) : 'COR document'
-  if (text.length < 20) return void res.status(400).json({ error: 'The local extractor did not return enough COR text for AI extraction.' })
-  if (text.length > 60000) return void res.status(400).json({ error: 'The extracted COR text is too large for AI extraction. Use Local Extractor or a smaller COR file.' })
+  if (text.length < 20) return void await sendDrfFailure(res,user,'cor_ai',400,'The local extractor did not return enough COR text for AI extraction.','Extracted text too short.',{fileType:fileName.split('.').pop(),extractionMode:'ai'})
+  if (text.length > 60000) return void await sendDrfFailure(res,user,'cor_ai',400,'The extracted COR text is too large for AI extraction. Use Local Extractor or a smaller COR file.','Extracted text too large.',{fileType:fileName.split('.').pop(),extractionMode:'ai'})
 
   let ai: Awaited<ReturnType<typeof integrations.active>>
-  try { ai = await aiAgents.active(tenantIdForUser(user)!, 'document') } catch { return void res.status(503).json({ error: 'Document Agent settings are unavailable.' }) }
-  if (!ai) return void res.status(503).json({ error: 'Enable and configure the Document Agent in Account Settings → AI Agent Manager, or use Local Extractor.' })
+  try { ai = await aiAgents.active(tenantIdForUser(user)!, 'document') } catch (error) { return void await sendDrfFailure(res,user,'cor_ai',503,'Document Agent settings are unavailable.',error,{extractionMode:'ai'}) }
+  if (!ai) return void await sendDrfFailure(res,user,'cor_ai',503,'Enable and configure the Document Agent in Account Settings → AI Agent Manager, or use Local Extractor.','Document Agent is not enabled.',{extractionMode:'ai'})
 
   const instructions = `You extract four exact fields from a Philippine BIR Certificate of Registration (COR) for a DRF.
 Return JSON only with this exact shape:
@@ -1805,8 +1830,7 @@ Rules:
       notes: `Processed with ${provider} AI after ${sourceMethod}. Please review all extracted values before generating the DRF.`,
     })
   } catch (error) {
-    console.error('AI COR extraction failed.')
-    res.status(502).json({ error: 'AI COR extraction failed. Check this account’s Document Agent provider, key, selected model, quota, and connection, or switch back to Local Extractor.' })
+    await sendDrfFailure(res,user,'cor_ai',502,'AI COR extraction failed. Check this account’s Document Agent provider, key, selected model, quota, and connection, or switch back to Local Extractor.',error,{extractionMode:'ai',provider:aiProviderName(ai.config)})
   }
 })
 
@@ -1820,12 +1844,14 @@ app.post('/api/documents/drf/render-template', requireAuth, requireTenantWorkspa
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!documentAccessAllowed(user)) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
 
+  let templateType = ''
   try {
     const templateRow = await documentTemplateRow(supabaseAdmin, tenantIdForUser(user)!, 'drf')
     if (!templateRow?.is_enabled || !templateRow.content_base64) throw new Error('The DRF template is not configured. Add it in Settings → Templates.')
     const templateName = String(templateRow.name || 'drf-template.xlsx').slice(0, 180)
     const values = normalizeTemplateValues(req.body?.values)
     const extension = templateName.split('.').pop()?.toLowerCase() || ''
+    templateType = extension
     const source = Buffer.from(String(templateRow.content_base64), 'base64')
     let output: Buffer
     let mimeType = 'application/octet-stream'
@@ -1886,8 +1912,7 @@ app.post('/api/documents/drf/render-template', requireAuth, requireTenantWorkspa
     const outputName = safeOutputName(values.business_name || values.trade_name || '', extension || 'docx')
     res.json({ fileData: output.toString('base64'), fileName: outputName, mimeType, matchedFields, posRowsWritten })
   } catch (error) {
-    console.error('DRF template generation failed:', error)
-    res.status(500).json({ error: error instanceof Error ? error.message : 'DRF template generation failed.' })
+    await sendDrfFailure(res,user,'template_render',500,error instanceof Error ? error.message : 'DRF template generation failed.',error,{templateType})
   }
 })
 

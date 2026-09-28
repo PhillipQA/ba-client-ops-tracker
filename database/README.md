@@ -1,6 +1,6 @@
 # Database setup
 
-For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–17 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
+For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–18 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
 
 | Deployment situation | What to run |
 | --- | --- |
@@ -44,3 +44,7 @@ Stop the old app, run `migrations/schema-v16-functional-integrity.sql` once, dep
 ## Upgrading from v0.6.59 to v0.6.60
 
 Run `migrations/schema-v17-brd-template.sql` once, then deploy v0.6.60 and rebuild. This only expands the document-template type constraint so each account can use the built-in or a custom BRD template. Existing data and templates are preserved. Do not run `setup.sql` on an existing database.
+
+## Upgrading from v0.6.62 to v0.6.63
+
+Run `migrations/schema-v18-drf-error-logs.sql` once, then deploy v0.6.63 and rebuild. It creates a private tenant and user scoped DRF error table. The service role writes diagnostics; browser users can only see their own entries through the application. Uploaded COR text, DRF field values, and template bytes are not logged. Do not run `setup.sql` on an existing database.

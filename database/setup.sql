@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v0.6.60: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 17. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v0.6.63: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 18. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -19,7 +19,7 @@ begin
       raise exception 'Supabase role % is missing. Use a new Supabase project for this setup.', object_name;
     end if;
   end loop;
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications'] loop
     if to_regclass(format('public.%I', object_name)) is not null then
       raise exception 'Fresh setup stopped: public.% already exists. No changes were applied. Use newer migrations for an existing installation; do not replay old migrations.', object_name;
     end if;
@@ -1235,6 +1235,26 @@ ALTER TABLE public.tenant_templates
   ADD CONSTRAINT tenant_templates_template_type_check
   CHECK (template_type IN ('drf', 'brd', 'fsd', 'signoff'));
 
+-- Included source: migrations/schema-v18-drf-error-logs.sql
+-- SHA-256: 99adf771f5814b2490993039fb09269ed2668d8050a129cdf44f76105fc540e2
+-- v0.6.63: private diagnostic records for DRF failures.
+
+create table if not exists public.drf_error_logs (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  user_id text not null references public.app_users(id) on delete cascade,
+  stage text not null check (stage in ('cor_upload','cor_local','cor_ai','template_render','download','dochub')),
+  source text not null check (source in ('browser','server')),
+  message text not null,
+  error_code text,
+  context jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists drf_error_logs_user_recent on public.drf_error_logs (tenant_id, user_id, created_at desc);
+alter table public.drf_error_logs enable row level security;
+revoke all on public.drf_error_logs from public, anon, authenticated;
+grant all on public.drf_error_logs to service_role;
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1248,7 +1268,7 @@ do $setup_grants$
 declare
   object_name text;
 begin
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications'] loop
     execute format('alter table public.%I enable row level security', object_name);
     execute format('revoke all on table public.%I from public, anon, authenticated', object_name);
     execute format('grant all on table public.%I to service_role', object_name);
@@ -1258,4 +1278,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 17 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 18 as schema_version;

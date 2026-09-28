@@ -8,7 +8,7 @@ import { useDocumentOperation } from './useDocumentOperation'
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
 const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
 
-export function useDocHubDraft(kind:'DRF'|'Sign-Off') {
+export function useDocHubDraft(kind:'DRF'|'Sign-Off',onError?:(error:Error)=>void) {
   const [available,setAvailable]=useState(false),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const [doc,setDoc]=useState<DocHubDocument|null>(null)
   const [options,setOptions]=useState({clientId:'',taskId:'',sequential:false,followUpDays:3})
@@ -35,7 +35,7 @@ export function useDocHubDraft(kind:'DRF'|'Sign-Off') {
   const submit=async(input:any)=>{
     const job=operation.begin();setBusy(true);setError('')
     try{const result=await dochubRequest('/api/dochub/prepare','POST',input,job.signal);if(!job.isCurrent())return;setDoc(result.document);updated()}
-    catch(e){if(job.isCurrent())setError((e as Error).message)}finally{if(job.isCurrent())setBusy(false)}
+    catch(e){if(job.isCurrent()){setError((e as Error).message);onError?.(e instanceof Error?e:new Error('DocHub preparation failed.'))}}finally{if(job.isCurrent())setBusy(false)}
   }
   const prepare=async(file:GeneratedDocument,signers:DocHubSigner[])=>{if(!enabled)return;validateSigners(signers);setDoc(null);const input={...file,...options,kind,id:crypto.randomUUID(),signers};pending.current=input;await submit(input)}
   const refresh=async()=>{

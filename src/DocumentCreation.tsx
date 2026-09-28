@@ -90,8 +90,8 @@ async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Pr
     credentials: 'same-origin',
     body: JSON.stringify(body),
   })
-  const payload = await response.json().catch(() => ({})) as { error?: string } & T
-  if (!response.ok) throw new Error(payload.error || 'Document request failed.')
+  const payload = await response.json().catch(() => ({})) as { error?: string; diagnosticId?: string; loggingUnavailable?: boolean } & T
+  if (!response.ok) throw Object.assign(new Error(payload.error || 'Document request failed.'), {diagnosticId:payload.diagnosticId,loggingUnavailable:payload.loggingUnavailable})
   return payload
 }
 
@@ -121,7 +121,8 @@ const defaultSignatories: Signatory[] = [
 ]
 
 export default function DocumentCreation({ clients, projects, items, launch, canGenerate, draftKey, active }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; draftKey: string; active: boolean }) {
-  const docHub = useDocHubDraft('DRF')
+  const docHubReporter = useRef<(error:Error)=>void>(()=>undefined)
+  const docHub = useDocHubDraft('DRF',error=>docHubReporter.current(error))
   useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
   const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'brd' || value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
   useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
@@ -179,8 +180,35 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const [generating, setGenerating] = useState(false)
   const [documentMessage, setDocumentMessage] = useState('')
   const [documentError, setDocumentError] = useState('')
+  const [recentDrfErrors, setRecentDrfErrors] = useState<{id:string;stage:string;source:string;message:string;created_at:string}[]>([])
+  const [drfLogError, setDrfLogError] = useState('')
+  const [failedDrfAction, setFailedDrfAction] = useState<'extract'|'generate'>('extract')
   const operation = useDocumentOperation()
   const corInput = useRef<HTMLInputElement>(null)
+  const loadDrfErrors = async () => {
+    const response = await fetch('/api/documents/drf/errors', {credentials:'same-origin'})
+    const payload = await response.json().catch(() => ({})) as {items?:typeof recentDrfErrors;error?:string}
+    if(!response.ok)throw new Error(payload.error || 'Could not load DRF errors.')
+    setRecentDrfErrors(payload.items || []);setDrfLogError('')
+  }
+  const showDrfFailure = async(stage:'cor_upload'|'cor_local'|'cor_ai'|'template_render'|'download'|'dochub',error:unknown,context:Record<string,unknown>={}) => {
+    const failure=error as Error & {diagnosticId?:string;loggingUnavailable?:boolean}
+    const message=error instanceof Error?error.message:'DRF operation failed.'
+    let id=failure?.diagnosticId || ''
+    let loggingUnavailable=Boolean(failure?.loggingUnavailable)
+    if(!id && !loggingUnavailable) {
+      try {
+        const response=await fetch('/api/documents/drf/errors',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage,message,context})})
+        const payload=await response.json().catch(()=>({})) as {diagnosticId?:string}
+        id=response.ok?payload.diagnosticId || '':''
+        loggingUnavailable=!id
+      } catch {loggingUnavailable=true}
+    }
+    setDocumentError(`${message}${id?` · Log ID: ${id}`:loggingUnavailable?' · Log could not be saved; check the DRF migration and Supabase connection.':''}`)
+    setDocumentMessage('')
+    if(id)void loadDrfErrors().catch(()=>undefined)
+  }
+  docHubReporter.current = error => {setFailedDrfAction('generate');void showDrfFailure('dochub',error)}
 
   const removeCor = () => {
     operation.cancel();docHub.reset()
@@ -207,7 +235,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     const files = Array.from(event.target.files || [])
     const selected = multiple ? files : files.slice(0, 1)
     if (maxBytes && selected.some((file) => file.size > maxBytes)) {
-      setDocumentError(`File is too large. Maximum allowed size is ${formatBytes(maxBytes)}.`)
+      void showDrfFailure('cor_upload',new Error(`File is too large. Maximum allowed size is ${formatBytes(maxBytes)}.`),{fileType:selected[0]?.type,fileBytes:selected[0]?.size})
       event.target.value = ''
       return
     }
@@ -232,6 +260,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     setExtracting(true)
     setDocumentError('')
     setDocumentMessage(corExtractionMode === 'ai' ? 'Reading the COR locally before AI extraction…' : 'Preparing private local COR extraction…')
+    let stage:'cor_local'|'cor_ai'='cor_local'
     try {
       let extraction: { businessName: string; tradeName: string; tin: string; address: string; notes: string }
       if (corExtractionMode === 'ai') {
@@ -239,6 +268,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
         const localText = await extractCorTextLocally(corFile, progress)
         if (!job.isCurrent()) return
         setDocumentMessage(`Local text is ready. Asking ${aiExtractionStatus.provider || 'the Document Agent'} to map the COR fields…`)
+        stage='cor_ai'
         extraction = await postJson<typeof extraction>('/api/documents/drf/extract-cor-ai', {
           text: localText.text,
           sourceMethod: localText.method,
@@ -255,8 +285,8 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       setDocumentMessage(`COR extraction completed. ${extraction.notes}`)
     } catch (error) {
       if (!job.isCurrent()) return
-      setDocumentError(error instanceof Error ? error.message : 'COR extraction failed.')
-      setDocumentMessage('')
+      setFailedDrfAction('extract')
+      await showDrfFailure(stage,error,{fileType:corFile.type,fileBytes:corFile.size,extractionMode:corExtractionMode})
     } finally {
       if(job.isCurrent())setExtracting(false)
     }
@@ -264,11 +294,12 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
   const generateDrf = async () => {
     if (!drfTemplate?.active || !canGenerate || extracting || generating || docHub.busy) return
-    try { docHub.validate(signatories) } catch(e) { setDocumentError((e as Error).message); return }
+    try { docHub.validate(signatories) } catch(e) {setFailedDrfAction('generate');void showDrfFailure('dochub',e);return}
     const job = operation.begin()
     setGenerating(true)
     setDocumentError('')
     setDocumentMessage('Placing DRF values into the account’s saved Excel template…')
+    let stage:'template_render'|'download'|'dochub'='template_render'
     try {
       const signatoryValues = Object.fromEntries(signatories.flatMap((signatory, index) => {
         const number = index + 1
@@ -300,7 +331,9 @@ export default function DocumentCreation({ clients, projects, items, launch, can
         posRows: posRows.map(({ computerName, serialNo, brand, model }) => ({ computerName, serialNo, brand, model })),
       }, job.signal)
       if (!job.isCurrent()) return
+      stage='download'
       downloadBase64File(result.fileData, result.mimeType, result.fileName)
+      stage='dochub'
       await docHub.prepare(result, signatories)
       if (!job.isCurrent()) return
       const matched = result.matchedFields?.length ? ` ${result.matchedFields.length} DRF fields were populated.` : ''
@@ -308,8 +341,8 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       setDocumentMessage(`DRF generated successfully.${matched}${rows}`)
     } catch (error) {
       if (!job.isCurrent()) return
-      setDocumentError(error instanceof Error ? error.message : 'DRF generation failed.')
-      setDocumentMessage('')
+      setFailedDrfAction('generate')
+      await showDrfFailure(stage,error,{templateType:'xlsx'})
     } finally {
       if(job.isCurrent())setGenerating(false)
     }
@@ -477,7 +510,15 @@ export default function DocumentCreation({ clients, projects, items, launch, can
               </div>
             </div>
 
-            <DocumentProcessingPanel state={documentError ? 'error' : (extracting || generating) ? 'working' : documentMessage ? 'success' : 'idle'} title={documentError ? 'Document processing failed' : generating ? 'Generating your DRF…' : extracting ? 'Reading your COR…' : 'Document is ready'} detail={documentError || documentMessage} stages={extracting ? ['Uploading document','Reading and extracting content','Mapping COR fields','Finalizing extracted values'] : ['Preparing template','Mapping reviewed information','Generating document','Starting download']} activeStage={generating ? 2 : extracting ? (documentMessage.toLowerCase().includes('asking') ? 2 : 1) : 3} onRetry={documentError ? () => void (corFile && !generating ? extractCor() : generateDrf()) : undefined}/>
+            <DocumentProcessingPanel state={documentError ? 'error' : (extracting || generating) ? 'working' : documentMessage ? 'success' : 'idle'} title={documentError ? 'Document processing failed' : generating ? 'Generating your DRF…' : extracting ? 'Reading your COR…' : 'Document is ready'} detail={documentError || documentMessage} stages={extracting ? ['Uploading document','Reading and extracting content','Mapping COR fields','Finalizing extracted values'] : ['Preparing template','Mapping reviewed information','Generating document','Starting download']} activeStage={generating ? 2 : extracting ? (documentMessage.toLowerCase().includes('asking') ? 2 : 1) : 3} onRetry={documentError ? () => void (failedDrfAction==='extract'?extractCor():generateDrf()) : undefined}/>
+            <details className="document-extraction-panel" onToggle={event=>{if(event.currentTarget.open)void loadDrfErrors().catch(error=>setDrfLogError(error.message))}}>
+              <summary>Recent DRF errors (saved to Supabase)</summary>
+              <p>Only your DRF errors appear here. Uploaded files, COR text, and entered form values are not logged.</p>
+              <button type="button" className="secondary compact" onClick={()=>void loadDrfErrors().catch(error=>setDrfLogError(error.message))}>Refresh errors</button>
+              {drfLogError&&<p role="alert">{drfLogError}</p>}
+              {!drfLogError&&!recentDrfErrors.length&&<p>No DRF errors found.</p>}
+              {recentDrfErrors.length>0&&<ul>{recentDrfErrors.map(entry=><li key={entry.id}><strong>{entry.stage.replace(/_/g,' ')} · {new Date(entry.created_at).toLocaleString()}</strong><div>{entry.message}</div><small>Log ID: {entry.id}</small></li>)}</ul>}
+            </details>
 
             <DocHubOptions key={docHub.resetVersion} draft={docHub} clients={clients} projects={projects} items={items} disabled={!canGenerate || generating || extracting} />
             <DocHubResult draft={docHub} />
