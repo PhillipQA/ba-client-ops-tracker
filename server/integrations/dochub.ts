@@ -124,17 +124,29 @@ export function createDocHubService(deps: Deps) {
           if (remoteDocument.isTemplate) throw new DocHubError('A regular document is required; templates are not supported.',409)
           doc.documentUrl=docHubUrl(remoteDocument.fullUrl) || docHubUrl(`https://dochub.com/d/${docHubId(doc.documentId)}`)
           doc.signRequestId=remoteDocument.signRequestId || doc.signRequestId
-          if (!doc.signRequestId && !doc.rolesPrepared) {
+          if (!doc.signRequestId) {
             const existing=await api.call(`/document-roles?filter[documentId]=${docHubId(doc.documentId)}`)
-            const roles=Array.isArray(existing.data)?existing.data:[]
-            for (let index=0;index<doc.signers.length;index++) {
-              const signer=doc.signers[index]
-              const found=roles.find((r: any)=>String(r.email || '').toLowerCase()===signer.email)
-              const role=found || await api.call('/document-roles','POST',{documentId:doc.documentId,name:signer.name,email:signer.email,canFreeEdit:false,receivesFinalCopy:true,...(doc.sequential?{queuePosition:index+1}:{})})
-              if (!role.id) throw new DocHubError('DocHub did not return the recipient role.',502)
-              signer.roleId=String(role.id);await save(tenant,doc)
+            const roles=(Array.isArray(existing.data)?existing.data:[]).map((r:any)=>r.attributes?{id:r.id,...r.attributes}:r)
+            const roleFor=(signer:any)=>roles.find((r:any)=>
+              // Some DocHub responses contain roles beyond the requested filter.
+              // An email can sign many DRFs; a role ID belongs to one document.
+              String(r.documentId || r.document?.id || r.document_id || '')===String(doc.documentId) &&
+              String(r.email || '').toLowerCase()===signer.email)
+            if (doc.rolesPrepared && roles.some((r:any)=>r.documentId || r.document?.id || r.document_id) &&
+              doc.signers.some((s:any)=>String(roleFor(s)?.id || '')!==String(s.roleId || ''))) {
+              doc.rolesPrepared=false;doc.draftAttempted=false
+              delete doc.setupNote
+              addEvent(doc,'recipients-repaired','Recipient roles were rechecked for this document.');await save(tenant,doc)
             }
-            doc.rolesPrepared=true;await save(tenant,doc)
+            if (!doc.rolesPrepared) {
+              for (let index=0;index<doc.signers.length;index++) {
+                const signer=doc.signers[index]
+                const role=roleFor(signer) || await api.call('/document-roles','POST',{documentId:doc.documentId,name:signer.name,email:signer.email,canFreeEdit:false,receivesFinalCopy:true,...(doc.sequential?{queuePosition:index+1}:{})})
+                if (!role.id) throw new DocHubError('DocHub did not return the recipient role.',502)
+                signer.roleId=String(role.id);await save(tenant,doc)
+              }
+              doc.rolesPrepared=true;await save(tenant,doc)
+            }
           }
           if (!doc.signRequestId && !doc.draftAttempted) {
             // Persist intent before the remote mutation; reconciliation discovers a request if the response is lost.

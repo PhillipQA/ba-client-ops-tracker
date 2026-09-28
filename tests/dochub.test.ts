@@ -22,7 +22,7 @@ function fixture(options:{rejectDraft?:boolean;lostImport?:boolean}={}){
  const state={clients:[{id:'client',name:'Acme',status:'Active'}],projects:[],items:[{id:'task',title:'Create DRF',clientId:'client',status:'In Progress',waitingOn:'Me',followUpDate:'',assignedToUserId:'worker',comments:[]}],accounts:[{id:'admin',name:'Admin',status:'Active',role:'Administrator'},{id:'worker',name:'Worker',status:'Active',role:'Contributor'},{id:'viewer',status:'Active',role:'Viewer'}],notifications:[],taskSettings:{statuses:[{id:'open',label:'In Progress',closed:false},{id:'done',label:'Completed',closed:true}]}}
  states.set(tenantA,copy(state));states.set(tenantB,copy(state))
  for(const [id,key] of [[tenantA,keyA],[tenantB,keyB]])db.tables.set('tenant_dochub_accounts',[...(db.tables.get('tenant_dochub_accounts')||[]),{tenant_id:id,encrypted_api_key:encryptSecret(key,id,'dochub'),key_suffix:key.slice(-4),enabled:true,encrypted_webhook_secret:encryptSecret('webhook-test-secret-1234',id,'dochub-webhook')}])
- const calls:any[]=[],remote={status:'PREPARING',signRequestId:'',signed:false,fields:false,roles:[] as any[],importComplete:false}
+ const calls:any[]=[],remote={status:'PREPARING',signRequestId:'',signRequests:{} as Record<string,string>,imports:0,signed:false,fields:false,roles:[] as any[],importComplete:false}
  const response=(body:any,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}})
  const request:typeof fetch=async(url:any,init:any={})=>{
    const href=String(url);calls.push({url:href,method:init.method||'GET',headers:init.headers,body:typeof init.body==='string'?JSON.parse(init.body):init.body})
@@ -31,12 +31,12 @@ function fixture(options:{rejectDraft?:boolean;lostImport?:boolean}={}){
    const path=new URL(href).pathname,body=typeof init.body==='string'?JSON.parse(init.body):{}
    if(path==='/api/v2/documents')return response({data:[]})
    if(path.endsWith('/s3-direct'))return response({url:'https://upload.dochub.com/',fields:{key:'upload-key',policy:'private','Content-Type':'application/pdf'}},201)
-   if(path==='/api/v2/documents/imports') {if(options.lostImport)throw new Error('socket lost');return response({id:'import-1',status:'processing'},202)}
-   if(path==='/api/v2/documents/imports/import-1')return response(remote.importComplete?{id:'import-1',status:'completed',documentId:'doc1'}:{id:'import-1',status:'processing'})
-   if(path==='/api/v2/documents/doc1')return response({id:'doc1',isTemplate:false,fullUrl:'https://dochub.com/d/doc1',signRequestId:remote.signRequestId||null})
-   if(path==='/api/v2/document-roles'){if(init.method==='POST'){const role={id:'role1',...body};remote.roles.push(role);return response(role,201)}return response({data:remote.roles})}
-   if(path==='/api/v2/sign-requests'&&init.method==='POST') {assert.equal(body.preparingEnabled,true);assert.equal(body.documentRoles[0].canFreeEdit,false);if(options.rejectDraft)return response({error:'fields required'},422);remote.signRequestId='sr1';return response({id:'sr1',status:'PREPARING'},201)}
-   if(path==='/api/v2/sign-requests/sr1')return response({id:'sr1',status:remote.status,compiledPdfId:remote.signed?'pdf1':null,signersData:[{id:'signer1',name:'Signer',email:'signer@example.com',status:remote.signed?'FINALIZED':'CREATED',signedAt:remote.signed?'2026-09-24T12:00:00Z':null,viewedAt:remote.signed?'2026-09-24T11:00:00Z':null}]})
+   if(path==='/api/v2/documents/imports') {if(options.lostImport)throw new Error('socket lost');remote.imports++;return response({id:`import-${remote.imports}`,status:'processing'},202)}
+   if(/^\/api\/v2\/documents\/imports\/import-\d+$/.test(path)){const n=path.split('-').pop();return response(remote.importComplete?{id:`import-${n}`,status:'completed',documentId:`doc${n}`}:{id:`import-${n}`,status:'processing'})}
+   if(/^\/api\/v2\/documents\/doc\d+$/.test(path)){const id=path.split('/').pop()!;return response({id,isTemplate:false,fullUrl:`https://dochub.com/d/${id}`,signRequestId:remote.signRequests[id]||(id==='doc1'?remote.signRequestId:null)||null})}
+   if(path==='/api/v2/document-roles'){if(init.method==='POST'){const role={id:`role${remote.roles.length+1}`,...body};remote.roles.push(role);return response(role,201)}return response({data:remote.roles})}
+   if(path==='/api/v2/sign-requests'&&init.method==='POST') {assert.equal(body.preparingEnabled,true);assert.equal(body.documentRoles[0].canFreeEdit,false);if(options.rejectDraft)return response({error:'fields required'},422);const id=`sr${Object.keys(remote.signRequests).length+1}`;remote.signRequestId=id;remote.signRequests[body.documentId]=id;return response({id,status:'PREPARING'},201)}
+   if(/^\/api\/v2\/sign-requests\/sr\d+$/.test(path))return response({id:path.split('/').pop(),status:remote.status,compiledPdfId:remote.signed?'pdf1':null,signersData:[{id:'signer1',name:'Signer',email:'signer@example.com',status:remote.signed?'FINALIZED':'CREATED',signedAt:remote.signed?'2026-09-24T12:00:00Z':null,viewedAt:remote.signed?'2026-09-24T11:00:00Z':null}]})
    if(path==='/api/v2/formfields')return response({data:remote.fields?[{id:'field1',documentRoleId:'role1',ffType:'dhSignature',isRequired:true}]:[]})
    throw new Error(`Unexpected operation ${init.method} ${path}`)
  }
@@ -58,6 +58,36 @@ test('upload -> async import -> unsent draft -> completed: single comment/notifi
  assert(!JSON.stringify(publicDocument(doc)).includes(f.input.fileData));assert(!('uploadKey' in publicDocument(doc)));assert(!('fingerprint' in publicDocument(doc)))
  await assert.rejects(()=>f.service.load(tenantB,doc.id),(e:any)=>e.status===404)
  await assert.rejects(()=>f.service.prepare(tenantA,f.user,{...f.input,signers:[{name:'Other',email:'other@example.com'}]}),(e:any)=>e.status===409)
+})
+test('a second DRF with the same signatories receives roles for its own document',async()=>{
+ const f=fixture()
+ const first=await f.service.prepare(tenantA,f.user,f.input)
+ f.remote.importComplete=true
+ await f.service.refresh(tenantA,first.id,true)
+ const secondInput={...f.input,id:randomUUID(),fileData:Buffer.from('%PDF-1.7\nsecond DRF').toString('base64')}
+ const second=await f.service.prepare(tenantA,f.user,secondInput)
+ assert.equal(second.documentId,'doc2')
+ assert.equal(second.status,'PREPARING')
+ assert.equal(f.remote.roles.length,2)
+ assert.deepEqual(f.remote.roles.map((r:any)=>[r.documentId,r.email]),[['doc1','signer@example.com'],['doc2','signer@example.com']])
+ const drafts=f.calls.filter(c=>c.url.endsWith('/sign-requests')&&c.method==='POST')
+ assert.equal(drafts.length,2)
+ assert.equal(drafts[0].body.documentRoles[0].id,'role1')
+ assert.equal(drafts[1].body.documentRoles[0].id,'role2')
+})
+test('refresh repairs a saved second DRF that inherited the first document role',async()=>{
+ const f=fixture({rejectDraft:true})
+ const first=await f.service.prepare(tenantA,f.user,f.input)
+ f.remote.importComplete=true;await f.service.refresh(tenantA,first.id,true)
+ const second=await f.service.prepare(tenantA,f.user,{...f.input,id:randomUUID(),fileData:Buffer.from('%PDF-1.7\nsecond DRF').toString('base64')})
+ const row=f.db.tables.get('tenant_dochub_documents')!.find((r:any)=>r.id===second.id)
+ row.data.signers[0].roleId='role1';row.data.rolesPrepared=true;row.data.draftAttempted=true
+ const repaired=await f.service.refresh(tenantA,second.id,true)
+ assert.equal(repaired.signers[0].roleId,'role2')
+ assert(repaired.events.some((e:any)=>e.key==='recipients-repaired'))
+ assert.equal(f.remote.roles.length,2,'the repair reuses the second document role')
+ const drafts=f.calls.filter(c=>c.url.endsWith('/sign-requests')&&c.method==='POST')
+ assert.equal(drafts.at(-1).body.documentRoles[0].id,'role2')
 })
 test('draft validation failure preserves unsent recipient roles without granting free editing',async()=>{const f=fixture({rejectDraft:true});f.remote.importComplete=true;const doc=await f.service.prepare(tenantA,f.user,f.input);assert.equal(doc.status,'SETUP_REQUIRED');assert(doc.setupNote);await f.service.refresh(tenantA,doc.id,true);assert.equal(f.calls.filter(c=>c.url.endsWith('/sign-requests')&&c.method==='POST').length,1);assert(!f.calls.some(c=>c.url.endsWith('/send')))})
 test('a request created in DocHub clears obsolete setup guidance when signing starts',async()=>{
