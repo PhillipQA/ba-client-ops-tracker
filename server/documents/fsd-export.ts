@@ -1,5 +1,5 @@
 import PizZip from 'pizzip'
-import { FSD_NOTICE, fsdReference, type FsdDetails, type FsdPreview, type FsdBlock } from '../../src/fsd-model'
+import { FSD_MODULE_SECTION_IDS, FSD_NOTICE, fsdReference, type FsdDetails, type FsdPreview, type FsdBlock } from '../../src/fsd-model'
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 const xml = (v: string) => v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;')
@@ -22,9 +22,10 @@ export function renderFsdDocx(d: FsdDetails, preview: Pick<FsdPreview,'sections'
   body += '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o &quot;1-3&quot; \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>'
   body += preview.sections.map(s => p(s.title)).join('')
   body += '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+  const firstSoftwareSectionId = preview.sections.find(section => FSD_MODULE_SECTION_IDS.includes(section.id as (typeof FSD_MODULE_SECTION_IDS)[number]))?.id
   for (const section of preview.sections) {
     if (section.id === 'summary') body += p('1. Introduction','Heading1',true)
-    if (section.id === 'mms') body += p('5. Software Features','Heading1',true)
+    if (section.id === firstSoftwareSectionId) body += p('5. Software Features','Heading1',true)
     if (section.id === 'assumptions') body += p('VI. Assumptions and Limitations','Heading1',true)
     const isSub = ['summary','scope','audience','acceptance','mms','report','lynexus','pos','assumptions','limitations'].includes(section.id)
     body += p(section.title,isSub?'Heading2':'Heading1',['report','lynexus','pos'].includes(section.id) && section.blocks.some(b=>b.type === 'table'))

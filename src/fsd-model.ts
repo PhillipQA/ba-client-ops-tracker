@@ -2,6 +2,13 @@ export type FsdMode = 'basic' | 'advanced'
 export const FSD_TEMPLATE_NAME = 'FSD Template 052026 - NEW'
 export const FSD_MODULES = ['MMS Feature', 'MMS Report', 'Lynexus Feature', 'POS Feature'] as const
 export type FsdModule = typeof FSD_MODULES[number]
+export const FSD_MODULE_SECTION: Record<FsdModule, 'mms' | 'report' | 'lynexus' | 'pos'> = {
+  'MMS Feature': 'mms',
+  'MMS Report': 'report',
+  'Lynexus Feature': 'lynexus',
+  'POS Feature': 'pos',
+}
+export const FSD_MODULE_SECTION_IDS = Object.values(FSD_MODULE_SECTION) as Array<(typeof FSD_MODULE_SECTION)[FsdModule]>
 export type FsdBlock = { type: 'paragraph'; text: string } | { type: 'table'; headers: string[]; rows: string[][] }
 export type FsdSection = { id: string; title: string; blocks: FsdBlock[]; sourceIds: string[] }
 export type FsdPreview = { sections: FsdSection[]; gaps: string[]; conflicts: string[]; provider: string; model: string; generatedAt: string }
@@ -20,6 +27,15 @@ export const FSD_SECTIONS = [
   ['lynexus', '5.3 Lynexus Feature'], ['pos', '5.4 POS Feature'], ['assumptions', '6.1 Assumptions'],
   ['limitations', '6.2 Limitations and Constraints'], ['acknowledgement', 'VII. Acknowledgement'], ['references', 'VIII. References'],
 ] as const
+export type FsdSectionId = typeof FSD_SECTIONS[number][0]
+export function fsdSectionsForModules(modules: readonly FsdModule[]) {
+  const selected = new Set(modules.map(module => FSD_MODULE_SECTION[module]))
+  return FSD_SECTIONS.filter(([id]) => !FSD_MODULE_SECTION_IDS.includes(id as (typeof FSD_MODULE_SECTION_IDS)[number]) || selected.has(id as (typeof FSD_MODULE_SECTION_IDS)[number]))
+}
+export function fsdExcludedModules(modules: readonly FsdModule[]) {
+  const selected = new Set(modules)
+  return FSD_MODULES.filter(module => !selected.has(module))
+}
 export const FSD_NOTICE = `The information contained in this document is proprietary to IRipple, Inc. The information in this document shall not be reproduced, shown or disclosed outside the IRipple, Inc. without written permission. Information contained in this document is highly sensitive and of a competitive nature.
 
 NO WARRANTIES OF ANY NATURE ARE EXTENDED BY THIS DOCUMENT. Any product and related material disclosed herein are only furnished pursuant and subject to the terms and conditions of a duly executed license or agreement to purchase services or equipment. The only warranties made by IRipple, Inc. if any, with respect to the products, programs or services described in this document are set forth in such license or agreement. IRipple, Inc. cannot accept any financial or other responsibility that may be the result of your use of the information in this document, including but not limited to direct, indirect, special or consequential damages.

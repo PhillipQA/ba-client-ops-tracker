@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.53",
+  "version": "0.6.54",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -29,7 +29,8 @@
     "test:rtm": "node --import tsx --test tests/rtm.test.ts",
     "test:rtm-ai": "node --import tsx --test tests/rtm-ai.test.ts",
     "db:bundle": "node scripts/build-database-setup.mjs",
-    "db:check": "node scripts/build-database-setup.mjs --check"
+    "db:check": "node scripts/build-database-setup.mjs --check",
+    "test:fsd-scope": "node --import tsx --test tests/fsd-scope.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",
