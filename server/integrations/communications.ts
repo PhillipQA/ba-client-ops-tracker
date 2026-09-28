@@ -311,6 +311,7 @@ export function registerCommunications(app: Express, deps: {
   }))
   app.post('/api/communications/gmail/sync', ...auth, guard, gmailGate, wrap(async (req,res) => {
     const user=current(req),row=await settings(user.organizationId,user.id),labels=Array.isArray(row?.gmail_labels) ? row.gmail_labels : []
+    const automatic=req.body?.auto===true
     if(!labels.length) throw new IntegrationError('Select monitored Gmail labels in settings first.')
     const token=await accessToken(req)
     let imported=0, updated=0
@@ -322,8 +323,11 @@ export function registerCommunications(app: Express, deps: {
       list:async(label,pageToken)=>google(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({labelIds:label,maxResults:'30',...(pageToken?{pageToken}:{})})}`,{headers:{Authorization:`Bearer ${token}`}}),
       checkpoint,
       message:async(externalId,label)=>{
-        const {data:found,error:lookupError}=await db.from('user_communications').select('id').eq('tenant_id',user.organizationId).eq('owner_user_id',user.id).eq('source','Gmail').eq('external_id',externalId).maybeSingle()
+        const {data:found,error:lookupError}=await db.from('user_communications').select('id,source_labels').eq('tenant_id',user.organizationId).eq('owner_user_id',user.id).eq('source','Gmail').eq('external_id',externalId).maybeSingle()
         if(lookupError) throw lookupError
+        // Gmail message bodies are immutable. Scheduled checks only download
+        // new messages or messages newly encountered under another label.
+        if(automatic && found && Array.isArray(found.source_labels) && found.source_labels.includes(label)) return
         const detail=await google(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(externalId)}?format=full`,{headers:{Authorization:`Bearer ${token}`}})
         const headers=detail.payload?.headers || [],head=(name:string)=>String(headers.find((x:any)=>x.name?.toLowerCase()===name)?.value || '')
         const extracted=await gmailBodyText(detail.payload,async id=>{

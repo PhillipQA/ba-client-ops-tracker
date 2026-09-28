@@ -116,7 +116,7 @@ test('account OAuth setup is gated; Gmail callback and persisted label names sta
 
 test('pagination filters before counting, reaches older records and isolates threads by owner and tenant',async()=>{
   const {app,records}=fixture(),sample=records[0]
-  records.splice(0,records.length,...Array.from({length:217},(_,i)=>({...sample,id:`message-${String(i).padStart(4,'0')}`,source:i<210?'Gmail':'Discord',source_label:i<210?'pos':'',received_at:new Date(2026,0,1,0,i).toISOString()})))
+  records.splice(0,records.length,...Array.from({length:217},(_,i)=>({...sample,id:`message-${String(i).padStart(4,'0')}`,source:i<210?'Gmail':'Discord',source_label:i<210?'pos':'',source_labels:i<210?['pos']:[],received_at:new Date(2026,0,1,0,i).toISOString()})))
   records.push({...sample,id:'archived',status:'Archived'}, {...sample,id:'other-user',owner_user_id:'user-b'}, {...sample,id:'other-tenant',tenant_id:'other-tenant'})
   const server=app.listen(0)
   try {
@@ -158,6 +158,7 @@ test('Gmail functional sync imports beyond page one, updates existing messages, 
  Object.assign(prefs[0],{gmail_labels:['L1','L2'],gmail_config_revision:'v1',gmail_refresh_token:encryptSecret('fixture-refresh','tenant:user-a','gmail-refresh')})
  const server=app.listen(0),original=globalThis.fetch
  const seenPages:string[]=[]
+ let detailCalls=0, newMessage=false
  try {
   const address=server.address();if(!address||typeof address==='string')throw new Error('No port')
   const base=`http://127.0.0.1:${address.port}`
@@ -167,8 +168,8 @@ test('Gmail functional sync imports beyond page one, updates existing messages, 
     else if(url.pathname.endsWith('/messages')) {
       const label=url.searchParams.get('labelIds'),token=url.searchParams.get('pageToken')||'';seenPages.push(`${label}:${token}`)
       const page=Number(token||0)
-      body=label==='L2'?{messages:[{id:'m0'}]}:{messages:Array.from({length:page===2?5:30},(_,i)=>({id:`m${page*30+i}`})),...(page<2?{nextPageToken:String(page+1)}:{})}
-    } else { const id=url.pathname.split('/').pop();body={id,threadId:'thread',labelIds:['L1','L2'],internalDate:'1790553600000',snippet:'Too short',payload:{mimeType:'text/html',headers:[{name:'Subject',value:'Fixture email'}],body:{data:Buffer.from('<p>Supervisor approval required.</p><p>Refund limit: 500.</p>').toString('base64url')}}} }
+      body=label==='L2'?{messages:[{id:'m0'}]}:{messages:Array.from({length:page===2?5:30},(_,i)=>({id:newMessage && page===0 && i===0?'m65':`m${page*30+i}`})),...(page<2?{nextPageToken:String(page+1)}:{})}
+    } else { detailCalls++;const id=url.pathname.split('/').pop();body={id,threadId:'thread',labelIds:['L1','L2'],internalDate:'1790553600000',snippet:'Too short',payload:{mimeType:'text/html',headers:[{name:'Subject',value:'Fixture email'}],body:{data:Buffer.from('<p>Supervisor approval required.</p><p>Refund limit: 500.</p>').toString('base64url')}}} }
     return new Response(JSON.stringify(body),{status:200,headers:{'content-type':'application/json'}})
   }) as typeof fetch
   const sync=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(sync.status,200)
@@ -180,5 +181,9 @@ test('Gmail functional sync imports beyond page one, updates existing messages, 
   imported[0].status='Archived';imported[0].linked_task_id='task'
   const second=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(second.status,200);assert.equal((await second.json()).imported,0)
   assert.equal(imported[0].status,'Archived');assert.equal(imported[0].linked_task_id,'task')
+  detailCalls=0;newMessage=true
+  const automatic=await original(base+'/api/communications/gmail/sync',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({auto:true})})
+  assert.equal(automatic.status,200);assert.equal((await automatic.json()).imported,1)
+  assert.equal(detailCalls,1,'Automatic checks should only download new message bodies')
  } finally {globalThis.fetch=original;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
 })
