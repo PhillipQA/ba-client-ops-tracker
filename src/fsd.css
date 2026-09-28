@@ -51,11 +51,6 @@
 .fsd-topline h2 { font-size:26px; margin:0; }
 .fsd-topline p { margin:8px 0 0; }
 .fsd-template-badge { display:flex; gap:8px; align-items:center; border:1px solid var(--fsd-border); border-radius:8px; padding:10px 12px; background:var(--fsd-surface-soft); font-size:12px; }
-.fsd-mode-tabs { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.fsd-mode-tabs button { display:flex; gap:14px; padding:16px 18px; text-align:left; color:var(--fsd-muted); background:var(--fsd-surface); border:1px solid var(--fsd-border); border-radius:10px; }
-.fsd-mode-tabs button.active { color:var(--fsd-accent-text); background:var(--fsd-accent); border-color:var(--fsd-accent); }
-.fsd-mode-tabs button span {display:flex;flex-direction:column;gap:5px;}
-.fsd-mode-tabs button.active small {color:inherit;opacity:.78;}
 .fsd-status {display:flex;justify-content:space-between;gap:16px;margin:16px 0 22px;font-size:12px;color:var(--fsd-subtle);}
 .fsd-fieldset {border:0;padding:0;margin:0;min-width:0;}
 .fsd-columns {display:grid;grid-template-columns:minmax(0,1.3fr) minmax(300px,1fr);gap:22px;align-items:start;}
@@ -132,4 +127,4 @@
 .fsd-draft-footer {display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:22px;}
 .fsd-draft-footer span {display:flex;align-items:center;gap:8px;}
 @media(max-width:1050px) {.fsd-columns{grid-template-columns:1fr}.fsd-topline{align-items:start;flex-direction:column}.fsd-paper{padding:24px}.fsd-paper table{min-width:500px}}
-@media(max-width:650px) {.fsd-mode-tabs,.fsd-fields,.fsd-module-checks{grid-template-columns:1fr}.fsd-card{padding:16px}.fsd-status,.fsd-draft-footer,.fsd-preview-toolbar{flex-direction:column;align-items:start}.fsd-paper{padding:14px}.fsd-preview-panel{padding:10px}.fsd-paper-header{grid-template-columns:1fr}.fsd-paper-header b{border:0}.fsd-signatories{grid-template-columns:1fr}}
+@media(max-width:650px) {.fsd-fields,.fsd-module-checks{grid-template-columns:1fr}.fsd-card{padding:16px}.fsd-status,.fsd-draft-footer,.fsd-preview-toolbar{flex-direction:column;align-items:start}.fsd-paper{padding:14px}.fsd-preview-panel{padding:10px}.fsd-paper-header{grid-template-columns:1fr}.fsd-paper-header b{border:0}.fsd-signatories{grid-template-columns:1fr}}

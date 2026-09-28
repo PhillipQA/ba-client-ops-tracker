@@ -1,4 +1,4 @@
-export type FsdMode = 'basic' | 'advanced'
+export type FsdMode = 'advanced'
 export const FSD_TEMPLATE_NAME = 'FSD Template 052026 - NEW'
 export const FSD_MODULES = ['MMS Feature', 'MMS Report', 'Lynexus Feature', 'POS Feature'] as const
 export type FsdModule = typeof FSD_MODULES[number]
@@ -45,6 +45,6 @@ export type FsdDetails = { client: string; feature: string; product: string; ref
 export type FsdDraft = { mode: FsdMode; details: FsdDetails; sources: FsdSource[]; presetId: string; presetInstructions: string; customPresets: FsdPreset[]; presetName: string; modules: FsdModule[]; guidance: string; mapping: Record<string, string>; pasteName: string; pasteText: string; pasteKind: FsdSource['kind']; preview: FsdPreview | null; previewRevision: number; revision: number; reviewed: boolean }
 export function emptyFsdDraft(): FsdDraft {
   const d = new Date(), date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-  return { mode: 'basic', details: { client: '', feature: '', product: 'BARTER XI', reference: '', version: '1.0', date, author: '', irippleBA: '', iripplePM: '', clientName1: '', clientTitle1: '', clientName2: '', clientTitle2: '' }, sources: [], presetId: 'standard', presetInstructions: FSD_PRESETS[0].instructions, customPresets: [], presetName: '', modules: [...FSD_MODULES], guidance: '', mapping: {}, pasteName: '', pasteText: '', pasteKind: 'Chat', preview: null, previewRevision: -1, revision: 0, reviewed: false }
+  return { mode: 'advanced', details: { client: '', feature: '', product: 'BARTER XI', reference: '', version: '1.0', date, author: '', irippleBA: '', iripplePM: '', clientName1: '', clientTitle1: '', clientName2: '', clientTitle2: '' }, sources: [], presetId: 'standard', presetInstructions: FSD_PRESETS[0].instructions, customPresets: [], presetName: '', modules: [...FSD_MODULES], guidance: '', mapping: {}, pasteName: '', pasteText: '', pasteKind: 'Chat', preview: null, previewRevision: -1, revision: 0, reviewed: false }
 }
 export function fsdReference(d: FsdDetails) { return d.reference.trim() || `FSD-${d.client.replace(/[^a-z0-9]/gi,'').toUpperCase().slice(0,20) || 'CLIENT'}-${d.date.slice(0,4)}-${d.date.slice(5).replace('-','')}-01` }

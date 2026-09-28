@@ -20,23 +20,22 @@ export function validateFsdDetails(value: any): FsdDetails {
 }
 function validateInput(body: any) {
   const details = validateFsdDetails(body?.details)
-  if (!['basic','advanced'].includes(body?.mode)) throw new IntegrationError('Choose Basic Mode or Advance Mode.')
+  if (body?.mode !== 'advanced') throw new IntegrationError('FSD Creation now uses Advanced Mode. Refresh the page and try again.')
   if (!Array.isArray(body.sources) || !body.sources.length || body.sources.length > 20) throw new IntegrationError('Add 1 to 20 requirement sources.')
   const sources: FsdSource[] = body.sources.map((source: any) => ({ id: text(source?.id, 'source ID', 80, true), name: text(source?.name, 'source name', 200, true), kind: source?.kind, target: text(source?.target ?? '', 'source target', 80), text: text(source?.text, 'source text', 120000, true) }))
   if (new Set(sources.map(s => s.id)).size !== sources.length || sources.some(s => !['BRD','Meeting notes','Supporting document','Chat'].includes(s.kind) || s.target && !FSD_SECTIONS.some(([id]) => id === s.target))) throw new IntegrationError('Invalid source kind, ID or target section.')
   if (sources.reduce((sum, source) => sum + source.text.length, 0) > 180000) throw new IntegrationError('Sources exceed 180,000 characters. Split the feature into smaller documents.')
   const preset = text(body.presetInstructions, 'preset instructions', 8000, true)
-  const modules = (body.mode === 'basic' ? [...FSD_MODULES] : body.modules) as FsdModule[]
+  const modules = body.modules as FsdModule[]
   if (!Array.isArray(modules) || modules.some((m: any) => !FSD_MODULES.includes(m)) || new Set(modules).size !== modules.length) throw new IntegrationError('Invalid module selection.')
   const sections = fsdSectionsForModules(modules)
   const activeSectionIds = new Set<FsdSectionId>(sections.map(([id]) => id))
   const effectiveSources = sources
-    .map(source => ({ ...source, target: body.mode === 'basic' ? '' : source.target }))
     .filter(source => !source.target || activeSectionIds.has(source.target as FsdSectionId))
   if (!effectiveSources.length) throw new IntegrationError('All requirement sources are mapped to modules that are excluded from this FSD. Select a module or remap at least one source.')
-  const guidance = body.mode === 'advanced' ? text(body.guidance || '', 'additional guidance', 10000) : ''
+  const guidance = text(body.guidance || '', 'additional guidance', 10000)
   const mapping: Record<string,string> = {}
-  if (body.mode === 'advanced') for (const [id] of sections) mapping[id] = text(body.mapping?.[id] || '', 'section guidance', 2000)
+  for (const [id] of sections) mapping[id] = text(body.mapping?.[id] || '', 'section guidance', 2000)
   return { details, mode: body.mode, sources: effectiveSources, preset, modules, excludedModules: fsdExcludedModules(modules), sections, guidance, mapping }
 }
 export function validateFsdPreview(value: any, strictSectionIds?: readonly FsdSectionId[]): Pick<FsdPreview,'sections'|'gaps'|'conflicts'> {

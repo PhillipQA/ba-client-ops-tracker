@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Download, FileText, Layers, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { Download, FileText, Plus, Sparkles, Trash2 } from 'lucide-react'
+import DocumentReset from './DocumentReset'
+import { useDocumentOperation } from './useDocumentOperation'
 import type { Client } from './types'
 import { emptyFsdDraft, fsdReference, fsdSectionsForModules, FSD_MODULE_SECTION_IDS, FSD_MODULES, FSD_NOTICE, FSD_PRESETS, FSD_SECTIONS, FSD_TEMPLATE_NAME, type FsdDraft, type FsdDetails, type FsdPreview, type FsdSource, type FsdSectionId } from './fsd-model'
 import { isFsdImageFile, readFsdSource } from './fsd-sources'
@@ -7,8 +9,8 @@ import './fsd.css'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
 function sourceId(sources: FsdSource[]) { return `SRC-${String(Math.max(0,...sources.map(s=>Number(s.id.replace(/^SRC-/,''))||0))+1).padStart(3,'0')}` }
 type Provider = { enabled: boolean; provider?: string; name?: string; model?: string }
-async function request<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`/api/documents/fsd/${path}`, { method: body ? 'POST':'GET', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, ...(body ? {body:JSON.stringify(body)}:{}) })
+async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`/api/documents/fsd/${path}`, { signal, method: body ? 'POST':'GET', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, ...(body ? {body:JSON.stringify(body)}:{}) })
   const result = await response.json().catch(()=>({}))
   if (!response.ok) throw new Error(result.error || 'The FSD request failed. Your draft is retained.')
   return result as T
@@ -17,7 +19,7 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
   const storageKey = `ba-fsd-v1:${draftKey}`
   const presetsKey = `ba-fsd-presets-v1:${draftKey}`
   const [draft, setDraft] = useState<FsdDraft>(() => {
-    try { const saved = sessionStorage.getItem(storageKey); if (saved) { const value = JSON.parse(saved); if (value.details && Array.isArray(value.sources) && Array.isArray(value.customPresets)) return {...emptyFsdDraft(),...value} } } catch { /* in-memory drafts remain available when storage is blocked */ }
+    try { const saved = sessionStorage.getItem(storageKey); if (saved) { const value = JSON.parse(saved); if (value.details && Array.isArray(value.sources) && Array.isArray(value.customPresets)) return {...emptyFsdDraft(),...value,mode:'advanced',...(value.mode==='advanced'?{}:{preview:null,previewRevision:-1,reviewed:false})} } } catch { /* in-memory drafts remain available when storage is blocked */ }
     const fresh = emptyFsdDraft()
     try { const presets = JSON.parse(localStorage.getItem(presetsKey) || '[]'); if (Array.isArray(presets)) fresh.customPresets = presets.filter(p => typeof p?.id === 'string' && typeof p?.name === 'string' && typeof p?.instructions === 'string').slice(0,30) } catch {}
     return fresh
@@ -30,9 +32,9 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
   const [presetSaveError,setPresetSaveError] = useState('')
   const [showPreview,setShowPreview] = useState(Boolean(draft.preview))
   const [editPreview,setEditPreview] = useState(false)
-  const [clearConfirm,setClearConfirm] = useState(false)
   const [uploadKind,setUploadKind] = useState<FsdSource['kind']>('BRD')
-  const operation = useRef(0)
+  const operation = useDocumentOperation()
+  const fileInput = useRef<HTMLInputElement>(null)
   const draftRef = useRef(draft)
   draftRef.current = draft
   useEffect(() => {
@@ -49,7 +51,6 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
     request<Provider>('provider').then(value=>{ if(alive){setProvider(value);setProviderError('')} }).catch(e=>{if(alive){setProvider(null);setProviderError(e.message)}})
     return ()=>{alive=false}
   },[active])
-  useEffect(()=>()=>{operation.current++},[])
   useEffect(() => {
     const preventLoss = (e: BeforeUnloadEvent) => { if (busy || saveError) { e.preventDefault(); e.returnValue = '' } }
     window.addEventListener('beforeunload',preventLoss); return ()=>window.removeEventListener('beforeunload',preventLoss)
@@ -58,19 +59,20 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
   const detail = (key: keyof FsdDetails,value: string) => patch({details:{...draft.details,[key]:value}})
   const stale = draft.previewRevision !== draft.revision
   const presets = [...FSD_PRESETS,...draft.customPresets]
-  const scopedSections = fsdSectionsForModules(draft.mode === 'advanced' ? draft.modules : FSD_MODULES)
+  const scopedSections = fsdSectionsForModules(draft.modules)
   const scopedSectionIds = new Set<FsdSectionId>(scopedSections.map(([id]) => id))
   const firstPreviewModuleSectionId = draft.preview?.sections.find(section => FSD_MODULE_SECTION_IDS.includes(section.id as (typeof FSD_MODULE_SECTION_IDS)[number]))?.id
   async function addFiles(files: File[]) {
     if (!files.length || busy) return
     if (draft.sources.length+files.length>20) {setError('Use up to 20 sources.');return}
-    const id = ++operation.current; setError('');setBusy('Reading documents…')
+    const job = operation.begin(); setError('');setBusy('Reading documents…')
     const added: FsdSource[] = [], errors: string[] = []
     for (const file of files) {
-      try { const text = await readFsdSource(file,setBusy); added.push({id:sourceId([...draftRef.current.sources,...added]),name:file.name,kind:isFsdImageFile(file)?'Supporting document':uploadKind,target:'',text}) }
+      if (!job.isCurrent()) return
+      try { const text = await readFsdSource(file,message=>{if(job.isCurrent())setBusy(message)}); if(!job.isCurrent())return; added.push({id:sourceId([...draftRef.current.sources,...added]),name:file.name,kind:isFsdImageFile(file)?'Supporting document':uploadKind,target:'',text}) }
       catch(e){ errors.push(e instanceof Error?e.message:'Document could not be read.') }
     }
-    if (id !== operation.current) return
+    if (!job.isCurrent()) return
     setDraft(d=>({...d,sources:[...d.sources,...added],revision:d.revision+1,reviewed:false}))
     setError(errors.join('\n'));setBusy('')
   }
@@ -79,27 +81,40 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
     if (draft.pasteText.trim()) { setError('Add your pasted text to Sources before generating, so it is included.');return }
     const required: (keyof FsdDetails)[] = ['client','feature','product','date','version','author']
     if (required.some(k=>!draft.details[k].trim()) || !draft.sources.length) {setError('Complete the required document details and add at least one source.');return}
-    const id=++operation.current,snapshot=draft,revision=draft.revision
+    const job=operation.begin(),snapshot=draft,revision=draft.revision
     setBusy('Generating preview with your account’s AI…');setError('')
     try {
-      const preview=await request<FsdPreview>('preview',snapshot)
-      if (id!==operation.current) return
+      const preview=await request<FsdPreview>('preview',snapshot,job.signal)
+      if (!job.isCurrent()) return
       setDraft(d=>({...d,preview,previewRevision:revision,reviewed:false}));setShowPreview(true);setEditPreview(false)
       setProvider(p=>({...p,enabled:true,name:preview.provider,model:preview.model}))
-    } catch(e) {if(id===operation.current)setError(e instanceof Error?e.message:'Generation failed.')}
-    finally {if(id===operation.current)setBusy('')}
+    } catch(e) {if(job.isCurrent())setError(e instanceof Error?e.message:'Generation failed.')}
+    finally {if(job.isCurrent())setBusy('')}
   }
   async function exportFsd() {
     if (!templateReady || !draft.preview || stale || !draft.reviewed || busy) return
-    const id = ++operation.current
+    const job = operation.begin()
     setBusy('Preparing Word document…');setError('')
     try {
-      const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true})
-      if (id !== operation.current) return
+      const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true},job.signal)
+      if (!job.isCurrent()) return
       const bytes=Uint8Array.from(atob(result.fileData),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:result.mimeType}))
       const a=document.createElement('a');a.href=url;a.download=result.fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
-    } catch(e){setError(e instanceof Error?e.message:'Export failed.')}
-    finally{setBusy('')}
+    } catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'Export failed.')}
+    finally{if(job.isCurrent())setBusy('')}
+  }
+  function reset() {
+    operation.cancel()
+    const next = emptyFsdDraft()
+    next.customPresets = draftRef.current.customPresets
+    draftRef.current = next
+    try { sessionStorage.removeItem(storageKey) } catch { /* The save effect reports storage failures. */ }
+    if (fileInput.current) fileInput.current.value = ''
+    setDraft(next);setShowPreview(false);setEditPreview(false);setUploadKind('BRD');setError('');setBusy('');setSaveError('')
+  }
+  function removeSource(id: string) {
+    patch({sources:draft.sources.filter(source=>source.id!==id),preview:null,previewRevision:-1})
+    setShowPreview(false);setEditPreview(false);setError('')
   }
   function editBlock(sectionIndex:number,blockIndex:number,row:number,col:number,value:string) {
     setDraft(d=> {
@@ -117,8 +132,8 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
   }
   const detailsField=(key:keyof FsdDetails,label:string,type='text',required=false)=><label key={key}>{label}{required?' *':''}<input type={type} maxLength={180} value={draft.details[key]} onChange={e=>detail(key,e.target.value)} required={required}/></label>
   return <div className="fsd-creator">
-    <div className="fsd-topline"><div><span className="fsd-eyebrow">DOCUMENT CREATION</span><h2>FSD Document Creator</h2><p>Turn your requirements into a reviewable specification.</p></div><span className="fsd-template-badge"><FileText size={16}/>{templateReady ? FSD_TEMPLATE_NAME : 'Template required'}</span></div>
-    <div className="fsd-mode-tabs" role="tablist" aria-label="FSD mode">{(['basic','advanced'] as const).map(mode=><button key={mode} role="tab" aria-selected={draft.mode===mode} className={draft.mode===mode?'active':''} disabled={Boolean(busy)} onClick={()=>patch({mode})}>{mode==='basic'?<FileText size={18}/>:<Layers size={18}/>}<span><strong>{mode==='basic'?'Basic Mode':'Advance Mode'}</strong><small>{mode==='basic'?'Upload · Preset · Preview · Generate':'Multiple sources · Mapping · Detailed controls'}</small></span></button>)}</div>
+    <div className="fsd-topline"><div><span className="fsd-eyebrow">DOCUMENT CREATION · ADVANCED MODE</span><h2>FSD Document Creator</h2><p>Turn your requirements into a reviewable specification.</p></div><span className="fsd-template-badge"><FileText size={16}/>{templateReady ? FSD_TEMPLATE_NAME : 'Template required'}</span></div>
+    <DocumentReset label="FSD" onReset={reset} disabled={!canGenerate} />
     <div className="fsd-status"><span>{provider?.enabled?`Document Agent: ${provider.name} · ${provider.model}`:providerError||'Configure and enable the Document Agent in Account Settings.'}</span><span>{saveError?'Draft held in this page':'Draft retained in this browser tab'}</span></div>
     {presetSaveError&&<p className="fsd-warning" role="status">{presetSaveError}</p>}
     {saveError&&<p className="fsd-warning" role="status">{saveError}</p>}
@@ -132,15 +147,15 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
             <label className="fsd-full">Document reference<input value={draft.details.reference} maxLength={180} placeholder={fsdReference(draft.details)} onChange={e=>detail('reference',e.target.value)}/></label>
           </div><details><summary>Signatories</summary><p>Names remain editable. Signature and date lines stay blank for approval.</p><div className="fsd-fields">{detailsField('irippleBA','iRipple Business Analyst')}{detailsField('iripplePM','iRipple Project Manager')}{detailsField('clientName1','Client signatory 1')}{detailsField('clientTitle1','Position 1')}{detailsField('clientName2','Client signatory 2')}{detailsField('clientTitle2','Position 2')}</div></details></section>
           <section className="fsd-card"><h3>2. Requirements & supporting sources</h3><label>Upload as<select value={uploadKind} onChange={e=>setUploadKind(e.target.value as FsdSource['kind'])}>{['BRD','Meeting notes','Supporting document','Chat'].map(k=><option key={k}>{k}</option>)}</select></label>
-            <label className="fsd-dropzone"><Plus size={26}/><strong>Add BRD, screenshots, or supporting documents</strong><span>PDF, DOCX, TXT, MD, CSV, JSON, PNG, JPG, WEBP, BMP, TIF/TIFF · 10 MB each</span><input type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" onChange={e=>{const files=Array.from(e.target.files||[]) as File[];e.target.value='';void addFiles(files)}}/></label>
+            <label className="fsd-dropzone"><Plus size={26}/><strong>Add BRD, screenshots, or supporting documents</strong><span>PDF, DOCX, TXT, MD, CSV, JSON, PNG, JPG, WEBP, BMP, TIF/TIFF · 10 MB each</span><input ref={fileInput} type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" onChange={e=>{const files=Array.from(e.target.files||[]) as File[];e.target.value='';void addFiles(files)}}/></label>
             <small>Up to 20 sources / 180,000 characters total. PDF scans and uploaded images use English OCR. Uploaded images are added as Supporting document sources. Review extracted text; diagrams and visual-only content are not interpreted.</small>
-            <div className="fsd-source-list">{draft.sources.map(source=><details key={source.id}><summary><FileText size={15}/><span>{source.name}</span><small>{source.kind} · {source.text.length.toLocaleString()} chars</small></summary><div className="fsd-source-actions"><label>Source type<select value={source.kind} onChange={e=>patch({sources:draft.sources.map(s=>s.id===source.id?{...s,kind:e.target.value as FsdSource['kind']}:s)})}>{['BRD','Meeting notes','Supporting document','Chat'].map(k=><option key={k}>{k}</option>)}</select></label>{draft.mode==='advanced'&&<label>Map to section<select value={source.target} onChange={e=>patch({sources:draft.sources.map(s=>s.id===source.id?{...s,target:e.target.value}:s)})}><option value="">Shared source / AI determines applicable sections</option>{FSD_SECTIONS.map(([id,title])=>{const excluded=FSD_MODULE_SECTION_IDS.includes(id as (typeof FSD_MODULE_SECTION_IDS)[number])&&!scopedSectionIds.has(id);return <option key={id} value={id} disabled={excluded}>{title}{excluded?' — excluded by scope':''}</option>})}</select>{source.target&&!scopedSectionIds.has(source.target as FsdSectionId)&&<small className="fsd-warning">This source is excluded from AI generation while its mapped module is unchecked.</small>}</label>}<button type="button" className="secondary" onClick={()=>patch({sources:draft.sources.filter(s=>s.id!==source.id)})}><Trash2 size={14}/>Remove</button></div><label>Review / correct extracted text<textarea rows={9} maxLength={120000} value={source.text} onChange={e=>patch({sources:draft.sources.map(s=>s.id===source.id?{...s,text:e.target.value}:s)})}/></label></details>)}</div>
-            <details className="fsd-paste" open={draft.mode==='advanced'||Boolean(draft.pasteText)}><summary>Paste meeting notes, chat or requirements</summary><div className="fsd-fields"><label>Source name<input value={draft.pasteName} maxLength={200} placeholder="Client meeting — 21 Sep" onChange={e=>patch({pasteName:e.target.value},false)}/></label><label>Source type<select value={draft.pasteKind} onChange={e=>patch({pasteKind:e.target.value as FsdSource['kind']},false)}>{['BRD','Meeting notes','Supporting document','Chat'].map(k=><option key={k}>{k}</option>)}</select></label></div><textarea aria-label="Pasted requirements" placeholder="Paste the requirements here…" rows={6} maxLength={120000} value={draft.pasteText} onChange={e=>patch({pasteText:e.target.value},false)}/><button className="secondary" disabled={!draft.pasteText.trim()} onClick={addPaste}><Plus size={15}/>Add to sources</button></details>
+            <div className="fsd-source-list">{draft.sources.map(source=><details key={source.id}><summary><FileText size={15}/><span>{source.name}</span><small>{source.kind} · {source.text.length.toLocaleString()} chars</small><button type="button" className="secondary" aria-label={`Remove ${source.name}`} onClick={e=>{e.preventDefault();e.stopPropagation();removeSource(source.id)}}><Trash2 size={14}/>Remove</button></summary><div className="fsd-source-actions"><label>Source type<select value={source.kind} onChange={e=>patch({sources:draft.sources.map(s=>s.id===source.id?{...s,kind:e.target.value as FsdSource['kind']}:s)})}>{['BRD','Meeting notes','Supporting document','Chat'].map(k=><option key={k}>{k}</option>)}</select></label><label>Map to section<select value={source.target} onChange={e=>patch({sources:draft.sources.map(s=>s.id===source.id?{...s,target:e.target.value}:s)})}><option value="">Shared source / AI determines applicable sections</option>{FSD_SECTIONS.map(([id,title])=>{const excluded=FSD_MODULE_SECTION_IDS.includes(id as (typeof FSD_MODULE_SECTION_IDS)[number])&&!scopedSectionIds.has(id);return <option key={id} value={id} disabled={excluded}>{title}{excluded?' — excluded by scope':''}</option>})}</select>{source.target&&!scopedSectionIds.has(source.target as FsdSectionId)&&<small className="fsd-warning">This source is excluded from AI generation while its mapped module is unchecked.</small>}</label></div><label>Review / correct extracted text<textarea rows={9} maxLength={120000} value={source.text} onChange={e=>patch({sources:draft.sources.map(s=>s.id===source.id?{...s,text:e.target.value}:s)})}/></label></details>)}</div>
+            <details className="fsd-paste" open><summary>Paste meeting notes, chat or requirements</summary><div className="fsd-fields"><label>Source name<input value={draft.pasteName} maxLength={200} placeholder="Client meeting — 21 Sep" onChange={e=>patch({pasteName:e.target.value},false)}/></label><label>Source type<select value={draft.pasteKind} onChange={e=>patch({pasteKind:e.target.value as FsdSource['kind']},false)}>{['BRD','Meeting notes','Supporting document','Chat'].map(k=><option key={k}>{k}</option>)}</select></label></div><textarea aria-label="Pasted requirements" placeholder="Paste the requirements here…" rows={6} maxLength={120000} value={draft.pasteText} onChange={e=>patch({pasteText:e.target.value},false)}/><button className="secondary" disabled={!draft.pasteText.trim()} onClick={addPaste}><Plus size={15}/>Add to sources</button></details>
           </section>
         </div>
         <div className="fsd-controls-column"><section className="fsd-card"><h3>3. Skills & presets</h3><label>Preset<select value={draft.presetId} onChange={e=>{const preset=presets.find(p=>p.id===e.target.value)!;patch({presetId:preset.id,presetInstructions:preset.instructions})}}>{presets.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Customize instructions<textarea rows={8} maxLength={8000} value={draft.presetInstructions} onChange={e=>patch({presetInstructions:e.target.value})}/></label><small>Presets guide every AI generation. The template structure and evidence rules stay in place.</small><div className="fsd-save-preset"><label>Save as a common preset<input maxLength={100} placeholder="Preset name" value={draft.presetName} onChange={e=>patch({presetName:e.target.value},false)}/></label><button className="secondary" disabled={!draft.presetName.trim()||!draft.presetInstructions.trim()||draft.customPresets.length>=30} onClick={()=>{const preset={id:crypto.randomUUID(),name:draft.presetName.trim(),instructions:draft.presetInstructions};patch({customPresets:[...draft.customPresets,preset],presetId:preset.id,presetName:''},false)}}>Save preset</button></div><small>Custom presets are saved for this account and user in this browser.</small>{draft.customPresets.some(p=>p.id===draft.presetId)&&<button className="secondary" onClick={()=>patch({customPresets:draft.customPresets.filter(p=>p.id!==draft.presetId),presetId:'standard',presetInstructions:FSD_PRESETS[0].instructions})}>Delete custom preset</button>}</section>
-          {draft.mode==='advanced'&&<section className="fsd-card"><h3>4. Scope & section mapping</h3><p><strong>Unchecked modules are hard-excluded.</strong> The Document Agent will not generate their feature sections, and sources mapped only to those modules are not sent for FSD generation.</p><div className="fsd-module-checks">{FSD_MODULES.map(module=><label key={module}><input type="checkbox" checked={draft.modules.includes(module)} onChange={e=>patch({modules:e.target.checked?[...draft.modules,module]:draft.modules.filter(m=>m!==module)})}/>{module}</label>)}</div><label>Additional skills / guidance<textarea rows={5} maxLength={10000} value={draft.guidance} placeholder="Terminology, known constraints, priorities…" onChange={e=>patch({guidance:e.target.value})}/></label><details><summary>Map instructions to included template sections</summary>{scopedSections.filter(([id])=>!['history','acknowledgement','references'].includes(id)).map(([id,title])=><label key={id}>{title}<textarea rows={2} maxLength={2000} value={draft.mapping[id]||''} placeholder="Optional: sources to prioritize and details to cover" onChange={e=>patch({mapping:{...draft.mapping,[id]:e.target.value}})}/></label>)}</details></section>}
-          <section className="fsd-card fsd-generate-card"><h3>{draft.mode==='basic'?'4':'5'}. Preview & generate</h3><p>The AI maps your sources into the iRipple template. Review and edit the result before downloading Word.</p><button className="primary fsd-primary" disabled={!draft.sources.length||!draft.presetInstructions.trim()} onClick={()=>void generatePreview()}><Sparkles size={16}/>{draft.preview?'Regenerate AI preview':'Generate AI preview'}</button>{draft.preview&&<button className="secondary" onClick={()=>setShowPreview(v=>!v)}>{showPreview?'Hide':'Show'} preview</button>}<small>Generation sends only in-scope source text to the Document Agent configured for this account. Unchecked modules are omitted from AI output, preview, and Word export.</small><details><summary>Included template sections</summary><ol>{scopedSections.map(([id,title])=><li key={id}>{title}</li>)}</ol></details></section>
+          <section className="fsd-card"><h3>4. Scope & section mapping</h3><p><strong>Unchecked modules are hard-excluded.</strong> The Document Agent will not generate their feature sections, and sources mapped only to those modules are not sent for FSD generation.</p><div className="fsd-module-checks">{FSD_MODULES.map(module=><label key={module}><input type="checkbox" checked={draft.modules.includes(module)} onChange={e=>patch({modules:e.target.checked?[...draft.modules,module]:draft.modules.filter(m=>m!==module)})}/>{module}</label>)}</div><label>Additional skills / guidance<textarea rows={5} maxLength={10000} value={draft.guidance} placeholder="Terminology, known constraints, priorities…" onChange={e=>patch({guidance:e.target.value})}/></label><details><summary>Map instructions to included template sections</summary>{scopedSections.filter(([id])=>!['history','acknowledgement','references'].includes(id)).map(([id,title])=><label key={id}>{title}<textarea rows={2} maxLength={2000} value={draft.mapping[id]||''} placeholder="Optional: sources to prioritize and details to cover" onChange={e=>patch({mapping:{...draft.mapping,[id]:e.target.value}})}/></label>)}</details></section>
+          <section className="fsd-card fsd-generate-card"><h3>5. Preview & generate</h3><p>The AI maps your sources into the iRipple template. Review and edit the result before downloading Word.</p><button className="primary fsd-primary" disabled={!draft.sources.length||!draft.presetInstructions.trim()} onClick={()=>void generatePreview()}><Sparkles size={16}/>{draft.preview?'Regenerate AI preview':'Generate AI preview'}</button>{draft.preview&&<button className="secondary" onClick={()=>setShowPreview(v=>!v)}>{showPreview?'Hide':'Show'} preview</button>}<small>Generation sends only in-scope source text to the Document Agent configured for this account. Unchecked modules are omitted from AI output, preview, and Word export.</small><details><summary>Included template sections</summary><ol>{scopedSections.map(([id,title])=><li key={id}>{title}</li>)}</ol></details></section>
         </div>
       </div>
     </fieldset>
@@ -151,6 +166,6 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
       {(draft.preview.gaps.length>0||draft.preview.conflicts.length>0)&&<section className="fsd-review-items"><h3>Review Items — Pending Confirmation</h3>{draft.preview.gaps.length>0&&<><h4>Missing information</h4><ul>{draft.preview.gaps.map((g,i)=><li key={i}>{g}</li>)}</ul></>}{draft.preview.conflicts.length>0&&<><h4>Conflicting sources</h4><ul>{draft.preview.conflicts.map((g,i)=><li key={i}>{g}</li>)}</ul></>}</section>}</div>
       <div className="fsd-export"><label><input type="checkbox" checked={draft.reviewed} disabled={stale||Boolean(busy)||!canGenerate} onChange={e=>patch({reviewed:e.target.checked},false)}/>I reviewed this preview and any pending confirmations. This does not record client approval.</label><button className="primary" disabled={stale||!draft.reviewed||Boolean(busy)||!canGenerate||!templateReady} onClick={()=>void exportFsd()}><Download size={16}/>Generate & Download FSD (.docx)</button><small>{templateReady ? 'Word export follows the template selected in Settings → Templates. Update the table of contents in Word for final page numbers.' : 'An Administrator must configure or restore the FSD template in Settings → Templates before export.'}</small></div>
     </section>}
-    <div className="fsd-draft-footer"><small>Your entries remain when switching modes or modules. Refresh restores the saved draft in this tab.</small>{clearConfirm?<span>Clear this draft?<button className="secondary" disabled={Boolean(busy)||!canGenerate} onClick={()=>{operation.current++;const next=emptyFsdDraft();next.customPresets=draftRef.current.customPresets;setDraft(next);setShowPreview(false);setError('');setClearConfirm(false)}}>Clear draft</button><button className="secondary" onClick={()=>setClearConfirm(false)}>Cancel</button></span>:<button className="secondary" disabled={Boolean(busy)||!canGenerate} onClick={()=>setClearConfirm(true)}>Start new FSD</button>}</div>
+    <div className="fsd-draft-footer"><small>Your entries remain when switching modules. Reset clears the saved draft in this tab. Saved custom presets remain available.</small></div>
   </div>
 }

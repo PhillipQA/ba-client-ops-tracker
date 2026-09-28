@@ -1,4 +1,4 @@
--- BA Client Ops Tracker v0.6.54: ONE-RUN FRESH DATABASE SETUP
+-- BA Client Ops Tracker v0.6.55: ONE-RUN FRESH DATABASE SETUP
 -- Includes schema versions 1 through 15. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.

@@ -17,8 +17,8 @@ export function docHubGuidance(doc: Pick<DocHubDocument, 'status' | 'setupNote'>
   // Existing records may retain a setup note from before a request was sent.
   return messages[status] || ''
 }
-export async function dochubRequest(url:string,method='GET',body?:unknown) {
-  const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)})
+export async function dochubRequest(url:string,method='GET',body?:unknown,signal?:AbortSignal) {
+  const response=await fetch(url,{signal,method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)})
   const data=await response.json().catch(()=>({}))
   if(!response.ok)throw new Error(data.error || 'DocHub request failed. Please retry.')
   return data

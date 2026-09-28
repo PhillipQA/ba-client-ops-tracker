@@ -2,9 +2,11 @@ import FsdCreation from './FsdCreation'
 import TestCaseCreation from './TestCaseCreation'
 import SignOffCreation from './SignOffCreation'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
+import DocumentReset from './DocumentReset'
+import { useDocumentOperation } from './useDocumentOperation'
 import type { Client, Project, WorkItem } from './types'
 import { DocHubOptions, DocHubResult, DocHubHistory, useDocHubDraft } from './DocHubPanel'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
 import {
   BriefcaseBusiness,
@@ -79,8 +81,9 @@ function downloadBase64File(base64: string, mimeType: string, filename: string) 
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
+async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
@@ -91,7 +94,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return payload
 }
 
-function FileSummary({ files }: { files: File[] }) {
+function FileSummary({ files, onRemove, disabled }: { files: File[]; onRemove: () => void; disabled: boolean }) {
   if (!files.length) return null
   return (
     <div className="document-file-list">
@@ -99,7 +102,7 @@ function FileSummary({ files }: { files: File[] }) {
         <div className="document-file-row" key={`${file.name}-${file.size}-${index}`}>
           <FileText size={16} />
           <div><strong>{file.name}</strong><span>{formatBytes(file.size)} · {file.type || 'Unknown type'}</span></div>
-          <CheckCircle2 size={16} className="document-file-check" />
+          <button type="button" className="secondary compact" disabled={disabled} aria-label={`Remove ${file.name}`} onClick={onRemove}><Trash2 size={15} />Remove</button>
         </div>
       ))}
     </div>
@@ -151,7 +154,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const [tin, setTin] = useState('')
   const [address, setAddress] = useState('')
   const [branchName, setBranchName] = useState('')
-  const [requestDate] = useState(todayMmDdYyyy)
+  const [requestDate, setRequestDate] = useState(todayMmDdYyyy)
   const [goLiveDate, setGoLiveDate] = useState('TBA')
   const [contractNumber, setContractNumber] = useState('')
   const [notes, setNotes] = useState('')
@@ -166,6 +169,22 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const [generating, setGenerating] = useState(false)
   const [documentMessage, setDocumentMessage] = useState('')
   const [documentError, setDocumentError] = useState('')
+  const operation = useDocumentOperation()
+  const corInput = useRef<HTMLInputElement>(null)
+
+  const removeCor = () => {
+    operation.cancel();docHub.reset()
+    setCorFiles([]);setBusinessName('');setTradeName('');setTin('');setAddress('')
+    setExtracting(false);setGenerating(false);setDocumentMessage('');setDocumentError('')
+    if (corInput.current) corInput.current.value = ''
+  }
+  const resetDrf = () => {
+    removeCor()
+    setBranchName('');setRequestDate(todayMmDdYyyy());setGoLiveDate('TBA');setContractNumber('');setNotes('')
+    setRequestFor(REQUEST_FOR_OPTIONS[0]);setDongle('n/a');setLicenseFor('BARTER RPOS 5.1 (CORE)')
+    setRequestNote('');setPosSetup('STANDALONE');setPosRows([newPosRow()])
+    setSignatories(defaultSignatories.map(signatory=>({...signatory})));setCorExtractionMode('local')
+  }
 
   const selectedTitle = useMemo(() => flow === 'drf' ? 'DRF Creation' : flow === 'fsd' ? 'FSD Creation' : flow === 'testcase' ? 'Test Case Creation' : 'Sign Off Form', [flow])
   const drfTemplate = documentTemplates.find(template => template.type === 'drf')
@@ -184,6 +203,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     setDocumentError('')
     setDocumentMessage('')
     setter(selected)
+    event.target.value = ''
   }
 
   const updateSignatory = (index: number, patch: Partial<Signatory>) => {
@@ -195,7 +215,9 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   }
 
   const extractCor = async () => {
-    if (!corFile) return
+    if (!corFile || extracting || generating || docHub.busy || !canGenerate) return
+    const job = operation.begin()
+    const progress = (message: string) => { if(job.isCurrent())setDocumentMessage(message) }
     setExtracting(true)
     setDocumentError('')
     setDocumentMessage(corExtractionMode === 'ai' ? 'Reading the COR locally before AI extraction…' : 'Preparing private local COR extraction…')
@@ -203,32 +225,36 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       let extraction: { businessName: string; tradeName: string; tin: string; address: string; notes: string }
       if (corExtractionMode === 'ai') {
         if (!aiExtractionStatus.available) throw new Error('AI extraction is unavailable. Configure and enable the Document Agent in Account Settings, or use Local Extractor.')
-        const localText = await extractCorTextLocally(corFile, (message) => setDocumentMessage(message))
+        const localText = await extractCorTextLocally(corFile, progress)
+        if (!job.isCurrent()) return
         setDocumentMessage(`Local text is ready. Asking ${aiExtractionStatus.provider || 'the Document Agent'} to map the COR fields…`)
         extraction = await postJson<typeof extraction>('/api/documents/drf/extract-cor-ai', {
           text: localText.text,
           sourceMethod: localText.method,
           fileName: corFile.name,
-        })
+        }, job.signal)
       } else {
-        extraction = await extractCorLocally(corFile, (message) => setDocumentMessage(message))
+        extraction = await extractCorLocally(corFile, progress)
       }
+      if (!job.isCurrent()) return
       setBusinessName(extraction.businessName || '')
       setTradeName(extraction.tradeName || '')
       setTin(extraction.tin || '')
       setAddress(extraction.address || '')
       setDocumentMessage(`COR extraction completed. ${extraction.notes}`)
     } catch (error) {
+      if (!job.isCurrent()) return
       setDocumentError(error instanceof Error ? error.message : 'COR extraction failed.')
       setDocumentMessage('')
     } finally {
-      setExtracting(false)
+      if(job.isCurrent())setExtracting(false)
     }
   }
 
   const generateDrf = async () => {
-    if (!drfTemplate?.active || !canGenerate || docHub.busy) return
+    if (!drfTemplate?.active || !canGenerate || extracting || generating || docHub.busy) return
     try { docHub.validate(signatories) } catch(e) { setDocumentError((e as Error).message); return }
+    const job = operation.begin()
     setGenerating(true)
     setDocumentError('')
     setDocumentMessage('Placing DRF values into the account’s saved Excel template…')
@@ -261,17 +287,20 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       const result = await postJson<{ fileData: string; fileName: string; mimeType: string; matchedFields?: string[]; posRowsWritten?: number }>('/api/documents/drf/render-template', {
         values,
         posRows: posRows.map(({ computerName, serialNo, brand, model }) => ({ computerName, serialNo, brand, model })),
-      })
+      }, job.signal)
+      if (!job.isCurrent()) return
       downloadBase64File(result.fileData, result.mimeType, result.fileName)
       await docHub.prepare(result, signatories)
+      if (!job.isCurrent()) return
       const matched = result.matchedFields?.length ? ` ${result.matchedFields.length} DRF fields were populated.` : ''
       const rows = result.posRowsWritten ? ` ${result.posRowsWritten} POS row${result.posRowsWritten === 1 ? '' : 's'} added.` : ''
       setDocumentMessage(`DRF generated successfully.${matched}${rows}`)
     } catch (error) {
+      if (!job.isCurrent()) return
       setDocumentError(error instanceof Error ? error.message : 'DRF generation failed.')
       setDocumentMessage('')
     } finally {
-      setGenerating(false)
+      if(job.isCurrent())setGenerating(false)
     }
   }
 
@@ -293,7 +322,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
         </button>
         <button type="button" className={`document-flow-card${flow === 'fsd' ? ' active' : ''}`} onClick={() => setFlow('fsd')}>
           <div className="document-flow-icon"><Clipboard size={22} /></div>
-          <div><strong>FSD Creation</strong><span>Basic and Advance modes with your configured AI.</span></div>
+          <div><strong>FSD Creation</strong><span>Advanced source mapping and scope controls with your configured AI.</span></div>
           <small>BRD required</small>
         </button>
         <button type="button" className={`document-flow-card${flow === 'testcase' ? ' active' : ''}`} onClick={() => setFlow('testcase')}>
@@ -316,6 +345,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
         {flow === 'drf' && (
           <div className="document-drf-stack">
+            <DocumentReset label="DRF" onReset={resetDrf} disabled={!canGenerate} />
             <div className="document-workspace-grid document-source-grid">
               <div className="document-upload-panel">
                 <div className="document-section-title"><ScanLine size={18} /><div><strong>1. Company COR</strong><span>Local Extractor is the default · optional tenant AI enhancement · PDF, JPEG, PNG, WEBP, TIFF, BMP, DOCX · maximum 12 MB</span></div></div>
@@ -334,13 +364,13 @@ export default function DocumentCreation({ clients, projects, items, launch, can
                   {aiExtractionStatus.available && corExtractionMode === 'ai' && <small>Only locally extracted COR text is sent to {aiExtractionStatus.provider || 'the configured Document Agent'}; the COR file itself stays in your browser. AI usage may incur provider charges.</small>}
                 </div>
                 <label className="document-dropzone document-dropzone-compact">
-                  <input type="file" accept={COR_ACCEPT} onChange={handleFiles(setCorFiles, false, MAX_COR_BYTES)} />
+                  <input ref={corInput} type="file" accept={COR_ACCEPT} disabled={!canGenerate || extracting || generating || docHub.busy} onChange={handleFiles(setCorFiles, false, MAX_COR_BYTES)} />
                   <Plus size={27} />
                   <strong>{corFiles.length ? 'Replace COR file' : 'Choose a COR file'}</strong>
                   <span>{corExtractionMode === 'local' ? 'The COR stays in your browser and no AI API key is used.' : 'The COR file stays in your browser; only locally extracted text is sent to the Document Agent.'}</span>
                 </label>
-                <FileSummary files={corFiles} />
-                <button type="button" className="secondary document-wide-button" disabled={!corFile || extracting} onClick={extractCor}><ScanLine size={16} /> {extracting ? 'Extracting…' : corExtractionMode === 'ai' ? 'Extract COR details with AI' : 'Extract COR details locally'}</button>
+                <FileSummary files={corFiles} onRemove={removeCor} disabled={!canGenerate || generating || docHub.busy} />
+                <button type="button" className="secondary document-wide-button" disabled={!canGenerate || !corFile || extracting || generating || docHub.busy} onClick={extractCor}><ScanLine size={16} /> {extracting ? 'Extracting…' : corExtractionMode === 'ai' ? 'Extract COR details with AI' : 'Extract COR details locally'}</button>
               </div>
 
               <div className="document-upload-panel">
@@ -433,11 +463,11 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
             <DocumentProcessingPanel state={documentError ? 'error' : (extracting || generating) ? 'working' : documentMessage ? 'success' : 'idle'} title={documentError ? 'Document processing failed' : generating ? 'Generating your DRF…' : extracting ? 'Reading your COR…' : 'Document is ready'} detail={documentError || documentMessage} stages={extracting ? ['Uploading document','Reading and extracting content','Mapping COR fields','Finalizing extracted values'] : ['Preparing template','Mapping reviewed information','Generating document','Starting download']} activeStage={generating ? 2 : extracting ? (documentMessage.toLowerCase().includes('asking') ? 2 : 1) : 3} onRetry={documentError ? () => void (corFile && !generating ? extractCor() : generateDrf()) : undefined}/>
 
-            <DocHubOptions draft={docHub} clients={clients} projects={projects} items={items} disabled={!canGenerate || generating} />
+            <DocHubOptions key={docHub.resetVersion} draft={docHub} clients={clients} projects={projects} items={items} disabled={!canGenerate || generating || extracting} />
             <DocHubResult draft={docHub} />
             <div className="document-generate-bar">
               <div><strong>6. Generate DRF</strong><span>The reviewed values are written into the saved standard Excel template and downloaded as a new .xlsx file.</span></div>
-              <button type="button" className="primary" disabled={!canGenerate || !drfTemplate?.active || generating || docHub.busy} onClick={generateDrf}><Download size={16} /> {generating || docHub.busy ? 'Processing…' : docHub.enabled ? 'Generate & Prepare in DocHub' : 'Generate & Download DRF'}</button>
+              <button type="button" className="primary" disabled={!canGenerate || !drfTemplate?.active || extracting || generating || docHub.busy} onClick={generateDrf}><Download size={16} /> {generating || docHub.busy ? 'Processing…' : docHub.enabled ? 'Generate & Prepare in DocHub' : 'Generate & Download DRF'}</button>
             </div>
           </div>
         )}

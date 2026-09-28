@@ -3,6 +3,7 @@ import { Archive, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FileSig
 import type { Client, Project, WorkItem } from './types'
 import { dochubRequest, docHubGuidance, docHubLabels, isArchivedDocHubStatus, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
 import './dochub.css'
+import { useDocumentOperation } from './useDocumentOperation'
 
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
 const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
@@ -12,12 +13,39 @@ export function useDocHubDraft(kind:'DRF'|'Sign-Off') {
   const [doc,setDoc]=useState<DocHubDocument|null>(null)
   const [options,setOptions]=useState({clientId:'',taskId:'',sequential:false,followUpDays:3})
   const pending=useRef<any>(null)
-  useEffect(()=>{let alive=true;const load=()=>{void dochubRequest('/api/dochub/status').then(s=>{if(alive){setAvailable(s.enabled);setEnabled(s.enabled);setError('')}}).catch(e=>{if(alive)setError(e.message)})};load();window.addEventListener('dochub-settings-changed',load);return()=>{alive=false;window.removeEventListener('dochub-settings-changed',load)}},[])
-  const submit=async(input:any)=>{setBusy(true);setError('');try{const result=await dochubRequest('/api/dochub/prepare','POST',input);setDoc(result.document);updated()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+  const operation=useDocumentOperation()
+  const resetCount=useRef(0)
+  const [resetVersion,setResetVersion]=useState(0)
+  useEffect(()=>{
+    let alive=true
+    const load=()=>{
+      const version=resetCount.current
+      void dochubRequest('/api/dochub/status').then(s=>{
+        if(alive){setAvailable(s.enabled);if(version===resetCount.current){setEnabled(s.enabled);setError('')}}
+      }).catch(e=>{if(alive&&version===resetCount.current)setError(e.message)})
+    }
+    load();window.addEventListener('dochub-settings-changed',load)
+    return()=>{alive=false;window.removeEventListener('dochub-settings-changed',load)}
+  },[])
+  const reset=()=>{
+    operation.cancel();resetCount.current++;pending.current=null
+    setDoc(null);setError('');setBusy(false);setEnabled(false)
+    setOptions({clientId:'',taskId:'',sequential:false,followUpDays:3});setResetVersion(resetCount.current)
+  }
+  const submit=async(input:any)=>{
+    const job=operation.begin();setBusy(true);setError('')
+    try{const result=await dochubRequest('/api/dochub/prepare','POST',input,job.signal);if(!job.isCurrent())return;setDoc(result.document);updated()}
+    catch(e){if(job.isCurrent())setError((e as Error).message)}finally{if(job.isCurrent())setBusy(false)}
+  }
   const prepare=async(file:GeneratedDocument,signers:DocHubSigner[])=>{if(!enabled)return;validateSigners(signers);setDoc(null);const input={...file,...options,kind,id:crypto.randomUUID(),signers};pending.current=input;await submit(input)}
-  const refresh=async()=>{if(!doc||busy)return;setBusy(true);setError('');try{const r=await dochubRequest(`/api/dochub/documents/${doc.id}/refresh`,'POST');setDoc(r.document);updated()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+  const refresh=async()=>{
+    if(!doc||busy)return
+    const job=operation.begin();setBusy(true);setError('')
+    try{const r=await dochubRequest(`/api/dochub/documents/${doc.id}/refresh`,'POST',undefined,job.signal);if(!job.isCurrent())return;setDoc(r.document);updated()}
+    catch(e){if(job.isCurrent())setError((e as Error).message)}finally{if(job.isCurrent())setBusy(false)}
+  }
   useEffect(()=>{if(!doc||!['IMPORTING','UPLOADING','UPLOADED'].includes(doc.status))return;const timer=window.setTimeout(()=>void refresh(),5000);return()=>window.clearTimeout(timer)},[doc,busy])
-  return {available,enabled,setEnabled,busy,error,canRetry:Boolean(pending.current),doc,options,setOptions,prepare,refresh,retry:()=>pending.current?submit(pending.current):Promise.resolve(),validate:(signers:DocHubSigner[])=>{if(enabled)validateSigners(signers)}}
+  return {available,enabled,setEnabled,busy,error,canRetry:Boolean(pending.current),doc,options,setOptions,prepare,refresh,reset,resetVersion,retry:()=>pending.current?submit(pending.current):Promise.resolve(),validate:(signers:DocHubSigner[])=>{if(enabled)validateSigners(signers)}}
 }
 
 type Draft=ReturnType<typeof useDocHubDraft>
