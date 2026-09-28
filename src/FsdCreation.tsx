@@ -6,6 +6,7 @@ import type { Client } from './types'
 import { emptyFsdDraft, fsdReference, fsdSectionsForModules, FSD_MODULE_SECTION_IDS, FSD_MODULES, FSD_NOTICE, FSD_PRESETS, FSD_SECTIONS, FSD_TEMPLATE_NAME, type FsdDraft, type FsdDetails, type FsdPreview, type FsdSource, type FsdSourceAnalysis, type FsdSectionId, type FsdModule } from './fsd-model'
 import { isFsdImageFile, readFsdSource } from './fsd-sources'
 import FsdSourceReview, { sourceReviewLabel } from './FsdSourceReview'
+import { APP_VERSION } from './version'
 import './fsd.css'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
 function sourceId(sources: FsdSource[]) { return `SRC-${String(Math.max(0,...sources.map(s=>Number(s.id.replace(/^SRC-/,''))||0))+1).padStart(3,'0')}` }
@@ -70,6 +71,17 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
   const sourceIncluded = (source: FsdSource, modules = draft.modules) => !source.target || fsdSectionsForModules(modules).some(([id])=>id===source.target)
   const includedSources = draft.sources.filter(s=>sourceIncluded(s))
   const pendingSources = includedSources.filter(s=>!s.analysis || s.analysisError)
+  const requiredDetails = {client:'Client',feature:'Feature name',product:'Product',author:'Prepared by',date:'Document date',version:'Revision'} as const
+  const missingDetails = (Object.keys(requiredDetails) as Array<keyof typeof requiredDetails>).filter(key=>!draft.details[key]?.trim()).map(key=>requiredDetails[key])
+  const date = draft.details.date
+  const invalidDate = Boolean(date?.trim()) && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date)
+  const previewPrerequisites = [
+    ...(includedSources.length?[]:[draft.sources.length?'Map a source to the selected scope':'Add at least one source']),
+    ...(missingDetails.length?[`Complete: ${missingDetails.join(', ')}`]:[]),
+    ...(invalidDate?['Choose a valid document date']:[]),
+    ...(!draft.presetInstructions.trim()?['Enter preset instructions']:[]),
+    ...(draft.pasteText.trim()?['Add or clear the pasted text above so it can be reviewed']:[]),
+  ]
   async function analyzeBatch(sources: FsdSource[], modules: FsdModule[], job: ReturnType<typeof operation.begin>) {
     const results: FsdSource[] = []
     for (const source of sources) {
@@ -125,9 +137,7 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
   }
   async function generatePreview() {
     if (busy) return
-    if (draft.pasteText.trim()) { setError('Add your pasted text to Sources before generating, so it is included.');return }
-    const required: (keyof FsdDetails)[] = ['client','feature','product','date','version','author']
-    if (required.some(k=>!draft.details[k].trim()) || !draft.sources.length) {setError('Complete the required document details and add at least one source.');return}
+    if (previewPrerequisites.length) return
     const job=operation.begin(),revision=draft.revision
     setBusy('Preparing sources…');setStage('analysis');setRetryAction('preview');setError('')
     try {
@@ -192,7 +202,7 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
   return <div className="fsd-creator">
     <div className="fsd-topline"><div><span className="fsd-eyebrow">DOCUMENT CREATION · ADVANCED MODE</span><h2>FSD Document Creator</h2><p>Turn your requirements into a reviewable specification.</p></div><span className="fsd-template-badge"><FileText size={16}/>{templateReady ? FSD_TEMPLATE_NAME : 'Template required'}</span></div>
     <DocumentReset label="FSD" onReset={reset} disabled={!canGenerate} />
-    <div className="fsd-status"><span>{provider?.enabled?`Document Agent: ${provider.name} · ${provider.model}`:providerError||'Configure and enable the Document Agent in Account Settings.'}</span><span>{saveError?'Draft held in this page':'Draft retained in this browser tab'}</span></div>
+    <div className="fsd-status"><span>{provider?.enabled?`Document Agent: ${provider.name} · ${provider.model}`:providerError||'Configure and enable the Document Agent in Account Settings.'}</span><span>{saveError?'Draft held in this page':'Draft retained in this browser tab'} · App v{APP_VERSION}</span></div>
     {presetSaveError&&<p className="fsd-warning" role="status">{presetSaveError}</p>}
     {saveError&&<p className="fsd-warning" role="status">{saveError}</p>}
     {draft.sources.some(s=>s.text.includes('[Extraction warning:'))&&<div className="fsd-alert">Some sources contain OCR or visual content. Review the extracted text and original images before generating requirements.</div>}
@@ -215,7 +225,7 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
         </div>
         <div className="fsd-controls-column"><section className="fsd-card"><h3>3. Skills & presets</h3><label>Preset<select value={draft.presetId} onChange={e=>{const preset=presets.find(p=>p.id===e.target.value)!;patch({presetId:preset.id,presetInstructions:preset.instructions})}}>{presets.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Customize instructions<textarea rows={8} maxLength={8000} value={draft.presetInstructions} onChange={e=>patch({presetInstructions:e.target.value})}/></label><small>Choose or change your preset after reviewing sources. It guides the combined FSD and does not change the source facts. Unsupported details stay as questions or TBD.</small><div className="fsd-save-preset"><label>Save as a common preset<input maxLength={100} placeholder="Preset name" value={draft.presetName} onChange={e=>patch({presetName:e.target.value},false)}/></label><button className="secondary" disabled={!draft.presetName.trim()||!draft.presetInstructions.trim()||draft.customPresets.length>=30} onClick={()=>{const preset={id:crypto.randomUUID(),name:draft.presetName.trim(),instructions:draft.presetInstructions};patch({customPresets:[...draft.customPresets,preset],presetId:preset.id,presetName:''},false)}}>Save preset</button></div><small>Custom presets are saved for this account and user in this browser.</small>{draft.customPresets.some(p=>p.id===draft.presetId)&&<button className="secondary" onClick={()=>patch({customPresets:draft.customPresets.filter(p=>p.id!==draft.presetId),presetId:'standard',presetInstructions:FSD_PRESETS[0].instructions})}>Delete custom preset</button>}</section>
           <section className="fsd-card"><h3>4. Scope & section mapping</h3><p><strong>Unchecked modules are hard-excluded.</strong> The Document Agent will not generate their feature sections, and sources mapped only to those modules are not sent for FSD generation.</p><div className="fsd-module-checks">{FSD_MODULES.map(module=><label key={module}><input type="checkbox" checked={draft.modules.includes(module)} onChange={e=>patch({modules:e.target.checked?[...draft.modules,module]:draft.modules.filter(m=>m!==module)})}/>{module}</label>)}</div><label>Additional skills / guidance<textarea rows={5} maxLength={10000} value={draft.guidance} placeholder="Terminology, known constraints, priorities…" onChange={e=>patch({guidance:e.target.value})}/></label><details><summary>Map instructions to included template sections</summary>{scopedSections.filter(([id])=>!['history','acknowledgement','references'].includes(id)).map(([id,title])=><label key={id}>{title}<textarea rows={2} maxLength={2000} value={draft.mapping[id]||''} placeholder="Optional: sources to prioritize and details to cover" onChange={e=>patch({mapping:{...draft.mapping,[id]:e.target.value}})}/></label>)}</details></section>
-          <section className="fsd-card fsd-generate-card"><h3>5. Preview & generate</h3><p>The AI combines reviewed source facts, your current preset, guidance and checked scope. Conflicts between documents are flagged for your review.</p><button className="primary fsd-primary" disabled={!draft.sources.length||!draft.presetInstructions.trim()} onClick={()=>void generatePreview()}><Sparkles size={16}/>{draft.preview?'Regenerate AI preview':'Generate AI preview'}</button>{draft.preview&&<button className="secondary" onClick={()=>setShowPreview(v=>!v)}>{showPreview?'Hide':'Show'} preview</button>}<small>Sources needing analysis are reviewed first. Unchanged source reviews are reused. Changing text, mapping or scope requires reanalysis; removing a source removes its facts. Unreadable or incomplete sources must be corrected or removed before generating.</small><details><summary>Included template sections</summary><ol>{scopedSections.map(([id,title])=><li key={id}>{title}</li>)}</ol></details></section>
+          <section className="fsd-card fsd-generate-card"><h3>5. Preview & generate</h3><p>The AI combines reviewed source facts, your current preset, guidance and checked scope. Conflicts between documents are flagged for your review.</p>{previewPrerequisites.length>0&&<div className="fsd-preview-prerequisites" role="status"><strong>To generate the FSD preview:</strong><ul>{previewPrerequisites.map(item=><li key={item}>{item}</li>)}</ul><small>Uploading and reviewing sources does not require these document details.</small></div>}<button className="primary fsd-primary" disabled={Boolean(previewPrerequisites.length)} onClick={()=>void generatePreview()}><Sparkles size={16}/>{draft.preview?'Regenerate AI preview':'Generate AI preview'}</button>{draft.preview&&<button className="secondary" onClick={()=>setShowPreview(v=>!v)}>{showPreview?'Hide':'Show'} preview</button>}<small>Sources needing analysis are reviewed first. Unchanged source reviews are reused. Changing text, mapping or scope requires reanalysis; removing a source removes its facts. Unreadable or incomplete sources must be corrected or removed before generating.</small><details><summary>Included template sections</summary><ol>{scopedSections.map(([id,title])=><li key={id}>{title}</li>)}</ol></details></section>
         </div>
       </div>
     </fieldset>
