@@ -1,12 +1,12 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.58**
+**Current release: v0.6.59**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
 Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
 
-Upgrade details: [v0.6.58 release notes](docs/releases/v0.6.58.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
+Upgrade details: [v0.6.59 release notes](docs/releases/v0.6.59.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
 
 ## Main modules
 
@@ -121,6 +121,8 @@ Patch runtime backups are stored locally under `.patch-backups/` and are ignored
 Keep Git focused on source code and documentation. Full-build and patch ZIPs should be published as **GitHub Release assets**, not committed into the repository.
 
 ## Current release highlights
+
+**v0.6.59** reads embedded PDF report screenshots individually for FSD source review, preserving selectable text and marking OCR figures for verification. AI treats screenshot data as examples unless the source explicitly defines a rule.
 
 **v0.6.58** makes FSD preview prerequisites visible beside the preview button. Upload and AI source review can finish before document details are entered. The screen also displays the running app version to help distinguish an old deployment.
 

@@ -68,6 +68,8 @@ export async function readFsdSource(file: File, progress: (message: string) => v
       try {
         if (pdf.numPages > 80) throw new Error(`${file.name}: split PDFs longer than 80 pages before uploading.`)
         const pages: string[] = []
+        let imageCount = 0
+        const seenImageText = new Map<string, number>()
         const imageOps = new Set([pdfjs.OPS.paintImageXObject, pdfjs.OPS.paintInlineImageXObject, pdfjs.OPS.paintImageMaskXObject, pdfjs.OPS.paintImageXObjectRepeat, pdfjs.OPS.paintInlineImageXObjectGroup])
         for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
           progress(`Reading ${file.name}: page ${pageNo} of ${pdf.numPages}…`)
@@ -78,14 +80,59 @@ export async function readFsdSource(file: File, progress: (message: string) => v
             const hasImages = operators.fnArray.some(op => imageOps.has(op))
             let pageText = embedded
             if (pdfNeedsOcr(embedded, hasImages)) {
+              // Capture PDF.js's decoded image bitmaps while the page renders. Once
+              // rendering finishes PDF.js may release them from its object cache.
+              // Reading the whole page alone makes small report screenshots illegible.
+              const names = [...new Set(operators.fnArray.flatMap((op, index) =>
+                op === pdfjs.OPS.paintImageXObject && typeof operators.argsArray[index]?.[0] === 'string'
+                  ? [operators.argsArray[index][0] as string] : []))]
+              const otherImageOps = operators.fnArray.some(op => imageOps.has(op) && op !== pdfjs.OPS.paintImageXObject)
+              imageCount += names.length
+              if (imageCount > 80 || names.length > 12) throw new Error(`${file.name}: too many embedded images for one source. Split this PDF into smaller parts.`)
+              const captured = names.map(name => new Promise<{ name: string, canvas?: HTMLCanvasElement }>(resolve => {
+                const objects = name.startsWith('g_') ? page.commonObjs : page.objs
+                objects.get(name, (image: { bitmap?: ImageBitmap, width?: number, height?: number }) => {
+                  if (!image?.bitmap || !image.width || !image.height || image.width * image.height > 16_000_000)
+                    return resolve({ name })
+                  try {
+                    const canvas = document.createElement('canvas')
+                    const scale = Math.min(2, 2400 / Math.max(image.width, image.height))
+                    canvas.width = Math.ceil(image.width * scale); canvas.height = Math.ceil(image.height * scale)
+                    canvas.getContext('2d')!.drawImage(image.bitmap, 0, 0, canvas.width, canvas.height)
+                    resolve({ name, canvas })
+                  } catch { resolve({ name }) } // Fall back to page OCR if PDF.js cannot expose the bitmap.
+                })
+              }))
               const initial = page.getViewport({ scale: 1 }), scale = Math.min(2, 2200 / Math.max(initial.width,initial.height))
               const viewport = page.getViewport({ scale }), canvas = document.createElement('canvas')
               canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height)
               try {
                 await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise
-                const recognized = await ocr(canvas, `${file.name}, page ${pageNo} of ${pdf.numPages}`)
-                // Keep native text as evidence even if OCR disagrees or misses small text.
-                pageText = `${embedded ? `[Selectable text]\n${embedded}\n` : ''}[OCR text]\n${recognized}`
+                const images = captured.length ? await Promise.race([
+                  Promise.all(captured),
+                  new Promise<null>(resolve => setTimeout(() => resolve(null), 1500)),
+                ]) : []
+                const imageText: string[] = []
+                if (images) for (const image of images) {
+                  if (!image.canvas) continue
+                  try {
+                    const recognized = await ocr(image.canvas, `${file.name}, page ${pageNo}, image ${image.name}`)
+                    const duplicate = seenImageText.get(recognized)
+                    if (duplicate) imageText.push(`[Embedded image: page ${pageNo}, ${image.name}; same text as page ${duplicate}]`)
+                    else {
+                      seenImageText.set(recognized, pageNo)
+                      imageText.push(`[Embedded image: page ${pageNo}, ${image.name}; verify layout and numeric values against the original]\n${recognized}`)
+                    }
+                  } finally { image.canvas.width = 0; image.canvas.height = 0 }
+                }
+                // A full-page pass remains the fallback for vector drawings, inline
+                // images and PDF.js image objects that could not be captured.
+                if (!imageText.length || !embedded || imageText.length < names.length || otherImageOps) {
+                  const recognized = await ocr(canvas, `${file.name}, page ${pageNo} of ${pdf.numPages}`)
+                  pageText = `${embedded ? `[Selectable text]\n${embedded}\n` : ''}[OCR text]\n${recognized}`
+                } else pageText = `${embedded ? `[Selectable text]\n${embedded}\n\n` : ''}${imageText.join('\n\n')}`
+                // When some images cannot be decoded, the page pass preserves their text.
+                if (imageText.length && pageText.includes('[OCR text]')) pageText += '\n\n' + imageText.join('\n\n')
               } finally { canvas.width = 0; canvas.height = 0 }
             }
             if (hasImages) pageText = '[Extraction warning: page contains images. OCR reads text only; review diagrams and layout in the original.]\n' + pageText
