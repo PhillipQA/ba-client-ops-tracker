@@ -1,12 +1,12 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.52**
+**Current release: v0.6.53**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
 Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
 
-Upgrade details: [v0.6.52 release notes](docs/releases/v0.6.52.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
+Upgrade details: [v0.6.53 release notes](docs/releases/v0.6.53.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
 
 ## Main modules
 
@@ -122,6 +122,6 @@ Keep Git focused on source code and documentation. Full-build and patch ZIPs sho
 
 ## Current release highlights
 
-**v0.6.39** is a codebase/repository organization release. It cleans the root directory, groups backend code under `server/`, moves migrations and release notes into dedicated folders, and replaces the previously long README with this navigation-focused version. It does not intentionally change application behavior.
+**v0.6.53** adds image support to FSD Creation. PNG, JPG/JPEG, WEBP, BMP, TIF and TIFF uploads are OCR-read and added to the FSD source list as Supporting document sources. Existing document-source handling is unchanged.
 
-For the previous functional changes, see the versioned files under [`docs/releases/`](docs/releases/).
+For earlier changes, see the versioned files under [`docs/releases/`](docs/releases/).

@@ -1,11 +1,22 @@
 import PizZip from 'pizzip'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 const LIMIT = 120000
+const IMAGE_EXTENSIONS = new Set(['png','jpg','jpeg','webp','bmp','tif','tiff'])
+export function isFsdImageFile(file: { name: string }) { return IMAGE_EXTENSIONS.has(file.name.split('.').pop()?.toLowerCase() || '') }
 export async function readFsdSource(file: File, progress: (message: string) => void): Promise<string> {
   if (!file.size || file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: use a nonempty file up to 10 MB.`)
   const ext = file.name.split('.').pop()?.toLowerCase()
   let text = ''
-  if (['txt','md','csv','json'].includes(ext || '')) text = await file.text()
+  if (IMAGE_EXTENSIONS.has(ext || '')) {
+    progress(`Reading ${file.name} with OCR…`)
+    const { createWorker } = await import('tesseract.js')
+    const worker = await createWorker('eng')
+    try {
+      text = (await worker.recognize(file)).data.text
+    } finally {
+      await worker.terminate()
+    }
+  } else if (['txt','md','csv','json'].includes(ext || '')) text = await file.text()
   else if (ext === 'docx') {
     const zip = new PizZip(await file.arrayBuffer())
     const part = zip.file('word/document.xml')
@@ -44,8 +55,8 @@ export async function readFsdSource(file: File, progress: (message: string) => v
       }
       text = pages.join('\n\n')
     } finally { await worker?.terminate(); await pdf.destroy() }
-  } else throw new Error(`${file.name}: use PDF, DOCX, TXT, MD, CSV or JSON. Convert older DOC files to DOCX first.`)
+  } else throw new Error(`${file.name}: use PDF, DOCX, TXT, MD, CSV, JSON, PNG, JPG, JPEG, WEBP, BMP, TIF or TIFF. Convert older DOC files to DOCX first.`)
   text = text.replace(/\r\n?/g,'\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').trim()
-  if (!text || text.length > LIMIT) throw new Error(`${file.name}: no readable text, or text exceeds 120,000 characters.`)
+  if (!text || text.length > LIMIT) throw new Error(`${file.name}: no readable text was detected, or text exceeds 120,000 characters.`)
   return text
 }
