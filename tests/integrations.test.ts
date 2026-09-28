@@ -112,7 +112,7 @@ test('real HTTP routes scope writes from authenticated tenant and deny unauthori
     assert.equal((await call('/api/account/templates','admin','PUT',{name:'template.xlsx',content_base64:templateData})).status,200)
     assert.equal((await call('/api/account/templates','docs-admin','PUT',{name:'document-template.xlsx',content_base64:templateData},'b')).status,200)
     assert.equal((await call('/api/account/integrations','docs-admin')).status,403)
-    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx');assert.equal(other.templates.length,3);assert.equal(other.templates.find((item:any)=>item.type==='fsd').source,'built-in')
+    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx');assert.equal(other.templates.length,4);assert.equal(other.templates.find((item:any)=>item.type==='brd').source,'built-in');assert.equal(other.templates.find((item:any)=>item.type==='fsd').source,'built-in')
     assert.equal((await call('/api/account/templates/fsd','admin','DELETE',undefined,'b')).status,200)
     const removed=await (await call('/api/account/templates/fsd','admin','GET',undefined,'b')).json();assert.equal(removed.template.active,false)
     assert.equal((await call('/api/account/templates/fsd/restore-default','admin','POST',undefined,'b')).status,200)

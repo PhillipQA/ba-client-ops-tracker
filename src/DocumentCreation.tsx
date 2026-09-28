@@ -1,3 +1,4 @@
+import BrdCreation from './BrdCreation'
 import FsdCreation from './FsdCreation'
 import TestCaseCreation from './TestCaseCreation'
 import SignOffCreation from './SignOffCreation'
@@ -23,7 +24,7 @@ import {
   UserRound,
 } from 'lucide-react'
 
-type DocumentFlow = 'drf' | 'fsd' | 'testcase' | 'signoff'
+type DocumentFlow = 'drf' | 'brd' | 'fsd' | 'testcase' | 'signoff'
 
 type Signatory = {
   email?: string
@@ -122,10 +123,10 @@ const defaultSignatories: Signatory[] = [
 export default function DocumentCreation({ clients, projects, items, launch, canGenerate, draftKey, active }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; draftKey: string; active: boolean }) {
   const docHub = useDocHubDraft('DRF')
   useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
-  const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
+  const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'brd' || value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
   useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
   const [corFiles, setCorFiles] = useState<File[]>([])
-  const [documentTemplates, setDocumentTemplates] = useState<{ type: 'drf' | 'fsd' | 'signoff'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[]>([])
+  const [documentTemplates, setDocumentTemplates] = useState<{ type: 'drf' | 'brd' | 'fsd' | 'signoff'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[]>([])
   const [corExtractionMode, setCorExtractionMode] = useState<'local' | 'ai'>('local')
   const [aiExtractionStatus, setAiExtractionStatus] = useState<{ available: boolean; provider?: string; model?: string; error?: string }>({ available: false })
 
@@ -140,7 +141,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     if (!active) return
     let alive = true
     void fetch('/api/account/templates', { credentials: 'same-origin' }).then(async response => {
-      const payload = await response.json().catch(() => ({})) as { templates?: { type: 'drf' | 'fsd' | 'signoff'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[] }
+      const payload = await response.json().catch(() => ({})) as { templates?: { type: 'drf' | 'brd' | 'fsd' | 'signoff'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[] }
       if (response.ok && alive) setDocumentTemplates(Array.isArray(payload.templates) ? payload.templates : [])
     }).catch(() => undefined)
     return () => { alive = false }
@@ -195,8 +196,9 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     setSignatories(defaultSignatories.map(signatory=>({...signatory})));setCorExtractionMode('local')
   }
 
-  const selectedTitle = useMemo(() => flow === 'drf' ? 'DRF Creation' : flow === 'fsd' ? 'FSD Creation' : flow === 'testcase' ? 'Test Case Creation' : 'Sign Off Form', [flow])
+  const selectedTitle = useMemo(() => flow === 'drf' ? 'DRF Creation' : flow === 'brd' ? 'BRD Creation' : flow === 'fsd' ? 'FSD Creation' : flow === 'testcase' ? 'Test Case Creation' : 'Sign Off Form', [flow])
   const drfTemplate = documentTemplates.find(template => template.type === 'drf')
+  const brdTemplate = documentTemplates.find(template => template.type === 'brd')
   const fsdTemplate = documentTemplates.find(template => template.type === 'fsd')
   const signoffTemplate = documentTemplates.find(template => template.type === 'signoff')
   const corFile = corFiles[0]
@@ -319,7 +321,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
         <FileText size={23} />
         <div>
           <strong>Document Creation</strong>
-          <p>Create BA delivery documents from source files. DRF Creation reads company COR details and writes the reviewed values directly into the approved Excel DRF template.</p>
+          <p>Create BA delivery documents from source files. BRD Creation can turn incomplete requirements into an editable business draft, then hand the structured result directly to FSD Creation.</p>
         </div>
       </div>
 
@@ -329,10 +331,15 @@ export default function DocumentCreation({ clients, projects, items, launch, can
           <div><strong>DRF Creation</strong><span>Extract COR details and populate the Excel DRF form.</span></div>
           <small>COR + XLSX template</small>
         </button>
+        <button type="button" className={`document-flow-card${flow === 'brd' ? ' active' : ''}`} onClick={() => setFlow('brd')}>
+          <div className="document-flow-icon"><FileCog size={22} /></div>
+          <div><strong>BRD Creation</strong><span>Draft a structured BRD from incomplete notes, documents, screenshots, or pasted requirements.</span></div>
+          <small>AI + DOCX + FSD handoff</small>
+        </button>
         <button type="button" className={`document-flow-card${flow === 'fsd' ? ' active' : ''}`} onClick={() => setFlow('fsd')}>
           <div className="document-flow-icon"><Clipboard size={22} /></div>
           <div><strong>FSD Creation</strong><span>Advanced source mapping and scope controls with your configured AI.</span></div>
-          <small>BRD required</small>
+          <small>BRD / Requirements</small>
         </button>
         <button type="button" className={`document-flow-card${flow === 'testcase' ? ' active' : ''}`} onClick={() => setFlow('testcase')}>
           <div className="document-flow-icon"><ClipboardCheck size={22} /></div>
@@ -348,8 +355,8 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
       <div className="panel document-workspace">
         <div className="panel-heading document-heading">
-          <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and use the account’s saved standard Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'fsd' ? 'Add requirements, choose a preset, then review and export using the iRipple FSD template.' : flow === 'testcase' ? 'Upload requirement sources, select reusable QA skills, review the AI coverage map, then generate editable test cases and export to Excel.' : 'Complete the deployment details and six signatory slots, then add supporting attachments.'}</p></div>
-          <span className="document-stage-pill">{flow === 'drf' ? (drfTemplate?.active ? 'DRF template ready' : 'DRF template required') : flow === 'signoff' ? (signoffTemplate?.active ? 'Sign Off template ready' : 'Sign Off template required') : flow === 'testcase' ? 'AI test suite workflow' : (fsdTemplate?.active ? 'FSD template ready' : 'FSD template required')}</span>
+          <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and use the account’s saved standard Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'brd' ? 'Add whatever business information is available. The Document Agent creates a best-effort BRD draft, flags inferred content, and keeps every section editable.' : flow === 'fsd' ? 'Add a BRD or other requirements, choose a preset, then review and export using the iRipple FSD template.' : flow === 'testcase' ? 'Upload requirement sources, select reusable QA skills, review the AI coverage map, then generate editable test cases and export to Excel.' : 'Complete the deployment details and six signatory slots, then add supporting attachments.'}</p></div>
+          <span className="document-stage-pill">{flow === 'drf' ? (drfTemplate?.active ? 'DRF template ready' : 'DRF template required') : flow === 'brd' ? (brdTemplate?.active ? 'BRD template ready' : 'BRD template required') : flow === 'signoff' ? (signoffTemplate?.active ? 'Sign Off template ready' : 'Sign Off template required') : flow === 'testcase' ? 'AI test suite workflow' : (fsdTemplate?.active ? 'FSD template ready' : 'FSD template required')}</span>
         </div>
 
         {flow === 'drf' && (
@@ -480,6 +487,8 @@ export default function DocumentCreation({ clients, projects, items, launch, can
             </div>
           </div>
         )}
+
+        <div className="fsd-retained" hidden={flow !== 'brd'}><BrdCreation projects={projects} canGenerate={canGenerate} templateReady={Boolean(brdTemplate?.active)} draftKey={draftKey} active={active && flow === 'brd'} onUseInFsd={(handoff) => { try { sessionStorage.setItem(`ba-brd-handoff:${draftKey}`, JSON.stringify(handoff)); setFlow('fsd') } catch { window.alert('Browser session storage is unavailable. Download the BRD and upload it to FSD Creation instead.') } }} /></div>
 
         <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} canGenerate={canGenerate} templateReady={Boolean(fsdTemplate?.active)} draftKey={draftKey} active={active && flow === 'fsd'} /></div>
 

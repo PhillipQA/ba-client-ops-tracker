@@ -1,6 +1,6 @@
 # Database setup
 
-For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–16 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
+For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–17 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
 
 | Deployment situation | What to run |
 | --- | --- |
@@ -40,3 +40,7 @@ The generator requires a complete, ordered migration sequence, includes source c
 ## Upgrading from v0.6.55 to v0.6.56
 
 Stop the old app, run `migrations/schema-v16-functional-integrity.sql` once, deploy v0.6.56 and rebuild. This adds atomic revision checks and Gmail sync progress / multiple labels. Do not use `setup.sql` on an existing database. All active server instances must use v0.6.56 before users resume; older servers call the legacy save function. Users should reload their browser after upgrading.
+
+## Upgrading from v0.6.59 to v0.6.60
+
+Run `migrations/schema-v17-brd-template.sql` once, then deploy v0.6.60 and rebuild. This only expands the document-template type constraint so each account can use the built-in or a custom BRD template. Existing data and templates are preserved. Do not run `setup.sql` on an existing database.

@@ -57,6 +57,25 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
     return ()=>{alive=false}
   },[active])
   useEffect(() => {
+    if (!active) return
+    const handoffKey = `ba-brd-handoff:${draftKey}`
+    let raw = ''
+    try { raw = sessionStorage.getItem(handoffKey) || '' } catch { return }
+    if (!raw) return
+    try {
+      const handoff = JSON.parse(raw) as { name?: string; text?: string; reference?: string }
+      const text = String(handoff.text || '').trim()
+      if (!text) throw new Error('The BRD handoff did not contain structured BRD data.')
+      const current = draftRef.current
+      if (current.sources.some(source => source.kind === 'BRD' && source.text === text)) { sessionStorage.removeItem(handoffKey); return }
+      if (current.sources.length >= 20 || current.sources.reduce((sum, source) => sum + source.text.length, 0) + text.length > 180000) throw new Error('The BRD could not be added because the FSD source limit would be exceeded. Remove an older source and use “Use in FSD Creator” again.')
+      const source: FsdSource = { id: sourceId(current.sources), name: String(handoff.name || handoff.reference || 'BRD Creator output').slice(0, 200), kind: 'BRD', text, target: '' }
+      setDraft(value => ({ ...value, sources: [...value.sources, source], revision: value.revision + 1, preview: null, previewRevision: -1, reviewed: false }))
+      setShowPreview(false); setEditPreview(false); setError('')
+      sessionStorage.removeItem(handoffKey)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not import the BRD Creator output into FSD Creation.') }
+  }, [active, draftKey])
+  useEffect(() => {
     const preventLoss = (e: BeforeUnloadEvent) => { if (busy || saveError) { e.preventDefault(); e.returnValue = '' } }
     window.addEventListener('beforeunload',preventLoss); return ()=>window.removeEventListener('beforeunload',preventLoss)
   },[busy,saveError])

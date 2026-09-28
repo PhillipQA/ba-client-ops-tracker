@@ -71,9 +71,10 @@ export function cleanIntegrationConfig(kind: IntegrationKind, input: any) {
   return { allowedUserIds }
 }
 
-export type DocumentTemplateKind = 'drf' | 'fsd' | 'signoff'
-const documentTemplateKinds = ['drf', 'fsd', 'signoff'] as const
+export type DocumentTemplateKind = 'drf' | 'brd' | 'fsd' | 'signoff'
+const documentTemplateKinds = ['drf', 'brd', 'fsd', 'signoff'] as const
 const builtInTemplateNames: Partial<Record<DocumentTemplateKind, string>> = {
+  brd: 'Built-in iRipple BRD template',
   fsd: 'Built-in iRipple FSD layout',
   signoff: 'Built-in iRipple Sign Off template',
 }
@@ -103,7 +104,7 @@ function decodeTemplateUpload(kind: DocumentTemplateKind, nameValue: unknown, co
   const name = String(nameValue || '').replace(/[\\/]/g, '_').slice(0, 180)
   const content = String(contentValue || '')
   const expected = kind === 'drf' ? '.xlsx' : '.docx'
-  if (!name.toLowerCase().endsWith(expected) || !/^[A-Za-z0-9+/]+={0,2}$/.test(content) || content.length > 7 * 1024 * 1024) throw new IntegrationError(`Upload a ${expected} ${kind === 'drf' ? 'DRF' : kind === 'fsd' ? 'FSD' : 'Sign Off'} template up to 5 MB.`)
+  if (!name.toLowerCase().endsWith(expected) || !/^[A-Za-z0-9+/]+={0,2}$/.test(content) || content.length > 7 * 1024 * 1024) throw new IntegrationError(`Upload a ${expected} ${kind === 'drf' ? 'DRF' : kind === 'brd' ? 'BRD' : kind === 'fsd' ? 'FSD' : 'Sign Off'} template up to 5 MB.`)
   const bytes = Buffer.from(content, 'base64')
   if (!bytes.length || bytes.length > 5 * 1024 * 1024 || bytes.subarray(0,2).toString() !== 'PK') throw new IntegrationError(`Upload a valid ${expected} template up to 5 MB.`)
   let zip: PizZip
@@ -114,6 +115,10 @@ function decodeTemplateUpload(kind: DocumentTemplateKind, nameValue: unknown, co
     const document = zip.file('word/document.xml')?.asText() || ''
     if (!zip.file('[Content_Types].xml') || !document) throw new IntegrationError('The file is not a valid Word document.')
     const xmlText = zip.file(/\.xml$/).map(file => file.asText()).join('').replace(/<[^>]+>/g, '')
+    if (kind === 'brd') {
+      const required = ['{project_name}','{module}','{date}','{prepared_by}','{version}','{summary}','{business_objectives}','{business_problems}','{in_scope}','{#stakeholders}','{#requirements}','{#customer_mapping}']
+      if (required.some(marker => !xmlText.includes(marker))) throw new IntegrationError('The BRD template is missing required mapping tags. Keep the standard BRD fields and table-loop tags when changing the template.')
+    }
     if (kind === 'fsd' && !document.includes('{{FSD_BODY}}')) throw new IntegrationError('The FSD template must contain the {{FSD_BODY}} marker where generated FSD content should be inserted.')
     if (kind === 'signoff') {
       const required = ['{client_name}','{document_reference}','{deployment_date}','{deployment_type}','{product}','{site}','{iripple_name_1}','{iripple_title_1}','{iripple_name_2}','{iripple_title_2}','{iripple_name_3}','{iripple_title_3}','{client_name_1}','{client_title_1}','{client_name_2}','{client_title_2}','{client_name_3}','{client_title_3}','{@attachments}']

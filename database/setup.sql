@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v0.6.56: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 16. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v0.6.60: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 17. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1224,6 +1224,17 @@ alter table public.user_communications add column if not exists source_labels te
 update public.user_communications set source_labels = array[source_label] where source_label is not null and source_label <> '' and cardinality(source_labels) = 0;
 create index if not exists user_communications_source_labels_idx on public.user_communications using gin(source_labels);
 
+-- Included source: migrations/schema-v17-brd-template.sql
+-- SHA-256: 8650544d165ec5d91e2d7ae8c7ac974b0995791dd4a5cdf8d88a7a3e2baa71db
+-- Schema v17: allow tenant-specific BRD document templates.
+
+ALTER TABLE public.tenant_templates
+  DROP CONSTRAINT IF EXISTS tenant_templates_template_type_check;
+
+ALTER TABLE public.tenant_templates
+  ADD CONSTRAINT tenant_templates_template_type_check
+  CHECK (template_type IN ('drf', 'brd', 'fsd', 'signoff'));
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1247,4 +1258,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 16 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 17 as schema_version;

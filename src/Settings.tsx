@@ -110,10 +110,11 @@ function AIAgentManager() {
   </section>
 }
 
-type TemplateKind = 'drf' | 'fsd' | 'signoff'
+type TemplateKind = 'drf' | 'brd' | 'fsd' | 'signoff'
 type TemplateInfo = { type: TemplateKind; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }
 const TEMPLATE_SPECS: { type: TemplateKind; title: string; format: string; accept: string; description: string; note?: string }[] = [
   { type: 'drf', title: 'DRF Template', format: 'Excel (.xlsx)', accept: '.xlsx', description: 'Standard Excel template used by DRF Creation. The generated DRF keeps its layout, formatting, logo, merged cells, and mapped fields.' },
+  { type: 'brd', title: 'BRD Template', format: 'Word (.docx)', accept: '.docx', description: 'Business Requirements layout used by BRD Creation.', note: 'The built-in template maps project details, summary, objectives, business problem, in-scope, stakeholders, functional requirements, acceptance criteria, and customer mapping. Custom BRD templates must keep the standard BRD mapping tags.' },
   { type: 'fsd', title: 'FSD Template', format: 'Word (.docx)', accept: '.docx', description: 'Word layout used when exporting an FSD.', note: 'Custom FSD templates must keep {{FSD_BODY}} in its own paragraph. Optional markers: {{FSD_REFERENCE}}, {{FSD_PRODUCT}}, {{FSD_FEATURE}}, {{FSD_CLIENT}}.' },
   { type: 'signoff', title: 'Sign Off Template', format: 'Word (.docx)', accept: '.docx', description: 'Word template used to generate the deployment Sign Off form.', note: 'Keep the standard Sign Off placeholders such as {client_name}, {document_reference}, deployment fields, and signatory fields.' },
 ]
@@ -160,7 +161,7 @@ function Templates() {
     finally { setBusy(null) }
   }
   return <div className="panel template-manager"><div className="panel-heading"><div><h2>Document Templates</h2><p>Manage the account-wide templates used by Document Creation. Uploading and replacing templates is handled here only.</p></div></div>
-    <div className="template-manager-grid">{TEMPLATE_SPECS.map(spec => { const info = current(spec.type); const working = busy === spec.type; const restorableType = spec.type === 'fsd' || spec.type === 'signoff' ? spec.type : null; return <article className="template-manager-card" key={spec.type}>
+    <div className="template-manager-grid">{TEMPLATE_SPECS.map(spec => { const info = current(spec.type); const working = busy === spec.type; const restorableType = spec.type === 'brd' || spec.type === 'fsd' || spec.type === 'signoff' ? spec.type : null; return <article className="template-manager-card" key={spec.type}>
       <div className="template-manager-card-head"><div><h3>{spec.title}</h3><span>{spec.format}</span></div><span className={`role-badge ${info.active ? '' : 'template-inactive'}`}>{info.active ? info.source === 'built-in' ? 'Built-in default' : 'Active' : 'Not configured'}</span></div>
       <p>{spec.description}</p>
       <div className={`template-current ${info.active ? '' : 'empty'}`}><strong>{info.active ? info.name : 'No active template'}</strong>{info.updated_at && <span>Updated {new Date(info.updated_at).toLocaleString()}</span>}</div>

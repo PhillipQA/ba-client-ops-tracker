@@ -35,9 +35,9 @@ export const AI_AGENT_DEFINITIONS: Record<AiAgentId, {
     id: 'document',
     name: 'Document Agent',
     shortName: 'Document Agent',
-    description: 'Dedicated document-generation agent for requirements extraction, FSD creation and document validation.',
+    description: 'Dedicated document-generation agent for requirements extraction, BRD/FSD creation and document validation.',
     defaultConfig: { provider: 'openai', model: 'gpt-5.6-terra' },
-    responsibilities: ['Extract requirements', 'Build FSD', 'Validate FSD', 'Generate test coverage', 'Map RTM sources'],
+    responsibilities: ['Extract requirements', 'Draft BRD', 'Build FSD', 'Validate FSD', 'Generate test coverage', 'Map RTM sources'],
     context: ['Uploaded requirement sources', 'Document details', 'Selected presets', 'Template structure'],
   },
 }

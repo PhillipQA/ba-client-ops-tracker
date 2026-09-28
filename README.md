@@ -6,7 +6,7 @@ BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations w
 
 Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
 
-Upgrade details: [v0.6.59 release notes](docs/releases/v0.6.59.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
+Upgrade details: [v0.6.60 release notes](docs/releases/v0.6.60.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
 
 ## Main modules
 
@@ -15,7 +15,7 @@ Upgrade details: [v0.6.59 release notes](docs/releases/v0.6.59.md). For personal
 - **Requirements & Traceability** — client-specific RTMs, optional Document Agent mapping from your BRD/FSD/test cases, reviewed source references, task/subtask progress, coverage, impact review and Excel export. Assignment and task linking stay manual.
 - **Tasks & Subtasks** — assignment, dates, follow-up, comments, evidence and lifecycle tracking.
 - **Communications Hub** — user-owned Gmail and Discord messages, manual communications, selective task creation, and existing shared inquiry handling.
-- **Document Creation** — DRF, FSD, Test Case and Sign-Off workflows.
+- **Document Creation** — DRF, BRD, FSD, Test Case and Sign-Off workflows, including direct structured BRD → FSD handoff.
 - **Document History** — compact Active/Archive tracking for DocHub documents.
 - **Reports** — project/task/user workload and activity reporting.
 - **AI Agent Manager** — separate BA Assistant and Document Agent configuration per tenant.
@@ -121,6 +121,8 @@ Patch runtime backups are stored locally under `.patch-backups/` and are ignored
 Keep Git focused on source code and documentation. Full-build and patch ZIPs should be published as **GitHub Release assets**, not committed into the repository.
 
 ## Current release highlights
+
+**v0.6.60** adds a dedicated BRD Creator using the supplied iRipple template, best-effort drafting from incomplete requirement sources, editable requirement/acceptance/mapping sections, DOCX export, and direct structured handoff into FSD Creation.
 
 **v0.6.59** reads embedded PDF report screenshots individually for FSD source review, preserving selectable text and marking OCR figures for verification. AI treats screenshot data as examples unless the source explicitly defines a rule.
 

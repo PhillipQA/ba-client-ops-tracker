@@ -3,6 +3,7 @@ import { workspaceVersion, mergeActivity } from './services/workspace-version'
 import { assertRtmMutation, reconcileRtm } from '../src/rtm'
 import { createDocHubService, registerDocHubRoutes, registerDocHubWebhook } from './integrations/dochub'
 import { runTenantAi } from './ai/tenant-ai'
+import { registerBrdRoutes } from './documents/brd-documents'
 import { registerFsdRoutes } from './documents/fsd-documents'
 import { registerTestCaseRoutes } from './documents/testcase-documents'
 import { registerRtmAiRoutes } from './documents/rtm-ai'
@@ -1738,6 +1739,8 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
     posRowsWritten: normalizedRows.length,
   }
 }
+
+registerBrdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, aiAgents, templatePath: path.join(projectRoot, 'templates', 'brd-template.docx') })
 
 registerFsdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, aiAgents, logoPath: path.join(projectRoot, 'templates', 'fsd-logo.png') })
 
