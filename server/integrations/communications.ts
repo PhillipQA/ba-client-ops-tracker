@@ -1,3 +1,4 @@
+import { gmailBodyText, syncGmailPages } from './gmail-content'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
@@ -41,13 +42,6 @@ function attachmentNames(payload:any): string[] {
   const names:string[]=[]
   function visit(part:any) { if(part?.filename) names.push(String(part.filename).slice(0,255));for(const child of part?.parts || []) visit(child) }
   visit(payload);return names.slice(0,50)
-}
-function decodeBody(payload: any): string {
-  const parts: any[] = []
-  function visit(part: any) { if (part?.mimeType === 'text/plain' && part?.body?.data) parts.push(part.body.data); for (const child of part?.parts || []) visit(child) }
-  visit(payload)
-  const encoded = parts[0] || (payload?.mimeType === 'text/plain' ? payload?.body?.data : '')
-  return encoded ? Buffer.from(encoded, 'base64url').toString('utf8').slice(0, 30000) : ''
 }
 export function registerCommunications(app: Express, deps: {
   db: any; requireAuth: Middleware; requireTenant: Middleware; requirePlatformAdmin: Middleware;
@@ -159,7 +153,7 @@ export function registerCommunications(app: Express, deps: {
       if (paginated) {
         query = tab === 'Archived' ? query.eq('status','Archived') : query.neq('status','Archived')
         if (['Gmail','Discord','Manual'].includes(tab)) query = query.eq('source',tab)
-        if (tab === 'Gmail' && label) query = query.eq('source_label',label)
+        if (tab === 'Gmail' && label) query = query.contains('source_labels',[label])
       }
       return query
     }
@@ -204,6 +198,7 @@ export function registerCommunications(app: Express, deps: {
       discord_user_id:id || null,discord_capture_mentions:req.body?.captureMentions !== false,
       gmail_labels:[...new Set(labels)],gmail_email:previous?.gmail_email || null,gmail_refresh_token:previous?.gmail_refresh_token || null,
       gmail_label_catalog:previous?.gmail_label_catalog || [],
+      gmail_sync_state:JSON.stringify([...(previous?.gmail_labels || [])].sort())===JSON.stringify([...labels].sort()) ? previous?.gmail_sync_state || {} : {},
       gmail_config_revision:previous?.gmail_config_revision || null,
       updated_at:new Date().toISOString() },{ onConflict:'tenant_id,user_id' })
     if (error) throw new IntegrationError(error.code === '23505' ? 'This Discord account is already linked to another user in this workspace.' : 'Could not save communication settings.',error.code === '23505' ? 409 : 503)
@@ -286,7 +281,7 @@ export function registerCommunications(app: Express, deps: {
       const {error}=await db.from('user_communication_settings').upsert({tenant_id:saved.tenantId,user_id:saved.userId,
         discord_user_id:previous?.discord_user_id || null,discord_capture_mentions:previous?.discord_capture_mentions ?? true,
         gmail_email:String(identity.email),gmail_refresh_token:encryptSecret(grant.refresh_token,`${saved.tenantId}:${saved.userId}`,gmailKind),
-        gmail_config_revision:saved.revision,gmail_labels:sameMailbox?previous?.gmail_labels || []:[],
+        gmail_sync_state:{},gmail_config_revision:saved.revision,gmail_labels:sameMailbox?previous?.gmail_labels || []:[],
         gmail_label_catalog:sameMailbox?previous?.gmail_label_catalog || []:[],updated_at:new Date().toISOString()},{onConflict:'tenant_id,user_id'})
       if(error) throw error
       result='connected'
@@ -310,7 +305,7 @@ export function registerCommunications(app: Express, deps: {
         await fetch('https://oauth2.googleapis.com/revoke',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({token}),signal:AbortSignal.timeout(10000),redirect:'error'})
       } catch { /* Disconnect locally even if revocation is temporarily unavailable. */ }
     }
-    const {error}=await db.from('user_communication_settings').update({gmail_email:null,gmail_refresh_token:null,gmail_labels:[],gmail_label_catalog:[],updated_at:new Date().toISOString()}).eq('tenant_id',user.organizationId).eq('user_id',user.id)
+    const {error}=await db.from('user_communication_settings').update({gmail_email:null,gmail_refresh_token:null,gmail_labels:[],gmail_label_catalog:[],gmail_sync_state:{},updated_at:new Date().toISOString()}).eq('tenant_id',user.organizationId).eq('user_id',user.id)
     if(error) throw error
     res.json({disconnected:true})
   }))
@@ -318,22 +313,34 @@ export function registerCommunications(app: Express, deps: {
     const user=current(req),row=await settings(user.organizationId,user.id),labels=Array.isArray(row?.gmail_labels) ? row.gmail_labels : []
     if(!labels.length) throw new IntegrationError('Select monitored Gmail labels in settings first.')
     const token=await accessToken(req)
-    let imported=0
-    for(const label of labels.slice(0,30)) {
-      const list=await google(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({labelIds:String(label),maxResults:'30'})}`,{headers:{Authorization:`Bearer ${token}`}})
-      for(const message of list.messages || []) {
-        const externalId=String(message.id)
+    let imported=0, updated=0
+    const checkpoint=async (state: any) => {
+      const {error}=await db.from('user_communication_settings').update({gmail_sync_state:state,updated_at:new Date().toISOString()}).eq('tenant_id',user.organizationId).eq('user_id',user.id)
+      if(error) throw new IntegrationError('Could not save Gmail progress. Apply schema-v16-functional-integrity.sql and retry.',503)
+    }
+    const result=await syncGmailPages(labels,row?.gmail_sync_state,{
+      list:async(label,pageToken)=>google(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({labelIds:label,maxResults:'30',...(pageToken?{pageToken}:{})})}`,{headers:{Authorization:`Bearer ${token}`}}),
+      checkpoint,
+      message:async(externalId,label)=>{
         const {data:found,error:lookupError}=await db.from('user_communications').select('id').eq('tenant_id',user.organizationId).eq('owner_user_id',user.id).eq('source','Gmail').eq('external_id',externalId).maybeSingle()
         if(lookupError) throw lookupError
-        if(found) continue
         const detail=await google(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(externalId)}?format=full`,{headers:{Authorization:`Bearer ${token}`}})
         const headers=detail.payload?.headers || [],head=(name:string)=>String(headers.find((x:any)=>x.name?.toLowerCase()===name)?.value || '')
-        const {error}=await db.from('user_communications').insert({tenant_id:user.organizationId,owner_user_id:user.id,source:'Gmail',external_id:externalId,thread_id:String(detail.threadId || ''),subject:head('subject').slice(0,500),sender:head('from').slice(0,500),body:decodeBody(detail.payload) || String(detail.snippet || ''),attachments:attachmentNames(detail.payload),source_label:String(label),received_at:new Date(Number(detail.internalDate || Date.now())).toISOString()})
+        const extracted=await gmailBodyText(detail.payload,async id=>{
+          const part=await google(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(externalId)}/attachments/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${token}`}})
+          return String(part.data || '')
+        })
+        const body=extracted || `${String(detail.snippet || '')}\n[Only a Gmail snippet is available; review the original email before interpreting it.]`
+        const sourceLabels=Array.isArray(detail.labelIds)?detail.labelIds.map(String):[label]
+        const fields={thread_id:String(detail.threadId || ''),subject:head('subject').slice(0,500),sender:head('from').slice(0,500),body:body.length>30000?body.slice(0,29850)+'\n[Body shortened at 30,000 characters. Review the original email for remaining content.]':body,attachments:attachmentNames(detail.payload),source_label:sourceLabels.find((id:string)=>labels.includes(id)) || '',source_labels:sourceLabels,received_at:new Date(Number(detail.internalDate || Date.now())).toISOString()}
+        const query=found?db.from('user_communications').update(fields).eq('id',found.id).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id):db.from('user_communications').insert({tenant_id:user.organizationId,owner_user_id:user.id,source:'Gmail',external_id:externalId,...fields})
+        const {error}=await query
         if(error && error.code!=='23505') throw error
-        if(!error) imported++
-      }
-    }
-    res.json({imported})
+        if(!error) { if(found) updated++; else imported++ }
+      },
+    })
+    if(!result.hasMore) await checkpoint({})
+    res.json({imported,updated,pages:result.pages,hasMore:result.hasMore})
   }))
   async function accessToken(req: Request) {
     const user=current(req),row=await settings(user.organizationId,user.id)

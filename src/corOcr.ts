@@ -1,5 +1,4 @@
-import PizZip from 'pizzip'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { readFsdSource } from './fsd-sources'
 
 type ProgressCallback = (message: string) => void
 
@@ -16,113 +15,8 @@ export type LocalCorExtraction = {
   notes: string
 }
 
-const MAX_PDF_OCR_PAGES = 4
-const MIN_TEXT_PDF_CHARS = 140
-
 function normalizeWhitespace(value: string) {
   return value.replace(/\r/g, '\n').replace(/[\t\f\v]+/g, ' ').replace(/[ ]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
-}
-
-function decodeXmlEntities(value: string) {
-  return value
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#39;/g, "'")
-}
-
-function extractDocxText(file: File) {
-  return file.arrayBuffer().then((buffer) => {
-    const zip = new PizZip(buffer)
-    const documentXml = zip.file('word/document.xml')?.asText()
-    if (!documentXml) throw new Error('The DOCX file does not contain readable document text.')
-    const text = documentXml
-      .replace(/<w:tab\s*\/>/g, '\t')
-      .replace(/<w:br\s*\/>/g, '\n')
-      .replace(/<\/w:p>/g, '\n')
-      .replace(/<[^>]+>/g, ' ')
-    return normalizeWhitespace(decodeXmlEntities(text))
-  })
-}
-
-async function createOcrWorker() {
-  const { createWorker } = await import('tesseract.js')
-  return createWorker('eng')
-}
-
-async function recognizeWithWorker(worker: any, source: Blob | File | HTMLCanvasElement) {
-  const result = await worker.recognize(source)
-  return normalizeWhitespace(String(result?.data?.text || ''))
-}
-
-async function extractImageText(file: File, onProgress?: ProgressCallback) {
-  onProgress?.('Running local OCR in your browser…')
-  const worker = await createOcrWorker()
-  try {
-    return await recognizeWithWorker(worker, file)
-  } finally {
-    await worker.terminate()
-  }
-}
-
-async function canvasToBlob(canvas: HTMLCanvasElement) {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not prepare the PDF page for OCR.')), 'image/png')
-  })
-}
-
-async function extractPdfText(file: File, onProgress?: ProgressCallback) {
-  onProgress?.('Checking the PDF for embedded text…')
-  const pdfjs = await import('pdfjs-dist')
-  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-  const data = new Uint8Array(await file.arrayBuffer())
-  const pdf = await pdfjs.getDocument({ data }).promise
-  const pageLimit = Math.min(pdf.numPages, MAX_PDF_OCR_PAGES)
-  const embeddedPages: string[] = []
-
-  for (let pageNumber = 1; pageNumber <= pageLimit; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber)
-    const content = await page.getTextContent()
-    let pageText = ''
-    for (const item of content.items as any[]) {
-      if (typeof item?.str !== 'string' || !item.str) continue
-      pageText += item.str
-      pageText += item.hasEOL ? '\n' : ' '
-    }
-    if (pageText.trim()) embeddedPages.push(pageText)
-  }
-
-  const embeddedText = normalizeWhitespace(embeddedPages.join('\n'))
-  if (embeddedText.replace(/\s/g, '').length >= MIN_TEXT_PDF_CHARS) {
-    return { text: embeddedText, method: 'embedded PDF text' }
-  }
-
-  onProgress?.(`The PDF appears scanned. Running local OCR on up to ${pageLimit} page${pageLimit === 1 ? '' : 's'}…`)
-  const worker = await createOcrWorker()
-  const ocrPages: string[] = []
-  try {
-    for (let pageNumber = 1; pageNumber <= pageLimit; pageNumber += 1) {
-      onProgress?.(`Running local OCR on PDF page ${pageNumber} of ${pageLimit}…`)
-      const page = await pdf.getPage(pageNumber)
-      const viewport = page.getViewport({ scale: 1.8 })
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.ceil(viewport.width)
-      canvas.height = Math.ceil(viewport.height)
-      const context = canvas.getContext('2d', { alpha: false })
-      if (!context) throw new Error('Your browser could not create the OCR canvas.')
-      await page.render({ canvas, canvasContext: context, viewport }).promise
-      const blob = await canvasToBlob(canvas)
-      const pageText = await recognizeWithWorker(worker, blob)
-      if (pageText) ocrPages.push(pageText)
-    }
-  } finally {
-    await worker.terminate()
-  }
-
-  const text = normalizeWhitespace([embeddedText, ...ocrPages].filter(Boolean).join('\n'))
-  return { text, method: 'local OCR' }
 }
 
 function lineKey(value: string) {
@@ -344,31 +238,9 @@ export function parseCorTextLocally(rawText: string, method: string): LocalCorEx
 }
 
 export async function extractCorTextLocally(file: File, onProgress?: ProgressCallback): Promise<CorTextExtraction> {
-  const extension = file.name.split('.').pop()?.toLowerCase() || ''
-  const mimeType = file.type.toLowerCase()
-  let text = ''
-  let method = 'local OCR'
-
-  if (extension === 'pdf' || mimeType === 'application/pdf') {
-    const result = await extractPdfText(file, onProgress)
-    text = result.text
-    method = result.method
-  } else if (extension === 'docx' || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-    onProgress?.('Reading DOCX text locally in your browser…')
-    text = await extractDocxText(file)
-    method = 'local DOCX text extraction'
-  } else if (extension === 'doc' || mimeType === 'application/msword') {
-    throw new Error('Legacy .doc COR files are not supported by the private local extractor. Please save the COR as PDF, DOCX, JPEG, or PNG first.')
-  } else {
-    text = await extractImageText(file, onProgress)
-    method = 'local OCR'
-  }
-
-  if (!text || text.replace(/\s/g, '').length < 20) {
-    throw new Error('The local extractor could not read enough text from this COR. Try a clearer scan/photo or a text-based PDF.')
-  }
-
-  return { text, method }
+  const text = await readFsdSource(file, onProgress || (() => undefined))
+  if (text.replace(/\[[^\]]*\]/g, '').replace(/\s/g, '').length < 20) throw new Error('The local extractor could not read enough text. Try a clearer scan or text-based PDF.')
+  return { text, method: text.includes('[OCR text]') || /\.(png|jpe?g|webp|tiff?)$/i.test(file.name) ? 'local OCR with source review' : 'local document text extraction' }
 }
 
 export async function extractCorLocally(file: File, onProgress?: ProgressCallback): Promise<LocalCorExtraction> {

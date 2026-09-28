@@ -3,7 +3,7 @@ import { LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Client, Project, UserAccount } from './types'
 import './communications.css'
 
-type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;thread_id?:string;attachments?:string[];status:string;received_at:string;linked_task_id?:string }
+type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;source_labels?:string[];thread_id?:string;attachments?:string[];status:string;received_at:string;linked_task_id?:string }
 type Settings = { discordUserId:string;captureMentions:boolean;gmailEmail:string;gmailLabels:string[];gmailLabelCatalog:Label[];gmailConnected:boolean;gmailReconnectRequired:boolean;gmailAvailable:boolean;gmailPlatformEnabled:boolean;callbackUrl:string }
 type Label = {id:string;name:string}
 type ViewPreferences = {layout:'cards'|'rows';pageSize:5|10|15}
@@ -81,7 +81,7 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
   const saveSettings=()=>act(async()=>{await request('/api/communications/settings','PUT',settings);await load();setMessage('Your communication preferences were saved.')})
   const beginGmail=()=>act(async()=>{const result=await request('/api/communications/gmail/connect');window.location.assign(result.url)})
   const fetchLabels=()=>act(async()=>{setLabelsLoading(true);try{const result=await request('/api/communications/gmail/labels');setLabels(result.labels)}finally{setLabelsLoading(false)}})
-  const sync=()=>act(async()=>{const result=await request('/api/communications/gmail/sync','POST');await load();setMessage(`${result.imported} Gmail messages imported.`)})
+  const sync=()=>act(async()=>{const result=await request('/api/communications/gmail/sync','POST');await load();setMessage(`${result.imported} Gmail messages imported; ${result.updated || 0} refreshed. ${result.hasMore ? 'More messages remain. Click Sync selected labels again to continue from saved progress.' : 'Selected labels have been scanned.'}`)})
   const update=(status:string)=>act(async()=>{if(!selected)return;await request(`/api/communications/${selected.id}`,'PATCH',{status});await load();setSelected(null)})
   const createTask=()=>act(async()=>{if(!selected)return;await request(`/api/communications/${selected.id}/create-task`,'POST',{title,description,clientId,projectId,assignedToUserId:assignee});await onTaskCreated();await load();setSelected(null);setCompose(false);setMessage('Task created. The original communication remains private to you.')})
   const pages=Math.max(1,Math.ceil(total/view.pageSize))

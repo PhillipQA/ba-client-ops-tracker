@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import express from 'express'
+import { encryptSecret } from '../server/integrations/tenant-integrations'
 import { registerCommunications } from '../server/integrations/communications'
 
 function fixture() {
@@ -16,6 +17,7 @@ function fixture() {
     constructor(public table:string) {}
     select(_columns='*',options?:any) {this.head=Boolean(options?.head);return this}
     eq(key:string,value:any){this.conditions.push(x=>x[key]===value);return this}
+    contains(key:string,values:any[]){this.conditions.push(x=>values.every(v=>(x[key] || []).includes(v)));return this}
     neq(key:string,value:any){this.conditions.push(x=>x[key]!==value);return this}
     is(key:string,value:any){this.conditions.push(x=>x[key]===value || (value===null && x[key]===undefined));return this}
     in(key:string,values:any[]){this.conditions.push(x=>values.includes(x[key]));return this}
@@ -39,7 +41,7 @@ function fixture() {
   }
   const app=express();app.use(express.json());app.use((req:any,_res,next)=>{const id=String(req.headers['x-test-user']||'user-a');req.authUser={id,organizationId:'tenant',name:id,role:String(req.headers['x-test-role']||'Contributor'),modules:['inbox','items'],status:'Active'};next()})
   const hub=registerCommunications(app,{db:{from:(table:string)=>new Query(table)},requireAuth:(_req,_res,next)=>next(),requireTenant:(_req,_res,next)=>next(),sessionFromRequest:()=>({token:'session-a',user:null}),sessionByToken:(token:string)=>token==='session-a'?{id:'user-a',organizationId:'tenant',status:'Active'}:null,requirePlatformAdmin:(_req,_res,next)=>next(),organizationById:async()=>({id:'tenant',status:'Active',enabledModules:['inbox','items','settings']}),load:async()=>({data:state}),commit:async(_tenant,next)=>{saved=next},openStatus:()=> 'Open'})
-  return {app,records,users,gmailAccounts,hub,getSaved:()=>saved}
+  return {app,records,users,gmailAccounts,prefs,hub,getSaved:()=>saved}
 }
 
 test('private communications reject cross-user reads and task conversion',async()=>{
@@ -145,4 +147,38 @@ test('pagination filters before counting, reaches older records and isolates thr
     assert.equal((await get('/api/communications/message-0000/thread','user-b')).status,404)
     assert.equal((await get('/api/communications/other-tenant/thread')).status,404)
   } finally {server.close()}
+})
+
+
+test('Gmail functional sync imports beyond page one, updates existing messages, and preserves all labels and HTML body',async()=>{
+ const oldKey=process.env.TENANT_INTEGRATION_MASTER_KEY
+ process.env.TENANT_INTEGRATION_MASTER_KEY='b'.repeat(64)
+ const {app,records,gmailAccounts,prefs}=fixture()
+ gmailAccounts.push({tenant_id:'tenant',platform_enabled:true,account_enabled:true,revision:'v1',encrypted_config:encryptSecret(JSON.stringify({clientId:'test',clientSecret:'fixture',redirectUri:'http://localhost'}),'tenant','gmail-oauth')})
+ Object.assign(prefs[0],{gmail_labels:['L1','L2'],gmail_config_revision:'v1',gmail_refresh_token:encryptSecret('fixture-refresh','tenant:user-a','gmail-refresh')})
+ const server=app.listen(0),original=globalThis.fetch
+ const seenPages:string[]=[]
+ try {
+  const address=server.address();if(!address||typeof address==='string')throw new Error('No port')
+  const base=`http://127.0.0.1:${address.port}`
+  globalThis.fetch=(async(input:any)=>{
+    const url=new URL(String(input));let body:any
+    if(url.hostname==='oauth2.googleapis.com') body={access_token:'fixture-access'}
+    else if(url.pathname.endsWith('/messages')) {
+      const label=url.searchParams.get('labelIds'),token=url.searchParams.get('pageToken')||'';seenPages.push(`${label}:${token}`)
+      const page=Number(token||0)
+      body=label==='L2'?{messages:[{id:'m0'}]}:{messages:Array.from({length:page===2?5:30},(_,i)=>({id:`m${page*30+i}`})),...(page<2?{nextPageToken:String(page+1)}:{})}
+    } else { const id=url.pathname.split('/').pop();body={id,threadId:'thread',labelIds:['L1','L2'],internalDate:'1790553600000',snippet:'Too short',payload:{mimeType:'text/html',headers:[{name:'Subject',value:'Fixture email'}],body:{data:Buffer.from('<p>Supervisor approval required.</p><p>Refund limit: 500.</p>').toString('base64url')}}} }
+    return new Response(JSON.stringify(body),{status:200,headers:{'content-type':'application/json'}})
+  }) as typeof fetch
+  const sync=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(sync.status,200)
+  const result=await sync.json();assert.equal(result.imported,65);assert.equal(result.hasMore,false)
+  assert.deepEqual(seenPages,['L1:','L1:1','L1:2','L2:'])
+  const imported=records.filter(r=>r.external_id?.startsWith('m'))
+  assert.equal(imported.length,65);assert.deepEqual(imported[0].source_labels,['L1','L2']);assert.match(imported[0].body,/Refund limit: 500/)
+  const filtered=await original(base+'/api/communications?tab=Gmail&label=L2&page=1');assert.equal(filtered.status,200);assert.equal((await filtered.json()).total,65)
+  imported[0].status='Archived';imported[0].linked_task_id='task'
+  const second=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(second.status,200);assert.equal((await second.json()).imported,0)
+  assert.equal(imported[0].status,'Archived');assert.equal(imported[0].linked_task_id,'task')
+ } finally {globalThis.fetch=original;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
 })

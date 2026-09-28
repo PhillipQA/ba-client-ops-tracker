@@ -129,16 +129,25 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const [corExtractionMode, setCorExtractionMode] = useState<'local' | 'ai'>('local')
   const [aiExtractionStatus, setAiExtractionStatus] = useState<{ available: boolean; provider?: string; model?: string; error?: string }>({ available: false })
 
+  const [settingsRevision, setSettingsRevision] = useState(0)
   useEffect(() => {
+    const refresh = () => setSettingsRevision(value => value + 1)
+    window.addEventListener('account-document-settings-changed', refresh)
+    return () => window.removeEventListener('account-document-settings-changed', refresh)
+  }, [])
+
+  useEffect(() => {
+    if (!active) return
     let alive = true
     void fetch('/api/account/templates', { credentials: 'same-origin' }).then(async response => {
       const payload = await response.json().catch(() => ({})) as { templates?: { type: 'drf' | 'fsd' | 'signoff'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[] }
       if (response.ok && alive) setDocumentTemplates(Array.isArray(payload.templates) ? payload.templates : [])
     }).catch(() => undefined)
     return () => { alive = false }
-  }, [draftKey])
+  }, [draftKey, active, settingsRevision])
 
   useEffect(() => {
+    if (!active) return
     let alive = true
     void fetch('/api/documents/drf/ai-status', { credentials: 'same-origin' }).then(async response => {
       const payload = await response.json().catch(() => ({})) as { available?: boolean; provider?: string; model?: string; error?: string }
@@ -147,7 +156,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       if (!response.ok || !payload.available) setCorExtractionMode('local')
     }).catch(() => { if (alive) { setAiExtractionStatus({ available: false }); setCorExtractionMode('local') } })
     return () => { alive = false }
-  }, [draftKey])
+  }, [draftKey, active, settingsRevision])
 
   const [businessName, setBusinessName] = useState('')
   const [tradeName, setTradeName] = useState('')

@@ -1,7 +1,7 @@
 export type TestCaseSourceKind = 'BRD' | 'FSD' | 'User Story' | 'Acceptance Criteria' | 'Change Request' | 'Meeting notes' | 'Supporting document' | 'Chat'
 export type TestCaseSource = { id: string; name: string; kind: TestCaseSourceKind; text: string }
 export type TestCaseSkill = { id: string; name: string; instructions: string; builtIn?: boolean }
-export type CoverageRequirement = { id: string; title: string; sourceIds: string[]; scenarios: string[] }
+export type CoverageRequirement = { id: string; title: string; sourceIds: string[]; scenarios: string[]; evidence?: { sourceId: string; quote: string }[] }
 export type CoverageMap = { requirements: CoverageRequirement[]; gaps: string[]; provider: string; model: string; generatedAt: string }
 export type TestCaseRow = {
   id: string
@@ -19,6 +19,25 @@ export type TestCaseRow = {
   remarks: string
 }
 export type CoverageFinding = { severity: 'info' | 'warning'; text: string }
+
+export function requirementRefs(value: string) { return [...new Set(value.split(/[,;\s]+/).filter(Boolean))] }
+/** This measures links, not semantic completeness or test execution. */
+export function reviewCoverage(cases: TestCaseRow[], coverage: Pick<CoverageMap, 'requirements' | 'gaps'> | null): TestCasePreview['coverageReview'] {
+  const requirements = coverage?.requirements || []
+  const known = new Set(requirements.map(r => r.id)), linked = new Set<string>()
+  const findings: CoverageFinding[] = []
+  for (const row of cases) {
+    const refs = requirementRefs(row.requirementRef)
+    const unknown = refs.filter(ref => !known.has(ref))
+    if (!refs.length || unknown.length) findings.push({ severity: 'warning', text: `${row.id}: ${unknown.length ? `unknown requirement references: ${unknown.join(', ')}` : 'missing requirement reference'}.` })
+    const executable = Boolean(row.scenario.trim() && row.steps.trim() && row.expectedResult.trim()) && !/\b(TBD|clarification required|to be confirmed)\b/i.test(row.expectedResult)
+    if (!executable) findings.push({ severity: 'warning', text: `${row.id}: incomplete or unconfirmed expected behavior; excluded from linked coverage.` })
+    if (executable && refs.length && !unknown.length) refs.forEach(ref => linked.add(ref))
+  }
+  requirements.filter(r => !linked.has(r.id)).forEach(r => findings.push({ severity: 'warning', text: `${r.id}: no complete test case links to this requirement.` }))
+  ;(coverage?.gaps || []).forEach(text => findings.push({ severity: 'warning', text }))
+  return { summary: 'Calculated from current case links. Linked requirements still need review for scenario completeness and correct expected results; this is not a test pass rate.', coveredRequirements: linked.size, totalRequirements: requirements.length, findings }
+}
 export type TestCasePreview = {
   cases: TestCaseRow[]
   coverageReview: {

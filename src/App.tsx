@@ -1,3 +1,4 @@
+import { businessDateKey, useBusinessDate } from './businessDate'
 import RequirementsTraceability from './RequirementsTraceability'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
@@ -57,7 +58,7 @@ import InternalAdmin from './InternalAdmin'
 import { ForgotPassword, ResetPassword } from './PasswordRecovery'
 import { ALL_MODULES, defaultModulesForRole } from './access'
 import { getAuthSession, login, logout, type AuthUser } from './auth'
-import { loadCloudStore, loadDiscordInquiries, queueCloudStoreSave, waitForCloudSaves, type CloudStorageStatus } from './cloudStore'
+import { loadCloudStore, resetCloudSession, pendingCloudEdits, loadDiscordInquiries, queueCloudStoreSave, waitForCloudSaves, type CloudStorageStatus } from './cloudStore'
 import Reports from './Reports'
 import Settings, { settingsRequest } from './Settings'
 import CommunicationsHub from './CommunicationsHub'
@@ -102,7 +103,6 @@ function localDateKey(date: Date) {
   return `${yyyy}-${mm}-${dd}`
 }
 
-const TODAY = localDateKey(new Date())
 
 const seedStore = (): Store => ({
   schemaVersion: STORE_SCHEMA_VERSION,
@@ -141,7 +141,7 @@ function normalizeAccount(value: Partial<UserAccount>, index: number): UserAccou
     role,
     modules: Array.isArray(value.modules) ? value.modules.filter((module): module is AppModule => ALL_MODULES.includes(module as AppModule)) : defaultModulesForRole(role),
     status: value.status === 'Disabled' ? 'Disabled' : 'Active',
-    createdAt: String(value.createdAt || TODAY),
+    createdAt: String(value.createdAt || businessDateKey()),
     theme: normalizeAppTheme(value.theme),
     interfaceMode: normalizeInterfaceMode(value.interfaceMode),
     clientThemes: normalizeClientThemes(value.clientThemes),
@@ -267,7 +267,7 @@ const initialStore = (): Store => {
 function workEventsForItemChanges(current: Store, next: Store, actor: AuthUser | null): WorkActivityEvent[] {
   if (!actor || actor.accountType === 'platform') return []
   const occurredAt = new Date().toISOString()
-  const date = occurredAt.slice(0, 10)
+  const date = businessDateKey(occurredAt)
   const before = new Map(current.items.map((item) => [item.id, item]))
   const after = new Map(next.items.map((item) => [item.id, item]))
   const assigneeName = (id?: string) => id ? next.accounts.find((user) => user.id === id)?.name || current.accounts.find((user) => user.id === id)?.name || 'Unknown user' : undefined
@@ -338,7 +338,7 @@ const navItems: { id: AppModule; label: string; icon: typeof LayoutDashboard }[]
 const priorityRank: Record<Priority, number> = { Urgent: 4, High: 3, Medium: 2, Low: 1 }
 
 function todayOrLater(date: string) {
-  return date && date >= TODAY
+  return date && date >= businessDateKey()
 }
 
 function niceDate(date: string) {
@@ -376,6 +376,7 @@ function activityTime(activity: PlannerActivity) {
 }
 
 function App() {
+  const today = useBusinessDate()
   const [documentLaunch,setDocumentLaunch]=useState<{taskId:string;flow:'drf'|'signoff';nonce:number}>()
 
   const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.hash.slice(1)).get('reset-password'))
@@ -410,6 +411,8 @@ function App() {
   const [dashboardAiBusy, setDashboardAiBusy] = useState(false)
   const [dashboardAiError, setDashboardAiError] = useState('')
   const [dashboardAiResult, setDashboardAiResult] = useState<{ message: string; wordCount: number } | null>(null)
+  const [saveConflict, setSaveConflict] = useState('')
+  const [recoveringCloud, setRecoveringCloud] = useState(false)
   const [cloudStatus, setCloudStatus] = useState<CloudStorageStatus>('checking')
   const [cloudMessage, setCloudMessage] = useState('Checking cloud storage…')
   const [lastCloudSync, setLastCloudSync] = useState<string>('')
@@ -426,6 +429,38 @@ function App() {
   const discordPollBusy = useRef(false)
 
   useEffect(() => { storeRef.current = store }, [store])
+
+  useEffect(() => {
+    const onConflict = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail
+      try { localStorage.setItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`, JSON.stringify(pendingCloudEdits<Store>() || storeRef.current)) } catch { /* The on-screen draft remains available. */ }
+      setSaveConflict(message); setCloudStatus('error'); setCloudMessage(message)
+    }
+    window.addEventListener('workspace-save-conflict', onConflict)
+    return () => window.removeEventListener('workspace-save-conflict', onConflict)
+  }, [authUser?.organizationId])
+
+  const recoverCloud = async () => {
+    setRecoveringCloud(true)
+    try {
+      const activePending = pendingCloudEdits<Store>()
+      const pending = activePending ? JSON.stringify(activePending, null, 2) : localStorage.getItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`) || JSON.stringify(storeRef.current, null, 2)
+      localStorage.setItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`, pending)
+      const url = URL.createObjectURL(new Blob([pending], { type: 'application/json' }))
+      const link = document.createElement('a'); link.href = url; link.download = `pending-workspace-edits-${Date.now()}.json`; link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      const result = await loadCloudStore<Store>({ recover: true })
+      if (!result.configured || !result.data) throw new Error('The latest workspace could not be loaded. Your pending edits are retained.')
+      const next = normalizeStore(result.data, seedStore())
+      storeRef.current = next; setStore(next)
+      localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
+      localStorage.removeItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`)
+      setLastCloudSync(result.updatedAt || ''); setSaveConflict(''); setCloudStatus('synced')
+      setCloudMessage('Latest workspace loaded. Reapply your edits from the downloaded copy.')
+    } catch (error) { setCloudMessage(error instanceof Error ? error.message : 'Reload failed.') }
+    finally { setRecoveringCloud(false) }
+  }
+
 
   useEffect(() => {
     let cancelled = false
@@ -455,6 +490,8 @@ function App() {
   }, [authUser?.id, authUser?.organizationId])
 
   useEffect(() => {
+    resetCloudSession()
+    setSaveConflict('')
     if (!authUser) return
     if (authUser.accountType === 'platform') {
       setStore(seedStore())
@@ -469,6 +506,7 @@ function App() {
       setCloudMessage('Checking cloud storage…')
       const tenantStorageKey = organizationStorageKey(authUser.organizationId)
       const cached = localStorage.getItem(tenantStorageKey)
+      if (localStorage.getItem(`${tenantStorageKey}:pending-edits`)) setSaveConflict('A pending copy from a previous save conflict is available. Download it and reapply the needed edits to the latest workspace.')
       if (cached) {
         try { setStore(normalizeStore(JSON.parse(cached), seedStore())) } catch { /* cloud load will replace invalid cache */ }
       } else {
@@ -676,7 +714,7 @@ function App() {
     const nextEvidence = result.item.evidence?.length || 0
     const evidenceEvent = authUser && previousEvidence !== nextEvidence ? workEventsForItemChanges(current, { ...current, items: current.items.map((item) => item.id === result.item.id ? result.item : item) }, authUser)[0] : undefined
     const explicitEvidenceEvent: WorkActivityEvent | undefined = authUser && previousEvidence !== nextEvidence ? {
-      id: crypto.randomUUID(), occurredAt: new Date().toISOString(), date: TODAY, actorUserId: authUser.id, actorName: authUser.name,
+      id: crypto.randomUUID(), occurredAt: new Date().toISOString(), date: today, actorUserId: authUser.id, actorName: authUser.name,
       actorRole: authUser.role, assignedToUserId: result.item.assignedToUserId,
       assignedToName: current.accounts.find((account) => account.id === result.item.assignedToUserId)?.name,
       clientId: result.item.clientId, projectId: result.item.projectId, taskId: result.item.id, parentTaskId: result.item.parentTaskId,
@@ -780,7 +818,7 @@ function App() {
 
   const accountCurrentUser = authUser ? store.accounts.find((account) => account.id === authUser.id && account.status === 'Active') : null
   const currentUser: UserAccount | null = authUser ? {
-    ...(accountCurrentUser ?? { ...authUser, passwordHash: '', createdAt: TODAY }),
+    ...(accountCurrentUser ?? { ...authUser, passwordHash: '', createdAt: today }),
     role: authUser.role,
     modules: authUser.modules,
     organizationId: authUser.organizationId,
@@ -973,12 +1011,12 @@ function App() {
       })
   }, [store.clients, store.items, openItems, clientArchiveFilter, clientSearch, clientSort])
 
-  const overdue = openItems.filter((item) => item.followUpDate && item.followUpDate < TODAY)
-  const dueToday = openItems.filter((item) => item.followUpDate === TODAY)
+  const overdue = openItems.filter((item) => item.followUpDate && item.followUpDate < today)
+  const dueToday = openItems.filter((item) => item.followUpDate === today)
   const waitingDev = openItems.filter((item) => item.waitingOn === 'Developer')
   const waitingClient = openItems.filter((item) => item.waitingOn === 'Client')
   const attentionClientCount = new Set(openItems.map((item) => item.clientId).filter(Boolean)).size
-  const waitingDevOverdue = waitingDev.filter((item) => item.followUpDate && item.followUpDate < TODAY).length
+  const waitingDevOverdue = waitingDev.filter((item) => item.followUpDate && item.followUpDate < today).length
   const openInquiryCount = openItems.filter((item) => item.type === 'Inquiry').length
 
   const searchedItems = useMemo(() => {
@@ -990,11 +1028,11 @@ function App() {
       })
       .filter((item) => waitingFilter === 'All' || item.waitingOn === waitingFilter)
       .sort((a, b) => {
-        const aOverdue = a.followUpDate && a.followUpDate < TODAY ? 1 : 0
-        const bOverdue = b.followUpDate && b.followUpDate < TODAY ? 1 : 0
+        const aOverdue = a.followUpDate && a.followUpDate < today ? 1 : 0
+        const bOverdue = b.followUpDate && b.followUpDate < today ? 1 : 0
         return bOverdue - aOverdue || priorityRank[b.priority] - priorityRank[a.priority] || (a.followUpDate || '9999').localeCompare(b.followUpDate || '9999')
       })
-  }, [store.items, query, waitingFilter, store.clients, store.projects])
+  }, [store.items, query, waitingFilter, store.clients, store.projects, today])
 
   const actionCenterUsers = trackedActionCenterUsers(store.accounts)
   const resolvedActionCenterScope = resolveActionCenterScope(actionCenterScope, currentUser?.id || '', currentUser?.role || 'Viewer', store.accounts)
@@ -1005,7 +1043,7 @@ function App() {
   const canEditActionItem = (item: WorkItem) => canWriteTasks && (currentUser?.role === 'Administrator' || item.assignedToUserId === currentUser?.id)
   const actionCenterWaitingDev = actionCenterWorkItems.filter((item) => item.waitingOn === 'Developer')
   const actionCenterClientCount = new Set(actionCenterWorkItems.map((item) => item.clientId).filter(Boolean)).size
-  const actionCenterWaitingDevOverdue = actionCenterWaitingDev.filter((item) => item.followUpDate && item.followUpDate < TODAY).length
+  const actionCenterWaitingDevOverdue = actionCenterWaitingDev.filter((item) => item.followUpDate && item.followUpDate < today).length
   const actionCenterInquiryCount = actionCenterWorkItems.filter((item) => item.type === 'Inquiry').length
   useEffect(() => {
     if (actionCenterScope.startsWith('user:') && !actionCenterUsers.some((account) => account.id === actionCenterScope.slice('user:'.length))) setActionCenterScope('mine')
@@ -1034,21 +1072,21 @@ function App() {
   const newExternalInquiryCount = newExternalInquiryIds.filter((id) => store.items.some((item) => item.id === id && item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')).length
 
   const filteredTasks = useMemo(() => {
-    const due3 = addDays(TODAY, 3)
-    const due7 = addDays(TODAY, 7)
+    const due3 = addDays(today, 3)
+    const due7 = addDays(today, 7)
     return searchedItems.filter((item) => {
       if (taskClientFilter === '__none__' && item.clientId) return false
       if (taskClientFilter && taskClientFilter !== '__none__' && item.clientId !== taskClientFilter) return false
       if (taskProjectFilter === '__none__' && item.projectId) return false
       if (taskProjectFilter && taskProjectFilter !== '__none__' && item.projectId !== taskProjectFilter) return false
-      if (taskDateFilter === 'due-3') return Boolean(item.dueDate && item.dueDate >= TODAY && item.dueDate <= due3)
-      if (taskDateFilter === 'due-7') return Boolean(item.dueDate && item.dueDate >= TODAY && item.dueDate <= due7)
-      if (taskDateFilter === 'followup-3') return Boolean(item.followUpDate && item.followUpDate >= TODAY && item.followUpDate <= due3)
-      if (taskDateFilter === 'followup-7') return Boolean(item.followUpDate && item.followUpDate >= TODAY && item.followUpDate <= due7)
-      if (taskDateFilter === 'overdue') return Boolean((item.dueDate && item.dueDate < TODAY) || (item.followUpDate && item.followUpDate < TODAY)) && !isTaskClosed(item.status, store.taskSettings)
+      if (taskDateFilter === 'due-3') return Boolean(item.dueDate && item.dueDate >= today && item.dueDate <= due3)
+      if (taskDateFilter === 'due-7') return Boolean(item.dueDate && item.dueDate >= today && item.dueDate <= due7)
+      if (taskDateFilter === 'followup-3') return Boolean(item.followUpDate && item.followUpDate >= today && item.followUpDate <= due3)
+      if (taskDateFilter === 'followup-7') return Boolean(item.followUpDate && item.followUpDate >= today && item.followUpDate <= due7)
+      if (taskDateFilter === 'overdue') return Boolean((item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)) && !isTaskClosed(item.status, store.taskSettings)
       return true
     })
-  }, [searchedItems, taskClientFilter, taskProjectFilter, taskDateFilter, store.taskSettings])
+  }, [searchedItems, taskClientFilter, taskProjectFilter, taskDateFilter, store.taskSettings, today])
   const selectedClient = store.clients.find((client) => client.id === selectedClientId) ?? null
   const selectedProject = store.projects.find((project) => project.id === selectedProjectId) ?? null
   const editingTask = editingTaskId ? store.items.find((item) => item.id === editingTaskId) ?? null : null
@@ -1090,12 +1128,12 @@ function App() {
       items: store.items.map((item) => item.id === id ? {
         ...item,
         status,
-        startDate: status === 'In Progress' && !item.startDate ? TODAY : item.startDate,
-        resolvedDate: closed ? (item.resolvedDate || TODAY) : undefined,
+        startDate: status === 'In Progress' && !item.startDate ? today : item.startDate,
+        resolvedDate: closed ? (item.resolvedDate || today) : undefined,
         waitingOn: closed ? 'Done' : reopened && item.waitingOn === 'Done' ? 'Me' : item.waitingOn,
       } : item),
       activity: [
-        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: TODAY, text: `Task status changed: ${target.title} → ${status}` },
+        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Task status changed: ${target.title} → ${status}` },
         ...store.activity,
       ],
     })
@@ -1121,8 +1159,8 @@ function App() {
       clientId: previous.clientId,
       projectId: previous.parentTaskId ? previous.projectId : updated.projectId,
       waitingOn: closed ? 'Done' : updated.waitingOn === 'Done' ? 'Me' : updated.waitingOn,
-      startDate: updated.status === 'In Progress' && !updated.startDate ? TODAY : updated.startDate,
-      resolvedDate: closed ? (previous.resolvedDate || TODAY) : undefined,
+      startDate: updated.status === 'In Progress' && !updated.startDate ? today : updated.startDate,
+      resolvedDate: closed ? (previous.resolvedDate || today) : undefined,
     }
     const editedItems = current.items.map((item) => item.id === updated.id ? normalized : item.parentTaskId === updated.id ? { ...item, projectId: normalized.projectId } : item)
     const inheritedItems = applySubtaskAssignmentInheritance(current.items, editedItems)
@@ -1133,7 +1171,7 @@ function App() {
         owner: item.assignedToUserId ? current.accounts.find((account) => account.id === item.assignedToUserId)?.name || item.owner : '',
       })),
       activity: [
-        { id: crypto.randomUUID(), clientId: previous.clientId, projectId: normalized.projectId, date: TODAY, text: `Updated task: ${previous.title}` },
+        { id: crypto.randomUUID(), clientId: previous.clientId, projectId: normalized.projectId, date: today, text: `Updated task: ${previous.title}` },
         ...current.activity,
       ],
     }
@@ -1179,7 +1217,7 @@ function App() {
       ...store,
       items: store.items.filter((item) => item.id !== id && item.parentTaskId !== id),
       activity: [
-        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: TODAY, text: `Deleted task: ${target.title}` },
+        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Deleted task: ${target.title}` },
         ...store.activity,
       ],
     })
@@ -1226,19 +1264,19 @@ function App() {
       ...store,
       items: store.items.map((item) => (item.id === id ? { ...item, type } : item)),
       activity: [
-        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: TODAY, text: `Inquiry converted to ${type.toLowerCase()}: ${target.title}` },
+        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Inquiry converted to ${type.toLowerCase()}: ${target.title}` },
         ...store.activity,
       ],
     })
   }
 
-  const weekStart = weekStartKey(TODAY)
-  const weekEnd = weekEndKey(TODAY)
+  const weekStart = weekStartKey(today)
+  const weekEnd = weekEndKey(today)
   const sortedPlanner = [...store.planner].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
-  const todayActivities = sortedPlanner.filter((item) => item.date === TODAY && item.status !== 'Cancelled')
+  const todayActivities = sortedPlanner.filter((item) => item.date === today && item.status !== 'Cancelled')
   const weekActivities = sortedPlanner.filter((item) => item.date >= weekStart && item.date <= weekEnd && item.status !== 'Cancelled')
   const todayFollowUps = actionCenterWorkItems
-    .filter((item) => item.followUpDate === TODAY)
+    .filter((item) => item.followUpDate === today)
     .sort((a, b) => priorityRank[b.priority] - priorityRank[a.priority] || a.title.localeCompare(b.title))
   const weekFollowUps = actionCenterWorkItems
     .filter((item) => item.followUpDate && item.followUpDate >= weekStart && item.followUpDate <= weekEnd)
@@ -1316,7 +1354,7 @@ function App() {
       const activity: PlannerActivity = {
         id: crypto.randomUUID(),
         title: suggestion.title,
-        date: suggestion.activityDate || suggestion.followUpDate || TODAY,
+        date: suggestion.activityDate || suggestion.followUpDate || today,
         startTime: suggestion.activityTime || '',
         endTime: '',
         allDay: !suggestion.activityTime,
@@ -1342,7 +1380,7 @@ function App() {
       waitingOn: suggestion.waitingOn || 'Me',
       assignedToUserId: currentUser?.id,
       owner: currentUser?.name || '',
-      dateRaised: TODAY,
+      dateRaised: today,
       startDate: '',
       dueDate: '',
       followUpDate: suggestion.followUpDate || '',
@@ -1353,7 +1391,7 @@ function App() {
     persist({
       ...store,
       items: [item, ...store.items],
-      activity: [{ id: crypto.randomUUID(), clientId, projectId, date: TODAY, text: `AI suggestion approved: created ${type.toLowerCase()} task — ${suggestion.title}` }, ...store.activity],
+      activity: [{ id: crypto.randomUUID(), clientId, projectId, date: today, text: `AI suggestion approved: created ${type.toLowerCase()} task — ${suggestion.title}` }, ...store.activity],
     })
     return `Created ${type.toLowerCase()} task: ${suggestion.title}`
   }
@@ -1393,6 +1431,7 @@ function App() {
       </aside>
 
       <main>
+        {saveConflict && <div className="panel" role="alert"><strong>Save conflict — your edits are kept locally.</strong><p>{saveConflict}</p><p>Download your pending workspace copy and reload, then reapply your edits to the current records. Open editors stay open for reference; reopen them before saving.</p><button className="secondary" disabled={recoveringCloud} onClick={() => void recoverCloud()}>{recoveringCloud ? 'Reloading…' : 'Download edits and reload latest'}</button></div>}
         <header className="topbar">
           <div><p className="eyebrow">{currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}</p><div className="record-title-line"><h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1>{canWrite && ((selectedClient && hasModule('clients')) || (selectedProject && hasModule('projects'))) && <button className="secondary record-title-edit" onClick={() => setEditingRecord(selectedProject ? { kind: 'projects', id: selectedProject.id } : { kind: 'clients', id: selectedClient!.id })}><Pencil size={16} />{selectedProject ? 'Edit project' : 'Edit client'}</button>}</div></div>
           <div className="top-actions">
@@ -1715,7 +1754,7 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, accounts,
       const item = entry.item
       const parent = item.parentTaskId ? allItems.find((candidate) => candidate.id === item.parentTaskId) : undefined
       const context = [clientName(item.clientId), projectName(item.projectId)].filter(Boolean).join(' · ')
-      const overdue = Boolean((item.dueDate && item.dueDate < TODAY) || item.followUpDate < TODAY)
+      const overdue = Boolean((item.dueDate && item.dueDate < businessDateKey()) || item.followUpDate < businessDateKey())
       const assignedTo = accounts.find((account) => account.id === item.assignedToUserId)?.name || 'Unassigned'
       const canEditThisItem = canEditTask(item)
       return <article className={`activity-tile${overdue ? ' activity-tile-overdue' : ''}`} key={`followup-${item.id}`}>
@@ -1732,7 +1771,7 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, accounts,
     }
     const activity = entry.activity
     const context = [clientName(activity.clientId), projectName(activity.projectId)].filter(Boolean).join(' · ')
-    const overdue = activity.status === 'Planned' && (activity.endDate || activity.date) < TODAY
+    const overdue = activity.status === 'Planned' && (activity.endDate || activity.date) < businessDateKey()
     return <article className={`activity-tile${activity.status === 'Done' ? ' activity-tile-done' : ''}${overdue ? ' activity-tile-overdue' : ''}`} key={`activity-${activity.id}`}>
       <div className="activity-tile-top"><span className="activity-tile-kind">{activity.source === 'Google Calendar' ? 'Calendar' : 'Tracker'}</span>{overdue && <span className="activity-overdue-label">Overdue</span>}</div>
       <h3>{canEdit ? <button type="button" className="activity-tile-title" onClick={() => onEdit(activity)}>{activity.title}</button> : activity.title}</h3>
@@ -1754,7 +1793,7 @@ function DashboardActionTable({ items, accounts, clients, projects, planner }: {
   const [page, setPage] = useState(1)
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown' : 'General'
   const nextActivity = (item: WorkItem) => planner
-    .filter((activity) => activity.status === 'Planned' && activity.date >= TODAY && activity.clientId === item.clientId && (!activity.projectId || activity.projectId === item.projectId))
+    .filter((activity) => activity.status === 'Planned' && activity.date >= businessDateKey() && activity.clientId === item.clientId && (!activity.projectId || activity.projectId === item.projectId))
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))[0]
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize))
   const safePage = Math.min(page, totalPages)
@@ -1765,9 +1804,9 @@ function DashboardActionTable({ items, accounts, clients, projects, planner }: {
   return <>
     <div className="table-scroll"><table className="dashboard-action-table"><thead><tr><th>Client</th><th>Task</th><th>Assigned to</th><th>Waiting on</th><th>Follow-up</th><th>Next activity</th></tr></thead><tbody>{visibleItems.map((item) => {
       const activity = nextActivity(item)
-      const activityLabel = activity ? `${activity.date === TODAY ? activityTime(activity) : `${niceDate(activity.date)} · ${activityTime(activity)}`} — ${activity.title}` : '—'
+      const activityLabel = activity ? `${activity.date === businessDateKey() ? activityTime(activity) : `${niceDate(activity.date)} · ${activityTime(activity)}`} — ${activity.title}` : '—'
       const assignee = accounts.find((account) => account.id === item.assignedToUserId)?.name || 'Unassigned'
-      return <tr key={item.id}><td><strong>{clientName(item.clientId)}</strong></td><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{assignee}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < TODAY ? 'overdue-date' : ''}>{item.followUpDate === TODAY ? 'Today' : niceDate(item.followUpDate)}</td><td>{activityLabel}</td></tr>
+      return <tr key={item.id}><td><strong>{clientName(item.clientId)}</strong></td><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{assignee}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < businessDateKey() ? 'overdue-date' : ''}>{item.followUpDate === businessDateKey() ? 'Today' : niceDate(item.followUpDate)}</td><td>{activityLabel}</td></tr>
     })}</tbody></table></div>
     <div className="dashboard-action-pagination">
       <label>Items per page<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1) }}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label>
@@ -1808,7 +1847,7 @@ function ActivityForm({ clients, projects, initial, onSubmit }: { clients: Clien
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
-    const startDate = String(form.get('date') || TODAY)
+    const startDate = String(form.get('date') || businessDateKey())
     const requestedEndDate = String(form.get('endDate') || startDate)
     const endDate = requestedEndDate >= startDate ? requestedEndDate : startDate
     onSubmit({
@@ -1831,8 +1870,8 @@ function ActivityForm({ clients, projects, initial, onSubmit }: { clients: Clien
   return <form className="form-grid" onSubmit={submit}>
     {initial?.source === 'Google Calendar' && <div className="readonly-notice span-2"><CalendarDays size={18} /><div><strong>Local calendar copy</strong><span>Your edits here stay in the BA Tracker. They are never sent back to Google Calendar.</span></div></div>}
     <label className="span-2">Activity title<input name="title" required defaultValue={initial?.title ?? ''} placeholder="Meeting, prep work, follow-up, review..." /></label>
-    <label>Start date<input name="date" type="date" required defaultValue={initial?.date ?? TODAY} /></label>
-    <label>End date<input name="endDate" type="date" defaultValue={initial?.endDate ?? initial?.date ?? TODAY} /></label>
+    <label>Start date<input name="date" type="date" required defaultValue={initial?.date ?? businessDateKey()} /></label>
+    <label>End date<input name="endDate" type="date" defaultValue={initial?.endDate ?? initial?.date ?? businessDateKey()} /></label>
     <label>Status<select name="status" defaultValue={initial?.status ?? 'Planned'}><option>Planned</option><option>Done</option><option>Cancelled</option></select></label>
     <label className="checkbox-label"><input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} /> All-day activity</label><div />
     {!allDay && <><label>Start time<input name="startTime" type="time" defaultValue={initial?.startTime ?? ''} /></label><label>End time<input name="endTime" type="time" defaultValue={initial?.endTime ?? ''} /></label></>}
@@ -1928,7 +1967,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
   const renderRow = (item: WorkItem, isSubtask = false) => {
     const rowEditable = canEdit && !archivedWorkReason({ clients, projects, items: sourceItems, taskSettings }, item)
     const closed = isTaskClosed(item.status, taskSettings)
-    const overdue = !closed && Boolean((item.dueDate && item.dueDate < TODAY) || (item.followUpDate && item.followUpDate < TODAY))
+    const overdue = !closed && Boolean((item.dueDate && item.dueDate < businessDateKey()) || (item.followUpDate && item.followUpDate < businessDateKey()))
     const children = sortedChildren(item.id)
     const completedChildren = children.filter((child) => isTaskClosed(child.status, taskSettings) || child.waitingOn === 'Done').length
     const siblings = isSubtask && item.parentTaskId ? sortedChildren(item.parentTaskId) : []
@@ -1945,7 +1984,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
       onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
     >
       <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{rowEditable && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong>{item.docHubDocuments?.map(d=><span className="dochub-task-badge" key={d.id}>DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}</span>)}<small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{isSubtask && item.comments?.length ? ` · ${item.comments.length} system update${item.comments.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small>{isSubtask && <span className="subtask-schedule-summary">Start: {item.startDate ? niceDate(item.startDate) : 'Not set'} · Due: {item.dueDate ? niceDate(item.dueDate) : 'Not set'}</span>}</div></div></td>
-      {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || 'Unassigned' : column === 'startDate' ? niceDate(item.startDate || '') : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < TODAY && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
+      {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || 'Unassigned' : column === 'startDate' ? niceDate(item.startDate || '') : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < businessDateKey() && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < businessDateKey() && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
       <td><div className="task-row-actions">{!rowEditable && (item.evidence || []).map(entry => <a key={entry.id} className="secondary compact" href={taskEvidenceUrl(item.id, entry)} target="_blank" rel="noreferrer">{entry.fileName}</a>)}{rowEditable && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{rowEditable && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{rowEditable && isSubtask && <button className="icon-button" title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'} onClick={() => onEdit(item.id)}><Paperclip size={17} /></button>}{rowEditable && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{rowEditable && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{rowEditable && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
   }
@@ -1977,7 +2016,7 @@ function ProjectDetail({ onOpenRtms, controls, project, clientContextId, store, 
   const parentTasks = tasks.filter((item) => !item.parentTaskId)
   const subtasks = tasks.filter((item) => Boolean(item.parentTaskId))
   const openTasks = tasks.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
-  const dueSoon = openTasks.filter((item) => item.dueDate && item.dueDate >= TODAY && item.dueDate <= addDays(TODAY, 7))
+  const dueSoon = openTasks.filter((item) => item.dueDate && item.dueDate >= businessDateKey() && item.dueDate <= addDays(businessDateKey(), 7))
   const completedSubtasks = subtasks.filter((item) => isTaskClosed(item.status, store.taskSettings) || item.waitingOn === 'Done').length
   const clientCount = new Set(allProjectTasks.map((item) => item.clientId).filter(Boolean)).size
   const communication = store.activity.filter((entry) => entry.projectId === project.id && (!clientContextId || entry.clientId === clientContextId)).sort((a, b) => b.date.localeCompare(a.date))
@@ -1985,7 +2024,7 @@ function ProjectDetail({ onOpenRtms, controls, project, clientContextId, store, 
   const addNote = (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || !note.trim()) return
-    setStore({ ...store, activity: [{ id: crypto.randomUUID(), clientId: clientContextId || undefined, projectId: project.id, date: TODAY, text: note.trim() }, ...store.activity] })
+    setStore({ ...store, activity: [{ id: crypto.randomUUID(), clientId: clientContextId || undefined, projectId: project.id, date: businessDateKey(), text: note.trim() }, ...store.activity] })
     setNote('')
   }
   return <section className="page-stack project-detail-page">
@@ -2032,7 +2071,7 @@ function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean
   const [type, setType] = useState<ItemType>(preset?.type || 'Task')
   const [status, setStatus] = useState(defaultOpenTaskStatus(store.taskSettings))
   const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
-  const workloadFor = (userId: string) => { const active = store.items.filter((item) => item.assignedToUserId === userId && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((item) => Boolean(item.dueDate && item.dueDate < TODAY)).length} overdue` }
+  const workloadFor = (userId: string) => { const active = store.items.filter((item) => item.assignedToUserId === userId && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((item) => Boolean(item.dueDate && item.dueDate < businessDateKey())).length} overdue` }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -2056,7 +2095,7 @@ function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean
       assignedToUserId,
       assignmentInherited: parent ? true : undefined,
       owner: assignedToUserId ? assignableUsers.find((account) => account.id === assignedToUserId)?.name || parent?.owner || '' : '',
-      dateRaised: TODAY,
+      dateRaised: businessDateKey(),
       startDate,
       dueDate,
       followUpDate: String(form.get('followUpDate') || ''),
@@ -2100,7 +2139,7 @@ function TaskEditForm({ canLinkRtm, store, item, onSubmit, onDelete, onEvidenceM
   const inheritAssignmentValue = '__inherit_parent_assignment__'
   const inheritsParentAssignment = Boolean(parent && (typeof item.assignmentInherited === 'boolean' ? item.assignmentInherited : String(item.assignedToUserId || '') === String(parent.assignedToUserId || '')))
   const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
-  const workloadFor = (userId: string) => { const active = store.items.filter((candidate) => candidate.assignedToUserId === userId && !isTaskClosed(candidate.status, store.taskSettings) && candidate.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((candidate) => Boolean(candidate.dueDate && candidate.dueDate < TODAY)).length} overdue` }
+  const workloadFor = (userId: string) => { const active = store.items.filter((candidate) => candidate.assignedToUserId === userId && !isTaskClosed(candidate.status, store.taskSettings) && candidate.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((candidate) => Boolean(candidate.dueDate && candidate.dueDate < businessDateKey())).length} overdue` }
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (saving) return

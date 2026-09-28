@@ -74,7 +74,7 @@ export function reconcileNotifications(state: any, options: {
   }
 
   const events = Array.isArray(state?.workEvents) ? state.workEvents : []
-  const rolledTaskIds = new Set(events.filter((event: any) => event?.action === 'follow_up_auto_moved' && (newEventIds.has(String(event?.id || '')) || (initializedAt && String(event?.occurredAt || '') >= initializedAt))).map((event: any) => String(event.taskId || '')))
+  const rolledTaskIds = new Set(events.filter((event: any) => event?.action === 'follow_up_auto_moved' && String(event.date || '') === options.today && (newEventIds.has(String(event?.id || '')) || (initializedAt && String(event?.occurredAt || '') >= initializedAt))).map((event: any) => String(event.taskId || '')))
   for (const event of events) {
     const eventId = String(event?.id || '')
     if (!eventId) continue

@@ -1,3 +1,5 @@
+import { buildAssistantContext } from './ai/assistant-context'
+import { workspaceVersion, mergeActivity } from './services/workspace-version'
 import { assertRtmMutation, reconcileRtm } from '../src/rtm'
 import { createDocHubService, registerDocHubRoutes, registerDocHubWebhook } from './integrations/dochub'
 import { runTenantAi } from './ai/tenant-ai'
@@ -382,6 +384,8 @@ async function organizationByLoginKey(account: string) {
   return data ? normalizeOrganization(data) : null
 }
 
+const loadedRevisions = new WeakMap<object, string | null>()
+
 async function loadTenantState(organizationId?: string | null) {
   if (!supabaseAdmin) return { configured: false, data: null as any, updatedAt: undefined as string | undefined }
   // A known tenant must never fall back to the original workspace after a DB error.
@@ -396,13 +400,15 @@ async function loadTenantState(organizationId?: string | null) {
     const accounts = Array.isArray(snapshot.accounts) ? snapshot.accounts : []
     const knownIds = new Set(accounts.map((account: any) => String(account.id)))
     const recovered = (users || []).filter((user: any) => !knownIds.has(String(user.id))).map(accountFromDatabase)
-    return { configured: true, data: { ...snapshot, accounts: [...accounts, ...recovered] }, updatedAt: data?.updated_at as string | undefined }
+    const recoveredState = { ...snapshot, accounts: [...accounts, ...recovered] }
+    loadedRevisions.set(recoveredState, data?.updated_at || null)
+    return { configured: true, data: recoveredState, updatedAt: data?.updated_at as string | undefined }
   }
   return loadLegacyTrackerState()
 }
 
-async function saveTenantState(organizationId: string | undefined, data: any) {
-  const saved = await commitTenantState(organizationId, data, null, 'account-snapshot', undefined, false)
+async function saveTenantState(organizationId: string | undefined, data: any, before: any) {
+  const saved = await commitTenantState(organizationId, data, null, 'account-snapshot', before, false)
   return saved.syncedAt
 }
 
@@ -425,6 +431,7 @@ function tenantIdForUser(user: SessionUser | null | undefined) {
 
 type NormalizedSyncResult = {
   ready: boolean
+  version?: string
   syncedAt?: string
   counts?: Record<string, number>
   error?: string
@@ -463,7 +470,7 @@ function authoritativeWorkEvents(current: any, next: any, actor: SessionUser) {
   const assigneeName = (id?: string) => id ? accounts.find((account: any) => String(account?.id || '') === id)?.name || 'Unknown user' : undefined
   const closedStatuses = new Set((Array.isArray(next?.taskSettings?.statuses) ? next.taskSettings.statuses : defaultTaskSettings.statuses).filter((status: any) => status?.closed).map((status: any) => String(status.label)))
   const occurredAt = new Date().toISOString()
-  const date = occurredAt.slice(0, 10)
+  const date = dateKeyInTimeZone(new Date(occurredAt), followUpTimeZone)
   const created: any[] = []
   const make = (item: any, action: string, summary: string, field?: string, oldValue?: string, newValue?: string) => ({
     id: crypto.randomUUID(), occurredAt, date, actorUserId: actor.id, actorName: actor.name, actorRole: actor.role,
@@ -574,7 +581,7 @@ async function commitTenantState(organizationId: string | undefined, state: any,
     if (state.rtms === undefined) state = { ...state, rtms: current.rtms || [] }
     assertRtmMutation(current, state, actor)
     const reconciled = reconcileRtm(current, state, actor)
-    return writeTenantState(organizationId, reconciled, actor, reason, before, synchronize)
+    return writeTenantState(organizationId, reconciled, actor, reason, current, synchronize)
   })
 }
 
@@ -599,7 +606,7 @@ async function ensureTenantFollowUpsCurrent(organizationId: string): Promise<Ten
       const saved = await commitTenantState(organizationId, notifications.state, null, reason, current.data, rollover.changed)
       return { configured: true, data: notifications.state, updatedAt: saved.syncedAt, changes: rollover.changes, notificationCount: notifications.created.length }
     } catch (error) {
-      if (attempt === 0 && error instanceof LifecycleError) continue
+      if (attempt === 0 && (error instanceof LifecycleError || error instanceof TenantSaveError && error.status === 409)) continue
       throw error
     }
   }
@@ -625,7 +632,9 @@ async function reconcileFollowUpRollovers() {
 async function writeTenantState(organizationId: string | undefined, state: any, actor: SessionUser | null, reason: string, before?: any, synchronize = true): Promise<NormalizedSyncResult> {
   if (!supabaseAdmin) throw new TenantSaveError('Supabase is not configured.', 503)
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
-  const { data, error } = await supabaseAdmin.rpc('save_tenant_state_v6', {
+  if (!before || !loadedRevisions.has(before)) throw new TenantSaveError('Reload the workspace before saving.', 409)
+  const { data, error } = await supabaseAdmin.rpc('save_tenant_state_v16', {
+    p_expected_updated_at: loadedRevisions.get(before),
     p_organization_id: organizationId,
     p_state: state,
     p_records: synchronize ? normalizedRecords(state, organizationId) : null,
@@ -634,15 +643,15 @@ async function writeTenantState(organizationId: string | undefined, state: any, 
     p_reason: reason,
   })
   if (error) {
-    if (error.code === 'PGRST202' || error.code === '42883') throw new TenantSaveError('Database update required: run supabase/schema-v6-tenant-save-integrity.sql in Supabase SQL Editor, then retry.', 409)
-    const status = error.code === '42501' ? 403 : ['23505', '23514', '22023', '22007', '22008'].includes(error.code) ? 400 : 500
+    if (error.code === 'PGRST202' || error.code === '42883') throw new TenantSaveError('Database update required: run database/migrations/schema-v16-functional-integrity.sql in Supabase SQL Editor, then retry.', 409)
+    const status = error.code === '40001' ? 409 : error.code === '42501' ? 403 : ['23505', '23514', '22023', '22007', '22008'].includes(error.code) ? 400 : 500
     throw new TenantSaveError(error.message || 'The tenant save was rolled back.', status)
   }
-  return data as NormalizedSyncResult
+  return { ...data, version: workspaceVersion(state) } as NormalizedSyncResult
 }
 
 async function syncNormalizedState(state: any, actor: SessionUser | null = null, reason = 'sync', organizationId?: string): Promise<NormalizedSyncResult> {
-  return commitTenantState(organizationId, state, actor, reason)
+  return commitTenantState(organizationId, state, actor, reason, state)
 }
 
 function isLegacyStore(data: any) {
@@ -793,7 +802,7 @@ app.post('/api/auth/login', enforceLoginFailureLimit, async (req, res) => {
     if (!isBcryptHash(legacyAccount.passwordHash)) {
       const upgradedHash = await secureHashPassword(password)
       const nextState = { ...state.data, accounts: accounts.map((entry: any) => String(entry.id) === String(legacyAccount.id) ? { ...entry, passwordHash: upgradedHash } : entry) }
-      await saveTenantState(BXI_CORE_ORG_ID, nextState)
+      await saveTenantState(BXI_CORE_ORG_ID, nextState, state.data)
       legacyAccount.passwordHash = upgradedHash
     }
     const legacyOrganization: OrganizationInfo = { id: BXI_CORE_ORG_ID, name: BXI_CORE_ORG_NAME, slug: BXI_CORE_ORG_SLUG, status: 'Active', enabledModules: [...ALL_MODULES] }
@@ -916,7 +925,7 @@ app.get('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try {
     const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
-    res.json({ configured: true, data: sanitizeStateForClient(state.data, user), updatedAt: state.updatedAt, organizationId: user.organizationId, organizationName: user.organizationName })
+    res.json({ configured: true, data: sanitizeStateForClient(state.data, user), updatedAt: state.updatedAt, version: workspaceVersion(state.data), timeZone: followUpTimeZone, organizationId: user.organizationId, organizationName: user.organizationName })
   } catch (error) {
     console.error('Supabase load failed:', error)
     res.status(500).json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database load failed.' })
@@ -1059,6 +1068,10 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     }
     const current = currentState.data && typeof currentState.data === 'object' ? currentState.data : { schemaVersion: 6, clients: [], projects: [], items: [], activity: [], planner: [], workEvents: [], notifications: [], accounts: [], taskSettings: defaultTaskSettings }
 
+    if (typeof req.body?.baseVersion !== 'string' || req.body.baseVersion !== workspaceVersion(current)) {
+      return void res.status(409).json({ configured: true, refreshRequired: true, error: 'This workspace has newer changes. Your edits are retained locally. Download them and reload the latest workspace before reapplying your change.' })
+    }
+
     // The browser may add default display columns while loading old tenant
     // data. Ordinary workspace saves cannot edit platform-managed settings.
     next = preserveTaskSettings(current, { ...next, schemaVersion: Math.max(6, Number(next.schemaVersion || 0)) })
@@ -1072,7 +1085,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     const missingDiscordItems = legacyDiscordItems.filter((item: any) => !nextIds.has(String(item.id || '')))
 
     const currentAccounts = Array.isArray(current.accounts) ? current.accounts.map(accountDefaults) : []
-    const incomingAccounts = preserveInterfaceModes(currentAccounts, Array.isArray(next.accounts) ? next.accounts.map(accountDefaults) : [])
+    const incomingAccounts = preserveInterfaceModes(currentAccounts, currentAccounts)
     const nextAccounts = await prepareAccountPasswords(currentAccounts, incomingAccounts)
     const assignableUsers = new Map(nextAccounts.filter((account: any) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor')).map((account: any) => [String(account.id), account]))
     const currentItemMap = new Map(currentItems.map((item: any) => [String(item?.id || ''), item]))
@@ -1087,11 +1100,11 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
       if (startDate && dueDate && dueDate < startDate) throw new TenantSaveError(`Task “${String(item?.title || 'Untitled')}” cannot be due before its Start Date.`, 400)
       const currentItem = currentItemMap.get(String(item?.id || '')) as any
       const comments = Array.isArray(currentItem?.comments) ? currentItem.comments : []
-      return { ...item, comments, docHubDocuments: currentItem?.docHubDocuments || [], assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
+      return { ...item, comments, evidence: currentItem?.evidence || [], docHubDocuments: currentItem?.docHubDocuments || [], assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
     })
     // Work history is derived on the server from the authenticated actor. Browser-supplied
     // event identities are never trusted, so assignment and action reports remain auditable.
-    const candidateNext = { ...next, rtms: next.rtms === undefined ? current.rtms || [] : next.rtms, accounts: nextAccounts, items: normalizedItems, notifications: Array.isArray(current.notifications) ? current.notifications : [], notificationState: current.notificationState }
+    const candidateNext = { ...next, activity: mergeActivity(current.activity, next.activity), rtms: next.rtms === undefined ? current.rtms || [] : next.rtms, accounts: nextAccounts, items: normalizedItems, notifications: Array.isArray(current.notifications) ? current.notifications : [], notificationState: current.notificationState }
     const workEvents = authoritativeWorkEvents(current, candidateNext, user)
     const existingEventIds = new Set((Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event?.id || '')))
     const newEventIds = workEvents.filter((event: any) => !existingEventIds.has(String(event?.id || ''))).map((event: any) => String(event.id))
@@ -1149,7 +1162,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
       if (own) for (const [token, sessionUser] of sessions.entries()) if (sessionUser.id === user.id) sessions.set(token, safeUser({ ...own, isPlatformAdmin: sessionUser.isPlatformAdmin }, organization))
     }
 
-    res.json({ configured: true, saved: true, updatedAt })
+    res.json({ configured: true, saved: true, updatedAt, version: saved.version })
   } catch (error) {
     console.error('Supabase save failed:', error)
     res.status(error instanceof TenantSaveError || error instanceof LifecycleError ? error.status : 500).json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database save failed.' })
@@ -1188,7 +1201,7 @@ async function updateTenantAccountSnapshot(organizationId: string, accountId: st
     ? existing ? accounts.map((account: any) => String(account.id) === accountId ? updated : account) : [...accounts, updated]
     : accounts.filter((account: any) => String(account.id) !== accountId)
   const next = { ...base, schemaVersion: 6, workEvents: Array.isArray(base.workEvents) ? base.workEvents : [], accounts: nextAccounts, taskSettings: base.taskSettings || defaultTaskSettings }
-  await saveTenantState(organizationId, next)
+  await saveTenantState(organizationId, next, base)
   return next
 }
 
@@ -1261,7 +1274,8 @@ app.post('/api/internal-admin/organizations', requireAuth, requirePlatformAdmin,
       await supabaseAdmin.from('organizations').delete().eq('id', organizationId)
       throw userError
     }
-    await saveTenantState(organizationId, emptyTenantData([account]))
+    const initial = await loadTenantState(organizationId)
+    await saveTenantState(organizationId, { ...initial.data, accounts: [account] }, initial.data)
     res.json({ organization: { id: organizationId, name, slug, status: 'Active', enabledModules: modules } })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Could not create tenant account.' })
@@ -1500,30 +1514,7 @@ app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res)
   let context: any
   try {
     const state = (await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))).data || emptyTenantData()
-    const allItems = Array.isArray(state.items) ? state.items : []
-    const allClients = Array.isArray(state.clients) ? state.clients : []
-    const allProjects = Array.isArray(state.projects) ? state.projects : []
-    const allPlanner = Array.isArray(state.planner) ? state.planner : []
-    const allEvents = Array.isArray(state.workEvents) ? state.workEvents : []
-    const requestedClientId = String(requestedContext?.client?.id || '')
-    const requestedProjectId = String(requestedContext?.project?.id || '')
-    const canSeeItems = moduleAllowed(user, 'items') || moduleAllowed(user, 'inbox')
-    const client = moduleAllowed(user, 'clients') ? allClients.find((entry: any) => String(entry.id) === requestedClientId) : undefined
-    const project = moduleAllowed(user, 'projects') ? allProjects.find((entry: any) => String(entry.id) === requestedProjectId) : undefined
-    const scopedItems = canSeeItems ? allItems.filter((item: any) => (!requestedClientId || String(item.clientId || '') === requestedClientId) && (!requestedProjectId || String(item.projectId || '') === requestedProjectId)) : []
-    const closed = new Set((Array.isArray(state.taskSettings?.statuses) ? state.taskSettings.statuses : defaultTaskSettings.statuses).filter((status: any) => status?.closed).map((status: any) => String(status.label)))
-    const ownAssignments = scopedItems.filter((item: any) => String(item.assignedToUserId || '') === user.id)
-    const ownActivity = allEvents.filter((event: any) => (String(event.actorUserId || '') === user.id || String(event.assignedToUserId || '') === user.id || (String(event.field || '') === 'assignedToUserId' && String(event.oldValue || '') === user.id)) && (!requestedClientId || String(event.clientId || '') === requestedClientId) && (!requestedProjectId || String(event.projectId || '') === requestedProjectId)).slice(0, 80)
-    context = {
-      currentUser: { id: user.id, name: user.name, role: user.role, modules: user.modules },
-      pronounRule: `When the user says I, me, or my, they mean ${user.name} (${user.id}).`,
-      client, project,
-      openItems: scopedItems.filter((item: any) => !closed.has(String(item.status)) && item.waitingOn !== 'Done').slice(0, 50),
-      recentItems: scopedItems.slice(0, 50),
-      upcomingActivities: moduleAllowed(user, 'action') ? allPlanner.filter((activity: any) => activity.status === 'Planned' && (!requestedClientId || String(activity.clientId || '') === requestedClientId) && (!requestedProjectId || String(activity.projectId || '') === requestedProjectId)).slice(0, 30) : [],
-      myAssignments: ownAssignments.slice(0, 60), myRecentActivity: ownActivity,
-      teamActivity: user.role === 'Administrator' ? allEvents.filter((event: any) => (!requestedClientId || String(event.clientId || '') === requestedClientId) && (!requestedProjectId || String(event.projectId || '') === requestedProjectId)).slice(0, 100) : undefined,
-    }
+    context = buildAssistantContext(state, user, requestedContext, message, today, followUpTimeZone, module => moduleAllowed(user, module as any))
   } catch (error) {
     console.error('AI context load failed:', error)
     return void res.status(503).json({ error: 'The assistant could not load your authorized workspace context.' })
@@ -1534,7 +1525,7 @@ Your job is to assess messy client input and help the BA organize work without m
 Be concise, practical, and evidence-aware. Distinguish what is known from what needs confirmation.
 Never claim a ticket, activity, email, or requirement was created or sent. You only propose actions for the human to approve.
 The authenticated current user is authoritative. Interpret I/me/my as that user. Respect the supplied role and permission-filtered context. Never infer or request hidden tenant data.
-Today is ${today}.
+Today is ${today}. Use the supplied business timezone and explicit period. Use exact totals for counts, never count sampled arrays as the workspace total. Detail arrays may be partial and descriptions shortened: acknowledge omissions, do not claim an exhaustive review, and request a narrower scope when needed. Distinguish current assignments from historical contributions. Cite task/event IDs for factual claims. Never use chat history as newer authoritative tracker data.
 
 Return JSON only with this shape:
 {
@@ -1574,7 +1565,7 @@ ${message}`,
     const parsed = parseModelJson(outputText)
     const responseMessage = String(parsed.message || '').trim()
     if (!responseMessage) throw new Error('The model returned no assessment.')
-    res.json({ message: responseMessage, suggestions: sanitizeSuggestions(parsed.suggestions) })
+    res.json({ message: responseMessage + (context.coverageNotice ? `\n\n${context.coverageNotice}` : ''), suggestions: sanitizeSuggestions(parsed.suggestions), contextCoverage: context.coverage })
   } catch (error) {
     console.error('Account AI request failed.')
     res.status(502).json({ error: 'BA Assistant request failed. Check this account’s BA Assistant provider, key, selected model, quota, and connection.' })

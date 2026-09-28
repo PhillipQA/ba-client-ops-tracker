@@ -39,8 +39,9 @@ export async function askBAAssistant(args: {
   message: string
   context: AssistantContext
   history: AIMessage[]
-}): Promise<{ message: string; suggestions: AISuggestion[] }> {
+}, signal?: AbortSignal): Promise<{ message: string; suggestions: AISuggestion[] }> {
   const response = await fetch('/api/assistant', {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(args),

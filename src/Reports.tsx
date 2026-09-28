@@ -1,3 +1,4 @@
+import { businessDateKey, useBusinessDate } from './businessDate'
 import { useMemo, useState } from 'react'
 import { Activity, AlertTriangle, CalendarRange, CheckCircle2, Clock3, Download, ListTodo, UsersRound } from 'lucide-react'
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
@@ -26,12 +27,12 @@ function niceDate(date: string) {
 }
 
 function startOfMonthKey() {
-  const today = new Date()
+  const today = dateFromKey(businessDateKey())
   return localDateKey(new Date(today.getFullYear(), today.getMonth(), 1))
 }
 
 function endOfMonthKey() {
-  const today = new Date()
+  const today = dateFromKey(businessDateKey())
   return localDateKey(new Date(today.getFullYear(), today.getMonth() + 1, 0))
 }
 
@@ -57,12 +58,12 @@ export default function Reports({ clients, projects, items, planner, taskSetting
   const [clientId, setClientId] = useState('')
   const [projectId, setProjectId] = useState('')
   const [userId, setUserId] = useState(currentUser.role === 'Administrator' ? '' : currentUser.id)
-  const today = localDateKey(new Date())
+  const today = useBusinessDate()
   const trackedUsers = useMemo(() => accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor')), [accounts])
   const effectiveUserId = currentUser.role === 'Administrator' ? userId : currentUser.id
 
   const contextProjects = useMemo(() => projects, [projects])
-  const contextItems = useMemo(() => items.filter((item) => (!clientId || item.clientId === clientId) && (!projectId || item.projectId === projectId)), [items, clientId, projectId])
+  const contextItems = useMemo(() => items.filter((item) => (!clientId || item.clientId === clientId) && (!projectId || item.projectId === projectId) && (!effectiveUserId || item.assignedToUserId === effectiveUserId)), [items, clientId, projectId, effectiveUserId])
   const periodActivities = useMemo(() => planner.filter((activity) => {
     const endDate = activity.endDate || activity.date
     return activity.status !== 'Cancelled' && activity.date <= to && endDate >= from && (!clientId || activity.clientId === clientId) && (!projectId || activity.projectId === projectId)
@@ -125,22 +126,26 @@ export default function Reports({ clients, projects, items, planner, taskSetting
   })
   const ganttActivities = [...periodActivities].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
   const userItems = useMemo(() => items.filter((item) => (!effectiveUserId || item.assignedToUserId === effectiveUserId) && (!clientId || item.clientId === clientId) && (!projectId || item.projectId === projectId)), [items, effectiveUserId, clientId, projectId])
-  const userEvents = useMemo(() => workEvents.filter((event) => event.date >= from && event.date <= to && (!effectiveUserId || event.actorUserId === effectiveUserId || event.assignedToUserId === effectiveUserId || (event.field === 'assignedToUserId' && event.oldValue === effectiveUserId)) && (!clientId || event.clientId === clientId) && (!projectId || event.projectId === projectId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [workEvents, from, to, effectiveUserId, clientId, projectId])
+  const userEvents = useMemo(() => workEvents.map(event => ({ ...event, date: event.occurredAt && Number.isFinite(Date.parse(event.occurredAt)) ? businessDateKey(event.occurredAt) : event.date })).filter((event) => event.date >= from && event.date <= to && (!effectiveUserId || event.actorUserId === effectiveUserId || event.assignedToUserId === effectiveUserId || (event.field === 'assignedToUserId' && event.oldValue === effectiveUserId)) && (!clientId || event.clientId === clientId) && (!projectId || event.projectId === projectId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [workEvents, from, to, effectiveUserId, clientId, projectId])
   const userOpen = userItems.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done')
   const userCompleted = userEvents.filter((event) => event.action === 'completed' && (!effectiveUserId || event.assignedToUserId === effectiveUserId || event.actorUserId === effectiveUserId))
   const userStarted = userEvents.filter((event) => event.action === 'started')
   const userOverdue = userOpen.filter((item) => Boolean(item.dueDate && item.dueDate < today))
   const userGanttItems = userItems.filter((item) => item.startDate && (item.dueDate || item.startDate) >= from && item.startDate! <= to).sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
-  const teamWorkload = trackedUsers.map((user) => {
-    const assigned = items.filter((item) => item.assignedToUserId === user.id)
+  const teamWorkload = trackedUsers.filter(user => !effectiveUserId || user.id === effectiveUserId).map((user) => {
+    const assigned = contextItems.filter((item) => item.assignedToUserId === user.id)
     const active = assigned.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done')
-    return { user, active: active.length, waiting: active.filter((item) => item.waitingOn !== 'Me').length, overdue: active.filter((item) => Boolean(item.dueDate && item.dueDate < today)).length, completed: workEvents.filter((event) => event.assignedToUserId === user.id && event.action === 'completed' && event.date >= from && event.date <= to).length }
+    return { user, active: active.length, waiting: active.filter((item) => item.waitingOn !== 'Me').length, overdue: active.filter((item) => Boolean(item.dueDate && item.dueDate < today)).length, completed: userEvents.filter((event) => event.assignedToUserId === user.id && event.action === 'completed' && event.date >= from && event.date <= to).length }
   }).filter((row) => currentUser.role === 'Administrator' || row.user.id === currentUser.id)
 
   const exportCsv = () => {
     const rows = [
       ['Metric', 'Value'],
       ['Date range', `${from} to ${to}`],
+      ['Client', clients.find(c => c.id === clientId)?.name || 'All clients'],
+      ['Project', projects.find(p => p.id === projectId)?.name || 'All projects'],
+      ['Assigned user', accounts.find(a => a.id === effectiveUserId)?.name || 'All users'],
+      ['Activity scope', 'Shared planner activities have no assigned user; filtered by client, project and date.'],
       ['Tasks and subtasks raised', raisedInPeriod.length],
       ['Tasks and subtasks resolved', resolvedInPeriod.length],
       ['Parent tasks', parentTasks.length],
@@ -172,7 +177,7 @@ export default function Reports({ clients, projects, items, planner, taskSetting
 
   return <section className="page-stack reports-page">
     <div className="panel report-filter-panel">
-      <div className="panel-heading"><div><h2>Reports</h2><p>Operational reporting derived from your tasks and activities.</p></div><button className="secondary" onClick={exportCsv}><Download size={16} /> Export CSV</button></div>
+      <div className="panel-heading"><div><h2>Reports</h2><p>Task metrics follow the selected client, project and assigned user. Shared planner activities have no assigned user and follow only client, project and date filters.</p></div><button className="secondary" onClick={exportCsv}><Download size={16} /> Export CSV</button></div>
       <div className="report-filters">
         <label>From<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label>To<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
@@ -211,7 +216,7 @@ export default function Reports({ clients, projects, items, planner, taskSetting
       <ReportMetric title="Work raised" value={raisedInPeriod.length} detail={`${parentTasks.length} parent tasks · ${subtasks.length} subtasks`} icon={<ListTodo size={18} />} />
       <ReportMetric title="Subtask completion" value={`${subtaskCompletion}%`} detail={`${completedSubtasks} of ${subtasks.length} completed`} icon={<CheckCircle2 size={18} />} />
       <ReportMetric title="Overdue now" value={overdueItems.length} detail={`${overdueSubtasks.length} overdue subtasks`} icon={<AlertTriangle size={18} />} />
-      <ReportMetric title="Activity completion" value={`${activityCompletion}%`} detail={`${completedActivities} of ${periodActivities.length} activities done`} icon={<CalendarRange size={18} />} />
+      <ReportMetric title="Shared activity completion" value={`${activityCompletion}%`} detail={`${completedActivities} of ${periodActivities.length} activities done`} icon={<CalendarRange size={18} />} />
     </div>
 
     <div className="panel report-panel">

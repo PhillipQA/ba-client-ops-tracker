@@ -1,6 +1,6 @@
 # Database setup
 
-For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–15 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
+For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–16 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
 
 | Deployment situation | What to run |
 | --- | --- |
@@ -36,3 +36,7 @@ npm run db:check
 ```
 
 The generator requires a complete, ordered migration sequence, includes source checksums, and strips only standalone transaction wrappers before surrounding the combined script with one transaction. It does not execute SQL or contact Supabase. Keep `setup.sql` committed with the matching migrations. Never put credentials or database exports in this folder.
+
+## Upgrading from v0.6.55 to v0.6.56
+
+Stop the old app, run `migrations/schema-v16-functional-integrity.sql` once, deploy v0.6.56 and rebuild. This adds atomic revision checks and Gmail sync progress / multiple labels. Do not use `setup.sql` on an existing database. All active server instances must use v0.6.56 before users resume; older servers call the legacy save function. Users should reload their browser after upgrading.

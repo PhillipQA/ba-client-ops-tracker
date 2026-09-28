@@ -1,12 +1,12 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.55**
+**Current release: v0.6.56**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
 Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
 
-Upgrade details: [v0.6.55 release notes](docs/releases/v0.6.55.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
+Upgrade details: [v0.6.56 release notes](docs/releases/v0.6.56.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
 
 ## Main modules
 
@@ -122,7 +122,7 @@ Keep Git focused on source code and documentation. Full-build and patch ZIPs sho
 
 ## Current release highlights
 
-**v0.6.55** hard-enforces Advanced Mode FSD module scope. Unchecked software modules are removed from the AI section schema, omitted from preview and Word export, and sources mapped only to unchecked modules are excluded from FSD AI generation.
+**v0.6.56** hard-enforces Advanced Mode FSD module scope. Unchecked software modules are removed from the AI section schema, omitted from preview and Word export, and sources mapped only to unchecked modules are excluded from FSD AI generation.
 
 **v0.6.53** adds image support to FSD Creation. PNG, JPG/JPEG, WEBP, BMP, TIF and TIFF uploads are OCR-read and added to the FSD source list as Supporting document sources. Existing document-source handling is unchanged.
 

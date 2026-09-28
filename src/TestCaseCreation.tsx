@@ -4,7 +4,7 @@ import { readFsdSource } from './fsd-sources'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
 import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
-import { TEST_CASE_COLUMNS, TEST_CASE_SKILLS, type CoverageMap, type TestCasePreview, type TestCaseRow, type TestCaseSkill, type TestCaseSource, type TestCaseSourceKind } from './testcase-model'
+import { reviewCoverage, TEST_CASE_COLUMNS, TEST_CASE_SKILLS, type CoverageMap, type TestCasePreview, type TestCaseRow, type TestCaseSkill, type TestCaseSource, type TestCaseSourceKind } from './testcase-model'
 import './testcase.css'
 
 type Provider = { enabled: boolean; provider?: string; name?: string; model?: string }
@@ -36,16 +36,7 @@ async function request<T>(path:string,body?:unknown,signal?:AbortSignal):Promise
   if(!response.ok) throw new Error(payload.error||'Test Case Creator request failed.')
   return payload
 }
-async function readSource(file:File,progress:(message:string)=>void){
-  const ext=file.name.split('.').pop()?.toLowerCase()||''
-  if(['png','jpg','jpeg','webp','bmp','tif','tiff'].includes(ext)){
-    if(!file.size||file.size>10*1024*1024) throw new Error(`${file.name}: use an image up to 10 MB.`)
-    progress(`Reading ${file.name} with OCR…`)
-    const {createWorker}=await import('tesseract.js'),worker=await createWorker('eng')
-    try{const result=await worker.recognize(file),text=result.data.text.replace(/\r\n?/g,'\n').trim();if(!text)throw new Error(`${file.name}: no readable text was detected.`);return text.slice(0,120000)}finally{await worker.terminate()}
-  }
-  return readFsdSource(file,progress)
-}
+const readSource = readFsdSource
 function downloadBase64(base64:string,mimeType:string,fileName:string){const binary=atob(base64),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);const url=URL.createObjectURL(new Blob([bytes],{type:mimeType})),a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 
 export default function TestCaseCreation({canGenerate,draftKey,active}:{canGenerate:boolean;draftKey:string;active:boolean}){
@@ -58,7 +49,8 @@ export default function TestCaseCreation({canGenerate,draftKey,active}:{canGener
   useEffect(()=>{if(!active)return;let alive=true;request<Provider>('provider').then(v=>{if(alive){setProvider(v);setProviderError('')}}).catch(e=>{if(alive){setProvider(null);setProviderError(e.message)}});return()=>{alive=false}},[active])
   const skills=useMemo(()=>[...TEST_CASE_SKILLS,...draft.customSkills],[draft.customSkills])
   const selectedSkills=skills.filter(s=>draft.selectedSkillIds.includes(s.id))
-  const coverageStale=Boolean(draft.coverage)&&draft.coverageRevision!==draft.inputRevision
+  const coverageStale=Boolean(draft.coverage)&&(draft.coverageRevision!==draft.inputRevision||draft.coverage!.requirements.some(r=>!r.evidence?.length))
+  const coverageReview=reviewCoverage(draft.preview?.cases||[],draft.coverage)
   const previewStale=Boolean(draft.preview)&&(coverageStale||draft.previewRevision!==draft.coverageRevision)
   const patch=(values:Partial<Draft>,inputChange=false)=>setDraft(d=>({...d,...values,inputRevision:inputChange?d.inputRevision+1:d.inputRevision}))
   const touchCoverage=(coverage:CoverageMap)=>setDraft(d=>({...d,coverage,preview:null,coverageRevision:d.inputRevision,previewRevision:-1}))
@@ -73,7 +65,7 @@ export default function TestCaseCreation({canGenerate,draftKey,active}:{canGener
   function removeCase(index:number){if(!draft.preview)return;const preview=structuredClone(draft.preview);preview.cases.splice(index,1);setDraft(d=>({...d,preview}))}
   function duplicateCase(index:number){if(!draft.preview)return;const preview=structuredClone(draft.preview),row=structuredClone(preview.cases[index]);row.id=tcId(preview.cases);preview.cases.splice(index+1,0,row);setDraft(d=>({...d,preview}))}
   function addCase(){if(!draft.preview)return;const preview=structuredClone(draft.preview);preview.cases.push({id:tcId(preview.cases),module:'General',requirementRef:draft.coverage?.requirements[0]?.id||'REQ-001',scenario:'',preconditions:'None specified',steps:'1. ',expectedResult:'',priority:'Medium',type:'Functional',testData:'As required',platform:'As specified',automationCandidate:'Review',remarks:''});setDraft(d=>({...d,preview}))}
-  async function exportCases(){if(!draft.preview||busy||previewStale)return;const job=operation.begin();setBusy('Preparing Excel test case suite…');setError('');try{const result=await request<{fileData:string;fileName:string;mimeType:string}>('export',{suiteName:draft.suiteName,cases:draft.preview.cases,coverageReview:draft.preview.coverageReview},job.signal);if(!job.isCurrent())return;downloadBase64(result.fileData,result.mimeType,result.fileName)}catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'Excel export failed.')}finally{if(job.isCurrent())setBusy('')}}
+  async function exportCases(){if(!draft.preview||busy||previewStale)return;const job=operation.begin();setBusy('Preparing Excel test case suite…');setError('');try{const result=await request<{fileData:string;fileName:string;mimeType:string}>('export',{suiteName:draft.suiteName,cases:draft.preview.cases,coverage:draft.coverage,sources:draft.sources},job.signal);if(!job.isCurrent())return;downloadBase64(result.fileData,result.mimeType,result.fileName)}catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'Excel export failed.')}finally{if(job.isCurrent())setBusy('')}}
   function reset(){
     operation.cancel()
     const next=freshDraft();next.customSkills=draftRef.current.customSkills;draftRef.current=next
@@ -85,6 +77,7 @@ export default function TestCaseCreation({canGenerate,draftKey,active}:{canGener
     <div className="tc-topline"><div><span className="tc-eyebrow">DOCUMENT CREATION</span><h2>Test Case Creator</h2><p>Turn requirements into traceable, editable QA and UAT test cases with AI-assisted coverage review.</p></div><span className="tc-badge"><ClipboardCheck size={17}/>AI + Skills + XLSX</span></div>
     <DocumentReset label="test cases" onReset={reset} disabled={!canGenerate} />
     <div className="tc-status"><span>{provider?.enabled?`Document Agent: ${provider.name} · ${provider.model}`:providerError||'Configure and enable the Document Agent in Account Settings.'}</span><span>{saveError||'Draft retained in this browser tab'}</span></div>
+    {draft.sources.some(s=>s.text.includes('[Extraction warning:'))&&<p className="tc-warning">Some sources contain OCR or visual content. Review source text and original diagrams before mapping coverage.</p>}
     <DocumentProcessingPanel state={error?'error':busy?'working':draft.preview?'success':'idle'} title={error?'Test Case processing failed':busy||'Test cases are ready'} detail={error||(!busy&&draft.preview?'Review the editable cases below, then download the Excel file.':'')} stages={busy.includes('Reading')?['Uploading documents','Reading and extracting content','Adding sources','Ready for coverage mapping']:busy.includes('Excel')?['Validating test cases','Mapping rows to workbook','Generating Excel file','Starting download']:['Preparing requirements','Mapping test coverage','Generating test cases','Ready for review']} activeStage={busy.includes('Reading')?1:busy.includes('Excel')?2:2}/>
     <fieldset disabled={!canGenerate||Boolean(busy)}>
       <div className="tc-grid">
@@ -101,8 +94,8 @@ export default function TestCaseCreation({canGenerate,draftKey,active}:{canGener
         </section>
       </div>
       <section className="tc-card tc-stage"><div className="tc-step"><span>3</span><div><h3>AI Test Coverage Map</h3><p>Map requirements to scenarios first. Review this before asking AI to write detailed cases.</p></div></div><button type="button" className="primary" disabled={!draft.sources.length||!selectedSkills.length||!provider?.enabled} onClick={()=>void buildCoverage()}><Sparkles size={16}/>{draft.coverage?'Regenerate coverage map':'Generate coverage map'}</button>{!provider?.enabled&&<small className="tc-inline-note">An enabled Document Agent is required.</small>}
-        {coverageStale&&<p className="tc-warning">Sources or skills changed after this coverage map. Regenerate it before generating test cases.</p>}
-        {draft.coverage&&<><div className="tc-coverage-meta"><span>{draft.coverage.requirements.length} mapped requirements</span><span>{draft.coverage.gaps.length} clarification item{draft.coverage.gaps.length===1?'':'s'}</span><span>{draft.coverage.provider} · {draft.coverage.model}</span></div><div className="tc-coverage-list">{draft.coverage.requirements.map((r,i)=><article key={r.id}><header><b>{r.id}</b><span>{r.sourceIds.join(', ')}</span></header><input aria-label={`${r.id} title`} value={r.title} onChange={e=>updateCoverage(i,'title',e.target.value)}/><label>Planned scenarios<textarea rows={Math.min(8,Math.max(3,r.scenarios.length+1))} value={r.scenarios.join('\n')} onChange={e=>updateCoverage(i,'scenarios',e.target.value)}/></label></article>)}</div>{draft.coverage.gaps.length>0&&<div className="tc-gaps"><h4><AlertTriangle size={16}/>Clarification needed</h4><ul>{draft.coverage.gaps.map((g,i)=><li key={i}>{g}</li>)}</ul></div>}</>}
+        {coverageStale&&<p className="tc-warning">Sources or skills changed, or this older map needs source excerpts. Regenerate it before generating test cases.</p>}
+        {draft.coverage&&<><div className="tc-coverage-meta"><span>{draft.coverage.requirements.length} mapped requirements</span><span>{draft.coverage.gaps.length} clarification item{draft.coverage.gaps.length===1?'':'s'}</span><span>{draft.coverage.provider} · {draft.coverage.model}</span></div><div className="tc-coverage-list">{draft.coverage.requirements.map((r,i)=><article key={r.id}><header><b>{r.id}</b><span>{r.sourceIds.join(', ')}</span></header>{r.evidence?.map((e,ei)=><blockquote key={ei}><small>{e.sourceId}</small><p>{e.quote}</p></blockquote>)}<input aria-label={`${r.id} title`} value={r.title} onChange={e=>updateCoverage(i,'title',e.target.value)}/><label>Planned scenarios<textarea rows={Math.min(8,Math.max(3,r.scenarios.length+1))} value={r.scenarios.join('\n')} onChange={e=>updateCoverage(i,'scenarios',e.target.value)}/></label></article>)}</div>{draft.coverage.gaps.length>0&&<div className="tc-gaps"><h4><AlertTriangle size={16}/>Clarification needed</h4><ul>{draft.coverage.gaps.map((g,i)=><li key={i}>{g}</li>)}</ul></div>}</>}
       </section>
       <section className="tc-card tc-stage"><div className="tc-step"><span>4</span><div><h3>Generate & review test cases</h3><p>AI creates traceable cases from the reviewed coverage map. Every row remains editable before export.</p></div></div><button type="button" className="primary" disabled={!draft.coverage||coverageStale} onClick={()=>void generateCases()}><Sparkles size={16}/>{draft.preview?'Regenerate test cases':'Generate test cases'}</button>
         {previewStale&&<p className="tc-warning">Coverage changed after these test cases were generated. Regenerate the test cases.</p>}
@@ -110,7 +103,7 @@ export default function TestCaseCreation({canGenerate,draftKey,active}:{canGener
     </fieldset>
     {draft.preview&&<section className="tc-preview"><div className="tc-preview-head"><div><h3>Editable Test Case Preview</h3><small>{draft.preview.cases.length} cases · {draft.preview.provider} · {draft.preview.model} · {new Date(draft.preview.generatedAt).toLocaleString()}</small></div><button className="secondary" onClick={addCase} disabled={!canGenerate||Boolean(busy)}><Plus size={15}/>Add test case</button></div>
       <div className="tc-table-scroll"><table><thead><tr>{TEST_CASE_COLUMNS.map(c=><th key={c.key}>{c.label}</th>)}<th>Actions</th></tr></thead><tbody>{draft.preview.cases.map((row,ri)=><tr key={`${row.id}-${ri}`}>{TEST_CASE_COLUMNS.map(c=><td key={c.key}>{c.key==='priority'?<select value={row.priority} onChange={e=>updateCase(ri,c.key,e.target.value)}>{['Low','Medium','High','Critical'].map(v=><option key={v}>{v}</option>)}</select>:c.key==='automationCandidate'?<select value={row.automationCandidate} onChange={e=>updateCase(ri,c.key,e.target.value)}>{['Yes','No','Review'].map(v=><option key={v}>{v}</option>)}</select>:<textarea aria-label={`${row.id} ${c.label}`} rows={c.key==='steps'||c.key==='expectedResult'?5:3} value={String(row[c.key]??'')} onChange={e=>updateCase(ri,c.key,e.target.value)}/>}</td>)}<td className="tc-row-actions"><button type="button" title="Duplicate" onClick={()=>duplicateCase(ri)}><Copy size={15}/></button><button type="button" title="Delete" onClick={()=>removeCase(ri)}><Trash2 size={15}/></button></td></tr>)}</tbody></table></div>
-      <div className="tc-review"><div><h3>AI Coverage Review</h3><p>{draft.preview.coverageReview.summary}</p></div><div className="tc-score"><strong>{draft.preview.coverageReview.coveredRequirements}/{draft.preview.coverageReview.totalRequirements}</strong><span>requirements covered</span></div>{draft.preview.coverageReview.findings.length>0&&<ul>{draft.preview.coverageReview.findings.map((f,i)=><li key={i} className={f.severity}><AlertTriangle size={14}/>{f.text}</li>)}</ul>}</div>
+      <div className="tc-review"><div><h3>Requirement Link Review</h3><p>{coverageReview.summary}</p></div><div className="tc-score"><strong>{coverageReview.coveredRequirements}/{coverageReview.totalRequirements}</strong><span>requirements linked</span></div>{coverageReview.findings.length>0&&<ul>{coverageReview.findings.map((f,i)=><li key={i} className={f.severity}><AlertTriangle size={14}/>{f.text}</li>)}</ul>}</div>
       <div className="tc-export"><span>Export preserves your edited preview as an Excel test case suite.</span><button type="button" className="primary" disabled={Boolean(busy)||!canGenerate||!draft.preview.cases.length||previewStale} onClick={()=>void exportCases()}><Download size={16}/>Download XLSX</button></div>
     </section>}
     <div className="tc-footer"><small>Draft sources, skills, coverage and edits stay in this browser tab until reset. Saved custom skills remain available for future suites.</small></div>

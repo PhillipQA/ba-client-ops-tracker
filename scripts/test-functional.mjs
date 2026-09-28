@@ -1,0 +1,53 @@
+import { spawnSync } from 'node:child_process'
+// Selected functional regressions only. Security and access-control suites are intentionally not run.
+const names = [
+  "upload -> async import -> unsent draft -> completed: single comment/notification, task stays open",
+  "a request created in DocHub clears obsolete setup guidance when signing starts",
+  "document cards use current signing guidance even for saved records with stale setup notes",
+  "lost import response does not automatically duplicate the import",
+  "completion projection preserves existing follow-up and can append to archived work",
+  "status mapping requires DocHub FINALIZED for overall completion",
+  "open Subtask follow-up moves once and creates an immutable System trail",
+  "resolved, configured closed, waiting-on Done, parent tasks, today and future dates do not roll",
+  "downtime catch-up advances to the current tenant day with a summarized comment",
+  "tenant date uses Asia/Manila by default",
+  "unchecked FSD modules are omitted from the section schema",
+  "all software feature sections may be hard-excluded",
+  "selecting all modules preserves the complete FSD template section set",
+  "excluded module list is the inverse of the selected scope",
+  "first reconciliation skips historical events but creates current due alerts once",
+  "new assignment and rollover events notify the correct user and Admin without duplicates",
+  "closed work is excluded from due and overdue alerts",
+  "validates source kinds, IDs and size limits",
+  "requires real source IDs and verified quotation; invalid reference codes are removed",
+  "review and current matrix revision are mandatory; no input mutations",
+  "adding references preserves existing fields, work links and completion statuses",
+  "duplicate new requirements blocked, including duplicate titles within batch",
+  "selected children require selected parents; edited cycles fail before save",
+  "deleting linked work recalculates and records link removal; deleting linked requirement rejected",
+  "N/A is excluded from coverage; zero requirements are not 100%",
+  "CSV quoted multiline cells and hierarchical import; duplicate IDs fail atomically",
+  "Word output retains header/logo and fixed sections, populates every client reference and all six signatories",
+  "new subtasks always inherit the main task assignee",
+  "inherited subtasks follow main task reassignment",
+  "a manually reassigned subtask keeps its override",
+  "legacy subtasks with the parent assignee are inferred as inherited",
+  "legacy subtasks with a different assignee are inferred as overrides",
+  "an inherited subtask can be explicitly switched to an override",
+  "an override can opt back into main-task inheritance",
+  "unassigning the main task also unassigns inherited subtasks"
+]
+const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const pattern = '^(?:' + names.map(escape).join('|') + ')$'
+const files = ["tests/dochub.test.ts", "tests/follow-up-rollover.test.ts", "tests/fsd-scope.test.ts", "tests/notification-engine.test.ts", "tests/rtm-ai.test.ts", "tests/rtm.test.ts", "tests/signoff.test.ts", "tests/subtask-assignment.test.ts"]
+const commands = [
+  ['--import', 'tsx', '--test', '--test-name-pattern=' + pattern, ...files],
+  ['--import', 'tsx', '--test', 'tests/functional-integrity.test.ts'],
+  ['--import', 'tsx', '--test', '--test-name-pattern=Gmail functional sync', 'tests/communications.test.ts'],
+  ['--import', 'tsx', 'tests/functional-routes.ts'],
+]
+for (const args of commands) {
+  const result = spawnSync(process.execPath, args, { stdio: 'inherit' })
+  if (result.error) throw result.error
+  if (result.status !== 0) process.exit(result.status || 1)
+}

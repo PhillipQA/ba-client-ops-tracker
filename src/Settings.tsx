@@ -129,7 +129,7 @@ function Templates() {
   const [templates, setTemplates] = useState<TemplateInfo[]>([])
   const [messages, setMessages] = useState<Partial<Record<TemplateKind,string>>>({})
   const [busy, setBusy] = useState<TemplateKind | null>(null)
-  const load = async () => { const result = await settingsRequest('/api/account/templates'); setTemplates(Array.isArray(result.templates) ? result.templates : []) }
+  const load = async () => { const result = await settingsRequest('/api/account/templates'); setTemplates(Array.isArray(result.templates) ? result.templates : []); window.dispatchEvent(new Event('account-document-settings-changed')) }
   useEffect(() => { void load().catch(e => setMessages({ drf: e instanceof Error ? e.message : 'Could not load templates.' })) }, [])
   const current = (type: TemplateKind) => templates.find(template => template.type === type) || { type, active: false, source: 'none' as const, name: '' }
   const upload = async (type: TemplateKind, file?: File) => {

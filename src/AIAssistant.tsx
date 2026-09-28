@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Bot, CalendarPlus, CheckCircle2, Clipboard, FileText, Loader2, MessageSquareText, PlusCircle, Sparkles, TicketCheck } from 'lucide-react'
+import { useDocumentOperation } from './useDocumentOperation'
 import { askBAAssistant, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
 
@@ -64,6 +65,7 @@ export default function AIAssistant({
   const [projectId, setProjectId] = useState(initialProjectId)
   const [threads, setThreads] = useState<Record<string, AIMessage[]>>(loadThreads)
   const [input, setInput] = useState('')
+  const operation = useDocumentOperation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [actionNotice, setActionNotice] = useState('')
@@ -76,20 +78,23 @@ export default function AIAssistant({
   const resolvedProjectId = linkedProjects.some((project) => project.id === projectId) ? projectId : ''
   const threadKey = `${currentUser.id}:${clientId || 'global'}:${resolvedProjectId || 'all'}`
   const messages = threads[threadKey] ?? []
+  useEffect(() => { operation.cancel(); setBusy(false); setError('') }, [threadKey])
+  useEffect(() => { saveThreads(threads) }, [threads])
 
   const context = useMemo(() => {
     const client = clients.find((value) => value.id === clientId)
     const project = projects.find((value) => value.id === resolvedProjectId)
     const scopedItems = items.filter((item) => (!clientId || item.clientId === clientId) && (!resolvedProjectId || item.projectId === resolvedProjectId))
     const closedStatuses = new Set(taskSettings.statuses.filter((status) => status.closed).map((status) => status.label))
-    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && item.waitingOn !== 'Done').slice(0, 20)
-    const upcomingActivities = planner.filter((activity) => (!clientId || activity.clientId === clientId) && (!resolvedProjectId || activity.projectId === resolvedProjectId) && activity.status === 'Planned').slice(0, 15)
-    const myAssignments = scopedItems.filter((item) => item.assignedToUserId === currentUser.id).slice(0, 40)
-    const myRecentActivity = workEvents.filter((event) => (event.actorUserId === currentUser.id || event.assignedToUserId === currentUser.id || (event.field === 'assignedToUserId' && event.oldValue === currentUser.id)) && (!clientId || event.clientId === clientId) && (!resolvedProjectId || event.projectId === resolvedProjectId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, 40)
-    return { currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role, modules: currentUser.modules }, client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities, myAssignments, myRecentActivity }
+    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && item.waitingOn !== 'Done')
+    const upcomingActivities = planner.filter((activity) => (!clientId || activity.clientId === clientId) && (!resolvedProjectId || activity.projectId === resolvedProjectId) && activity.status === 'Planned')
+    const myAssignments = scopedItems.filter((item) => item.assignedToUserId === currentUser.id)
+    const myRecentActivity = workEvents.filter((event) => (event.actorUserId === currentUser.id || event.assignedToUserId === currentUser.id || (event.field === 'assignedToUserId' && event.oldValue === currentUser.id)) && (!clientId || event.clientId === clientId) && (!resolvedProjectId || event.projectId === resolvedProjectId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    return { currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role, modules: currentUser.modules }, client, project, openItems, recentItems: scopedItems, upcomingActivities, myAssignments, myRecentActivity }
   }, [clientId, resolvedProjectId, clients, projects, items, planner, taskSettings, currentUser, workEvents, accounts])
 
   const updateContext = (nextClientId: string, nextProjectId: string) => {
+    operation.cancel(); setBusy(false)
     setClientId(nextClientId)
     setProjectId(nextProjectId)
     setError('')
@@ -102,6 +107,7 @@ export default function AIAssistant({
     const text = input.trim()
     if (!text || busy) return
 
+    const job = operation.begin()
     const userMessage: AIMessage = { id: crypto.randomUUID(), role: 'user', content: text, createdAt: new Date().toISOString() }
     const nextMessages = [...messages, userMessage]
     const nextThreads = { ...threads, [threadKey]: nextMessages }
@@ -113,7 +119,8 @@ export default function AIAssistant({
     setActionNotice('')
 
     try {
-      const result = await askBAAssistant({ message: text, context, history: messages.slice(-8) })
+      const result = await askBAAssistant({ message: text, context, history: messages.slice(-8) }, job.signal)
+      if (!job.isCurrent()) return
       const assistantMessage: AIMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -121,13 +128,11 @@ export default function AIAssistant({
         suggestions: result.suggestions.map((suggestion) => ({ ...suggestion, id: suggestion.id || crypto.randomUUID() })),
         createdAt: new Date().toISOString(),
       }
-      const completed = { ...nextThreads, [threadKey]: [...nextMessages, assistantMessage] }
-      setThreads(completed)
-      saveThreads(completed)
+      setThreads(current => ({ ...current, [threadKey]: [...(current[threadKey] || nextMessages), assistantMessage] }))
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'The AI assistant could not respond.')
+      if (job.isCurrent()) setError(requestError instanceof Error ? requestError.message : 'The AI assistant could not respond.')
     } finally {
-      setBusy(false)
+      if (job.isCurrent()) setBusy(false)
     }
   }
 
@@ -143,6 +148,7 @@ export default function AIAssistant({
   }
 
   const clearThread = () => {
+    operation.cancel(); setBusy(false)
     const next = { ...threads }
     delete next[threadKey]
     setThreads(next)
