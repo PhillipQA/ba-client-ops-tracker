@@ -20,6 +20,36 @@ export function wordText(node: Node): string {
 
 /** PDF images may contain the body even when headers/footers are selectable. */
 export function pdfNeedsOcr(text: string, hasImages: boolean) { return hasImages || text.trim().length < 20 }
+
+/** Only OCR pictures placed in the document body. Template logos and footer art
+ * are packaged as media too, but they are not requirement evidence. */
+function bodyImageParts(zip: PizZip, documentXml: Document): string[] {
+  const rels = zip.file('word/_rels/document.xml.rels')
+  if (!rels) return []
+  const relationships = new DOMParser().parseFromString(rels.asText(), 'application/xml')
+  if (relationships.querySelector('parsererror')) return []
+  const relationshipNs = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+  const usedIds = new Set<string>()
+  for (const element of Array.from(documentXml.getElementsByTagName('*'))) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.namespaceURI === relationshipNs) usedIds.add(attribute.value)
+    }
+  }
+  const parts: string[] = []
+  for (const relationship of Array.from(relationships.getElementsByTagName('*'))) {
+    if (relationship.localName !== 'Relationship' || !usedIds.has(relationship.getAttribute('Id') || '') ||
+        !relationship.getAttribute('Type')?.endsWith('/image') || relationship.getAttribute('TargetMode') === 'External') continue
+    const target = relationship.getAttribute('Target') || ''
+    const segments: string[] = []
+    for (const segment of (target.startsWith('/') ? target.slice(1) : `word/${target}`).split('/')) {
+      if (segment === '..') segments.pop()
+      else if (segment && segment !== '.') segments.push(segment)
+    }
+    const name = segments.join('/')
+    if (name.startsWith('word/media/') && zip.file(name) && !parts.includes(name)) parts.push(name)
+  }
+  return parts
+}
 export async function readFsdSource(file: File, progress: (message: string) => void): Promise<string> {
   if (!file.size || file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: use a nonempty file up to 10 MB.`)
   const ext = file.name.split('.').pop()?.toLowerCase()
@@ -43,15 +73,17 @@ export async function readFsdSource(file: File, progress: (message: string) => v
       if (!zip.file('word/document.xml')) throw new Error(`${file.name}: invalid Word document.`)
       const parts = ['word/document.xml', ...Object.keys(zip.files).filter(name => /^word\/(header|footer|footnotes|endnotes).*\.xml$/.test(name)).sort()]
       const extracted: string[] = []
+      let bodyXml: Document | undefined
       for (const name of parts) {
         const content = zip.file(name)!.asText()
         if (content.length > 5000000) throw new Error(`${file.name}: document is too large to extract.`)
         const xml = new DOMParser().parseFromString(content,'application/xml')
         if (xml.querySelector('parsererror')) throw new Error(`${file.name}: damaged Word document.`)
+        if (name === 'word/document.xml') bodyXml = xml
         extracted.push(`[${name.replace('word/','')}]\n${wordText(xml.documentElement)}`)
         check(extracted.join('\n'))
       }
-      const media = Object.keys(zip.files).filter(name => name.startsWith('word/media/') && !zip.files[name].dir)
+      const media = bodyXml ? bodyImageParts(zip, bodyXml) : []
       for (const name of media) {
         if (!isFsdImageFile({name})) { extracted.push(`[Extraction warning: review unsupported embedded visual ${name} in the original.]`); continue }
         const bytes = zip.file(name)!.asUint8Array()
