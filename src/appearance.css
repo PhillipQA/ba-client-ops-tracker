@@ -141,6 +141,9 @@ body:has(.app-shell[data-interface-mode="gray"]), .app-shell[data-interface-mode
 .app-shell.ui-refresh[data-interface-mode] :is(.gantt-axis span, .gantt-label-head, .subtask-progress-label, .project-context-banner span, .subtask-comment-entry time, .subtask-comment-heading span, .subtask-comment-empty, .subtask-evidence-heading span, .subtask-evidence-file span, .subtask-evidence-dropzone span) { color: var(--ui-muted); }
 .app-shell.ui-refresh[data-interface-mode] :is(.project-context-banner strong, .subtask-comment-heading strong, .subtask-comment-entry p, .subtask-evidence-heading strong, .subtask-evidence-file strong, .subtask-evidence-dropzone b) { color: var(--ui-text); }
 .app-shell.ui-refresh[data-interface-mode] .task-comment-composer textarea { background: var(--ui-input) !important; color: var(--ui-text) !important; border-color: var(--ui-border) !important; }
+.app-shell.ui-refresh[data-interface-mode] .task-comment-pagination { color: var(--ui-muted); }
+.app-shell.ui-refresh[data-interface-mode] .task-comment-pagination select { background: var(--ui-input); color: var(--ui-text); border-color: var(--ui-border); }
+.app-shell.ui-refresh[data-interface-mode] .task-comment-page-buttons > span { color: var(--ui-muted); }
 .app-shell.ui-refresh[data-interface-mode] .work-schedule-fields { background: var(--ui-soft); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(.work-schedule-fields > p, .dashboard-ai-footer span) { color: var(--ui-muted); }
 .app-shell.ui-refresh[data-interface-mode] :is(.report-mini-stats, .subtask-report-summary) { background: var(--ui-border); }

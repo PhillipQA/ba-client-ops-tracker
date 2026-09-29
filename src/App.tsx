@@ -2204,7 +2204,15 @@ function WorkCommentTrail({ item, onMutation }: { item: WorkItem; onMutation: (r
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [pageSize, setPageSize] = useState<2 | 3 | 5>(3)
+  const [page, setPage] = useState(1)
   const comments = [...(item.comments || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const totalPages = Math.max(1, Math.ceil(comments.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pageStart = (currentPage - 1) * pageSize
+  const visibleComments = comments.slice(pageStart, pageStart + pageSize)
+  useEffect(() => setPage(1), [item.id])
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [page, totalPages])
   const submitComment = async () => {
     const trimmed = text.trim()
     if (!trimmed || busy) return
@@ -2214,6 +2222,7 @@ function WorkCommentTrail({ item, onMutation }: { item: WorkItem; onMutation: (r
       const result = await addTaskComment(item.id, trimmed)
       onMutation(result)
       setText('')
+      setPage(1)
       setMessage('Comment added.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Comment could not be saved.')
@@ -2225,10 +2234,21 @@ function WorkCommentTrail({ item, onMutation }: { item: WorkItem; onMutation: (r
     <div className="subtask-comment-heading"><div><strong><MessageSquareText size={15} /> Activity comments</strong><span>User notes and permanent System follow-up entries.</span></div><span className="count-pill">{comments.length}</span></div>
     <div className="task-comment-composer"><textarea value={text} maxLength={2000} rows={2} placeholder="Add a comment for the assignee or team…" onChange={(event) => setText(event.target.value)} /><button className="secondary" type="button" disabled={!text.trim() || busy} onClick={() => void submitComment()}>{busy ? 'Adding…' : 'Add comment'}</button></div>
     {message && <div className={`task-comment-message${message === 'Comment added.' ? ' success' : ''}`}>{message}</div>}
-    {comments.length ? <div className="subtask-comment-list">{comments.map((comment) => <article key={comment.id} className="subtask-comment-entry">
-      <div><span className={comment.kind === 'System' ? 'system-comment-badge' : 'user-comment-badge'}>{comment.kind === 'System' ? 'System' : comment.createdByName || 'User'}</span><time>{evidenceDate(comment.createdAt)}</time></div>
-      <p>{comment.text}</p>
-    </article>)}</div> : <div className="subtask-comment-empty">No comments yet.</div>}
+    {comments.length ? <>
+      <div className="subtask-comment-list">{visibleComments.map((comment) => <article key={comment.id} className="subtask-comment-entry">
+        <div><span className={comment.kind === 'System' ? 'system-comment-badge' : 'user-comment-badge'}>{comment.kind === 'System' ? 'System' : comment.createdByName || 'User'}</span><time>{evidenceDate(comment.createdAt)}</time></div>
+        <p>{comment.text}</p>
+      </article>)}</div>
+      <div className="task-comment-pagination">
+        <span>{pageStart + 1}–{Math.min(pageStart + pageSize, comments.length)} of {comments.length}</span>
+        <label>Show<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value) as 2 | 3 | 5); setPage(1) }}><option value={2}>2</option><option value={3}>3</option><option value={5}>5</option></select></label>
+        <div className="task-comment-page-buttons">
+          <button type="button" className="secondary compact" disabled={currentPage <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>Previous</button>
+          <span>Page {currentPage} of {totalPages}</span>
+          <button type="button" className="secondary compact" disabled={currentPage >= totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>Next</button>
+        </div>
+      </div>
+    </> : <div className="subtask-comment-empty">No comments yet.</div>}
   </section>
 }
 
