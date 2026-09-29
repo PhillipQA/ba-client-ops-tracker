@@ -28,31 +28,57 @@ export async function gmailBodyText(payload: any, attachment: (id: string) => Pr
   for (const part of parts) { const text = await gmailBodyText(part,attachment); if(text) texts.push(text) }
   return texts.join('\n\n')
 }
-export type GmailSyncState = { labels: string[]; cursors: Record<string,string|null> }
+export type GmailSyncState = { labels: string[]; cursors: Record<string,string|null>; windowStart?: number; nextLabelIndex?: number; nextHeadIndex?: number }
+export const GMAIL_SYNC_WINDOW_DAYS = 10
+export function gmailWindowStart(previous: GmailSyncState | undefined, now = Date.now()) {
+  const current = Math.floor(now / 1000)
+  const cutoff = current - GMAIL_SYNC_WINDOW_DAYS * 86400
+  const saved = previous?.windowStart
+  // Keep a stable search query while continuing a bounded scan. A stale
+  // cursor starts over with a fresh ten-day window.
+  return Number.isSafeInteger(saved) && saved! >= cutoff - 6 * 3600 && saved! <= current ? saved! : cutoff
+}
 export async function syncGmailPages(labels: string[], previous: GmailSyncState | undefined, callbacks: {
   list: (label: string, pageToken?: string) => Promise<{ messages?: {id:string}[]; nextPageToken?: string }>
   message: (id: string, label: string) => Promise<void>
   checkpoint: (state: GmailSyncState) => Promise<void>
-}, maxPages = 5) {
+}, maxPages = 5, windowStart?: number) {
   const selected = [...new Set(labels)].sort()
-  const state: GmailSyncState = { labels: selected, cursors: previous && JSON.stringify(previous.labels)===JSON.stringify(selected) ? {...previous.cursors} : {} }
+  const continuing = previous && JSON.stringify(previous.labels)===JSON.stringify(selected) && previous.windowStart===windowStart
+  const state: GmailSyncState = { labels: selected, cursors: continuing ? {...previous.cursors} : {}, ...(windowStart===undefined?{}:{windowStart}), nextLabelIndex:continuing ? previous.nextLabelIndex || 0 : 0, nextHeadIndex:continuing ? previous.nextHeadIndex || 0 : 0 }
   const seen = new Set<string>()
-  let pages = 0
-  for (const label of selected) {
-    if (state.cursors[label] === null) continue
-    do {
-      const page = await callbacks.list(label, state.cursors[label] || undefined)
-      for (const message of page.messages || []) {
-        if (seen.has(message.id)) continue
-        await callbacks.message(message.id,label); seen.add(message.id)
-      }
-      const token = page.nextPageToken || null
-      if (token && token === state.cursors[label]) throw new Error('Gmail repeated a page token; retry sync.')
-      state.cursors[label] = token
+  let pages = 0, completedLabels = 0
+  const process = async (label: string, pageToken?: string) => {
+    const page = await callbacks.list(label,pageToken)
+    for (const message of page.messages || []) {
+      if (seen.has(message.id)) continue
+      await callbacks.message(message.id,label); seen.add(message.id)
+    }
+    pages++
+    return page.nextPageToken || null
+  }
+  // Even during a longer backfill, check the newest page so a fresh message
+  // does not wait behind the continuation cursor. Rotate labels under budget.
+  if (continuing && selected.some(label=>state.cursors[label]!==null)) {
+    const headPages=Math.min(selected.length,Math.max(0,maxPages-1))
+    for (let i=0;i<headPages;i++) {
+      const index=state.nextHeadIndex! % selected.length,label=selected[index]
+      state.nextHeadIndex=(index+1)%selected.length
+      const token=await process(label)
+      if (state.cursors[label]===undefined) state.cursors[label]=token
       await callbacks.checkpoint(state)
-      pages++
-    } while (state.cursors[label] !== null && pages < maxPages)
-    if (pages >= maxPages) break
+    }
+  }
+  while (pages < maxPages && selected.length && completedLabels < selected.length) {
+    const index = state.nextLabelIndex! % selected.length
+    const label = selected[index]
+    state.nextLabelIndex = (index + 1) % selected.length
+    if (state.cursors[label] === null) { completedLabels++; continue }
+    completedLabels = 0
+    const token = await process(label, state.cursors[label] || undefined)
+    if (token && token === state.cursors[label]) throw new Error('Gmail repeated a page token; retry sync.')
+    state.cursors[label] = token
+    await callbacks.checkpoint(state)
   }
   return { pages, processed:seen.size, hasMore:selected.some(label=>state.cursors[label]!==null), state }
 }

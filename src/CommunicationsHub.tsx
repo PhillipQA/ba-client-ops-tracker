@@ -23,7 +23,8 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
   const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[clientId,setClientId]=useState(''),[projectId,setProjectId]=useState(''),[assignee,setAssignee]=useState(currentUser.id)
   const [message,setMessage]=useState(''),[busy,setBusy]=useState(false)
   const [gmailStatus,setGmailStatus]=useState('')
-  const gmailRefresh=useRef<Promise<{imported:number;updated:number;hasMore:boolean}|null>|null>(null)
+  const gmailRefresh=useRef<Promise<{imported:number;updated:number;hasMore:boolean;retryAfterSeconds?:number}|null>|null>(null)
+  const gmailContinuation=useRef<number|null>(null)
   const detailRef=useRef<HTMLDivElement>(null)
   const [openCount,setOpenCount]=useState(0),[labelsLoading,setLabelsLoading]=useState(false)
   const viewKey=`communications-view:${currentUser.organizationId || ''}:${currentUser.id}`
@@ -37,7 +38,7 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
     setSettings(prefs);setLabels(catalog);setRefresh(value=>value+1)
     return prefs
   }
-  const refreshGmail=(prefs?:Settings,manual=false):Promise<{imported:number;updated:number;hasMore:boolean}|null>=>{
+  const refreshGmail=(prefs?:Settings,manual=false):Promise<{imported:number;updated:number;hasMore:boolean;retryAfterSeconds?:number}|null>=>{
     // A settings save must run again with the newly selected labels, even if
     // the initial check is still finishing.
     if(gmailRefresh.current)return prefs ? gmailRefresh.current.then(()=>refreshGmail(prefs,manual)) : gmailRefresh.current
@@ -52,9 +53,11 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
       finally{setLabelsLoading(false)}
       if(!current.gmailLabels.length){setGmailStatus(labelError || 'Select labels and save settings to start automatic Gmail sync.');return null}
       try {
-        const result=await request('/api/communications/gmail/sync','POST',{auto:!manual}) as {imported:number;updated:number;hasMore:boolean}
+        const result=await request('/api/communications/gmail/sync','POST',{auto:!manual}) as {imported:number;updated:number;hasMore:boolean;retryAfterSeconds?:number}
         setRefresh(value=>value+1)
-        setGmailStatus(labelError || `Gmail checked ${new Date().toLocaleTimeString()}${result.hasMore?' · More older messages will sync on the next check.':''}`)
+        if(gmailContinuation.current!==null)window.clearTimeout(gmailContinuation.current)
+        gmailContinuation.current=result.hasMore ? window.setTimeout(()=>{gmailContinuation.current=null;if(document.visibilityState==='visible' && navigator.onLine)void refreshGmail()},Math.max(75,result.retryAfterSeconds || 0)*1000) : null
+        setGmailStatus(labelError || (result.retryAfterSeconds ? `Gmail is pacing the 10-day sync. Try again in ${result.retryAfterSeconds} seconds.` : `Gmail checked ${new Date().toLocaleTimeString()}${result.hasMore?' · More messages from the last 10 days will sync on the next check.':''}`))
         return result
       } catch(e){setGmailStatus(e instanceof Error?`Gmail sync: ${e.message}`:'Gmail sync failed.');return null}
     })().finally(()=>{gmailRefresh.current=null})
@@ -101,13 +104,13 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
     const timer=window.setInterval(check,5*60*1000)
     document.addEventListener('visibilitychange',check)
     window.addEventListener('online',check)
-    return()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',check);window.removeEventListener('online',check)}
+    return()=>{window.clearInterval(timer);if(gmailContinuation.current!==null)window.clearTimeout(gmailContinuation.current);document.removeEventListener('visibilitychange',check);window.removeEventListener('online',check)}
   },[currentUser.id,currentUser.organizationId])
   const act=async(fn:()=>Promise<void>)=>{setBusy(true);setMessage('');try{await fn()}catch(e){setMessage(e instanceof Error?e.message:'Request failed.')}finally{setBusy(false)}}
   const saveSettings=()=>act(async()=>{await request('/api/communications/settings','PUT',settings);const prefs=await load();await refreshGmail(prefs);setMessage('Your communication preferences were saved. Gmail sync is automatic.')})
   const beginGmail=()=>act(async()=>{const result=await request('/api/communications/gmail/connect');window.location.assign(result.url)})
   const fetchLabels=()=>act(async()=>{setLabelsLoading(true);try{const result=await request('/api/communications/gmail/labels');setLabels(result.labels)}finally{setLabelsLoading(false)}})
-  const sync=()=>act(async()=>{const result=await refreshGmail(undefined,true);if(result)setMessage(`${result.imported} Gmail messages imported; ${result.updated || 0} refreshed.${result.hasMore?' More older messages will sync on the next check.':''}`)})
+  const sync=()=>act(async()=>{const result=await refreshGmail(undefined,true);if(result)setMessage(result.retryAfterSeconds?`Gmail is pacing the 10-day sync. Try again in ${result.retryAfterSeconds} seconds.`:`${result.imported} Gmail messages imported; ${result.updated || 0} refreshed.${result.hasMore?' More messages from the last 10 days will sync on the next check.':''}`)})
   const update=(status:string)=>act(async()=>{if(!selected)return;await request(`/api/communications/${selected.id}`,'PATCH',{status});await load();setSelected(null)})
   const createTask=()=>act(async()=>{if(!selected)return;await request(`/api/communications/${selected.id}/create-task`,'POST',{title,description,clientId,projectId,assignedToUserId:assignee});await onTaskCreated();await load();setSelected(null);setCompose(false);setMessage('Task created. The original communication remains private to you.')})
   const pages=Math.max(1,Math.ceil(total/view.pageSize))
@@ -118,7 +121,7 @@ export default function CommunicationsHub({clients,projects,accounts,currentUser
     {gmailStatus && <p className="settings-message" role="status">{gmailStatus}</p>}
     {config && settings && <div className="panel communication-settings"><div className="panel-heading"><h2>My integration settings</h2></div>
       <div className="communication-settings-grid"><div><h3>Gmail</h3><p>{settings.gmailConnected ? `Connected: ${settings.gmailEmail}` : 'Connect your own Google account to import messages from selected Gmail labels.'}</p>
-        {settings.gmailAvailable ? settings.gmailConnected ? <><small>Labels and selected messages check automatically when you open this Hub and every five minutes while it is open.</small><button className="secondary" disabled={busy || labelsLoading} onClick={fetchLabels}>Refresh Gmail labels</button><button className="secondary" disabled={busy} onClick={sync}>Check Gmail now</button><button className="secondary danger-button" disabled={busy} onClick={()=>{if(window.confirm('Disconnect your Gmail account? Imported private messages remain in your Hub.'))void act(async()=>{await request('/api/communications/gmail','DELETE');await load();setGmailStatus('')})}}>Disconnect</button></> : <button className="primary" disabled={busy} onClick={beginGmail}>{settings.gmailReconnectRequired?'Reconnect Gmail':'Connect Gmail'}</button> : <small>{settings.gmailPlatformEnabled?'Ask your account administrator to configure Gmail in Settings → Integrations.':'Internal Admin must enable Gmail for this account first.'}</small>}
+        {settings.gmailAvailable ? settings.gmailConnected ? <><small>Selected labels sync messages from the latest 10 days when you open this Hub and every five minutes while it is open. Previously imported messages remain in your Hub.</small><button className="secondary" disabled={busy || labelsLoading} onClick={fetchLabels}>Refresh Gmail labels</button><button className="secondary" disabled={busy} onClick={sync}>Check Gmail now</button><button className="secondary danger-button" disabled={busy} onClick={()=>{if(window.confirm('Disconnect your Gmail account? Imported private messages remain in your Hub.'))void act(async()=>{await request('/api/communications/gmail','DELETE');await load();setGmailStatus('')})}}>Disconnect</button></> : <button className="primary" disabled={busy} onClick={beginGmail}>{settings.gmailReconnectRequired?'Reconnect Gmail':'Connect Gmail'}</button> : <small>{settings.gmailPlatformEnabled?'Ask your account administrator to configure Gmail in Settings → Integrations.':'Internal Admin must enable Gmail for this account first.'}</small>}
         {labels.length>0 && <div className="communication-labels">{labels.map(label=><label key={label.id}><input type="checkbox" checked={settings.gmailLabels.includes(label.id)} onChange={e=>setSettings({...settings,gmailLabels:e.target.checked?[...settings.gmailLabels,label.id]:settings.gmailLabels.filter(id=>id!==label.id)})}/>{label.name}</label>)}</div>}
         {settings.gmailLabels.length>0 && !labels.length && <p>Monitoring {settings.gmailLabels.length} saved label{settings.gmailLabels.length===1?'':'s'}. Refresh labels to change them.</p>}
       </div><div><h3>Discord</h3><p>Link your personal Discord user ID. The existing workspace bot routes mentions of you and your DMs to the bot into your private Hub.</p><label>My Discord user ID<input value={settings.discordUserId} onChange={e=>setSettings({...settings,discordUserId:e.target.value})} placeholder="Numeric Discord user ID" /></label><label className="checkbox-label"><input type="checkbox" checked={settings.captureMentions} onChange={e=>setSettings({...settings,captureMentions:e.target.checked})}/>Capture mentions of me</label><small>Personal person-to-person DMs cannot be captured by the bot. The bot needs access to the server channel and message content.</small></div></div>

@@ -5,7 +5,7 @@ import { validateCoverage, validatePreview } from '../server/documents/testcase-
 import { reviewCoverage } from '../src/testcase-model'
 import { assertFsdGrounding, interpretRequirements } from '../server/documents/fsd-grounding'
 import { buildAssistantContext, assistantPeriod } from '../server/ai/assistant-context'
-import { gmailBodyText, syncGmailPages } from '../server/integrations/gmail-content'
+import { gmailBodyText, gmailWindowStart, syncGmailPages } from '../server/integrations/gmail-content'
 import { businessDateKey, setBusinessTimeZone } from '../src/businessDate'
 import { reconcileNotifications } from '../server/services/notification-engine'
 import { defaultTaskSettings } from '../src/data'
@@ -63,12 +63,16 @@ test('Gmail sync reaches later pages, retains a continuation, resumes all labels
  const visits:string[]=[],cursors:any[]=[]
  const callbacks={list:async(label:string,token?:string)=>({messages:[{id:label==='B'?'A0':`${label}${token||'0'}`}],nextPageToken:label==='A'&&!token?'1':label==='A'&&token==='1'?'2':undefined}),message:async(id:string)=>{visits.push(id)},checkpoint:async(state:any)=>{cursors.push(structuredClone(state))}}
  const first=await syncGmailPages(['A','B'],undefined,callbacks,2)
- assert.equal(first.hasMore,true);assert.deepEqual(visits,['A0','A1'])
+ assert.equal(first.hasMore,true);assert.deepEqual(visits,['A0'])
  const second=await syncGmailPages(['A','B'],first.state,callbacks,5)
- assert.equal(second.hasMore,false);assert.deepEqual(visits,['A0','A1','A2','A0'])
+ assert.equal(second.hasMore,false);assert.deepEqual(visits,['A0','A0','A1','A2'])
  const oneRun:string[]=[]
  await syncGmailPages(['A','B'],undefined,{...callbacks,message:async id=>{oneRun.push(id)}})
  assert.deepEqual(oneRun,['A0','A1','A2'])
+ const now=1_800_000_000_000, cutoff=Math.floor(now/1000)-10*86400
+ assert.equal(gmailWindowStart(undefined,now),cutoff)
+ assert.equal(gmailWindowStart({...first.state,windowStart:cutoff},now+60_000),cutoff)
+ assert.equal(gmailWindowStart({...first.state,windowStart:cutoff},now+7*3600_000),Math.floor((now+7*3600_000)/1000)-10*86400)
 })
 test('HTML-only and attachment-backed MIME bodies preserve the full readable message',async()=>{
  const html='<html><head><style>bad</style></head><body><p>Supervisor &amp; QA</p><p>Approve refunds over &#8369;500.</p></body></html>'

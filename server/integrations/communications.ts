@@ -1,4 +1,4 @@
-import { gmailBodyText, syncGmailPages } from './gmail-content'
+import { gmailBodyText, gmailWindowStart, syncGmailPages } from './gmail-content'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
@@ -12,7 +12,12 @@ type GmailCredentials = { clientId: string; clientSecret: string; redirectUri: s
 const google = async (url: string, init: RequestInit) => {
   const response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(20000) })
   const data: any = await response.json()
-  if (!response.ok) throw new IntegrationError(data.error_description || data.error?.message || 'Gmail request failed.', 502)
+  if (!response.ok) {
+    const message = data.error_description || data.error?.message || 'Gmail request failed.'
+    if (response.status === 429 || (response.status === 403 && /quota|rate.?limit|userRateLimitExceeded/i.test(message)))
+      throw new IntegrationError('Gmail quota is temporarily exceeded. Wait a minute before checking again; automatic sync will retry.',429)
+    throw new IntegrationError(message, 502)
+  }
   return data
 }
 function origin(req: Request) {
@@ -52,6 +57,9 @@ export function registerCommunications(app: Express, deps: {
   openStatus: (state: any) => string;
 }) {
   const { db } = deps
+  const gmailSyncJobs = new Map<string,Promise<any>>()
+  const gmailBackfillCooldowns = new Map<string,number>()
+  const gmailQuotaCooldowns = new Map<string,number>()
   const auth = [deps.requireAuth, deps.requireTenant]
   const current = (req: Request) => (req as any).authUser
   const guard: Middleware = async (req, res, next) => {
@@ -202,6 +210,7 @@ export function registerCommunications(app: Express, deps: {
       gmail_config_revision:previous?.gmail_config_revision || null,
       updated_at:new Date().toISOString() },{ onConflict:'tenant_id,user_id' })
     if (error) throw new IntegrationError(error.code === '23505' ? 'This Discord account is already linked to another user in this workspace.' : 'Could not save communication settings.',error.code === '23505' ? 409 : 503)
+    if (JSON.stringify([...(previous?.gmail_labels || [])].sort())!==JSON.stringify([...labels].sort())) gmailBackfillCooldowns.delete(`${user.organizationId}:${user.id}`)
     res.json({ saved:true })
   }))
   app.post('/api/communications', ...auth, guard, wrap(async (req,res) => {
@@ -310,41 +319,59 @@ export function registerCommunications(app: Express, deps: {
     res.json({disconnected:true})
   }))
   app.post('/api/communications/gmail/sync', ...auth, guard, gmailGate, wrap(async (req,res) => {
-    const user=current(req),row=await settings(user.organizationId,user.id),labels=Array.isArray(row?.gmail_labels) ? row.gmail_labels : []
-    const automatic=req.body?.auto===true
-    if(!labels.length) throw new IntegrationError('Select monitored Gmail labels in settings first.')
-    const token=await accessToken(req)
-    let imported=0, updated=0
-    const checkpoint=async (state: any) => {
-      const {error}=await db.from('user_communication_settings').update({gmail_sync_state:state,updated_at:new Date().toISOString()}).eq('tenant_id',user.organizationId).eq('user_id',user.id)
-      if(error) throw new IntegrationError('Could not save Gmail progress. Apply schema-v16-functional-integrity.sql and retry.',503)
-    }
-    const result=await syncGmailPages(labels,row?.gmail_sync_state,{
-      list:async(label,pageToken)=>google(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({labelIds:label,maxResults:'30',...(pageToken?{pageToken}:{})})}`,{headers:{Authorization:`Bearer ${token}`}}),
-      checkpoint,
-      message:async(externalId,label)=>{
-        const {data:found,error:lookupError}=await db.from('user_communications').select('id,source_labels').eq('tenant_id',user.organizationId).eq('owner_user_id',user.id).eq('source','Gmail').eq('external_id',externalId).maybeSingle()
-        if(lookupError) throw lookupError
-        // Gmail message bodies are immutable. Scheduled checks only download
-        // new messages or messages newly encountered under another label.
-        if(automatic && found && Array.isArray(found.source_labels) && found.source_labels.includes(label)) return
-        const detail=await google(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(externalId)}?format=full`,{headers:{Authorization:`Bearer ${token}`}})
-        const headers=detail.payload?.headers || [],head=(name:string)=>String(headers.find((x:any)=>x.name?.toLowerCase()===name)?.value || '')
-        const extracted=await gmailBodyText(detail.payload,async id=>{
-          const part=await google(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(externalId)}/attachments/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${token}`}})
-          return String(part.data || '')
-        })
-        const body=extracted || `${String(detail.snippet || '')}\n[Only a Gmail snippet is available; review the original email before interpreting it.]`
-        const sourceLabels=Array.isArray(detail.labelIds)?detail.labelIds.map(String):[label]
-        const fields={thread_id:String(detail.threadId || ''),subject:head('subject').slice(0,500),sender:head('from').slice(0,500),body:body.length>30000?body.slice(0,29850)+'\n[Body shortened at 30,000 characters. Review the original email for remaining content.]':body,attachments:attachmentNames(detail.payload),source_label:sourceLabels.find((id:string)=>labels.includes(id)) || '',source_labels:sourceLabels,received_at:new Date(Number(detail.internalDate || Date.now())).toISOString()}
-        const query=found?db.from('user_communications').update(fields).eq('id',found.id).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id):db.from('user_communications').insert({tenant_id:user.organizationId,owner_user_id:user.id,source:'Gmail',external_id:externalId,...fields})
-        const {error}=await query
-        if(error && error.code!=='23505') throw error
-        if(!error) { if(found) updated++; else imported++ }
-      },
-    })
-    if(!result.hasMore) await checkpoint({})
-    res.json({imported,updated,pages:result.pages,hasMore:result.hasMore})
+    const user=current(req),key=`${user.organizationId}:${user.id}`
+    const ongoing=gmailSyncJobs.get(key)
+    if(ongoing) {res.json(await ongoing);return}
+    const quotaUntil=gmailQuotaCooldowns.get(key) || 0
+    if(Date.now()<quotaUntil) throw new IntegrationError('Gmail quota is temporarily exceeded. Wait a minute before checking again; automatic sync will retry.',429)
+    const backfillUntil=gmailBackfillCooldowns.get(key) || 0
+    if(Date.now()<backfillUntil) {res.json({imported:0,updated:0,pages:0,hasMore:true,retryAfterSeconds:Math.ceil((backfillUntil-Date.now())/1000)});return}
+    const job=(async()=>{
+      const row=await settings(user.organizationId,user.id),labels=Array.isArray(row?.gmail_labels) ? row.gmail_labels : []
+      if(!labels.length) throw new IntegrationError('Select monitored Gmail labels in settings first.')
+      const token=await accessToken(req),windowStart=gmailWindowStart(row?.gmail_sync_state)
+      let imported=0, updated=0
+      const checkpoint=async (state: any) => {
+        const {error}=await db.from('user_communication_settings').update({gmail_sync_state:state,updated_at:new Date().toISOString()}).eq('tenant_id',user.organizationId).eq('user_id',user.id)
+        if(error) throw new IntegrationError('Could not save Gmail progress. Apply schema-v16-functional-integrity.sql and retry.',503)
+      }
+      const result=await syncGmailPages(labels,row?.gmail_sync_state,{
+        list:async(label,pageToken)=>google(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({labelIds:label,maxResults:'20',q:`after:${windowStart}`,...(pageToken?{pageToken}:{})})}`,{headers:{Authorization:`Bearer ${token}`}}),
+        checkpoint,
+        message:async(externalId,label)=>{
+          const {data:found,error:lookupError}=await db.from('user_communications').select('id,source_labels').eq('tenant_id',user.organizationId).eq('owner_user_id',user.id).eq('source','Gmail').eq('external_id',externalId).maybeSingle()
+          if(lookupError) throw lookupError
+          // Saved bodies do not need to be downloaded again on a manual check.
+          // Revisit a message if it appears under a newly monitored label.
+          if(found && Array.isArray(found.source_labels) && found.source_labels.includes(label)) return
+          const detail=await google(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(externalId)}?format=full`,{headers:{Authorization:`Bearer ${token}`}})
+          const headers=detail.payload?.headers || [],head=(name:string)=>String(headers.find((x:any)=>x.name?.toLowerCase()===name)?.value || '')
+          const extracted=await gmailBodyText(detail.payload,async id=>{
+            const part=await google(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(externalId)}/attachments/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${token}`}})
+            return String(part.data || '')
+          })
+          const body=extracted || `${String(detail.snippet || '')}\n[Only a Gmail snippet is available; review the original email before interpreting it.]`
+          const sourceLabels=Array.isArray(detail.labelIds)?detail.labelIds.map(String):[label]
+          const fields={thread_id:String(detail.threadId || ''),subject:head('subject').slice(0,500),sender:head('from').slice(0,500),body:body.length>30000?body.slice(0,29850)+'\n[Body shortened at 30,000 characters. Review the original email for remaining content.]':body,attachments:attachmentNames(detail.payload),source_label:sourceLabels.find((id:string)=>labels.includes(id)) || '',source_labels:sourceLabels,received_at:new Date(Number(detail.internalDate || Date.now())).toISOString()}
+          const query=found?db.from('user_communications').update(fields).eq('id',found.id).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id):db.from('user_communications').insert({tenant_id:user.organizationId,owner_user_id:user.id,source:'Gmail',external_id:externalId,...fields})
+          const {error}=await query
+          if(error && error.code!=='23505') throw error
+          if(!error) { if(found) updated++; else imported++ }
+        },
+      },3,windowStart)
+      if(!result.hasMore) await checkpoint({})
+      return {imported,updated,pages:result.pages,hasMore:result.hasMore}
+    })()
+    gmailSyncJobs.set(key,job)
+    try {
+      const result=await job
+      if(result.hasMore) gmailBackfillCooldowns.set(key,Date.now()+60_000)
+      else gmailBackfillCooldowns.delete(key)
+      res.json(result)
+    } catch(error) {
+      if(error instanceof IntegrationError && error.status===429) gmailQuotaCooldowns.set(key,Date.now()+60_000)
+      throw error
+    } finally {if(gmailSyncJobs.get(key)===job)gmailSyncJobs.delete(key)}
   }))
   async function accessToken(req: Request) {
     const user=current(req),row=await settings(user.organizationId,user.id)

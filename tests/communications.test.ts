@@ -158,6 +158,9 @@ test('Gmail functional sync imports beyond page one, updates existing messages, 
  Object.assign(prefs[0],{gmail_labels:['L1','L2'],gmail_config_revision:'v1',gmail_refresh_token:encryptSecret('fixture-refresh','tenant:user-a','gmail-refresh')})
  const server=app.listen(0),original=globalThis.fetch
  const seenPages:string[]=[]
+ const seenQueries:string[]=[]
+ const realNow=Date.now;let clock=realNow()
+ Date.now=()=>clock
  let detailCalls=0, newMessage=false
  try {
   const address=server.address();if(!address||typeof address==='string')throw new Error('No port')
@@ -166,24 +169,61 @@ test('Gmail functional sync imports beyond page one, updates existing messages, 
     const url=new URL(String(input));let body:any
     if(url.hostname==='oauth2.googleapis.com') body={access_token:'fixture-access'}
     else if(url.pathname.endsWith('/messages')) {
-      const label=url.searchParams.get('labelIds'),token=url.searchParams.get('pageToken')||'';seenPages.push(`${label}:${token}`)
-      const page=Number(token||0)
-      body=label==='L2'?{messages:[{id:'m0'}]}:{messages:Array.from({length:page===2?5:30},(_,i)=>({id:newMessage && page===0 && i===0?'m65':`m${page*30+i}`})),...(page<2?{nextPageToken:String(page+1)}:{})}
+      const label=url.searchParams.get('labelIds'),token=url.searchParams.get('pageToken')||'';seenPages.push(`${label}:${token}`);seenQueries.push(url.searchParams.get('q')||'')
+      const page=Number(token||0),size=Number(url.searchParams.get('maxResults')),start=page*size,count=Math.min(size,Math.max(0,65-start))
+      assert.equal(size,20)
+      body=label==='L2'?{messages:[{id:'m0'}]}:{messages:Array.from({length:count},(_,i)=>({id:newMessage && page===0 && i===0?'m65':`m${start+i}`})),...(start+count<65?{nextPageToken:String(page+1)}:{})}
     } else { detailCalls++;const id=url.pathname.split('/').pop();body={id,threadId:'thread',labelIds:['L1','L2'],internalDate:'1790553600000',snippet:'Too short',payload:{mimeType:'text/html',headers:[{name:'Subject',value:'Fixture email'}],body:{data:Buffer.from('<p>Supervisor approval required.</p><p>Refund limit: 500.</p>').toString('base64url')}}} }
     return new Response(JSON.stringify(body),{status:200,headers:{'content-type':'application/json'}})
   }) as typeof fetch
   const sync=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(sync.status,200)
-  const result=await sync.json();assert.equal(result.imported,65);assert.equal(result.hasMore,false)
-  assert.deepEqual(seenPages,['L1:','L1:1','L1:2','L2:'])
-  const imported=records.filter(r=>r.external_id?.startsWith('m'))
-  assert.equal(imported.length,65);assert.deepEqual(imported[0].source_labels,['L1','L2']);assert.match(imported[0].body,/Refund limit: 500/)
-  const filtered=await original(base+'/api/communications?tab=Gmail&label=L2&page=1');assert.equal(filtered.status,200);assert.equal((await filtered.json()).total,65)
-  imported[0].status='Archived';imported[0].linked_task_id='task'
-  const second=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(second.status,200);assert.equal((await second.json()).imported,0)
-  assert.equal(imported[0].status,'Archived');assert.equal(imported[0].linked_task_id,'task')
-  detailCalls=0;newMessage=true
+  const result=await sync.json();assert.equal(result.imported,40);assert.equal(result.hasMore,true)
+  assert.deepEqual(seenPages,['L1:','L2:','L1:1'])
+  assert.ok(seenQueries.every(q=>q===`after:${Math.floor(clock/1000)-10*86400}`))
+  const paused=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(paused.status,200)
+  assert.ok((await paused.json()).retryAfterSeconds>0)
+  clock+=61_000;newMessage=true
+  const next=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(next.status,200)
+  assert.equal((await next.json()).imported,21,'New mail should arrive even while older pages are still being scanned')
+  clock+=61_000
   const automatic=await original(base+'/api/communications/gmail/sync',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({auto:true})})
-  assert.equal(automatic.status,200);assert.equal((await automatic.json()).imported,1)
-  assert.equal(detailCalls,1,'Automatic checks should only download new message bodies')
- } finally {globalThis.fetch=original;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
+  assert.equal(automatic.status,200);assert.equal((await automatic.json()).imported,5)
+  const imported=records.filter(r=>r.external_id?.startsWith('m'))
+  assert.equal(imported.length,66);assert.deepEqual(imported[0].source_labels,['L1','L2']);assert.match(imported[0].body,/Refund limit: 500/)
+  assert.deepEqual(seenPages.slice(0,9),['L1:','L2:','L1:1','L1:','L2:','L1:2','L1:','L2:','L1:3'])
+  const filtered=await original(base+'/api/communications?tab=Gmail&label=L2&page=1');assert.equal(filtered.status,200);assert.equal((await filtered.json()).total,66)
+  imported[0].status='Archived';imported[0].linked_task_id='task'
+  detailCalls=0
+  const second=await original(base+'/api/communications/gmail/sync',{method:'POST'});assert.equal(second.status,200);assert.equal((await second.json()).imported,0)
+  assert.equal(detailCalls,0,'Manual checks must not re-download existing message bodies')
+  assert.equal(imported[0].status,'Archived');assert.equal(imported[0].linked_task_id,'task')
+ } finally {Date.now=realNow;globalThis.fetch=original;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
+})
+
+test('Gmail quota errors pause new checks and resume without losing the scan state',async()=>{
+ const oldKey=process.env.TENANT_INTEGRATION_MASTER_KEY,original=globalThis.fetch,realNow=Date.now
+ process.env.TENANT_INTEGRATION_MASTER_KEY='c'.repeat(64)
+ const {app,gmailAccounts,prefs}=fixture()
+ gmailAccounts.push({tenant_id:'tenant',platform_enabled:true,account_enabled:true,revision:'v1',encrypted_config:encryptSecret(JSON.stringify({clientId:'test',clientSecret:'fixture',redirectUri:'http://localhost'}),'tenant','gmail-oauth')})
+ Object.assign(prefs[0],{gmail_labels:['L1'],gmail_config_revision:'v1',gmail_refresh_token:encryptSecret('fixture-refresh','tenant:user-a','gmail-refresh')})
+ const server=app.listen(0);let clock=realNow(),listCalls=0,quota=true
+ Date.now=()=>clock
+ try {
+  const address=server.address();if(!address||typeof address==='string')throw new Error('No port')
+  const base=`http://127.0.0.1:${address.port}`
+  globalThis.fetch=(async(input:any)=>{
+   const url=new URL(String(input))
+   if(url.hostname==='oauth2.googleapis.com')return new Response(JSON.stringify({access_token:'fixture-access'}),{status:200,headers:{'content-type':'application/json'}})
+   listCalls++
+   return new Response(JSON.stringify(quota?{error:{message:"Quota exceeded for quota metric 'Total Query Cost' and limit 'Units per minute per user'"}}:{messages:[]}),{status:quota?403:200,headers:{'content-type':'application/json'}})
+  }) as typeof fetch
+  const failed=await original(base+'/api/communications/gmail/sync',{method:'POST'})
+  assert.equal(failed.status,429);assert.match((await failed.json()).error,/Gmail quota is temporarily exceeded/)
+  assert.equal((await original(base+'/api/communications/gmail/sync',{method:'POST'})).status,429)
+  assert.equal(listCalls,1,'The cooldown must prevent another Gmail request')
+  assert.deepEqual(prefs[0].gmail_sync_state || {},{})
+  clock+=61_000;quota=false
+  const resumed=await original(base+'/api/communications/gmail/sync',{method:'POST'})
+  assert.equal(resumed.status,200);assert.equal((await resumed.json()).hasMore,false);assert.equal(listCalls,2)
+ } finally {globalThis.fetch=original;Date.now=realNow;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
 })
