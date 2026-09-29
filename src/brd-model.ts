@@ -41,6 +41,7 @@ export type BrdPreview = {
 }
 export type BrdDraft = {
   details: BrdDetails
+  fileNameOverride?: string
   sources: BrdSource[]
   pasteName: string
   pasteText: string

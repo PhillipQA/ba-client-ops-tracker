@@ -5,6 +5,7 @@ import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
 import type { Client, Project, WorkItem } from './types'
 import { DocHubOptions, DocHubResult, useDocHubDraft } from './DocHubPanel'
+import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, SIGNOFF_TITLE, SIGNOFF_PURPOSE, SIGNOFF_SCOPE, SIGNOFF_AUTHORIZATION, formatDeploymentDate, signoffReference, type SignoffInput, type SignoffAttachment } from './signoff'
 
 type Upload = SignoffAttachment & { id: string; size: number; image: boolean }
@@ -45,6 +46,9 @@ export default function SignOffCreation({ clients, projects, items, launch, canG
   const [emails,setEmails]=useState({irippleSignatories:['','',''],clientSignatories:['','','']})
   useEffect(()=>{if(launch?.flow!=='signoff')return;const task=items.find(i=>i.id===launch.taskId);docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:task?.clientId || ''}));const client=clients.find(c=>c.id===task?.clientId);if(client)setDetails(d=>({...d,clientName:client.name}))},[launch])
   const [details, setDetails] = useState(initialDetails)
+  const [fileNameOverride,setFileNameOverride]=useState<string | undefined>()
+  const suggestedFileName=suggestedDocumentStem('SO',details.clientName,details.site)
+  const fileName=fileNameOverride ?? suggestedFileName
   const [files, setFiles] = useState<Upload[]>([])
   const [busy, setBusy] = useState(false), [uploading, setUploading] = useState(false)
   const [error, setError] = useState(''), [message, setMessage] = useState('')
@@ -52,7 +56,7 @@ export default function SignOffCreation({ clients, projects, items, launch, canG
   const fileInput = useRef<HTMLInputElement>(null)
   const reset = () => {
     operation.cancel();docHub.reset()
-    setDetails(initialDetails());setFiles([]);setEmails({irippleSignatories:['','',''],clientSignatories:['','','']})
+    setDetails(initialDetails());setFileNameOverride(undefined);setFiles([]);setEmails({irippleSignatories:['','',''],clientSignatories:['','','']})
     setBusy(false);setUploading(false);setError('');setMessage('')
     if(fileInput.current)fileInput.current.value=''
   }
@@ -82,7 +86,7 @@ export default function SignOffCreation({ clients, projects, items, launch, canG
     const job = operation.begin()
     setBusy(true); setError(''); setMessage('')
     try {
-      const response = await fetch('/api/documents/signoff/generate', { signal: job.signal, method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ details, attachments: files.map(({ name, data, caption }) => ({ name, data, caption })) }) })
+      const response = await fetch('/api/documents/signoff/generate', { signal: job.signal, method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ details, fileName:documentOutputName(fileName,'docx',suggestedFileName), attachments: files.map(({ name, data, caption }) => ({ name, data, caption })) }) })
       const result = await response.json().catch(() => ({}))
       if (!job.isCurrent()) return
       if (!response.ok) throw new Error(result.error || 'Sign Off generation failed. Please retry.')
@@ -107,6 +111,7 @@ export default function SignOffCreation({ clients, projects, items, launch, canG
         <label>Deployment type<select value={details.deploymentType} onChange={e => update('deploymentType', e.target.value)}>{DEPLOYMENT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
         <label>Product deployed<select value={details.product} onChange={e => update('product', e.target.value)}>{DEPLOYED_PRODUCTS.map(value => <option key={value}>{value}</option>)}</select></label>
         <label>Site code / name<input required maxLength={160} value={details.site} onChange={e => update('site', e.target.value)} placeholder="Enter the site code or name" /></label>
+        <label className="document-field-wide">Filename (extension added automatically)<input aria-label="Sign Off filename" value={fileName} maxLength={150} onChange={e=>setFileNameOverride(e.target.value)} onBlur={()=>{if(!fileNameOverride?.trim())setFileNameOverride(undefined)}}/><small>Download and DocHub: {documentOutputName(fileName,files.some(f=>!f.image)?'zip':'docx',suggestedFileName)}{files.some(f=>!f.image)?` · DocHub receives ${documentOutputName(fileName,'docx',suggestedFileName)}`:''}</small></label>
         <label>Document year<input type="number" required min={1900} max={9999} value={details.documentYear} onChange={e => update('documentYear', e.target.value)} /></label>
         <label>Document number<input type="number" required min={1} max={9999} value={details.documentNumber} onChange={e => update('documentNumber', e.target.value)} /><small>Set the number for this document; it is not automatically incremented.</small></label>
       </div><div className="signoff-header-preview"><strong>{SIGNOFF_TITLE}</strong><span>{signoffReference(details.clientName, details.documentYear, details.documentNumber)}</span><small>The Word document uses the original iRipple logo and header.</small></div></div>

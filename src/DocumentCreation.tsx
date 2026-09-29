@@ -7,6 +7,7 @@ import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
 import type { Client, Project, WorkItem } from './types'
 import { DocHubOptions, DocHubResult, DocHubHistory, useDocHubDraft } from './DocHubPanel'
+import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
 import {
@@ -165,6 +166,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const [tin, setTin] = useState('')
   const [address, setAddress] = useState('')
   const [branchName, setBranchName] = useState('')
+  const [drfFileNameOverride, setDrfFileNameOverride] = useState<string | undefined>()
   const [requestDate, setRequestDate] = useState(todayMmDdYyyy)
   const [goLiveDate, setGoLiveDate] = useState('TBA')
   const [contractNumber, setContractNumber] = useState('')
@@ -218,7 +220,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   }
   const resetDrf = () => {
     removeCor()
-    setBranchName('');setRequestDate(todayMmDdYyyy());setGoLiveDate('TBA');setContractNumber('');setNotes('')
+    setBranchName('');setDrfFileNameOverride(undefined);setRequestDate(todayMmDdYyyy());setGoLiveDate('TBA');setContractNumber('');setNotes('')
     setRequestFor(REQUEST_FOR_OPTIONS[0]);setDongle('n/a');setLicenseFor('BARTER RPOS 5.1 (CORE)')
     setRequestNote('');setPosSetup('STANDALONE');setPosRows([newPosRow()])
     setSignatories(defaultSignatories.map(signatory=>({...signatory})));setCorExtractionMode('local')
@@ -230,6 +232,9 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const fsdTemplate = documentTemplates.find(template => template.type === 'fsd')
   const signoffTemplate = documentTemplates.find(template => template.type === 'signoff')
   const corFile = corFiles[0]
+  const drfClientName=clients.find(client=>client.id===docHub.options.clientId)?.name || businessName || tradeName
+  const suggestedDrfFileName=suggestedDocumentStem('DRF',drfClientName,branchName)
+  const drfFileName=drfFileNameOverride ?? suggestedDrfFileName
 
   const handleFiles = (setter: (files: File[]) => void, multiple = false, maxBytes?: number) => (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
@@ -328,6 +333,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       }
       const result = await postJson<{ fileData: string; fileName: string; mimeType: string; matchedFields?: string[]; posRowsWritten?: number }>('/api/documents/drf/render-template', {
         values,
+        fileName: documentOutputName(drfFileName,'xlsx',suggestedDrfFileName),
         posRows: posRows.map(({ computerName, serialNo, brand, model }) => ({ computerName, serialNo, brand, model })),
       }, job.signal)
       if (!job.isCurrent()) return
@@ -450,6 +456,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
                   <div className="document-subsection-heading"><div><strong>DRF details</strong><span>Fields from the Excel form that are not extracted from the COR.</span></div></div>
                   <div className="document-field-grid document-drf-fields">
                     <label>Branch Name<input value={branchName} onChange={(event) => setBranchName(event.target.value)} placeholder="e.g. iRipple - Ortigas Pasig" /></label>
+                    <label className="document-field-wide">Filename (extension added automatically)<input aria-label="DRF filename" value={drfFileName} maxLength={150} onChange={event=>setDrfFileNameOverride(event.target.value)} onBlur={()=>{if(!drfFileNameOverride?.trim())setDrfFileNameOverride(undefined)}}/><small>Download and DocHub: {documentOutputName(drfFileName,drfTemplate?.name.split('.').pop() || 'xlsx',suggestedDrfFileName)}</small></label>
                     <label>Request Date<input value={requestDate} readOnly className="document-readonly-input" title="Automatically set to the date this DRF is created" /></label>
                     <label>GO-LIVE Date<input value={goLiveDate} onChange={(event) => setGoLiveDate(event.target.value)} placeholder="MM/DD/YYYY or TBA" /></label>
                     <label>Contract Number (SLSS-DRF)<input value={contractNumber} onChange={(event) => setContractNumber(event.target.value)} placeholder="Contract / SLSS-DRF reference" /></label>
@@ -498,7 +505,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
                     {posRows.map((row, index) => (
                       <tr key={row.id}>
                         <td>{index + 1}</td>
-                        <td><input maxLength={12} value={row.computerName} onChange={(event) => updatePosRow(row.id, { computerName: event.target.value.toUpperCase() })} placeholder="PC01" /></td>
+                        <td><input maxLength={16} value={row.computerName} onChange={(event) => updatePosRow(row.id, { computerName: event.target.value.toUpperCase() })} placeholder="PC01" title="Maximum 16 characters" /></td>
                         <td><input value={row.serialNo} onChange={(event) => updatePosRow(row.id, { serialNo: event.target.value })} placeholder="Serial number" /></td>
                         <td><input value={row.brand} onChange={(event) => updatePosRow(row.id, { brand: event.target.value })} placeholder="Brand" /></td>
                         <td><input value={row.model} onChange={(event) => updatePosRow(row.id, { model: event.target.value })} placeholder="Model" /></td>
@@ -531,7 +538,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
         <div className="fsd-retained" hidden={flow !== 'brd'}><BrdCreation projects={projects} canGenerate={canGenerate} templateReady={Boolean(brdTemplate?.active)} draftKey={draftKey} active={active && flow === 'brd'} onUseInFsd={(handoff) => { try { sessionStorage.setItem(`ba-brd-handoff:${draftKey}`, JSON.stringify(handoff)); setFlow('fsd') } catch { window.alert('Browser session storage is unavailable. Download the BRD and upload it to FSD Creation instead.') } }} /></div>
 
-        <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} canGenerate={canGenerate} templateReady={Boolean(fsdTemplate?.active)} draftKey={draftKey} active={active && flow === 'fsd'} /></div>
+        <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} projects={projects} canGenerate={canGenerate} templateReady={Boolean(fsdTemplate?.active)} draftKey={draftKey} active={active && flow === 'fsd'} /></div>
 
         <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /></div>
 

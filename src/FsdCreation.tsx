@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, FileText, Plus, Sparkles, Trash2 } from 'lucide-react'
 import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
-import type { Client } from './types'
+import type { Client, Project } from './types'
+import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { emptyFsdDraft, fsdReference, fsdSectionsForModules, FSD_MODULE_SECTION_IDS, FSD_MODULES, FSD_NOTICE, FSD_PRESETS, FSD_SECTIONS, FSD_TEMPLATE_NAME, type FsdDraft, type FsdDetails, type FsdPreview, type FsdSource, type FsdSourceAnalysis, type FsdSectionId, type FsdModule } from './fsd-model'
 import { isFsdImageFile, readFsdSource } from './fsd-sources'
 import FsdSourceReview, { sourceReviewLabel } from './FsdSourceReview'
@@ -17,7 +18,7 @@ async function request<T>(path: string, body?: unknown, signal?: AbortSignal): P
   if (!response.ok) throw new Error(result.error || 'The FSD request failed. Your draft is retained.')
   return result as T
 }
-export default function FsdCreation({ clients, canGenerate, templateReady, draftKey, active }: { clients: Client[]; canGenerate: boolean; templateReady: boolean; draftKey: string; active: boolean }) {
+export default function FsdCreation({ clients, projects, canGenerate, templateReady, draftKey, active }: { clients: Client[]; projects: Project[]; canGenerate: boolean; templateReady: boolean; draftKey: string; active: boolean }) {
   const storageKey = `ba-fsd-v1:${draftKey}`
   const presetsKey = `ba-fsd-presets-v1:${draftKey}`
   const [draft, setDraft] = useState<FsdDraft>(() => {
@@ -82,6 +83,8 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
   const patch = (values: Partial<FsdDraft>, content = true) => setDraft(d=>({...d,...values,...(values.modules?{sources:(values.sources||d.sources).map(s=>({...s,analysis:undefined,analysisError:undefined}))}:{}),revision:content?d.revision+1:d.revision,reviewed:content?false:values.reviewed??d.reviewed}))
   const editSource = (id: string, values: Partial<FsdSource>) => patch({sources:draft.sources.map(s=>s.id===id?{...s,...values,analysis:undefined,analysisError:undefined}:s)})
   const detail = (key: keyof FsdDetails,value: string) => patch({details:{...draft.details,[key]:value}})
+  const suggestedFileName=suggestedDocumentStem('FSD',draft.details.client,draft.projectName)
+  const fileName=draft.fileNameOverride ?? suggestedFileName
   const stale = draft.previewRevision !== draft.revision || Boolean(draft.preview && !draft.preview.requirements?.length)
   const presets = [...FSD_PRESETS,...draft.customPresets]
   const scopedSections = fsdSectionsForModules(draft.modules)
@@ -177,7 +180,7 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
     const job = operation.begin()
     setBusy('Preparing Word document…');setStage('export');setRetryAction('export');setError('')
     try {
-      const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true,mode:'advanced',sources:draft.sources,modules:draft.modules,presetInstructions:draft.presetInstructions},job.signal)
+      const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true,mode:'advanced',sources:draft.sources,modules:draft.modules,presetInstructions:draft.presetInstructions,fileName:documentOutputName(fileName,'docx',suggestedFileName)},job.signal)
       if (!job.isCurrent()) return
       const bytes=Uint8Array.from(atob(result.fileData),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:result.mimeType}))
       const a=document.createElement('a');a.href=url;a.download=result.fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
@@ -231,8 +234,10 @@ export default function FsdCreation({ clients, canGenerate, templateReady, draft
         <div className="fsd-input-column">
           <section className="fsd-card"><h3>1. Document details</h3><div className="fsd-fields">
             <label>Client *<input list={`fsd-clients-${draftKey}`} value={draft.details.client} maxLength={180} onChange={e=>detail('client',e.target.value)}/><datalist id={`fsd-clients-${draftKey}`}>{clients.map(c=><option key={c.id} value={c.name}/>)}</datalist></label>
+            <label>Project name (filename)<input list={`fsd-projects-${draftKey}`} value={draft.projectName || ''} maxLength={180} onChange={e=>patch({projectName:e.target.value},false)} placeholder="Choose a project or enter its name"/><datalist id={`fsd-projects-${draftKey}`}>{projects.map(p=><option key={p.id} value={p.name}/>)}</datalist></label>
             {detailsField('feature','Feature name','text',true)}{detailsField('product','Product','text',true)}{detailsField('author','Prepared by','text',true)}{detailsField('date','Document date','date',true)}{detailsField('version','Revision','text',true)}
             <label className="fsd-full">Document reference<input value={draft.details.reference} maxLength={180} placeholder={fsdReference(draft.details)} onChange={e=>detail('reference',e.target.value)}/></label>
+            <label className="fsd-full">Filename (without .docx)<input aria-label="FSD filename" value={fileName} maxLength={150} onChange={e=>patch({fileNameOverride:e.target.value},false)} onBlur={()=>{if(!draft.fileNameOverride?.trim())patch({fileNameOverride:undefined},false)}}/><small>Download: {documentOutputName(fileName,'docx',suggestedFileName)}</small></label>
           </div><details><summary>Signatories</summary><p>Names remain editable. Signature and date lines stay blank for approval.</p><div className="fsd-fields">{detailsField('irippleBA','iRipple Business Analyst')}{detailsField('iripplePM','iRipple Project Manager')}{detailsField('clientName1','Client signatory 1')}{detailsField('clientTitle1','Position 1')}{detailsField('clientName2','Client signatory 2')}{detailsField('clientTitle2','Position 2')}</div></details></section>
           <section className="fsd-card"><h3>2. Requirements & supporting sources</h3><label>Upload as<select value={uploadKind} onChange={e=>setUploadKind(e.target.value as FsdSource['kind'])}>{['BRD','Meeting notes','Supporting document','Chat'].map(k=><option key={k}>{k}</option>)}</select></label>
             <label className="fsd-dropzone"><Plus size={26}/><strong>Add BRD, screenshots, or supporting documents</strong><span>PDF, DOCX, TXT, MD, CSV, JSON, PNG, JPG, WEBP, BMP, TIF/TIFF · 10 MB each</span><input ref={fileInput} type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" onChange={e=>{const files=Array.from(e.target.files||[]) as File[];e.target.value='';void addFiles(files)}}/></label>

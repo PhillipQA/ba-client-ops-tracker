@@ -30,6 +30,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js'
 import { createServer as createViteServer } from 'vite'
 import { normalizeAppTheme, normalizeClientThemes } from '../src/theme'
+import { documentOutputName } from '../src/documentFilename'
 import { normalizeInterfaceMode, type InterfaceMode } from '../src/appearance'
 import { preserveInterfaceModes } from './accounts/preferences'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './auth/password-recovery-email'
@@ -1719,7 +1720,7 @@ function renderIrippleDrfExcel(source: Buffer, values: Record<string, string>, r
 
   const rows = Array.isArray(rawRows) ? rawRows.slice(0, 17) : []
   const normalizedRows = rows.map((row: any) => ({
-    computerName: String(row?.computerName || '').trim().toUpperCase().slice(0, 12),
+    computerName: String(row?.computerName || '').trim().toUpperCase().slice(0, 16),
     serialNo: String(row?.serialNo || '').trim().slice(0, 180),
     brand: String(row?.brand || '').trim().slice(0, 120),
     model: String(row?.model || '').trim().slice(0, 120),
@@ -1909,7 +1910,9 @@ app.post('/api/documents/drf/render-template', requireAuth, requireTenantWorkspa
       throw new Error('Unsupported DRF template format. Use the approved XLSX DRF template. Legacy DOCX, fillable PDF, TXT, HTML, MD, and RTF templates are also supported.')
     }
 
-    const outputName = safeOutputName(values.business_name || values.trade_name || '', extension || 'docx')
+    const outputName = req.body?.fileName
+      ? documentOutputName(req.body.fileName, extension || 'docx', safeOutputName(values.business_name || values.trade_name || '', extension || 'docx'))
+      : safeOutputName(values.business_name || values.trade_name || '', extension || 'docx')
     res.json({ fileData: output.toString('base64'), fileName: outputName, mimeType, matchedFields, posRowsWritten })
   } catch (error) {
     await sendDrfFailure(res,user,'template_render',500,error instanceof Error ? error.message : 'DRF template generation failed.',error,{templateType})

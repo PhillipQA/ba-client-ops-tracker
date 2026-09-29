@@ -62,6 +62,16 @@ test('supporting files are bundled byte-for-byte beside the Word form with safe 
   assert(doc.file('word/document.xml')!.asText().includes('accompanying ZIP'))
 })
 
+test('custom filename follows the Word form into the downloadable ZIP and DocHub upload', async () => {
+  const stem = 'SO-Example-Branch-7'
+  const word = await renderSignoff(template, input(), [], `${stem}.docx`)
+  assert.equal(word.fileName, `${stem}.docx`)
+  const packaged = await renderSignoff(template, input(), [{ name: 'approval.txt', data: Buffer.from('approved').toString('base64'), caption: '' }], `${stem}.docx`)
+  assert.equal(packaged.fileName, `${stem}.zip`)
+  assert.equal(packaged.signingFile?.fileName, `${stem}.docx`)
+  assert(new PizZip(packaged.output).file(`${stem}.docx`))
+})
+
 test('attachment validation rejects unsupported files, malformed images, oversized uploads, and excess counts', async () => {
   for (const attachments of [[{ name: 'run.exe', data: 'eA==', caption: '' }], [{ name: 'bad.png', data: 'eA==', caption: '' }], [{ name: 'bad.txt', data: '====', caption: '' }], Array.from({ length: 21 }, () => image()), [{ name: 'big.txt', data: Buffer.alloc(SIGNOFF_MAX_FILE_BYTES + 1).toString('base64'), caption: '' }]]) await assert.rejects(() => renderSignoff(template, input(), attachments))
   const validLargeText = { name: 'large.txt', data: Buffer.alloc(4 * 1024 * 1024, 65).toString('base64'), caption: '' }

@@ -6,6 +6,7 @@ import { useDocumentOperation } from './useDocumentOperation'
 import { isFsdImageFile, readFsdSource } from './fsd-sources'
 import type { Project } from './types'
 import { APP_VERSION } from './version'
+import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import {
   BRD_TEMPLATE_NAME, brdHandoffText, brdReference, emptyBrdDraft,
   type BrdDraft, type BrdDetails, type BrdMappingRow, type BrdPreview,
@@ -42,6 +43,8 @@ export default function BrdCreation({ projects, canGenerate, templateReady, draf
   useEffect(()=>{if(!active)return;let alive=true;request<Provider>('provider').then(v=>{if(alive){setProvider(v);setProviderError('')}}).catch(e=>{if(alive){setProvider(null);setProviderError(e.message)}});return()=>{alive=false}},[active])
   const patch=(values:Partial<BrdDraft>,content=true)=>setDraft(d=>({...d,...values,revision:content?d.revision+1:d.revision,reviewed:content?false:values.reviewed??d.reviewed}))
   const detail=(key:keyof BrdDetails,value:string)=>patch({details:{...draft.details,[key]:value}})
+  const suggestedFileName=suggestedDocumentStem('BRD','',draft.details.projectName)
+  const fileName=draft.fileNameOverride ?? suggestedFileName
   const stale=draft.previewRevision!==draft.revision
   async function addFiles(files:File[]){
     if(!files.length||busy)return
@@ -67,7 +70,7 @@ export default function BrdCreation({ projects, canGenerate, templateReady, draf
   async function exportBrd(){
     if(!draft.preview||stale||!draft.reviewed||!templateReady||busy)return
     const job=operation.begin();setStage('export');setBusy('Mapping reviewed BRD content to your template…');setError('')
-    try{const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true},job.signal);if(!job.isCurrent())return;downloadBase64(result.fileData,result.mimeType,result.fileName)}catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'BRD export failed.')}finally{if(job.isCurrent())setBusy('')}
+    try{const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true,fileName:documentOutputName(fileName,'docx',suggestedFileName)},job.signal);if(!job.isCurrent())return;downloadBase64(result.fileData,result.mimeType,result.fileName)}catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'BRD export failed.')}finally{if(job.isCurrent())setBusy('')}
   }
   function reset(){operation.cancel();const next=emptyBrdDraft();try{sessionStorage.removeItem(storageKey)}catch{}if(fileInput.current)fileInput.current.value='';setDraft(next);setShowPreview(false);setEditPreview(false);setError('');setBusy('');setSaveError('');setUploadKind('Requirements');setStage('reading')}
   const setPreview=(preview:BrdPreview)=>setDraft(d=>({...d,preview,reviewed:false}))
@@ -89,6 +92,7 @@ export default function BrdCreation({ projects, canGenerate, templateReady, draf
         <label>Module<input value={draft.details.module} maxLength={180} placeholder="e.g. Inventory, POS Registration" onChange={e=>detail('module',e.target.value)}/></label>
         <label>Date<input type="date" value={draft.details.date} onChange={e=>detail('date',e.target.value)}/></label><label>Prepared By<input value={draft.details.preparedBy} maxLength={180} onChange={e=>detail('preparedBy',e.target.value)}/></label>
         <label>Version<input value={draft.details.version} maxLength={40} onChange={e=>detail('version',e.target.value)}/></label><label>Document Reference<input value={draft.details.reference} maxLength={180} placeholder={brdReference(draft.details)} onChange={e=>detail('reference',e.target.value)}/></label>
+        <label className="fsd-full">Filename (without .docx)<input aria-label="BRD filename" value={fileName} maxLength={150} onChange={e=>patch({fileNameOverride:e.target.value},false)} onBlur={()=>{if(!draft.fileNameOverride?.trim())patch({fileNameOverride:undefined},false)}}/><small>Download: {documentOutputName(fileName,'docx',suggestedFileName)}</small></label>
       </div><small>Only source content is required to start. Missing metadata can stay blank and is rendered as a neutral placeholder.</small></section>
       <section className="fsd-card"><h3>2. Requirement sources</h3><label>Upload as<select value={uploadKind} onChange={e=>setUploadKind(e.target.value as BrdSource['kind'])}>{['Requirements','Meeting notes','Supporting document','Chat'].map(k=><option key={k}>{k}</option>)}</select></label>
         <label className="fsd-dropzone"><Plus size={26}/><strong>Add requirements, meeting notes, screenshots or supporting documents</strong><span>PDF, DOCX, TXT, MD, CSV, JSON, PNG, JPG, WEBP, BMP, TIF/TIFF · 10 MB each</span><input ref={fileInput} type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" onChange={e=>{const files=Array.from(e.target.files||[]) as File[];e.target.value='';void addFiles(files)}}/></label>

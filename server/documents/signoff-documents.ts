@@ -5,6 +5,7 @@ import { PDFDocument } from 'pdf-lib'
 import type { Express, RequestHandler } from 'express'
 import { documentTemplateRow, IntegrationError } from '../integrations/tenant-integrations'
 import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, formatDeploymentDate, signoffReference } from '../../src/signoff'
+import { safeDocumentStem } from '../../src/documentFilename'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const supported = new Set(['png', 'jpg', 'jpeg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'zip'])
@@ -65,7 +66,7 @@ function imageParagraph(id: string, name: string, width: number, height: number,
   const cx = Math.round(width * scale * 914400), cy = Math.round(height * scale * 914400)
   return `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${1000 + index}" name="Attachment ${index}" descr="${xml(name)}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${1000 + index}" name="${xml(name)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
 }
-export async function renderSignoff(template: Buffer, input: unknown, attachments: unknown = []) {
+export async function renderSignoff(template: Buffer, input: unknown, attachments: unknown = [], fileName?: string) {
   const values = validateSignoff(input)
   if (!Array.isArray(attachments) || attachments.length > SIGNOFF_MAX_ATTACHMENTS) throw new Error(`Use up to ${SIGNOFF_MAX_ATTACHMENTS} attachments.`)
   const zip = new PizZip(template)
@@ -123,7 +124,7 @@ export async function renderSignoff(template: Buffer, input: unknown, attachment
   const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' })
   doc.render({ ...values, attachments: attachmentXml })
   const output = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' })
-  const stem = values.document_reference.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 180)
+  const stem = fileName ? safeDocumentStem(fileName) || values.document_reference.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 180) : values.document_reference.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 180)
   if (files.some(file => !file.image)) {
     const bundle = new PizZip(); bundle.file(`${stem}.docx`, output)
     files.forEach((file, index) => bundle.file(`attachments/${String(index + 1).padStart(2, '0')}-${file.name}`, file.bytes))
@@ -145,7 +146,7 @@ export function registerSignoffRoutes(app: Express, deps: { db: any; requireAuth
       return void res.status(error instanceof IntegrationError ? error.status : 503).json({ error: error instanceof Error ? error.message : 'Sign Off template is unavailable.' })
     }
     try {
-      const result = await renderSignoff(template, req.body?.details, req.body?.attachments)
+      const result = await renderSignoff(template, req.body?.details, req.body?.attachments, req.body?.fileName)
       res.json({ signingFile: result.signingFile, fileData: result.output.toString('base64'), fileName: result.fileName, mimeType: result.mimeType, imageCount: result.imageCount, attachmentCount: result.attachmentCount })
     } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Could not generate the Sign Off form.' }) }
   })

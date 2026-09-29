@@ -7,6 +7,7 @@ import { aiProviderName, documentTemplateRow, IntegrationError, normalizeAiConfi
 import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
 import { brdReference, type BrdDetails, type BrdMappingRow, type BrdPreview, type BrdRequirement, type BrdSource, type BrdStakeholder } from '../../src/brd-model'
+import { documentOutputName } from '../../src/documentFilename'
 
 const DOCX_MIME='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 function text(value:unknown,label:string,max:number,required=false){
@@ -102,6 +103,6 @@ export function registerBrdRoutes(app:Express,deps:{db:any;requireAuth:RequestHa
     if(row&&!row.is_enabled)throw new IntegrationError('The BRD template is not configured. Add or restore it in Settings → Templates.',503)
     const template=row?.is_enabled&&row.content_base64?Buffer.from(row.content_base64,'base64'):await readFile(deps.templatePath)
     const output=renderBrd(template,details,preview),reference=brdReference(details)
-    res.json({fileData:output.toString('base64'),fileName:`${reference}`.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,160)+'.docx',mimeType:DOCX_MIME})
+    res.json({fileData:output.toString('base64'),fileName:req.body?.fileName?documentOutputName(req.body.fileName,'docx',reference):`${reference}`.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,160)+'.docx',mimeType:DOCX_MIME})
   }catch(e){res.status(e instanceof IntegrationError?e.status:500).json({error:e instanceof IntegrationError?e.message:'Could not export the BRD. Confirm the BRD template assets are installed.'})}})
 }

@@ -8,6 +8,7 @@ import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
 import { renderFsdDocx } from './fsd-export'
 import { FSD_SECTIONS, FSD_MODULES, FSD_MODULE_SECTION_IDS, fsdExcludedModules, fsdSectionsForModules, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource, type FsdModule, type FsdSectionId } from '../../src/fsd-model'
+import { documentOutputName } from '../../src/documentFilename'
 
 function text(value: unknown, label: string, max = 200, required = false) {
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) throw new IntegrationError(`Invalid ${label} (maximum ${max} characters).`)
@@ -189,7 +190,7 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
       const customTemplate = templateRow?.is_enabled && templateRow.content_base64 ? Buffer.from(templateRow.content_base64, 'base64') : undefined
       const logo = await readFile(deps.logoPath)
       const output = renderFsdDocx(details, preview, logo, customTemplate)
-      res.json({ fileData: output.toString('base64'), fileName: `${details.reference || 'FSD-'+details.client+'-'+details.feature}`.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,150)+'.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+      res.json({ fileData: output.toString('base64'), fileName: req.body?.fileName ? documentOutputName(req.body.fileName,'docx',details.reference || `FSD-${details.client}-${details.feature}`) : `${details.reference || 'FSD-'+details.client+'-'+details.feature}`.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,150)+'.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
     } catch (e) { res.status(e instanceof IntegrationError ? e.status : 500).json({ error: e instanceof IntegrationError ? e.message : 'Could not export the FSD. Confirm the FSD template assets are installed.' }) }
   })
 }
