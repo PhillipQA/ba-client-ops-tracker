@@ -11,6 +11,24 @@ const terminal = new Set(['COMPLETED','REJECTED','VOIDED','EXPIRED'])
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const types: Record<string,string> = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+const SIGNED_PDF_MAX_BYTES = 25 * 1024 * 1024
+
+export function signedPdfFileName(doc: any): string {
+  const source = String(doc?.fileName || doc?.title || 'signed-document').trim()
+  const baseName = (source.split(/[\\/]/).pop() || 'signed-document')
+    .replace(/[<>:"|?*\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/\.(?:docx|xlsx|pdf|zip)$/i, '')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 170)
+  return `${baseName || 'signed-document'}.pdf`
+}
+
+function signedPdfContentDisposition(fileName: string): string {
+  const fallback = fileName.normalize('NFKD').replace(/[^\x20-\x7e]/g, '_').replace(/[\\"]/g, '_')
+  const encoded = encodeURIComponent(fileName).replace(/'/g, '%27')
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`
+}
 export function validatePreparation(input: any) {
   if (!uuid.test(String(input?.id || ''))) throw new DocHubError('A valid preparation ID is required.')
   if (!['DRF','Sign-Off'].includes(input.kind)) throw new DocHubError('Choose DRF or Sign-Off.')
@@ -275,7 +293,20 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
   }))
   app.get('/api/dochub/documents/:id/pdf',...scope,wrap(async(req,res)=>{const doc=await service.load(tenant(req),String(req.params.id));if(doc.status!=='COMPLETED'||!doc.documentId)throw new DocHubError('The signed PDF is available after completion.',409)
     const api=await service.active(tenant(req)),remote=await api.call(doc.compiledPdfId?`/compiled-pdfs/${docHubId(doc.compiledPdfId)}/download-url?documentId=${docHubId(doc.documentId)}`:`/documents/${docHubId(doc.documentId)}/pdf-url`)
-    res.redirect(302,storageUrl(remote.url))
+    const url=storageUrl(remote.url),request=deps.request || fetch
+    let response:Response
+    try{response=await request(url,{method:'GET',headers:{Accept:'application/pdf'},redirect:'error',signal:AbortSignal.timeout(60_000)})}catch{throw new DocHubError('The signed PDF could not be downloaded from DocHub. Refresh the document and try again.',502)}
+    if(!response.ok)throw new DocHubError('DocHub storage could not provide the signed PDF.',502,response.status)
+    const announcedSize=Number(response.headers.get('content-length') || 0)
+    if(announcedSize>SIGNED_PDF_MAX_BYTES)throw new DocHubError('The signed PDF is too large to download through the tracker.',413)
+    const buffer=Buffer.from(await response.arrayBuffer())
+    if(!buffer.length||buffer.length>SIGNED_PDF_MAX_BYTES||buffer.subarray(0,5).toString()!=='%PDF-')throw new DocHubError('DocHub returned an invalid signed PDF.',502)
+    const fileName=signedPdfFileName(doc)
+    res.setHeader('Content-Type','application/pdf')
+    res.setHeader('Content-Length',String(buffer.length))
+    res.setHeader('Cache-Control','private, no-store')
+    res.setHeader('Content-Disposition',signedPdfContentDisposition(fileName))
+    res.send(buffer)
   }))
   let scanning=false
   const timer=setInterval(()=>{if(scanning)return;scanning=true;void service.scan().catch(()=>undefined).finally(()=>{scanning=false})},60_000);timer.unref()

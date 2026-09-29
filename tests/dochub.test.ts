@@ -4,7 +4,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import express from 'express'
 import { encryptSecret, decryptSecret } from '../server/integrations/tenant-integrations'
 import { apiClient, DocHubError, docHubUrl, storageUrl, verifyDocHubWebhook, draftPacket, signingStatus } from '../server/integrations/dochub-api'
-import { applyDocumentToWorkspace, createDocHubService, publicDocument, registerDocHubRoutes, registerDocHubWebhook, validatePreparation } from '../server/integrations/dochub'
+import { applyDocumentToWorkspace, createDocHubService, publicDocument, registerDocHubRoutes, registerDocHubWebhook, signedPdfFileName, validatePreparation } from '../server/integrations/dochub'
 import { assertLifecycleMutation } from '../src/lifecycle'
 import { docHubGuidance } from '../src/dochub'
 process.env.TENANT_INTEGRATION_MASTER_KEY='ab'.repeat(32)
@@ -27,6 +27,7 @@ function fixture(options:{rejectDraft?:boolean;lostImport?:boolean}={}){
  const request:typeof fetch=async(url:any,init:any={})=>{
    const href=String(url);calls.push({url:href,method:init.method||'GET',headers:init.headers,body:typeof init.body==='string'?JSON.parse(init.body):init.body})
    if(href.startsWith('https://upload.dochub.com')){assert(!init.headers?.['X-API-Token']);assert(init.body instanceof FormData);assert(init.body.get('file') instanceof Blob);return new Response('',{status:204===200?200:201})}
+   if(href.startsWith('https://bucket.s3.amazonaws.com/')){assert(!init.headers?.['X-API-Token']);assert.equal(init.headers?.Accept,'application/pdf');return new Response(Buffer.from('%PDF-1.7\nsigned fixture'),{status:200,headers:{'Content-Type':'application/pdf'}})}
    assert.equal(init.headers.Accept,'application/json');assert([keyA,keyB].includes(init.headers['X-API-Token']))
    const path=new URL(href).pathname,body=typeof init.body==='string'?JSON.parse(init.body):{}
    if(path==='/api/v2/documents')return response({data:[]})
@@ -37,6 +38,8 @@ function fixture(options:{rejectDraft?:boolean;lostImport?:boolean}={}){
    if(path==='/api/v2/document-roles'){if(init.method==='POST'){const role={id:`role${remote.roles.length+1}`,...body};remote.roles.push(role);return response(role,201)}return response({data:remote.roles})}
    if(path==='/api/v2/sign-requests'&&init.method==='POST') {assert.equal(body.preparingEnabled,true);assert.equal(body.documentRoles[0].canFreeEdit,false);if(options.rejectDraft)return response({error:'fields required'},422);const id=`sr${Object.keys(remote.signRequests).length+1}`;remote.signRequestId=id;remote.signRequests[body.documentId]=id;return response({id,status:'PREPARING'},201)}
    if(/^\/api\/v2\/sign-requests\/sr\d+$/.test(path))return response({id:path.split('/').pop(),status:remote.status,compiledPdfId:remote.signed?'pdf1':null,signersData:[{id:'signer1',name:'Signer',email:'signer@example.com',status:remote.signed?'FINALIZED':'CREATED',signedAt:remote.signed?'2026-09-24T12:00:00Z':null,viewedAt:remote.signed?'2026-09-24T11:00:00Z':null}]})
+   if(path==='/api/v2/compiled-pdfs/pdf1/download-url')return response({url:'https://bucket.s3.amazonaws.com/signed.pdf?signature=test'})
+   if(path==='/api/v2/documents/doc1/pdf-url')return response({url:'https://bucket.s3.amazonaws.com/signed.pdf?signature=test'})
    if(path==='/api/v2/formfields')return response({data:remote.fields?[{id:'field1',documentRoleId:'role1',ffType:'dhSignature',isRequired:true}]:[]})
    throw new Error(`Unexpected operation ${init.method} ${path}`)
  }
@@ -114,6 +117,25 @@ test('document cards use current signing guidance even for saved records with st
 test('lost import response does not automatically duplicate the import',async()=>{const f=fixture({lostImport:true});const doc=await f.service.prepare(tenantA,f.user,f.input);assert.equal(doc.status,'REVIEW_REQUIRED');await f.service.refresh(tenantA,doc.id,true);assert.equal(f.calls.filter(c=>c.url.endsWith('/documents/imports')&&c.method==='POST').length,1)})
 test('completion projection preserves existing follow-up and can append to archived work',()=>{const f=fixture(),state=f.states.get(tenantA);state.items[0].followUpDate='2026-10-01';const doc={id:'d1',title:'DRF',taskId:'task',createdBy:'admin',clientId:'client',status:'COMPLETED',signers:[],events:[{id:'e1',key:'complete',message:'Signature complete',createdAt:new Date().toISOString(),complete:true}],followUpDate:'2026-09-30'};const r=applyDocumentToWorkspace(state,doc);assert.equal(r.next.items[0].followUpDate,'2026-10-01');state.clients[0].archived=true;state.clients[0].status='Closed';r.next.clients=state.clients;assert.doesNotThrow(()=>assertLifecycleMutation(state,r.next,null));assert.throws(()=>assertLifecycleMutation(state,r.next,{role:'Administrator',modules:['items']}))})
 test('status mapping requires DocHub FINALIZED for overall completion',()=>{assert.equal(signingStatus({status:'IN_PROGRESS',signersData:[{status:'FINALIZED'}]}),'PARTIALLY_SIGNED');assert.equal(signingStatus({status:'FINALIZED'}),'COMPLETED');assert.equal(signingStatus({status:'PREPARING'}),'PREPARING')})
+test('signed PDF filename keeps the tracker document name and changes only the extension',()=>{
+ assert.equal(signedPdfFileName({fileName:'DRF-CARD-INDOGROSIR-INC.xlsx',title:'ignored'}),'DRF-CARD-INDOGROSIR-INC.pdf')
+ assert.equal(signedPdfFileName({title:'SO Client Main Branch.docx'}),'SO Client Main Branch.pdf')
+ assert.equal(signedPdfFileName({title:'../unsafe:name.xlsx'}),'unsafe-name.pdf')
+ assert.equal(signedPdfFileName({}),'signed-document.pdf')
+})
+test('signed PDF endpoint proxies DocHub storage and returns the document filename',async()=>{
+ const f=fixture(),id=randomUUID(),createdAt='2026-09-29T03:00:00Z'
+ f.db.tables.set('tenant_dochub_documents',[{tenant_id:tenantA,id,document_id:'doc1',updated_at:createdAt,data:{id,kind:'DRF',title:'DRF-CARD-INDOGROSIR-INC.xlsx',fileName:'DRF-CARD-INDOGROSIR-INC.xlsx',status:'COMPLETED',documentId:'doc1',compiledPdfId:'pdf1',createdAt,signers:[],events:[]}}])
+ const app=express();f.deps.requireAuth=(req:any,_res:any,next:any)=>{req.authUser={id:'admin',role:'Administrator',modules:['documents','items'],organizationId:tenantA,accountType:'tenant'};next()};registerDocHubRoutes(app,f.deps,f.service)
+ const server=app.listen(0,'127.0.0.1');await new Promise<void>(r=>server.once('listening',r));const base=`http://127.0.0.1:${(server.address() as any).port}`
+ try{
+  const response=await fetch(`${base}/api/dochub/documents/${id}/pdf`)
+  assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/pdf')
+  assert.match(response.headers.get('content-disposition') || '',/filename\*=UTF-8''DRF-CARD-INDOGROSIR-INC\.pdf/)
+  assert.match(Buffer.from(await response.arrayBuffer()).toString(),/^%PDF-/)
+  const storageCall=f.calls.find(c=>c.url.startsWith('https://bucket.s3.amazonaws.com/'));assert(storageCall);assert(!storageCall.headers?.['X-API-Token'])
+ }finally{await new Promise<void>(r=>server.close(()=>r()))}
+})
 test('HTTP tenant access, admin-only settings and exact webhook verification',async()=>{
  const f=fixture(),app=express();f.deps.requireAuth=(req:any,res:any,next:any)=>{const role=req.get('x-role');if(!role)return res.sendStatus(401);req.authUser={id:'admin',role,modules:req.get('x-no-modules')?[]:['documents','settings','items'],organizationId:req.get('x-tenant')||tenantA,accountType:'tenant'};next()}
  registerDocHubWebhook(app,f.deps,f.service);app.use(express.json());registerDocHubRoutes(app,f.deps,f.service)

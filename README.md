@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.59**
+**Current release: v0.6.68**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
@@ -121,6 +121,8 @@ Patch runtime backups are stored locally under `.patch-backups/` and are ignored
 Keep Git focused on source code and documentation. Full-build and patch ZIPs should be published as **GitHub Release assets**, not committed into the repository.
 
 ## Current release highlights
+
+**v0.6.68** keeps the tracker document name when downloading a completed DocHub signed PDF. For example, `DRF-CARD-INDOGROSIR-INC.xlsx` downloads as `DRF-CARD-INDOGROSIR-INC.pdf` instead of a provider-generated numeric filename. The tracker proxies the completed PDF through its authenticated DocHub route and sets the download filename itself.
 
 **v0.6.60** adds a dedicated BRD Creator using the supplied iRipple template, best-effort drafting from incomplete requirement sources, editable requirement/acceptance/mapping sections, DOCX export, and direct structured handoff into FSD Creation.
 
