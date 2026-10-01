@@ -595,7 +595,7 @@ select option { background: #181818; color: #fff; }
 .table-link small { margin-top: 4px; color: #929292; }
 .project-name-link:hover strong { color: #c8d2ff; }
 
-.task-filter-grid { padding: 12px 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 9px; border-bottom: 1px solid #383838; align-items: end; }
+.task-filter-grid { padding: 12px 20px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 9px; border-bottom: 1px solid #383838; align-items: end; }
 .task-filter-grid label { display: grid; gap: 5px; min-width: 0; color: #bebebe; font-size: 9.5px; font-weight: 700; }
 .task-filter-grid select { min-width: 0; min-height: 37px; border: 1px solid #3d3d3d; border-radius: 8px; background: #181818; color: #f7f7f7; padding: 7px 28px 7px 9px; }
 .task-filter-clear { min-height: 37px; }

@@ -393,6 +393,7 @@ function App() {
   const [waitingFilter, setWaitingFilter] = useState<'All' | WaitingOn>('All')
   const [taskClientFilter, setTaskClientFilter] = useState('')
   const [taskProjectFilter, setTaskProjectFilter] = useState('')
+  const [taskStatusFilter, setTaskStatusFilter] = useState('')
   const [taskDateFilter, setTaskDateFilter] = useState<'All' | 'due-3' | 'due-7' | 'followup-3' | 'followup-7' | 'overdue'>('All')
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -1079,6 +1080,7 @@ function App() {
       if (taskClientFilter && taskClientFilter !== '__none__' && item.clientId !== taskClientFilter) return false
       if (taskProjectFilter === '__none__' && item.projectId) return false
       if (taskProjectFilter && taskProjectFilter !== '__none__' && item.projectId !== taskProjectFilter) return false
+      if (taskStatusFilter && item.status !== taskStatusFilter) return false
       if (taskDateFilter === 'due-3') return Boolean(item.dueDate && item.dueDate >= today && item.dueDate <= due3)
       if (taskDateFilter === 'due-7') return Boolean(item.dueDate && item.dueDate >= today && item.dueDate <= due7)
       if (taskDateFilter === 'followup-3') return Boolean(item.followUpDate && item.followUpDate >= today && item.followUpDate <= due3)
@@ -1086,7 +1088,7 @@ function App() {
       if (taskDateFilter === 'overdue') return Boolean((item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)) && !isTaskClosed(item.status, store.taskSettings)
       return true
     })
-  }, [searchedItems, taskClientFilter, taskProjectFilter, taskDateFilter, store.taskSettings, today])
+  }, [searchedItems, taskClientFilter, taskProjectFilter, taskStatusFilter, taskDateFilter, store.taskSettings, today])
   const selectedClient = store.clients.find((client) => client.id === selectedClientId) ?? null
   const selectedProject = store.projects.find((project) => project.id === selectedProjectId) ?? null
   const editingTask = editingTaskId ? store.items.find((item) => item.id === editingTaskId) ?? null : null
@@ -1596,10 +1598,11 @@ function App() {
               <div className="panel-heading"><div><h2>All tasks</h2><p>Tasks, requirements, issues, inquiries, decisions, and follow-ups in one searchable list.</p></div><span className="count-pill">{filteredTasks.length} shown · {store.items.length} total</span></div>
               <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} />
               <div className="task-filter-grid">
+                <label>Status<select value={taskStatusFilter} onChange={(event) => setTaskStatusFilter(event.target.value)}><option value="">All statuses</option>{[...new Set([...store.taskSettings.statuses.map((status) => status.label), ...store.items.map((item) => item.status)])].filter(Boolean).map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
                 <label>Client<select value={taskClientFilter} onChange={(event) => { setTaskClientFilter(event.target.value); setTaskProjectFilter('') }}><option value="">All clients</option><option value="__none__">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
                 <label>Project<select value={taskProjectFilter} onChange={(event) => setTaskProjectFilter(event.target.value)}><option value="">All projects</option><option value="__none__">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 <label>Due / follow-up<select value={taskDateFilter} onChange={(event) => setTaskDateFilter(event.target.value as typeof taskDateFilter)}><option value="All">All dates</option><option value="due-3">Due in next 3 days</option><option value="due-7">Due in next 7 days</option><option value="followup-3">Follow-up in next 3 days</option><option value="followup-7">Follow-up in next 7 days</option><option value="overdue">Overdue due/follow-up</option></select></label>
-                <button className="secondary task-filter-clear" type="button" onClick={() => { setTaskClientFilter(''); setTaskProjectFilter(''); setTaskDateFilter('All'); setWaitingFilter('All'); setQuery('') }}>Clear filters</button>
+                <button className="secondary task-filter-clear" type="button" onClick={() => { setTaskClientFilter(''); setTaskProjectFilter(''); setTaskStatusFilter(''); setTaskDateFilter('All'); setWaitingFilter('All'); setQuery('') }}>Clear filters</button>
               </div>
               <TaskTable items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} canEdit={canWriteTasks} />
             </div>
