@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.71**
+**Current release: v0.6.72**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
@@ -122,9 +122,11 @@ Keep Git focused on source code and documentation. Full-build and patch ZIPs sho
 
 ## Current release highlights
 
+**v0.6.72** replaces the v0.6.70 SMTP signatory reminder with DocHub's native resend API. **Send notification** now refreshes the current sign request, then calls `POST /api/v2/sign-requests/{id}/resend-email` with that signer's DocHub `signerId`. DocHub sends the signing invitation/reminder itself, so no SMTP configuration is required for this action. Signed/rejected signers remain protected, successful resends are recorded in document/task activity, and the local cooldown now matches DocHub's documented one-resend-per-signer-per-3-minutes limit.
+
 **v0.6.71** adds a Status filter to Task Module → All tasks. It defaults to All statuses, follows the workspace task-status configuration, keeps legacy statuses visible if older records still use them, combines with the existing search/Waiting on/client/project/date filters, and is reset by Clear filters.
 
-**v0.6.70** adds per-signatory reminder notifications inside DocHub Document Details. Unsigned signers show a **Send notification** action; signed signers keep the same action disabled. The tracker sends the reminder through the server SMTP configuration, records the sender and time on the signer, and mirrors the reminder into the linked task/subtask activity trail. Provider status is refreshed before sending so a signer who has already completed the document is not reminded from stale tracker state.
+**v0.6.70** introduced per-signatory reminder controls inside DocHub Document Details. **v0.6.72 supersedes its SMTP delivery path with DocHub native resend-email delivery** while retaining the same signer-card UI and activity logging.
 
 **v0.6.69** keeps task/subtask editors compact by paginating Activity comments. The three newest entries are shown by default, page size can be changed to 2, 3, or 5, and Previous/Next controls expose older history without forcing the editor to grow through the full activity trail.
 

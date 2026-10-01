@@ -7,7 +7,6 @@ import { apiClient, DocHubError, docHubUrl, storageUrl, verifyDocHubWebhook, dra
 import { applyDocumentToWorkspace, createDocHubService, publicDocument, registerDocHubRoutes, registerDocHubWebhook, signedPdfFileName, validatePreparation } from '../server/integrations/dochub'
 import { assertLifecycleMutation } from '../src/lifecycle'
 import { canNotifyDocHubSigner, docHubGuidance, isDocHubSignerSigned } from '../src/dochub'
-import { docHubReminderEmailText } from '../server/integrations/dochub-reminder-email'
 process.env.TENANT_INTEGRATION_MASTER_KEY='ab'.repeat(32)
 const tenantA='11111111-1111-4111-8111-111111111111',tenantB='22222222-2222-4222-8222-222222222222'
 const keyA='account-a-api-key-1234567890',keyB='account-b-api-key-1234567890'
@@ -39,6 +38,7 @@ function fixture(options:{rejectDraft?:boolean;lostImport?:boolean}={}){
    if(path==='/api/v2/document-roles'){if(init.method==='POST'){const role={id:`role${remote.roles.length+1}`,...body};remote.roles.push(role);return response(role,201)}return response({data:remote.roles})}
    if(path==='/api/v2/sign-requests'&&init.method==='POST') {assert.equal(body.preparingEnabled,true);assert.equal(body.documentRoles[0].canFreeEdit,false);if(options.rejectDraft)return response({error:'fields required'},422);const id=`sr${Object.keys(remote.signRequests).length+1}`;remote.signRequestId=id;remote.signRequests[body.documentId]=id;return response({id,status:'PREPARING'},201)}
    if(/^\/api\/v2\/sign-requests\/sr\d+$/.test(path))return response({id:path.split('/').pop(),status:remote.status,compiledPdfId:remote.signed?'pdf1':null,signersData:[{id:'signer1',name:'Signer',email:'signer@example.com',status:remote.signed?'FINALIZED':'CREATED',signedAt:remote.signed?'2026-09-24T12:00:00Z':null,viewedAt:remote.signed?'2026-09-24T11:00:00Z':null}]})
+   if(/^\/api\/v2\/sign-requests\/sr\d+\/resend-email$/.test(path)&&init.method==='POST'){assert.equal(body.signerId,'signer1');return new Response(null,{status:204})}
    if(path==='/api/v2/compiled-pdfs/pdf1/download-url')return response({url:'https://bucket.s3.amazonaws.com/signed.pdf?signature=test'})
    if(path==='/api/v2/documents/doc1/pdf-url')return response({url:'https://bucket.s3.amazonaws.com/signed.pdf?signature=test'})
    if(path==='/api/v2/formfields')return response({data:remote.fields?[{id:'field1',documentRoleId:'role1',ffType:'dhSignature',isRequired:true}]:[]})
@@ -167,28 +167,21 @@ test('signer notification eligibility disables completed signers and unsent docu
  assert.equal(isDocHubSignerSigned({...pending,status:'FINALIZED'}),true)
 })
 
-test('tracker reminder email is plain text and does not invent a signer URL',()=>{
- const text=docHubReminderEmailText({signerName:'Elizar Almencion',signerEmail:'ealmencion@iripple.com',documentTitle:'DRF-Gingersnaps-Sm-Santa-Rosa.xlsx',senderName:'Phillip Val R. Cabalo'})
- assert.match(text,/Elizar Almencion/)
- assert.match(text,/DRF-Gingersnaps-Sm-Santa-Rosa\.xlsx/)
- assert.match(text,/original DocHub signature-request email/)
- assert.match(text,/Phillip Val R\. Cabalo/)
- assert(!/https?:\/\//.test(text))
-})
-
-test('pending signer can receive a tracker reminder and the activity is preserved across refresh',async()=>{
- const f=fixture(),id=randomUUID(),createdAt='2026-10-01T04:30:00Z',sent:any[]=[]
- f.remote.status='IN_PROGRESS';f.remote.signed=false
+test('pending signer reminder uses the native DocHub resend-email endpoint and preserves activity across refresh',async()=>{
+ const f=fixture(),id=randomUUID(),createdAt='2026-10-01T04:30:00Z'
+ f.remote.status='IN_PROGRESS';f.remote.signRequestId='sr1';f.remote.signed=false
  f.db.tables.set('tenant_dochub_documents',[{tenant_id:tenantA,id,document_id:'doc1',updated_at:createdAt,data:{id,kind:'DRF',title:'DRF-Gingersnaps-Sm-Santa-Rosa.xlsx',fileName:'DRF-Gingersnaps-Sm-Santa-Rosa.xlsx',status:'SENT',documentId:'doc1',signRequestId:'sr1',createdAt,createdBy:'admin',createdByName:'Admin',taskId:'task',clientId:'client',signers:[{id:'signer1',name:'Signer',email:'signer@example.com',status:'CREATED'}],events:[]}}])
  const actor={id:'admin',name:'Phillip Val R. Cabalo',username:'admin',role:'Administrator',modules:['documents']}
- let doc=await f.service.notifySigner(tenantA,id,'signer1',actor,async(input:any)=>{sent.push(input)})
- assert.equal(sent.length,1);assert.equal(sent[0].signerEmail,'signer@example.com');assert.equal(sent[0].senderName,'Phillip Val R. Cabalo')
+ let doc=await f.service.notifySigner(tenantA,id,'signer1',actor)
+ const resend=f.calls.find(c=>c.url.endsWith('/api/v2/sign-requests/sr1/resend-email')&&c.method==='POST')
+ assert(resend);assert.deepEqual(resend.body,{signerId:'signer1'});assert.equal(resend.headers['X-API-Token'],keyA)
  assert(doc.signers[0].notificationSentAt);assert.equal(doc.signers[0].notificationSentByName,'Phillip Val R. Cabalo')
- assert(doc.events.some((e:any)=>/sent a reminder notification to Signer/.test(e.message)))
- assert(f.states.get(tenantA).items[0].comments.some((c:any)=>/sent a reminder notification to Signer/.test(c.text)))
+ assert(doc.events.some((e:any)=>/resent the DocHub signing invitation to Signer/.test(e.message)))
+ assert(f.states.get(tenantA).items[0].comments.some((c:any)=>/resent the DocHub signing invitation to Signer/.test(c.text)))
  doc=await f.service.refresh(tenantA,id,true)
- assert(doc.signers[0].notificationSentAt,'refresh must retain tracker reminder metadata')
- await assert.rejects(()=>f.service.notifySigner(tenantA,id,'signer1',actor,async()=>{}),(e:any)=>e.status===429)
+ assert(doc.signers[0].notificationSentAt,'refresh must retain DocHub reminder metadata')
+ await assert.rejects(()=>f.service.notifySigner(tenantA,id,'signer1',actor),(e:any)=>e.status===429&&/3 minutes/.test(e.message))
  f.remote.signed=true
- await assert.rejects(()=>f.service.notifySigner(tenantA,id,'signer1',actor,async()=>{}),(e:any)=>e.status===409 && /already signed/.test(e.message))
+ await assert.rejects(()=>f.service.notifySigner(tenantA,id,'signer1',actor),(e:any)=>e.status===409&&/already signed/.test(e.message))
 })
+

@@ -5,10 +5,7 @@ import PizZip from 'pizzip'
 import { encryptSecret, decryptSecret, encryptionKey } from './tenant-integrations'
 import { apiClient, DocHubError, docHubId, docHubUrl, storageUrl, verifyDocHubWebhook, draftPacket, signingStatus } from './dochub-api'
 import { archivedWorkReason, workContext, LifecycleError } from '../../src/lifecycle'
-import { docHubReminderMailer, type DocHubReminderEmail } from './dochub-reminder-email'
-
-type ReminderSender = (input: DocHubReminderEmail) => Promise<void>
-type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; organizationById: (id: string) => Promise<any>; load: (id: string) => Promise<any>; commit: (id: string, state: any, actor: any, reason: string, before: any, sync?: boolean) => Promise<any>; request?: typeof fetch; sendReminderEmail?: ReminderSender | null }
+type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; organizationById: (id: string) => Promise<any>; load: (id: string) => Promise<any>; commit: (id: string, state: any, actor: any, reason: string, before: any, sync?: boolean) => Promise<any>; request?: typeof fetch }
 const terminal = new Set(['COMPLETED','REJECTED','VOIDED','EXPIRED'])
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -231,26 +228,33 @@ export function createDocHubService(deps: Deps) {
     })
     return refresh(tenant,clean.id,true)
   }
-  async function notifySigner(tenant: string,id: string,signerId: string,actor: any,sendEmail: ReminderSender) {
+  async function notifySigner(tenant: string,id: string,signerId: string,actor: any) {
     const refreshed=await refresh(tenant,id,true)
     if (refreshed.error) throw new DocHubError('The latest DocHub signer status could not be verified. Refresh the document successfully before sending a notification.',409)
     return locked(`${tenant}:${id}`,async()=>{
       const doc=await load(tenant,id)
-      if (!['SENT','VIEWED','PARTIALLY_SIGNED'].includes(String(doc.status || '').toUpperCase())) throw new DocHubError('Notifications are available only while the document is awaiting signatures.',409)
+      if (!['SENT','VIEWED','PARTIALLY_SIGNED'].includes(String(doc.status || '').toUpperCase()) || !doc.signRequestId) throw new DocHubError('Notifications are available only while the DocHub sign request is awaiting signatures.',409)
       const signer=(doc.signers || []).find((candidate:any)=>String(candidate.id || '')===signerId && !candidate.removed)
       if (!signer) throw new DocHubError('The selected signatory is no longer available.',404)
-      if (signer.signedAt || String(signer.status || '').toUpperCase()==='FINALIZED') throw new DocHubError('This signatory has already signed the document.',409)
-      if (!email.test(String(signer.email || ''))) throw new DocHubError('This signatory does not have a valid notification email address.',409)
+      const signerStatus=String(signer.status || '').toUpperCase()
+      if (signer.signedAt || signerStatus==='FINALIZED') throw new DocHubError('This signatory has already signed the document.',409)
+      if (signerStatus==='REJECTED') throw new DocHubError('This signatory rejected the request and cannot be reminded.',409)
       const last=Date.parse(String(signer.notificationSentAt || ''))
-      if (Number.isFinite(last) && Date.now()-last < 60_000) throw new DocHubError('A notification was just sent to this signatory. Wait a minute before sending another.',429)
+      if (Number.isFinite(last) && Date.now()-last < 180_000) throw new DocHubError('DocHub allows one reminder per signatory every 3 minutes. Wait before sending another.',429)
+      const api=await active(tenant)
+      try {
+        await api.call(`/sign-requests/${docHubId(doc.signRequestId)}/resend-email`,'POST',{signerId:String(signer.id)})
+      } catch (error) {
+        if (error instanceof DocHubError && error.providerStatus===429) throw new DocHubError('DocHub rate-limited this signatory reminder. Wait at least 3 minutes before trying again.',429,429)
+        if (error instanceof DocHubError && error.providerStatus===422) throw new DocHubError('DocHub rejected the reminder. The request may no longer be in progress, the signer may already be finalized or rejected, or a sequential signer may not be the current signer.',409,422)
+        throw error
+      }
       const senderName=String(actor?.name || actor?.username || 'User').trim().slice(0,120) || 'User'
-      try { await sendEmail({ signerName:String(signer.name || 'Signatory').slice(0,120), signerEmail:String(signer.email), documentTitle:String(doc.title || 'Document').slice(0,180), senderName }) }
-      catch { throw new DocHubError('The reminder email could not be sent. Check the server SMTP settings and try again.',502) }
       const sentAt=new Date().toISOString()
       signer.notificationSentAt=sentAt; signer.notificationSentByName=senderName
-      addEvent(doc,`notification:${signer.id}:${sentAt}`,`${senderName} sent a reminder notification to ${signer.name || signer.email}.`)
+      addEvent(doc,`notification:${signer.id}:${sentAt}`,`${senderName} resent the DocHub signing invitation to ${signer.name || signer.email}.`)
       await save(tenant,doc)
-      try { await mirror(tenant,doc) } catch { doc.error='The reminder was sent, but its task activity entry is pending synchronization. Refresh to retry.';await save(tenant,doc) }
+      try { await mirror(tenant,doc) } catch { doc.error='DocHub resent the invitation, but its task activity entry is pending synchronization. Refresh to retry.';await save(tenant,doc) }
       return doc
     })
   }
@@ -282,7 +286,6 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
   const limiter=rateLimit({windowMs:60_000,limit:120,standardHeaders:true,legacyHeaders:false,message:{error:'Too many DocHub requests. Wait a minute and retry.'}})
   const notificationLimiter=rateLimit({windowMs:60_000,limit:10,standardHeaders:true,legacyHeaders:false,message:{error:'Too many reminder notifications. Wait a minute and retry.'}})
   const scope=[deps.requireAuth,deps.requireTenant,guard(),limiter],admins=[deps.requireAuth,deps.requireTenant,guard(true),limiter]
-  const sendReminderEmail=deps.sendReminderEmail===undefined?docHubReminderMailer():deps.sendReminderEmail
   const tenant=(req:Request)=>(req as any).authUser.organizationId as string
   const write=(req:Request)=>{const u=(req as any).authUser;if(u.role==='Viewer'||!u.modules?.includes('documents'))throw new DocHubError('Document Creation write access is required.',403);return u}
   const webhookUrl=(id:string)=>{try{const u=new URL(process.env.APP_BASE_URL || '');if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash)return '';return `${u.origin}/api/webhooks/dochub/${id}`}catch{return ''}}
@@ -312,11 +315,10 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
   app.post('/api/dochub/documents/:id/refresh',...scope,wrap(async(req,res)=>{res.json({document:publicDocument(await service.refresh(tenant(req),String(req.params.id)))})}))
   app.post('/api/dochub/documents/:id/signers/:signerId/notify',...scope,notificationLimiter,wrap(async(req,res)=>{
     const actor=write(req)
-    if(!sendReminderEmail)throw new DocHubError('Reminder email is unavailable. Configure SMTP_HOST and SMTP_FROM on the server first.',503)
     const signerId=String(req.params.signerId || '').trim()
     if(!signerId || signerId.length>200)throw new DocHubError('Choose a valid signatory.')
-    const document=await service.notifySigner(tenant(req),String(req.params.id),signerId,actor,sendReminderEmail)
-    res.json({ok:true,document:publicDocument(document),message:'Reminder notification sent.'})
+    const document=await service.notifySigner(tenant(req),String(req.params.id),signerId,actor)
+    res.json({ok:true,document:publicDocument(document),message:'DocHub reminder sent.'})
   }))
   app.post('/api/dochub/documents/:id/recover',...scope,wrap(async(req,res)=>{
     write(req);const id=tenant(req),key=String(req.params.id),documentId=String(req.body?.documentId || '').trim()

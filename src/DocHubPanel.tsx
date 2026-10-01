@@ -90,7 +90,7 @@ function DocHubCard({doc,refresh,busy=false}:{doc:DocHubDocument;refresh:()=>Pro
     <details><summary>Signatories and activity</summary>
       <ul className="dochub-signers">{signers.map((s,i)=>{const signerSigned=isDocHubSignerSigned(s),canNotify=canNotifyDocHubSigner(doc.status,s),sending=notifyBusy===s.id;return <li key={s.id||i}>
         <strong>{s.name}</strong><span>{s.email}</span><span>{signerSigned?'Signed':s.viewedAt?'Viewed':s.status || 'Prepared'}{s.signedAt?` · ${dateTime(s.signedAt)}`:''}</span>
-        <button type="button" className="secondary compact dochub-notify" disabled={busy||Boolean(notifyBusy)||!canNotify} title={signerSigned?'This signatory has already signed.':!canNotify?'Notifications are available after the DocHub request has been sent.':'Send a reminder email to this signatory.'} onClick={()=>void notify(s)}><Bell size={13}/>{sending?'Sending…':'Send notification'}</button>
+        <button type="button" className="secondary compact dochub-notify" disabled={busy||Boolean(notifyBusy)||!canNotify} title={signerSigned?'This signatory has already signed.':!canNotify?'Notifications are available after the DocHub request has been sent.':'Resend the DocHub signing invitation to this signatory.'} onClick={()=>void notify(s)}><Bell size={13}/>{sending?'Sending…':'Send notification'}</button>
         {s.notificationSentAt&&<small className="dochub-notify-meta">Last notification: {dateTime(s.notificationSentAt)}{s.notificationSentByName?` · ${s.notificationSentByName}`:''}</small>}
       </li>})}</ul>
       {notifyError&&<p className="dochub-error" role="alert">{notifyError}</p>}{notifyMessage&&<p className="dochub-notify-success" role="status">{notifyMessage}</p>}
