@@ -26,3 +26,9 @@
 .dochub-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 14px 14px;color:var(--muted,#687586);font-size:12px}.dochub-pagination>div{display:flex;align-items:center;gap:9px}.dochub-pagination .compact{display:inline-flex;align-items:center;gap:4px;min-height:31px;padding:5px 8px}
 @media(max-width:1050px){.dochub-row{grid-template-columns:minmax(210px,2fr) minmax(105px,.8fr) minmax(65px,.5fr) minmax(190px,1.3fr)}.dochub-row-followup{display:none}}
 @media(max-width:780px){.dochub-history-toolbar,.dochub-pagination{align-items:stretch;flex-direction:column}.dochub-history-toolbar label{justify-content:space-between}.dochub-row{grid-template-columns:minmax(0,1fr) auto;align-items:start}.dochub-row-status{justify-self:end}.dochub-row-signatures,.dochub-row-followup{display:none}.dochub-row-actions{grid-column:1/-1;justify-content:flex-start}.dochub-pagination>div{justify-content:space-between}.dochub-history-tabs{border-bottom:0}}
+
+/* v0.6.70 per-signatory reminder notifications */
+.dochub-signers .dochub-notify{justify-self:start;display:inline-flex;align-items:center;gap:6px;margin-top:6px;min-height:32px;padding:6px 9px;font-size:11px}
+.dochub-signers .dochub-notify:disabled{opacity:.48;cursor:not-allowed;filter:none}
+.dochub-notify-meta{display:block;color:var(--muted,#687586);font-size:10.5px;line-height:1.35}
+.dochub-notify-success{margin:10px 0 0;padding:9px 10px;border-radius:7px;background:rgba(34,160,90,.08);font-size:12px}

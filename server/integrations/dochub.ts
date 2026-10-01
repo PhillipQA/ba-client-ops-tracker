@@ -5,8 +5,10 @@ import PizZip from 'pizzip'
 import { encryptSecret, decryptSecret, encryptionKey } from './tenant-integrations'
 import { apiClient, DocHubError, docHubId, docHubUrl, storageUrl, verifyDocHubWebhook, draftPacket, signingStatus } from './dochub-api'
 import { archivedWorkReason, workContext, LifecycleError } from '../../src/lifecycle'
+import { docHubReminderMailer, type DocHubReminderEmail } from './dochub-reminder-email'
 
-type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; organizationById: (id: string) => Promise<any>; load: (id: string) => Promise<any>; commit: (id: string, state: any, actor: any, reason: string, before: any, sync?: boolean) => Promise<any>; request?: typeof fetch }
+type ReminderSender = (input: DocHubReminderEmail) => Promise<void>
+type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; organizationById: (id: string) => Promise<any>; load: (id: string) => Promise<any>; commit: (id: string, state: any, actor: any, reason: string, before: any, sync?: boolean) => Promise<any>; request?: typeof fetch; sendReminderEmail?: ReminderSender | null }
 const terminal = new Set(['COMPLETED','REJECTED','VOIDED','EXPIRED'])
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -183,7 +185,7 @@ export function createDocHubService(deps: Deps) {
           if (doc.signRequestId) {
             const remote=await api.call(`/sign-requests/${docHubId(doc.signRequestId)}?include=document,signers.user`)
             doc.status=signingStatus(remote);doc.compiledPdfId=remote.compiledPdfId || '';doc.remoteStatus=String(remote.status || '')
-            if (Array.isArray(remote.signersData)) doc.signers=remote.signersData.map((s: any)=>({id:s.id,name:s.name || s.email || 'Signatory',email:s.email || '',roleId:doc.signers.find((old: any)=>old.email===s.email)?.roleId,status:s.status,viewedAt:s.viewedAt || null,signedAt:s.signedAt || null,removed:!!s.removed,queuePosition:s.queuePosition || null}))
+            if (Array.isArray(remote.signersData)) doc.signers=remote.signersData.map((s: any)=>{const previous=doc.signers.find((old: any)=>old.id===s.id || (old.email&&old.email===s.email));return {id:s.id,name:s.name || s.email || 'Signatory',email:s.email || '',roleId:previous?.roleId,status:s.status,viewedAt:s.viewedAt || null,signedAt:s.signedAt || null,removed:!!s.removed,queuePosition:s.queuePosition || null,notificationSentAt:previous?.notificationSentAt,notificationSentByName:previous?.notificationSentByName}})
             for (const signer of doc.signers) {
               if (signer.viewedAt) addEvent(doc,`viewed:${signer.id}`,`${signer.name} viewed the document (${signer.viewedAt}).`)
               if (signer.signedAt || signer.status==='FINALIZED') addEvent(doc,`signed:${signer.id}`,`${signer.name} signed the document${signer.signedAt?` (${signer.signedAt})`:''}.`)
@@ -229,6 +231,29 @@ export function createDocHubService(deps: Deps) {
     })
     return refresh(tenant,clean.id,true)
   }
+  async function notifySigner(tenant: string,id: string,signerId: string,actor: any,sendEmail: ReminderSender) {
+    const refreshed=await refresh(tenant,id,true)
+    if (refreshed.error) throw new DocHubError('The latest DocHub signer status could not be verified. Refresh the document successfully before sending a notification.',409)
+    return locked(`${tenant}:${id}`,async()=>{
+      const doc=await load(tenant,id)
+      if (!['SENT','VIEWED','PARTIALLY_SIGNED'].includes(String(doc.status || '').toUpperCase())) throw new DocHubError('Notifications are available only while the document is awaiting signatures.',409)
+      const signer=(doc.signers || []).find((candidate:any)=>String(candidate.id || '')===signerId && !candidate.removed)
+      if (!signer) throw new DocHubError('The selected signatory is no longer available.',404)
+      if (signer.signedAt || String(signer.status || '').toUpperCase()==='FINALIZED') throw new DocHubError('This signatory has already signed the document.',409)
+      if (!email.test(String(signer.email || ''))) throw new DocHubError('This signatory does not have a valid notification email address.',409)
+      const last=Date.parse(String(signer.notificationSentAt || ''))
+      if (Number.isFinite(last) && Date.now()-last < 60_000) throw new DocHubError('A notification was just sent to this signatory. Wait a minute before sending another.',429)
+      const senderName=String(actor?.name || actor?.username || 'User').trim().slice(0,120) || 'User'
+      try { await sendEmail({ signerName:String(signer.name || 'Signatory').slice(0,120), signerEmail:String(signer.email), documentTitle:String(doc.title || 'Document').slice(0,180), senderName }) }
+      catch { throw new DocHubError('The reminder email could not be sent. Check the server SMTP settings and try again.',502) }
+      const sentAt=new Date().toISOString()
+      signer.notificationSentAt=sentAt; signer.notificationSentByName=senderName
+      addEvent(doc,`notification:${signer.id}:${sentAt}`,`${senderName} sent a reminder notification to ${signer.name || signer.email}.`)
+      await save(tenant,doc)
+      try { await mirror(tenant,doc) } catch { doc.error='The reminder was sent, but its task activity entry is pending synchronization. Refresh to retry.';await save(tenant,doc) }
+      return doc
+    })
+  }
   async function scan() {
     if(!db)return
     const rows=await db.from('tenant_dochub_accounts').select('tenant_id').eq('enabled',true)
@@ -242,7 +267,7 @@ export function createDocHubService(deps: Deps) {
       }
     }
   }
-  return {account,active,load,save,list,mirror,prepare,refresh,scan,locked,check}
+  return {account,active,load,save,list,mirror,prepare,refresh,notifySigner,scan,locked,check}
 }
 
 export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubService(deps)) {
@@ -255,7 +280,9 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
     }catch(e){res.status(e instanceof DocHubError?e.status:503).json({error:e instanceof Error?e.message:'Account unavailable.'})}
   }
   const limiter=rateLimit({windowMs:60_000,limit:120,standardHeaders:true,legacyHeaders:false,message:{error:'Too many DocHub requests. Wait a minute and retry.'}})
+  const notificationLimiter=rateLimit({windowMs:60_000,limit:10,standardHeaders:true,legacyHeaders:false,message:{error:'Too many reminder notifications. Wait a minute and retry.'}})
   const scope=[deps.requireAuth,deps.requireTenant,guard(),limiter],admins=[deps.requireAuth,deps.requireTenant,guard(true),limiter]
+  const sendReminderEmail=deps.sendReminderEmail===undefined?docHubReminderMailer():deps.sendReminderEmail
   const tenant=(req:Request)=>(req as any).authUser.organizationId as string
   const write=(req:Request)=>{const u=(req as any).authUser;if(u.role==='Viewer'||!u.modules?.includes('documents'))throw new DocHubError('Document Creation write access is required.',403);return u}
   const webhookUrl=(id:string)=>{try{const u=new URL(process.env.APP_BASE_URL || '');if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash)return '';return `${u.origin}/api/webhooks/dochub/${id}`}catch{return ''}}
@@ -283,6 +310,14 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
   app.get('/api/dochub/documents',...scope,wrap(async(req,res)=>{const id=tenant(req);let documents=await service.list(id);if(req.query.taskId)documents=documents.filter((d:any)=>d.taskId===req.query.taskId);let names=new Map<string,string>();try{const state=(await deps.load(id)).data;names=new Map((state?.accounts || []).map((u:any)=>[String(u.id),String(u.name || u.username || 'User')]))}catch{}res.json({documents:documents.map((doc:any)=>publicDocument({...doc,createdByName:doc.createdByName || names.get(String(doc.createdBy || '')) || (doc.createdBy?'Former user':'System')}))})}))
   app.post('/api/dochub/prepare',...scope,wrap(async(req,res)=>{const u=write(req);res.json({document:publicDocument(await service.prepare(tenant(req),u,req.body))})}))
   app.post('/api/dochub/documents/:id/refresh',...scope,wrap(async(req,res)=>{res.json({document:publicDocument(await service.refresh(tenant(req),String(req.params.id)))})}))
+  app.post('/api/dochub/documents/:id/signers/:signerId/notify',...scope,notificationLimiter,wrap(async(req,res)=>{
+    const actor=write(req)
+    if(!sendReminderEmail)throw new DocHubError('Reminder email is unavailable. Configure SMTP_HOST and SMTP_FROM on the server first.',503)
+    const signerId=String(req.params.signerId || '').trim()
+    if(!signerId || signerId.length>200)throw new DocHubError('Choose a valid signatory.')
+    const document=await service.notifySigner(tenant(req),String(req.params.id),signerId,actor,sendReminderEmail)
+    res.json({ok:true,document:publicDocument(document),message:'Reminder notification sent.'})
+  }))
   app.post('/api/dochub/documents/:id/recover',...scope,wrap(async(req,res)=>{
     write(req);const id=tenant(req),key=String(req.params.id),documentId=String(req.body?.documentId || '').trim()
     if(!/^[a-zA-Z0-9_-]{3,120}$/.test(documentId))throw new DocHubError('Enter the existing DocHub document ID.')

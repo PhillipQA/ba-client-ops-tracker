@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Archive, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FileSignature, FolderOpen, LayoutGrid, List, RefreshCw, UserRound, X } from 'lucide-react'
+import { Archive, Bell, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FileSignature, FolderOpen, LayoutGrid, List, RefreshCw, UserRound, X } from 'lucide-react'
 import type { Client, Project, WorkItem } from './types'
-import { dochubRequest, docHubGuidance, docHubLabels, isArchivedDocHubStatus, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
+import { canNotifyDocHubSigner, dochubRequest, docHubGuidance, docHubLabels, isArchivedDocHubStatus, isDocHubSignerSigned, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
 import './dochub.css'
 import { useDocumentOperation } from './useDocumentOperation'
 
@@ -70,14 +70,32 @@ export function DocHubResult({draft}:{draft:Draft}) {return <div className="doch
 
 function DocHubCard({doc,refresh,busy=false}:{doc:DocHubDocument;refresh:()=>Promise<void>;busy?:boolean}) {
   const [recoverId,setRecoverId]=useState(''),[recoverError,setRecoverError]=useState(''),[recoverBusy,setRecoverBusy]=useState(false)
-  const signers=doc.signers.filter(s=>!s.removed),signed=signers.filter(s=>s.signedAt||s.status==='FINALIZED').length
+  const [notifyBusy,setNotifyBusy]=useState(''),[notifyError,setNotifyError]=useState(''),[notifyMessage,setNotifyMessage]=useState('')
+  const signers=doc.signers.filter(s=>!s.removed),signed=signers.filter(isDocHubSignerSigned).length
   const guidance=docHubGuidance(doc)
+  const notify=async(signer:DocHubSigner)=>{
+    if(!signer.id||!canNotifyDocHubSigner(doc.status,signer)||notifyBusy)return
+    setNotifyBusy(signer.id);setNotifyError('');setNotifyMessage('')
+    try{
+      const result=await dochubRequest(`/api/dochub/documents/${doc.id}/signers/${encodeURIComponent(signer.id)}/notify`,'POST')
+      setNotifyMessage(result.message || `Notification sent to ${signer.name}.`)
+      await refresh();updated()
+    }catch(e){setNotifyError((e as Error).message)}finally{setNotifyBusy('')}
+  }
   return <article className={`dochub-card${doc.status==='COMPLETED'?' complete':''}`}><div className="dochub-card-head"><div><strong>{doc.title}</strong><span>{docHubLabels[doc.status] || doc.status}</span></div><span className="count-pill">{signed}/{signers.length} signed</span></div>
     {doc.createdByName&&<div className="dochub-created-by"><UserRound size={14}/><span>Created by <strong>{doc.createdByName}</strong> · {dateTime(doc.createdAt)}</span></div>}
     {doc.error&&<p className="dochub-error" role="alert">{doc.error}</p>}{guidance&&<p className="dochub-guidance">{guidance}</p>}
     <div className="dochub-actions">{doc.documentUrl&&<a className="secondary" href={doc.documentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15}/> Open in DocHub</a>}<button type="button" className="secondary" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={15}/>{busy?'Refreshing…':'Refresh status'}</button>{doc.status==='COMPLETED'&&<a className="secondary" href={`/api/dochub/documents/${doc.id}/pdf`} target="_blank" rel="noopener noreferrer">View signed PDF</a>}</div>
     <small>Last checked: {dateTime(doc.checkedAt)}{doc.followUpDate?` · Follow-up: ${doc.followUpDate}`:''}</small>
-    <details><summary>Signatories and activity</summary><ul className="dochub-signers">{signers.map((s,i)=><li key={s.id||i}><strong>{s.name}</strong><span>{s.email}</span><span>{s.signedAt||s.status==='FINALIZED'?'Signed':s.viewedAt?'Viewed':s.status || 'Prepared'}{s.signedAt?` · ${dateTime(s.signedAt)}`:''}</span></li>)}</ul><ol className="dochub-timeline">{doc.events.map(e=><li key={e.id}><time>{dateTime(e.createdAt)}</time>{e.message}</li>)}</ol></details>
+    <details><summary>Signatories and activity</summary>
+      <ul className="dochub-signers">{signers.map((s,i)=>{const signerSigned=isDocHubSignerSigned(s),canNotify=canNotifyDocHubSigner(doc.status,s),sending=notifyBusy===s.id;return <li key={s.id||i}>
+        <strong>{s.name}</strong><span>{s.email}</span><span>{signerSigned?'Signed':s.viewedAt?'Viewed':s.status || 'Prepared'}{s.signedAt?` · ${dateTime(s.signedAt)}`:''}</span>
+        <button type="button" className="secondary compact dochub-notify" disabled={busy||Boolean(notifyBusy)||!canNotify} title={signerSigned?'This signatory has already signed.':!canNotify?'Notifications are available after the DocHub request has been sent.':'Send a reminder email to this signatory.'} onClick={()=>void notify(s)}><Bell size={13}/>{sending?'Sending…':'Send notification'}</button>
+        {s.notificationSentAt&&<small className="dochub-notify-meta">Last notification: {dateTime(s.notificationSentAt)}{s.notificationSentByName?` · ${s.notificationSentByName}`:''}</small>}
+      </li>})}</ul>
+      {notifyError&&<p className="dochub-error" role="alert">{notifyError}</p>}{notifyMessage&&<p className="dochub-notify-success" role="status">{notifyMessage}</p>}
+      <ol className="dochub-timeline">{doc.events.map(e=><li key={e.id}><time>{dateTime(e.createdAt)}</time>{e.message}</li>)}</ol>
+    </details>
     {doc.status==='REVIEW_REQUIRED'&&!doc.documentId&&<div><p>After confirming the matching file in DocHub, enter its document ID to resume this preparation.</p><input aria-label="Existing DocHub document ID" value={recoverId} onChange={e=>setRecoverId(e.target.value)}/><button type="button" className="secondary" disabled={!recoverId||recoverBusy} onClick={async()=>{setRecoverBusy(true);try{await dochubRequest(`/api/dochub/documents/${doc.id}/recover`,'POST',{documentId:recoverId});await refresh()}catch(e){setRecoverError((e as Error).message)}finally{setRecoverBusy(false)}}}>Link existing document</button>{recoverError&&<p role="alert">{recoverError}</p>}</div>}
   </article>
 }
