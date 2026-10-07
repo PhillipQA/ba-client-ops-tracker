@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createPostgresClient } from '../server/postgres-client'
+import pg from 'pg'
+
+test('PostgreSQL timestamptz retains microseconds for workspace revision checks', () => {
+  const parsed = pg.types.getTypeParser(1184, 'text')('2026-10-07 23:51:47.123456+00')
+  assert.equal(parsed, '2026-10-07T23:51:47.123456+00:00')
+})
 
 function fakeDatabase(jsonColumns: string[] = []) {
   const queries: { sql: string; params: unknown[] }[] = []
