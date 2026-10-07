@@ -77,14 +77,15 @@ export function rollOverOpenSubtaskFollowUps(state: any, options: {
 
   const nextItems = items.map((item: any) => {
     const previousDate = String(item?.followUpDate || '')
-    if (!item?.parentTaskId || !DATE_KEY.test(previousDate) || previousDate >= today || isClosed(item, state)) return item
+    if (!item?.id || !DATE_KEY.test(previousDate) || previousDate >= today || isClosed(item, state)) return item
 
     const daysMoved = calendarDaysBetween(previousDate, today)
     if (!daysMoved) return item
-    const title = String(item.title || 'Untitled subtask')
+    const kind = item.parentTaskId ? 'Subtask' : 'Task'
+    const title = String(item.title || `Untitled ${kind.toLowerCase()}`)
     const text = daysMoved === 1
-      ? `Follow-up automatically moved from ${previousDate} to ${today} because the Subtask remains open.`
-      : `Follow-up automatically caught up from ${previousDate} to ${today} after ${daysMoved} calendar days because the Subtask remained open.`
+      ? `Follow-up automatically moved from ${previousDate} to ${today} because the ${kind.toLowerCase()} remains open.`
+      : `Follow-up automatically caught up from ${previousDate} to ${today} after ${daysMoved} calendar days because the ${kind.toLowerCase()} remained open.`
     const comment = {
       id: createId(),
       text,
@@ -111,9 +112,9 @@ export function rollOverOpenSubtaskFollowUps(state: any, options: {
       clientId: item.clientId || undefined,
       projectId: item.projectId || undefined,
       taskId: String(item.id),
-      parentTaskId: String(item.parentTaskId),
+      parentTaskId: item.parentTaskId ? String(item.parentTaskId) : undefined,
       itemTitle: title,
-      itemKind: 'Subtask',
+      itemKind: kind,
       action: 'follow_up_auto_moved',
       summary: text,
       field: 'followUpDate',
