@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
-import { FSD_MODULES, FSD_SECTIONS, fsdExcludedModules, fsdSectionsForModules, type FsdModule, type FsdSource, type FsdSourceAnalysis, type FsdSourceCoverage } from '../../src/fsd-model'
+import { FSD_SECTIONS, isCustomFsdFeature, fsdExcludedModules, fsdSectionsForModules, type FsdFeature, type FsdModule, type FsdSource, type FsdSourceAnalysis, type FsdSourceCoverage } from '../../src/fsd-model'
 import { IntegrationError } from '../integrations/tenant-integrations'
-import { interpretationInstructions, interpretRequirements, rejectExcludedMentions } from './fsd-grounding'
+import { fsdInterpretationInstructions, interpretRequirements, rejectExcludedMentions } from './fsd-grounding'
+import { validateFsdScope } from './fsd-scope'
 
 export function validateSourceAnalysisInput(body: any) {
-  const modules = body?.modules as FsdModule[]
-  if (!Array.isArray(modules) || modules.some(m => !FSD_MODULES.includes(m)) || new Set(modules).size !== modules.length) throw new IntegrationError('Invalid module selection.')
+  const { modules, features } = validateFsdScope(body, true)
   const value = body?.source
   const field = (key: string, max: number, required = true) => {
     const text = value?.[key] ?? (key === 'target' ? '' : undefined)
@@ -13,17 +13,17 @@ export function validateSourceAnalysisInput(body: any) {
     return text.trim()
   }
   const source: FsdSource = { id: field('id', 80), name: field('name', 200), text: field('text', 120000), target: field('target', 80, false), kind: value?.kind }
-  if (!['BRD', 'Meeting notes', 'Supporting document', 'Chat'].includes(source.kind) || source.target && !FSD_SECTIONS.some(([id]) => id === source.target)) throw new IntegrationError('Invalid source type or section mapping.')
-  if (source.target && !fsdSectionsForModules(modules).some(([id]) => id === source.target)) throw new IntegrationError('This source is mapped to an unchecked module. It is excluded from AI review and generation.')
-  return { source, modules }
+  if (!['BRD', 'Meeting notes', 'Supporting document', 'Chat'].includes(source.kind) || source.target && !FSD_SECTIONS.some(([id]) => id === source.target) && !isCustomFsdFeature(source.target)) throw new IntegrationError('Invalid source type or section mapping.')
+  if (source.target && !fsdSectionsForModules(modules, features).some(([id]) => id === source.target)) throw new IntegrationError('This source is mapped to a removed feature or unchecked legacy module. Reassign its mapping before AI review or generation.')
+  return { source, modules, features }
 }
 
-export function sourceAnalysisFingerprint(source: FsdSource, modules: readonly FsdModule[]) {
-  return createHash('sha256').update(JSON.stringify([1, source.id, source.name, source.kind, source.target, source.text, [...modules].sort()])).digest('hex')
+export function sourceAnalysisFingerprint(source: FsdSource, modules: readonly FsdModule[], features?: readonly FsdFeature[]) {
+  return createHash('sha256').update(JSON.stringify([1, source.id, source.name, source.kind, source.target, source.text, [...modules].sort(), ...(features ? [features.map(f => ({ id: f.id, name: f.name.trim() }))] : [])])).digest('hex')
 }
 
-export function sourceAnalysisInstructions(modules: FsdModule[]) {
-  return `${interpretationInstructions}
+export function sourceAnalysisInstructions(modules: FsdModule[], features?: FsdFeature[]) {
+  return `${fsdInterpretationInstructions(features)}
 This is a source review before document generation. Read the entire supplied source for the selected scope. Return JSON with these additional fields:
 "readability": "readable|partial|unreadable", "summary": "brief explanation of what this source establishes for the selected scope", "complete": true.
 Use partial when text is understandable only in part or extraction warnings exist. Use unreadable only when no meaningful content can be understood, with an empty requirements array. A readable reference document can have zero relevant requirements; explain that in summary without inventing any.
@@ -57,7 +57,7 @@ export function validateSourceAnalysis(value: any, source: FsdSource, modules: F
 }
 
 /** Reuse analyses only for the exact source and scope that were reviewed. */
-export function groundingFromSourceAnalyses(sources: FsdSource[], rawSources: FsdSource[], modules: FsdModule[], allowIncomplete = false) {
+export function groundingFromSourceAnalyses(sources: FsdSource[], rawSources: FsdSource[], modules: FsdModule[], allowIncomplete = false, features?: FsdFeature[]) {
   const requirements: FsdSourceAnalysis['requirements'] = [], gaps: string[] = []
   const sourceCoverage: FsdSourceCoverage = { usedSourceIds: [], partialSourceIds: [], skippedSources: [] }
   const skip = (source: FsdSource, reason: string) => {
@@ -68,7 +68,7 @@ export function groundingFromSourceAnalyses(sources: FsdSource[], rawSources: Fs
     const raw = rawSources.find(s => s.id === source.id)
     const analysis = raw?.analysis
     if (allowIncomplete && (!analysis || raw?.analysisError)) { skip(source, 'No successful source review is available. Retry AI review or paste clearer notes.'); continue }
-    if (!analysis || analysis.fingerprint !== sourceAnalysisFingerprint(source, modules)) throw new IntegrationError(`${source.name}: source or scope changed. Analyze this source again before generating.`, 422)
+    if (!analysis || analysis.fingerprint !== sourceAnalysisFingerprint(source, modules, features)) throw new IntegrationError(`${source.name}: source or scope changed. Feature names also require a new source review. Analyze this source again before generating.`, 422)
     const current = validateSourceAnalysis(analysis, source, modules)
     if (current.readability === 'unreadable') {
       if (allowIncomplete) { skip(source, 'No readable content was understood. Add a clearer copy or paste its contents.'); continue }

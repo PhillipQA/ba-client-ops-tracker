@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.73",
+  "version": "0.6.74",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -33,7 +33,8 @@
     "test:fsd-scope": "node --import tsx --test tests/fsd-scope.test.ts",
     "test:functional-integrity": "node --import tsx --test tests/functional-integrity.test.ts",
     "test:functional": "node scripts/test-functional.mjs",
-    "test:fsd-available": "node --import tsx --test tests/fsd-available.test.ts"
+    "test:fsd-available": "node --import tsx --test tests/fsd-available.test.ts",
+    "test:fsd-custom-features": "node --import tsx --test tests/fsd-custom-features.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",

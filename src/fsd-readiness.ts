@@ -1,8 +1,8 @@
-import { FSD_MODULE_SECTION, type FsdModule, type FsdSource } from './fsd-model'
+import { FSD_MODULE_SECTION, fsdModuleSection, fsdSectionsForModules, isCustomFsdFeature, type FsdLegacyModule, type FsdFeature, type FsdModule, type FsdSource } from './fsd-model'
 
 export type FsdReadinessIssue = { id: string; title: string; missing: string; add: string }
 
-const moduleSuggestions: Record<FsdModule, string> = {
+const moduleSuggestions: Record<FsdLegacyModule, string> = {
   'MMS Feature': 'Add workflow notes or screenshots describing the action, user role, inputs, validation and expected result.',
   'MMS Report': 'Add a sample report, column list or notes describing filters, calculations, data sources and expected output.',
   'Lynexus Feature': 'Add integration notes or an API specification describing the systems, fields exchanged and expected responses.',
@@ -10,7 +10,8 @@ const moduleSuggestions: Record<FsdModule, string> = {
 }
 
 export function suggestedFsdSectionInput(id: string) {
-  const module = (Object.keys(moduleSuggestions) as FsdModule[]).find(m => FSD_MODULE_SECTION[m] === id)
+  if (isCustomFsdFeature(id)) return 'Add notes or screenshots describing the feature workflow, scenarios, inputs, expected outputs and field definitions. For reports, include sample columns, filter rules and calculations.'
+  const module = (Object.keys(moduleSuggestions) as FsdLegacyModule[]).find(m => FSD_MODULE_SECTION[m] === id)
   if (module) return moduleSuggestions[module]
   if (id === 'acceptance') return 'Add test scenarios or notes stating the conditions, expected results and pass/fail rules.'
   if (id === 'functional') return 'Describe the workflow, inputs, user actions, validations and expected outputs in notes or screenshots.'
@@ -35,9 +36,9 @@ export function suggestedFsdInput(gap: string) {
 }
 
 /** Guidance reflects the current source review, not a required list of file types. */
-export function fsdReadiness(sources: FsdSource[], modules: readonly FsdModule[]): FsdReadinessIssue[] {
-  const selected = new Set<string>(modules.map(m => FSD_MODULE_SECTION[m]))
-  const included = sources.filter(s => !s.target || !['mms','report','lynexus','pos'].includes(s.target) || selected.has(s.target))
+export function fsdReadiness(sources: FsdSource[], modules: readonly FsdModule[], features?: readonly FsdFeature[]): FsdReadinessIssue[] {
+  const selected = new Set<string>(fsdSectionsForModules(modules, features).map(([id]) => id))
+  const included = sources.filter(s => !s.target || selected.has(s.target))
   const issues: FsdReadinessIssue[] = []
   if (!included.length) return [{ id: 'source', title: 'Requirement information', missing: sources.length ? 'Your sources are mapped only to unchecked modules.' : 'No requirement information has been added.', add: sources.length ? 'Select the relevant module or change a source mapping to an included section.' : 'Upload any relevant file or paste a few notes explaining the desired change. A BRD is optional.' }]
   for (const source of included) {
@@ -53,7 +54,7 @@ export function fsdReadiness(sources: FsdSource[], modules: readonly FsdModule[]
   }
   if (included.every(s => s.analysis && !s.analysisError)) {
     const facts = included.flatMap(s => s.analysis?.readability === 'unreadable' ? [] : s.analysis?.requirements || [])
-    for (const module of modules) if (!facts.some(r => r.module === module)) issues.push({ id: `module-${FSD_MODULE_SECTION[module]}`, title: module, missing: 'No module-specific requirements were identified. Applicability and behavior remain pending.', add: moduleSuggestions[module] })
+    for (const module of modules) if (!facts.some(r => r.module === module)) issues.push({ id: `module-${fsdModuleSection(module)}`, title: features?.find(f => f.id === module)?.name || module, missing: 'No feature-specific requirements were identified. Applicability and behavior remain pending.', add: isCustomFsdFeature(module) ? suggestedFsdSectionInput(module) : moduleSuggestions[module] })
   }
   return issues
 }

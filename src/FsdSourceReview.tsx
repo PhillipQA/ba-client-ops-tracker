@@ -1,5 +1,5 @@
 import { Sparkles } from 'lucide-react'
-import type { FsdSource } from './fsd-model'
+import type { FsdFeature, FsdSource } from './fsd-model'
 
 export function sourceReviewLabel(source: FsdSource, excluded: boolean, working: boolean) {
   if (excluded) return 'Excluded by scope'
@@ -10,7 +10,7 @@ export function sourceReviewLabel(source: FsdSource, excluded: boolean, working:
   return {readable:'Readable',partial:'Needs review',unreadable:'Unreadable'}[source.analysis.readability]
 }
 
-export default function FsdSourceReview({source,excluded,working,onAnalyze}:{source:FsdSource;excluded:boolean;working:boolean;onAnalyze:()=>void}) {
+export default function FsdSourceReview({source,excluded,working,onAnalyze,features}:{source:FsdSource;excluded:boolean;working:boolean;onAnalyze:()=>void;features?:FsdFeature[]}) {
   if (excluded) return <p className="fsd-warning">This source is excluded by scope. Its content will not be sent for AI review or FSD generation.</p>
   const analysis=source.analysis
   return <section className="fsd-source-review" aria-label={`AI review of ${source.name}`} aria-live="polite">
@@ -21,7 +21,7 @@ export default function FsdSourceReview({source,excluded,working,onAnalyze}:{sou
       <p>{analysis.summary}</p>
       <small>{analysis.provider} · {analysis.model} · {analysis.requirements.length} supported facts / requirements. Verify the interpretation against the excerpts.</small>
       {analysis.gaps.length>0&&<div className="fsd-source-questions"><strong>Questions and reading limitations</strong><ul>{analysis.gaps.map((gap,i)=><li key={i}>{gap}</li>)}</ul></div>}
-      {analysis.requirements.length>0&&<details><summary>What the AI understood ({analysis.requirements.length})</summary>{analysis.requirements.map(r=><article key={r.id}><strong>{r.module}</strong><p>{r.requirement}</p>{r.evidence.map((e,i)=><blockquote key={i}>{e.quote}</blockquote>)}</article>)}</details>}
+      {analysis.requirements.length>0&&<details><summary>What the AI understood ({analysis.requirements.length})</summary>{analysis.requirements.map(r=><article key={r.id}><strong>{features?.find(f=>f.id===r.module)?.name || r.module}</strong><p>{r.requirement}</p>{r.evidence.map((e,i)=><blockquote key={i}>{e.quote}</blockquote>)}</article>)}</details>}
     </>}
   </section>
 }

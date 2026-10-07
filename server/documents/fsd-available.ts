@@ -1,5 +1,5 @@
 import { fsdReadiness, suggestedFsdSectionInput } from '../../src/fsd-readiness'
-import type { FsdSectionId, FsdSource, FsdModule, FsdBlock } from '../../src/fsd-model'
+import type { FsdSectionId, FsdSource, FsdModule, FsdBlock, FsdFeature } from '../../src/fsd-model'
 import { IntegrationError } from '../integrations/tenant-integrations'
 
 export function pendingFsdSection(id: FsdSectionId, title: string) {
@@ -38,9 +38,9 @@ export function completeAvailableSections(value: any, sections: readonly (readon
   }) }
 }
 
-export function availableFsdGaps(sources: FsdSource[], modules: FsdModule[], existing: string[], sections: { id: string; title: string; blocks: FsdBlock[] }[]) {
+export function availableFsdGaps(sources: FsdSource[], modules: FsdModule[], existing: string[], sections: { id: string; title: string; blocks: FsdBlock[] }[], features?: FsdFeature[]) {
   const notes = [...existing]
-  for (const issue of fsdReadiness(sources, modules)) notes.push(`${issue.title}: ${issue.missing} What to add: ${issue.add}`.slice(0, 2000))
+  for (const issue of fsdReadiness(sources, modules, features)) notes.push(`${issue.title}: ${issue.missing} What to add: ${issue.add}`.slice(0, 2000))
   for (const section of sections) if (!['history', 'acknowledgement', 'references'].includes(section.id) && section.blocks.some(b => b.type === 'paragraph' ? /^TBD\b/i.test(b.text) : b.rows.some(row => row.some(cell => /^TBD\b/i.test(cell))))) notes.push(`${section.title}: pending information. What to add: ${suggestedFsdSectionInput(section.id)}`)
   const unique = [...new Set(notes)]
   // Preserve every issue without producing an export that cannot be validated.
