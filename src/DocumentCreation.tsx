@@ -206,7 +206,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
         loggingUnavailable=!id
       } catch {loggingUnavailable=true}
     }
-    setDocumentError(`${message}${id?` · Log ID: ${id}`:loggingUnavailable?' · Log could not be saved; check the DRF migration and Supabase connection.':''}`)
+    setDocumentError(`${message}${id?` · Log ID: ${id}`:loggingUnavailable?' · Log could not be saved; check the DRF migration and database connection.':''}`)
     setDocumentMessage('')
     if(id)void loadDrfErrors().catch(()=>undefined)
   }
@@ -519,7 +519,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
             <DocumentProcessingPanel state={documentError ? 'error' : (extracting || generating) ? 'working' : documentMessage ? 'success' : 'idle'} title={documentError ? 'Document processing failed' : generating ? 'Generating your DRF…' : extracting ? 'Reading your COR…' : 'Document is ready'} detail={documentError || documentMessage} stages={extracting ? ['Uploading document','Reading and extracting content','Mapping COR fields','Finalizing extracted values'] : ['Preparing template','Mapping reviewed information','Generating document','Starting download']} activeStage={generating ? 2 : extracting ? (documentMessage.toLowerCase().includes('asking') ? 2 : 1) : 3} onRetry={documentError ? () => void (failedDrfAction==='extract'?extractCor():generateDrf()) : undefined}/>
             <details className="document-extraction-panel" onToggle={event=>{if(event.currentTarget.open)void loadDrfErrors().catch(error=>setDrfLogError(error.message))}}>
-              <summary>Recent DRF errors (saved to Supabase)</summary>
+              <summary>Recent DRF errors (saved to database)</summary>
               <p>Only your DRF errors appear here. Uploaded files, COR text, and entered form values are not logged.</p>
               <button type="button" className="secondary compact" onClick={()=>void loadDrfErrors().catch(error=>setDrfLogError(error.message))}>Refresh errors</button>
               {drfLogError&&<p role="alert">{drfLogError}</p>}

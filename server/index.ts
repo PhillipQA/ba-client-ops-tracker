@@ -28,6 +28,7 @@ import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { PDFDocument, PDFTextField } from 'pdf-lib'
 import { createClient } from '@supabase/supabase-js'
+import { createPostgresClient } from './postgres-client'
 import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js'
 import { createServer as createViteServer } from 'vite'
 import { normalizeAppTheme, normalizeClientThemes } from '../src/theme'
@@ -123,9 +124,13 @@ app.use('/api/auth', authRequestDiagnostics)
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
-  ? createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
-  : null
+const databaseProvider = process.env.DATABASE_PROVIDER === 'postgres' ? 'postgres' : 'supabase'
+if (databaseProvider === 'postgres' && !process.env.DATABASE_URL) throw new Error('DATABASE_URL is required for PostgreSQL mode.')
+const supabaseAdmin: any = databaseProvider === 'postgres'
+  ? createPostgresClient(process.env.DATABASE_URL!)
+  : supabaseUrl && supabaseServiceRoleKey
+    ? createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    : null
 
 const integrations = createIntegrationStore(supabaseAdmin)
 const aiAgents = createAiAgentManager(supabaseAdmin, integrations)
@@ -452,7 +457,7 @@ function sanitizedAccountRaw(account: any) {
 }
 
 async function normalizedSchemaStatus(organizationId?: string): Promise<NormalizedSyncResult> {
-  if (!supabaseAdmin) return { ready: false, error: 'Supabase is not configured.' }
+  if (!supabaseAdmin) return { ready: false, error: 'Database is not configured.' }
   const { error } = await supabaseAdmin.from('data_migration_runs').select('id').limit(1)
   if (error) return { ready: false, error: error.message }
   let query = supabaseAdmin.from('data_migration_runs').select('completed_at, counts').eq('status', 'completed').order('completed_at', { ascending: false }).limit(1)
@@ -619,7 +624,7 @@ async function ensureTenantFollowUpsCurrent(organizationId: string): Promise<Ten
 }
 
 async function writeTenantState(organizationId: string | undefined, state: any, actor: SessionUser | null, reason: string, before?: any, synchronize = true): Promise<NormalizedSyncResult> {
-  if (!supabaseAdmin) throw new TenantSaveError('Supabase is not configured.', 503)
+  if (!supabaseAdmin) throw new TenantSaveError('Database is not configured.', 503)
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
   if (!before || !loadedRevisions.has(before)) throw new TenantSaveError('Reload the workspace before saving.', 409)
   const { data, error } = await supabaseAdmin.rpc('save_tenant_state_v16', {
@@ -632,7 +637,7 @@ async function writeTenantState(organizationId: string | undefined, state: any, 
     p_reason: reason,
   })
   if (error) {
-    if (error.code === 'PGRST202' || error.code === '42883') throw new TenantSaveError('Database update required: run database/migrations/schema-v16-functional-integrity.sql in Supabase SQL Editor, then retry.', 409)
+    if (error.code === 'PGRST202' || error.code === '42883') throw new TenantSaveError('Database update required: run database/migrations/schema-v16-functional-integrity.sql in the database, then retry.', 409)
     const status = error.code === '40001' ? 409 : error.code === '42501' ? 403 : ['23505', '23514', '22023', '22007', '22008'].includes(error.code) ? 400 : 500
     throw new TenantSaveError(error.message || 'The tenant save was rolled back.', status)
   }
@@ -671,7 +676,7 @@ app.post('/api/auth/login', enforceLoginFailureLimit, async (req, res) => {
     // The Internal Admin control plane is intentionally separate from tenant workspaces.
     if (accountKey === INTERNAL_ADMIN_ACCOUNT_KEY) {
       if (!supabaseAdmin || !await platformAuthSchemaReady()) {
-        res.status(409).json({ error: 'Internal Admin authentication is not initialized. Run the latest Supabase account/security schema first.' })
+        res.status(409).json({ error: 'Internal Admin authentication is not initialized. Run the latest account/security schema first.' })
         return
       }
 
@@ -908,7 +913,7 @@ app.post('/api/data-architecture/migrate', requireAuth, requirePlatformAdmin, as
 
 app.get('/api/store/revision', requireAuth, requireTenantWorkspace, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store')
-  if (!supabaseAdmin) return void res.status(503).json({ configured: false, error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ configured: false, error: 'Database is not configured.' })
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try { res.json(await readWorkspaceRevision(supabaseAdmin, String(tenantIdForUser(user)), followUpTimeZone)) }
   catch { res.status(500).json({ error: 'Could not check the workspace revision.' }) }
@@ -917,7 +922,7 @@ app.get('/api/store/revision', requireAuth, requireTenantWorkspace, async (req, 
 app.get('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store')
   if (!supabaseAdmin) {
-    res.status(503).json({ configured: false, data: null, error: 'Supabase is not configured.' })
+    res.status(503).json({ configured: false, data: null, error: 'Database is not configured.' })
     return
   }
   const user = (req as express.Request & { authUser: SessionUser }).authUser
@@ -925,7 +930,7 @@ app.get('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
     res.json({ configured: true, data: sanitizeStateForClient(state.data, user), updatedAt: state.updatedAt, version: workspaceVersion(state.data), revision: workspaceRevision(state.updatedAt, followUpTimeZone), timeZone: followUpTimeZone, organizationId: user.organizationId, organizationName: user.organizationName })
   } catch (error) {
-    console.error('Supabase load failed:', error)
+    console.error('Database load failed:', error)
     res.status(500).json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database load failed.' })
   }
 })
@@ -937,7 +942,7 @@ function notificationsForUser(state: any, userId: string) {
 }
 
 app.get('/api/notifications', requireAuth, requireTenantWorkspace, async (req, res) => {
-  if (!supabaseAdmin) return void res.status(503).json({ configured: false, notifications: [], error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ configured: false, notifications: [], error: 'Database is not configured.' })
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try {
     const current = await readNotificationState(supabaseAdmin, String(tenantIdForUser(user)))
@@ -948,7 +953,7 @@ app.get('/api/notifications', requireAuth, requireTenantWorkspace, async (req, r
 })
 
 app.put('/api/notifications/:notificationId', requireAuth, requireTenantWorkspace, async (req, res) => {
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   const action = String(req.body?.action || '') as 'read' | 'unread' | 'dismiss'
   if (!['read', 'unread', 'dismiss'].includes(action)) return void res.status(400).json({ error: 'Choose read, unread, or dismiss.' })
@@ -964,7 +969,7 @@ app.put('/api/notifications/:notificationId', requireAuth, requireTenantWorkspac
 })
 
 app.post('/api/notifications/read-all', requireAuth, requireTenantWorkspace, async (req, res) => {
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try {
     const current = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
@@ -1047,7 +1052,7 @@ function requireTenantWorkspace(req: express.Request, res: express.Response, nex
 
 app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   if (!supabaseAdmin) {
-    res.status(503).json({ configured: false, error: 'Supabase is not configured.' })
+    res.status(503).json({ configured: false, error: 'Database is not configured.' })
     return
   }
   let next = req.body?.data
@@ -1162,7 +1167,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
 
     res.json({ configured: true, saved: true, updatedAt, version: saved.version })
   } catch (error) {
-    console.error('Supabase save failed:', error)
+    console.error('Database save failed:', error)
     res.status(error instanceof TenantSaveError || error instanceof LifecycleError ? error.status : 500).json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database save failed.' })
   }
 })
@@ -1281,7 +1286,7 @@ app.post('/api/internal-admin/organizations', requireAuth, requirePlatformAdmin,
 })
 
 app.patch('/api/internal-admin/organizations/:organizationId', requireAuth, requirePlatformAdmin, async (req, res) => {
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
   const organizationId = String(req.params.organizationId || '')
   try {
     const current = await organizationById(organizationId)
@@ -1319,7 +1324,7 @@ app.patch('/api/internal-admin/organizations/:organizationId', requireAuth, requ
 })
 
 app.post('/api/internal-admin/organizations/:organizationId/users', requireAuth, requirePlatformAdmin, async (req, res) => {
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
   const organizationId = String(req.params.organizationId || '')
   const username = String(req.body?.username || '').trim()
   const password = String(req.body?.password || '')
@@ -1349,7 +1354,7 @@ app.post('/api/internal-admin/organizations/:organizationId/users', requireAuth,
 })
 
 app.patch('/api/internal-admin/users/:userId', requireAuth, requirePlatformAdmin, async (req, res) => {
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
   const userId = String(req.params.userId || '')
   try {
     const { data: existing, error: readError } = await supabaseAdmin.from('app_users').select('*').eq('id', userId).is('deleted_at', null).maybeSingle()
@@ -1431,7 +1436,7 @@ app.post('/api/internal-admin/password', requireAuth, requirePlatformAdmin, asyn
 })
 
 app.post('/api/internal-admin/users/:userId/password', requireAuth, requirePlatformAdmin, async (req, res) => {
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
   const userId = String(req.params.userId || '')
   const password = String(req.body?.password || '')
   if (password.length < 8) return void res.status(400).json({ error: 'Use a password with at least 8 characters.' })
@@ -1757,13 +1762,13 @@ app.post('/api/documents/drf/errors', requireAuth, requireTenantWorkspace, drfRe
   if (!documentAccessAllowed(user)) return void res.status(403).json({error:'Document Creation access is required.'})
   if (!isDrfStage(req.body?.stage) || typeof req.body?.message !== 'string' || req.body.message.length > 2000) return void res.status(400).json({error:'A DRF error stage and short message are required.'})
   const diagnosticId = await recordDrfError(supabaseAdmin, {tenantId:tenantIdForUser(user)!,userId:user.id}, req.body.stage, 'browser', req.body.message, req.body.context || {})
-  if (!diagnosticId) return void res.status(503).json({error:'DRF error could not be saved. Apply schema-v18-drf-error-logs.sql and check Supabase connectivity.'})
+  if (!diagnosticId) return void res.status(503).json({error:'DRF error could not be saved. Apply schema-v18-drf-error-logs.sql and check database connectivity.'})
   res.status(201).json({diagnosticId})
 })
 app.get('/api/documents/drf/errors', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!documentAccessAllowed(user)) return void res.status(403).json({error:'Document Creation access is required.'})
-  if (!supabaseAdmin) return void res.status(503).json({error:'Supabase is not configured.'})
+  if (!supabaseAdmin) return void res.status(503).json({error:'Database is not configured.'})
   const {data,error} = await supabaseAdmin.from('drf_error_logs').select('id,stage,source,message,error_code,context,created_at')
     .eq('tenant_id',tenantIdForUser(user)!).eq('user_id',user.id).order('created_at',{ascending:false}).limit(20)
   if (error) return void res.status(503).json({error:'DRF logs are unavailable. Apply schema-v18-drf-error-logs.sql and retry.'})
@@ -1997,7 +2002,7 @@ MESSAGE: ${messageText}`,
 }
 
 async function captureDiscordInquiry(discordMessage: any, organizationId: string, discordClient: DiscordClient, revision: string) {
-  if (!supabaseAdmin) throw new Error('Supabase is not configured; Discord capture requires persistent cloud storage.')
+  if (!supabaseAdmin) throw new Error('Database is not configured; Discord capture requires persistent database storage.')
   const text = normalizeDiscordContent(String(discordMessage.content || ''), discordClient)
   if (!text) return { created: false, reason: 'empty' }
 
@@ -2092,7 +2097,7 @@ app.get('/api/integrations/discord/inquiries', requireAuth, requireTenantWorkspa
     return
   }
   if (!supabaseAdmin) {
-    res.status(503).json({ configured: false, items: [], error: 'Supabase is not configured.' })
+    res.status(503).json({ configured: false, items: [], error: 'Database is not configured.' })
     return
   }
   // Private Discord messages are delivered to Work Hub by the bot. This legacy
@@ -2162,7 +2167,7 @@ function evidenceBase64(value: unknown) {
 }
 
 async function ensureTaskEvidenceBucket() {
-  if (!supabaseAdmin) throw new Error('Supabase is not configured.')
+  if (!supabaseAdmin) throw new Error('Database is not configured.')
   if (taskEvidenceBucketReady) return
   const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets()
   if (listError) throw listError
@@ -2196,7 +2201,7 @@ async function saveCommentState(current: any, next: any, actor: SessionUser, eve
 app.post('/api/tasks/:taskId/comments', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to add comments.' })
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
   if (!text) return void res.status(400).json({ error: 'Comment text is required.' })
   if (text.length > 2000) return void res.status(400).json({ error: 'Comments must be 2,000 characters or fewer.' })
@@ -2232,7 +2237,7 @@ app.post('/api/tasks/:taskId/comments', requireAuth, requireTenantWorkspace, asy
 app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to upload evidence.' })
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
 
   const taskId = String(req.params.taskId || '')
   const fileName = safeEvidenceFileName(req.body?.fileName)
@@ -2308,7 +2313,7 @@ app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
 app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to remove evidence.' })
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
 
   try {
     const taskId = String(req.params.taskId || '')
@@ -2351,7 +2356,7 @@ app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, r
 app.get('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceReadAllowed(user)) return void res.status(403).json({ error: 'Task access is required to view evidence.' })
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Supabase is not configured.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
 
   try {
     const taskId = String(req.params.taskId || '')
@@ -2428,7 +2433,7 @@ async function reconcileDiscord() {
   try {
     const { data, error } = await supabaseAdmin.from('tenant_integrations').select('tenant_id,updated_at').eq('integration_type','discord').eq('is_enabled',true)
     if (error) throw error
-    const enabled = new Set((data || []).map(row => row.tenant_id))
+    const enabled = new Set((data || []).map((row: any) => row.tenant_id))
     for (const [id, runtime] of discordRuntimes) if (!enabled.has(id)) { discordRuntimes.delete(id); await runtime.client.destroy() }
     for (const row of data || []) {
       const organization = await organizationById(row.tenant_id)
