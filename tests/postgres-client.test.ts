@@ -38,3 +38,11 @@ test('PostgreSQL mode passes workspace state as JSON to the atomic save function
   assert.match(save.sql, /"p_state" => \$1/)
   assert.deepEqual(save.params, ['{"items":[]}', 'test'])
 })
+
+test('DocHub task filters read the task ID from JSON', async () => {
+  const { client, queries } = fakeDatabase(['data'])
+  await client.from('tenant_dochub_documents').select('id').eq('tenant_id', 'tenant-1').eq('data->>taskId', 'task-1')
+  const read = queries.find(item => item.sql.startsWith('SELECT "id"'))!
+  assert.match(read.sql, /\("data"->>'taskId'\) = \$2/)
+  assert.deepEqual(read.params, ['tenant-1', 'task-1'])
+})

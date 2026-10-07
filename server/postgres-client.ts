@@ -11,6 +11,10 @@ const identifier = (name: string) => {
   if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw new Error(`Invalid SQL identifier: ${name}`)
   return `"${name}"`
 }
+const filterColumn = (name: string) => {
+  const jsonText = /^([a-z_][a-z0-9_]*)->>([a-z_][a-z0-9_]*)$/i.exec(name)
+  return jsonText ? `(${identifier(jsonText[1])}->>'${jsonText[2]}')` : identifier(name)
+}
 const tableName = (name: string) => `public.${identifier(name)}`
 
 export function createPostgresClient(connectionString: string, testPool?: Pick<pg.Pool, 'query'>) {
@@ -63,7 +67,7 @@ export function createPostgresClient(connectionString: string, testPool?: Pick<p
     }
     update(value: Record<string, any>) { this.action = 'update'; this.values = [value]; return this }
     delete() { this.action = 'delete'; return this }
-    private add(column: string, op: string, value: unknown) { this.conditions.push({ sql: `${identifier(column)} ${op} ?`, values: [value] }); return this }
+    private add(column: string, op: string, value: unknown) { this.conditions.push({ sql: `${filterColumn(column)} ${op} ?`, values: [value] }); return this }
     eq(column: string, value: unknown) { return value === null ? this.is(column, null) : this.add(column, '=', value) }
     neq(column: string, value: unknown) { return this.add(column, '<>', value) }
     is(column: string, value: unknown) { if (value !== null) throw new Error('Only IS NULL is supported'); this.conditions.push({ sql: `${identifier(column)} IS NULL`, values: [] }); return this }
