@@ -6,7 +6,7 @@ import { encryptSecret, decryptSecret, encryptionKey } from './tenant-integratio
 import { apiClient, DocHubError, docHubId, docHubUrl, storageUrl, verifyDocHubWebhook, draftPacket, signingStatus } from './dochub-api'
 import { archivedWorkReason, workContext, LifecycleError } from '../../src/lifecycle'
 type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; organizationById: (id: string) => Promise<any>; load: (id: string) => Promise<any>; commit: (id: string, state: any, actor: any, reason: string, before: any, sync?: boolean) => Promise<any>; request?: typeof fetch }
-const terminal = new Set(['COMPLETED','REJECTED','VOIDED','EXPIRED'])
+const terminal = new Set(['DONE','COMPLETE','COMPLETED','REJECTED','VOID','VOIDED','EXPIRED'])
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const types: Record<string,string> = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
@@ -81,6 +81,15 @@ export function applyDocumentToWorkspace(state: any, doc: any) {
   return { next, changed: JSON.stringify(next) !== JSON.stringify(state) }
 }
 
+const documentFields = ['id','kind','title','fileName','taskId','clientId','projectId','status','documentUrl','documentId','signRequestId','error','setupNote','createdAt','createdBy','createdByName','updatedAt','checkedAt','followUpDate','signers','events']
+const documentProjection = documentFields.map(field => `${field}:data->${field}`).join(',')
+export function documentHistoryRevision(rows: any[]) {
+  return createHash('sha256').update(JSON.stringify(rows.map(row => [row.id,row.updated_at]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))))).digest('hex')
+}
+function mirrorProjection(doc: any) {
+  return createHash('sha256').update(JSON.stringify({id:doc.id,taskId:doc.taskId,clientId:doc.clientId,projectId:doc.projectId,title:doc.title,status:doc.status,documentUrl:doc.documentUrl,followUpDate:doc.followUpDate,signers:(doc.signers || []).map((signer:any)=>[signer.id,signer.removed,Boolean(signer.signedAt || signer.status==='FINALIZED')]),events:doc.events || []})).digest('hex')
+}
+
 export function createDocHubService(deps: Deps) {
   const { db } = deps
   const locks = new Map<string,Promise<any>>()
@@ -95,15 +104,24 @@ export function createDocHubService(deps: Deps) {
   async function active(tenant: string) { const a = await account(tenant); if (!a?.enabled) throw new DocHubError('Ask your account Administrator to configure and enable DocHub in Settings.',409); return apiClient(decryptSecret(a.encrypted_api_key, tenant, 'dochub'), deps.request) }
   async function load(tenant: string,id: string) { const r = await database().from('tenant_dochub_documents').select('data').eq('tenant_id',tenant).eq('id',id).maybeSingle(); check(r.error); if (!r.data) throw new DocHubError('Document not found.',404); return r.data.data }
   async function save(tenant: string,doc: any) { doc.updatedAt = new Date().toISOString(); const r = await database().from('tenant_dochub_documents').upsert({ tenant_id:tenant,id:doc.id,document_id:doc.documentId || null,data:doc,updated_at:doc.updatedAt },{onConflict:'tenant_id,id'}); check(r.error) }
-  async function list(tenant: string) { const r = await database().from('tenant_dochub_documents').select('data').eq('tenant_id',tenant).order('updated_at',{ascending:false}).limit(500); check(r.error); return (r.data || []).map((r: any) => r.data) }
+  function documentQuery(tenant: string,projection: string,taskId?: string) {
+    let query=database().from('tenant_dochub_documents').select(projection).eq('tenant_id',tenant)
+    if(taskId)query=query.eq('data->>taskId',taskId)
+    return query.order('updated_at',{ascending:false}).limit(500)
+  }
+  async function list(tenant: string,taskId?: string) {const r=await documentQuery(tenant,documentProjection+',updated_at',taskId);check(r.error);return {documents:(r.data || []).map(({updated_at,...document}:any)=>document),revision:documentHistoryRevision(r.data || [])}}
+  async function revision(tenant: string,taskId?: string) {const r=await documentQuery(tenant,'id,updated_at',taskId);check(r.error);return documentHistoryRevision(r.data || [])}
   async function mirror(tenant: string,doc: any) {
+    const projection=mirrorProjection(doc)
+    if(doc.mirroredProjection===projection && !doc.error?.includes('synchronization'))return
     for (let attempt=0;attempt<4;attempt++) {
       const current = (await deps.load(tenant)).data
       if (!current) return
       const {next,changed} = applyDocumentToWorkspace(current,doc)
-      if (!changed && (doc.mirroredEventKeys || []).length === (doc.events || []).length) return
+      if (!changed && (doc.mirroredEventKeys || []).length === (doc.events || []).length) {doc.mirroredProjection=projection;await save(tenant,doc);return}
       try {
         if(changed) await deps.commit(tenant,next,null,'dochub-update',current)
+        doc.mirroredProjection=projection
         doc.mirroredEventKeys=(doc.events || []).map((e: any)=>e.key)
         if((doc.events || []).some((e: any)=>e.complete))doc.completionNotified=true
         await save(tenant,doc);return
@@ -258,20 +276,27 @@ export function createDocHubService(deps: Deps) {
       return doc
     })
   }
-  async function scan() {
+  const scans=new Map<string,Promise<void>>(),lastScan=new Map<string,number>()
+  async function scan(tenant: string,taskId?: string) {
     if(!db)return
-    const rows=await db.from('tenant_dochub_accounts').select('tenant_id').eq('enabled',true)
-    if(rows.error)return
-    for(const a of rows.data || []){
-      const org=await deps.organizationById(a.tenant_id).catch(()=>null);if(!org||org.status!=='Active')continue
-      for(const doc of await list(a.tenant_id).catch(()=>[])) {
-        if(terminal.has(doc.status)){ await locked(`${a.tenant_id}:${doc.id}`,async()=>mirror(a.tenant_id,await load(a.tenant_id,doc.id))).catch(()=>undefined);continue }
-        if(['REVIEW_REQUIRED','IMPORT_FAILED','UPLOAD_FAILED'].includes(doc.status)&&!doc.error?.includes('synchronization'))continue
-        await refresh(a.tenant_id,doc.id).catch(()=>undefined)
-      }
-    }
+    const key=`${tenant}:${taskId || ''}`
+    if(scans.has(key))return scans.get(key)
+    if(Date.now()-(lastScan.get(key) || 0)<120_000)return
+    const work=(async()=>{
+      const configured=await database().from('tenant_dochub_accounts').select('enabled').eq('tenant_id',tenant).maybeSingle();check(configured.error)
+      if(!configured.data?.enabled)return
+      const result=await documentQuery(tenant,'id,status:data->status,error:data->error,checkedAt:data->checkedAt',taskId);check(result.error)
+      const pending=(result.data || []).filter((doc:any)=>{
+        if(doc.error?.includes('synchronization'))return true
+        return !terminal.has(doc.status) && !['REVIEW_REQUIRED','IMPORT_FAILED','UPLOAD_FAILED'].includes(doc.status)
+      }).sort((a:any,b:any)=>String(a.checkedAt || '').localeCompare(String(b.checkedAt || ''))).slice(0,10)
+      for(const doc of pending)await refresh(tenant,doc.id).catch(()=>undefined)
+      lastScan.set(key,Date.now())
+    })()
+    scans.set(key,work)
+    try{await work}finally{if(scans.get(key)===work)scans.delete(key)}
   }
-  return {account,active,load,save,list,mirror,prepare,refresh,notifySigner,scan,locked,check}
+  return {account,active,load,save,list,revision,mirror,prepare,refresh,notifySigner,scan,locked,check}
 }
 
 export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubService(deps)) {
@@ -310,7 +335,17 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
     const r=await deps.db.from('tenant_dochub_accounts').update({encrypted_webhook_secret:encryptSecret(remote.secret,id,'dochub-webhook'),webhook_id:remote.id,webhook_url:url,updated_at:new Date().toISOString()}).eq('tenant_id',id);if(r.error)throw new DocHubError('The webhook was created but its secret could not be saved. Open the DocHub developer portal, rotate that webhook secret, and save it here before trying registration again.',503);res.json({ok:true})
   }))
   app.get('/api/dochub/status',...scope,wrap(async(req,res)=>{const a=await service.account(tenant(req));res.json({configured:!!a,enabled:!!a?.enabled,webhookConfigured:!!a?.encrypted_webhook_secret})}))
-  app.get('/api/dochub/documents',...scope,wrap(async(req,res)=>{const id=tenant(req);let documents=await service.list(id);if(req.query.taskId)documents=documents.filter((d:any)=>d.taskId===req.query.taskId);let names=new Map<string,string>();try{const state=(await deps.load(id)).data;names=new Map((state?.accounts || []).map((u:any)=>[String(u.id),String(u.name || u.username || 'User')]))}catch{}res.json({documents:documents.map((doc:any)=>publicDocument({...doc,createdByName:doc.createdByName || names.get(String(doc.createdBy || '')) || (doc.createdBy?'Former user':'System')}))})}))
+  app.get('/api/dochub/revision',...scope,wrap(async(req,res)=>{res.json({revision:await service.revision(tenant(req),String(req.query.taskId || '') || undefined)})}))
+  app.post('/api/dochub/sync',...scope,wrap(async(req,res)=>{await service.scan(tenant(req),String(req.query.taskId || '') || undefined);res.json({ok:true})}))
+  app.get('/api/dochub/documents',...scope,wrap(async(req,res)=>{
+    const id=tenant(req),result=await service.list(id,String(req.query.taskId || '') || undefined)
+    let names=new Map<string,string>()
+    if(result.documents.some((doc:any)=>doc.createdBy && !doc.createdByName)){
+      const users=await deps.db.from('app_users').select('id,name,username').eq('organization_id',id)
+      if(!users.error)names=new Map((users.data || []).map((user:any)=>[String(user.id),String(user.name || user.username || 'User')]))
+    }
+    res.json({revision:result.revision,documents:result.documents.map((doc:any)=>publicDocument({...doc,signers:doc.signers || [],events:doc.events || [],createdByName:doc.createdByName || names.get(String(doc.createdBy || '')) || (doc.createdBy?'Former user':'System')}))})
+  }))
   app.post('/api/dochub/prepare',...scope,wrap(async(req,res)=>{const u=write(req);res.json({document:publicDocument(await service.prepare(tenant(req),u,req.body))})}))
   app.post('/api/dochub/documents/:id/refresh',...scope,wrap(async(req,res)=>{res.json({document:publicDocument(await service.refresh(tenant(req),String(req.params.id)))})}))
   app.post('/api/dochub/documents/:id/signers/:signerId/notify',...scope,notificationLimiter,wrap(async(req,res)=>{
@@ -345,8 +380,6 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
     res.setHeader('Content-Disposition',signedPdfContentDisposition(fileName))
     res.send(buffer)
   }))
-  let scanning=false
-  const timer=setInterval(()=>{if(scanning)return;scanning=true;void service.scan().catch(()=>undefined).finally(()=>{scanning=false})},60_000);timer.unref()
   return service
 }
 
@@ -365,7 +398,7 @@ export function registerDocHubWebhook(app:Express,deps:Deps,service:ReturnType<t
       if(event.type==='webhook.ping')return void res.sendStatus(204)
       // The signed event is a refresh signal, never an authority to overwrite status or select another tenant.
       const documentId=String(event.data?.document?.id || ''),requestId=String(event.data?.sign_request?.id || '')
-      const docs=await service.list(tenant)
+      const {documents:docs}=await service.list(tenant)
       const matched=docs.filter((d:any)=>(documentId&&d.documentId===documentId)||(requestId&&d.signRequestId===requestId))
       for(const doc of matched){const updated=await service.refresh(tenant,doc.id,true);if(updated.error)return void res.sendStatus(503)}
       res.sendStatus(204)

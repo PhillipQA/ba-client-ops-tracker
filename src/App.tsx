@@ -1,4 +1,6 @@
 import { businessDateKey, useBusinessDate } from './businessDate'
+import { usePageActive, useVisiblePolling } from './useVisiblePolling'
+import { workspaceAutoRefreshAllowed } from './activePolling'
 import RequirementsTraceability from './RequirementsTraceability'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
@@ -38,6 +40,7 @@ import {
   Pencil,
   Paperclip,
   Plus,
+  RefreshCw,
   Search,
   ShieldCheck,
   LogOut,
@@ -58,7 +61,7 @@ import InternalAdmin from './InternalAdmin'
 import { ForgotPassword, ResetPassword } from './PasswordRecovery'
 import { ALL_MODULES, defaultModulesForRole } from './access'
 import { getAuthSession, login, logout, type AuthUser } from './auth'
-import { loadCloudStore, resetCloudSession, pendingCloudEdits, loadDiscordInquiries, queueCloudStoreSave, waitForCloudSaves, type CloudStorageStatus } from './cloudStore'
+import { loadCloudStore, resetCloudSession, pendingCloudEdits, queueCloudStoreSave, waitForCloudSaves, type CloudStorageStatus } from './cloudStore'
 import Reports from './Reports'
 import Settings, { settingsRequest } from './Settings'
 import WorkHub from './WorkHub'
@@ -428,8 +431,10 @@ function App() {
   const [newExternalInquiryIds, setNewExternalInquiryIds] = useState<string[]>([])
   const [notificationBusy, setNotificationBusy] = useState(false)
   const [rtmContext, setRtmContext] = useState<{ clientId?: string; projectId?: string }>({})
+  const pageActive = usePageActive()
   const storeRef = useRef(store)
-  const discordPollBusy = useRef(false)
+  const workspaceRefreshBusy = useRef(false)
+  const [refreshingCloud, setRefreshingCloud] = useState(false)
 
   useEffect(() => { storeRef.current = store }, [store])
 
@@ -553,80 +558,51 @@ function App() {
     return () => { cancelled = true }
   }, [authUser?.id])
 
-  useEffect(() => {
-    if (!authUser || authUser.accountType === 'platform') return
-    let cancelled = false
-    let busy = false
-    const refreshAutomaticFollowUps = async () => {
-      if (busy) return
-      busy = true
-      try {
-        await waitForCloudSaves()
-        const result = await loadCloudStore<Store>()
-        if (cancelled || !result.configured || !result.data) return
+  const refreshWorkspace = async (manual = false, signal?: AbortSignal) => {
+    if (!authUser || authUser.accountType === 'platform' || workspaceRefreshBusy.current) return
+    workspaceRefreshBusy.current = true
+    if (manual) setRefreshingCloud(true)
+    try {
+      const result = await loadCloudStore<Store>({ onlyIfChanged: !manual, signal })
+      if (signal?.aborted || !result.configured) return
+      if (result.data) {
         const refreshed = normalizeStore(result.data, seedStore())
-        const knownComments = new Set(storeRef.current.items.flatMap((item) => (item.comments || []).map((comment) => comment.id)))
-        const newSystemComments = refreshed.items.flatMap((item) => item.comments || []).filter((comment) => comment.kind === 'System' && !knownComments.has(comment.id)).length
         storeRef.current = refreshed
         setStore(refreshed)
         localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(refreshed))
         setLastCloudSync(result.updatedAt || new Date().toISOString())
         setCloudStatus('synced')
-        setCloudMessage(newSystemComments ? `${newSystemComments} new system update${newSystemComments === 1 ? '' : 's'}` : 'Supabase synced')
-      } catch (error) {
-        if (!cancelled) console.error('Automatic follow-up refresh failed:', error)
-      } finally {
-        busy = false
+        setCloudMessage('Supabase synced')
       }
+    } catch (error) {
+      if (!signal?.aborted) {
+        console.error('Workspace refresh failed:', error)
+        if (manual) setCloudMessage(error instanceof Error ? error.message : 'Could not refresh the workspace.')
+      }
+    } finally {
+      workspaceRefreshBusy.current = false
+      if (manual) setRefreshingCloud(false)
     }
-    const timer = window.setInterval(() => { void refreshAutomaticFollowUps() }, 5 * 60_000)
-    const onFocus = () => { void refreshAutomaticFollowUps() }
-    const onVisibility = () => { if (document.visibilityState === 'visible') void refreshAutomaticFollowUps() }
-    window.addEventListener('focus', onFocus)
-    window.addEventListener('dochub-updated', onFocus)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-      window.removeEventListener('focus', onFocus)
-      window.removeEventListener('dochub-updated', onFocus)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-  }, [authUser?.id])
+  }
+  useVisiblePolling(signal => refreshWorkspace(false, signal), {
+    enabled: Boolean(authUser && authUser.accountType !== 'platform' && (cloudStatus === 'synced' || cloudStatus === 'saving') && workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)),
+    interval: 5 * 60_000,
+    scope: `${authUser?.id}:${view}:${selectedClientId || ''}:${selectedProjectId || ''}`,
+    events: ['dochub-updated'],
+  })
 
-  useEffect(() => {
-    if (!authUser || authUser.accountType === 'platform') return
-    let cancelled = false
-    let busy = false
-    const refreshNotifications = async () => {
-      if (busy) return
-      busy = true
-      try {
-        const result = await loadNotifications()
-        if (cancelled) return
-        const current = storeRef.current
-        const next = { ...current, notifications: result.notifications }
-        storeRef.current = next
-        setStore(next)
-        localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(next))
-        if (result.updatedAt) setLastCloudSync(result.updatedAt)
-      } catch (error) {
-        if (!cancelled) console.error('Notification refresh failed:', error)
-      } finally {
-        busy = false
-      }
-    }
-    const initial = window.setTimeout(() => void refreshNotifications(), 1500)
-    const timer = window.setInterval(() => void refreshNotifications(), 60_000)
-    const onFocus = () => void refreshNotifications()
-    window.addEventListener('focus', onFocus)
-    return () => {
-      cancelled = true
-      window.clearTimeout(initial)
-      window.clearInterval(timer)
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [authUser?.id])
+  // Opening the bell is an explicit read; the workspace refresh supplies notices otherwise.
+  const refreshNotifications = async () => {
+    if (!authUser || authUser.accountType === 'platform' || notificationBusy) return
+    setNotificationBusy(true)
+    try {
+      const result = await loadNotifications()
+      const next = { ...storeRef.current, notifications: result.notifications }
+      storeRef.current = next; setStore(next)
+      localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(next))
+    } catch (error) { console.error('Notification refresh failed:', error) }
+    finally { setNotificationBusy(false) }
+  }
 
   const persist = (next: Store) => {
     try { assertLifecycleMutation(storeRef.current, next, authUser); assertRtmMutation(storeRef.current, next, authUser) }
@@ -904,41 +880,6 @@ function App() {
     }
   }, [currentUser?.id, currentUser?.role, currentUser?.accountType, currentUser?.modules.join('|'), view])
 
-  const canSyncExternalInquiries = Boolean(currentUser && currentUser.accountType !== 'platform' && (currentUser.role === 'Administrator' || currentUser.modules.includes('inbox') || currentUser.modules.includes('items')))
-
-  useEffect(() => {
-    if (!authUser || cloudStatus !== 'synced' || !canSyncExternalInquiries) return
-    let cancelled = false
-
-    const pollExternalInquiries = async () => {
-      if (discordPollBusy.current || cancelled) return
-      discordPollBusy.current = true
-      try {
-        const result = await loadDiscordInquiries<WorkItem>()
-        if (cancelled || !result.configured || !result.items.length) return
-        const current = storeRef.current
-        const currentIds = new Set(current.items.map((item) => item.id))
-        const missing = result.items.filter((item) => !currentIds.has(item.id))
-        if (!missing.length) return
-        const merged: Store = { ...current, items: [...missing, ...current.items] }
-        storeRef.current = merged
-        setStore(merged)
-        localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(merged))
-        setNewExternalInquiryIds((previous) => [...new Set([...missing.map((item) => item.id), ...previous])])
-        setLastCloudSync(result.updatedAt || new Date().toISOString())
-        setCloudMessage(`${missing.length} new Discord ${missing.length === 1 ? 'inquiry' : 'inquiries'} received`)
-      } catch (error) {
-        console.error('External inquiry sync failed:', error)
-      } finally {
-        discordPollBusy.current = false
-      }
-    }
-
-    void pollExternalInquiries()
-    const interval = window.setInterval(() => void pollExternalInquiries(), 12000)
-    return () => { cancelled = true; window.clearInterval(interval) }
-  }, [authUser?.id, cloudStatus, canSyncExternalInquiries])
-
   const acceptAccountUsers = (users: UserAccount[]) => {
     const current = storeRef.current
     const accounts = users.map((account, index) => normalizeAccount(account, index)).filter((account): account is UserAccount => Boolean(account))
@@ -964,22 +905,13 @@ function App() {
     } catch (error) { return error instanceof Error ? error.message : 'Profile save failed.' }
   }
 
-  // Permission changes take effect on the server immediately and refresh open tabs.
-  useEffect(() => {
-    if (!authUser) return
-    let cancelled = false
-    const refresh = async () => {
-      try {
-        const session = await getAuthSession()
-        if (cancelled) return
-        setAuthUser(session)
-        if (!session) { setStore(seedStore()); setProfileOpen(false); setSelectedClientId(null); setSelectedProjectId(null) }
-      } catch { /* Preserve the current view during temporary network outages. */ }
-    }
-    const interval = window.setInterval(() => void refresh(), 15000)
-    window.addEventListener('focus', refresh)
-    return () => { cancelled = true; window.clearInterval(interval); window.removeEventListener('focus', refresh) }
-  }, [authUser?.id, authUser?.organizationId])
+  // Active pages recheck the session; every server action still verifies permissions.
+  useVisiblePolling(async signal => {
+    const session = await getAuthSession()
+    if (signal.aborted) return
+    setAuthUser(session)
+    if (!session) { setStore(seedStore()); setProfileOpen(false); setSelectedClientId(null); setSelectedProjectId(null) }
+  }, { enabled: Boolean(authUser && workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)), interval: 60_000, immediate: false, scope: `${authUser?.id}:${view}` })
 
   const clientName = (id?: string) => id ? store.clients.find((c) => c.id === id)?.name ?? 'Unknown client' : 'General / no client'
   const projectName = (id?: string) => id ? store.projects.find((p) => p.id === id)?.name ?? 'Unknown project' : 'No project'
@@ -1439,7 +1371,8 @@ function App() {
         <header className="topbar">
           <div><p className="eyebrow">{currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}</p><div className="record-title-line"><h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1>{canWrite && ((selectedClient && hasModule('clients')) || (selectedProject && hasModule('projects'))) && <button className="secondary record-title-edit" onClick={() => setEditingRecord(selectedProject ? { kind: 'projects', id: selectedProject.id } : { kind: 'clients', id: selectedClient!.id })}><Pencil size={16} />{selectedProject ? 'Edit project' : 'Edit client'}</button>}</div></div>
           <div className="top-actions">
-            {currentUser.accountType !== 'platform' && <NotificationCenter notifications={store.notifications} clients={store.clients} projects={store.projects} isAdmin={currentUser.role === 'Administrator'} busy={notificationBusy} onOpen={openNotification} onAction={handleNotificationAction} onReadAll={handleReadAllNotifications} />}
+            {currentUser.accountType !== 'platform' && <button className="secondary" disabled={refreshingCloud || cloudStatus === 'checking' || cloudStatus === 'saving' || Boolean(saveConflict)} onClick={() => void refreshWorkspace(true)} title="Fetch the latest workspace"><RefreshCw size={16} />{refreshingCloud ? 'Refreshing…' : 'Refresh now'}</button>}
+            {currentUser.accountType !== 'platform' && <NotificationCenter notifications={store.notifications} clients={store.clients} projects={store.projects} isAdmin={currentUser.role === 'Administrator'} busy={notificationBusy} onOpen={openNotification} onAction={handleNotificationAction} onReadAll={handleReadAllNotifications} onRefresh={() => void refreshNotifications()} />}
             <span className="top-role-pill">{view === 'internal-admin' && currentUser.accountType === 'platform' ? 'Platform Admin' : currentUser.role}</span>
             {view !== 'internal-admin' && canWrite && hasModule('clients') && <button className="secondary" onClick={() => setModal('client')}><Users size={17} /> Add client</button>}
             {view !== 'internal-admin' && canWrite && !isArchived(selectedClient || undefined) && !isArchived(selectedProject || undefined) && !isArchived(store.clients.find(client => client.id === selectedProjectClientId)) && (hasModule('items') || hasModule('inbox')) && <button className="primary" onClick={() => {
@@ -1614,7 +1547,7 @@ function App() {
         )}
 
         {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && <RequirementsTraceability key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`} store={store} canEdit={canWrite} canLink={canWrite && hasModule('items')} canOverride={currentUser?.role === 'Administrator'} context={rtmContext} onSave={saveRtms} onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined} />}
-        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} items={store.items} launch={documentLaunch} canGenerate={canWrite} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={!selectedClient && !selectedProject && view === 'documents'} /></div>}
+        {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} items={store.items} launch={documentLaunch} canGenerate={canWrite} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={pageActive && !selectedClient && !selectedProject && view === 'documents'} /></div>}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} />}
 
@@ -1634,7 +1567,7 @@ function App() {
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} closeDisabled={modal === 'taskEdit' && taskEditSaving} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
         {modal === 'item' && <TaskForm canLinkRtm={hasModule('requirements') && hasModule('items')} store={store} preset={taskPreset} onSubmit={(item) => { const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined; persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: parent ? `Created subtask under ${parent.title}: ${item.title}` : `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
-        {modal === 'taskEdit' && editingTask && <TaskEditForm canLinkRtm={hasModule('requirements') && hasModule('items')} store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} onCommentMutation={applyCommentMutation} />}
+        {modal === 'taskEdit' && editingTask && <TaskEditForm autoRefreshDocuments={workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)} canLinkRtm={hasModule('requirements') && hasModule('items')} store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} onCommentMutation={applyCommentMutation} />}
         {modal === 'client' && <ClientForm onSubmit={(client) => { persist({ ...store, clients: [...store.clients, client] }); setModal(null) }} />}
         {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
         {modal === 'activity' && <ActivityForm clients={store.clients} projects={store.projects} initial={editingActivity} onSubmit={saveActivity} />}
@@ -2135,7 +2068,7 @@ function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean
   </form>
 }
 
-function TaskEditForm({ canLinkRtm, store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation }: { canLinkRtm: boolean; store: Store; item: WorkItem; onSubmit: (item: WorkItem) => Promise<void>; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void }) {
+function TaskEditForm({ autoRefreshDocuments=true, canLinkRtm, store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation }: { autoRefreshDocuments?: boolean; canLinkRtm: boolean; store: Store; item: WorkItem; onSubmit: (item: WorkItem) => Promise<void>; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void }) {
   const [rtmLinks, setRtmLinks] = useState<RtmLink[]>(item.rtmLinks || [])
   const [editProjectId, setEditProjectId] = useState(item.projectId || '')
   const [type, setType] = useState<ItemType>(item.type)
@@ -2199,7 +2132,7 @@ function TaskEditForm({ canLinkRtm, store, item, onSubmit, onDelete, onEvidenceM
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} startDate={item.startDate || ''} dueDate={item.dueDate || ''} followUpDate={item.followUpDate || ''} />
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>
-    <DocHubHistory taskId={item.id} canCreate onComplete={() => { const closed=store.taskSettings.statuses.find(s=>s.closed); if(closed)setStatus(closed.label) }} />
+    <DocHubHistory active={autoRefreshDocuments} taskId={item.id} canCreate onComplete={() => { const closed=store.taskSettings.statuses.find(s=>s.closed); if(closed)setStatus(closed.label) }} />
     <WorkCommentTrail item={item} onMutation={onCommentMutation} />
     {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
     {saveError && <p className="record-editor-error span-2" role="alert">{saveError}</p>}

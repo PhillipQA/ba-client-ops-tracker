@@ -12,9 +12,11 @@ const tenantA='11111111-1111-4111-8111-111111111111',tenantB='22222222-2222-4222
 const keyA='account-a-api-key-1234567890',keyB='account-b-api-key-1234567890'
 const copy=(v:any)=>JSON.parse(JSON.stringify(v))
 function database(){
- const tables=new Map<string,any[]>()
- return {tables,from(table:string){if(!tables.has(table))tables.set(table,[]);let filters:any[]=[],op='select',payload:any,single=false,limit=Infinity
-  const q:any={select(){return q},eq(k:string,v:any){filters.push([k,v]);return q},maybeSingle(){single=true;return q},limit(v:number){limit=v;return q},order(){return q},upsert(v:any){op='upsert';payload=v;return q},update(v:any){op='update';payload=v;return q},then(resolve:any,reject:any){try{const rows=tables.get(table)!,match=(r:any)=>filters.every(([k,v])=>r[k]===v);if(op==='upsert'){const old=rows.findIndex(r=>r.tenant_id===payload.tenant_id&&r.id===payload.id);if(old<0)rows.push(copy(payload));else rows[old]=copy(payload)}if(op==='update')rows.filter(match).forEach(r=>Object.assign(r,copy(payload)));const found=rows.filter(match).slice(0,limit);resolve({data:copy(single?found[0]||null:found),error:null})}catch(e){reject(e)}}};return q
+ const tables=new Map<string,any[]>(),queries:any[]=[]
+ const field=(row:any,key:string)=>key.split(/->>?/).reduce((value:any,part:string)=>value?.[part],row)
+ return {tables,queries,from(table:string){if(!tables.has(table))tables.set(table,[]);let filters:any[]=[],op='select',payload:any,single=false,limit=Infinity,columns='*'
+  const project=(row:any)=>columns==='*'?row:Object.fromEntries(columns.split(',').map(selection=>{const [alias,path]=selection.includes(':')?selection.split(':'):[selection,selection];return [alias,field(row,path)??null]}))
+  const q:any={select(value='*'){columns=value;return q},eq(k:string,v:any){filters.push([k,v]);return q},maybeSingle(){single=true;return q},limit(v:number){limit=v;return q},order(){return q},upsert(v:any){op='upsert';payload=v;return q},update(v:any){op='update';payload=v;return q},then(resolve:any,reject:any){try{queries.push({table,columns,filters:copy(filters),op});const rows=tables.get(table)!,match=(r:any)=>filters.every(([k,v])=>field(r,k)===v);if(op==='upsert'){const old=rows.findIndex(r=>r.tenant_id===payload.tenant_id&&r.id===payload.id);if(old<0)rows.push(copy(payload));else rows[old]=copy(payload)}if(op==='update')rows.filter(match).forEach(r=>Object.assign(r,copy(payload)));const found=rows.filter(match).slice(0,limit).map(project);resolve({data:copy(single?found[0]||null:found),error:null})}catch(e){reject(e)}}};return q
  }}
 }
 function fixture(options:{rejectDraft?:boolean;lostImport?:boolean}={}){
@@ -185,3 +187,44 @@ test('pending signer reminder uses the native DocHub resend-email endpoint and p
  await assert.rejects(()=>f.service.notifySigner(tenantA,id,'signer1',actor),(e:any)=>e.status===409&&/already signed/.test(e.message))
 })
 
+
+test('DocHub egress: history excludes file bytes and filters by tenant and linked task',async()=>{
+ const f=fixture()
+ for(const [tenant,id,taskId] of [[tenantA,'doc-a','task'],[tenantA,'doc-unrelated','other'],[tenantB,'doc-b','task']]){
+  await f.service.save(tenant,{id,taskId,status:'IMPORTING',title:id,createdByName:'Admin',signers:[],events:[],fileData:'a'.repeat(100000),fingerprint:'private'})
+ }
+ f.db.queries.length=0
+ const result=await f.service.list(tenantA,'task')
+ assert.deepEqual(result.documents.map((d:any)=>d.id),['doc-a'])
+ assert(!JSON.stringify(result).includes('aaaa'));assert(!('fileData' in result.documents[0]))
+ assert.equal(f.db.queries[0].columns.includes('data->fileData'),false)
+ assert(f.db.queries[0].filters.some(([key,value]:any[])=>key==='tenant_id'&&value===tenantA))
+ assert(f.db.queries[0].filters.some(([key,value]:any[])=>key==='data->>taskId'&&value==='task'))
+ const revision=await f.service.revision(tenantA,'task');assert.equal(revision,result.revision)
+ assert.equal(f.db.queries.at(-1)?.columns,'id,updated_at')
+})
+
+test('DocHub egress: active-tab scans use small pending metadata and skip unchanged workspace mirrors',async()=>{
+ const f=fixture()
+ await f.service.prepare(tenantA,f.user,f.input)
+ await f.service.prepare(tenantB,{...f.user,organizationId:tenantB},{...f.input,id:randomUUID()})
+ f.db.tables.get('tenant_dochub_documents')!.find((row:any)=>row.tenant_id===tenantA).data.checkedAt='2026-01-01T00:00:00Z'
+ let workspaceLoads=0;const original=f.deps.load;f.deps.load=async(id:string)=>{workspaceLoads++;return original(id)}
+ f.db.queries.length=0;f.calls.length=0
+ await f.service.scan(tenantA)
+ assert.equal(workspaceLoads,0)
+ assert(f.calls.length>0);assert(f.calls.every(call=>call.headers['X-API-Token']===keyA))
+ const query=f.db.queries.find((q:any)=>q.columns==='id,status:data->status,error:data->error,checkedAt:data->checkedAt')
+ assert(query);assert(query.filters.some(([key,value]:any[])=>key==='tenant_id'&&value===tenantA))
+ const calls=f.calls.length;await f.service.scan(tenantA);assert.equal(f.calls.length,calls)
+})
+
+test('DocHub egress: completed documents do not cause repeated full reads during active-tab scans',async()=>{
+ const f=fixture()
+ await f.service.save(tenantA,{id:'completed',status:'COMPLETED',signers:[],events:[]})
+ let workspaceLoads=0;f.deps.load=async()=>{workspaceLoads++;throw new Error('unexpected workspace read')}
+ f.db.queries.length=0
+ await f.service.scan(tenantA)
+ assert.equal(workspaceLoads,0);assert.equal(f.calls.length,0)
+ assert(!f.db.queries.some((query:any)=>query.table==='tenant_dochub_documents'&&query.columns==='data'))
+})

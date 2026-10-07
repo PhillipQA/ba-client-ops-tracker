@@ -41,8 +41,8 @@ async function prepareUpload(file: File): Promise<Upload> {
   if (content.size > SIGNOFF_MAX_FILE_BYTES) throw new Error(`${file.name}: prepared image exceeds 5 MB. Choose a smaller image.`)
   return { id: crypto.randomUUID(), name, data: await base64(content), caption: '', size: content.size, image }
 }
-export default function SignOffCreation({ clients, projects, items, launch, canGenerate, templateReady }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: {taskId:string;flow:'drf'|'signoff';nonce:number}; canGenerate: boolean; templateReady: boolean }) {
-  const docHub=useDocHubDraft('Sign-Off')
+export default function SignOffCreation({ clients, projects, items, launch, canGenerate, templateReady, active=true }: { active?: boolean; clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: {taskId:string;flow:'drf'|'signoff';nonce:number}; canGenerate: boolean; templateReady: boolean }) {
+  const docHub=useDocHubDraft('Sign-Off',undefined,active)
   const [emails,setEmails]=useState({irippleSignatories:['','',''],clientSignatories:['','','']})
   useEffect(()=>{if(launch?.flow!=='signoff')return;const task=items.find(i=>i.id===launch.taskId);docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:task?.clientId || ''}));const client=clients.find(c=>c.id===task?.clientId);if(client)setDetails(d=>({...d,clientName:client.name}))},[launch])
   const [details, setDetails] = useState(initialDetails)

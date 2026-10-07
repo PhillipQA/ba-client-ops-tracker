@@ -123,9 +123,9 @@ const defaultSignatories: Signatory[] = [
 
 export default function DocumentCreation({ clients, projects, items, launch, canGenerate, draftKey, active }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; draftKey: string; active: boolean }) {
   const docHubReporter = useRef<(error:Error)=>void>(()=>undefined)
-  const docHub = useDocHubDraft('DRF',error=>docHubReporter.current(error))
-  useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
   const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'brd' || value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
+  const docHub = useDocHubDraft('DRF',error=>docHubReporter.current(error),active && flow === 'drf')
+  useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
   useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
   const [corFiles, setCorFiles] = useState<File[]>([])
   const [documentTemplates, setDocumentTemplates] = useState<{ type: 'drf' | 'brd' | 'fsd' | 'signoff'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[]>([])
@@ -542,7 +542,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
         <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /></div>
 
-        <div hidden={flow !== 'signoff'}><SignOffCreation clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} templateReady={Boolean(signoffTemplate?.active)} /></div>
+        <div hidden={flow !== 'signoff'}><SignOffCreation active={active && flow === 'signoff'} clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} templateReady={Boolean(signoffTemplate?.active)} /></div>
       </div>
       <DocHubHistory active={active} />
     </section>

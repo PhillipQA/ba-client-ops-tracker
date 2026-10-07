@@ -1,12 +1,14 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.76**
+**Current release: v0.6.77**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
 Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
 
-Latest update: [v0.6.76 GitHub / GitLab provider selection](docs/releases/v0.6.76.md).
+Latest update: [v0.6.77 active tab refresh](docs/releases/v0.6.77.md).
+
+Git providers: [v0.6.76 GitHub / GitLab provider selection](docs/releases/v0.6.76.md).
 
 Latest FSD update: [v0.6.74 release notes](docs/releases/v0.6.74.md).
 

@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { GitBranch, RefreshCw, ExternalLink, ChevronLeft, ChevronRight, Link, Plus } from 'lucide-react'
 import { GITHUB_QA_STATUSES, type GithubConnection, type GithubRepository, type GithubTicket, type GithubComment, type GithubSyncResult } from './github-model'
 import type { Client, Project, UserAccount, WorkItem } from './types'
+import { pageIsActive } from './activePolling'
+import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 
 class ApiError extends Error { constructor(message: string, public retryAfterSeconds?: number) { super(message) } }
 async function apiRequest(root: string, path: string, method='GET', body?: unknown, signal?: AbortSignal) {
@@ -26,6 +28,8 @@ export default function GithubHub({clients,projects,accounts,tasks,currentUser,o
   const [selected,setSelected] = useState<GithubTicket|null>(null),[comments,setComments] = useState<GithubComment[]>([]),[commentError,setCommentError] = useState(''),[detailLoading,setDetailLoading] = useState(false),[detailRefresh,setDetailRefresh] = useState(0)
   const [form,setForm] = useState<'create'|'link'|null>(null),[title,setTitle] = useState(''),[description,setDescription] = useState(''),[clientId,setClientId] = useState(''),[projectId,setProjectId] = useState(''),[assignee,setAssignee] = useState(currentUser.id),[taskId,setTaskId] = useState(''),[taskSearch,setTaskSearch] = useState('')
   const syncJob = useRef(false), continuation = useRef<ReturnType<typeof setTimeout>|null>(null), alive = useRef(true), detailRef = useRef<HTMLDivElement>(null)
+  const pageActive=usePageActive(),autoActive=useRef(false),syncController=useRef<AbortController|null>(null)
+  autoActive.current=!settingsOpen
   const canWriteTasks = currentUser.role!=='Viewer' && (currentUser.role==='Administrator' || currentUser.modules.includes('items'))
   const maps = connection?.repositories || [], pages = Math.max(1,Math.ceil(total/pageSize))
   const mapping = (repo: string) => maps.find(r=>r.fullName===repo)
@@ -37,7 +41,7 @@ export default function GithubHub({clients,projects,accounts,tasks,currentUser,o
   useEffect(()=>{const timer=setTimeout(()=>{setQuery(search.trim());setPage(1)},300);return()=>clearTimeout(timer)},[search])
   useEffect(()=>{setPage(1);setSelected(null);setForm(null)},[view,repository,state,qa,label,pageSize])
   useEffect(()=>{
-    if(!connection)return
+    if(!connection || !pageActive)return
     const controller=new AbortController();setLoading(true);setListError('')
     const params=new URLSearchParams({page:String(page),pageSize:String(pageSize),view,state,repository,qa,label,q:query})
     void request(`/tickets?${params}`,'GET',undefined,controller.signal).then(result=>{
@@ -46,37 +50,45 @@ export default function GithubHub({clients,projects,accounts,tasks,currentUser,o
       setSelected(previous=>previous ? result.items.find((i:GithubTicket)=>i.id===previous.id) || null : null)
     }).catch(e=>{if(e.name!=='AbortError'){setListError(e.message);setLoading(false);setItems([]);setTotal(0)}})
     return()=>controller.abort()
-  },[connection?.login,connection?.repositories,page,pageSize,view,state,repository,qa,label,query,refresh])
+  },[connection?.login,connection?.repositories,page,pageSize,view,state,repository,qa,label,query,refresh,pageActive])
   useEffect(()=>{
     if(!selected){setComments([]);return}
+    if(!pageActive)return
     const controller=new AbortController();setDetailLoading(true);setComments([]);setCommentError('')
     void request(`/tickets/${selected.id}`,'GET',undefined,controller.signal).then(result=>{setComments(result.comments);setCommentError(result.commentError);setDetailLoading(false)}).catch(e=>{if(e.name!=='AbortError'){setCommentError(e.message);setDetailLoading(false)}})
     return()=>controller.abort()
-  },[selected?.id,detailRefresh])
+  },[selected?.id,detailRefresh,pageActive])
 
-  const sync = async(auto=false) => {
+  const sync = async(auto=false,signal?:AbortSignal,background=auto) => {
+    if(background && (!autoActive.current || !pageIsActive()))return
     if(syncJob.current || !connection?.connected || !maps.length)return
+    const controller=new AbortController(),abort=()=>controller.abort()
+    if(background)syncController.current=controller
+    signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort()
+    const current=()=>alive.current && !controller.signal.aborted && (!background || (autoActive.current && pageIsActive()))
     syncJob.current=true;setWorking(true);setSyncMessage(`Checking ${providerLabel} tickets…`);clearContinuation()
     try {
-      const result: GithubSyncResult = await request('/sync','POST',{auto})
-      if(!alive.current)return
+      const result: GithubSyncResult = await request('/sync','POST',{auto},controller.signal)
+      if(!current())return
       setRefresh(v=>v+1);if(result.requests>0)setDetailRefresh(v=>v+1)
-      const latest: GithubConnection = await request('/connection');if(!alive.current)return;setConnection(latest)
+      const latest: GithubConnection = await request('/connection','GET',undefined,controller.signal);if(!current())return
+      setConnection(previous=>({...latest,repositories:JSON.stringify(previous?.repositories)===JSON.stringify(latest.repositories)?previous!.repositories:latest.repositories}))
       setSyncMessage(`${result.imported} tickets imported; ${result.updated} refreshed.${result.hasMore?' More tickets are being fetched; sync will continue automatically.':''}`)
-      if(result.hasMore)continuation.current=setTimeout(()=>{if(document.visibilityState==='visible' && navigator.onLine)void sync(false)},Math.max(5,result.retryAfterSeconds || 0)*1000)
+      if(result.hasMore && autoActive.current)continuation.current=setTimeout(()=>{if(autoActive.current && pageIsActive())void sync(false,undefined,true)},Math.max(5,result.retryAfterSeconds || 0)*1000)
     } catch(e) {
-      if(!alive.current)return
+      if(!current())return
       setSyncMessage(e instanceof Error?e.message:`${providerLabel} sync failed.`)
-      if(e instanceof ApiError && e.retryAfterSeconds)continuation.current=setTimeout(()=>{if(document.visibilityState==='visible' && navigator.onLine)void sync(false)},e.retryAfterSeconds*1000)
-    } finally {syncJob.current=false;if(alive.current)setWorking(false)}
+      if(e instanceof ApiError && e.retryAfterSeconds && autoActive.current)continuation.current=setTimeout(()=>{if(autoActive.current && pageIsActive())void sync(false,undefined,true)},e.retryAfterSeconds*1000)
+    } finally {signal?.removeEventListener('abort',abort);if(syncController.current===controller)syncController.current=null;syncJob.current=false;if(alive.current)setWorking(false)}
   }
+  useVisiblePolling(signal=>sync(true,signal), {
+    enabled:Boolean(connection?.connected && maps.length && !settingsOpen),interval:5*60_000,
+    scope:`${provider}:${connection?.login}:${JSON.stringify(maps)}`,
+  })
   useEffect(()=>{
-    if(!connection?.connected || !maps.length || settingsOpen)return
-    const check=()=>{if(document.visibilityState==='visible' && navigator.onLine && !syncJob.current)void sync(true)}
-    const starter=setTimeout(check,250);const timer=setInterval(check,5*60*1000)
-    document.addEventListener('visibilitychange',check);window.addEventListener('online',check)
-    return()=>{clearTimeout(starter);clearInterval(timer);clearContinuation();document.removeEventListener('visibilitychange',check);window.removeEventListener('online',check)}
-  },[connection?.connected,connection?.login,JSON.stringify(maps),settingsOpen])
+    if(!pageActive || !autoActive.current){syncController.current?.abort();clearContinuation()}
+  },[pageActive,settingsOpen])
+  useEffect(()=>()=>{syncController.current?.abort();clearContinuation()},[])
   const act = async(fn:()=>Promise<void>) => {
     if(syncJob.current)return
     syncJob.current=true;setWorking(true);setMessage('');clearContinuation()

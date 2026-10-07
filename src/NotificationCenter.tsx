@@ -14,7 +14,7 @@ function severityIcon(notification: AppNotification) {
   return <Clock3 size={17} />
 }
 
-export default function NotificationCenter({ notifications, clients, projects, isAdmin, busy, onOpen, onAction, onReadAll }: {
+export default function NotificationCenter({ notifications, clients, projects, isAdmin, busy, onOpen, onAction, onReadAll, onRefresh }: {
   notifications: AppNotification[]
   clients: Client[]
   projects: Project[]
@@ -23,6 +23,7 @@ export default function NotificationCenter({ notifications, clients, projects, i
   onOpen: (notification: AppNotification) => void
   onAction: (notification: AppNotification, action: 'read' | 'unread' | 'dismiss') => void
   onReadAll: () => void
+  onRefresh?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | 'unread' | 'team'>('all')
@@ -39,7 +40,7 @@ export default function NotificationCenter({ notifications, clients, projects, i
     return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape) }
   }, [open])
   return <div className="notification-center" ref={root}>
-    <button className={`notification-bell${open ? ' active' : ''}`} type="button" title="Notifications" aria-label={`${unread} unread notifications`} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+    <button className={`notification-bell${open ? ' active' : ''}`} type="button" title="Notifications" aria-label={`${unread} unread notifications`} aria-expanded={open} onClick={() => { if (!open) onRefresh?.(); setOpen(value => !value) }}>
       <Bell size={18} />{unread > 0 && <span>{unread > 99 ? '99+' : unread}</span>}
     </button>
     {open && <div className="notification-popover" role="dialog" aria-label="Notifications">

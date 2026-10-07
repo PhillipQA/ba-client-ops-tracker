@@ -1,6 +1,6 @@
 # Database setup
 
-For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–19 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
+For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–20 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
 
 | Deployment situation | What to run |
 | --- | --- |

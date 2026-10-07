@@ -4,29 +4,33 @@ import type { Client, Project, WorkItem } from './types'
 import { canNotifyDocHubSigner, dochubRequest, docHubGuidance, docHubLabels, isArchivedDocHubStatus, isDocHubSignerSigned, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
 import './dochub.css'
 import { useDocumentOperation } from './useDocumentOperation'
+import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
 const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
 
-export function useDocHubDraft(kind:'DRF'|'Sign-Off',onError?:(error:Error)=>void) {
+export function useDocHubDraft(kind:'DRF'|'Sign-Off',onError?:(error:Error)=>void,active=true) {
   const [available,setAvailable]=useState(false),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const [doc,setDoc]=useState<DocHubDocument|null>(null)
   const [options,setOptions]=useState({clientId:'',taskId:'',sequential:false,followUpDays:3})
   const pending=useRef<any>(null)
   const operation=useDocumentOperation()
+  const pageActive=usePageActive()
   const resetCount=useRef(0)
   const [resetVersion,setResetVersion]=useState(0)
   useEffect(()=>{
+    if(!active || !pageActive)return
+    const controller=new AbortController()
     let alive=true
     const load=()=>{
       const version=resetCount.current
-      void dochubRequest('/api/dochub/status').then(s=>{
+      void dochubRequest('/api/dochub/status','GET',undefined,controller.signal).then(s=>{
         if(alive){setAvailable(s.enabled);if(version===resetCount.current){setEnabled(s.enabled);setError('')}}
       }).catch(e=>{if(alive&&version===resetCount.current)setError(e.message)})
     }
     load();window.addEventListener('dochub-settings-changed',load)
-    return()=>{alive=false;window.removeEventListener('dochub-settings-changed',load)}
-  },[])
+    return()=>{alive=false;controller.abort();window.removeEventListener('dochub-settings-changed',load)}
+  },[active,pageActive])
   const reset=()=>{
     operation.cancel();resetCount.current++;pending.current=null
     setDoc(null);setError('');setBusy(false);setEnabled(false)
@@ -38,13 +42,14 @@ export function useDocHubDraft(kind:'DRF'|'Sign-Off',onError?:(error:Error)=>voi
     catch(e){if(job.isCurrent()){setError((e as Error).message);onError?.(e instanceof Error?e:new Error('DocHub preparation failed.'))}}finally{if(job.isCurrent())setBusy(false)}
   }
   const prepare=async(file:GeneratedDocument,signers:DocHubSigner[])=>{if(!enabled)return;validateSigners(signers);setDoc(null);const input={...file,...options,kind,id:crypto.randomUUID(),signers};pending.current=input;await submit(input)}
-  const refresh=async()=>{
-    if(!doc||busy)return
+  const refresh=async(signal?:AbortSignal)=>{
+    if(!doc||busy || signal?.aborted)return
     const job=operation.begin();setBusy(true);setError('')
+    const abort=()=>{if(job.isCurrent()){operation.cancel();setBusy(false)}};signal?.addEventListener('abort',abort,{once:true})
     try{const r=await dochubRequest(`/api/dochub/documents/${doc.id}/refresh`,'POST',undefined,job.signal);if(!job.isCurrent())return;setDoc(r.document);updated()}
-    catch(e){if(job.isCurrent())setError((e as Error).message)}finally{if(job.isCurrent())setBusy(false)}
+    catch(e){if(job.isCurrent())setError((e as Error).message)}finally{signal?.removeEventListener('abort',abort);if(job.isCurrent())setBusy(false)}
   }
-  useEffect(()=>{if(!doc||!['IMPORTING','UPLOADING','UPLOADED'].includes(doc.status))return;const timer=window.setTimeout(()=>void refresh(),5000);return()=>window.clearTimeout(timer)},[doc,busy])
+  useVisiblePolling(signal=>refresh(signal), {enabled:Boolean(active && doc && ['IMPORTING','UPLOADING','UPLOADED'].includes(doc.status)),interval:15_000,minGap:15_000,immediate:false,scope:doc?.id})
   return {available,enabled,setEnabled,busy,error,canRetry:Boolean(pending.current),doc,options,setOptions,prepare,refresh,reset,resetVersion,retry:()=>pending.current?submit(pending.current):Promise.resolve(),validate:(signers:DocHubSigner[])=>{if(enabled)validateSigners(signers)}}
 }
 
@@ -157,9 +162,25 @@ function DocHubDetails({doc,busy,refresh,onClose}:{doc:DocHubDocument;busy:boole
 export function DocHubHistory({active=true,taskId,canCreate=false,onComplete}:{active?:boolean;taskId?:string;canCreate?:boolean;onComplete?:()=>void}) {
   const [docs,setDocs]=useState<DocHubDocument[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(''),[view,setView]=useState<'active'|'archive'>('active'),[selected,setSelected]=useState<DocHubDocument|null>(null)
   const [layout,setLayout]=useState<'row'|'tile'>('row'),[pageSize,setPageSize]=useState<3|5|10>(5),[page,setPage]=useState(1)
-  const load=async()=>{try{const r=await dochubRequest(`/api/dochub/documents${taskId?`?taskId=${encodeURIComponent(taskId)}`:''}`);setDocs(r.documents);setSelected(current=>current?((r.documents as DocHubDocument[]).find(d=>d.id===current.id)||null):null);setError('')}catch(e){setError((e as Error).message)}}
+  const revision=useRef<string | undefined>(undefined)
+  const suffix=taskId?`?taskId=${encodeURIComponent(taskId)}`:''
+  const load=async(signal?:AbortSignal)=>{try{
+    const r=await dochubRequest(`/api/dochub/documents${suffix}`,'GET',undefined,signal)
+    if(signal?.aborted)return
+    setDocs(r.documents);revision.current=r.revision
+    setSelected(current=>current?((r.documents as DocHubDocument[]).find(d=>d.id===current.id)||null):null);setError('')
+  }catch(e){if(!signal?.aborted)setError((e as Error).message)}}
   const refreshOne=async(id:string)=>{setBusy(id);try{await dochubRequest(`/api/dochub/documents/${id}/refresh`,'POST');await load();updated()}catch(e){setError((e as Error).message)}finally{setBusy('')}}
-  useEffect(()=>{if(!active)return;let live=true;const refresh=()=>{if(live)void load()};refresh();const timer=window.setInterval(refresh,30_000);window.addEventListener('dochub-updated',refresh);return()=>{live=false;window.clearInterval(timer);window.removeEventListener('dochub-updated',refresh)}},[active,taskId])
+  // Entry loads history once. Subsequent checks read small metadata and only
+  // retrieve document cards after a change. There is no server-wide scanner.
+  useEffect(()=>{revision.current=undefined},[taskId])
+  useVisiblePolling(async signal=>{
+    if(view==='active')await dochubRequest(`/api/dochub/sync${suffix}`,'POST',undefined,signal)
+    if(signal.aborted)return
+    const next=await dochubRequest(`/api/dochub/revision${suffix}`,'GET',undefined,signal)
+    if(signal.aborted)return
+    if(next.revision!==revision.current){await load(signal);if(!signal.aborted)updated()}
+  },{enabled:active,interval:2*60_000,scope:`${taskId || 'history'}:${view}`,events:['dochub-updated']})
   const archivedDocs=docs.filter(d=>isArchivedDocHubStatus(d.status)),activeDocs=docs.filter(d=>!isArchivedDocHubStatus(d.status)),visibleDocs=taskId?docs:(view==='archive'?archivedDocs:activeDocs)
   const totalPages=Math.max(1,Math.ceil(visibleDocs.length/pageSize))
   useEffect(()=>{setPage(current=>Math.min(current,totalPages))},[totalPages])
@@ -185,7 +206,7 @@ export function DocHubSettings() {
   const act=async(action:'save'|'test'|'webhook')=>{setBusy(true);setMessage('');try{const result=action==='save'?await dochubRequest('/api/account/dochub','PUT',{apiKey:key,webhookSecret:secret,enabled}):await dochubRequest(`/api/account/dochub/${action}`,'POST');setKey('');setSecret('');await load();if(action==='save')window.dispatchEvent(new Event('dochub-settings-changed'));setMessage(result.message || (action==='webhook'?'Live completion updates connected.':'DocHub settings saved for this account.'))}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}}
   return <section className="panel dochub-settings"><div className="panel-heading"><div><h2>DocHub integration</h2><p>Only this account uses the API key. Tenant Administrators manage the connection.</p></div><span className="role-badge">{data?.enabled?'Enabled':data?.configured?'Disabled':'Not configured'}</span></div><p>Create a key in <a href="https://dev.dochub.com/settings/api-keys" target="_blank" rel="noopener noreferrer">DocHub API settings</a> with document, recipient-role, formfield-read and sign-request access.</p>
     <div className="integration-form"><label>{data?.configured?'Replace API key (leave blank to keep it)':'DocHub API key'}<input type="password" autoComplete="new-password" value={key} disabled={busy} onChange={e=>setKey(e.target.value)}/><small>{data?.maskedKey}</small></label><label className="dochub-check"><input type="checkbox" checked={enabled} disabled={busy} onChange={e=>setEnabled(e.target.checked)}/> Enable for this account</label></div>
-    <details><summary>Live completion notifications</summary><p>Register a webhook for prompt updates. The server also checks pending documents every minute while running.</p><label>Webhook URL<input readOnly value={data?.webhookUrl || 'Set APP_BASE_URL on the server to show the callback URL.'}/></label><button type="button" className="secondary" disabled={busy||!data?.enabled||!data?.webhookUrl||data?.webhookRegistered} onClick={()=>void act('webhook')}>{data?.webhookRegistered?'Webhook registered':'Register DocHub webhook'}</button><label>Webhook signing secret (manual setup or rotation)<input type="password" autoComplete="new-password" value={secret} onChange={e=>setSecret(e.target.value)}/><small>{data?.webhookConfigured?'A signing secret is saved.':'Optional when using background checks.'}</small></label><p>For manual setup, subscribe to document.status_changed, sign_request.created, sign_request.voided, signer.finalized and signer.rejected.</p></details>
+    <details><summary>Live completion notifications</summary><p>Register a webhook for prompt updates. Pending documents are checked while Documents or their linked task is open.</p><label>Webhook URL<input readOnly value={data?.webhookUrl || 'Set APP_BASE_URL on the server to show the callback URL.'}/></label><button type="button" className="secondary" disabled={busy||!data?.enabled||!data?.webhookUrl||data?.webhookRegistered} onClick={()=>void act('webhook')}>{data?.webhookRegistered?'Webhook registered':'Register DocHub webhook'}</button><label>Webhook signing secret (manual setup or rotation)<input type="password" autoComplete="new-password" value={secret} onChange={e=>setSecret(e.target.value)}/><small>{data?.webhookConfigured?'A signing secret is saved.':'Optional when checking statuses from an open document tab.'}</small></label><p>For manual setup, subscribe to document.status_changed, sign_request.created, sign_request.voided, signer.finalized and signer.rejected.</p></details>
     <div className="dochub-actions"><button type="button" className="primary" disabled={busy||data?.encryptionReady===false} onClick={()=>void act('save')}>{busy?'Working…':'Save DocHub settings'}</button><button type="button" className="secondary" disabled={busy||!data?.enabled} onClick={()=>void act('test')}>Test connection</button></div>{data?.encryptionReady===false&&<p role="alert">Internal Admin must configure integration encryption on the server.</p>}{message&&<p role="status">{message}</p>}<small>Keys are encrypted on the server and never returned to the browser after saving. Draft preparation does not send signing invitations.</small>
   </section>
 }

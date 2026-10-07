@@ -46,6 +46,8 @@ const commands = [
   ['--import', 'tsx', '--test', 'tests/fsd-source-analysis.test.ts', 'tests/fsd-available.test.ts', 'tests/fsd-custom-features.test.ts'],
   ['--import', 'tsx', '--test', 'tests/github.test.ts', 'tests/gitlab.test.ts'],
   ['--import', 'tsx', '--test', '--test-name-pattern=Gmail functional sync', 'tests/communications.test.ts'],
+  ['--import', 'tsx', '--test', 'tests/egress.test.ts'],
+  ['--import', 'tsx', '--test', '--test-name-pattern=DocHub egress', 'tests/dochub.test.ts'],
   ['--import', 'tsx', 'tests/functional-routes.ts'],
 ]
 for (const args of commands) {

@@ -1,5 +1,6 @@
 import { buildAssistantContext } from './ai/assistant-context'
 import { workspaceVersion, mergeActivity } from './services/workspace-version'
+import { readWorkspaceRevision, readNotificationState, workspaceRevision } from './services/workspace-reads'
 import { assertRtmMutation, reconcileRtm } from '../src/rtm'
 import { createDocHubService, registerDocHubRoutes, registerDocHubWebhook } from './integrations/dochub'
 import { runTenantAi } from './ai/tenant-ai'
@@ -617,21 +618,6 @@ async function ensureTenantFollowUpsCurrent(organizationId: string): Promise<Ten
   return { ...current, changes: [], notificationCount: 0 }
 }
 
-let reconcilingFollowUps = false
-async function reconcileFollowUpRollovers() {
-  if (!supabaseAdmin || reconcilingFollowUps) return
-  reconcilingFollowUps = true
-  try {
-    const { data, error } = await supabaseAdmin.from('organizations').select('id').eq('status', 'Active').is('deleted_at', null)
-    if (error) throw error
-    for (const organization of data || []) await ensureTenantFollowUpsCurrent(String(organization.id)).catch((rolloverError) => console.warn(`Follow-up rollover failed for tenant ${String(organization.id)}:`, rolloverError instanceof Error ? rolloverError.message : rolloverError))
-  } catch (error) {
-    console.warn('Automatic Subtask follow-up rollover is unavailable:', error instanceof Error ? error.message : error)
-  } finally {
-    reconcilingFollowUps = false
-  }
-}
-
 async function writeTenantState(organizationId: string | undefined, state: any, actor: SessionUser | null, reason: string, before?: any, synchronize = true): Promise<NormalizedSyncResult> {
   if (!supabaseAdmin) throw new TenantSaveError('Supabase is not configured.', 503)
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
@@ -920,7 +906,16 @@ app.post('/api/data-architecture/migrate', requireAuth, requirePlatformAdmin, as
   }
 })
 
+app.get('/api/store/revision', requireAuth, requireTenantWorkspace, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  if (!supabaseAdmin) return void res.status(503).json({ configured: false, error: 'Supabase is not configured.' })
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  try { res.json(await readWorkspaceRevision(supabaseAdmin, String(tenantIdForUser(user)), followUpTimeZone)) }
+  catch { res.status(500).json({ error: 'Could not check the workspace revision.' }) }
+})
+
 app.get('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
   if (!supabaseAdmin) {
     res.status(503).json({ configured: false, data: null, error: 'Supabase is not configured.' })
     return
@@ -928,7 +923,7 @@ app.get('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try {
     const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
-    res.json({ configured: true, data: sanitizeStateForClient(state.data, user), updatedAt: state.updatedAt, version: workspaceVersion(state.data), timeZone: followUpTimeZone, organizationId: user.organizationId, organizationName: user.organizationName })
+    res.json({ configured: true, data: sanitizeStateForClient(state.data, user), updatedAt: state.updatedAt, version: workspaceVersion(state.data), revision: workspaceRevision(state.updatedAt, followUpTimeZone), timeZone: followUpTimeZone, organizationId: user.organizationId, organizationName: user.organizationName })
   } catch (error) {
     console.error('Supabase load failed:', error)
     res.status(500).json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database load failed.' })
@@ -945,8 +940,8 @@ app.get('/api/notifications', requireAuth, requireTenantWorkspace, async (req, r
   if (!supabaseAdmin) return void res.status(503).json({ configured: false, notifications: [], error: 'Supabase is not configured.' })
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   try {
-    const current = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
-    res.json({ configured: true, notifications: notificationsForUser(current.data, user.id), updatedAt: current.updatedAt })
+    const current = await readNotificationState(supabaseAdmin, String(tenantIdForUser(user)))
+    res.json({ configured: true, notifications: notificationsForUser(current, user.id), updatedAt: current.updatedAt })
   } catch (error) {
     res.status(500).json({ configured: true, notifications: [], error: error instanceof Error ? error.message : 'Notifications could not be loaded.' })
   }
@@ -2100,15 +2095,9 @@ app.get('/api/integrations/discord/inquiries', requireAuth, requireTenantWorkspa
     res.status(503).json({ configured: false, items: [], error: 'Supabase is not configured.' })
     return
   }
-  try {
-    const state = await loadTenantState(tenantIdForUser(user))
-    const items = Array.isArray(state.data?.items) ? state.data.items : []
-    const discordInquiries = items.filter((item: any) => item?.type === 'Inquiry' && item?.source === 'Discord' && item?.externalSourceId)
-    res.json({ configured: true, items: [], updatedAt: state.updatedAt })
-  } catch (error) {
-    console.error('Discord inquiry sync failed:', error)
-    res.status(500).json({ configured: true, items: [], error: error instanceof Error ? error.message : 'Discord inquiry sync failed.' })
-  }
+  // Private Discord messages are delivered to Work Hub by the bot. This legacy
+  // route must not download tenant_state just to return an empty inquiry list.
+  res.json({ configured: true, items: [] })
 })
 
 
@@ -2469,12 +2458,9 @@ const server = app.listen(port, () => {
     console.warn('SECURITY: BXI_CORE_BOOTSTRAP_PASSWORD is not configured with 12+ characters. It is required only while the initial BXI-Core Admin account is in bootstrap state.')
   }
   void reconcileDiscord()
-  void reconcileFollowUpRollovers()
 })
 configureHttpServer(server)
 
-const discordTimer = setInterval(() => { void reconcileDiscord(); const now = Date.now(); for (const [id, value] of discordUserWindows) if (now - value.startedAt > 60000) discordUserWindows.delete(id) }, 30000)
+const discordTimer = setInterval(() => { const now = Date.now(); for (const [id, value] of discordUserWindows) if (now - value.startedAt > 60000) discordUserWindows.delete(id) }, 30000)
 discordTimer.unref()
-const followUpRolloverTimer = setInterval(() => { void reconcileFollowUpRollovers() }, 5 * 60_000)
-followUpRolloverTimer.unref()
-process.on('SIGTERM', () => { clearInterval(discordTimer); clearInterval(followUpRolloverTimer); for (const runtime of discordRuntimes.values()) void runtime.client.destroy(); process.exit(0) })
+process.on('SIGTERM', () => { clearInterval(discordTimer); for (const runtime of discordRuntimes.values()) void runtime.client.destroy(); process.exit(0) })
