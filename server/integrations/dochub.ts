@@ -331,7 +331,7 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
   app.get('/api/dochub/documents/:id/pdf',...scope,wrap(async(req,res)=>{const doc=await service.load(tenant(req),String(req.params.id));if(doc.status!=='COMPLETED'||!doc.documentId)throw new DocHubError('The signed PDF is available after completion.',409)
     const api=await service.active(tenant(req)),remote=await api.call(doc.compiledPdfId?`/compiled-pdfs/${docHubId(doc.compiledPdfId)}/download-url?documentId=${docHubId(doc.documentId)}`:`/documents/${docHubId(doc.documentId)}/pdf-url`)
     const url=storageUrl(remote.url),request=deps.request || fetch
-    let response:Response
+    let response:Awaited<ReturnType<typeof fetch>>
     try{response=await request(url,{method:'GET',headers:{Accept:'application/pdf'},redirect:'error',signal:AbortSignal.timeout(60_000)})}catch{throw new DocHubError('The signed PDF could not be downloaded from DocHub. Refresh the document and try again.',502)}
     if(!response.ok)throw new DocHubError('DocHub storage could not provide the signed PDF.',502,response.status)
     const announcedSize=Number(response.headers.get('content-length') || 0)

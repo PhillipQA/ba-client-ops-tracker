@@ -99,6 +99,11 @@
 .fsd-preview-prerequisites {margin:12px 0 16px;padding:12px 16px;border:1px solid var(--fsd-border);border-radius:8px;background:var(--fsd-surface-panel);color:var(--fsd-text);}
 .fsd-preview-prerequisites ul {margin:8px 0;padding-left:20px;}
 .fsd-preview-prerequisites li {margin:3px 0;}
+.fsd-readiness {margin:16px 0;padding:14px 16px;border:1px solid var(--fsd-border);border-radius:8px;background:var(--fsd-surface-panel);color:var(--fsd-text);}
+.fsd-readiness h4 {margin:0 0 8px;color:var(--fsd-label);}
+.fsd-readiness ul {padding-left:20px;}
+.fsd-readiness li {margin:12px 0;overflow-wrap:anywhere;}
+.fsd-readiness li p {margin:5px 0;}
 .fsd-generate-card button {margin-bottom:12px;margin-right:8px;}
 .fsd-generate-card small {display:block;}
 .fsd-creator button.primary {background:var(--fsd-accent);color:var(--fsd-accent-text);border:1px solid var(--fsd-accent);}

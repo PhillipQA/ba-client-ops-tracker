@@ -9,6 +9,7 @@ import { runTenantAi } from '../ai/tenant-ai'
 import { renderFsdDocx } from './fsd-export'
 import { FSD_SECTIONS, FSD_MODULES, FSD_MODULE_SECTION_IDS, fsdExcludedModules, fsdSectionsForModules, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource, type FsdModule, type FsdSectionId } from '../../src/fsd-model'
 import { documentOutputName } from '../../src/documentFilename'
+import { availableFsdGaps, completeAvailableSections, pendingFsdSection } from './fsd-available'
 
 function text(value: unknown, label: string, max = 200, required = false) {
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) throw new IntegrationError(`Invalid ${label} (maximum ${max} characters).`)
@@ -22,6 +23,7 @@ export function validateFsdDetails(value: any): FsdDetails {
   return details
 }
 function validateInput(body: any) {
+  if (body?.allowIncomplete !== undefined && typeof body.allowIncomplete !== 'boolean') throw new IntegrationError('Invalid generation option.')
   const details = validateFsdDetails(body?.details)
   if (body?.mode !== 'advanced') throw new IntegrationError('FSD Creation now uses Advanced Mode. Refresh the page and try again.')
   if (!Array.isArray(body.sources) || !body.sources.length || body.sources.length > 20) throw new IntegrationError('Add 1 to 20 requirement sources.')
@@ -39,9 +41,9 @@ function validateInput(body: any) {
   const guidance = text(body.guidance || '', 'additional guidance', 10000)
   const mapping: Record<string,string> = {}
   for (const [id] of sections) mapping[id] = text(body.mapping?.[id] || '', 'section guidance', 2000)
-  return { details, mode: body.mode, sources: effectiveSources, preset, modules, excludedModules: fsdExcludedModules(modules), sections, guidance, mapping }
+  return { details, mode: body.mode, sources: effectiveSources, preset, modules, excludedModules: fsdExcludedModules(modules), sections, guidance, mapping, allowIncomplete: body.allowIncomplete === true }
 }
-export function validateFsdPreview(value: any, strictSectionIds?: readonly FsdSectionId[]): Pick<FsdPreview,'sections'|'gaps'|'conflicts'> {
+export function validateFsdPreview(value: any, strictSectionIds?: readonly FsdSectionId[], allowIncomplete = false): Pick<FsdPreview,'sections'|'gaps'|'conflicts'> {
   if (!Array.isArray(value?.sections)) throw new IntegrationError('AI output is missing required template sections. Try generating again.', 422)
   const canonicalIds = FSD_SECTIONS.map(([id]) => id)
   const coreIds = canonicalIds.filter(id => !FSD_MODULE_SECTION_IDS.includes(id as (typeof FSD_MODULE_SECTION_IDS)[number]))
@@ -70,7 +72,8 @@ export function validateFsdPreview(value: any, strictSectionIds?: readonly FsdSe
     return { id, title, blocks, sourceIds }
   })
   const acceptance = sections.find(s => s.id === 'acceptance')!
-  if (!acceptance.blocks.some(b => b.type === 'table' && b.headers.length === 3 && /ac.*id/i.test(b.headers[0]))) throw new IntegrationError('The preview is missing the template acceptance criteria table. Regenerate it.', 422)
+  const pendingAcceptance = allowIncomplete && acceptance.blocks.length === 1 && acceptance.blocks[0].type === 'paragraph' && /^TBD\b/i.test(acceptance.blocks[0].text)
+  if (!pendingAcceptance && !acceptance.blocks.some(b => b.type === 'table' && b.headers.length === 3 && /ac.*id/i.test(b.headers[0]))) throw new IntegrationError('The preview is missing the template acceptance criteria table. Regenerate it.', 422)
   for (const id of ['mms','report','lynexus','pos']) {
     const section = sections.find(s => s.id === id)
     if (!section) continue
@@ -86,7 +89,7 @@ export function validateFsdPreview(value: any, strictSectionIds?: readonly FsdSe
   if (JSON.stringify(sections).length > 450000) throw new IntegrationError('Document output is too large. Reduce the scope.', 422)
   return { sections, gaps: notices('gaps'), conflicts: notices('conflicts') }
 }
-function fsdInstructions(sections: readonly (readonly [FsdSectionId, string])[], excludedModules: readonly FsdModule[]) {
+function fsdInstructions(sections: readonly (readonly [FsdSectionId, string])[], excludedModules: readonly FsdModule[], allowIncomplete = false) {
   const exclusionRule = excludedModules.length
     ? `HARD EXCLUSIONS: ${excludedModules.join(', ')}. These modules are unchecked by the user. Do NOT analyze, extract, summarize, infer, map, cite, generate, or mention requirements for them. Ignore source passages that relate only to these excluded modules. Never output their section IDs, even as Not applicable, Out of scope, TBD, placeholders, gaps, or conflicts.`
     : 'No software module is explicitly excluded by the user.'
@@ -106,7 +109,8 @@ Follow the supplied preset, section guidance, source mapping and selected module
 - Included MMS Feature and POS Feature sections use numbered UI/UX Details (screens affected, visual changes, user interactions) and Interface/Integration Specification (endpoint/API, data format, errors). Included Lynexus uses Interface/Integration. State not applicable with reason if supported; otherwise TBD. Add subsections below the existing included module section with paragraph blocks.
 - For SELECTED modules only, if applicability is not established by evidence, say TBD — applicability requires confirmation, and list the gap. Never generate unsupported features.
 - Assumptions and Limitations: dependencies, preconditions, constraints and exclusions for selected scope only, separated. Never claim an FSD is approved or signatures are present.
-Cover, proprietary notice, contents and document history are rendered by the application. Do not duplicate these in other sections. Aim for complete, specific content rather than generic guidance.`
+Cover, proprietary notice, contents and document history are rendered by the application. Do not duplicate these in other sections. Aim for complete, specific content rather than generic guidance.
+${allowIncomplete ? 'The user chose Generate anyway using available information. Even one supported fact is sufficient for a partial draft; no specific document type or BRD is mandatory. Use verified readable portions only. Keep every selected section; start missing content with "TBD — Pending information" and explain exactly what information the user can add (plain-text notes, workflow steps, sample report, field definitions or API examples). Skip unsupported portions, never invent them or treat this draft as complete. Acceptance Criteria may be a single TBD paragraph when no supported measurable expected result is available. Include concrete pending questions in gaps. For a partly specified module, use the required tables and put TBD in missing cells.' : ''}`
 }
 export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; aiAgents: ReturnType<typeof createAiAgentManager>; logoPath: string }) {
   const guard: RequestHandler = (req,res,next) => {
@@ -142,28 +146,34 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
       const input = validateInput(req.body)
       const ai = await active(req)
       if (!ai) throw new IntegrationError('Enable and configure the Document Agent in Account Settings → AI Agent Manager before generating an FSD.', 503)
-      let grounding: ReturnType<typeof interpretRequirements>
+      let grounding: ReturnType<typeof interpretRequirements> | ReturnType<typeof groundingFromSourceAnalyses>
       if (req.body.sourceReviewVersion === 1 || input.sources.some(source => req.body.sources.find((s: FsdSource) => s.id === source.id)?.analysis)) {
-        grounding = groundingFromSourceAnalyses(input.sources, req.body.sources, input.modules)
+        grounding = groundingFromSourceAnalyses(input.sources, req.body.sources, input.modules, input.allowIncomplete)
       } else {
         // Older open tabs still work; the current UI reviews each source on upload.
         const mapped = await runTenantAi(ai.secret, ai.config, interpretationInstructions + `\nOnly analyze selected modules: ${JSON.stringify(input.modules)}. Ignore hard-excluded modules in every output field: ${JSON.stringify(input.excludedModules)}.`, JSON.stringify({ sources: input.sources, selectedModules: input.modules }), 180000, 18000)
         let interpretation: any
         try { interpretation = JSON.parse(mapped.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')) }
         catch { throw new IntegrationError('The AI returned an invalid source map. Your draft is retained; retry.', 422) }
-        grounding = interpretRequirements(interpretation, input.sources, input.modules)
+        grounding = interpretRequirements(interpretation, input.sources, input.modules, input.allowIncomplete)
       }
       // Raw mixed-scope documents are never sent to the writing step.
       const { sources: _sources, ...writingInput } = input
       const sourceCatalog = input.sources.map(({ id, name, kind, target }) => ({ id, name, kind, target }))
-      const result = await runTenantAi(ai.secret, ai.config, fsdInstructions(input.sections, input.excludedModules), JSON.stringify({ ...writingInput, requirements: grounding.requirements, sourceCatalog, sourceGaps: grounding.gaps }), 180000, 24000)
       let parsed: any
-      try { parsed = JSON.parse(result.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')) }
-      catch { throw new IntegrationError('The AI returned an invalid document. Your draft is retained; retry with a smaller scope.', 422) }
+      if (input.allowIncomplete && !grounding.requirements.length) {
+        parsed = { sections: input.sections.map(([id, title]) => pendingFsdSection(id, title)), gaps: ['No supported requirements were identified. Paste the desired behavior, affected module and expected result to populate this draft.'], conflicts: [] }
+      } else {
+        const result = await runTenantAi(ai.secret, ai.config, fsdInstructions(input.sections, input.excludedModules, input.allowIncomplete), JSON.stringify({ ...writingInput, requirements: grounding.requirements, sourceCatalog, sourceGaps: grounding.gaps }), 180000, 24000)
+        try { parsed = JSON.parse(result.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')) }
+        catch { throw new IntegrationError('The AI returned an invalid document. Your draft is retained; retry with a smaller scope.', 422) }
+      }
       const expectedSectionIds = input.sections.map(([id]) => id)
-      const preview = validateFsdPreview(parsed, expectedSectionIds)
+      if (input.allowIncomplete) parsed = completeAvailableSections(parsed, input.sections)
+      const preview = validateFsdPreview(parsed, expectedSectionIds, input.allowIncomplete)
       preview.gaps = [...new Set([...grounding.gaps, ...preview.gaps])]
-      assertFsdGrounding(preview, grounding.requirements, input.modules)
+      if (input.allowIncomplete) preview.gaps = availableFsdGaps(req.body.sources.filter((s: FsdSource) => input.sources.some(source => source.id === s.id)), input.modules, preview.gaps, preview.sections)
+      assertFsdGrounding(preview, grounding.requirements, input.modules, input.allowIncomplete)
       const knownSources = new Set(input.sources.map(s => s.id))
       if (preview.sections.some(s => s.sourceIds.some(id => !knownSources.has(id)))) throw new IntegrationError('The AI cited an unknown source. Regenerate the preview.', 422)
       preview.sections.find(s => s.id === 'history')!.blocks = [{ type: 'table', headers: ['Version','Date','Author','Description'], rows: [[input.details.version,input.details.date,input.details.author,'Initial draft for review']] }]
@@ -171,20 +181,26 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
       const evidenceRows = grounding.requirements.flatMap(r => r.evidence.map(e => [r.id, r.module, e.sourceId, e.quote]))
       const evidenceBlocks: FsdBlock[] = []
       for (let start = 0; start < evidenceRows.length; start += 100) evidenceBlocks.push({ type: 'table', headers: ['Requirement ID', 'Module', 'Source ID', 'Supporting excerpt'], rows: evidenceRows.slice(start, start + 100) })
-      preview.sections.find(s => s.id === 'references')!.blocks = [{ type: 'table', headers: ['Source ID','Document / Source','Type'], rows: input.sources.filter(s => grounding.requirements.some(r => r.evidence.some(e => e.sourceId === s.id))).map(s => [s.id,s.name,s.kind]) }, ...evidenceBlocks]
-      validateFsdPreview(preview, expectedSectionIds)
+      const coverage = 'sourceCoverage' in grounding ? grounding.sourceCoverage : undefined
+      const referenceSources = input.sources.filter(s => grounding.requirements.some(r => r.evidence.some(e => e.sourceId === s.id)) || input.allowIncomplete && (!coverage || coverage.usedSourceIds.includes(s.id)))
+      preview.sections.find(s => s.id === 'references')!.blocks = referenceSources.length ? [{ type: 'table', headers: ['Source ID','Document / Source','Type'], rows: referenceSources.map(s => [s.id,s.name,s.kind]) }, ...evidenceBlocks] : [{ type: 'paragraph', text: 'TBD — No source supplied supported requirements for this draft.' }]
+      validateFsdPreview(preview, expectedSectionIds, input.allowIncomplete)
       const normalized = normalizeAiConfig(ai.config)
-      res.json({ ...preview, requirements: grounding.requirements, interpretationGaps: grounding.gaps, provider: aiProviderName(ai.config), model: normalized.model, generatedAt: new Date().toISOString() })
+      res.json({ ...preview, requirements: grounding.requirements, interpretationGaps: grounding.gaps, generationMode: input.allowIncomplete ? 'available' : 'standard', ...(coverage ? { sourceCoverage: coverage } : {}), provider: aiProviderName(ai.config), model: normalized.model, generatedAt: new Date().toISOString() })
     } catch (e) { res.status(e instanceof IntegrationError ? e.status : 502).json({ error: e instanceof IntegrationError ? e.message : 'FSD generation failed. Check the Document Agent key, model access, quota and connection. Your draft is retained.' }) }
   })
   app.post('/api/documents/fsd/generate', ...scope, limiter, async (req,res) => {
     try {
       if (req.body?.reviewed !== true) throw new IntegrationError('Review the preview before generating the Word document.')
-      const details = validateFsdDetails(req.body.details), preview = validateFsdPreview(req.body.preview)
       const input = validateInput(req.body)
-      const grounding = interpretRequirements({ requirements: req.body.preview?.requirements }, input.sources, input.modules)
-      validateFsdPreview(req.body.preview, input.sections.map(([id]) => id))
-      assertFsdGrounding(preview, grounding.requirements, input.modules)
+      const details = input.details, preview = validateFsdPreview(req.body.preview, input.sections.map(([id]) => id), input.allowIncomplete)
+      const grounding = interpretRequirements({ requirements: req.body.preview?.requirements }, input.sources, input.modules, input.allowIncomplete)
+      if (input.allowIncomplete) {
+        const reviewedGrounding = groundingFromSourceAnalyses(input.sources, req.body.sources, input.modules, true)
+        if (JSON.stringify(grounding.requirements) !== JSON.stringify(reviewedGrounding.requirements)) throw new IntegrationError('The source review changed after this preview. Regenerate before downloading.', 422)
+        preview.gaps = availableFsdGaps(req.body.sources.filter((s: FsdSource) => input.sources.some(source => source.id === s.id)), input.modules, [...preview.gaps, ...reviewedGrounding.gaps], preview.sections)
+      }
+      assertFsdGrounding(preview, grounding.requirements, input.modules, input.allowIncomplete)
       const templateRow = await documentTemplateRow(deps.db, (req as any).authUser.organizationId, 'fsd')
       if (templateRow && !templateRow.is_enabled) throw new IntegrationError('The FSD template is not configured. Add or restore it in Settings → Templates.', 503)
       const customTemplate = templateRow?.is_enabled && templateRow.content_base64 ? Buffer.from(templateRow.content_base64, 'base64') : undefined

@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.72**
+**Current release: v0.6.73**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
@@ -121,6 +121,8 @@ Patch runtime backups are stored locally under `.patch-backups/` and are ignored
 Keep Git focused on source code and documentation. Full-build and patch ZIPs should be published as **GitHub Release assets**, not committed into the repository.
 
 ## Current release highlights
+
+**v0.6.73** adds an actionable missing-information checklist to FSD Preview & Generate. **Generate anyway — use available information** accepts sparse notes and verified parts of incomplete source reviews, skips unreadable/failed reviews, retains selected sections with TBD placeholders, and carries pending information into Word exports. Basic document details remain required. No formal BRD or particular document type is mandatory. Existing scope exclusions and source evidence checks still apply. This release also corrects the fetch response type in DocHub signed-PDF downloading so server type checking passes.
 
 **v0.6.72** replaces the v0.6.70 SMTP signatory reminder with DocHub's native resend API. **Send notification** now refreshes the current sign request, then calls `POST /api/v2/sign-requests/{id}/resend-email` with that signer's DocHub `signerId`. DocHub sends the signing invitation/reminder itself, so no SMTP configuration is required for this action. Signed/rejected signers remain protected, successful resends are recorded in document/task activity, and the local cooldown now matches DocHub's documented one-resend-per-signer-per-3-minutes limit.
 

@@ -36,7 +36,7 @@ export function interpretRequirements(value: any, sources: FsdSource[], modules:
   return { requirements, gaps }
 }
 
-export function assertFsdGrounding(preview: Pick<FsdPreview, 'sections' | 'gaps' | 'conflicts'>, requirements: FsdRequirement[], modules: FsdModule[]) {
+export function assertFsdGrounding(preview: Pick<FsdPreview, 'sections' | 'gaps' | 'conflicts'>, requirements: FsdRequirement[], modules: FsdModule[], allowIncomplete = false) {
   const byId = new Map(requirements.map(r => [r.id, r]))
   for (const section of preview.sections) {
     if (['history', 'acknowledgement', 'references'].includes(section.id)) continue
@@ -44,6 +44,7 @@ export function assertFsdGrounding(preview: Pick<FsdPreview, 'sections' | 'gaps'
       const content = block.type === 'paragraph' ? block.text : [...block.headers, ...block.rows.flat()].join('\n')
       rejectExcludedMentions(content, modules)
       if (block.type === 'paragraph' && /^TBD\b/i.test(content)) continue
+      if (allowIncomplete && block.type === 'table' && block.rows.length && block.rows.every(row => row.length && row.every(cell => /^TBD\b/i.test(cell)))) continue
       const refs = block.requirementIds || []
       if (!refs.length || refs.some(id => !byId.has(id))) throw new IntegrationError(`${section.title} has unsupported content or unknown requirement links. Regenerate the preview.`, 422)
       const sectionModule = FSD_MODULES.find(m => FSD_MODULE_SECTION[m] === section.id)
