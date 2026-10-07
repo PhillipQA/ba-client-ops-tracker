@@ -44,7 +44,15 @@ try {
     await admin.query(`grant usage on schema public to ${quote(appRole)}`)
     await admin.query(`grant select, insert, update, delete on all tables in schema public to ${quote(appRole)}`)
     await admin.query(`grant usage, select, update on all sequences in schema public to ${quote(appRole)}`)
-    await admin.query(`grant execute on all functions in schema public to ${quote(appRole)}`)
+    // The restored public schema can also contain extension functions such as
+    // dblink_connect_u. The addon admin cannot grant these and the app never
+    // calls them. Grant only the tracker RPC functions it actually uses.
+    for (const signature of [
+      'public.save_tenant_state_v6(uuid,jsonb,jsonb,jsonb,text,text)',
+      'public.save_tenant_state_v16(uuid,jsonb,timestamptz,jsonb,jsonb,text,text)',
+      'public.issue_password_reset_v7(text,text,text,text)',
+      'public.redeem_password_reset_v7(text,text)',
+    ]) await admin.query(`grant execute on function ${signature} to ${quote(appRole)}`)
     await admin.query('commit')
     console.log(`Prepared ${tables.rowCount} imported tables and task evidence storage for the application role.`)
   } catch (error) {
