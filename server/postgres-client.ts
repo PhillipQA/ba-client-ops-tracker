@@ -1,7 +1,9 @@
 import pg from 'pg'
 
 const { Pool, types } = pg
-types.setTypeParser(1184, value => new Date(value).toISOString())
+// Keep PostgreSQL's microseconds for optimistic workspace revision checks.
+// Date#toISOString truncates them to milliseconds and causes false 409 conflicts.
+types.setTypeParser(1184, value => value.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00'))
 types.setTypeParser(1114, value => new Date(value.replace(' ', 'T') + 'Z').toISOString())
 
 type Result = { data: any; error: any; count?: number | null }
