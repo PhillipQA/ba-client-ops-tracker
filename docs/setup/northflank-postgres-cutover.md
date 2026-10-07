@@ -7,7 +7,7 @@ This release supports `DATABASE_PROVIDER=postgres`. The database connection is s
 1. Confirm that the Supabase project in the running service's `SUPABASE_URL` is the project exported to Northflank. An earlier connection string used a different project ref; compare the actual refs before cutover.
 2. Stop writes to the old app during the final export and import, or repeat the restore immediately before switching. A green Northflank restore from an earlier dump is a snapshot, not continuous replication.
 3. Restore the final Supabase `public` schema and data to the Northflank PostgreSQL addon. Keep a backup of the previous database and the unchanged Supabase project until the new app has been verified.
-4. Apply `database/migrations/northflank-postgres.sql` as the restored database owner or admin. Grant the `POSTGRES_URI` user the listed privileges and ensure it can bypass row level security. Run these against the destination, not Supabase. Keep `TENANT_INTEGRATION_MASTER_KEY` exactly the same so encrypted integrations remain readable.
+4. In a one-off secure service shell, set `PG_ADMIN_URL` to the addon's `POSTGRES_URI_ADMIN` (without saving it as a permanent service variable) and run `npm run db:prepare-postgres`. This creates the evidence table, grants the standard `POSTGRES_URI` user access, and disables imported Supabase row policies on the private destination tables. It runs in one transaction and leaves Supabase untouched. Keep `TENANT_INTEGRATION_MASTER_KEY` exactly the same so encrypted integrations remain readable.
 
 ## Check and transfer
 
@@ -15,6 +15,7 @@ Use a one-off secure shell or temporary Northflank job with `DATABASE_URL` set t
 
 ```bash
 npm ci
+npm run db:prepare-postgres
 npm run db:verify-migration
 npm run db:migrate-evidence
 ```
