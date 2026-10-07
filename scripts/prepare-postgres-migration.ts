@@ -50,9 +50,16 @@ try {
     for (const signature of [
       'public.save_tenant_state_v6(uuid,jsonb,jsonb,jsonb,text,text)',
       'public.save_tenant_state_v16(uuid,jsonb,timestamptz,jsonb,jsonb,text,text)',
+    ]) await admin.query(`grant execute on function ${signature} to ${quote(appRole)}`)
+    const optional = [
       'public.issue_password_reset_v7(text,text,text,text)',
       'public.redeem_password_reset_v7(text,text)',
-    ]) await admin.query(`grant execute on function ${signature} to ${quote(appRole)}`)
+    ]
+    for (const signature of optional) {
+      const present = (await admin.query('select to_regprocedure($1) as function', [signature])).rows[0].function
+      if (present) await admin.query(`grant execute on function ${signature} to ${quote(appRole)}`)
+      else console.warn(`Optional password recovery function is absent from the imported database: ${signature}`)
+    }
     await admin.query('commit')
     console.log(`Prepared ${tables.rowCount} imported tables and task evidence storage for the application role.`)
   } catch (error) {

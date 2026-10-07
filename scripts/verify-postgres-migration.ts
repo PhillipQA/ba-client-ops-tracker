@@ -34,6 +34,20 @@ async function main() {
     console.log(`${same ? 'OK' : 'DIFF'} tenant_state ${item.organization_id} revision`)
     mismatch ||= !same
   }
+  for (const [name, params, signature] of [
+    ['issue_password_reset_v7', { p_account: '', p_username: '', p_email: '', p_token_hash: 'invalid' }, 'public.issue_password_reset_v7(text,text,text,text)'],
+    ['redeem_password_reset_v7', { p_token_hash: 'invalid', p_password_hash: 'invalid' }, 'public.redeem_password_reset_v7(text,text)'],
+  ] as const) {
+    // Invalid input is rejected before a token is read or written. PGRST202
+    // means the source project does not expose this optional RPC either.
+    const check = await source.rpc(name, params)
+    if (check.error && check.error.code !== 'PGRST202' && check.error.code !== '22023') throw new Error(`Source ${name}: ${check.error.message}`)
+    const presentAtSource = check.error?.code !== 'PGRST202'
+    const { rows: functions } = await pool.query('select to_regprocedure($1) is not null as present', [signature])
+    const presentAtTarget = Boolean(functions[0].present)
+    console.log(`${presentAtSource === presentAtTarget ? 'OK' : 'DIFF'} ${name}: Supabase=${presentAtSource ? 'present' : 'absent'} PostgreSQL=${presentAtTarget ? 'present' : 'absent'}`)
+    mismatch ||= presentAtSource !== presentAtTarget
+  }
   if (mismatch) throw new Error('Migration differs from live Supabase data. Refresh the database backup before cutover.')
   console.log('Database row counts and workspace revisions match the current Supabase project.')
 }
