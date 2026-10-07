@@ -136,6 +136,8 @@ test('pagination filters before counting, reaches older records and isolates thr
     const discord=await get('/api/communications?page=1&pageSize=10&tab=Discord&label=pos')
     assert.equal(discord.body.total,7);assert.ok(discord.body.items.every((x:any)=>x.source==='Discord'))
     assert.equal((await get('/api/communications?page=1&pageSize=5&tab=Archived')).body.total,1)
+    assert.equal((await get('/api/communications?page=1&pageSize=5&tab=Gmail&archived=true')).body.total,1)
+    assert.equal((await get('/api/communications?page=1&pageSize=5&tab=Discord&archived=true')).body.total,0)
     assert.equal((await get('/api/communications?page=1&pageSize=5&tab=Gmail&label=missing')).body.total,0)
     assert.equal((await get('/api/communications?page=1&pageSize=5&tab=All','user-b')).body.total,1)
     for(const query of ['page=0','page=1.5','page=bad','pageSize=200','tab=Unknown'])assert.equal((await get(`/api/communications?${query}`)).status,400)

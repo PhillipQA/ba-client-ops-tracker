@@ -103,3 +103,6 @@
   .communication-page-buttons { justify-content: space-between; gap: .4rem; }
   .communication-page-buttons button { padding: .45rem .55rem; }
 }
+
+.work-hub-shared-inquiries > summary { cursor: pointer; padding: 1rem; font-weight: 650; }
+.work-hub-shared-inquiries > .callout { margin: .7rem 0; }

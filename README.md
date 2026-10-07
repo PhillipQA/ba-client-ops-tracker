@@ -1,10 +1,12 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.74**
+**Current release: v0.6.75**
 
 BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
 
 Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
+
+Latest update: [v0.6.75 Work Hub and GitHub release notes](docs/releases/v0.6.75.md).
 
 Latest FSD update: [v0.6.74 release notes](docs/releases/v0.6.74.md).
 
@@ -16,7 +18,7 @@ Upgrade details: [v0.6.60 release notes](docs/releases/v0.6.60.md). For personal
 - **Clients & Projects** — shared project structure with tenant/client history.
 - **Requirements & Traceability** — client-specific RTMs, optional Document Agent mapping from your BRD/FSD/test cases, reviewed source references, task/subtask progress, coverage, impact review and Excel export. Assignment and task linking stay manual.
 - **Tasks & Subtasks** — assignment, dates, follow-up, comments, evidence and lifecycle tracking.
-- **Communications Hub** — user-owned Gmail and Discord messages, manual communications, selective task creation, and existing shared inquiry handling.
+- **Work Hub** — Email, Discord, GitHub and Manual Logs. Personal GitHub tokens pull created/assigned issues from selected repositories, with local QA status and task/subtask links. Imported content stays private per user.
 - **Document Creation** — DRF, BRD, FSD, Test Case and Sign-Off workflows, including direct structured BRD → FSD handoff.
 - **Document History** — compact Active/Archive tracking for DocHub documents.
 - **Reports** — project/task/user workload and activity reporting.

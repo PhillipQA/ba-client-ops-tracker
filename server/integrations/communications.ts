@@ -1,3 +1,4 @@
+import { registerGithub } from './github'
 import { gmailBodyText, gmailWindowStart, syncGmailPages } from './gmail-content'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
@@ -64,7 +65,7 @@ export function registerCommunications(app: Express, deps: {
   const current = (req: Request) => (req as any).authUser
   const guard: Middleware = async (req, res, next) => {
     try { await liveUser(current(req)); res.setHeader('Cache-Control','no-store'); next() }
-    catch(e) { res.status(e instanceof IntegrationError ? e.status : 503).json({error:e instanceof Error ? e.message : 'Communications unavailable.'}) }
+    catch(e) { res.status(e instanceof IntegrationError ? e.status : 503).json({error:e instanceof Error ? e.message : 'Work Hub unavailable.'}) }
   }
   const wrap = (fn: (req: Request, res: Response) => Promise<any>): Middleware => async (req,res) => {
     try { if (!db) throw new IntegrationError('Cloud storage is required for private communications.',503); await fn(req,res) }
@@ -90,10 +91,10 @@ export function registerCommunications(app: Express, deps: {
   }
   const liveUser = async (user: any, settingsAccess = false) => {
     const org = await deps.organizationById(user.organizationId)
-    if (!org || org.status !== 'Active' || !org.enabledModules.includes('inbox')) throw new IntegrationError('Communications is disabled for this account.',403)
+    if (!org || org.status !== 'Active' || !org.enabledModules.includes('inbox')) throw new IntegrationError('Work Hub is disabled for this account.',403)
     const {data,error}=await db.from('app_users').select('id,role,status,modules').eq('organization_id',user.organizationId).eq('id',user.id).is('deleted_at',null).maybeSingle()
     if (error || !data || data.status !== 'Active') throw new IntegrationError('This user is unavailable.',403)
-    if (settingsAccess ? data.role !== 'Administrator' || !org.enabledModules.includes('settings') : data.role !== 'Administrator' && !data.modules?.includes('inbox')) throw new IntegrationError(settingsAccess ? 'Account Administrator with Settings access is required.' : 'Communications access is required.',403)
+    if (settingsAccess ? data.role !== 'Administrator' || !org.enabledModules.includes('settings') : data.role !== 'Administrator' && !data.modules?.includes('inbox')) throw new IntegrationError(settingsAccess ? 'Account Administrator with Settings access is required.' : 'Work Hub access is required.',403)
     return user.organizationId as string
   }
   const gmailGate: Middleware = async (req,res,next) => { try { await liveUser(current(req)); next() } catch(e) { res.status(e instanceof IntegrationError ? e.status : 503).json({error:e instanceof Error ? e.message : 'Gmail access unavailable.'}) } }
@@ -159,7 +160,7 @@ export function registerCommunications(app: Express, deps: {
     const filtered = (head=false) => {
       let query = db.from('user_communications').select('*', paginated ? {count:'exact',head} : {}).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id)
       if (paginated) {
-        query = tab === 'Archived' ? query.eq('status','Archived') : query.neq('status','Archived')
+        query = tab === 'Archived' || req.query.archived === 'true' ? query.eq('status','Archived') : query.neq('status','Archived')
         if (['Gmail','Discord','Manual'].includes(tab)) query = query.eq('source',tab)
         if (tab === 'Gmail' && label) query = query.contains('source_labels',[label])
       }
@@ -381,6 +382,7 @@ export function registerCommunications(app: Express, deps: {
     const grant=await google('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:config.credentials.clientId,client_secret:config.credentials.clientSecret,refresh_token:refresh,grant_type:'refresh_token'})})
     return String(grant.access_token)
   }
+  registerGithub(app,{db,requireAuth:deps.requireAuth,requireTenant:deps.requireTenant,guard,load:deps.load,commit:deps.commit,openStatus:deps.openStatus})
   const timer=setInterval(()=>{const now=Date.now();for(const [key,value] of oauthStates) if(value.expires<now) oauthStates.delete(key)},60000);timer.unref()
   return {
     async captureDiscord(message:any,tenantId:string) {

@@ -1,6 +1,6 @@
 # Database setup
 
-For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–18 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
+For a **new Supabase project**, use just **[`setup.sql`](setup.sql)**. Paste the complete file into Supabase SQL Editor and click **Run once**. It includes schema versions 1–19 in dependency order, all current tables, indexes, functions, row security, permissions, and the initial Internal Admin / BXI-Core accounts.
 
 | Deployment situation | What to run |
 | --- | --- |
@@ -48,3 +48,8 @@ Run `migrations/schema-v17-brd-template.sql` once, then deploy v0.6.60 and rebui
 ## Upgrading from v0.6.62 to v0.6.63
 
 Run `migrations/schema-v18-drf-error-logs.sql` once, then deploy v0.6.63 and rebuild. It creates a private tenant and user scoped DRF error table. The service role writes diagnostics; browser users can only see their own entries through the application. Uploaded COR text, DRF field values, and template bytes are not logged. Do not run `setup.sql` on an existing database.
+
+
+## Upgrading from v0.6.74 to v0.6.75
+
+Run `migrations/schema-v19-work-hub-github.sql` once in Supabase SQL Editor, then deploy v0.6.75 and rebuild. It adds two private tables for per-user GitHub connections and issues. No existing Gmail, Discord, document or workspace data is changed. Keep `TENANT_INTEGRATION_MASTER_KEY` unchanged. Do not run `setup.sql` on an existing database. Users connect their personal GitHub tokens inside Work Hub → GitHub → My GitHub settings.

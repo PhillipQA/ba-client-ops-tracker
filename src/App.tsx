@@ -61,7 +61,9 @@ import { getAuthSession, login, logout, type AuthUser } from './auth'
 import { loadCloudStore, resetCloudSession, pendingCloudEdits, loadDiscordInquiries, queueCloudStoreSave, waitForCloudSaves, type CloudStorageStatus } from './cloudStore'
 import Reports from './Reports'
 import Settings, { settingsRequest } from './Settings'
-import CommunicationsHub from './CommunicationsHub'
+import WorkHub from './WorkHub'
+import './communications.css'
+import './github.css'
 import AccountUsers from './AccountUsers'
 import ThemePreferences from './ThemePreferences'
 import { askBAAssistant, type AIMessage, type AISuggestion } from './ai'
@@ -311,7 +313,7 @@ const labels: Record<View, string> = {
   action: 'My Action Center',
   clients: 'Clients',
   projects: 'Projects',
-  inbox: 'Communications Hub',
+  inbox: 'Work Hub',
   items: 'Tasks',
   documents: 'Document Creation',
   reports: 'Reports',
@@ -326,7 +328,7 @@ const navItems: { id: AppModule; label: string; icon: typeof LayoutDashboard }[]
   { id: 'action', label: 'Action Center', icon: LayoutDashboard },
   { id: 'clients', label: 'Clients', icon: Users },
   { id: 'projects', label: 'Projects', icon: BriefcaseBusiness },
-  { id: 'inbox', label: 'Communications Hub', icon: Inbox },
+  { id: 'inbox', label: 'Work Hub', icon: Inbox },
   { id: 'items', label: 'Tasks', icon: Archive },
   { id: 'requirements', label: 'Requirements & Traceability', icon: Table2 },
   { id: 'documents', label: 'Document Creation', icon: FileText },
@@ -1570,7 +1572,8 @@ function App() {
 
         {!selectedClient && !selectedProject && view === 'inbox' && hasModule('inbox') && (
           <section className="page-stack">
-            <CommunicationsHub clients={store.clients} projects={store.projects} accounts={store.accounts} currentUser={currentUser} onTaskCreated={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
+            <WorkHub key={`${currentUser.organizationId}:${currentUser.id}`} tasks={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} currentUser={currentUser} onTaskCreated={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
+            <details className="work-hub-shared-inquiries"><summary>Existing shared inquiries</summary>
             <div className="callout"><Inbox size={22} /><div><strong>Capture first, classify later.</strong><p>Client questions can stay here until you know whether they should become a requirement, issue, decision, or simply be answered.</p></div></div>
             <div className="panel">
               <div className="panel-heading"><div><h2>Existing shared inquiries</h2><p>Continue managing inquiries created in the earlier shared workspace workflow.</p></div><div className="inquiry-heading-actions">{newExternalInquiryCount > 0 && <button className="secondary" type="button" onClick={() => setNewExternalInquiryIds([])}>{newExternalInquiryCount} new · Mark seen</button>}{canWrite && <button className="primary" onClick={() => { setTaskPreset({ type: 'Inquiry' }); setModal('item') }}><Plus size={18} /> Capture inquiry</button>}</div></div>
@@ -1589,6 +1592,7 @@ function App() {
                 })}</div> : <Empty text="No archived Discord inquiries yet." />}
               </details>
             </div>
+            </details>
           </section>
         )}
 

@@ -17,11 +17,11 @@ export function GmailAccountSettings(){
     const replacing=Boolean(oauthJson || clientId || secret)
     if((remove || (config?.configured && replacing)) && !window.confirm(remove?'Remove this account’s Gmail OAuth credentials? Users will need to reconnect if you configure Gmail again.':'Replace this account’s Gmail OAuth credentials? Connected users will need to reconnect.'))return
     setBusy(true);setMessage('')
-    try{await request('/api/account/gmail',remove?'DELETE':'PUT',remove?{}:{enabled,...(replacing?{oauthJson:oauthJson || undefined,clientId,clientSecret:secret}: {})});setOauthJson('');setFilename('');setClientId('');setSecret('');await load();setMessage(remove?'Account Gmail credentials removed.':'Account Gmail configuration saved. Users can connect from Communications Hub.')}
+    try{await request('/api/account/gmail',remove?'DELETE':'PUT',remove?{}:{enabled,...(replacing?{oauthJson:oauthJson || undefined,clientId,clientSecret:secret}: {})});setOauthJson('');setFilename('');setClientId('');setSecret('');await load();setMessage(remove?'Account Gmail credentials removed.':'Account Gmail configuration saved. Users can connect from Work Hub.')}
     catch(e){setMessage(e instanceof Error?e.message:'Could not save Gmail settings.')}finally{setBusy(false)}
   }
   return <section className="panel account-integration-card calendar-card">
-    <div className="panel-heading"><div><h2>Gmail — account setup</h2><p>Use this account’s Google OAuth Web client. Each user authorizes their own mailbox in Communications Hub.</p></div></div>
+    <div className="panel-heading"><div><h2>Gmail — account setup</h2><p>Use this account’s Google OAuth Web client. Each user authorizes their own mailbox in Work Hub.</p></div></div>
     {config && <><p>Internal Admin: {config.platformEnabled?'Enabled':'Disabled'} · Credentials: {config.configured?'Saved':'Not configured'}</p>
       {!config.encryptionReady && <p role="alert">Configure the existing integration master key before saving credentials.</p>}
       <label>Authorized redirect URI — add this exact address in Google Cloud<input readOnly value={config.expectedRedirectUri} onFocus={e=>e.target.select()} /></label>
