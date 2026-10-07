@@ -534,7 +534,7 @@ function App() {
           setStore(cloud)
           localStorage.setItem(tenantStorageKey, JSON.stringify(cloud))
           setLastCloudSync(result.updatedAt || new Date().toISOString())
-          setCloudMessage('Supabase synced')
+          setCloudMessage('Database synced')
           setCloudStatus('synced')
           if (sourceVersion < STORE_SCHEMA_VERSION) {
             void queueCloudStoreSave(cloud).catch((error) => console.error('Could not save migrated tracker data:', error))
@@ -545,7 +545,7 @@ function App() {
         const saved = await queueCloudStoreSave(local)
         if (cancelled) return
         setLastCloudSync(saved.updatedAt || new Date().toISOString())
-        setCloudMessage('Supabase initialized from this browser')
+        setCloudMessage('Database initialized from this browser')
         setCloudStatus('synced')
       } catch (error) {
         if (cancelled) return
@@ -572,7 +572,7 @@ function App() {
         localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(refreshed))
         setLastCloudSync(result.updatedAt || new Date().toISOString())
         setCloudStatus('synced')
-        setCloudMessage('Supabase synced')
+        setCloudMessage('Database synced')
       }
     } catch (error) {
       if (!signal?.aborted) {
@@ -615,7 +615,7 @@ function App() {
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(normalized))
     if (cloudStatus === 'local') return
     setCloudStatus('saving')
-    setCloudMessage('Saving to Supabase…')
+    setCloudMessage('Saving to database…')
     void queueCloudStoreSave(normalized).then((result) => {
       if (!result.configured) {
         setCloudStatus('local')
@@ -624,7 +624,7 @@ function App() {
       }
       setLastCloudSync(result.updatedAt || new Date().toISOString())
       setCloudStatus('synced')
-      setCloudMessage('Supabase synced')
+      setCloudMessage('Database synced')
     }).catch((error) => {
       console.error(error)
       setCloudStatus('error')
@@ -643,7 +643,7 @@ function App() {
       const saved = await queueCloudStoreSave(savedState)
       if (!saved.configured) throw new Error('Cloud storage is unavailable. Your RTM was not saved.')
       setLastCloudSync(saved.updatedAt || new Date().toISOString())
-      setCloudStatus('synced'); setCloudMessage('Supabase synced')
+      setCloudStatus('synced'); setCloudMessage('Database synced')
       const refreshed = await loadCloudStore<Store>().catch(() => null)
       if (refreshed?.data) savedState = normalizeStore(refreshed.data)
     }
@@ -670,7 +670,7 @@ function App() {
         const saved = await queueCloudStoreSave(next)
         if (!saved.configured) throw new Error('The server could not save this change. Retry when storage is available.')
         setLastCloudSync(saved.updatedAt || new Date().toISOString())
-        setCloudStatus('synced'); setCloudMessage('Supabase synced')
+        setCloudStatus('synced'); setCloudMessage('Database synced')
       }
       storeRef.current = next; setStore(next)
       localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(next))
@@ -713,7 +713,7 @@ function App() {
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
     if (result.updatedAt) setLastCloudSync(result.updatedAt)
     setCloudStatus('synced')
-    setCloudMessage('Supabase synced')
+    setCloudMessage('Database synced')
   }
 
   const applyCommentMutation = (result: TaskCommentMutationResult) => {
@@ -728,22 +728,22 @@ function App() {
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
     if (result.updatedAt) setLastCloudSync(result.updatedAt)
     setCloudStatus('synced')
-    setCloudMessage('Comment saved · Supabase synced')
+    setCloudMessage('Comment saved · Database synced')
   }
 
   const syncCloudNow = async () => {
     setCloudStatus('saving')
-    setCloudMessage('Saving to Supabase…')
+    setCloudMessage('Saving to database…')
     try {
       const result = await queueCloudStoreSave({ ...store, schemaVersion: STORE_SCHEMA_VERSION })
       if (!result.configured) {
         setCloudStatus('local')
-        setCloudMessage('Supabase is not configured yet')
+        setCloudMessage('Database is not configured yet')
         return
       }
       setLastCloudSync(result.updatedAt || new Date().toISOString())
       setCloudStatus('synced')
-      setCloudMessage('Supabase synced')
+      setCloudMessage('Database synced')
     } catch (error) {
       console.error(error)
       setCloudStatus('error')
@@ -1117,13 +1117,13 @@ function App() {
     const candidate = reconcileRtm(current, { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...current.workEvents].slice(0, 10000) }, authUser)
     if (cloudStatus !== 'local') {
       setCloudStatus('saving')
-      setCloudMessage('Saving to Supabase…')
+      setCloudMessage('Saving to database…')
       try {
         const result = await queueCloudStoreSave(candidate)
-        if (!result.configured) throw new Error('Cloud storage is unavailable. Your edit was not saved; please retry when Supabase is connected.')
+        if (!result.configured) throw new Error('Cloud storage is unavailable. Your edit was not saved; please retry when the database is connected.')
         setLastCloudSync(result.updatedAt || new Date().toISOString())
         setCloudStatus('synced')
-        setCloudMessage('Supabase synced')
+        setCloudMessage('Database synced')
       } catch (error) {
         setCloudStatus('error')
         setCloudMessage(error instanceof Error ? error.message : 'Cloud save failed')
@@ -2266,7 +2266,7 @@ function SubtaskEvidencePanel({ item, onMutation }: { item: WorkItem; onMutation
 
   return <section className="subtask-evidence-panel span-2">
     <div className="subtask-evidence-heading">
-      <div><strong><Paperclip size={15} /> Activity evidence</strong><span>Attach a file, drag and drop, or paste a screenshot with Ctrl+V. Files are stored privately in Supabase.</span></div>
+      <div><strong><Paperclip size={15} /> Activity evidence</strong><span>Attach a file, drag and drop, or paste a screenshot with Ctrl+V. Files are stored privately in the database.</span></div>
       <span className="count-pill">{evidence.length}</span>
     </div>
     <div

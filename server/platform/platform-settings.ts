@@ -21,7 +21,7 @@ export function registerPlatformSettings(app: Express, d: any) {
       const { data, error } = await d.db.from('tenant_integrations').select('tenant_id,integration_type,is_enabled,connection_status,last_tested_at')
       integrationsReady = !error; health = data || []
     }
-    res.json({ version: APP_VERSION, supabaseConfigured: Boolean(d.db), encryptionReady, integrationsReady, health,
+    res.json({ version: APP_VERSION, databaseProvider: process.env.DATABASE_PROVIDER === 'postgres' ? 'PostgreSQL' : 'Supabase', databaseConfigured: Boolean(d.db), encryptionReady, integrationsReady, health,
       legacy: { discord: Boolean(process.env.DISCORD_BOT_TOKEN), openai: Boolean(process.env.OPENAI_API_KEY) } })
   }))
   app.get('/api/internal-admin/organizations/:id/system', ...scope, wrap(async (req: any, res: any) => {
