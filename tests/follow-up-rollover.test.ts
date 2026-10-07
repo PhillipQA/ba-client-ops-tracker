@@ -31,13 +31,21 @@ test('open Subtask follow-up moves once and creates an immutable System trail', 
   assert.equal(repeated.state.workEvents.length, 1)
 })
 
-test('resolved, configured closed, waiting-on Done, parent tasks, today and future dates do not roll', () => {
+test('open parent task follow-up rolls into today and preserves its System trail', () => {
+  const parent = subtask({ id: 'parent', parentTaskId: undefined })
+  const result = rollOverOpenSubtaskFollowUps(state([parent]), { today: '2026-09-23' })
+  assert.equal(result.state.items[0].followUpDate, '2026-09-23')
+  assert.equal(result.state.workEvents[0].itemKind, 'Task')
+  assert.equal(result.state.workEvents[0].parentTaskId, undefined)
+  assert.match(result.state.items[0].comments[0].text, /task remains open/)
+})
+
+test('resolved, configured closed, waiting-on Done, today and future dates do not roll', () => {
   const items = [
     subtask({ id: 'resolved', status: 'Resolved' }),
     subtask({ id: 'custom', status: 'Accepted' }),
     subtask({ id: 'waiting-done', waitingOn: 'Done' }),
     subtask({ id: 'resolved-date', resolvedDate: '2026-09-22' }),
-    subtask({ id: 'parent', parentTaskId: undefined }),
     subtask({ id: 'today', followUpDate: '2026-09-23' }),
     subtask({ id: 'future', followUpDate: '2026-09-24' }),
   ]
