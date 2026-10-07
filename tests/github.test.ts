@@ -193,7 +193,7 @@ test('repository discovery supports pagination and unavailable storage gives mig
 
 test('Work Hub exposes exactly Email, Discord, GitHub and Manual Logs with ticket filters',()=>{
   const currentUser:any={id:'user-a',name:'Alice',role:'Contributor',modules:['inbox','items'],organizationId:'tenant'},props={clients:[],projects:[],accounts:[],tasks:[],currentUser,onTaskCreated:async()=>{}}
-  assert.deepEqual(WORK_HUB_TABS.map(t=>t.label),['Email','Discord','GitHub','Manual Logs'])
-  const hub=renderToStaticMarkup(createElement(WorkHub,props));assert.match(hub,/>Work Hub</);assert.match(hub,/>Email</);assert.match(hub,/>GitHub</);assert.match(hub,/>Manual Logs</);assert.ok(!hub.includes('My Communications'))
+  assert.deepEqual(WORK_HUB_TABS.map(t=>t.label),['Email','Discord','GitHub / GitLab','Manual Logs'])
+  const hub=renderToStaticMarkup(createElement(WorkHub,props));assert.match(hub,/>Work Hub</);assert.match(hub,/>Email</);assert.match(hub,/>GitHub \/ GitLab</);assert.match(hub,/>Manual Logs</);assert.ok(!hub.includes('My Communications'))
   const github=renderToStaticMarkup(createElement(GithubHub,props));assert.match(github,/Assigned to me/);assert.match(github,/Created by me/);assert.match(github,/All my tickets/);assert.match(github,/My GitHub settings/);assert.match(github,/QA status/)
 })

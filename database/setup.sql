@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v0.6.75: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 19. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v0.6.76: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 20. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -19,7 +19,7 @@ begin
       raise exception 'Supabase role % is missing. Use a new Supabase project for this setup.', object_name;
     end if;
   end loop;
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     if to_regclass(format('public.%I', object_name)) is not null then
       raise exception 'Fresh setup stopped: public.% already exists. No changes were applied. Use newer migrations for an existing installation; do not replay old migrations.', object_name;
     end if;
@@ -1307,6 +1307,60 @@ alter table public.user_github_issues enable row level security;
 revoke all on public.user_github_connections, public.user_github_issues from public, anon, authenticated;
 grant all on public.user_github_connections, public.user_github_issues to service_role;
 
+-- Included source: migrations/schema-v20-work-hub-gitlab.sql
+-- SHA-256: 98ec0643d2e9a2ee7ac285d75201db4df1f1eafa323e1dd5f2499dee540f132b
+-- Apply once to existing v0.6.75 databases. Private GitLab data stays outside tenant_state.
+
+create table if not exists public.user_gitlab_connections (
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  user_id text not null references public.app_users(id) on delete cascade,
+  instance_url text not null,
+  gitlab_user_id bigint not null,
+  gitlab_login text not null,
+  encrypted_token text,
+  repositories jsonb not null default '[]'::jsonb,
+  sync_cursor jsonb,
+  last_synced_at timestamptz,
+  retry_after timestamptz,
+  revision uuid not null default gen_random_uuid(),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, user_id)
+);
+create table if not exists public.user_gitlab_issues (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  owner_user_id text not null references public.app_users(id) on delete cascade,
+  instance_url text not null,
+  gitlab_user_id bigint not null,
+  gitlab_id bigint not null,
+  number integer not null,
+  repository text not null,
+  title text not null default '',
+  body text not null default '',
+  html_url text not null,
+  state text not null check (state in ('open','closed')),
+  state_reason text,
+  creator text not null,
+  assignees jsonb not null default '[]'::jsonb,
+  labels jsonb not null default '[]'::jsonb,
+  milestone text not null default '',
+  comments_count integer not null default 0,
+  created_at timestamptz not null,
+  updated_at timestamptz not null,
+  imported_at timestamptz not null default now(),
+  created_by_me boolean not null default false,
+  assigned_to_me boolean not null default false,
+  available boolean not null default true,
+  qa_status text not null default 'Not started' check (qa_status in ('Not started','In progress','Needs retest','Passed','Failed','Blocked')),
+  linked_task_id text,
+  unique (tenant_id, owner_user_id, instance_url, gitlab_user_id, gitlab_id)
+);
+create index if not exists user_gitlab_issues_owner_recent on public.user_gitlab_issues(tenant_id,owner_user_id,instance_url,gitlab_user_id,updated_at desc);
+alter table public.user_gitlab_connections enable row level security;
+alter table public.user_gitlab_issues enable row level security;
+revoke all on public.user_gitlab_connections, public.user_gitlab_issues from public, anon, authenticated;
+grant all on public.user_gitlab_connections, public.user_gitlab_issues to service_role;
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1320,7 +1374,7 @@ do $setup_grants$
 declare
   object_name text;
 begin
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     execute format('alter table public.%I enable row level security', object_name);
     execute format('revoke all on table public.%I from public, anon, authenticated', object_name);
     execute format('grant all on table public.%I to service_role', object_name);
@@ -1330,4 +1384,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 19 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 20 as schema_version;

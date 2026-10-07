@@ -53,3 +53,7 @@ Run `migrations/schema-v18-drf-error-logs.sql` once, then deploy v0.6.63 and reb
 ## Upgrading from v0.6.74 to v0.6.75
 
 Run `migrations/schema-v19-work-hub-github.sql` once in Supabase SQL Editor, then deploy v0.6.75 and rebuild. It adds two private tables for per-user GitHub connections and issues. No existing Gmail, Discord, document or workspace data is changed. Keep `TENANT_INTEGRATION_MASTER_KEY` unchanged. Do not run `setup.sql` on an existing database. Users connect their personal GitHub tokens inside Work Hub → GitHub → My GitHub settings.
+
+## Upgrading from v0.6.75 to v0.6.76
+
+Run `migrations/schema-v20-work-hub-gitlab.sql` in Supabase SQL Editor before deploying v0.6.76. It adds two private GitLab tables; existing GitHub connections are retained. If upgrading from v0.6.74, run schema-v19 first, then schema-v20. Keep `TENANT_INTEGRATION_MASTER_KEY` unchanged. For an existing database, use migrations rather than `setup.sql`. Users choose GitLab in Work Hub → GitHub / GitLab, enter their GitLab website URL and personal token with read_api scope, then select projects.

@@ -44,7 +44,7 @@ const commands = [
   ['--import', 'tsx', '--test', '--test-name-pattern=' + pattern, ...files],
   ['--import', 'tsx', '--test', 'tests/functional-integrity.test.ts'],
   ['--import', 'tsx', '--test', 'tests/fsd-source-analysis.test.ts', 'tests/fsd-available.test.ts', 'tests/fsd-custom-features.test.ts'],
-  ['--import', 'tsx', '--test', 'tests/github.test.ts'],
+  ['--import', 'tsx', '--test', 'tests/github.test.ts', 'tests/gitlab.test.ts'],
   ['--import', 'tsx', '--test', '--test-name-pattern=Gmail functional sync', 'tests/communications.test.ts'],
   ['--import', 'tsx', 'tests/functional-routes.ts'],
 ]

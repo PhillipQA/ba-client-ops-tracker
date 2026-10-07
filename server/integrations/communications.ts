@@ -1,3 +1,4 @@
+import { registerGitlab } from './gitlab'
 import { registerGithub } from './github'
 import { gmailBodyText, gmailWindowStart, syncGmailPages } from './gmail-content'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
@@ -383,6 +384,7 @@ export function registerCommunications(app: Express, deps: {
     return String(grant.access_token)
   }
   registerGithub(app,{db,requireAuth:deps.requireAuth,requireTenant:deps.requireTenant,guard,load:deps.load,commit:deps.commit,openStatus:deps.openStatus})
+  registerGitlab(app,{db,requireAuth:deps.requireAuth,requireTenant:deps.requireTenant,guard,load:deps.load,commit:deps.commit,openStatus:deps.openStatus})
   const timer=setInterval(()=>{const now=Date.now();for(const [key,value] of oauthStates) if(value.expires<now) oauthStates.delete(key)},60000);timer.unref()
   return {
     async captureDiscord(message:any,tenantId:string) {

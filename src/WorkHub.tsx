@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react'
-import GithubHub from './GithubHub'
+import GitProviderHub from './GitProviderHub'
 import { WORK_HUB_TABS } from './github-model'
 import type { Client, Project, UserAccount, WorkItem } from './types'
 
@@ -118,7 +118,7 @@ export default function WorkHub({clients,projects,accounts,tasks,currentUser,onT
   const pages=Math.max(1,Math.ceil(total/view.pageSize))
   const openMessage=(item:Message)=>{setSelected(item);setOpenCount(value=>value+1);setSelectedThread([]);setThreadPage(1);setThreadTotal(0);setThreadError('');setThreadRetry(value=>value+1);setCompose(false);setTitle(item.subject || 'Follow up');setDescription('');setClientId('');setProjectId('');setAssignee(currentUser.id)}
   return <section className="communications-hub page-stack">
-    <div className="panel communications-heading"><div><h2>Work Hub</h2><p>Your email, Discord messages, GitHub tickets and manual logs in one place. Your imported content stays private; you choose what to share through tasks.</p></div><div className="integration-actions"><button className="secondary" onClick={()=>setConfig(!config)}>My integration settings</button><button className="primary" disabled={currentUser.role==='Viewer'} onClick={()=>{setTab('Manual');setArchived(false);setSelected(null);setCompose(true);setTitle('');setDescription('')}}>+ New manual log</button></div></div>
+    <div className="panel communications-heading"><div><h2>Work Hub</h2><p>Your email, Discord messages, GitHub/GitLab tickets and manual logs in one place. Your imported content stays private; you choose what to share through tasks.</p></div><div className="integration-actions"><button className="secondary" onClick={()=>setConfig(!config)}>My integration settings</button><button className="primary" disabled={currentUser.role==='Viewer'} onClick={()=>{setTab('Manual');setArchived(false);setSelected(null);setCompose(true);setTitle('');setDescription('')}}>+ New manual log</button></div></div>
     {message && <p className="settings-message" role="status">{message}</p>}
     {gmailStatus && <p className="settings-message" role="status">{gmailStatus}</p>}
     {config && settings && <div className="panel communication-settings"><div className="panel-heading"><h2>My integration settings</h2></div>
@@ -127,12 +127,12 @@ export default function WorkHub({clients,projects,accounts,tasks,currentUser,onT
         {labels.length>0 && <div className="communication-labels">{labels.map(label=><label key={label.id}><input type="checkbox" checked={settings.gmailLabels.includes(label.id)} onChange={e=>setSettings({...settings,gmailLabels:e.target.checked?[...settings.gmailLabels,label.id]:settings.gmailLabels.filter(id=>id!==label.id)})}/>{label.name}</label>)}</div>}
         {settings.gmailLabels.length>0 && !labels.length && <p>Monitoring {settings.gmailLabels.length} saved label{settings.gmailLabels.length===1?'':'s'}. Refresh labels to change them.</p>}
       </div><div><h3>Discord</h3><p>Link your personal Discord user ID. The existing workspace bot routes mentions of you and your DMs to the bot into your private Hub.</p><label>My Discord user ID<input value={settings.discordUserId} onChange={e=>setSettings({...settings,discordUserId:e.target.value})} placeholder="Numeric Discord user ID" /></label><label className="checkbox-label"><input type="checkbox" checked={settings.captureMentions} onChange={e=>setSettings({...settings,captureMentions:e.target.checked})}/>Capture mentions of me</label><small>Personal person-to-person DMs cannot be captured by the bot. The bot needs access to the server channel and message content.</small></div></div>
-      <p>GitHub uses your own personal token. <button className="secondary" onClick={()=>{setTab('GitHub');setConfig(false);setSelected(null);setCompose(false)}}>Open GitHub settings</button></p>
+      <p>GitHub and GitLab use your own personal tokens. <button className="secondary" onClick={()=>{setTab('GitHub');setConfig(false);setSelected(null);setCompose(false)}}>Open Git ticket settings</button></p>
       <button className="primary" disabled={busy} onClick={saveSettings}>Save my settings</button>
     </div>}
     <div className="panel communication-results">
       <div className="communication-tabs" role="group" aria-label="Work Hub source">{WORK_HUB_TABS.map(({id,label})=><button key={id} className={tab===id?'active':''} aria-pressed={tab===id} onClick={()=>{setTab(id);setPage(1);setArchived(false);setSelected(null);setCompose(false)}}>{label}</button>)}</div>
-      {tab==='GitHub' ? <GithubHub key={viewKey} clients={clients} projects={projects} accounts={accounts} tasks={tasks} currentUser={currentUser} onTaskCreated={onTaskCreated}/> : <>
+      {tab==='GitHub' ? <GitProviderHub key={viewKey} clients={clients} projects={projects} accounts={accounts} tasks={tasks} currentUser={currentUser} onTaskCreated={onTaskCreated}/> : <>
 
       <div className="communication-toolbar">
         {tab==='Gmail' && settings?.gmailLabels.length ? <label className="communication-label-filter">Gmail label <select value={labelFilter} onChange={e=>{setLabelFilter(e.target.value);setPage(1)}}><option value="">All monitored labels</option>{settings.gmailLabels.map((id,index)=><option key={id} value={id}>{labels.find(x=>x.id===id)?.name || (labelsLoading?`Loading label ${index+1}…`:`Unavailable label ${index+1}`)}</option>)}</select></label> : <span className="communication-view-title">{tab==='Manual'?'Manual logs':tab==='Gmail'?'Email messages':'Discord messages'}</span>}
