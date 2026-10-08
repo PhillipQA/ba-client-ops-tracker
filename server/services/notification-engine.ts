@@ -87,7 +87,7 @@ export function reconcileNotifications(state: any, options: {
       add(assigneeId, { ...base, dedupeBase: `event:${eventId}:assigned`, type: event.action, severity: 'info', title: event.action === 'assigned' ? 'Work assigned to you' : 'Work reassigned to you', message: event.summary })
       if (event.action === 'reassigned' && event.oldValue && String(event.oldValue) !== assigneeId) add(String(event.oldValue), { ...base, dedupeBase: `event:${eventId}:removed`, type: 'reassigned', severity: 'info', title: 'Work reassigned', message: event.summary })
     } else if (event.action === 'follow_up_auto_moved') {
-      for (const [recipient, scope] of recipientsWithAdmins(assigneeId)) add(recipient, { ...base, dedupeBase: `event:${eventId}:followup`, scope, type: 'follow_up_moved', severity: 'warning', title: 'Subtask follow-up moved', message: event.summary })
+      for (const [recipient, scope] of recipientsWithAdmins(assigneeId)) add(recipient, { ...base, dedupeBase: `event:${eventId}:followup`, scope, type: 'follow_up_moved', severity: 'warning', title: `${event.itemKind === 'Task' ? 'Task' : 'Subtask'} follow-up moved`, message: event.summary })
     } else if (event.action === 'reopened') {
       for (const [recipient, scope] of recipientsWithAdmins(assigneeId)) if (recipient !== actorId) add(recipient, { ...base, dedupeBase: `event:${eventId}:reopened`, scope, type: 'reopened', severity: 'warning', title: 'Work reopened', message: event.summary })
     } else if (event.action === 'completed') {
