@@ -1,6 +1,8 @@
 import { businessDateKey, useBusinessDate } from './businessDate'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 import { workspaceAutoRefreshAllowed } from './activePolling'
+import { workHubSync, WORK_HUB_INTEGRATIONS } from './workHubSync'
+import { useWorkHubSync } from './useWorkHubSync'
 import RequirementsTraceability from './RequirementsTraceability'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
@@ -432,6 +434,9 @@ function App() {
   const [notificationBusy, setNotificationBusy] = useState(false)
   const [rtmContext, setRtmContext] = useState<{ clientId?: string; projectId?: string }>({})
   const pageActive = usePageActive()
+  const hubSync = useWorkHubSync()
+  const hubSyncing = hubSync.allRunning || WORK_HUB_INTEGRATIONS.some(id => hubSync.integrations[id].phase === 'syncing')
+  useEffect(() => { void workHubSync.setSession(authUser) }, [authUser?.id, authUser?.organizationId, authUser?.accountType, authUser?.status, authUser?.lastLoginAt, authUser?.modules.includes('inbox')])
   const storeRef = useRef(store)
   const workspaceRefreshBusy = useRef(false)
   const [refreshingCloud, setRefreshingCloud] = useState(false)
@@ -756,6 +761,7 @@ function App() {
     setLoginError('')
     try {
       const user = await login(account, username, password)
+      void workHubSync.setSession(user, true)
       setAuthUser(user)
       if (user.accountType === 'platform' && user.isPlatformAdmin) {
         setCloudStatus('synced')
@@ -779,6 +785,7 @@ function App() {
     setLogoutBusy(true)
     try {
       await logout()
+      void workHubSync.setSession(null)
       setAuthUser(null)
       setProfileOpen(false)
       setSelectedClientId(null)
@@ -1371,7 +1378,7 @@ function App() {
         <header className="topbar">
           <div><p className="eyebrow">{currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}</p><div className="record-title-line"><h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1>{canWrite && ((selectedClient && hasModule('clients')) || (selectedProject && hasModule('projects'))) && <button className="secondary record-title-edit" onClick={() => setEditingRecord(selectedProject ? { kind: 'projects', id: selectedProject.id } : { kind: 'clients', id: selectedClient!.id })}><Pencil size={16} />{selectedProject ? 'Edit project' : 'Edit client'}</button>}</div></div>
           <div className="top-actions">
-            {currentUser.accountType !== 'platform' && <button className="secondary" disabled={refreshingCloud || cloudStatus === 'checking' || cloudStatus === 'saving' || Boolean(saveConflict)} onClick={() => void refreshWorkspace(true)} title="Fetch the latest workspace"><RefreshCw size={16} />{refreshingCloud ? 'Refreshing…' : 'Refresh now'}</button>}
+            {currentUser.accountType !== 'platform' && <button className="secondary" disabled={refreshingCloud || hubSyncing || cloudStatus === 'checking' || cloudStatus === 'saving' || Boolean(saveConflict)} onClick={() => { void refreshWorkspace(true); void workHubSync.syncAll() }} title="Fetch the latest workspace and sync all connected Work Hub integrations"><RefreshCw size={16} />{refreshingCloud || hubSyncing ? 'Refreshing…' : 'Refresh now'}</button>}
             {currentUser.accountType !== 'platform' && <NotificationCenter notifications={store.notifications} clients={store.clients} projects={store.projects} isAdmin={currentUser.role === 'Administrator'} busy={notificationBusy} onOpen={openNotification} onAction={handleNotificationAction} onReadAll={handleReadAllNotifications} onRefresh={() => void refreshNotifications()} />}
             <span className="top-role-pill">{view === 'internal-admin' && currentUser.accountType === 'platform' ? 'Platform Admin' : currentUser.role}</span>
             {view !== 'internal-admin' && canWrite && hasModule('clients') && <button className="secondary" onClick={() => setModal('client')}><Users size={17} /> Add client</button>}
