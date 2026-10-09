@@ -17,7 +17,7 @@ const google = async (url: string, init: RequestInit) => {
   if (!response.ok) {
     const message = data.error_description || data.error?.message || 'Gmail request failed.'
     if (response.status === 429 || (response.status === 403 && /quota|rate.?limit|userRateLimitExceeded/i.test(message)))
-      throw new IntegrationError('Gmail quota is temporarily exceeded. Wait a minute before checking again; automatic sync will retry.',429)
+      throw new IntegrationError('Gmail quota is temporarily exceeded. Wait a minute, then click Sync Gmail again.',429)
     throw new IntegrationError(message, 502)
   }
   return data
@@ -325,7 +325,7 @@ export function registerCommunications(app: Express, deps: {
     const ongoing=gmailSyncJobs.get(key)
     if(ongoing) {res.json(await ongoing);return}
     const quotaUntil=gmailQuotaCooldowns.get(key) || 0
-    if(Date.now()<quotaUntil) throw new IntegrationError('Gmail quota is temporarily exceeded. Wait a minute before checking again; automatic sync will retry.',429)
+    if(Date.now()<quotaUntil) throw new IntegrationError('Gmail quota is temporarily exceeded. Wait a minute, then click Sync Gmail again.',429)
     const backfillUntil=gmailBackfillCooldowns.get(key) || 0
     if(Date.now()<backfillUntil) {res.json({imported:0,updated:0,pages:0,hasMore:true,retryAfterSeconds:Math.ceil((backfillUntil-Date.now())/1000)});return}
     const job=(async()=>{

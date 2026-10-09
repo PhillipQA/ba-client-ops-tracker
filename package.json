@@ -41,6 +41,7 @@
     "test:github": "node --import tsx --test tests/github.test.ts",
     "test:gitlab": "node --import tsx --test tests/gitlab.test.ts",
     "test:egress": "node --import tsx --test tests/egress.test.ts",
+    "test:work-hub-sync": "node --import tsx --test tests/work-hub-sync.test.ts",
     "test:postgres": "node --import tsx --test tests/postgres-client.test.ts"
   },
   "dependencies": {

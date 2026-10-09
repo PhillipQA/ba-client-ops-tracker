@@ -72,7 +72,9 @@ export function startActivePolling(work: (signal: AbortSignal) => Promise<unknow
 }
 
 export function workspaceAutoRefreshAllowed(view: string, clientId?: string | null, projectId?: string | null) {
+  // Work Hub has one login sync and explicit refresh controls.
+  if (view === 'inbox') return false
   if (clientId || projectId) return true
   // The All Items / Tasks overview is deliberately cache-only until Refresh now.
-  return ['action', 'clients', 'projects', 'inbox', 'requirements', 'documents', 'reports', 'ai'].includes(view)
+  return ['action', 'clients', 'projects', 'requirements', 'documents', 'reports', 'ai'].includes(view)
 }

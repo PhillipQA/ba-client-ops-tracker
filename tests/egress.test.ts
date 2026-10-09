@@ -36,8 +36,16 @@ test('All Items has no automatic reads; selected client/project tabs can refresh
   assert.equal(reads, 0); assert.equal(c.timers.size, 0); stop()
   assert.equal(workspaceAutoRefreshAllowed('items', 'client'), true)
   assert.equal(workspaceAutoRefreshAllowed('items', undefined, 'project'), true)
-  assert.equal(workspaceAutoRefreshAllowed('inbox'), true)
+  assert.equal(workspaceAutoRefreshAllowed('inbox'), false)
   assert.equal(workspaceAutoRefreshAllowed('settings'), false)
+})
+
+test('Work Hub has no workspace or session polling when time passes or focus returns', async () => {
+  const c = clock(); let reads = 0
+  const stop = workspaceAutoRefreshAllowed('inbox') ? startActivePolling(async () => { reads++ }, { interval: 60_000, environment: c.environment }) : () => undefined
+  await c.advance(3_600_000); c.activity(false); c.activity(true); await settle()
+  assert.equal(reads, 0); assert.equal(c.timers.size, 0); stop()
+  assert.equal(workspaceAutoRefreshAllowed('inbox', 'client', 'project'), false)
 })
 
 test('hidden or offline tabs cancel polling; visible tabs resume without overlap', async () => {

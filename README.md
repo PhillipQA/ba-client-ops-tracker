@@ -39,6 +39,18 @@ Upgrade details: [v0.6.60 release notes](docs/releases/v0.6.60.md). For personal
 
 Integration credentials are tenant-scoped where supported. Secrets must not be committed to Git.
 
+### Work Hub sync
+
+- Each connected integration syncs once at sign-in, using its saved labels or repositories. Restoring the same login does not repeat that sync.
+- **Refresh now** in Work Hub syncs every connected integration. The top-bar **Refresh now** also reloads the workspace.
+- **Sync Gmail**, **Sync Discord**, **Sync GitHub**, and **Sync GitLab** refresh only their own source.
+- Work Hub has no periodic polling, automatic page continuation, or focus/tab sync. More pages or a provider limit require another explicit Sync.
+- Saved message and ticket pages are cached for the signed-in user. Filters, pagination, and editing still read or update the saved database as needed.
+- Discord's workspace bot continues capturing linked mentions and DMs to the bot. Sync Discord loads that saved private inbox.
+- Ticket details show saved data. Click the provider's Sync button with a ticket open to load its latest comment.
+
+Run the sync regressions with `npm run test:work-hub-sync` and `npm run test:egress`.
+
 ## Repository map
 
 ```text
