@@ -2449,8 +2449,17 @@ if (!isProduction) {
   app.use(vite.middlewares)
 } else {
   const dist = path.join(projectRoot, 'dist')
-  app.use(express.static(dist))
-  app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
+  app.use(express.static(dist, {
+    setHeaders: (res, filePath) => {
+      if (path.basename(filePath) === 'index.html') res.setHeader('Cache-Control', 'no-store')
+      else if (filePath.startsWith(path.join(dist, 'assets') + path.sep)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    },
+  }))
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/assets/')) { res.status(404).send('Asset not found. Refresh the page to load the latest version.'); return }
+    res.setHeader('Cache-Control', 'no-store')
+    res.sendFile(path.join(dist, 'index.html'))
+  })
 }
 
 const server = app.listen(port, () => {
