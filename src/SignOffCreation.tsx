@@ -1,19 +1,19 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowDown, ArrowUp, Download, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { ArrowDown, ArrowUp, Download, Plus, Trash2 } from 'lucide-react'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
 import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
 import type { Client, Project, WorkItem } from './types'
 import { DocHubOptions, DocHubResult, useDocHubDraft } from './DocHubPanel'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
-import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, SIGNOFF_TITLE, SIGNOFF_PURPOSE, SIGNOFF_SCOPE, SIGNOFF_AUTHORIZATION, formatDeploymentDate, signoffReference, type SignoffInput, type SignoffAttachment } from './signoff'
+import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, SIGNOFF_TITLE, GO_LIVE_TITLE, GO_LIVE_TYPES, GO_LIVE_SECTION_FIELDS, PRODUCTION_SECTION_FIELDS, SIGNOFF_MAX_SIGNATORIES, signoffSectionDefaults, type SignoffFormType, formatDeploymentDate, signoffReference, type SignoffInput, type SignoffAttachment } from './signoff'
 
 type Upload = SignoffAttachment & { id: string; size: number; image: boolean }
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip'
-const emptyPeople = () => Array.from({ length: 3 }, () => ({ name: '', title: '' }))
-function initialDetails(): SignoffInput {
+const emptyPeople = () => Array.from({ length: 2 }, () => ({ name: '', title: '' }))
+function initialDetails(formType: SignoffFormType = 'production'): SignoffInput {
   const now = new Date(), year = String(now.getFullYear())
-  return { clientName: '', site: '', deploymentDate: `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`, deploymentType: DEPLOYMENT_TYPES[0], product: DEPLOYED_PRODUCTS[0], documentYear: year, documentNumber: '1', irippleSignatories: emptyPeople(), clientSignatories: emptyPeople() }
+  return { formType, sections: signoffSectionDefaults(formType), projectName: '', preparedBy: '', documentDate: `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`, goLiveType: GO_LIVE_TYPES[0], clientName: '', site: '', deploymentDate: `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`, deploymentType: DEPLOYMENT_TYPES[0], product: DEPLOYED_PRODUCTS[0], documentYear: year, documentNumber: '1', irippleSignatories: emptyPeople(), clientSignatories: emptyPeople() }
 }
 function base64(file: Blob) {
   return new Promise<string>((resolve, reject) => {
@@ -41,27 +41,53 @@ async function prepareUpload(file: File): Promise<Upload> {
   if (content.size > SIGNOFF_MAX_FILE_BYTES) throw new Error(`${file.name}: prepared image exceeds 5 MB. Choose a smaller image.`)
   return { id: crypto.randomUUID(), name, data: await base64(content), caption: '', size: content.size, image }
 }
-export default function SignOffCreation({ clients, projects, items, launch, canGenerate, templateReady, active=true }: { active?: boolean; clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: {taskId:string;flow:'drf'|'signoff';nonce:number}; canGenerate: boolean; templateReady: boolean }) {
-  const docHub=useDocHubDraft('Sign-Off',undefined,active)
-  const [emails,setEmails]=useState({irippleSignatories:['','',''],clientSignatories:['','','']})
+type SignOffProps = { active?: boolean; clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: {taskId:string;flow:'drf'|'signoff';nonce:number}; canGenerate: boolean; templateReady: boolean; goLiveTemplateReady?: boolean }
+export default function SignOffCreation(props: SignOffProps) {
+  const [formType,setFormType] = useState<SignoffFormType>('production')
+  const [working,setWorking] = useState({ production:false, golive:false })
+  const onWorking = useCallback((type:SignoffFormType,value:boolean)=>setWorking(old=>old[type]===value?old:{...old,[type]:value}),[])
+  return <div><h2>Sign Off Document</h2><div className="signoff-form-toggle" role="group" aria-label="Sign Off document type">
+    <button type="button" className={formType==='production'?'primary':'secondary'} aria-pressed={formType==='production'} disabled={working.production||working.golive} onClick={()=>setFormType('production')}>Production Deployment Form</button>
+    <button type="button" className={formType==='golive'?'primary':'secondary'} aria-pressed={formType==='golive'} disabled={working.production||working.golive} onClick={()=>setFormType('golive')}>Sign Off Form</button>
+  </div><p>Each form retains its own details, edited sections, signatories, attachments and DocHub preparation while you switch.</p>
+  {(['production','golive'] as const).map(type=><div key={type} hidden={formType!==type}><SignOffForm {...props} formType={type} onWorking={onWorking} active={Boolean((props.active??true)&&formType===type)} templateReady={type==='production'?props.templateReady:Boolean(props.goLiveTemplateReady)}/></div>)}
+  </div>
+}
+function SignOffForm({ clients, projects, items, launch, canGenerate, templateReady, active=true, formType, onWorking }: SignOffProps & {formType:SignoffFormType;onWorking:(type:SignoffFormType,working:boolean)=>void}) {
+  const goLive = formType==='golive'
+  const label = goLive?'Sign Off Form':'Production Deployment Form'
+  const sectionFields = goLive?GO_LIVE_SECTION_FIELDS:PRODUCTION_SECTION_FIELDS
+  const docHub=useDocHubDraft('Sign-Off',undefined,active,true)
+  const [emails,setEmails]=useState({irippleSignatories:['',''],clientSignatories:['','']})
   useEffect(()=>{if(launch?.flow!=='signoff')return;const task=items.find(i=>i.id===launch.taskId);docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:task?.clientId || ''}));const client=clients.find(c=>c.id===task?.clientId);if(client)setDetails(d=>({...d,clientName:client.name}))},[launch])
-  const [details, setDetails] = useState(initialDetails)
+  const [details, setDetails] = useState(()=>initialDetails(formType))
   const [fileNameOverride,setFileNameOverride]=useState<string | undefined>()
-  const suggestedFileName=suggestedDocumentStem('SO',details.clientName,details.site)
+  const suggestedFileName=suggestedDocumentStem('SO',details.clientName,goLive?details.projectName:details.site)
   const fileName=fileNameOverride ?? suggestedFileName
   const [files, setFiles] = useState<Upload[]>([])
   const [busy, setBusy] = useState(false), [uploading, setUploading] = useState(false)
   const [error, setError] = useState(''), [message, setMessage] = useState('')
+  useEffect(()=>onWorking(formType,busy||uploading||docHub.busy),[formType,busy,uploading,docHub.busy,onWorking])
   const operation = useDocumentOperation()
   const fileInput = useRef<HTMLInputElement>(null)
   const reset = () => {
     operation.cancel();docHub.reset()
-    setDetails(initialDetails());setFileNameOverride(undefined);setFiles([]);setEmails({irippleSignatories:['','',''],clientSignatories:['','','']})
+    setDetails(initialDetails(formType));setFileNameOverride(undefined);setFiles([]);setEmails({irippleSignatories:['',''],clientSignatories:['','']})
     setBusy(false);setUploading(false);setError('');setMessage('')
     if(fileInput.current)fileInput.current.value=''
   }
   const update = (key: keyof SignoffInput, value: string) => setDetails(previous => ({ ...previous, [key]: value }))
   const person = (side: 'irippleSignatories' | 'clientSignatories', index: number, key: 'name' | 'title', value: string) => setDetails(previous => ({ ...previous, [side]: previous[side].map((p, i) => i === index ? { ...p, [key]: value } : p) }))
+  const addPerson = (side:'irippleSignatories'|'clientSignatories') => {
+    if(details[side].length>=SIGNOFF_MAX_SIGNATORIES)return
+    setDetails(old=>({...old,[side]:[...old[side],{name:'',title:''}]}))
+    setEmails(old=>({...old,[side]:[...old[side],'']}))
+  }
+  const removePerson = (side:'irippleSignatories'|'clientSignatories',index:number) => {
+    if(details[side].length<=2)return
+    setDetails(old=>({...old,[side]:old[side].filter((_,i)=>i!==index)}))
+    setEmails(old=>({...old,[side]:old[side].filter((_,i)=>i!==index)}))
+  }
   const addFiles = async (selected: File[]) => {
     if (!selected.length || busy || uploading || docHub.busy) return
     const job = operation.begin()
@@ -82,6 +108,7 @@ export default function SignOffCreation({ clients, projects, items, launch, canG
   const generate = async (event: FormEvent) => {
     event.preventDefault(); if (!canGenerate || !templateReady || busy || uploading || docHub.busy) return
     const signers=(['irippleSignatories','clientSignatories'] as const).flatMap(side=>details[side].map((p,i)=>({...p,email:emails[side][i],label:side==='irippleSignatories'?'iRipple':'Client'})))
+    if(docHub.enabled && signers.filter(s=>s.name.trim()||s.email?.trim()).length>12){setError('DocHub supports up to 12 active signatories across both sides. Reduce the signing list or turn off DocHub preparation to download only.');return}
     try { docHub.validate(signers) } catch(e) { setError((e as Error).message); return }
     const job = operation.begin()
     setBusy(true); setError(''); setMessage('')
@@ -101,28 +128,28 @@ export default function SignOffCreation({ clients, projects, items, launch, canG
   let shownDate = ''
   try { shownDate = formatDeploymentDate(details.deploymentDate) } catch { /* Browser date input can be empty while editing. */ }
   return <form className="signoff-form document-drf-stack" onSubmit={generate}>
-    <DocumentReset label="Sign Off" onReset={reset} disabled={!canGenerate} />
+    <DocumentReset label={label} onReset={reset} disabled={!canGenerate} />
     {!canGenerate && <p role="status">Your role can view this form. An Administrator or Contributor with Document Creation access can generate it.</p>}
-    {!templateReady && <p role="status">The Sign Off template is not configured. An Administrator can add or restore it in Settings → Templates.</p>}
+    {!templateReady && <p role="status">{label} template is not configured. An Administrator can add or restore it in Settings → Templates.</p>}
     <fieldset disabled={!canGenerate || !templateReady || busy || uploading || docHub.busy}>
-      <div className="document-extraction-panel"><h3>1. Client and deployment details</h3><div className="document-field-grid">
-        <label className="document-field-wide">Client name<input required maxLength={150} list="signoff-clients" value={details.clientName} onChange={e => update('clientName', e.target.value)} placeholder="Choose an existing client or enter a client name" /><datalist id="signoff-clients">{clients.map(c => <option key={c.id} value={c.name} />)}</datalist><small>Used in the header reference, client heading, client approval section, and Client Name row.</small></label>
-        <label>Target Deployment Date (MM/DD/YYYY)<input type="date" required min="1900-01-01" max="9999-12-31" value={details.deploymentDate} onChange={e => update('deploymentDate', e.target.value)} /><small>Document date: {shownDate || 'Select a date'}</small></label>
-        <label>Deployment type<select value={details.deploymentType} onChange={e => update('deploymentType', e.target.value)}>{DEPLOYMENT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>
+      <div className="document-extraction-panel"><h3>1. {goLive?'Go Live':'Client and deployment'} details</h3><div className="document-field-grid">
+        <label className="document-field-wide">Client name<input required maxLength={150} list={`signoff-clients-${formType}`} value={details.clientName} onChange={e => update('clientName', e.target.value)} placeholder="Choose an existing client or enter a client name" /><datalist id={`signoff-clients-${formType}`}>{clients.map(c => <option key={c.id} value={c.name} />)}</datalist><small>Used in the header reference, client heading, client approval section, and Client Name row.</small></label>
+        <label>{goLive?'Go Live Date':'Target Deployment Date'} (MM/DD/YYYY)<input type="date" required min="1900-01-01" max="9999-12-31" value={details.deploymentDate} onChange={e => update('deploymentDate', e.target.value)} /><small>Document date: {shownDate || 'Select a date'}</small></label>
+        {goLive?<label>Go Live Type<select value={details.goLiveType} onChange={e=>update('goLiveType',e.target.value)}>{GO_LIVE_TYPES.map(value=><option key={value}>{value}</option>)}</select></label>:<label>Deployment type<select value={details.deploymentType} onChange={e => update('deploymentType', e.target.value)}>{DEPLOYMENT_TYPES.map(value => <option key={value}>{value}</option>)}</select></label>}
         <label>Product deployed<select value={details.product} onChange={e => update('product', e.target.value)}>{DEPLOYED_PRODUCTS.map(value => <option key={value}>{value}</option>)}</select></label>
-        <label>Site code / name<input required maxLength={160} value={details.site} onChange={e => update('site', e.target.value)} placeholder="Enter the site code or name" /></label>
+        {goLive?<><label className="document-field-wide">Client / Project Name<input required maxLength={180} value={details.projectName||''} onChange={e=>update('projectName',e.target.value)} placeholder="Project or deployment name"/></label><label>Prepared by<input required maxLength={150} value={details.preparedBy||''} onChange={e=>update('preparedBy',e.target.value)}/></label><label>Document date<input type="date" required min="1900-01-01" max="9999-12-31" value={details.documentDate||''} onChange={e=>update('documentDate',e.target.value)}/></label></>:<label>Site code / name<input required maxLength={160} value={details.site} onChange={e => update('site', e.target.value)} placeholder="Enter the site code or name" /></label>}
         <label className="document-field-wide">Filename (extension added automatically)<input aria-label="Sign Off filename" value={fileName} maxLength={150} onChange={e=>setFileNameOverride(e.target.value)} onBlur={()=>{if(!fileNameOverride?.trim())setFileNameOverride(undefined)}}/><small>Download and DocHub: {documentOutputName(fileName,files.some(f=>!f.image)?'zip':'docx',suggestedFileName)}{files.some(f=>!f.image)?` · DocHub receives ${documentOutputName(fileName,'docx',suggestedFileName)}`:''}</small></label>
         <label>Document year<input type="number" required min={1900} max={9999} value={details.documentYear} onChange={e => update('documentYear', e.target.value)} /></label>
         <label>Document number<input type="number" required min={1} max={9999} value={details.documentNumber} onChange={e => update('documentNumber', e.target.value)} /><small>Set the number for this document; it is not automatically incremented.</small></label>
-      </div><div className="signoff-header-preview"><strong>{SIGNOFF_TITLE}</strong><span>{signoffReference(details.clientName, details.documentYear, details.documentNumber)}</span><small>The Word document uses the original iRipple logo and header.</small></div></div>
-      <div className="document-extraction-panel"><h3>2. Agreed and Approved by</h3><p>Three signatories per side. Enter each name and position; leave unused slots blank. Signature and signing-date lines remain blank for approval.</p><div className="signoff-approval-grid">{(['irippleSignatories', 'clientSignatories'] as const).map(side => <section key={side}><h4>{side === 'irippleSignatories' ? 'IRIPPLE, INC' : details.clientName || 'Client'}</h4>{details[side].map((p, index) => <div className="signoff-person" key={index}><strong>Signatory {index + 1}</strong><label>Name<input maxLength={100} value={p.name} onChange={e => person(side, index, 'name', e.target.value)} /></label><label>Email (DocHub only)<input type="email" value={emails[side][index]} onChange={e=>setEmails(old=>({...old,[side]:old[side].map((value,i)=>i===index?e.target.value:value)}))} /></label><label>Position / title<input maxLength={100} value={p.title} onChange={e => person(side, index, 'title', e.target.value)} /></label></div>)}</section>)}</div></div>
-      <div className="document-extraction-panel"><h3>3. Retained document sections</h3><p>These sections keep the wording from your supplied template.</p>{[['Purpose', SIGNOFF_PURPOSE], ['Scope', SIGNOFF_SCOPE], ['Deployment Authorization', SIGNOFF_AUTHORIZATION]].map(([title, content]) => <details className="signoff-retained" key={title}><summary>{title}</summary><p>{content}</p></details>)}</div>
+      </div><div className="signoff-header-preview"><strong>{goLive?GO_LIVE_TITLE:SIGNOFF_TITLE}</strong><span>{signoffReference(details.clientName, details.documentYear, details.documentNumber, formType)}</span><small>The Word document includes the iRipple logo, document title and reference.</small></div></div>
+      <div className="document-extraction-panel"><h3>2. Agreed and Approved by</h3><p>Two signatories per side to start. Use Add signatory for additional approvers. Enter each name and position; leave unused slots blank. Signature and signing-date lines remain blank for approval.</p><div className="signoff-approval-grid">{(['irippleSignatories', 'clientSignatories'] as const).map(side => <section key={side}><h4>{side === 'irippleSignatories' ? 'IRIPPLE, INC' : details.clientName || 'Client'}</h4>{details[side].map((p, index) => <div className="signoff-person" key={index}><strong>Signatory {index + 1}</strong><label>Name<input maxLength={100} value={p.name} onChange={e => person(side, index, 'name', e.target.value)} /></label><label>Email (DocHub only)<input type="email" value={emails[side][index]} onChange={e=>setEmails(old=>({...old,[side]:old[side].map((value,i)=>i===index?e.target.value:value)}))} /></label><label>Position / title<input maxLength={100} value={p.title} onChange={e => person(side, index, 'title', e.target.value)} /></label>{details[side].length>2&&<button type="button" className="secondary" onClick={()=>removePerson(side,index)}>Remove signatory {index+1}</button>}</div>)}<button type="button" className="secondary" disabled={details[side].length>=SIGNOFF_MAX_SIGNATORIES} onClick={()=>addPerson(side)}><Plus size={16}/> Add {side==='irippleSignatories'?'iRipple':'client'} signatory</button></section>)}</div></div>
+      <div className="document-extraction-panel"><h3>3. Retained document sections</h3><p>Edit the wording below. These values are included in the generated document for this form only.</p>{sectionFields.map(([key,title])=><label className="signoff-section-field" key={key}>{title}<textarea aria-label={`${label} — ${title}`} rows={key==='activities_completed'?9:5} maxLength={12000} value={details.sections?.[key]||''} onChange={e=>setDetails(old=>({...old,sections:{...old.sections,[key]:e.target.value}}))} placeholder={key==='branches_live'?'Branch name — MM/DD/YYYY, one branch per line':key==='known_issues'?'Enter None or list known issues':key==='activities_completed'?'List the activities completed before and after go live':key==='receipt_validation'?'Sales invoice, terminal readings, X-reading if applicable, initial and first Z-reading':key==='mall_integration'?'Enter Not applicable or confirm setup screenshots and received text files':''}/></label>)}<button type="button" className="secondary" onClick={()=>{if(window.confirm('Restore the default section text for this form?'))setDetails(old=>({...old,sections:signoffSectionDefaults(formType)}))}}>Restore default section text</button></div>
       <div className="document-extraction-panel"><h3>4. Attachments</h3><p>JPEG, PNG, and WEBP images appear on attachment pages in Word. Other supporting files are supplied with the Word form in a ZIP. Up to 5 MB per file, 12 MB total, and {SIGNOFF_MAX_ATTACHMENTS} files.</p><label>Add attachments<input ref={fileInput} type="file" multiple accept={ACCEPT} onChange={e => { const selected = Array.from(e.target.files || []); e.target.value = ''; if (selected.length) void addFiles(selected) }} /></label>
         <div className="signoff-attachments">{files.map((file, index) => <div className="signoff-attachment" key={file.id}>{file.image && <img src={`data:image/${file.name.endsWith('.png') ? 'png' : 'jpeg'};base64,${file.data}`} alt={`Attachment ${index + 1} preview`} />}<div><strong>{index + 1}. {file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(2)} MB · {file.image ? 'Embedded in Word' : 'Included in ZIP'}</small><label>Caption (optional)<input maxLength={200} value={file.caption} onChange={e => setFiles(previous => previous.map(f => f.id === file.id ? { ...f, caption: e.target.value } : f))} /></label><div className="signoff-attachment-actions"><button type="button" className="secondary compact" disabled={index === 0} aria-label={`Move attachment ${index + 1} up`} onClick={() => move(index, -1)}><ArrowUp size={16} /></button><button type="button" className="secondary compact" disabled={index === files.length - 1} aria-label={`Move attachment ${index + 1} down`} onClick={() => move(index, 1)}><ArrowDown size={16} /></button><button type="button" className="secondary compact" aria-label={`Remove attachment ${index + 1}`} onClick={() => setFiles(previous => previous.filter(f => f.id !== file.id))}><Trash2 size={16} /> Remove</button></div></div></div>)}</div>
         <small>Images are resized to fit the document. This form is a session draft: download before leaving or refreshing. Files are processed for generation and are not saved as account records.</small>
       </div>
       <DocHubOptions key={docHub.resetVersion} draft={docHub} clients={clients} projects={projects} items={items} disabled={!canGenerate || busy || uploading || docHub.busy} />
-      <div className="document-generate-bar"><div><strong>5. Generate Sign Off</strong><span>{files.some(f => !f.image) ? 'Downloads a ZIP containing the Word form and supporting files.' : 'Downloads an editable Word form with your uploaded images.'}</span></div><button className="primary" type="submit"><Download size={16} />{busy ? 'Generating…' : uploading ? 'Preparing attachments…' : docHub.enabled ? 'Generate & Prepare in DocHub' : 'Generate & Download Sign Off'}</button></div>
+      <div className="document-generate-bar"><div><strong>5. Generate {label}</strong><span>{files.some(f => !f.image) ? 'Downloads a ZIP containing the Word form and supporting files.' : 'Downloads an editable Word form with your uploaded images.'}</span></div><button className="primary" type="submit"><Download size={16} />{busy ? 'Generating…' : uploading ? 'Preparing attachments…' : docHub.enabled ? 'Generate & Prepare in DocHub' : `Generate & Download ${label}`}</button></div>
     </fieldset>
     <DocHubResult draft={docHub} />
     <DocumentProcessingPanel state={error?'error':(busy||uploading)?'working':message?'success':'idle'} title={error?'Sign Off processing failed':busy?'Generating your Sign Off…':uploading?'Preparing attachments…':'Sign Off package is ready'} detail={error||message} stages={['Preparing attachments','Mapping form information','Generating document package','Starting download']} activeStage={uploading?0:busy?2:3}/>

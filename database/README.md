@@ -57,3 +57,8 @@ Run `migrations/schema-v19-work-hub-github.sql` once in Supabase SQL Editor, the
 ## Upgrading from v0.6.75 to v0.6.76
 
 Run `migrations/schema-v20-work-hub-gitlab.sql` in Supabase SQL Editor before deploying v0.6.76. It adds two private GitLab tables; existing GitHub connections are retained. If upgrading from v0.6.74, run schema-v19 first, then schema-v20. Keep `TENANT_INTEGRATION_MASTER_KEY` unchanged. For an existing database, use migrations rather than `setup.sql`. Users choose GitLab in Work Hub → GitHub / GitLab, enter their GitLab website URL and personal token with read_api scope, then select projects.
+
+
+## Upgrading to v0.6.80
+
+The built-in Go Live Sign Off Form works with the existing document-template table. Run `migrations/schema-v21-golive-template.sql` once to enable custom Go Live template uploads and removal in Settings. This expands the template type constraint; existing templates and data are retained. Do not run `setup.sql` on an existing database.

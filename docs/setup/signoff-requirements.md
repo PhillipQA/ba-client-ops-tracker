@@ -1,4 +1,35 @@
-# BA Client Ops Tracker Sign Off Requirements
+# BA Client Ops Tracker Sign Off Document
+
+## v0.6.80 update
+
+Confirmed October 11, 2026. The module is **Sign Off Document**, with a toggle for **Production Deployment Form** and **Sign Off Form**. The Sign Off Form uses the supplied Go Live Sign Off template. The October instructions supersede the older fixed signer counts and fixed retained wording below.
+
+- Each form starts with two iRipple and two client signatories. Add or remove approvers manually, up to 20 per side. Signature and signing-date lines remain available for approval. DocHub preparation retains its existing maximum of 12 active signers across both sides.
+- Narrative sections use editable multiline text boxes. Blank sections remain blank; generation does not invent activities, branches, or known-issue results. Restore defaults resets section wording for the current form only.
+- Both forms retain separate in-memory details, filenames, signatories, email addresses, attachments and DocHub choices while switching. Refreshing or leaving the mounted workspace does not save these drafts. Reset applies only to the current form.
+- The Production layout, PAF reference, deployment fields and attachments remain supported. The Go Live layout retains its original logo/header, uses an SOF reference, and maps author/date rather than retaining sample identity or dates.
+- Go Live required fields: client, client/project name, go-live date, go-live type, product, prepared by, document date, year and document number. Existing product choices are shared with Production.
+
+| Uploaded template section | Editable form field / mapping |
+| --- | --- |
+| Client/Project heading | Client / Project Name (`project_name`) |
+| Approval heading; Client Name row | Client name (`client_name`) |
+| Go Live Date | Go Live Date (`go_live_date`) |
+| Go Live Type | Pilot Branch / Store Roll Out (`go_live_type`) |
+| Product Deployed | Product deployed (`product`) |
+| Header version; Prepared By; Date | `document_reference`, `prepared_by`, `document_date` |
+| Introduction | `introduction` |
+| Activities Completed | `activities_completed` |
+| Receipt Printout Validation | `receipt_validation` |
+| Mall Integration Requirements | `mall_integration` |
+| Branch/es that Went Live | `branches_live` |
+| Known Issues | `known_issues` |
+| Acknowledgement | `acknowledgement` |
+| Approval rows | Indexed iRipple/client name and title fields, expanded from the first approval row |
+
+Built-in generation requires no new template row. Apply `database/migrations/schema-v21-golive-template.sql` to manage optional custom Go Live templates in Settings. The uploaded source document remains unchanged.
+
+## Original production requirements
 
 Confirmed September 20, 2026 for the iRipple BA Project. Implemented in the v0.6.7 release package; hosted deployment remains a separate step. Ollama integration remains paused.
 

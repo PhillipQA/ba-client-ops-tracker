@@ -71,12 +71,13 @@ export function cleanIntegrationConfig(kind: IntegrationKind, input: any) {
   return { allowedUserIds }
 }
 
-export type DocumentTemplateKind = 'drf' | 'brd' | 'fsd' | 'signoff'
-const documentTemplateKinds = ['drf', 'brd', 'fsd', 'signoff'] as const
+export type DocumentTemplateKind = 'drf' | 'brd' | 'fsd' | 'signoff' | 'golive'
+const documentTemplateKinds = ['drf', 'brd', 'fsd', 'signoff', 'golive'] as const
 const builtInTemplateNames: Partial<Record<DocumentTemplateKind, string>> = {
   brd: 'Built-in iRipple BRD template',
   fsd: 'Built-in iRipple FSD layout',
-  signoff: 'Built-in iRipple Sign Off template',
+  signoff: 'Built-in iRipple Production Deployment template',
+  golive: 'Built-in Go Live Sign Off template',
 }
 export function documentTemplateKind(value: unknown): DocumentTemplateKind {
   const kind = String(value || '').toLowerCase()
@@ -120,8 +121,12 @@ function decodeTemplateUpload(kind: DocumentTemplateKind, nameValue: unknown, co
       if (required.some(marker => !xmlText.includes(marker))) throw new IntegrationError('The BRD template is missing required mapping tags. Keep the standard BRD fields and table-loop tags when changing the template.')
     }
     if (kind === 'fsd' && !document.includes('{{FSD_BODY}}')) throw new IntegrationError('The FSD template must contain the {{FSD_BODY}} marker where generated FSD content should be inserted.')
+    if (kind === 'golive') {
+      const required = ['{client_name}','{project_name}','{document_reference}','{go_live_date}','{go_live_type}','{product}','{prepared_by}','{document_date}','{iripple_name_1}','{iripple_title_1}','{client_name_1}','{client_title_1}','{introduction}','{activities_completed}','{receipt_validation}','{mall_integration}','{branches_live}','{known_issues}','{acknowledgement}','{@attachments}']
+      if (required.some(marker => !xmlText.includes(marker))) throw new IntegrationError('The Go Live template is missing required mapping fields. Keep the standard Go Live and editable-section tags.')
+    }
     if (kind === 'signoff') {
-      const required = ['{client_name}','{document_reference}','{deployment_date}','{deployment_type}','{product}','{site}','{iripple_name_1}','{iripple_title_1}','{iripple_name_2}','{iripple_title_2}','{iripple_name_3}','{iripple_title_3}','{client_name_1}','{client_title_1}','{client_name_2}','{client_title_2}','{client_name_3}','{client_title_3}','{@attachments}']
+      const required = ['{client_name}','{document_reference}','{deployment_date}','{deployment_type}','{product}','{site}','{iripple_name_1}','{iripple_title_1}','{client_name_1}','{client_title_1}','{@attachments}']
       if (required.some(marker => !xmlText.includes(marker))) throw new IntegrationError('The Sign Off template is missing required placeholders. Keep the standard Sign Off mapping fields when changing the template.')
     }
   }

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
 import PizZip from 'pizzip'
+import { readFile } from 'node:fs/promises'
 import { encryptSecret, decryptSecret, encryptionKey, integrationSummary, createIntegrationStore, registerIntegrationRoutes, normalizeAiConfig, createAiClient } from '../server/integrations/tenant-integrations'
 import { registerPlatformSettings } from '../server/platform/platform-settings'
 import { requirePlatformAdmin } from '../server/platform/platform-auth'
@@ -82,7 +83,7 @@ test('Discord duplicate bot identity cannot be assigned across tenants', async()
 })
 test('real HTTP routes scope writes from authenticated tenant and deny unauthorized users', async()=>{
   const db=memoryDatabase(), store=createIntegrationStore(db), app=express()
-  app.use(express.json())
+  app.use(express.json({limit:'10mb'}))
   const auth:any=(req:any,res:any,next:any)=>{
     const role=req.get('x-test-user')
     if (!role) return res.sendStatus(401)
@@ -112,10 +113,21 @@ test('real HTTP routes scope writes from authenticated tenant and deny unauthori
     assert.equal((await call('/api/account/templates','admin','PUT',{name:'template.xlsx',content_base64:templateData})).status,200)
     assert.equal((await call('/api/account/templates','docs-admin','PUT',{name:'document-template.xlsx',content_base64:templateData},'b')).status,200)
     assert.equal((await call('/api/account/integrations','docs-admin')).status,403)
-    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx');assert.equal(other.templates.length,4);assert.equal(other.templates.find((item:any)=>item.type==='brd').source,'built-in');assert.equal(other.templates.find((item:any)=>item.type==='fsd').source,'built-in')
+    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx');assert.equal(other.templates.length,5);assert.equal(other.templates.find((item:any)=>item.type==='brd').source,'built-in');assert.equal(other.templates.find((item:any)=>item.type==='fsd').source,'built-in');assert.equal(other.templates.find((item:any)=>item.type==='golive').source,'built-in')
     assert.equal((await call('/api/account/templates/fsd','admin','DELETE',undefined,'b')).status,200)
     const removed=await (await call('/api/account/templates/fsd','admin','GET',undefined,'b')).json();assert.equal(removed.template.active,false)
     assert.equal((await call('/api/account/templates/fsd/restore-default','admin','POST',undefined,'b')).status,200)
     const restored=await (await call('/api/account/templates/fsd','admin','GET',undefined,'b')).json();assert.equal(restored.template.source,'built-in')
+    const goLiveBytes=await readFile(new URL('../templates/golive-template.docx',import.meta.url))
+    assert.equal((await call('/api/account/templates/golive','docs-admin','PUT',{name:'go-live.docx',content_base64:goLiveBytes.toString('base64')},'b')).status,200)
+    const goLive=await (await call('/api/account/templates/golive','admin','GET',undefined,'b')).json();assert.equal(goLive.template.source,'custom');assert.equal(goLive.template.name,'go-live.docx')
+    const otherTenant=await (await call('/api/account/templates/golive','admin','GET',undefined,'a')).json();assert.equal(otherTenant.template.source,'built-in')
+    const broken=new PizZip(goLiveBytes);broken.file('word/document.xml',broken.file('word/document.xml')!.asText().replace('{activities_completed}',''))
+    assert.equal((await call('/api/account/templates/golive','admin','PUT',{name:'broken.docx',content_base64:broken.generate({type:'base64'})},'b')).status,400)
+    assert.equal((await call('/api/account/templates/golive','admin','DELETE',undefined,'b')).status,200)
+    const disabled=await (await call('/api/account/templates/golive','admin','GET',undefined,'b')).json();assert.equal(disabled.template.active,false)
+    const production=await (await call('/api/account/templates/signoff','admin','GET',undefined,'b')).json();assert.equal(production.template.active,true)
+    assert.equal((await call('/api/account/templates/golive/restore-default','admin','POST',undefined,'b')).status,200)
+    const restoredLive=await (await call('/api/account/templates/golive','admin','GET',undefined,'b')).json();assert.equal(restoredLive.template.source,'built-in')
   } finally { await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve())) }
 })

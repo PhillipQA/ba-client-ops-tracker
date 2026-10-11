@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v0.6.77: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 20. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v0.6.80: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 21. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1361,6 +1361,14 @@ alter table public.user_gitlab_issues enable row level security;
 revoke all on public.user_gitlab_connections, public.user_gitlab_issues from public, anon, authenticated;
 grant all on public.user_gitlab_connections, public.user_gitlab_issues to service_role;
 
+-- Included source: migrations/schema-v21-golive-template.sql
+-- SHA-256: bd3f72bc21f7427b3c69cdeb07ceb7f225af5a1c0a34e22d39888303e1290b4f
+-- Enables optional custom Go Live templates. Built-in generation needs no new row.
+
+ALTER TABLE public.tenant_templates DROP CONSTRAINT IF EXISTS tenant_templates_template_type_check;
+ALTER TABLE public.tenant_templates ADD CONSTRAINT tenant_templates_template_type_check
+  CHECK (template_type IN ('drf', 'brd', 'fsd', 'signoff', 'golive'));
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1384,4 +1392,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 20 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 21 as schema_version;

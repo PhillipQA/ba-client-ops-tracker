@@ -4,7 +4,8 @@ import Docxtemplater from 'docxtemplater'
 import { PDFDocument } from 'pdf-lib'
 import type { Express, RequestHandler } from 'express'
 import { documentTemplateRow, IntegrationError } from '../integrations/tenant-integrations'
-import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, formatDeploymentDate, signoffReference } from '../../src/signoff'
+import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, formatDeploymentDate, signoffReference, GO_LIVE_TYPES, GO_LIVE_SECTION_FIELDS, PRODUCTION_SECTION_FIELDS, SIGNOFF_MAX_SIGNATORIES, signoffSectionDefaults, type SignoffInput } from '../../src/signoff'
+import { prepareSignoffTemplate } from './signoff-template'
 import { safeDocumentStem } from '../../src/documentFilename'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -18,18 +19,31 @@ function text(value: unknown, label: string, max: number, required = true): stri
 }
 export function validateSignoff(input: any) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Sign Off details are required.')
+  const formType = input.formType ?? 'production'
+  if (!['production', 'golive'].includes(formType)) throw new Error('Choose a supported document form type.')
   const clientName = text(input.clientName, 'Client name', 150)
-  const site = text(input.site, 'Site code / name', 160)
+  const site = text(input.site ?? '', 'Site code / name', 160, formType === 'production')
   const deploymentDate = formatDeploymentDate(text(input.deploymentDate, 'Deployment date', 10))
-  if (!(DEPLOYMENT_TYPES as readonly unknown[]).includes(input.deploymentType)) throw new Error('Choose a supported deployment type.')
+  if (formType === 'production' && !(DEPLOYMENT_TYPES as readonly unknown[]).includes(input.deploymentType)) throw new Error('Choose a supported deployment type.')
   if (!(DEPLOYED_PRODUCTS as readonly unknown[]).includes(input.product)) throw new Error('Choose a supported product.')
   const year = text(input.documentYear, 'Document year', 4)
   const number = text(input.documentNumber, 'Document number', 4)
   if (!/^(19|[2-9]\d)\d{2}$/.test(year) || !/^\d{1,4}$/.test(number) || Number(number) < 1) throw new Error('Enter a valid document year and a number from 1 to 9999.')
-  const values: Record<string, string> = { client_name: clientName, document_reference: signoffReference(clientName, year, String(Number(number))), deployment_date: deploymentDate, deployment_type: input.deploymentType, product: input.product, site }
+  const values: Record<string, string> = { client_name: clientName, document_reference: signoffReference(clientName, year, String(Number(number)), formType), deployment_date: deploymentDate, deployment_type: input.deploymentType || '', product: input.product, site }
+  if (formType === 'golive') {
+    if (!(GO_LIVE_TYPES as readonly unknown[]).includes(input.goLiveType)) throw new Error('Choose Pilot Branch or Store Roll Out.')
+    values.go_live_date = deploymentDate
+    values.go_live_type = input.goLiveType
+    values.project_name = text(input.projectName, 'Client / project name', 180)
+    values.prepared_by = text(input.preparedBy, 'Prepared by', 150)
+    values.document_date = formatDeploymentDate(text(input.documentDate, 'Document date', 10))
+  }
+  if (input.sections !== undefined && (!input.sections || typeof input.sections !== 'object' || Array.isArray(input.sections))) throw new Error('Invalid document sections.')
+  const defaults = signoffSectionDefaults(formType)
+  for (const [field, label] of formType === 'golive' ? GO_LIVE_SECTION_FIELDS : PRODUCTION_SECTION_FIELDS) values[field] = text(input.sections?.[field] ?? defaults[field], label, 12000, false)
   for (const [side, key] of [['iripple', 'irippleSignatories'], ['client', 'clientSignatories']]) {
     const people = input[key]
-    if (!Array.isArray(people) || people.length !== 3) throw new Error('Provide three signatories for iRipple and three for the client.')
+    if (!Array.isArray(people) || people.length < 2 || people.length > SIGNOFF_MAX_SIGNATORIES) throw new Error(`Provide 2 to ${SIGNOFF_MAX_SIGNATORIES} signatory slots per side.`)
     people.forEach((person, index) => {
       values[`${side}_name_${index + 1}`] = text(person?.name, `${side} signatory ${index + 1} name`, 100, false)
       values[`${side}_title_${index + 1}`] = text(person?.title, `${side} signatory ${index + 1} position`, 100, false)
@@ -69,7 +83,7 @@ function imageParagraph(id: string, name: string, width: number, height: number,
 export async function renderSignoff(template: Buffer, input: unknown, attachments: unknown = [], fileName?: string) {
   const values = validateSignoff(input)
   if (!Array.isArray(attachments) || attachments.length > SIGNOFF_MAX_ATTACHMENTS) throw new Error(`Use up to ${SIGNOFF_MAX_ATTACHMENTS} attachments.`)
-  const zip = new PizZip(template)
+  const zip = new PizZip(prepareSignoffTemplate(template, input as SignoffInput))
   // Keep long client-derived references readable inside the original header cell.
   if (values.document_reference.length > 55) {
     for (const part of zip.file(/^word\/header\d+\.xml$/)) {
@@ -98,7 +112,13 @@ export async function renderSignoff(template: Buffer, input: unknown, attachment
       totalPixels += pixels
       if (!pixels || pixels > 16000000 || totalPixels > 40000000) throw new Error('Images are too large. Resize images to at most 16 megapixels each and 40 megapixels total.')
       // Decode accepted formats once to reject corrupt image bytes before exporting Word.
-      try { const check = await PDFDocument.create(); const img = ext === 'png' ? await check.embedPng(bytes) : await check.embedJpg(bytes); if (!img.width || !img.height) throw new Error() }
+      try {
+        const check = await PDFDocument.create()
+        // pdf-lib's JPEG reader starts at the backing buffer's first byte; copy pooled Node buffers.
+        const imageBytes = Uint8Array.from(bytes)
+        const img = ext === 'png' ? await check.embedPng(imageBytes) : await check.embedJpg(imageBytes)
+        if (!img.width || !img.height) throw new Error()
+      }
       catch { throw new Error('An image attachment is damaged. Export it as JPEG or PNG and retry.') }
     }
     files.push({ name, bytes, image, caption, ext, ...dimensions })
@@ -132,16 +152,18 @@ export async function renderSignoff(template: Buffer, input: unknown, attachment
   }
   return { output, fileName: `${stem}.docx`, mimeType: DOCX_MIME, imageCount: files.length, attachmentCount: files.length }
 }
-export function registerSignoffRoutes(app: Express, deps: { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; templatePath: string }) {
+export function registerSignoffRoutes(app: Express, deps: { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; templatePath: string; goLiveTemplatePath?: string }) {
   app.post('/api/documents/signoff/generate', deps.requireAuth, deps.requireTenant, async (req, res) => {
     const user = (req as any).authUser
     if (user.role === 'Viewer' || !user.modules?.includes('documents')) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
     res.setHeader('Cache-Control', 'no-store')
     let template: Buffer
     try {
-      const row = await documentTemplateRow(deps.db, user.organizationId, 'signoff')
+      const formType = req.body?.details?.formType ?? 'production'
+      if (!['production','golive'].includes(formType)) throw new IntegrationError('Choose a supported document form type.', 400)
+      const row = await documentTemplateRow(deps.db, user.organizationId, formType === 'golive' ? 'golive' : 'signoff')
       if (row && !row.is_enabled) throw new IntegrationError('The Sign Off template is not configured. Add or restore it in Settings → Templates.', 503)
-      template = row?.is_enabled && row.content_base64 ? Buffer.from(row.content_base64, 'base64') : await readFile(deps.templatePath)
+      template = row?.is_enabled && row.content_base64 ? Buffer.from(row.content_base64, 'base64') : await readFile(formType === 'golive' ? deps.goLiveTemplatePath || new URL('../../templates/golive-template.docx', import.meta.url).pathname : deps.templatePath)
     } catch (error) {
       return void res.status(error instanceof IntegrationError ? error.status : 503).json({ error: error instanceof Error ? error.message : 'Sign Off template is unavailable.' })
     }

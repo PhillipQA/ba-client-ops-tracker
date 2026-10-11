@@ -2037,3 +2037,8 @@ select option { background: #181818; color: #fff; }
 .document-reset-bar small { flex:1; min-width:200px; line-height:1.5; color:inherit; opacity:.8; }
 .document-reset-bar button { flex-shrink:0; display:inline-flex; align-items:center; gap:7px; }
 .fsd-source-list summary button { flex-shrink:0; }
+
+
+.signoff-form-toggle { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.signoff-section-field { display: grid; gap: 8px; margin: 16px 0; font-weight: 600; }
+.signoff-section-field textarea { width: 100%; font-weight: 400; resize: vertical; }

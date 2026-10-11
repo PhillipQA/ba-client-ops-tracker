@@ -9,13 +9,14 @@ import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
 const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
 
-export function useDocHubDraft(kind:'DRF'|'Sign-Off',onError?:(error:Error)=>void,active=true) {
+export function useDocHubDraft(kind:'DRF'|'Sign-Off',onError?:(error:Error)=>void,active=true,preserveChoiceOnActivation=false) {
   const [available,setAvailable]=useState(false),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const [doc,setDoc]=useState<DocHubDocument|null>(null)
   const [options,setOptions]=useState({clientId:'',taskId:'',sequential:false,followUpDays:3})
   const pending=useRef<any>(null)
   const operation=useDocumentOperation()
   const pageActive=usePageActive()
+  const initializedChoice=useRef(false)
   const resetCount=useRef(0)
   const [resetVersion,setResetVersion]=useState(0)
   useEffect(()=>{
@@ -25,7 +26,7 @@ export function useDocHubDraft(kind:'DRF'|'Sign-Off',onError?:(error:Error)=>voi
     const load=()=>{
       const version=resetCount.current
       void dochubRequest('/api/dochub/status','GET',undefined,controller.signal).then(s=>{
-        if(alive){setAvailable(s.enabled);if(version===resetCount.current){setEnabled(s.enabled);setError('')}}
+        if(alive){setAvailable(s.enabled);if(version===resetCount.current){if(!preserveChoiceOnActivation||!initializedChoice.current||!s.enabled)setEnabled(s.enabled);initializedChoice.current=true;setError('')}}
       }).catch(e=>{if(alive&&version===resetCount.current)setError(e.message)})
     }
     load();window.addEventListener('dochub-settings-changed',load)
@@ -189,7 +190,7 @@ export function DocHubHistory({active=true,taskId,canCreate=false,onComplete}:{a
   return <section className={`panel dochub-history${taskId?' span-2':''}`}><div className="panel-heading"><div><h3>{taskId?'Linked documents':'Document history'}</h3><p>{taskId?'Signing updates are added to this work item’s activity comments.':'Active documents stay here while they are being prepared, routed, or signed. Done, completed, and voided documents move to Archive automatically.'}</p></div><button type="button" className="secondary" onClick={()=>void load()}>Reload history</button></div>
     {!taskId&&<><div className="dochub-history-tabs" role="tablist" aria-label="Document history folders"><button type="button" className={view==='active'?'active':''} role="tab" aria-selected={view==='active'} onClick={()=>{setView('active');setPage(1)}}><FolderOpen size={16}/> Active <span>{activeDocs.length}</span></button><button type="button" className={view==='archive'?'active':''} role="tab" aria-selected={view==='archive'} onClick={()=>{setView('archive');setPage(1)}}><Archive size={16}/> Archive <span>{archivedDocs.length}</span></button></div>
     <div className="dochub-history-toolbar"><div className="dochub-layout-switch" role="group" aria-label="Document history layout"><button type="button" className={layout==='row'?'active':''} aria-pressed={layout==='row'} onClick={()=>setLayout('row')}><List size={15}/> Row</button><button type="button" className={layout==='tile'?'active':''} aria-pressed={layout==='tile'} onClick={()=>setLayout('tile')}><LayoutGrid size={15}/> Tile</button></div><label>Items per page<select value={pageSize} onChange={event=>{setPageSize(Number(event.target.value) as 3|5|10);setPage(1)}}><option value={3}>3</option><option value={5}>5</option><option value={10}>10</option></select></label></div></>}
-    {taskId&&canCreate&&<div className="dochub-actions">{(['drf','signoff'] as const).map(flow=><button key={flow} type="button" className="secondary" onClick={()=>window.dispatchEvent(new CustomEvent('dochub-create',{detail:{taskId,flow}}))}>Create {flow==='drf'?'DRF':'Sign-Off'} for this work</button>)}</div>}
+    {taskId&&canCreate&&<div className="dochub-actions">{(['drf','signoff'] as const).map(flow=><button key={flow} type="button" className="secondary" onClick={()=>window.dispatchEvent(new CustomEvent('dochub-create',{detail:{taskId,flow}}))}>Create {flow==='drf'?'DRF':'Sign Off Document'} for this work</button>)}</div>}
     {error&&<p className="dochub-history-message" role="alert">{error}</p>}
     {!visibleDocs.length&&!error&&<div className="dochub-history-empty">{taskId?'No documents linked yet.':view==='archive'?'Archive is empty. Completed and voided documents will appear here for tracking.':'No active documents. New or in-route documents will appear here.'}</div>}
     {taskId?pagedDocs.map(doc=><DocHubCard key={doc.id} doc={doc} busy={busy===doc.id} refresh={()=>refreshOne(doc.id)}/>):layout==='tile'?<div className="dochub-history-grid">{pagedDocs.map(doc=><DocHubTile key={doc.id} doc={doc} archived={view==='archive'} busy={busy===doc.id} onOpen={()=>setSelected(doc)} onRefresh={()=>refreshOne(doc.id)}/>)}</div>:<div className="dochub-history-list">{pagedDocs.map(doc=><DocHubRow key={doc.id} doc={doc} archived={view==='archive'} busy={busy===doc.id} onOpen={()=>setSelected(doc)} onRefresh={()=>refreshOne(doc.id)}/>)}</div>}

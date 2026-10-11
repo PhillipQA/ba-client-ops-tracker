@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.79",
+  "version": "0.6.80",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -76,4 +76,3 @@
     "@types/react-dom": "latest"
   }
 }
-
