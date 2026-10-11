@@ -12,7 +12,7 @@ function table(headers: string[], rows: string[][], process = false, plain = fal
 }
 function block(b: FsdBlock) { return b.type === 'table' ? table(b.headers,b.rows,b.headers.length === 2) : b.text.split('\n\n').map(s => p(s, /^5\.[1-4]\.\d+[. ]/.test(s) && s.length < 150 ? 'Heading3' : '')).join('') }
 function drawing() { return `<w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="1250000" cy="454545"/><wp:docPr id="1" name="iRipple logo"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="1" name="iRipple"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="logo"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1250000" cy="454545"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>` }
-export function renderFsdDocx(d: FsdDetails, preview: Pick<FsdPreview,'sections'|'gaps'|'conflicts'>, logo: Buffer, template?: Buffer) {
+export function renderFsdDocx(d: FsdDetails, preview: Pick<FsdPreview,'sections'|'gaps'|'conflicts'>, logo: Buffer, template?: Buffer, inputCoverage: {name:string;status:string;reason:string}[] = []) {
   const reference = fsdReference(d)
   const sign = (name: string, title: string) => `\n\n________________________  __________\n${name || 'Name'}                                      (Date)\n${title || 'Position'}`
   let body = p(d.product,'Title')+p(d.feature,'Title')+p('Agreed and Approved by:')
@@ -31,6 +31,7 @@ export function renderFsdDocx(d: FsdDetails, preview: Pick<FsdPreview,'sections'
     body += p(section.title,isSub?'Heading2':'Heading1',['report','lynexus','pos'].includes(section.id) && section.blocks.some(b=>b.type === 'table'))
     body += section.blocks.map(block).join('')
   }
+  if (inputCoverage.length) body += p('Input Coverage','Heading1',true) + table(['Document / Source','Status','Details'], inputCoverage.map(s => [s.name,s.status,s.reason]))
   if (preview.gaps.length || preview.conflicts.length) {
     body += p('Review Items — Pending Confirmation','Heading1',true)
     if (preview.gaps.length) body += p('Missing information','Heading2')+preview.gaps.map((v,i)=>p(`${i+1}. ${v}`)).join('')
@@ -77,3 +78,4 @@ export function renderFsdDocx(d: FsdDetails, preview: Pick<FsdPreview,'sections'
   zip.file('word/styles.xml',`<w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="140" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/><w:spacing w:before="400" w:after="300"/><w:keepNext/></w:pPr><w:rPr><w:b/><w:sz w:val="30"/></w:rPr></w:style>${[1,2,3].map(n=>`<w:style w:type="paragraph" w:styleId="Heading${n}"><w:name w:val="heading ${n}"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="260" w:after="140"/><w:outlineLvl w:val="${n-1}"/></w:pPr><w:rPr><w:b/><w:sz w:val="${n===1?28:24}"/></w:rPr></w:style>`).join('')}</w:styles>`)
   return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
+

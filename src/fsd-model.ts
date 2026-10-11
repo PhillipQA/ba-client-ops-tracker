@@ -19,9 +19,10 @@ export type FsdBlock = ({ type: 'paragraph'; text: string } | { type: 'table'; h
 export type FsdSection = { id: string; title: string; blocks: FsdBlock[]; sourceIds: string[] }
 export type FsdRequirement = { id: string; requirement: string; module: FsdModule | 'General'; evidence: { sourceId: string; quote: string }[] }
 export type FsdSourceAnalysis = { fingerprint: string; readability: 'readable' | 'partial' | 'unreadable'; summary: string; requirements: FsdRequirement[]; gaps: string[]; complete: boolean; provider: string; model: string; analyzedAt: string }
+export type FsdUploadFailure = { id: string; name: string; reason: string }
 export type FsdGenerationMode = 'standard' | 'available'
-export type FsdSourceCoverage = { usedSourceIds: string[]; partialSourceIds: string[]; skippedSources: { id: string; name: string; reason: string }[] }
-export type FsdPreview = { sections: FsdSection[]; gaps: string[]; conflicts: string[]; provider: string; model: string; generatedAt: string; interpretationGaps?: string[]; requirements?: FsdRequirement[]; generationMode?: FsdGenerationMode; sourceCoverage?: FsdSourceCoverage; features?: FsdFeature[] }
+export type FsdSourceCoverage = { contributingSourceIds?: string[]; noRelevantSourceIds?: string[]; excludedSources?: {id:string;name:string;reason:string}[]; usedSourceIds: string[]; partialSourceIds: string[]; skippedSources: { id: string; name: string; reason: string }[] }
+export type FsdPreview = { uploadFailures?: FsdUploadFailure[]; sections: FsdSection[]; gaps: string[]; conflicts: string[]; provider: string; model: string; generatedAt: string; interpretationGaps?: string[]; requirements?: FsdRequirement[]; generationMode?: FsdGenerationMode; sourceCoverage?: FsdSourceCoverage; features?: FsdFeature[] }
 export type FsdSource = { id: string; name: string; kind: 'BRD' | 'Meeting notes' | 'Supporting document' | 'Chat'; text: string; target: string; analysis?: FsdSourceAnalysis; analysisError?: string }
 export type FsdPreset = { id: string; name: string; instructions: string }
 export const FSD_PRESETS: FsdPreset[] = [
@@ -62,9 +63,10 @@ NO WARRANTIES OF ANY NATURE ARE EXTENDED BY THIS DOCUMENT. Any product and relat
 
 You should be very careful to ensure the use of this information and/or software material complies with the laws, rules, and regulations of the jurisdictions with respect to which it is used. The information contained herein is subject to change without notice. Revisions may be issued to advise of such changes and/or additions.`
 export type FsdDetails = { client: string; feature: string; product: string; reference: string; version: string; date: string; author: string; irippleBA: string; iripplePM: string; clientName1: string; clientTitle1: string; clientName2: string; clientTitle2: string }
-export type FsdDraft = { mode: FsdMode; details: FsdDetails; projectName?: string; fileNameOverride?: string; sources: FsdSource[]; presetId: string; presetInstructions: string; customPresets: FsdPreset[]; presetName: string; modules: FsdModule[]; features?: FsdFeature[]; guidance: string; mapping: Record<string, string>; pasteName: string; pasteText: string; pasteKind: FsdSource['kind']; preview: FsdPreview | null; previewRevision: number; revision: number; reviewed: boolean }
+export type FsdDraft = { uploadFailures?: FsdUploadFailure[]; mode: FsdMode; details: FsdDetails; projectName?: string; fileNameOverride?: string; sources: FsdSource[]; presetId: string; presetInstructions: string; customPresets: FsdPreset[]; presetName: string; modules: FsdModule[]; features?: FsdFeature[]; guidance: string; mapping: Record<string, string>; pasteName: string; pasteText: string; pasteKind: FsdSource['kind']; preview: FsdPreview | null; previewRevision: number; revision: number; reviewed: boolean }
 export function emptyFsdDraft(): FsdDraft {
   const d = new Date(), date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
   return { mode: 'advanced', details: { client: '', feature: '', product: 'BARTER XI', reference: '', version: '1.0', date, author: '', irippleBA: '', iripplePM: '', clientName1: '', clientTitle1: '', clientName2: '', clientTitle2: '' }, projectName: '', sources: [], presetId: 'standard', presetInstructions: FSD_PRESETS[0].instructions, customPresets: [], presetName: '', modules: [...FSD_MODULES], guidance: '', mapping: {}, pasteName: '', pasteText: '', pasteKind: 'Chat', preview: null, previewRevision: -1, revision: 0, reviewed: false }
 }
 export function fsdReference(d: FsdDetails) { return d.reference.trim() || `FSD-${d.client.replace(/[^a-z0-9]/gi,'').toUpperCase().slice(0,20) || 'CLIENT'}-${d.date.slice(0,4)}-${d.date.slice(5).replace('-','')}-01` }
+

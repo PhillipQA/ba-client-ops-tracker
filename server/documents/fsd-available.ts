@@ -2,6 +2,27 @@ import { fsdReadiness, suggestedFsdSectionInput } from '../../src/fsd-readiness'
 import type { FsdSectionId, FsdSource, FsdModule, FsdBlock, FsdFeature } from '../../src/fsd-model'
 import { IntegrationError } from '../integrations/tenant-integrations'
 
+/** Failed uploads are diagnostics, never empty requirement sources. */
+export function unavailableFsdInputs(value: unknown): { id: string; name: string; reason: string }[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 20) throw new IntegrationError('Keep at most 20 unavailable upload records; dismiss older records before continuing.')
+  const records = value.map(item => {
+    if (!item || ['id', 'name', 'reason'].some(key => typeof item[key] !== 'string' || !item[key].trim() || item[key].length > (key === 'reason' ? 2000 : 200) || /[\u0000-\u001f]/.test(item[key]))) throw new IntegrationError('Invalid unavailable upload record.')
+    return { id: item.id.trim(), name: item.name.trim(), reason: item.reason.trim() }
+  })
+  if (new Set(records.map(item => item.id)).size !== records.length) throw new IntegrationError('Duplicate unavailable upload record.')
+  return records
+}
+
+export function fsdInputCoverage(sources: FsdSource[], selected: FsdSource[], requirements: { evidence: {sourceId:string}[] }[], failures: {name:string;reason:string}[]) {
+  const contributing = new Set(requirements.flatMap(r => r.evidence.map(e => e.sourceId)))
+  return [...sources.map(source => {
+    const included = selected.some(s => s.id === source.id)
+    const unavailable = source.analysisError || !source.analysis || source.analysis.readability === 'unreadable'
+    return { name: source.name, status: !included ? 'Excluded by section mapping' : unavailable ? 'Skipped — no readable successful review' : contributing.has(source.id) ? (source.analysis!.readability === 'partial' || !source.analysis!.complete ? 'Partially used — verified facts retained' : 'Contributed supported requirements') : 'Reviewed — no relevant requirements', reason: !included ? 'Reassign to an included section to use this source.' : unavailable ? source.analysisError || 'Replace the source or retry review.' : source.analysis!.gaps.join('; ') }
+  }), ...failures.map(f => ({ name: f.name, status: 'Upload unavailable — skipped', reason: f.reason }))]
+}
+
 export function pendingFsdSection(id: FsdSectionId, title: string) {
   return { id, title, sourceIds: [], blocks: [{ type: 'paragraph' as const, text: `TBD — Pending information for ${title.replace(/^[\d.]+\s*/, '')}. Add relevant notes or supporting evidence to complete this section.`, requirementIds: [] }] }
 }
@@ -47,3 +68,4 @@ export function availableFsdGaps(sources: FsdSource[], modules: FsdModule[], exi
   if (unique.length > 100) throw new IntegrationError('This draft has more than 100 review items. Split the feature into smaller documents so all pending information remains visible.', 422)
   return unique
 }
+

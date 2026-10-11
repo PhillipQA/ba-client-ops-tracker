@@ -9,7 +9,7 @@ import { runTenantAi } from '../ai/tenant-ai'
 import { renderFsdDocx } from './fsd-export'
 import { FSD_SECTIONS, isCustomFsdFeature, isFsdFeatureSection, fsdExcludedModules, fsdSectionsForModules, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource, type FsdModule, type FsdSectionId, type FsdFeature } from '../../src/fsd-model'
 import { documentOutputName } from '../../src/documentFilename'
-import { availableFsdGaps, completeAvailableSections, pendingFsdSection } from './fsd-available'
+import { availableFsdGaps, completeAvailableSections, pendingFsdSection, unavailableFsdInputs, fsdInputCoverage } from './fsd-available'
 import { validateFsdScope } from './fsd-scope'
 import { normalizeFeaturePreview } from './fsd-feature-preview'
 import { fsdFeatureCode } from '../../src/fsd-features'
@@ -35,6 +35,7 @@ function validateInput(body: any) {
   if (new Set(sources.map(s => s.id)).size !== sources.length || sources.some(s => !['BRD','Meeting notes','Supporting document','Chat'].includes(s.kind) || s.target && !FSD_SECTIONS.some(([id]) => id === s.target) && !isCustomFsdFeature(s.target))) throw new IntegrationError('Invalid source kind, ID or target section.')
   if (sources.reduce((sum, source) => sum + source.text.length, 0) > 180000) throw new IntegrationError('Sources exceed 180,000 characters. Split the feature into smaller documents.')
   const preset = text(body.presetInstructions, 'preset instructions', 8000, true)
+  const uploadFailures = unavailableFsdInputs(body.uploadFailures)
   const sections = fsdSectionsForModules(modules, features)
   const activeSectionIds = new Set<FsdSectionId>(sections.map(([id]) => id))
   const effectiveSources = sources
@@ -43,7 +44,7 @@ function validateInput(body: any) {
   const guidance = text(body.guidance || '', 'additional guidance', 10000)
   const mapping: Record<string,string> = {}
   for (const [id] of sections) mapping[id] = text(body.mapping?.[id] || '', 'section guidance', 2000)
-  return { details, mode: body.mode, sources: effectiveSources, preset, modules, features, excludedModules: fsdExcludedModules(modules), sections, guidance, mapping, allowIncomplete: body.allowIncomplete === true }
+  return { details, mode: body.mode, sources: effectiveSources, preset, modules, features, excludedModules: fsdExcludedModules(modules), sections, guidance, mapping, uploadFailures, allowIncomplete: body.allowIncomplete === true }
 }
 export function validateFsdPreview(value: any, strictSectionIds?: readonly FsdSectionId[], allowIncomplete = false, features?: FsdFeature[]): Pick<FsdPreview,'sections'|'gaps'|'conflicts'> {
   if (!Array.isArray(value?.sections)) throw new IntegrationError('AI output is missing required template sections. Try generating again.', 422)
@@ -163,7 +164,7 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
         grounding = interpretRequirements(interpretation, input.sources, input.modules, input.allowIncomplete)
       }
       // Raw mixed-scope documents are never sent to the writing step.
-      const { sources: _sources, ...writingInput } = input
+      const { sources: _sources, uploadFailures: _uploadFailures, ...writingInput } = input
       const sourceCatalog = input.sources.map(({ id, name, kind, target }) => ({ id, name, kind, target }))
       let parsed: any
       if (input.allowIncomplete && !grounding.requirements.length) {
@@ -188,11 +189,12 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
       const evidenceBlocks: FsdBlock[] = []
       for (let start = 0; start < evidenceRows.length; start += 100) evidenceBlocks.push({ type: 'table', headers: ['Requirement ID', input.features ? 'Feature' : 'Module', 'Source ID', 'Supporting excerpt'], rows: evidenceRows.slice(start, start + 100) })
       const coverage = 'sourceCoverage' in grounding ? grounding.sourceCoverage : undefined
+      if (coverage) coverage.excludedSources = req.body.sources.filter((s: FsdSource) => !input.sources.some(source => source.id === s.id)).map((s: FsdSource) => ({ id: s.id, name: s.name, reason: 'Mapped outside the selected scope; reassign its section to include it.' }))
       const referenceSources = input.sources.filter(s => grounding.requirements.some(r => r.evidence.some(e => e.sourceId === s.id)) || input.allowIncomplete && (!coverage || coverage.usedSourceIds.includes(s.id)))
       preview.sections.find(s => s.id === 'references')!.blocks = referenceSources.length ? [{ type: 'table', headers: ['Source ID','Document / Source','Type'], rows: referenceSources.map(s => [s.id,s.name,s.kind]) }, ...evidenceBlocks] : [{ type: 'paragraph', text: 'TBD — No source supplied supported requirements for this draft.' }]
       validateFsdPreview(preview, expectedSectionIds, input.allowIncomplete, input.features)
       const normalized = normalizeAiConfig(ai.config)
-      res.json({ ...preview, ...(input.features ? { features: input.features } : {}), requirements: grounding.requirements, interpretationGaps: grounding.gaps, generationMode: input.allowIncomplete ? 'available' : 'standard', ...(coverage ? { sourceCoverage: coverage } : {}), provider: aiProviderName(ai.config), model: normalized.model, generatedAt: new Date().toISOString() })
+      res.json({ ...preview, uploadFailures: input.uploadFailures, ...(input.features ? { features: input.features } : {}), requirements: grounding.requirements, interpretationGaps: grounding.gaps, generationMode: input.allowIncomplete ? 'available' : 'standard', ...(coverage ? { sourceCoverage: coverage } : {}), provider: aiProviderName(ai.config), model: normalized.model, generatedAt: new Date().toISOString() })
     } catch (e) { res.status(e instanceof IntegrationError ? e.status : 502).json({ error: e instanceof IntegrationError ? e.message : 'FSD generation failed. Check the Document Agent key, model access, quota and connection. Your draft is retained.' }) }
   })
   app.post('/api/documents/fsd/generate', ...scope, limiter, async (req,res) => {
@@ -208,12 +210,14 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
         preview.gaps = availableFsdGaps(req.body.sources.filter((s: FsdSource) => input.sources.some(source => source.id === s.id)), input.modules, [...preview.gaps, ...reviewedGrounding.gaps], preview.sections, input.features)
       }
       assertFsdGrounding(preview, grounding.requirements, input.modules, input.allowIncomplete, input.features)
+      validateFsdPreview(preview, input.sections.map(([id]) => id), input.allowIncomplete, input.features)
       const templateRow = await documentTemplateRow(deps.db, (req as any).authUser.organizationId, 'fsd')
       if (templateRow && !templateRow.is_enabled) throw new IntegrationError('The FSD template is not configured. Add or restore it in Settings → Templates.', 503)
       const customTemplate = templateRow?.is_enabled && templateRow.content_base64 ? Buffer.from(templateRow.content_base64, 'base64') : undefined
       const logo = await readFile(deps.logoPath)
-      const output = renderFsdDocx(details, preview, logo, customTemplate)
+      const output = renderFsdDocx(details, preview, logo, customTemplate, fsdInputCoverage(req.body.sources, input.sources, grounding.requirements, input.uploadFailures))
       res.json({ fileData: output.toString('base64'), fileName: req.body?.fileName ? documentOutputName(req.body.fileName,'docx',details.reference || `FSD-${details.client}-${details.feature}`) : `${details.reference || 'FSD-'+details.client+'-'+details.feature}`.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,150)+'.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
     } catch (e) { res.status(e instanceof IntegrationError ? e.status : 500).json({ error: e instanceof IntegrationError ? e.message : 'Could not export the FSD. Confirm the FSD template assets are installed.' }) }
   })
 }
+

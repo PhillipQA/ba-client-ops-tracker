@@ -10,6 +10,7 @@ import FsdSourceReview, { sourceReviewLabel } from './FsdSourceReview'
 import { APP_VERSION } from './version'
 import './fsd.css'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
+import FsdCoverage from './FsdCoverage'
 import FsdReadinessChecklist from './FsdReadinessChecklist'
 import { fsdReadiness } from './fsd-readiness'
 import type { FsdGenerationMode } from './fsd-model'
@@ -99,8 +100,8 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
   const sourceIncluded = (source: FsdSource, modules = draft.modules) => !source.target || fsdSectionsForModules(modules, draft.features).some(([id])=>id===source.target)
   const includedSources = draft.sources.filter(s=>sourceIncluded(s))
   const pendingSources = includedSources.filter(s=>!s.analysis || s.analysisError)
-  const readiness = fsdReadiness(draft.sources, draft.modules, draft.features)
-  const standardSourceProblems = includedSources.some(s=>s.analysisError || s.analysis && (!s.analysis.complete || s.analysis.readability==='unreadable')) || includedSources.length>0 && includedSources.every(s=>s.analysis && !s.analysis.requirements.length)
+  const readiness = fsdReadiness(draft.sources, draft.modules, draft.features, draft.uploadFailures)
+  const standardSourceProblems = Boolean(draft.uploadFailures?.length) || includedSources.some(s=>s.analysisError || s.analysis && (!s.analysis.complete || s.analysis.readability!=='readable')) || includedSources.length>0 && includedSources.every(s=>s.analysis && !s.analysis.requirements.length)
   const requiredDetails = {client:'Client',feature:'Document title',product:'Product',author:'Prepared by',date:'Document date',version:'Revision'} as const
   const missingDetails = (Object.keys(requiredDetails) as Array<keyof typeof requiredDetails>).filter(key=>!draft.details[key]?.trim()).map(key=>requiredDetails[key])
   const date = draft.details.date
@@ -149,9 +150,10 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
   }
   async function addFiles(files: File[]) {
     if (!files.length || busy) return
+    if ((draft.uploadFailures?.length||0)+files.length>20) {setError('Dismiss older unavailable upload records before adding more files (20 records maximum).');return}
     if (draft.sources.length+files.length>20) {setError('Use up to 20 sources.');return}
     const job = operation.begin(); setError('');setRetryAction('upload');setStage('reading');setBusy('Reading documents…')
-    const added: FsdSource[] = [], errors: string[] = []
+    const added: FsdSource[] = [], errors: string[] = [], failures: {id:string;name:string;reason:string}[] = []
     for (const file of files) {
       if (!job.isCurrent()) return
       try {
@@ -160,10 +162,10 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
         if ([...draftRef.current.sources,...added].reduce((sum,s)=>sum+s.text.length,0)+text.length>180000) throw new Error(`${file.name}: sources would exceed 180,000 characters. Split the feature into smaller documents.`)
         added.push({id:sourceId([...draftRef.current.sources,...added]),name:file.name,kind:isFsdImageFile(file)?'Supporting document':uploadKind,target:'',text})
       }
-      catch(e){ errors.push(e instanceof Error?e.message:'Document could not be read.') }
+      catch(e){ const reason=(e instanceof Error?e.message:'Document could not be read.').replace(/[\u0000-\u001f]/g,' ').slice(0,2000); errors.push(reason); failures.push({id:crypto.randomUUID(),name:file.name.replace(/[\u0000-\u001f]/g,' ').slice(0,200)||'Unnamed file',reason}) }
     }
     if (!job.isCurrent()) return
-    if (added.length) setDraft(d=>({...d,sources:[...d.sources,...added],revision:d.revision+1,reviewed:false}))
+    if (added.length || failures.length) setDraft(d=>({...d,sources:[...d.sources,...added],uploadFailures:[...(d.uploadFailures||[]).filter(f=>!added.some(s=>s.name===f.name)),...failures],revision:d.revision+1,reviewed:false}))
     const results = await analyzeBatch(added,draft.modules,job)
     if (!job.isCurrent()) return
     if (results.some(s=>s.analysisError)) {if(!errors.length)setRetryAction('analysis');errors.push('Some sources could not be reviewed. Extracted text is retained; open the affected source and retry AI review.')}
@@ -193,7 +195,7 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
     const job = operation.begin()
     setBusy('Preparing Word document…');setStage('export');setRetryAction('export');setError('')
     try {
-      const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true,mode:'advanced',sources:draft.sources,modules:draft.modules,features:draft.features,presetInstructions:draft.presetInstructions,allowIncomplete:draft.preview.generationMode==='available',fileName:documentOutputName(fileName,'docx',suggestedFileName)},job.signal)
+      const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true,mode:'advanced',sources:draft.sources,uploadFailures:draft.uploadFailures,modules:draft.modules,features:draft.features,presetInstructions:draft.presetInstructions,allowIncomplete:draft.preview.generationMode==='available',fileName:documentOutputName(fileName,'docx',suggestedFileName)},job.signal)
       if (!job.isCurrent()) return
       const bytes=Uint8Array.from(atob(result.fileData),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:result.mimeType}))
       const a=document.createElement('a');a.href=url;a.download=result.fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
@@ -270,9 +272,10 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
             <h3>5. Preview &amp; generate</h3>
             <p>The AI uses your reviewed facts, current preset and listed features. A few readable notes are enough to start a draft.</p>
             {previewPrerequisites.length>0&&<div className="fsd-preview-prerequisites" role="status"><strong>Complete these basics before either option:</strong><ul>{previewPrerequisites.map(item=><li key={item}>{item}</li>)}</ul><small>Supporting documents can be incomplete. Basic document details are still required.</small></div>}
+            {Boolean(draft.uploadFailures?.length)&&<details className="fsd-card"><summary>Unavailable uploads ({draft.uploadFailures!.length})</summary><ul>{draft.uploadFailures!.map(f=><li key={f.id}><strong>{f.name}</strong>: {f.reason} <button type="button" className="secondary" onClick={()=>patch({uploadFailures:draft.uploadFailures!.filter(item=>item.id!==f.id)})}>Dismiss</button></li>)}</ul><small>Retry the upload or paste its contents. Successful replacement with the same filename clears its failure record.</small></details>}
             <FsdReadinessChecklist issues={readiness} preview={stale?null:draft.preview}/>
             <button className="primary fsd-primary" disabled={Boolean(previewPrerequisites.length)||standardSourceProblems} onClick={()=>void generatePreview()}><Sparkles size={16}/>{draft.preview?'Regenerate AI preview':'Generate AI preview'}</button>
-            {standardSourceProblems&&<small>Some reviews are incomplete, unreadable or contain no supported requirements. Correct the sources, or use Generate anyway below.</small>}
+            {standardSourceProblems&&<small>Some uploads or reviews are unavailable, partial, or contain no supported requirements. Correct the sources, or use Generate anyway below.</small>}
             <button className="secondary fsd-primary" disabled={Boolean(previewPrerequisites.length)} onClick={()=>void generatePreview('available')}><Sparkles size={16}/>Generate anyway — use available information</button>
             {draft.preview&&<button className="secondary" onClick={()=>setShowPreview(v=>!v)}>{showPreview?'Hide':'Show'} preview</button>}
             <small>Generate anyway uses verified readable portions, skips unreadable or failed source reviews, and keeps missing selected sections as TBD. At least one successfully reviewed readable source is needed. Review the partial draft before downloading it.</small>
@@ -283,8 +286,8 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
     </fieldset>
     {showPreview&&draft.preview&&<section className="fsd-preview-panel"><div className="fsd-preview-toolbar"><div><h3>FSD Preview</h3><small>{draft.preview.provider} · {draft.preview.model} · {new Date(draft.preview.generatedAt).toLocaleString()}</small></div><button className="secondary" disabled={!canGenerate||Boolean(busy)||stale} onClick={()=>setEditPreview(v=>!v)}>{editPreview?'Finish editing':'Edit preview'}</button></div>
       {stale&&<p className="fsd-warning">Inputs changed after this preview. Regenerate before exporting.</p>}
-      {draft.preview.generationMode==='available'&&<div className="fsd-warning" role="status"><strong>Partial draft — generated using available information.</strong><p>Missing details remain TBD / Pending information. Review the pending questions before using this specification.</p>{draft.preview.sourceCoverage&&<><p>{draft.preview.sourceCoverage.usedSourceIds.length} source(s) used; {draft.preview.sourceCoverage.partialSourceIds.length} used in part; {draft.preview.sourceCoverage.skippedSources.length} skipped.</p>{draft.preview.sourceCoverage.skippedSources.length>0&&<ul>{draft.preview.sourceCoverage.skippedSources.map(source=><li key={source.id}>{source.name}: {source.reason}</li>)}</ul>}</>}</div>}
-      <details className="fsd-card"><summary>Review interpreted requirements and source evidence</summary><p>Excerpts are checked against source text. Confirm that the interpretation and feature classification are correct.</p>{draft.preview.requirements?.map(r=><article key={r.id}><strong>{r.id} · {draft.features?.find(f=>f.id===r.module)?.name || r.module}</strong><p>{r.requirement}</p>{r.evidence.map((e,i)=><blockquote key={i}><small>{e.sourceId}</small><p>{e.quote}</p></blockquote>)}</article>)}{draft.preview.interpretationGaps?.map((g,i)=><p key={i}>{g}</p>)}</details>
+      {draft.preview.generationMode==='available'&&<div className="fsd-warning" role="status"><strong>Partial draft — generated using available information.</strong><p>Missing details remain TBD / Pending information. Review the pending questions before using this specification.</p>{draft.preview.sourceCoverage&&<><p>{draft.preview.sourceCoverage.usedSourceIds.length} source(s) reviewed successfully; {draft.preview.sourceCoverage.partialSourceIds.length} read in part; {draft.preview.sourceCoverage.skippedSources.length} skipped.</p>{draft.preview.sourceCoverage.skippedSources.length>0&&<ul>{draft.preview.sourceCoverage.skippedSources.map(source=><li key={source.id}>{source.name}: {source.reason}</li>)}</ul>}</>}</div>}
+      <FsdCoverage preview={draft.preview} sources={draft.sources}/><details className="fsd-card"><summary>Review interpreted requirements and source evidence</summary><p>Excerpts are checked against source text. Confirm that the interpretation and feature classification are correct.</p>{draft.preview.requirements?.map(r=><article key={r.id}><strong>{r.id} · {draft.features?.find(f=>f.id===r.module)?.name || r.module}</strong><p>{r.requirement}</p>{r.evidence.map((e,i)=><blockquote key={i}><small>{e.sourceId}</small><p>{e.quote}</p></blockquote>)}</article>)}{draft.preview.interpretationGaps?.map((g,i)=><p key={i}>{g}</p>)}</details>
       <div className="fsd-paper"><div className="fsd-paper-header"><strong>iRipple</strong><b>FEATURE SPECIFICATION DOCUMENT</b><small>Document Version:<br/>{fsdReference(draft.details)}</small></div><div className="fsd-cover"><h2>{draft.details.product}</h2><h2>{draft.details.feature}</h2><p>Agreed and Approved by:</p><div className="fsd-signatories"><div><b>IRIPPLE, INC.</b><p>{draft.details.irippleBA||'Name'} — Business Analyst</p><p>{draft.details.iripplePM||'Name'} — Project Manager</p></div><div><b>{draft.details.client}</b><p>{draft.details.clientName1||'Name'} — {draft.details.clientTitle1||'Position'}</p><p>{draft.details.clientName2||'Name'} — {draft.details.clientTitle2||'Position'}</p></div></div><small>Signature and date lines are left blank in the Word document.</small></div><details><summary>Proprietary Data Notice</summary><p className="fsd-preserve">{FSD_NOTICE}</p></details><details><summary>Table of Contents</summary>{draft.preview.sections.map(section=><p key={section.id}>{section.title}</p>)}</details>
       {draft.preview.sections.map((section,si)=><section className="fsd-preview-section" key={section.id}>{section.id==='summary'&&<h2>1. Introduction</h2>}{section.id===firstPreviewModuleSectionId&&<h2>5. Software Features</h2>}{section.id==='assumptions'&&<h2>VI. Assumptions and Limitations</h2>}<h3>{section.title}</h3><small className="fsd-source-citation">{section.sourceIds.length?`Sources: ${section.sourceIds.map(id=>draft.sources.find(s=>s.id===id)?.name||id).join(', ')}`:'Document metadata / review item'}</small>{section.blocks.map((block,bi)=>block.type==='paragraph'?editPreview?<textarea key={bi} disabled={Boolean(busy)||!canGenerate||stale} aria-label={section.title} rows={Math.min(20,Math.max(3,block.text.split('\n').length+2))} maxLength={16000} value={block.text} onChange={e=>editBlock(si,bi,0,0,e.target.value)}/>:<p className="fsd-preserve" key={bi}>{block.text}</p>:<div className="fsd-table-scroll" key={bi}><table><thead><tr>{block.headers.map((header,hi)=><th key={hi}>{header}</th>)}</tr></thead><tbody>{block.rows.map((row,ri)=><tr key={ri}>{row.map((cell,ci)=><td key={ci}>{editPreview?<textarea disabled={Boolean(busy)||!canGenerate||stale} aria-label={`${section.title}, ${block.headers[ci]}, row ${ri+1}`} rows={3} maxLength={8000} value={cell} onChange={e=>editBlock(si,bi,ri,ci,e.target.value)}/>:<span className="fsd-preserve">{cell}</span>}</td>)}</tr>)}</tbody></table></div>)}</section>)}
       {(draft.preview.gaps.length>0||draft.preview.conflicts.length>0)&&<section className="fsd-review-items"><h3>Review Items — Pending Confirmation</h3>{draft.preview.gaps.length>0&&<><h4>Missing information</h4><ul>{draft.preview.gaps.map((g,i)=><li key={i}>{g}</li>)}</ul></>}{draft.preview.conflicts.length>0&&<><h4>Conflicting sources</h4><ul>{draft.preview.conflicts.map((g,i)=><li key={i}>{g}</li>)}</ul></>}</section>}</div>
@@ -293,3 +296,4 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
     <div className="fsd-draft-footer"><small>Your entries remain when switching modules. Reset clears the saved draft in this tab. Saved custom presets remain available.</small></div>
   </div>
 }
+

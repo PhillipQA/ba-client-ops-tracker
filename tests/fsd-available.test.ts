@@ -8,7 +8,7 @@ import FsdReadinessChecklist from '../src/FsdReadinessChecklist'
 import { fsdReadiness } from '../src/fsd-readiness'
 import { emptyFsdDraft, fsdSectionsForModules, type FsdSource, type FsdSourceAnalysis } from '../src/fsd-model'
 import { groundingFromSourceAnalyses, sourceAnalysisFingerprint, validateSourceAnalysis } from '../server/documents/fsd-source-analysis'
-import { completeAvailableSections } from '../server/documents/fsd-available'
+import { completeAvailableSections, unavailableFsdInputs, fsdInputCoverage } from '../server/documents/fsd-available'
 import { registerFsdRoutes } from '../server/documents/fsd-documents'
 
 const modules = ['MMS Report'] as const
@@ -109,7 +109,9 @@ async function harness(run: (post: (path: string, body: any) => Promise<{ status
 test('short partial notes preview and export with missing sections, source evidence and actionable pending items', async () => {
   const partial = reviewed(source, { complete: false, readability: 'partial', gaps: ['Report filter rules are missing.'] })
   const unreadable = reviewed({ ...source, id: 'SRC-002', name: 'Blurred image.png', text: '[Extraction warning: no readable text found in this image; inspect the original for visual requirements.]' }, { readability: 'unreadable', requirements: [] })
-  const d = draft([partial, unreadable])
+  const excluded = { ...source, id: 'SRC-003', name: 'Excluded POS notes.txt', target: 'pos' }
+  const noFacts = reviewed({ ...source, id: 'SRC-004', name: 'Background.txt' }, { requirements: [] })
+  const d = { ...draft([partial, unreadable, excluded, noFacts]), uploadFailures: [{ id: 'upload-1', name: 'Broken.docx', reason: 'Damaged Word document' }] }
   await harness(async (post, wire) => {
     const strict = await post('preview', { ...d, allowIncomplete: false })
     assert.equal(strict.status, 422); assert.equal(wire.length, 0)
@@ -118,17 +120,22 @@ test('short partial notes preview and export with missing sections, source evide
     assert.equal(preview.body.generationMode, 'available')
     assert.equal(preview.body.requirements.length, 1)
     assert.equal(preview.body.sourceCoverage.skippedSources.length, 1)
+    assert.deepEqual(preview.body.sourceCoverage.contributingSourceIds, ['SRC-001'])
+    assert.deepEqual(preview.body.sourceCoverage.noRelevantSourceIds, ['SRC-004'])
+    assert.equal(preview.body.sourceCoverage.excludedSources[0].name, excluded.name)
+    assert.equal(preview.body.uploadFailures[0].name, 'Broken.docx')
     assert.match(preview.body.sections.find((s: any) => s.id === 'acceptance').blocks[0].text, /^TBD/)
     assert.ok(preview.body.gaps.some((g: string) => /What to add:.*filter/.test(g)))
     assert.ok(!preview.body.sections.some((s: any) => s.id === 'pos'))
     assert.equal(wire.length, 1)
     const writing = JSON.parse(wire[0].messages[0].content)
-    assert.equal(writing.requirements.length, 1); assert.equal(writing.sources, undefined)
+    assert.equal(writing.requirements.length, 1); assert.equal(writing.sources, undefined); assert.equal(writing.uploadFailures, undefined)
     const output = await post('generate', { ...d, preview: preview.body, reviewed: true, fileName: 'FSD-Acme-Stock-report.docx' })
     assert.equal(output.status, 200, JSON.stringify(output.body)); assert.equal(output.body.fileName, 'FSD-Acme-Stock-report.docx')
     const zip = new PizZip(Buffer.from(output.body.fileData, 'base64'))
     const word = zip.file('word/document.xml')!.asText()
     assert.match(word, /Pending information/); assert.match(word, /stock report shows item codes/)
+    assert.match(word, /Input Coverage/); assert.match(word, /Broken.docx/); assert.match(word, /Excluded POS notes.txt/); assert.match(word, /Background.txt/); assert.match(word, /Reviewed — no relevant requirements/)
     assert.match(word, /What to add:/); assert.match(word, /Blurred image.png: skipped/)
     assert.ok(!word.includes('5.4 POS Feature'))
     const changed = await post('generate', { ...d, sources: [{ ...partial, text: 'Edited notes' }, unreadable], preview: preview.body, reviewed: true })
@@ -154,4 +161,23 @@ test('TBD-only preview from sparse readable input downloads while basic fields s
     const rejected = await post('generate', { ...d, preview: forged, reviewed: true })
     assert.equal(rejected.status, 422); assert.match(rejected.body.error, /unsupported content/)
   }, {})
+})
+
+
+
+test('upload diagnostics remain actionable without becoming requirement sources', () => {
+  const failures = [{ id: 'broken-1', name: 'Broken.docx', reason: 'Damaged Word document' }]
+  const issues = fsdReadiness([reviewed()], modules, undefined, failures)
+  const unavailable = issues.find(i => i.id === 'broken-1')!
+  assert.equal(unavailable.category, 'unavailable')
+  assert.match(unavailable.add, /Generate anyway skips/)
+  assert.equal(unavailableFsdInputs(undefined).length, 0)
+  assert.deepEqual(unavailableFsdInputs(failures), failures)
+  assert.throws(() => unavailableFsdInputs([{ ...failures[0], reason: '' }]), /Invalid/)
+  assert.throws(() => unavailableFsdInputs([...failures, ...failures]), /Duplicate/)
+  const notes = reviewed()
+  const rows = fsdInputCoverage([notes], [notes], notes.analysis!.requirements, failures)
+  assert.equal(rows[0].status, 'Contributed supported requirements')
+  assert.equal(rows[1].name, 'Broken.docx')
+  assert.match(rows[1].status, /skipped/)
 })

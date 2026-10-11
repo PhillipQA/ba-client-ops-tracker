@@ -1,6 +1,6 @@
 import { FSD_MODULE_SECTION, fsdModuleSection, fsdSectionsForModules, isCustomFsdFeature, type FsdLegacyModule, type FsdFeature, type FsdModule, type FsdSource } from './fsd-model'
 
-export type FsdReadinessIssue = { id: string; title: string; missing: string; add: string }
+export type FsdReadinessIssue = { category?: 'unavailable' | 'missing-data'; sourceId?: string; sectionId?: string; id: string; title: string; missing: string; add: string }
 
 const moduleSuggestions: Record<FsdLegacyModule, string> = {
   'MMS Feature': 'Add workflow notes or screenshots describing the action, user role, inputs, validation and expected result.',
@@ -36,11 +36,12 @@ export function suggestedFsdInput(gap: string) {
 }
 
 /** Guidance reflects the current source review, not a required list of file types. */
-export function fsdReadiness(sources: FsdSource[], modules: readonly FsdModule[], features?: readonly FsdFeature[]): FsdReadinessIssue[] {
+export function fsdReadiness(sources: FsdSource[], modules: readonly FsdModule[], features?: readonly FsdFeature[], uploadFailures: {id:string;name:string;reason:string}[] = []): FsdReadinessIssue[] {
   const selected = new Set<string>(fsdSectionsForModules(modules, features).map(([id]) => id))
   const included = sources.filter(s => !s.target || selected.has(s.target))
-  const issues: FsdReadinessIssue[] = []
-  if (!included.length) return [{ id: 'source', title: 'Requirement information', missing: sources.length ? 'Your sources are mapped only to unchecked modules.' : 'No requirement information has been added.', add: sources.length ? 'Select the relevant module or change a source mapping to an included section.' : 'Upload any relevant file or paste a few notes explaining the desired change. A BRD is optional.' }]
+  const issues: FsdReadinessIssue[] = uploadFailures.map(f => ({ id: f.id, category: 'unavailable', title: f.name, missing: `Upload unavailable: ${f.reason}`, add: 'Replace this file or paste its readable contents. Generate anyway skips this unavailable upload.' }))
+  for (const source of sources.filter(s => s.target && !selected.has(s.target))) issues.push({ id: `${source.id}-excluded`, category: 'unavailable', sourceId: source.id, title: source.name, missing: 'Excluded by section mapping; this input will not be used.', add: 'Reassign to an included feature or shared section to use its content.' })
+  if (!included.length) return [{ id: 'source', title: 'Requirement information', missing: sources.length ? 'Your sources are mapped only to unchecked modules.' : 'No requirement information has been added.', add: sources.length ? 'Select the relevant module or change a source mapping to an included section.' : 'Upload any relevant file or paste a few notes explaining the desired change. A BRD is optional.' }, ...issues]
   for (const source of included) {
     const review = source.analysis
     if (source.analysisError) issues.push({ id: `${source.id}-failed`, title: source.name, missing: `Source review failed: ${source.analysisError}`, add: 'Retry AI review or paste clearer notes. Generate anyway skips this source if its review still fails.' })
@@ -52,9 +53,10 @@ export function fsdReadiness(sources: FsdSource[], modules: readonly FsdModule[]
       review.gaps.forEach((gap, index) => issues.push({ id: `${source.id}-gap-${index}`, title: `${source.name} — clarification`, missing: gap, add: suggestedFsdInput(gap) }))
     }
   }
-  if (included.every(s => s.analysis && !s.analysisError)) {
-    const facts = included.flatMap(s => s.analysis?.readability === 'unreadable' ? [] : s.analysis?.requirements || [])
+  if (included.some(s => s.analysis && !s.analysisError)) {
+    const facts = included.flatMap(s => s.analysisError || s.analysis?.readability === 'unreadable' ? [] : s.analysis?.requirements || [])
     for (const module of modules) if (!facts.some(r => r.module === module)) issues.push({ id: `module-${fsdModuleSection(module)}`, title: features?.find(f => f.id === module)?.name || module, missing: 'No feature-specific requirements were identified. Applicability and behavior remain pending.', add: isCustomFsdFeature(module) ? suggestedFsdSectionInput(module) : moduleSuggestions[module] })
   }
-  return issues
+  return issues.map(issue => ({ ...issue, category: issue.category || (/-(failed|pending|unreadable|partial)$/.test(issue.id) ? 'unavailable' : 'missing-data'), sourceId: issue.sourceId || included.find(s => issue.id.startsWith(`${s.id}-`))?.id, sectionId: issue.id.startsWith('module-') ? issue.id.slice(7) : undefined }))
 }
+
