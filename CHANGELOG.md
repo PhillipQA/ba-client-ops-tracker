@@ -1,0 +1,58 @@
+# Changelog
+
+**Current application release: v0.6.81**
+
+Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.81 — Multiple tasks from one email
+Released October 12, 2026.
+
+- Create multiple distinct tasks from the same Work Hub email without signing out or closing the browser.
+- Reject duplicate task titles for the same client/project, ignoring case and repeated whitespace.
+- Keep the message and task form open after saving. Retain client, project and assignee; clear title and description for the next task.
+- Prevent rapid duplicate clicks and preserve saved tasks if a subsequent refresh or message-badge update fails.
+
+**Database:** no new migration. [Full notes](docs/releases/v0.6.81.md).
+
+## v0.6.80 — Sign Off Document
+Released October 11, 2026.
+
+- Rename the module to Sign Off Document.
+- Switch between Production Deployment Form and the supplied Go Live Sign Off Form.
+- Edit retained narrative sections and add signatories beyond the initial two per side.
+- Keep separate drafts and attachments while switching forms.
+
+**Database:** schema v21 is needed for optional custom Go Live template management. Built-in generation uses the existing table. [Full notes](docs/releases/v0.6.80.md).
+
+## v0.6.79 — FSD missing-input guidance
+Released October 11, 2026.
+
+- Name missing information and unavailable/failed sources before generation.
+- Keep failed uploads visible so users can replace or retry them.
+- Show contributing, partially used, skipped, irrelevant and excluded sources.
+- Generate Anyway uses verified available content and retains TBD placeholders for unavailable information.
+
+**Database:** no new migration. [Full notes](docs/releases/v0.6.79.md).
+
+## v0.6.78 — Work Hub login and manual sync
+Merged October 9, 2026.
+
+- Sync connected integrations once at sign-in.
+- Refresh now syncs all connected integrations; individual Sync buttons refresh one source.
+- Remove timed/focus-driven Work Hub sync and automatic continuation.
+- Preserve saved per-user pages until the relevant source is refreshed.
+
+**Database:** no new migration for the sync change. [Full notes](docs/releases/v0.6.78.md). This supersedes the Work Hub polling described in v0.6.76/v0.6.77.
+
+## Earlier updates
+
+| Version | Main change | Database action |
+| --- | --- | --- |
+| [v0.6.77](docs/releases/v0.6.77.md) | Active-view refresh and reduced background reads | No new migration |
+| [v0.6.76](docs/releases/v0.6.76.md) | GitHub / GitLab provider selection | Schema v20 for GitLab; v19 if GitHub is not installed |
+| [v0.6.75](docs/releases/v0.6.75.md) | Personal GitHub Work Hub integration | Schema v19 |
+| [v0.6.74](docs/releases/v0.6.74.md) | FSD custom features and supporting screenshots | No new migration |
+| [v0.6.73](docs/releases/v0.6.73.md) | FSD readiness checklist and Generate Anyway | No new migration |
+| [v0.6.72](docs/releases/v0.6.72.md) | DocHub native signatory reminders | No new migration |
+
+The [release archive](docs/releases/README.md) contains the older version notes and verification reports. SMTP reminder delivery introduced in v0.6.70 was superseded by DocHub-native reminders in v0.6.72; SMTP remains applicable to password recovery.

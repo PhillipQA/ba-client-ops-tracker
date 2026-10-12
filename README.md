@@ -1,167 +1,189 @@
 # BA Client Ops Tracker
 
-**Current release: v0.6.77**
+**Current application version: v0.6.81**
 
-BA Client Ops Tracker is a multi-tenant Business Analyst and client-operations workspace for managing clients, projects, tasks/subtasks, follow-ups, inquiries, activities, communications, document workflows, reporting and AI-assisted BA work.
+A workspace for clients, projects, tasks, follow-ups, Work Hub communications, document creation, requirements traceability and reports. This guide covers installation, first login, deployment and updates.
 
-Built with **React + TypeScript + Vite**, an **Express** backend, **Supabase**, Discord integration, DocHub, Google Calendar, local OCR and tenant-configured AI providers.
+Already installed? Go to [Update an existing installation](#update-an-existing-installation). Read the [changelog](CHANGELOG.md) for changes by version.
 
-Latest update: [v0.6.77 active tab refresh](docs/releases/v0.6.77.md).
+## Requirements
 
-Git providers: [v0.6.76 GitHub / GitLab provider selection](docs/releases/v0.6.76.md).
+- Node.js **22 or newer**, with npm. Check with `node --version` and `npm --version`.
+- Git and access to this private repository, or a complete source ZIP.
+- A configured database: Supabase for the fresh setup below, or an already imported/prepared PostgreSQL database.
+- An environment file for local development, or environment variables configured on the application host.
 
-Latest FSD update: [v0.6.74 release notes](docs/releases/v0.6.74.md).
+The application uses React, TypeScript and Vite with an Express server. Run the commands below from the folder containing `package.json`.
 
-Upgrade details: [v0.6.60 release notes](docs/releases/v0.6.60.md). For personal interface modes, see [v0.6.42](docs/releases/v0.6.42.md). For Document Agent RTM mapping, see [v0.6.41](docs/releases/v0.6.41.md); for initial RTM activation, see [v0.6.40](docs/releases/v0.6.40.md).
+## Install locally
 
-## Main modules
-
-- **Action Center** — assigned work, follow-ups, activities and workload views.
-- **Clients & Projects** — shared project structure with tenant/client history.
-- **Requirements & Traceability** — client-specific RTMs, optional Document Agent mapping from your BRD/FSD/test cases, reviewed source references, task/subtask progress, coverage, impact review and Excel export. Assignment and task linking stay manual.
-- **Tasks & Subtasks** — assignment, dates, follow-up, comments, evidence and lifecycle tracking.
-- **Work Hub** — Email, Discord, GitHub / GitLab and Manual Logs. Choose a Git provider and connect your personal token to pull created/assigned issues from selected repositories or projects, with local QA status and task/subtask links. Imported content stays private per user.
-- **Document Creation** — DRF, BRD, FSD, Test Case and Sign-Off workflows, including direct structured BRD → FSD handoff.
-- **Document History** — compact Active/Archive tracking for DocHub documents.
-- **Reports** — project/task/user workload and activity reporting.
-- **AI Agent Manager** — separate BA Assistant and Document Agent configuration per tenant.
-- **Settings & Appearance** — organized account controls and personal Dark, Light, or Gray interface modes, independent of background themes and document templates.
-- **Internal Admin** — tenant/account/module/platform administration.
-
-## Integrations
-
-- Supabase
-- Discord
-- Gmail (per-user OAuth, selected-label manual sync)
-- DocHub
-- Google Calendar
-- Gemini / OpenAI-compatible AI providers
-
-Integration credentials are tenant-scoped where supported. Secrets must not be committed to Git.
-
-### Work Hub sync
-
-- Each connected integration syncs once at sign-in, using its saved labels or repositories. Restoring the same login does not repeat that sync.
-- **Refresh now** in Work Hub syncs every connected integration. The top-bar **Refresh now** also reloads the workspace.
-- **Sync Gmail**, **Sync Discord**, **Sync GitHub**, and **Sync GitLab** refresh only their own source.
-- Work Hub has no periodic polling, automatic page continuation, or focus/tab sync. More pages or a provider limit require another explicit Sync.
-- Saved message and ticket pages are cached for the signed-in user. Filters, pagination, and editing still read or update the saved database as needed.
-- Discord's workspace bot continues capturing linked mentions and DMs to the bot. Sync Discord loads that saved private inbox.
-- Ticket details show saved data. Click the provider's Sync button with a ticket open to load its latest comment.
-
-Run the sync regressions with `npm run test:work-hub-sync` and `npm run test:egress`.
-
-## Repository map
-
-```text
-ba-client-ops-tracker/
-├── database/       Supabase migrations
-├── docs/           Architecture, setup and release notes
-├── public/         Static browser assets
-├── scripts/        Patch / rollback tooling
-├── server/         Express backend
-├── src/            React frontend
-├── templates/      Controlled document templates
-├── tests/          Automated tests
-├── README.md
-├── server.ts       Stable server entry point
-└── package.json
-```
-
-See [`docs/architecture/REPOSITORY-STRUCTURE.md`](docs/architecture/REPOSITORY-STRUCTURE.md) for the full organization rules.
-
-## Quick start
-
-Requirements: **Node.js 22+** and npm.
+### 1. Get the source and install dependencies
 
 ```bash
+git clone https://github.com/PhillipQA/ba-client-ops-tracker.git
+cd ba-client-ops-tracker
 npm ci
+```
+
+If using a source ZIP, extract the complete project, open a terminal in that folder and run `npm ci`. Keep `package-lock.json`; it pins the dependency versions used by the build.
+
+### 2. Choose the database setup
+
+| Situation | Action |
+| --- | --- |
+| New installation with a new, empty Supabase project | Run the complete [database/setup.sql](database/setup.sql) once in Supabase SQL Editor. The result should report schema version **21**. |
+| Existing Supabase database | Reuse its URL and service-role key. Apply only missing migrations from the [upgrade guide](docs/setup/upgrade.md). |
+| Existing Northflank PostgreSQL database with imported tracker data | Use `DATABASE_PROVIDER=postgres` and `DATABASE_URL`. The database must already have the tracker schema, permissions and evidence storage. |
+| Moving existing Supabase data to Northflank PostgreSQL | Follow the [PostgreSQL cutover guide](docs/setup/northflank-postgres-cutover.md) before changing the running service. |
+
+**Do not run the fresh setup script on an existing or restored database.** It creates an empty installation; it does not transfer your current data. The script targets Supabase and is not a standalone fresh-install script for a plain PostgreSQL addon.
+
+### 3. Configure the environment
+
+Copy the example file.
+
+**Windows PowerShell**
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+**macOS / Linux**
+
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local` and replace the placeholders.
+
+| Variable | When required |
+| --- | --- |
+| `DATABASE_PROVIDER` | `supabase` for Supabase; `postgres` for a prepared PostgreSQL database. The default is Supabase. |
+| `SUPABASE_URL` | Supabase mode: your project's URL. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase mode: your project's server-side service-role key. |
+| `DATABASE_URL` | PostgreSQL mode: the application user's connection URI, including the database host's required TLS settings. |
+| `TENANT_INTEGRATION_MASTER_KEY` | Key for encrypted integration credentials. Generate it for a new installation; preserve the existing key when upgrading or moving data. |
+| `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` | Fresh installation: choose at least 12 characters for the initial Internal Admin login. |
+| `BXI_CORE_BOOTSTRAP_PASSWORD` | Fresh installation: choose at least 12 characters for the initial BXI-Core administrator login. |
+| `APP_BASE_URL` | `http://localhost:5173` locally; the public HTTPS origin when hosted. Do not include a query string or fragment. |
+| `PORT` | Defaults to `5173` locally. Use the port supplied/configured by your host in production. |
+
+Generate a new integration key with:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+Paste the result into `TENANT_INTEGRATION_MASTER_KEY`. Real environment files and credentials are excluded from Git. Existing users keep their saved passwords; bootstrap passwords do not reset an existing account.
+
+### 4. Start the app
+
+```bash
 npm run dev
 ```
 
-Production validation:
+Open **http://localhost:5173**. If you changed `PORT`, use that port instead. The Express server also serves the Vite development frontend; no second server is needed.
+
+### 5. Sign in
+
+For a fresh installation:
+
+| Account | User | Password |
+| --- | --- | --- |
+| `internal_admin` | `admin` | Your `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` |
+| `BXI-Core` | `Admin` | Your `BXI_CORE_BOOTSTRAP_PASSWORD` |
+
+Internal Admin manages accounts, enabled modules and platform integration access. BXI-Core opens the initial tenant workspace. Complete the Internal Admin password-change prompt, then configure users and integrations as needed.
+
+For an existing/imported database, use its existing account and user credentials.
+
+## Build and deploy
+
+Build and validate the source:
 
 ```bash
+npm ci
+npm run build
+npm run typecheck:server
+npm start
+```
+
+`npm start` runs the Express server in production mode and serves `dist/`. **Do not use `npm run preview` as the deployed app server**; it does not provide the Express API.
+
+For Northflank or another Node host:
+
+| Setting | Value |
+| --- | --- |
+| Source | This repository and the intended branch, normally `main` |
+| Node version | 22 or newer |
+| Build command | `npm ci && npm run build` |
+| Start command | `npm start` |
+| Environment | The database variables above, the existing integration key and the public `APP_BASE_URL` |
+| HTTP port | The value configured/provided as `PORT` |
+
+Configure environment values before building if using the optional `VITE_GOOGLE_CLIENT_ID`. Run **one application instance**: login sessions are stored in server memory. A restart can require signing in again; database records remain in the database.
+
+Follow [Deploy on a new server](docs/setup/deploy-new-server.md) for moving an existing installation.
+
+## Optional integrations
+
+The app can be installed before connecting external services.
+
+| Feature | Setup location |
+| --- | --- |
+| Gmail | Internal Admin enables access; the account administrator configures OAuth; each user connects Gmail and selects labels in Work Hub. |
+| Discord | Account Settings configures the workspace bot; users link their Discord IDs in Work Hub. |
+| GitHub / GitLab | Each user's Work Hub integration settings. |
+| DocHub | Account Settings integration configuration. |
+| BA Assistant / Document Agent | Account Settings → AI Agent Manager. |
+| Google Calendar | Configure the public Google client ID and the account settings shown by the app. |
+| Email password recovery | Server SMTP variables and registered user emails; see [password recovery setup](docs/setup/password-recovery.md). |
+
+Work Hub syncs connected integrations once at sign-in. **Refresh now** syncs all; each integration's **Sync** button refreshes only that source. Creating tasks from an email does not trigger another Gmail sync.
+
+## Update an existing installation
+
+1. Back up the database and any separately stored files. Keep the environment values and integration master key.
+2. Review the [changelog](CHANGELOG.md) and [upgrade guide](docs/setup/upgrade.md). Apply only the migrations your database is missing.
+3. From your existing checkout, update and validate:
+
+```bash
+git pull --ff-only
+npm ci
 npm run build
 npm run typecheck:server
 ```
 
-The application reads local environment values from `.env.local` / `.env`; use `.env.example` as the safe template. Never commit real secrets.
+4. Restart with `npm start`, or redeploy through your host. Confirm the version shown on the login page.
 
-## Database
+If your checkout contains local source edits, reconcile them before pulling. For an official patch ZIP, use the [patch instructions](docs/setup/upgrade.md#official-patch-zips); a source update does not require a patch ZIP.
 
-**New Supabase database:** run [`database/setup.sql`](database/setup.sql) once in SQL Editor. It includes the complete schema through v15.
+**v0.6.81 adds no database migration.** The optional v21 migration enables custom Go Live templates; built-in Sign Off generation does not require a new template row.
 
-**Existing database:** use only the newer migrations required by your release. Moving the app server while retaining the same Supabase project needs no database SQL. See [Deploy on a new server](docs/setup/deploy-new-server.md).
+## Troubleshooting
 
-See [`database/README.md`](database/README.md).
+| Symptom | Check |
+| --- | --- |
+| Invalid credentials on a fresh installation | Run the database setup, set both bootstrap passwords and use the Account/User values above. Restart after changing the environment. |
+| Database unavailable or schema missing | Check the selected provider, database connection, schema and application-user permissions. Follow the database/upgrade guide for the installed version. |
+| Cannot reach a private Northflank database from your computer | The app needs a reachable database URI. For desktop administration, use the addon connection/forwarding configuration rather than assuming its private hostname is public. |
+| Blank page or an older version after deployment | Confirm the host built and started successfully. Hard-refresh with Ctrl+Shift+R; if the old HTML is still cached, check in a private browser window. |
+| Production page loads but API requests fail | Run `npm start`, not `npm run preview`, and check the server logs/environment. |
+| Forgot password email does not arrive | Configure SMTP, save the user's recovery email and check [password recovery setup](docs/setup/password-recovery.md). |
 
-## AI architecture
+## Documentation and checks
 
-The application separates AI responsibilities through an **AI Agent Manager**:
+- [Changelog](CHANGELOG.md) — current and recent updates.
+- [Documentation index](docs/README.md) — setup and reference guides.
+- [Release archive](docs/releases/README.md) — detailed notes by version.
+- [Database guide](database/README.md) — fresh setup versus existing database upgrades.
 
-```text
-AI Agent Manager
-├── BA Assistant       conversational BA/workspace support
-└── Document Agent     requirement extraction, FSD/test/document workflows
-```
-
-Each tenant can configure the supported provider/model/credential for these agents independently, with legacy shared AI configuration retained as a compatibility fallback where applicable.
-
-## Patch workflow
-
-To apply an official patch:
-
-```bash
-npm run patch -- "C:\path\to\ba-client-ops-patch-vX.Y.Z.zip"
-npm run patch:status
-npm run build
-```
-
-Rollback the most recently applied patch when necessary:
+Focused Work Hub checks:
 
 ```bash
-npm run patch:rollback
+npm run test:communications
+npm run test:work-hub-tasks
+npm run test:work-hub-sync
 ```
 
-Patch runtime backups are stored locally under `.patch-backups/` and are ignored by Git.
-
-## Documentation
-
-- [Documentation index](docs/README.md)
-- [Repository structure](docs/architecture/REPOSITORY-STRUCTURE.md)
-- [Setup guides](docs/setup/)
-- [Release notes](docs/releases/)
-- [v0.6.39 upgrade notes](docs/releases/v0.6.39.md)
-
-## Releases and generated ZIPs
-
-Keep Git focused on source code and documentation. Full-build and patch ZIPs should be published as **GitHub Release assets**, not committed into the repository.
-
-## Current release highlights
-
-**v0.6.73** adds an actionable missing-information checklist to FSD Preview & Generate. **Generate anyway — use available information** accepts sparse notes and verified parts of incomplete source reviews, skips unreadable/failed reviews, retains selected sections with TBD placeholders, and carries pending information into Word exports. Basic document details remain required. No formal BRD or particular document type is mandatory. Existing scope exclusions and source evidence checks still apply. This release also corrects the fetch response type in DocHub signed-PDF downloading so server type checking passes.
-
-**v0.6.72** replaces the v0.6.70 SMTP signatory reminder with DocHub's native resend API. **Send notification** now refreshes the current sign request, then calls `POST /api/v2/sign-requests/{id}/resend-email` with that signer's DocHub `signerId`. DocHub sends the signing invitation/reminder itself, so no SMTP configuration is required for this action. Signed/rejected signers remain protected, successful resends are recorded in document/task activity, and the local cooldown now matches DocHub's documented one-resend-per-signer-per-3-minutes limit.
-
-**v0.6.71** adds a Status filter to Task Module → All tasks. It defaults to All statuses, follows the workspace task-status configuration, keeps legacy statuses visible if older records still use them, combines with the existing search/Waiting on/client/project/date filters, and is reset by Clear filters.
-
-**v0.6.70** introduced per-signatory reminder controls inside DocHub Document Details. **v0.6.72 supersedes its SMTP delivery path with DocHub native resend-email delivery** while retaining the same signer-card UI and activity logging.
-
-**v0.6.69** keeps task/subtask editors compact by paginating Activity comments. The three newest entries are shown by default, page size can be changed to 2, 3, or 5, and Previous/Next controls expose older history without forcing the editor to grow through the full activity trail.
-
-**v0.6.68** keeps the tracker document name when downloading a completed DocHub signed PDF. For example, `DRF-CARD-INDOGROSIR-INC.xlsx` downloads as `DRF-CARD-INDOGROSIR-INC.pdf` instead of a provider-generated numeric filename. The tracker proxies the completed PDF through its authenticated DocHub route and sets the download filename itself.
-
-**v0.6.60** adds a dedicated BRD Creator using the supplied iRipple template, best-effort drafting from incomplete requirement sources, editable requirement/acceptance/mapping sections, DOCX export, and direct structured handoff into FSD Creation.
-
-**v0.6.59** reads embedded PDF report screenshots individually for FSD source review, preserving selectable text and marking OCR figures for verification. AI treats screenshot data as examples unless the source explicitly defines a rule.
-
-**v0.6.58** makes FSD preview prerequisites visible beside the preview button. Upload and AI source review can finish before document details are entered. The screen also displays the running app version to help distinguish an old deployment.
-
-**v0.6.57** adds automatic AI source review when uploading FSD files or adding pasted notes. Each source shows readability, interpreted facts with original excerpts, and clarification questions. FSD generation combines the current reviewed sources, preset, guidance and checked scope. Source changes require reanalysis; unchanged reviews are reused.
-
-**v0.6.56** hard-enforces Advanced Mode FSD module scope. Unchecked software modules are removed from the AI section schema, omitted from preview and Word export, and sources mapped only to unchecked modules are excluded from FSD AI generation.
-
-**v0.6.53** adds image support to FSD Creation. PNG, JPG/JPEG, WEBP, BMP, TIF and TIFF uploads are OCR-read and added to the FSD source list as Supporting document sources. Existing document-source handling is unchanged.
-
-For earlier changes, see the versioned files under [`docs/releases/`](docs/releases/).
+`npm run test:functional` runs the wider functional regression selection.

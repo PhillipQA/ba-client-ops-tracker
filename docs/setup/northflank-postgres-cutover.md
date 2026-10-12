@@ -1,17 +1,47 @@
-# Move the tracker from Supabase to Northflank PostgreSQL
+# Move existing tracker data to Northflank PostgreSQL
 
-This release supports `DATABASE_PROVIDER=postgres`. The database connection is server side. Browser sessions and stored passwords remain in your imported PostgreSQL data. Task evidence files need a separate copy because PostgreSQL dumps of `public` do not include Supabase Storage objects.
+The app supports `DATABASE_PROVIDER=postgres`. This guide covers importing an existing Supabase tracker database, not creating a plain PostgreSQL database from scratch.
 
-## Prepare the database
+A PostgreSQL dump of `public` does not include Supabase Storage evidence files. Copy those separately using the evidence migration command below.
 
-1. Confirm that the Supabase project in the running service's `SUPABASE_URL` is the project exported to Northflank. An earlier connection string used a different project ref; compare the actual refs before cutover.
-2. Stop writes to the old app during the final export and import, or repeat the restore immediately before switching. A green Northflank restore from an earlier dump is a snapshot, not continuous replication.
-3. Restore the final Supabase `public` schema and data to the Northflank PostgreSQL addon. Keep a backup of the previous database and the unchanged Supabase project until the new app has been verified.
-4. In a one-off secure service shell, set `PG_ADMIN_URL` to the addon's `POSTGRES_URI_ADMIN` (without saving it as a permanent service variable) and run `npm run db:prepare-postgres`. This creates the evidence table, grants the standard `POSTGRES_URI` user access, and disables imported Supabase row policies on the private destination tables. It runs in one transaction and leaves Supabase untouched. Keep `TENANT_INTEGRATION_MASTER_KEY` exactly the same so encrypted integrations remain readable.
+## 1. Prepare the final import
 
-## Check and transfer
+1. Confirm that the source project matches the running app's `SUPABASE_URL`.
+2. Pause writes to the old app during the final export/import. An earlier restore is a snapshot, not continuous replication.
+3. Restore the final Supabase `public` schema/data to the destination PostgreSQL addon. Preserve account records, tracker functions and the applicable schema migrations.
+4. Keep the source database and a backup until destination verification succeeds.
+5. Preserve `TENANT_INTEGRATION_MASTER_KEY` exactly so stored integration credentials remain readable.
 
-Use a one-off secure shell or temporary Northflank job with `DATABASE_URL` set to the Northflank addon URI and `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` set to the *currently running* source project. Do not paste their values into a ticket or commit them.
+## 2. Configure a one-off maintenance process
+
+Use a secure service shell or temporary job that can reach both databases. Provide:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | Destination PostgreSQL application-user URI |
+| `PG_ADMIN_URL` | Destination admin URI for the preparation command; use the same host/database with the separate admin user |
+| `SUPABASE_URL` | Currently running source project's URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Source project's server-side service-role key |
+
+The helper scripts read process environment variables and `.env` by default. If running locally with `.env.local`, set the dotenv path first:
+
+**PowerShell**
+
+```powershell
+$env:DOTENV_CONFIG_PATH = ".env.local"
+```
+
+**macOS / Linux**
+
+```bash
+export DOTENV_CONFIG_PATH=.env.local
+```
+
+Keep the admin URI in the one-off maintenance process rather than the permanent application service.
+
+## 3. Prepare, compare and copy evidence
+
+From the repository root:
 
 ```bash
 npm ci
@@ -20,13 +50,28 @@ npm run db:verify-migration
 npm run db:migrate-evidence
 ```
 
-The comparison checks account, workspace, integration, and Git provider row counts plus each workspace revision. It fails if the source and destination do not match. The evidence script copies every file referenced by the imported workspace to `public.tracker_evidence_files`; rerunning it updates existing copies. If either command fails, keep the old app live and resolve the mismatch or missing file first.
+- Preparation creates `public.tracker_evidence_files`, grants the application user access and disables imported Supabase row policies on the private destination tables. It runs in one transaction and does not modify Supabase.
+- Verification compares source/destination counts for the tables it checks and each workspace revision. It fails on mismatches; it is not a full byte-for-byte comparison of every column.
+- Evidence migration copies referenced task files into the destination evidence table. Rerunning updates existing copies.
 
-## Switch the service
+Do not switch the running app if verification or evidence transfer fails. Resolve mismatched data, absent tracker functions or missing files first. Preparation can report absent optional password-recovery functions; if recovery is needed, restore its schema/functions before testing it.
 
-1. Deploy this source and build with `npm ci && npm run build`; run with `npm start`.
-2. In the Northflank service environment, keep its inherited `DATABASE_URL`, add `DATABASE_PROVIDER=postgres`, and redeploy. Keep the existing `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` until the verification above and the live smoke test pass. The PostgreSQL mode does not use them.
-3. Sign in and check the Internal Admin account, a tenant workspace, an existing task evidence download, and saving a harmless edit. Check Gmail, GitHub/GitLab, and any configured integrations you use.
-4. Remove the two Supabase variables from the Northflank service and any linked secret group only after the new service works. Then redeploy once more. Do not delete the Supabase project until you are satisfied with the backup and rollout.
+## 4. Switch the application service
 
-If verification fails after the switch, remove `DATABASE_PROVIDER` and redeploy to resume the prior Supabase path. Writes made to PostgreSQL after the switch do not automatically copy back to Supabase, so handle those records before rolling back.
+1. Build with `npm ci && npm run build`; start with `npm start`.
+2. Set `DATABASE_PROVIDER=postgres` and the application user's `DATABASE_URL` on the service. Use the destination's required TLS settings and a hostname the service can reach.
+3. Keep the existing integration key and public `APP_BASE_URL`.
+4. Retain source Supabase variables until verification and the live checks below pass; PostgreSQL runtime mode does not use them.
+5. Redeploy with one application instance.
+
+For desktop database administration, a private addon hostname may need Northflank forwarding. Do not assume it is directly reachable from DBeaver on your computer.
+
+## 5. Verify and retire the old connection
+
+Check Internal Admin login, a tenant workspace, an existing evidence download, a harmless saved edit and the integrations you use. Confirm password recovery if enabled.
+
+After these checks pass, remove the unused Supabase variables from the application service and linked configuration, then redeploy. Keep the source backup until the rollout is accepted.
+
+To return to Supabase, set `DATABASE_PROVIDER=supabase`, restore its connection variables and redeploy. PostgreSQL writes made after cutover are not copied back automatically; reconcile those records before rollback.
+
+See the [README](../../README.md) for application installation and the [upgrade guide](upgrade.md) for version/schema requirements.

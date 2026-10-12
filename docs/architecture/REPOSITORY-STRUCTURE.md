@@ -1,37 +1,33 @@
 # Repository structure
 
-BA Client Ops Tracker uses a predictable top-level layout:
+## Main paths
 
-```text
-ba-client-ops-tracker/
-├── .github/                 # CI workflows
-├── database/                # Supabase migrations and database notes
-├── docs/                    # Architecture, setup and release documentation
-├── public/                  # Static browser assets
-├── scripts/                 # Patch / rollback utilities
-├── server/                  # Express backend grouped by responsibility
-├── src/                     # React application
-├── templates/               # Controlled document-generation templates
-├── tests/                   # Automated tests
-├── .env.example             # Safe environment-variable template
-├── .gitignore
-├── index.html
-├── package.json
-├── README.md
-├── server.ts                # Stable backend entry point
-└── tsconfig*.json
-```
+| Path | Contents |
+| --- | --- |
+| `src/` | React frontend |
+| `server/` | Express backend grouped by responsibility |
+| `server.ts` | Stable application server entry point |
+| `database/` | Fresh Supabase setup, incremental migrations and selected combined upgrades |
+| `templates/` | Controlled document-generation templates |
+| `public/` | Static browser assets |
+| `scripts/` | Patch tools, functional-check runner and database helpers |
+| `tests/` | Automated regression checks |
+| `docs/setup/` | Current installation, hosting and maintenance guides |
+| `docs/releases/` | Version-specific historical release notes |
+| `docs/releases/archive/` | Superseded bootstrap/patch instructions |
+| `README.md` | Installation, environment, first login and deployment |
+| `CHANGELOG.md` | Recent changes, newest first |
+| `.env.example` | Safe configuration template |
 
 ## Conventions
 
-1. Keep the repository root limited to project entry/configuration files.
-2. Put backend features in the appropriate `server/` responsibility folder.
-3. Put incremental database migrations in `database/migrations/`. Regenerate the fresh-install entry point, `database/setup.sql`, with `npm run db:bundle`; verify it with `npm run db:check`.
-4. Put release notes in `docs/releases/`; do not add new `UPGRADE-*.md` files to the root.
-5. Generated full-build and patch ZIP files belong in release artifacts, not Git source control.
-6. Never commit `.env`, secrets, local patch backups, `dist/`, `node_modules/`, logs or TypeScript build-info files.
-7. Preserve the patch updater as the supported migration path between released versions.
+1. Keep current setup guidance in the README and `docs/setup/`.
+2. Keep a short newest-first changelog; link detailed version notes instead of repeating them.
+3. Put release notes in `docs/releases/vX.Y.Z.md`. Do not add root `UPGRADE-*.md` or legacy patch-note files.
+4. Preserve older instructions in the release archive; label superseded behavior when relevant.
+5. Put database migrations in `database/migrations/`. Regenerate fresh setup with `npm run db:bundle` and check it with `npm run db:check`.
+6. Keep source updates and official version-matched patch ZIP workflows distinct.
+7. Publish generated ZIPs as release assets rather than committing them to Git.
+8. Keep environment secrets, local patch backups, builds, dependencies and logs out of source control.
 
-## Frontend organization
-
-The existing `src/` paths remain stable in v0.6.39 to avoid mixing a repository cleanup with a high-risk UI refactor. Future feature work can move frontend areas into `src/modules/`, `src/components/`, and `src/services/` incrementally with build/test validation in each release.
+See the [documentation index](../README.md) and [release index](../releases/README.md).

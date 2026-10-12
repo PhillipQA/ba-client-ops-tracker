@@ -1,31 +1,10 @@
-# Email password recovery — v0.6.4
+# Configure email password recovery
 
-This patch upgrades **v0.6.3 → v0.6.4**. It removes both help panels below Sign in and replaces them with **Forgot password?** Users enter their account, username and registered email, receive a reset link, and choose a new password. Links expire after 30 minutes and work once.
+The current app includes **Forgot password?** on the login screen. Configure SMTP and a registered recovery email to enable it. The original v0.6.4 patch instructions are retained in the [historical archive](../releases/archive/email-password-recovery-v0.6.4.md).
 
-## Apply the patch
+## 1. Configure SMTP on the server
 
-1. Stop the running app. From `E:\Playwright\ba-client-ops-tracker`, confirm `npm run patch:status` reports **0.6.3**.
-2. Save the patch ZIP in `E:\Playwright`, then run:
-
-```powershell
-npm run patch -- "E:\Playwright\ba-client-ops-patch-v0.6.4-email-recovery.zip"
-```
-
-Keep the two dashes separate from the quoted path. The updater installs the email dependency and creates its normal file rollback backup. Your environment files are preserved.
-
-3. In **Supabase → SQL Editor**, run the updated project's **`supabase/schema-v7-password-recovery.sql`**. Your existing v0.6.3 schema, including v6, must already be installed. This migration adds private recovery-token storage and reset functions; it does not replace existing accounts or workspace records. The patch command copies this SQL file but does not execute it.
-4. Configure the email sender below, then build and restart:
-
-```powershell
-npm run build
-npm run dev
-```
-
-For production, use your existing deployment process and `npm start`. Refresh open browser tabs. `npm run patch:status` should now report **0.6.4**.
-
-## Configure the sender
-
-Add these values to your existing `.env.local` for local use, or your hosting service's environment settings for a deployed app. Replace every example value with your provider's actual settings. No email provider or mailbox is connected by the patch itself.
+Add your provider's settings to `.env.local` locally, or to the host's environment variables:
 
 ```dotenv
 APP_BASE_URL=https://your-client-ops-app.example.com
@@ -38,29 +17,31 @@ SMTP_PASS=your-smtp-password-or-app-password
 SMTP_FROM="Client Ops Tracker <no-reply@your-verified-domain.example>"
 ```
 
-Use a sender address/domain approved by your email provider. Keep credentials on the server; do not use a `VITE_` prefix. Restart the server after changing these values. Your host must permit outbound connections to the provider's SMTP port.
+Replace the placeholders with the provider's approved settings and sender. Port 587 uses STARTTLS with the settings above. For implicit TLS on port 465, set `SMTP_PORT=465` and `SMTP_SECURE=true`. Restart the app after changing configuration.
 
-For port **587**, use `SMTP_SECURE=false` and `SMTP_REQUIRE_TLS=true` to require STARTTLS. If your provider requires port **465**, set `SMTP_PORT=465` and `SMTP_SECURE=true`. These settings follow the [Nodemailer SMTP documentation](https://nodemailer.com/smtp).
+`APP_BASE_URL` must be the public HTTPS origin users can reach, with no username, password, query or fragment. Local testing can use `http://localhost:5173`.
 
-`APP_BASE_URL` must be the URL users can open to reach this app. It must use HTTPS, except that local testing accepts an HTTP loopback address such as `http://localhost:5173`. A localhost link works only on the computer running the app. Do not include a username, password, query string or fragment in this URL.
+These values belong on the server, without a `VITE_` prefix. SMTP is used for password recovery. Current DocHub signing reminders use the DocHub-native API, not this SMTP configuration.
 
-## Register recovery email addresses
+## 2. Register recovery emails
 
-- **Workspace users:** save the user's email in **My Profile**, or have an administrator edit the user in Settings/Internal Admin. Recovery requires the same Account, User and email saved on that user record.
-- **Internal Admin:** sign in, open **Security → Recovery email**, enter the address and your current password, then choose **Save recovery email**. This is separate from a tenant user's email.
+- Workspace users: save an email in My Profile, or have an administrator update the user record.
+- Internal Admin: open Security → Recovery email and save it with the current password.
 
-Accounts with no registered email need an administrator to set one before email recovery is possible. Disabled users and suspended workspaces cannot recover a password through this flow.
+The account, username and email entered in Forgot password must match the saved record. Disabled users and suspended workspaces cannot use this recovery flow.
 
-## Check your email setup
+## 3. Check delivery
 
-Sign out, choose **Forgot password?**, and enter an active account's registered details. Open the received link and set a new password. Sign in with that password. Check the spam folder if necessary.
+1. Sign out and select Forgot password.
+2. Enter the active user's Account, User and registered email.
+3. Open the received reset link, choose a new password and sign in again.
 
-The request screen intentionally shows the same acknowledgement for matching and nonmatching accounts. If no email arrives, confirm the saved account details, SMTP configuration and v7 migration. The server logs a short configuration/delivery error without printing reset tokens or email credentials. Missing sender configuration shows “Email recovery is unavailable.”
+Reset links expire after 30 minutes and work once. Requesting a link does not change the password; a later request replaces older links.
 
-Requesting a link does not change the password. The reset signs out that user's sessions on the running server. A new request replaces older links; changing the password or registered email also invalidates outstanding links. Recovery is limited to five requests per IP per 15 minutes, one email per account per minute, and five emails per account per hour.
+The acknowledgement is deliberately the same for matching and nonmatching details. If no email arrives, check the registered details, spam folder, SMTP variables, outbound SMTP access and server logs.
 
-The app retains its existing in-memory session model; run a single application instance as before. This patch does not add a shared session store across server instances.
+## Database prerequisites
 
-## Rollback
+A current fresh installation includes recovery-token storage/functions. Existing databases need the recovery schema from their original upgrade path. Imported PostgreSQL databases must also include the recovery functions; consult the [cutover guide](northflank-postgres-cutover.md) if they are absent.
 
-The existing `npm run patch:rollback` command restores the previous code files. The additive v7 SQL can remain in place when rolling back to v0.6.3. A file rollback does not reverse passwords a user has already reset.
+A code rollback does not reverse a password already reset. Application sessions are currently in memory, so run one application instance.
