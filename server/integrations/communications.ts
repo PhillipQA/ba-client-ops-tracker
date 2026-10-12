@@ -4,6 +4,7 @@ import { gmailBodyText, gmailWindowStart, syncGmailPages } from './gmail-content
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
+import { findCommunicationTaskDuplicate } from '../../src/communicationTasks'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 const CALLBACK = '/api/communications/gmail/callback'
@@ -62,6 +63,13 @@ export function registerCommunications(app: Express, deps: {
   const gmailSyncJobs = new Map<string,Promise<any>>()
   const gmailBackfillCooldowns = new Map<string,number>()
   const gmailQuotaCooldowns = new Map<string,number>()
+  const taskCreateJobs = new Map<string,Promise<void>>()
+  const createTaskInOrder = async (tenantId: string, create: () => Promise<void>) => {
+    const previous = taskCreateJobs.get(tenantId) || Promise.resolve()
+    const job = previous.catch(() => undefined).then(create)
+    taskCreateJobs.set(tenantId, job)
+    try { await job } finally { if (taskCreateJobs.get(tenantId) === job) taskCreateJobs.delete(tenantId) }
+  }
   const auth = [deps.requireAuth, deps.requireTenant]
   const current = (req: Request) => (req as any).authUser
   const guard: Middleware = async (req, res, next) => {
@@ -234,24 +242,35 @@ export function registerCommunications(app: Express, deps: {
   app.post('/api/communications/:id/create-task', ...auth, guard, wrap(async (req,res) => {
     const user=current(req)
     if(user.role === 'Viewer' || (!user.modules?.includes('items') && user.role !== 'Administrator')) throw new IntegrationError('Task write access is required.',403)
-    const communication=await own(req,req.params.id)
-    if(communication.linked_task_id) throw new IntegrationError('This communication already has a linked task.',409)
-    const stateResult=await deps.load(user.organizationId),state=stateResult.data
-    if(!state) throw new IntegrationError('Workspace data is unavailable.',503)
-    const clientId=requireText(req.body?.clientId,'Client',100),projectId=requireText(req.body?.projectId,'Project',100)
-    if (!clientId || !projectId || !state.clients?.some((x:any)=>x.id===clientId && !x.archived) || !state.projects?.some((x:any)=>x.id===projectId && !x.archived)) throw new IntegrationError('Select an active client and project.')
-    const assignee=requireText(req.body?.assignedToUserId,'Assignee',100)
-    const account=(state.accounts || []).find((x:any)=>x.id===assignee && x.status!=='Disabled' && ['Administrator','Contributor'].includes(x.role))
-    if (!account) throw new IntegrationError('Select an active team member.')
-    const title=requireText(req.body?.title,'Task title',200),description=requireText(req.body?.description,'Task description',5000)
-    if(!title) throw new IntegrationError('Enter a task title.')
-    const item={ id:randomUUID(),clientId,projectId,title,type:'Task',priority:'Medium',status:deps.openStatus(state),waitingOn:'Me',owner:account.name || account.username,
-      assignedToUserId:assignee,dateRaised:new Date().toISOString().slice(0,10),dueDate:'',followUpDate:'',description,resolution:'',source:'Internal' }
-    // Shared task contains only the fields explicitly submitted here; never a private source ID or thread.
-    await deps.commit(user.organizationId,{ ...state,items:[item,...(state.items || [])] },user,'communication-task',state)
-    const {error}=await db.from('user_communications').update({linked_task_id:item.id}).eq('id',communication.id).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id)
-    if(error) throw error
-    res.status(201).json({ task:item })
+    await createTaskInOrder(user.organizationId, async () => {
+      const communication=await own(req,req.params.id)
+      const stateResult=await deps.load(user.organizationId),state=stateResult.data
+      if(!state) throw new IntegrationError('Workspace data is unavailable.',503)
+      const clientId=requireText(req.body?.clientId,'Client',100),projectId=requireText(req.body?.projectId,'Project',100)
+      if (!clientId || !projectId || !state.clients?.some((x:any)=>x.id===clientId && !x.archived) || !state.projects?.some((x:any)=>x.id===projectId && !x.archived)) throw new IntegrationError('Select an active client and project.')
+      const assignee=requireText(req.body?.assignedToUserId,'Assignee',100)
+      const account=(state.accounts || []).find((x:any)=>x.id===assignee && x.status!=='Disabled' && ['Administrator','Contributor'].includes(x.role))
+      if (!account) throw new IntegrationError('Select an active team member.')
+      const title=requireText(req.body?.title,'Task title',200),description=requireText(req.body?.description,'Task description',5000)
+      if(!title) throw new IntegrationError('Enter a task title.')
+      const duplicate = findCommunicationTaskDuplicate(state.items || [], { title, clientId, projectId })
+      if (duplicate) {
+        res.status(409).json({ code: 'DUPLICATE_TASK', error: `A task named “${duplicate.title}” already exists for this client and project. Enter a different task title.`, taskId: duplicate.id })
+        return
+      }
+      const item={ id:randomUUID(),clientId,projectId,title,type:'Task',priority:'Medium',status:deps.openStatus(state),waitingOn:'Me',owner:account.name || account.username,
+        assignedToUserId:assignee,dateRaised:new Date().toISOString().slice(0,10),dueDate:'',followUpDate:'',description,resolution:'',source:'Internal' }
+      // Shared task contains only the fields explicitly submitted here; never a private source ID or thread.
+      await deps.commit(user.organizationId,{ ...state,items:[item,...(state.items || [])] },user,'communication-task',state)
+      // This private badge records the latest task; it must not restrict subsequent tasks.
+      // A badge-write failure does not undo a task that was already committed.
+      let warning: string | undefined
+      try {
+        const {error}=await db.from('user_communications').update({linked_task_id:item.id}).eq('id',communication.id).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id)
+        if(error) warning = 'Task created, but the message badge could not be updated.'
+      } catch { warning = 'Task created, but the message badge could not be updated.' }
+      res.status(201).json({ task:item, ...(warning ? { warning } : {}) })
+    })
   }))
   app.get('/api/communications/gmail/connect', ...auth, guard, gmailGate, wrap(async (req,res) => {
     const user=current(req),session=deps.sessionFromRequest(req),config=await activeAccount(user.organizationId)

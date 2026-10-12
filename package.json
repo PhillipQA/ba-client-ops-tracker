@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.80",
+  "version": "0.6.81",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -42,7 +42,8 @@
     "test:gitlab": "node --import tsx --test tests/gitlab.test.ts",
     "test:egress": "node --import tsx --test tests/egress.test.ts",
     "test:work-hub-sync": "node --import tsx --test tests/work-hub-sync.test.ts",
-    "test:postgres": "node --import tsx --test tests/postgres-client.test.ts"
+    "test:postgres": "node --import tsx --test tests/postgres-client.test.ts",
+    "test:work-hub-tasks": "node --import tsx --test tests/work-hub-task-creation.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",
@@ -73,6 +74,7 @@
     "@types/node": "^24.3.1",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "jsdom": "^26.1.0"
   }
 }

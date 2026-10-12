@@ -4,13 +4,13 @@ import express from 'express'
 import { encryptSecret } from '../server/integrations/tenant-integrations'
 import { registerCommunications } from '../server/integrations/communications'
 
-function fixture() {
+function fixture(options: { failLink?: boolean } = {}) {
   const records:any[]=[{id:'11111111-1111-4111-8111-111111111111',tenant_id:'tenant',owner_user_id:'user-a',source:'Gmail',external_id:'secret-mail',thread_id:'thread-a',subject:'Private subject',body:'Private full email thread',sender:'private@example.com',status:'New',received_at:new Date().toISOString()}]
   const gmailAccounts:any[]=[]
   const users:any[]=[{id:'user-a',role:'Contributor',status:'Active',modules:['inbox','items'],organization_id:'tenant'},{id:'user-b',role:'Contributor',status:'Active',modules:['inbox','items'],organization_id:'tenant'}]
   const prefs:any[]=[{tenant_id:'tenant',user_id:'user-a',discord_user_id:'123456789012345678',discord_capture_mentions:true},{tenant_id:'tenant',user_id:'user-b',discord_user_id:'234567890123456789',discord_capture_mentions:true}]
   let saved:any
-  const state={clients:[{id:'client',name:'Client'}],projects:[{id:'project',name:'Project'}],accounts:[{id:'user-a',name:'Alice',status:'Active',role:'Contributor'},{id:'user-b',name:'Bob',status:'Active',role:'Contributor'}],items:[]}
+  const state:any={clients:[{id:'client',name:'Client'}],projects:[{id:'project',name:'Project'}],accounts:[{id:'user-a',name:'Alice',status:'Active',role:'Contributor'},{id:'user-b',name:'Bob',status:'Active',role:'Contributor'}],items:[]}
   class Query {
     conditions:((x:any)=>boolean)[]=[]; action='read'; value:any; many=true
     orders:{key:string;ascending:boolean}[]=[]; start=0; end=Infinity; head=false
@@ -32,7 +32,7 @@ function fixture() {
     then(resolve:any,reject:any){return this.run().then(resolve,reject)}
     async run(){const rows=this.table==='user_communications'?records:this.table==='user_communication_settings'?prefs:this.table==='gmail_accounts'?gmailAccounts:users
       if(this.action==='insert'){const record={id:crypto.randomUUID(),...this.value};rows.push(record);return {data:this.many?null:record,error:null}}
-      if(this.action==='update'){const found=rows.filter(x=>this.conditions.every(c=>c(x)));for(const row of found)Object.assign(row,this.value);return {data:this.many?null:found[0]||null,error:null}}
+      if(this.action==='update'){if(options.failLink && this.table==='user_communications' && this.value.linked_task_id)return {data:null,error:{message:'Badge write failed'}};const found=rows.filter(x=>this.conditions.every(c=>c(x)));for(const row of found)Object.assign(row,this.value);return {data:this.many?null:found[0]||null,error:null}}
       if(this.action==='upsert'){const found=rows.find(x=>x.tenant_id===this.value.tenant_id && x.user_id===this.value.user_id);if(found)Object.assign(found,this.value);else rows.push(this.value);return {data:null,error:null}}
       const matched=rows.filter(x=>this.conditions.every(c=>c(x))).sort((a,b)=>{for(const {key,ascending} of this.orders){const result=String(a[key]).localeCompare(String(b[key]));if(result)return ascending?result:-result}return 0})
       if(this.start>0 && this.start>=matched.length)return {data:null,count:null,error:{code:'PGRST103'}}
@@ -40,8 +40,8 @@ function fixture() {
     }
   }
   const app=express();app.use(express.json());app.use((req:any,_res,next)=>{const id=String(req.headers['x-test-user']||'user-a');req.authUser={id,organizationId:'tenant',name:id,role:String(req.headers['x-test-role']||'Contributor'),modules:['inbox','items'],status:'Active'};next()})
-  const hub=registerCommunications(app,{db:{from:(table:string)=>new Query(table)},requireAuth:(_req,_res,next)=>next(),requireTenant:(_req,_res,next)=>next(),sessionFromRequest:()=>({token:'session-a',user:null}),sessionByToken:(token:string)=>token==='session-a'?{id:'user-a',organizationId:'tenant',status:'Active'}:null,requirePlatformAdmin:(_req,_res,next)=>next(),organizationById:async()=>({id:'tenant',status:'Active',enabledModules:['inbox','items','settings']}),load:async()=>({data:state}),commit:async(_tenant,next)=>{saved=next},openStatus:()=> 'Open'})
-  return {app,records,users,gmailAccounts,prefs,hub,getSaved:()=>saved}
+  const hub=registerCommunications(app,{db:{from:(table:string)=>new Query(table)},requireAuth:(_req,_res,next)=>next(),requireTenant:(_req,_res,next)=>next(),sessionFromRequest:()=>({token:'session-a',user:null}),sessionByToken:(token:string)=>token==='session-a'?{id:'user-a',organizationId:'tenant',status:'Active'}:null,requirePlatformAdmin:(_req,_res,next)=>next(),organizationById:async()=>({id:'tenant',status:'Active',enabledModules:['inbox','items','settings']}),load:async()=>({data:saved || state}),commit:async(_tenant,next)=>{saved=next},openStatus:()=> 'Open'})
+  return {app,records,users,gmailAccounts,prefs,hub,state,getSaved:()=>saved}
 }
 
 test('private communications reject cross-user reads and task conversion',async()=>{
@@ -58,6 +58,78 @@ test('private communications reject cross-user reads and task conversion',async(
     const task=getSaved().items[0];assert.equal(task.assignedToUserId,'user-b');assert.equal(task.description,'Terminal 05 pending')
     assert.ok(!JSON.stringify(task).includes('Private full email thread'));assert.ok(!JSON.stringify(task).includes('private@example.com'));assert.ok(!JSON.stringify(task).includes(privateId))
   }finally{server.close()}
+})
+
+async function taskFixture(options: { failLink?: boolean } = {}) {
+  const data=fixture(options),server=data.app.listen(0,'127.0.0.1')
+  await new Promise<void>(resolve=>server.once('listening',resolve))
+  const address=server.address();if(!address || typeof address==='string')throw new Error('No test port')
+  const base=`http://127.0.0.1:${address.port}`
+  const create=async(title:string,patch:any={},messageId=data.records[0].id)=>{
+    const response=await fetch(`${base}/api/communications/${messageId}/create-task`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,description:'Shared summary',clientId:'client',projectId:'project',assignedToUserId:'user-b',...patch})})
+    return {status:response.status,body:await response.json()}
+  }
+  return {...data,create,close:()=>new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()))}
+}
+
+test('one Gmail message creates multiple distinct tasks without a new session',async()=>{
+  const f=await taskFixture()
+  try {
+    const first=await f.create('Check terminal 05'),second=await f.create('Check terminal 06')
+    assert.equal(first.status,201);assert.equal(second.status,201)
+    assert.notEqual(first.body.task.id,second.body.task.id)
+    assert.deepEqual(f.getSaved().items.map((item:any)=>item.title),['Check terminal 06','Check terminal 05'])
+    assert.equal(f.records[0].linked_task_id,second.body.task.id)
+    for(const task of f.getSaved().items){assert.equal(task.assignedToUserId,'user-b');assert(!JSON.stringify(task).includes('private@example.com'));assert(!JSON.stringify(task).includes('secret-mail'));assert(!JSON.stringify(task).includes(f.records[0].id))}
+  } finally {await f.close()}
+})
+
+test('task duplicates ignore case and whitespace and are blocked across emails and assignees',async()=>{
+  const f=await taskFixture()
+  try {
+    const first=await f.create('Check terminal 05')
+    f.records.push({...f.records[0],id:'second-email',linked_task_id:null})
+    for(const messageId of [f.records[0].id,'second-email']){
+      const duplicate=await f.create('  CHECK   terminal 05  ',{description:'Different description',assignedToUserId:'user-a'},messageId)
+      assert.equal(duplicate.status,409);assert.equal(duplicate.body.code,'DUPLICATE_TASK');assert.equal(duplicate.body.taskId,first.body.task.id)
+    }
+    assert.equal(f.getSaved().items.length,1);assert.equal(f.records[0].linked_task_id,first.body.task.id)
+    assert.equal((await f.create('Check terminal 06')).status,201)
+  } finally {await f.close()}
+})
+
+test('task duplicate validation uses client/project and excludes subtasks and other item types',async()=>{
+  const f=await taskFixture()
+  try {
+    f.state.clients.push({id:'other-client',name:'Other client'});f.state.projects.push({id:'other-project',name:'Other project'})
+    f.state.items.push({id:'subtask',type:'Task',parentTaskId:'parent',clientId:'client',projectId:'project',title:'Verify rollout'},{id:'issue',type:'Issue',clientId:'client',projectId:'project',title:'Verify rollout'})
+    assert.equal((await f.create('Verify rollout')).status,201)
+    assert.equal((await f.create('Verify rollout',{projectId:'other-project'})).status,201)
+    assert.equal((await f.create('Verify rollout',{clientId:'other-client'})).status,201)
+    assert.equal((await f.create('Verify rollout')).status,409)
+    assert.equal(f.getSaved().items.filter((item:any)=>!item.parentTaskId && item.type==='Task').length,3)
+  } finally {await f.close()}
+})
+
+test('concurrent task submissions preserve distinct tasks and reject repeated titles',async()=>{
+  const f=await taskFixture()
+  try {
+    const duplicates=await Promise.all([f.create('Concurrent check'),f.create(' concurrent   CHECK ')])
+    assert.deepEqual(duplicates.map(result=>result.status).sort(),[201,409]);assert.equal(f.getSaved().items.length,1)
+    const distinct=await Promise.all([f.create('Second check'),f.create('Third check')])
+    assert.deepEqual(distinct.map(result=>result.status),[201,201]);assert.equal(f.getSaved().items.length,3)
+  } finally {await f.close()}
+})
+
+test('invalid task fields do not save and failed message badges do not hide a saved task',async()=>{
+  const f=await taskFixture({failLink:true})
+  try {
+    for(const patch of [{title:' '},{clientId:''},{projectId:'missing'},{assignedToUserId:'missing'}])assert.equal((await f.create('Valid task',patch)).status,400)
+    assert.equal(f.getSaved(),undefined)
+    const result=await f.create('Valid task');assert.equal(result.status,201);assert.match(result.body.warning,/badge/);assert.equal(f.getSaved().items.length,1)
+    assert.equal((await f.create('Valid task')).status,409)
+    assert.equal((await f.create('Another task')).status,201);assert.equal(f.getSaved().items.length,2)
+  } finally {await f.close()}
 })
 
 test('one Discord mention of two linked users produces two private records',async()=>{
