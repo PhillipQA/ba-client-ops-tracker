@@ -43,6 +43,10 @@ import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
 import { registerCommunications } from './integrations/communications'
 import { applySubtaskAssignmentInheritance } from '../src/subtaskAssignment'
 import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transport'
+import { createLoginLimiter, type LoginIdentity } from './auth/login-limiter'
+import { SessionStore, SESSION_MAX_AGE_SECONDS, idleTimeoutFromEnv } from './auth/session-store'
+import { securityHeaders } from './auth/security-headers'
+import { sanitizeStateForClient } from './services/client-state'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -56,57 +60,43 @@ const followUpTimeZone = process.env.FOLLOW_UP_TIME_ZONE || 'Asia/Manila'
 
 // Render and similar hosts terminate TLS at a trusted reverse proxy.
 app.set('trust proxy', 1)
+app.disable('x-powered-by')
+app.use(securityHeaders({ production: isProduction }))
 
-const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000
-const MAX_LOGIN_FAILURES = 5
-type LoginFailureEntry = { count: number; resetAt: number }
-const loginFailures = new Map<string, LoginFailureEntry>()
+const loginLimiter = createLoginLimiter()
 
-function loginFailureKey(req: express.Request) {
-  const account = typeof req.body?.account === 'string' ? req.body.account.trim().toLowerCase() : ''
-  const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : ''
-  return `${req.ip || req.socket.remoteAddress || 'unknown'}:${account}:${username}`
+function loginIdentity(req: express.Request): LoginIdentity {
+  return {
+    ip: req.ip || req.socket.remoteAddress || 'unknown',
+    account: typeof req.body?.account === 'string' ? req.body.account : '',
+    username: typeof req.body?.username === 'string' ? req.body.username : '',
+  }
 }
 
-function activeLoginFailure(req: express.Request) {
-  const key = loginFailureKey(req)
-  const current = loginFailures.get(key)
-  if (current && current.resetAt > Date.now()) return { key, current }
-  if (current) loginFailures.delete(key)
-  return { key, current: null }
-}
-
-function setLoginRateHeaders(res: express.Response, count: number, resetAt: number) {
-  res.setHeader('RateLimit-Limit', String(MAX_LOGIN_FAILURES))
-  res.setHeader('RateLimit-Remaining', String(Math.max(0, MAX_LOGIN_FAILURES - count)))
-  res.setHeader('RateLimit-Reset', String(Math.ceil(resetAt / 1000)))
+function setLoginRateHeaders(res: express.Response, rate: { limit: number; remaining: number; resetAt: number }) {
+  res.setHeader('RateLimit-Limit', String(rate.limit))
+  res.setHeader('RateLimit-Remaining', String(rate.remaining))
+  res.setHeader('RateLimit-Reset', String(Math.ceil(rate.resetAt / 1000)))
 }
 
 function enforceLoginFailureLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const { current } = activeLoginFailure(req)
-  if (!current || current.count < MAX_LOGIN_FAILURES) {
-    if (current) setLoginRateHeaders(res, current.count, current.resetAt)
+  const result = loginLimiter.check(loginIdentity(req))
+  if (result.rate) setLoginRateHeaders(res, result.rate)
+  if (!result.blocked) {
     next()
     return
   }
-  const retryAfter = Math.max(1, Math.ceil((current.resetAt - Date.now()) / 1000))
-  setLoginRateHeaders(res, current.count, current.resetAt)
-  res.setHeader('Retry-After', String(retryAfter))
-  res.status(429).json({ error: `Too many failed login attempts. Please try again in ${Math.ceil(retryAfter / 60)} minute${retryAfter > 60 ? 's' : ''}.` })
+  res.setHeader('Retry-After', String(result.retryAfterSeconds))
+  res.status(429).json({ error: `Too many failed login attempts. Please try again in ${Math.ceil(result.retryAfterSeconds / 60)} minute${result.retryAfterSeconds > 60 ? 's' : ''}.` })
 }
 
 function rejectInvalidLogin(req: express.Request, res: express.Response) {
-  const { key, current } = activeLoginFailure(req)
-  const next: LoginFailureEntry = current
-    ? { count: current.count + 1, resetAt: current.resetAt }
-    : { count: 1, resetAt: Date.now() + LOGIN_FAILURE_WINDOW_MS }
-  loginFailures.set(key, next)
-  setLoginRateHeaders(res, next.count, next.resetAt)
+  setLoginRateHeaders(res, loginLimiter.recordFailure(loginIdentity(req)))
   res.status(401).json({ error: 'Invalid account, user, or password.' })
 }
 
 function clearLoginFailures(req: express.Request) {
-  loginFailures.delete(loginFailureKey(req))
+  loginLimiter.recordSuccess(loginIdentity(req))
 }
 
 
@@ -206,7 +196,8 @@ type OrganizationInfo = {
   status: 'Active' | 'Suspended'
   enabledModules: string[]
 }
-const sessions = new Map<string, SessionUser>()
+// Sessions expire on the server (8 hours absolute, 2 hours idle by default), not only in the browser cookie.
+const sessions = new SessionStore<SessionUser>({ idleTimeoutMs: idleTimeoutFromEnv(process.env.SESSION_IDLE_TIMEOUT_MINUTES) })
 
 // Legacy SHA-256 digest retained only for backward-compatible verification and
 // as the browser-to-server pre-hash used by the existing Settings UI. Passwords
@@ -251,21 +242,6 @@ function bootstrapPasswordUsable(value: string) {
 
 function sessionCookie(token: string, maxAge: number) {
   return `ba_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${isProduction ? '; Secure' : ''}`
-}
-
-function sanitizeStateForClient(state: any, user: SessionUser) {
-  if (!state || typeof state !== 'object' || Array.isArray(state)) return state
-  return {
-    ...state,
-    items: Array.isArray(state.items) ? state.items.filter((item: any) => !(item?.source === 'Discord' && item?.externalSourceId)) : [],
-    activity: Array.isArray(state.activity) ? state.activity.filter((item: any) => !String(item?.text || '').startsWith('Discord inquiry captured:')) : [],
-    accounts: Array.isArray(state.accounts)
-      ? state.accounts.map((account: any) => ({ ...account, passwordHash: '' }))
-      : state.accounts,
-    notifications: Array.isArray(state.notifications)
-      ? state.notifications.filter((notification: any) => String(notification?.recipientUserId || '') === user.id)
-      : [],
-  }
 }
 
 function safeUser(account: any, organization?: OrganizationInfo | null): SessionUser {
@@ -429,6 +405,15 @@ function accountFromDatabase(row: any) {
     createdAt: String(row.created_on || new Date().toISOString().slice(0, 10)), theme: normalizeAppTheme(row.raw_data?.theme), clientThemes: normalizeClientThemes(row.raw_data?.clientThemes),
     interfaceMode: normalizeInterfaceMode(row.raw_data?.interfaceMode),
   }
+}
+
+// The users table is the authority for passwords, so re-checking a password reads it from there.
+async function verifyTenantUserPassword(user: SessionUser, plaintext: string) {
+  if (!supabaseAdmin || !user.organizationId || !plaintext) return false
+  const { data, error } = await supabaseAdmin.from('app_users').select('password_hash,status')
+    .eq('id', user.id).eq('organization_id', user.organizationId).is('deleted_at', null).maybeSingle()
+  if (error || !data || data.status === 'Disabled') return false
+  return verifyPassword(plaintext, data.password_hash)
 }
 
 function tenantIdForUser(user: SessionUser | null | undefined) {
@@ -718,10 +703,9 @@ app.post('/api/auth/login', enforceLoginFailureLimit, async (req, res) => {
       const loggedInAt = new Date().toISOString()
       await supabaseAdmin.from('platform_users').update({ last_login_at: loggedInAt, updated_at: loggedInAt }).eq('id', platformAccount.id)
       const user = safePlatformUser({ ...platformAccount, password_hash: storedHash, last_login_at: loggedInAt })
-      const token = randomBytes(32).toString('hex')
-      sessions.set(token, user)
+      const token = sessions.create(user)
       clearLoginFailures(req)
-      res.setHeader('Set-Cookie', sessionCookie(token, 28800))
+      res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
       res.json({ user, cloudConfigured: true, multiTenant: true })
       return
     }
@@ -773,10 +757,9 @@ app.post('/api/auth/login', enforceLoginFailureLimit, async (req, res) => {
       const loggedInAt = new Date().toISOString()
       await supabaseAdmin.from('app_users').update({ last_login_at: loggedInAt, updated_at: loggedInAt }).eq('id', normalizedAccount.id)
       const user = safeUser({ ...normalizedAccount, password_hash: storedHash, last_login_at: loggedInAt }, organization)
-      const token = randomBytes(32).toString('hex')
-      sessions.set(token, user)
+      const token = sessions.create(user)
       clearLoginFailures(req)
-      res.setHeader('Set-Cookie', sessionCookie(token, 28800))
+      res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
       res.json({ user, cloudConfigured: true, multiTenant: true })
       return
     }
@@ -801,10 +784,9 @@ app.post('/api/auth/login', enforceLoginFailureLimit, async (req, res) => {
     }
     const legacyOrganization: OrganizationInfo = { id: BXI_CORE_ORG_ID, name: BXI_CORE_ORG_NAME, slug: BXI_CORE_ORG_SLUG, status: 'Active', enabledModules: [...ALL_MODULES] }
     const user = safeUser(legacyAccount, legacyOrganization)
-    const token = randomBytes(32).toString('hex')
-    sessions.set(token, user)
+    const token = sessions.create(user)
     clearLoginFailures(req)
-    res.setHeader('Set-Cookie', sessionCookie(token, 28800))
+    res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
     res.json({ user, cloudConfigured: state.configured, multiTenant: false })
   } catch (error) {
     console.error('Login failed:', error)
@@ -1835,7 +1817,7 @@ Rules:
   }
 })
 
-app.post('/api/documents/drf/extract-cor', requireAuth, async (req, res) => {
+app.post('/api/documents/drf/extract-cor', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!documentAccessAllowed(user)) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
   res.status(410).json({ error: 'COR extraction now runs through the browser. Use Local Extractor or AI Enhanced extraction from DRF Creation.' })
@@ -2064,7 +2046,7 @@ app.get('/api/integrations/discord/status', requireAuth, requireTenantWorkspace,
   res.json(discordStatusPayload(user.organizationId))
 })
 registerAccountUsers(app, { requireAuth, requireTenant: requireTenantWorkspace, organizationById,
-  load: loadTenantState, commit: commitTenantState, hashPassword: secureHashPassword,
+  load: loadTenantState, commit: commitTenantState, hashPassword: secureHashPassword, verifyCurrentPassword: verifyTenantUserPassword,
   refreshSessions(organizationId, account, organization, passwordChanged) {
     for (const [token, session] of sessions) {
       if (session.organizationId !== organizationId || session.id !== account.id) continue
@@ -2234,7 +2216,7 @@ app.post('/api/tasks/:taskId/comments', requireAuth, requireTenantWorkspace, asy
   }
 })
 
-app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
+app.post('/api/tasks/:taskId/evidence', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to upload evidence.' })
   if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
@@ -2310,7 +2292,7 @@ app.post('/api/tasks/:taskId/evidence', requireAuth, async (req, res) => {
   }
 })
 
-app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, res) => {
+app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to remove evidence.' })
   if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
@@ -2353,7 +2335,7 @@ app.delete('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, r
   }
 })
 
-app.get('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, async (req, res) => {
+app.get('/api/tasks/:taskId/evidence/:evidenceId', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceReadAllowed(user)) return void res.status(403).json({ error: 'Task access is required to view evidence.' })
   if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
@@ -2465,6 +2447,10 @@ const server = app.listen(port, () => {
   void reconcileDiscord()
 })
 configureHttpServer(server)
+
+// Expired sessions and old login-failure counters are dropped even if nobody presents them again.
+const housekeepingTimer = setInterval(() => { sessions.prune(); loginLimiter.prune() }, 5 * 60_000)
+housekeepingTimer.unref()
 
 const discordTimer = setInterval(() => { const now = Date.now(); for (const [id, value] of discordUserWindows) if (now - value.startedAt > 60000) discordUserWindows.delete(id) }, 30000)
 discordTimer.unref()

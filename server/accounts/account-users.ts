@@ -10,18 +10,37 @@ type Dependencies = {
   load: (id: string) => Promise<any>
   commit: (id: string, next: any, actor: any, reason: string, before: any) => Promise<any>
   hashPassword: (password: string) => Promise<string>
+  /** Checks a plaintext password against the signed-in user's stored credential. */
+  verifyCurrentPassword: (user: any, password: string) => Promise<boolean>
   refreshSessions: (id: string, account: any, organization: any, passwordChanged: boolean) => void
 }
 class AccountError extends Error {
   constructor(message: string, public status = 400) { super(message) }
 }
 const roles = ['Administrator', 'Contributor', 'Viewer']
+const PASSWORD_ATTEMPT_WINDOW_MS = 15 * 60 * 1000
+const MAX_PASSWORD_ATTEMPTS = 5
 // Deliberately return only public fields, never stored password material.
 export function publicAccount(account: any) {
   return { ...Object.fromEntries(['id', 'username', 'name', 'email', 'phone', 'role', 'modules', 'status', 'createdAt', 'theme', 'clientThemes'].map(key => [key, account[key]])), interfaceMode: normalizeInterfaceMode(account.interfaceMode) }
 }
 export function registerAccountUsers(app: Express, deps: Dependencies) {
   const queues = new Map<string, Promise<unknown>>()
+  const passwordAttempts = new Map<string, { count: number; resetAt: number }>()
+  // Changing an email address or password needs the current password. A session alone (an unlocked laptop,
+  // a copied cookie) must not be enough to take an account over, and the email is what password recovery trusts.
+  const confirmCurrentPassword = async (user: any, body: any) => {
+    const key = `${user.organizationId}:${user.id}`
+    const at = Date.now()
+    for (const [entryKey, entry] of passwordAttempts) if (entry.resetAt <= at) passwordAttempts.delete(entryKey)
+    const entry = passwordAttempts.get(key)
+    if (entry && entry.count >= MAX_PASSWORD_ATTEMPTS) throw new AccountError('Too many incorrect password attempts. Try again in a few minutes.', 429)
+    const supplied = typeof body.currentPassword === 'string' ? body.currentPassword : ''
+    if (!supplied) throw new AccountError('Enter your current password to change your email address or password.', 403)
+    if (supplied.length <= 256 && await deps.verifyCurrentPassword(user, supplied)) { passwordAttempts.delete(key); return }
+    passwordAttempts.set(key, { count: (entry?.count || 0) + 1, resetAt: entry?.resetAt || at + PASSWORD_ATTEMPT_WINDOW_MS })
+    throw new AccountError('Your current password is incorrect.', 403)
+  }
   const actor = (req: Request): any => (req as any).authUser
   const route = (admin: boolean, operation: (req: Request, user: any, organization: any, state: any) => Promise<any>): RequestHandler => async (req, res) => {
     const user = actor(req)
@@ -90,8 +109,10 @@ export function registerAccountUsers(app: Express, deps: Dependencies) {
   }))
   app.patch('/api/account/profile', ...middleware, route(false, async (req, user, organization, state) => {
     const body = req.body || {}
-    if (Object.keys(body).some(key => !['name', 'email', 'phone', 'theme', 'interfaceMode', 'clientId', 'clientTheme', 'newPassword'].includes(key))) throw new AccountError('Only your own profile and appearance preferences can be changed.', 403)
+    if (Object.keys(body).some(key => !['name', 'email', 'phone', 'theme', 'interfaceMode', 'clientId', 'clientTheme', 'newPassword', 'currentPassword'].includes(key))) throw new AccountError('Only your own profile and appearance preferences can be changed.', 403)
     const existing = state.accounts.find((a: any) => a.id === user.id)
+    const emailChanging = typeof body.email === 'string' && body.email.trim().toLowerCase() !== String(existing.email || '').trim().toLowerCase()
+    if (body.newPassword !== undefined || emailChanging) await confirmCurrentPassword(user, body)
     const account = fields(body, existing)
     if (body.interfaceMode !== undefined) {
       if (body.interfaceMode !== null && !normalizeInterfaceMode(body.interfaceMode)) throw new AccountError('Choose Dark, Light, or Gray interface mode.')

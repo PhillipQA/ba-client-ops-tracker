@@ -896,7 +896,7 @@ function App() {
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
   }
 
-  const saveOwnPreferences = async (patch: { name?: string; email?: string; phone?: string; theme?: AppTheme; interfaceMode?: InterfaceMode | null; clientId?: string; clientTheme?: AppTheme | null; newPassword?: string }) => {
+  const saveOwnPreferences = async (patch: { name?: string; email?: string; phone?: string; theme?: AppTheme; interfaceMode?: InterfaceMode | null; clientId?: string; clientTheme?: AppTheme | null; newPassword?: string; currentPassword?: string }) => {
     await waitForCloudSaves()
     const result = await settingsRequest('/api/account/profile', 'PATCH', patch)
     const accounts = storeRef.current.accounts
@@ -905,7 +905,7 @@ function App() {
     else setAuthUser(current => current && current.id === result.user.id ? { ...current, ...result.user } : current)
   }
 
-  const updateOwnProfile = async (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string }) => {
+  const updateOwnProfile = async (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string; currentPassword?: string }) => {
     try {
       await saveOwnPreferences(profile)
       return profile.newPassword ? 'Password changed. Sign in with your new password.' : 'Profile updated.'
@@ -1641,7 +1641,7 @@ function LoginScreen({ busy, error, onLogin }: { busy: boolean; error: string; o
   </div>
 }
 
-function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: () => void; onSave: (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string }) => Promise<string | void> }) {
+function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: () => void; onSave: (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string; currentPassword?: string }) => Promise<string | void> }) {
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1651,17 +1651,25 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
     const form = new FormData(event.currentTarget)
     const password = String(form.get('newPassword') || '')
     const confirm = String(form.get('confirmPassword') || '')
+    const currentPassword = String(form.get('currentPassword') || '')
+    const email = String(form.get('email') || '').trim()
     if (password && password !== confirm) {
       setMessage('The new password and confirmation do not match.')
       setSaving(false)
       return
     }
+    if ((password || email.toLowerCase() !== String(user.email || '').trim().toLowerCase()) && !currentPassword) {
+      setMessage('Enter your current password to change your email address or password.')
+      setSaving(false)
+      return
+    }
     const result = await onSave({
       name: String(form.get('name') || '').trim(),
-      email: String(form.get('email') || '').trim(),
+      email,
       phone: String(form.get('phone') || '').trim(),
       theme: normalizeAppTheme(form.get('theme')),
       newPassword: password || undefined,
+      currentPassword: currentPassword || undefined,
     })
     setMessage(result || 'Profile updated.')
     setSaving(false)
@@ -1679,6 +1687,7 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
           <label>New password <small>Optional</small><input name="newPassword" type="password" minLength={8} autoComplete="new-password" /></label>
           <label>Confirm new password<input name="confirmPassword" type="password" minLength={8} autoComplete="new-password" /></label>
         </div>
+        <label>Current password <small>Required to change your email address or password</small><input name="currentPassword" type="password" autoComplete="current-password" /></label>
         {message && <div className="settings-message">{message}</div>}
         <div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Close</button><button className="primary" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</button></div>
       </form>
