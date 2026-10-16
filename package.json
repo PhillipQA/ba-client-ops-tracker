@@ -11,6 +11,8 @@
     "patch": "node scripts/apply-patch.mjs",
     "patch:rollback": "node scripts/rollback-patch.mjs",
     "patch:status": "node scripts/patch-status.mjs",
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.mjs",
+    "test:auth-hardening": "node --import tsx --test tests/session-store.test.ts tests/login-limiter.test.ts tests/auth-hardening.test.ts tests/client-state.test.ts tests/profile-credentials.test.ts",
     "test:communications": "node --import tsx --test tests/communications.test.ts",
     "test:integrations": "node --import tsx --test tests/integrations.test.ts",
     "typecheck:server": "tsc -p tsconfig.server.json",
