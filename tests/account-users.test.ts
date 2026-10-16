@@ -24,6 +24,7 @@ async function fixture(run: (f: any) => Promise<void>) {
     load: async id => ({ data: structuredClone(states[id]) }),
     commit: async (id, next) => { if (failSave) throw new Error('Database offline'); states[id] = structuredClone(next) },
     hashPassword: async password => `hashed:${password}`,
+    verifyCurrentPassword: async (user: any, password: string) => password === `current-${user.id}`,
     refreshSessions: (id, user, _org, changed) => { if (sessions[user.id]?.organizationId === id) { if (changed || user.status === 'Disabled') delete sessions[user.id]; else sessions[user.id] = { ...sessions[user.id], ...user } } },
   })
   const server = app.listen(0, '127.0.0.1'); await new Promise<void>(resolve => server.once('listening', resolve))
@@ -117,7 +118,7 @@ test('concurrent user updates retain both changes and password change invalidate
   assert(results.every((r: any) => r.status === 200))
   assert.equal(states.a.accounts[1].theme, 'green-grass')
   assert.equal(states.a.accounts[2].theme, 'calm-mountain')
-  assert.equal((await call('/api/account/profile', 'viewer-a', 'PATCH', { newPassword: 'replacement-password' })).status, 200)
+  assert.equal((await call('/api/account/profile', 'viewer-a', 'PATCH', { newPassword: 'replacement-password', currentPassword: 'current-viewer-a' })).status, 200)
   assert.equal(sessions['viewer-a'], undefined)
 }))
 

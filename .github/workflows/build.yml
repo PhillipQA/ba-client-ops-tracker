@@ -15,3 +15,20 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run build
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # Authentication and access-control tests. These must pass.
+      - name: Authentication and session tests
+        run: npm run test:auth-hardening
+      # The whole suite had not been run automatically before this job existed, and some older tests may be
+      # out of date. Failures are reported but do not block the build. Remove continue-on-error once it is green.
+      - name: Full test suite
+        run: npm test
+        continue-on-error: true

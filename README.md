@@ -121,7 +121,7 @@ For Northflank or another Node host:
 | Environment | The database variables above, the existing integration key and the public `APP_BASE_URL` |
 | HTTP port | The value configured/provided as `PORT` |
 
-Configure environment values before building if using the optional `VITE_GOOGLE_CLIENT_ID`. Run **one application instance**: login sessions are stored in server memory. A restart can require signing in again; database records remain in the database.
+Configure environment values before building if using the optional `VITE_GOOGLE_CLIENT_ID`. Run **one application instance**: login sessions are stored in server memory. A restart can require signing in again; database records remain in the database. Sessions end 8 hours after sign-in, or after 2 hours without activity (change this with `SESSION_IDLE_TIMEOUT_MINUTES`).
 
 Follow [Deploy on a new server](docs/setup/deploy-new-server.md) for moving an existing installation.
 

@@ -4,6 +4,19 @@
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
 
+## Unreleased — Security hardening
+
+- Changing your email address or password in My profile now requires your current password, with a limit on wrong guesses.
+- Sessions now expire on the server: 8 hours after sign-in, or 2 hours without activity (`SESSION_IDLE_TIMEOUT_MINUTES`). Expired sessions are cleaned up automatically.
+- Failed sign-ins are limited per address and per user as well as per address-and-user, so one password tried against many users, or one user attacked from many addresses, is stopped.
+- Internal Admin can only view data or change its own password and recovery email until the bootstrap password is replaced.
+- Add baseline security headers: no content-type sniffing, no framing, referrer and permissions policies, and HSTS in production.
+- Non-administrators no longer receive other users' email addresses and phone numbers.
+- Evidence and DRF routes require a tenant workspace login like the rest of the workspace routes.
+- Add `npm test` and run the authentication tests in CI.
+
+**Database:** no new migration.
+
 ## v0.6.81 — Multiple tasks from one email
 Released October 12, 2026.
 
