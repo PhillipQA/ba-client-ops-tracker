@@ -47,6 +47,7 @@ import { createLoginLimiter, type LoginIdentity } from './auth/login-limiter'
 import { SessionStore, SESSION_MAX_AGE_SECONDS, idleTimeoutFromEnv } from './auth/session-store'
 import { securityHeaders } from './auth/security-headers'
 import { sanitizeStateForClient } from './services/client-state'
+import { accountChangesAreSelfOnly } from './services/account-guard'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -999,25 +1000,8 @@ async function prepareAccountPasswords(currentAccounts: any[], nextAccounts: any
   }))
 }
 
-function accountChangesAreSelfOnly(currentAccounts: any[], nextAccounts: any[], userId: string) {
-  if (currentAccounts.length !== nextAccounts.length) return false
-  const currentMap = new Map(currentAccounts.map((account) => [String(account.id), account]))
-  for (const next of nextAccounts) {
-    const current = currentMap.get(String(next.id))
-    if (!current) return false
-    if (String(next.id) !== userId) {
-      if (stable(current) !== stable(next)) return false
-      continue
-    }
-    const allowed = ['name', 'email', 'phone', 'passwordHash', 'theme']
-    const keys = new Set([...Object.keys(current), ...Object.keys(next)])
-    for (const key of keys) {
-      if (allowed.includes(key)) continue
-      if (stable(current[key]) !== stable(next[key])) return false
-    }
-  }
-  return true
-}
+// accountChangesAreSelfOnly lives in ./services/account-guard so it can be unit tested without
+// starting this server. The regression test there pins the privilege-escalation cases.
 
 function moduleAllowed(user: SessionUser, module: string) {
   return user.modules.includes(module)
