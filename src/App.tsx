@@ -36,6 +36,7 @@ import {
   FileText,
   GripVertical,
   LayoutGrid,
+  Columns3,
   Inbox,
   LayoutDashboard,
   List,
@@ -77,6 +78,11 @@ import GoogleCalendarPanel from './GoogleCalendarPanel'
 import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
 import { loadNotifications, markAllNotificationsRead, updateNotification } from './notifications'
 import { addTaskComment, type TaskCommentMutationResult } from './taskComments'
+import TaskBoard from './TaskBoard'
+import TaskEffort from './TaskEffort'
+import { type BoardGroup, type TaskLayout } from './taskBoardModel'
+import { normalizeEstimate } from './effort'
+import type { TimeEntryMutationResult } from './timeEntries'
 import type { ActivityLog, AppModule, AppNotification, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkActivityEvent, WorkItem } from './types'
 import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTIONS, type AppTheme } from './theme'
 import { normalizeInterfaceMode, type InterfaceMode } from './appearance'
@@ -392,6 +398,9 @@ function App() {
   const [query, setQuery] = useState('')
   const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
   const [clientLayout, setClientLayout] = useState<ClientLayout>('tiles')
+  const [taskLayout, setTaskLayout] = useState<TaskLayout>('table')
+  const [boardGroup, setBoardGroup] = useState<BoardGroup>('status')
+  const [boardShowSubtasks, setBoardShowSubtasks] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const [clientSort, setClientSort] = useState('name')
   const [projectArchiveFilter, setProjectArchiveFilter] = useState('active')
@@ -500,6 +509,17 @@ function App() {
       const saved = localStorage.getItem(`ba-client-layout:${authUser.organizationId}:${authUser.id}`)
       setClientLayout(saved === 'list' || saved === 'table' ? saved : 'tiles')
     } catch { setClientLayout('tiles') }
+  }, [authUser?.id, authUser?.organizationId])
+
+  useEffect(() => {
+    setTaskLayout('table'); setBoardGroup('status'); setBoardShowSubtasks(false)
+    if (!authUser) return
+    try {
+      const saved = JSON.parse(localStorage.getItem(`ba-task-view:${authUser.organizationId}:${authUser.id}`) || '{}') as { layout?: string; group?: string; subtasks?: boolean }
+      setTaskLayout(saved.layout === 'board' ? 'board' : 'table')
+      setBoardGroup(saved.group === 'waiting' ? 'waiting' : 'status')
+      setBoardShowSubtasks(saved.subtasks === true)
+    } catch { /* Defaults already applied. */ }
   }, [authUser?.id, authUser?.organizationId])
 
   useEffect(() => {
@@ -736,6 +756,17 @@ function App() {
     setCloudMessage('Comment saved · Database synced')
   }
 
+  const applyTimeEntryMutation = (result: TimeEntryMutationResult) => {
+    const current = storeRef.current
+    const next: Store = { ...current, items: current.items.map((item) => item.id === result.item.id ? { ...item, timeEntries: result.item.timeEntries || [] } : item) }
+    storeRef.current = next
+    setStore(next)
+    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
+    if (result.updatedAt) setLastCloudSync(result.updatedAt)
+    setCloudStatus('synced')
+    setCloudMessage('Time saved · Database synced')
+  }
+
   const syncCloudNow = async () => {
     setCloudStatus('saving')
     setCloudMessage('Saving to database…')
@@ -928,6 +959,13 @@ function App() {
     [store.items, store.taskSettings, currentUser],
   )
 
+  const chooseTaskView = (next: { layout?: TaskLayout; group?: BoardGroup; subtasks?: boolean }) => {
+    const view = { layout: next.layout ?? taskLayout, group: next.group ?? boardGroup, subtasks: next.subtasks ?? boardShowSubtasks }
+    setTaskLayout(view.layout); setBoardGroup(view.group); setBoardShowSubtasks(view.subtasks)
+    if (!authUser) return
+    try { localStorage.setItem(`ba-task-view:${authUser.organizationId}:${authUser.id}`, JSON.stringify(view)) } catch { /* Keep the view usable when storage is unavailable. */ }
+  }
+
   const chooseClientLayout = (layout: ClientLayout) => {
     setClientLayout(layout)
     if (!authUser) return
@@ -1077,6 +1115,20 @@ function App() {
       } : item),
       activity: [
         { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Task status changed: ${target.title} → ${status}` },
+        ...store.activity,
+      ],
+    })
+  }
+
+  const updateTaskWaitingOn = (id: string, waitingOn: WaitingOn) => {
+    if (!canWriteTasks) return
+    const target = store.items.find((item) => item.id === id)
+    if (!target || target.waitingOn === waitingOn || waitingOn === 'Done' || isTaskClosed(target.status, store.taskSettings)) return
+    persist({
+      ...store,
+      items: store.items.map((item) => item.id === id ? { ...item, waitingOn } : item),
+      activity: [
+        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Task now waiting on ${waitingOn}: ${target.title}` },
         ...store.activity,
       ],
     })
@@ -1548,7 +1600,23 @@ function App() {
                 <label>Due / follow-up<select value={taskDateFilter} onChange={(event) => setTaskDateFilter(event.target.value as typeof taskDateFilter)}><option value="All">All dates</option><option value="due-3">Due in next 3 days</option><option value="due-7">Due in next 7 days</option><option value="followup-3">Follow-up in next 3 days</option><option value="followup-7">Follow-up in next 7 days</option><option value="overdue">Overdue due/follow-up</option></select></label>
                 <button className="secondary task-filter-clear" type="button" onClick={() => { setTaskClientFilter(''); setTaskProjectFilter(''); setTaskStatusFilter(''); setTaskDateFilter('All'); setWaitingFilter('All'); setQuery('') }}>Clear filters</button>
               </div>
-              <TaskTable items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} canEdit={canWriteTasks} />
+              <div className="task-view-toolbar">
+                <div className="client-layout-switch" role="group" aria-label="Task layout">
+                  <button type="button" aria-pressed={taskLayout === 'table'} onClick={() => chooseTaskView({ layout: 'table' })} title="Table"><Table2 size={16} /><span>Table</span></button>
+                  <button type="button" aria-pressed={taskLayout === 'board'} onClick={() => chooseTaskView({ layout: 'board' })} title="Board"><Columns3 size={16} /><span>Board</span></button>
+                </div>
+                {taskLayout === 'board' && <>
+                  <span className="toolbar-label" id="board-group-label">Group by</span>
+                  <div className="client-layout-switch" role="group" aria-labelledby="board-group-label">
+                    <button type="button" aria-pressed={boardGroup === 'status'} onClick={() => chooseTaskView({ group: 'status' })}><span>Status</span></button>
+                    <button type="button" aria-pressed={boardGroup === 'waiting'} onClick={() => chooseTaskView({ group: 'waiting' })}><span>Waiting on</span></button>
+                  </div>
+                  <label className="toolbar-check"><input type="checkbox" checked={boardShowSubtasks} onChange={(event) => chooseTaskView({ subtasks: event.target.checked })} /> Show subtasks as cards</label>
+                </>}
+              </div>
+              {taskLayout === 'board'
+                ? <TaskBoard items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} taskSettings={store.taskSettings} group={boardGroup} showSubtasks={boardShowSubtasks} today={today} canEdit={canWriteTasks} onStatusChange={updateTaskStatus} onWaitingChange={updateTaskWaitingOn} onOpen={canWriteTasks ? openTaskEditor : undefined} />
+                : <TaskTable items={filteredTasks} allItems={store.items} clients={store.clients} projects={store.projects} taskSettings={store.taskSettings} onResolve={resolveItem} onStatusChange={updateTaskStatus} onEdit={openTaskEditor} onDelete={deleteTask} onCreateSubtask={openSubtaskCreator} onReorderSubtasks={reorderSubtasks} canEdit={canWriteTasks} />}
             </div>
           </section>
         )}
@@ -1574,7 +1642,7 @@ function App() {
 
       {modal && canWrite && <Modal title={modal === 'item' ? (taskPreset?.parentTaskId ? 'Add subtask' : taskPreset?.type === 'Inquiry' ? 'Capture inquiry' : 'Add task') : modal === 'taskEdit' ? 'Edit task' : modal === 'client' ? 'Add client' : modal === 'project' ? 'Add project' : editingActivity ? 'Edit activity' : 'Add activity'} closeDisabled={modal === 'taskEdit' && taskEditSaving} onClose={() => { setModal(null); setEditingActivityId(null); setEditingTaskId(null); setTaskPreset(null) }}>
         {modal === 'item' && <TaskForm canLinkRtm={hasModule('requirements') && hasModule('items')} store={store} preset={taskPreset} onSubmit={(item) => { const parent = item.parentTaskId ? store.items.find((candidate) => candidate.id === item.parentTaskId) : undefined; persist({ ...store, items: [item, ...store.items], activity: [{ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: item.dateRaised, text: parent ? `Created subtask under ${parent.title}: ${item.title}` : `Created ${item.type.toLowerCase()} task: ${item.title}` }, ...store.activity] }); setModal(null); setTaskPreset(null) }} />}
-        {modal === 'taskEdit' && editingTask && <TaskEditForm autoRefreshDocuments={workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)} canLinkRtm={hasModule('requirements') && hasModule('items')} store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} onCommentMutation={applyCommentMutation} />}
+        {modal === 'taskEdit' && editingTask && <TaskEditForm autoRefreshDocuments={workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)} canLinkRtm={hasModule('requirements') && hasModule('items')} store={store} item={editingTask} onSubmit={saveTaskEdit} onDelete={deleteTask} onEvidenceMutation={applyEvidenceMutation} onCommentMutation={applyCommentMutation} onTimeEntryMutation={applyTimeEntryMutation} currentUser={currentUser} today={today} />}
         {modal === 'client' && <ClientForm onSubmit={(client) => { persist({ ...store, clients: [...store.clients, client] }); setModal(null) }} />}
         {modal === 'project' && <ProjectForm onSubmit={(project) => { persist({ ...store, projects: [...store.projects, project] }); setModal(null) }} />}
         {modal === 'activity' && <ActivityForm clients={store.clients} projects={store.projects} initial={editingActivity} onSubmit={saveActivity} />}
@@ -2035,7 +2103,10 @@ function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean
     const dueDate = String(form.get('dueDate') || '')
     const assignedToUserId = parent?.assignedToUserId || String(form.get('assignedToUserId') || '') || undefined
     if (startDate && dueDate && dueDate < startDate) { window.alert('Due Date cannot be earlier than Start Date.'); return }
+    const estimate = normalizeEstimate(form.get('estimateHours'))
+    if (!estimate.ok) { window.alert(estimate.error); return }
     onSubmit({
+      estimateHours: estimate.value,
       id: crypto.randomUUID(),
       clientId: parent?.clientId || clientId || undefined,
       projectId: parent?.projectId || projectId || undefined,
@@ -2078,13 +2149,14 @@ function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean
     {canLinkRtm && <RtmTaskLinks store={store} clientId={clientId} projectId={projectId} value={rtmLinks} onChange={setRtmLinks} />}
     <label>QA result<select name="qaResult" defaultValue="Not Run"><option>Not Run</option><option>Passed</option><option>Failed</option><option>Blocked</option></select><small>Used by linked Testing stages. Passed requires completed work.</small></label>
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} />
+    <label>Estimate (hours)<input name="estimateHours" type="number" inputMode="decimal" min="0" max="1000" step="0.25" placeholder="Optional" /></label>
     <label>Source<select name="source" defaultValue={type === 'Inquiry' ? 'Chat' : 'Internal'}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} placeholder="Context, comments, acceptance details, dependencies, or what needs to be done..." /></label>
     <div className="form-actions span-2"><button className="primary">{parent ? 'Create subtask' : type === 'Inquiry' ? 'Capture inquiry' : 'Create task'}</button></div>
   </form>
 }
 
-function TaskEditForm({ autoRefreshDocuments=true, canLinkRtm, store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation }: { autoRefreshDocuments?: boolean; canLinkRtm: boolean; store: Store; item: WorkItem; onSubmit: (item: WorkItem) => Promise<void>; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void }) {
+function TaskEditForm({ autoRefreshDocuments=true, canLinkRtm, store, item, onSubmit, onDelete, onEvidenceMutation, onCommentMutation, onTimeEntryMutation, currentUser, today }: { autoRefreshDocuments?: boolean; canLinkRtm: boolean; store: Store; item: WorkItem; onSubmit: (item: WorkItem) => Promise<void>; onDelete: (id: string) => void; onEvidenceMutation: (result: TaskEvidenceMutationResult) => void; onCommentMutation: (result: TaskCommentMutationResult) => void; onTimeEntryMutation: (result: TimeEntryMutationResult) => void; currentUser: { id: string; role?: string }; today: string }) {
   const [rtmLinks, setRtmLinks] = useState<RtmLink[]>(item.rtmLinks || [])
   const [editProjectId, setEditProjectId] = useState(item.projectId || '')
   const [type, setType] = useState<ItemType>(item.type)
@@ -2105,8 +2177,11 @@ function TaskEditForm({ autoRefreshDocuments=true, canLinkRtm, store, item, onSu
     const assignmentSelection = String(form.get('assignedToUserId') || '')
     const assignedToUserId = parent && assignmentSelection === inheritAssignmentValue ? parent.assignedToUserId : assignmentSelection || undefined
     if (startDate && dueDate && dueDate < startDate) { window.alert('Due Date cannot be earlier than Start Date.'); return }
+    const estimate = normalizeEstimate(form.get('estimateHours'))
+    if (!estimate.ok) { setSaveError(estimate.error); return }
     const changes: WorkItem = {
       ...item,
+      estimateHours: estimate.value,
       rtmLinks,
       qaResult: String(form.get('qaResult') || 'Not Run') as WorkItem['qaResult'],
       title: item.title,
@@ -2146,9 +2221,11 @@ function TaskEditForm({ autoRefreshDocuments=true, canLinkRtm, store, item, onSu
     {canLinkRtm && <RtmTaskLinks store={store} clientId={item.clientId || parent?.clientId} projectId={editProjectId || parent?.projectId} value={rtmLinks} onChange={setRtmLinks} />}
     <label>QA result<select name="qaResult" defaultValue={item.qaResult || 'Not Run'}><option>Not Run</option><option>Passed</option><option>Failed</option><option>Blocked</option></select><small>Completed work without an explicit pass shows Done, not Passed.</small></label>
     <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} startDate={item.startDate || ''} dueDate={item.dueDate || ''} followUpDate={item.followUpDate || ''} />
+    <label>Estimate (hours)<input name="estimateHours" type="number" inputMode="decimal" min="0" max="1000" step="0.25" defaultValue={item.estimateHours ?? ''} placeholder="Optional" /><small>{parent ? 'Rolls up to the main task when it has no estimate.' : 'Leave blank to use the sum of subtask estimates.'}</small></label>
     <label>Source<select name="source" defaultValue={item.source}><option>Email</option><option>Meeting</option><option>Chat</option><option>Discord</option><option>Internal</option><option>Other</option></select></label>
     <label className="span-2">Description / comments<textarea name="description" rows={4} defaultValue={item.description} /></label>
     <DocHubHistory active={autoRefreshDocuments} taskId={item.id} canCreate onComplete={() => { const closed=store.taskSettings.statuses.find(s=>s.closed); if(closed)setStatus(closed.label) }} />
+    <TaskEffort item={item} allItems={store.items} currentUser={currentUser} canLog={currentUser.role !== 'Viewer'} today={today} onMutation={onTimeEntryMutation} />
     <WorkCommentTrail item={item} onMutation={onCommentMutation} />
     {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
     {saveError && <p className="record-editor-error span-2" role="alert">{saveError}</p>}

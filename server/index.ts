@@ -48,6 +48,7 @@ import { SessionStore, SESSION_MAX_AGE_SECONDS, idleTimeoutFromEnv } from './aut
 import { securityHeaders } from './auth/security-headers'
 import { sanitizeStateForClient } from './services/client-state'
 import { accountChangesAreSelfOnly } from './services/account-guard'
+import { addTimeEntry, applyEffortSaveRules, removeTimeEntry } from './services/time-entries'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -492,7 +493,7 @@ function authoritativeWorkEvents(current: any, next: any, actor: SessionUser) {
       const action = isClosed ? 'completed' : wasClosed ? 'reopened' : item.status === 'In Progress' ? 'started' : 'status_changed'
       created.push(make(item, action, `${actor.name} changed “${item.title}” from ${before.status} to ${item.status}.`, 'status', String(before.status || ''), String(item.status || '')))
     }
-    for (const [field, label] of [['priority', 'priority'], ['waitingOn', 'waiting on'], ['dueDate', 'due date'], ['followUpDate', 'follow-up date']] as const) {
+    for (const [field, label] of [['priority', 'priority'], ['waitingOn', 'waiting on'], ['dueDate', 'due date'], ['followUpDate', 'follow-up date'], ['estimateHours', 'estimate']] as const) {
       if (String(before[field] || '') !== String(item[field] || '')) created.push(make(item, 'updated', `${actor.name} changed the ${label} for “${item.title}”.`, field, String(before[field] || ''), String(item[field] || '')))
     }
     const beforeEvidence = Array.isArray(before.evidence) ? before.evidence.length : 0
@@ -1069,7 +1070,9 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
       if (startDate && dueDate && dueDate < startDate) throw new TenantSaveError(`Task “${String(item?.title || 'Untitled')}” cannot be due before its Start Date.`, 400)
       const currentItem = currentItemMap.get(String(item?.id || '')) as any
       const comments = Array.isArray(currentItem?.comments) ? currentItem.comments : []
-      return { ...item, comments, evidence: currentItem?.evidence || [], docHubDocuments: currentItem?.docHubDocuments || [], assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
+      const effort = applyEffortSaveRules(currentItem, item)
+      if (!effort.ok) throw new TenantSaveError(effort.error, effort.status)
+      return { ...effort.value, comments, evidence: currentItem?.evidence || [], docHubDocuments: currentItem?.docHubDocuments || [], assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
     })
     // Work history is derived on the server from the authenticated actor. Browser-supplied
     // event identities are never trusted, so assignment and action reports remain auditable.
@@ -2199,6 +2202,35 @@ app.post('/api/tasks/:taskId/comments', requireAuth, requireTenantWorkspace, asy
     res.status(error instanceof LifecycleError ? error.status : 500).json({ error: error instanceof Error ? error.message : 'Comment could not be saved.' })
   }
 })
+
+async function mutateTimeEntries(req: express.Request, res: express.Response, mutate: (task: any, user: SessionUser) => ReturnType<typeof addTimeEntry> | ReturnType<typeof removeTimeEntry>) {
+  const user = (req as express.Request & { authUser: SessionUser }).authUser
+  if (!taskEvidenceWriteAllowed(user)) return void res.status(403).json({ error: 'Task edit access is required to log time.' })
+  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+  try {
+    const taskId = String(req.params.taskId || '')
+    const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
+    const current = state.data && typeof state.data === 'object' ? state.data : null
+    if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
+    const items = Array.isArray(current.items) ? current.items : []
+    const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+    if (!task || (task.source === 'Discord' && task.externalSourceId)) return void res.status(404).json({ error: 'Task or Subtask was not found.' })
+    const locked = archivedWorkReason(current, task)
+    if (locked) return void res.status(409).json({ error: locked })
+    const result = mutate(task, user)
+    if (!result.ok) return void res.status(result.status).json({ error: result.error })
+    const next = { ...current, items: items.map((candidate: any) => String(candidate?.id || '') === taskId ? result.value.task : candidate) }
+    const saved = await commitTenantState(tenantIdForUser(user), next, user, 'task-time-entry', current)
+    res.json({ item: result.value.task, entry: result.value.entry, updatedAt: saved.syncedAt })
+  } catch (error) {
+    console.error('Time entry save failed:', error)
+    res.status(error instanceof LifecycleError ? error.status : 500).json({ error: error instanceof Error ? error.message : 'Time entry could not be saved.' })
+  }
+}
+
+app.post('/api/tasks/:taskId/time-entries', requireAuth, requireTenantWorkspace, (req, res) => mutateTimeEntries(req, res, (task, user) => addTimeEntry(task, req.body, user, new Date(), randomUUID())))
+
+app.delete('/api/tasks/:taskId/time-entries/:entryId', requireAuth, requireTenantWorkspace, (req, res) => mutateTimeEntries(req, res, (task, user) => removeTimeEntry(task, String(req.params.entryId || ''), user)))
 
 app.post('/api/tasks/:taskId/evidence', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
