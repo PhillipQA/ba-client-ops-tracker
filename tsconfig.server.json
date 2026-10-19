@@ -18,6 +18,7 @@
     "src/testcase-model.ts",
     "src/version.ts",
     "src/subtaskAssignment.ts",
-    "src/types.ts"
+    "src/types.ts",
+    "src/effort.ts"
   ]
 }

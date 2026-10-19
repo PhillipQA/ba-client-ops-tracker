@@ -45,7 +45,8 @@
     "test:egress": "node --import tsx --test tests/egress.test.ts",
     "test:work-hub-sync": "node --import tsx --test tests/work-hub-sync.test.ts",
     "test:postgres": "node --import tsx --test tests/postgres-client.test.ts",
-    "test:work-hub-tasks": "node --import tsx --test tests/work-hub-task-creation.test.mjs"
+    "test:work-hub-tasks": "node --import tsx --test tests/work-hub-task-creation.test.mjs",
+    "test:effort": "node --import tsx --test tests/effort.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",

@@ -2,6 +2,7 @@ import { businessDateKey, useBusinessDate } from './businessDate'
 import { useMemo, useState } from 'react'
 import { Activity, AlertTriangle, CalendarRange, CheckCircle2, Clock3, Download, ListTodo, UsersRound } from 'lucide-react'
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
+import EffortReport from './EffortReport'
 
 function localDateKey(date: Date) {
   const yyyy = date.getFullYear()
@@ -201,6 +202,8 @@ export default function Reports({ clients, projects, items, planner, taskSetting
         </div>
       </div>
     </div>
+
+    <EffortReport items={items} clients={clients} projects={projects} trackedUsers={trackedUsers} from={from} to={to} clientId={clientId} projectId={projectId} userId={effectiveUserId} showTeam />
 
     <div className="panel report-panel">
       <div className="panel-heading"><div><h2>User Gantt</h2><p>Task and subtask timelines use Start Date through Due Date.</p></div><span className="count-pill">{userGanttItems.length} scheduled</span></div>

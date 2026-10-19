@@ -71,6 +71,10 @@ export interface WorkItem {
   rtmLinks?: import('./rtm').RtmLink[]
   qaResult?: 'Not Run' | 'Passed' | 'Failed' | 'Blocked'
   docHubDocuments?: import('./dochub').DocHubLink[]
+  /** Optional estimate in hours. */
+  estimateHours?: number
+  /** Time logged against this task. Written only through the time-entry API. */
+  timeEntries?: import('./effort').TimeEntry[]
   id: string
   clientId?: string
   projectId?: string
