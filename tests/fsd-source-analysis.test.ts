@@ -31,10 +31,12 @@ test('upload review works before details or presets; generation uses all reviewe
   const originalFetch=globalThis.fetch
   const wire:any[]=[]
   let reply:any=reading()
+  const queued:any[]=[] // one-off replies served before `reply`; a string is returned as raw text
   globalThis.fetch=(async(input:any,options:any)=>{
     if (!String(input).startsWith('https://api.anthropic.com/')) return originalFetch(input,options)
     wire.push(JSON.parse(options.body))
-    return new Response(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(reply)}]}),{headers:{'content-type':'application/json'}})
+    const next=queued.length?queued.shift():reply
+    return new Response(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:typeof next==='string'?next:JSON.stringify(next)}]}),{headers:{'content-type':'application/json'}})
   }) as typeof fetch
   const app=express();app.use(express.json())
   app.use((req:any,_res,next)=>{req.authUser={organizationId:'fixture',role:'Administrator',modules:['documents']};next()})
@@ -72,5 +74,21 @@ test('upload review works before details or presets; generation uses all reviewe
     assert.equal(excluded.status,400);assert.equal(wire.length,before+1)
     const unreadable=await post('analyze-source',{source:{...source,text:'[Extraction warning: no readable text found in this image; inspect the original for visual requirements.]'},modules})
     assert.equal(unreadable.status,200);assert.equal(unreadable.body.readability,'unreadable');assert.equal(wire.length,before+1)
+    // A document reply with a line break inside a string is repaired without another AI call.
+    const unrepaired=JSON.stringify(reply).replace('Stock report currency requires confirmation.','Stock report currency\nrequires confirmation.')
+    assert.throws(()=>JSON.parse(unrepaired))
+    queued.push(unrepaired)
+    const calls=wire.length
+    const repaired=await post('preview',draft)
+    assert.equal(repaired.status,200,JSON.stringify(repaired.body));assert.equal(wire.length,calls+1)
+    // An unreadable reply is requested once more, with a reminder in the instructions.
+    queued.push('Here is the document: {"sections":[')
+    const retried=await post('preview',draft)
+    assert.equal(retried.status,200,JSON.stringify(retried.body));assert.equal(wire.length,calls+3)
+    assert.doesNotMatch(wire[calls+1].system,/could not be parsed as JSON/);assert.match(wire[calls+2].system,/could not be parsed as JSON/)
+    // Two unreadable replies stop with a clear message and the draft is untouched.
+    queued.push('not json','still not json')
+    const failed=await post('preview',draft)
+    assert.equal(failed.status,422);assert.match(failed.body.error,/could not be read as a document/);assert.equal(wire.length,calls+5)
   } finally {globalThis.fetch=originalFetch;await new Promise<void>(resolve=>server.close(()=>resolve()))}
 })

@@ -1,8 +1,20 @@
 # Changelog
 
-**Current application release: v0.6.83**
+**Current application release: v0.6.84**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.84 — FSD and BRD generation survive unreadable AI replies
+Released October 21, 2026.
+
+### Fixed
+
+- Generating an FSD preview could stop with "The AI returned an invalid document. Your draft is retained; retry with a smaller scope." The AI had finished, but its reply contained a formatting slip the app could not read — typically a line break or an unescaped quotation mark inside the text, which is more likely in long documents or when the sources quote on-screen messages.
+- The app now repairs these slips when it can do so safely (line breaks and tabs inside text, quotation marks inside text, trailing commas, extra words or code fences around the document). If the reply still cannot be read, it asks the AI once more, with a reminder to return clean JSON, before showing an error. The BRD preview gets the same repair and retry. Source reviews and the older source-map step repair slips as well but do not retry.
+- If both attempts fail, the message now says the reply could not be read and that trying again usually works, instead of suggesting a smaller scope. The draft and sources are kept as before.
+- When a reply cannot be read, the server log records only its length and shape, never document text.
+
+No database migration is needed.
 
 ## v0.6.83 — More Sign Off forms and configurable Waiting on
 Released October 21, 2026.

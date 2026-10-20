@@ -6,6 +6,7 @@ import PizZip from 'pizzip'
 import { aiProviderName, documentTemplateRow, IntegrationError, normalizeAiConfig } from '../integrations/tenant-integrations'
 import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
+import { runAiJson } from '../ai/parse-ai-json'
 import { brdReference, type BrdDetails, type BrdMappingRow, type BrdPreview, type BrdRequirement, type BrdSource, type BrdStakeholder } from '../../src/brd-model'
 import { documentOutputName } from '../../src/documentFilename'
 
@@ -91,8 +92,9 @@ export function registerBrdRoutes(app:Express,deps:{db:any;requireAuth:RequestHa
     const details=validateDetails(req.body?.details),sources=validateSources(req.body?.sources),guidance=text(req.body?.guidance||'','guidance',10000)
     const ai=await active(req);if(!ai)throw new IntegrationError('Enable and configure the Document Agent in Account Settings → AI Agent Manager before generating a BRD.',503)
     const sourceCatalog=sources.map(({id,name,kind})=>({id,name,kind}))
-    const output=await runTenantAi(ai.secret,ai.config,instructions(),JSON.stringify({documentDetails:details,sourceCatalog,sources,guidance}),180000,22000)
-    let parsed:any;try{parsed=JSON.parse(output.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''))}catch{throw new IntegrationError('The AI returned an invalid BRD draft. Your sources are retained; retry generation.',422)}
+    const request=JSON.stringify({documentDetails:details,sourceCatalog,sources,guidance}),brdInstructions=instructions()
+    const parsed=await runAiJson(note=>runTenantAi(ai.secret,ai.config,note?`${brdInstructions}\n${note}`:brdInstructions,request,180000,22000),
+      ()=>new IntegrationError('The AI replied twice with text that could not be read as a BRD. Your sources are retained; this is usually temporary — try again.',422),'brd-preview')
     const preview=validatePreview(parsed,new Set(sources.map(s=>s.id))),normalized=normalizeAiConfig(ai.config)
     res.json({...preview,provider:aiProviderName(ai.config),model:normalized.model,generatedAt:new Date().toISOString()})
   }catch(e){res.status(e instanceof IntegrationError?e.status:502).json({error:e instanceof IntegrationError?e.message:'BRD generation failed. Check the Document Agent key, model access, quota and connection. Your draft is retained.'})}})

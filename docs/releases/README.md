@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.84](v0.6.84.md) | FSD and BRD generation repair or retry unreadable AI replies |
 | [v0.6.83](v0.6.83.md) | More Sign Off forms (UAT, UAT Deployment, Training) and configurable Waiting on options |
 | [v0.6.82](v0.6.82.md) | Task board, effort tracking, linked-task schedule, security hardening and stale-cache fix |
 | [v0.6.81](v0.6.81.md) | Multiple tasks from one email and duplicate-title validation |
