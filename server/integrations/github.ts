@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { GITHUB_QA_STATUSES, type GithubRepository } from '../../src/github-model'
+import { linkedTaskSchedule } from './linked-task-fields'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
 import { GithubError, githubIdentity, githubIssue, githubRepoPath, githubRepositoryName, githubRequest } from './github-api'
 
@@ -229,7 +230,8 @@ export function registerGithub(app: Express, deps: {
     if(!title || !clientId || !projectId || !state.clients?.some((c: any)=>c.id===clientId && !c.archived) || !state.projects?.some((p: any)=>p.id===projectId && !p.archived))throw new IntegrationError('Enter a task title and select an active client and project.')
     const account=state.accounts?.find((a: any)=>a.id===assignee && a.status!=='Disabled' && ['Administrator','Contributor'].includes(a.role))
     if(!account)throw new IntegrationError('Select an active team member.')
-    const task={id:randomUUID(),clientId,projectId,title,type:'Task',priority:'Medium',status:deps.openStatus(state),waitingOn:'Me',owner:account.name || account.username,assignedToUserId:assignee,dateRaised:new Date().toISOString().slice(0,10),dueDate:'',followUpDate:'',description,resolution:'',source:'Other'}
+    const schedule=linkedTaskSchedule(req.body)
+    const task={id:randomUUID(),clientId,projectId,title,type:'Task',priority:'Medium',status:deps.openStatus(state),waitingOn:schedule.waitingOn,owner:account.name || account.username,assignedToUserId:assignee,dateRaised:new Date().toISOString().slice(0,10),startDate:schedule.startDate,dueDate:schedule.dueDate,followUpDate:schedule.followUpDate,description,resolution:'',source:'Other'}
     // Reserve the private link before creating shared work, preventing duplicate submissions.
     await writeTicket(u,row,ticket.id,{linked_task_id:task.id},true)
     try {await deps.commit(u.organizationId,{...state,items:[task,...(state.items || [])]},u,'github-task',state)}

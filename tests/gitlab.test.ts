@@ -158,6 +158,16 @@ test('task creation shares only reviewed fields and cannot create a duplicate on
   assert.equal((await f.ask(`/tickets/${id}/create-task`,'POST',body,'user-a','tenant','Viewer')).status,403)
 }))
 
+test('task creation saves the chosen schedule and waiting on, and rejects invalid values',async()=>fixture(async(f:any)=>{
+  await f.connect();await f.select();await f.sync();const id=f.tables.user_gitlab_issues[0].id
+  const base={title:'Scheduled retest',description:'Summary',clientId:'client',projectId:'project',assignedToUserId:'user-b'}
+  for(const bad of [{waitingOn:'Nobody'},{startDate:'2026-13-01'},{dueDate:'2026-02-30'},{followUpDate:'tomorrow'},{startDate:'2026-10-21',dueDate:'2026-10-20'}]){
+    const rejected=await f.ask(`/tickets/${id}/create-task`,'POST',{...base,...bad});assert.equal(rejected.status,400,JSON.stringify(bad));assert.equal(f.tables.user_gitlab_issues[0].linked_task_id,null)
+  }
+  const created=await f.ask(`/tickets/${id}/create-task`,'POST',{...base,waitingOn:'Client',startDate:'2026-10-20',dueDate:'2026-10-24',followUpDate:'2026-10-22'});assert.equal(created.status,201,JSON.stringify(created.body))
+  const saved=f.states.tenant.items[0];assert.equal(saved.waitingOn,'Client');assert.equal(saved.startDate,'2026-10-20');assert.equal(saved.dueDate,'2026-10-24');assert.equal(saved.followUpDate,'2026-10-22')
+}))
+
 test('failed task commits release the reservation; lost successful responses keep a recoverable link',async()=>fixture(async(f:any)=>{
   await f.connect();await f.select();await f.sync();const ticket=f.tables.user_gitlab_issues[0],body={title:'Retest',description:'Summary',clientId:'client',projectId:'project',assignedToUserId:'user-a'}
   f.setCommitFailure(true);assert.equal((await f.ask(`/tickets/${ticket.id}/create-task`,'POST',body)).status,503);assert.equal(ticket.linked_task_id,null)
