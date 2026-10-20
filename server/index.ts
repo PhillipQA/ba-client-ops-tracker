@@ -19,6 +19,7 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import path from 'node:path'
+import { registerStaticSite } from './platform/static-site'
 import { fileURLToPath } from 'node:url'
 import { requirePlatformAdmin } from './platform/platform-auth'
 import { registerPlatformSettings } from './platform/platform-settings'
@@ -2447,8 +2448,7 @@ if (!isProduction) {
   app.use(vite.middlewares)
 } else {
   const dist = path.join(projectRoot, 'dist')
-  app.use(express.static(dist))
-  app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
+  registerStaticSite(app, dist)
 }
 
 const server = app.listen(port, () => {

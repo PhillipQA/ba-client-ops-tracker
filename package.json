@@ -26,6 +26,7 @@
     "test:calendar": "node --import tsx --test tests/google-calendar.test.ts",
     "test:subtask-assignment": "node --import tsx --test tests/subtask-assignment.test.ts",
     "test:auth-layout": "node --test tests/auth-layout.test.mjs",
+    "test:static-site": "node --import tsx --test tests/static-site.test.ts",
     "test:dochub": "node --import tsx --test tests/dochub.test.ts",
     "test:auth-transport": "node --import tsx --test tests/auth-transport.test.ts",
     "test:rtm": "node --import tsx --test tests/rtm.test.ts",
