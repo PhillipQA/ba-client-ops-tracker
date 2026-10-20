@@ -1,6 +1,6 @@
 # Database setup
 
-The current fresh Supabase setup includes **schema versions 1–21**. Application v0.6.81 adds no migration beyond that schema.
+The current fresh Supabase setup includes **schema versions 1–21**. Application v0.6.82 adds no migration beyond that schema.
 
 ## Choose the correct path
 

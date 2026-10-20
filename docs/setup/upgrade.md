@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.6.81.**
+**Current application version: v0.6.82.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.81**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.82**.
 
 ## Database requirements
 
@@ -37,7 +37,7 @@ For an existing Supabase database, the recent incremental migrations are:
 
 Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations missing the Git provider tables, the [combined v19/v20 upgrade](../../database/upgrades/schema-v19-v20-work-hub-git-providers.sql) is available. Do not run both the combined script and the same individual migrations.
 
-- **v0.6.78, v0.6.79 and v0.6.81 add no new database migration.**
+- **v0.6.78, v0.6.79, v0.6.81 and v0.6.82 add no new database migration.**
 - Built-in Go Live generation works with the existing template table; v21 enables custom Go Live uploads/removal.
 - For installations earlier than these rows, consult the [historical release notes](../releases/README.md) for prior schema prerequisites.
 - PostgreSQL imports must contain the applicable schema and tracker functions. See the [cutover guide](northflank-postgres-cutover.md). Supabase-specific role/storage setup is not a fresh-install recipe for plain PostgreSQL; confirm compatibility before applying an older Supabase migration there.
@@ -65,6 +65,7 @@ Replace the ZIP path with the actual patch and follow its version-specific instr
 - Check the displayed application version.
 - Open an existing workspace and confirm clients, projects and tasks are present.
 - Check integrations you use, existing evidence downloads and document generation.
+- For v0.6.82, switch Tasks to Board view, log time on a task, and create a task from Work Hub → Linked work with a Waiting on value and dates. A browser that had the old version open needs one hard refresh (Ctrl+Shift+R) after this deploy.
 - For v0.6.81, create two differently named tasks from one email. The form should stay open; trying an existing title for the same client/project should show a duplicate warning.
 
 Focused automated checks:
