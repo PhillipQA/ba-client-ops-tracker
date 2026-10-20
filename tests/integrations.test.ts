@@ -113,7 +113,8 @@ test('real HTTP routes scope writes from authenticated tenant and deny unauthori
     assert.equal((await call('/api/account/templates','admin','PUT',{name:'template.xlsx',content_base64:templateData})).status,200)
     assert.equal((await call('/api/account/templates','docs-admin','PUT',{name:'document-template.xlsx',content_base64:templateData},'b')).status,200)
     assert.equal((await call('/api/account/integrations','docs-admin')).status,403)
-    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx');assert.equal(other.templates.length,5);assert.equal(other.templates.find((item:any)=>item.type==='brd').source,'built-in');assert.equal(other.templates.find((item:any)=>item.type==='fsd').source,'built-in');assert.equal(other.templates.find((item:any)=>item.type==='golive').source,'built-in')
+    const other=await (await call('/api/account/templates','admin','GET',undefined,'b')).json();assert.equal(other.template.name,'document-template.xlsx');assert.equal(other.templates.length,8);assert.equal(other.templates.find((item:any)=>item.type==='brd').source,'built-in');assert.equal(other.templates.find((item:any)=>item.type==='fsd').source,'built-in');assert.equal(other.templates.find((item:any)=>item.type==='golive').source,'built-in')
+    for(const kind of ['uat','uatdeploy','training'])assert.equal(other.templates.find((item:any)=>item.type===kind).source,'built-in')
     assert.equal((await call('/api/account/templates/fsd','admin','DELETE',undefined,'b')).status,200)
     const removed=await (await call('/api/account/templates/fsd','admin','GET',undefined,'b')).json();assert.equal(removed.template.active,false)
     assert.equal((await call('/api/account/templates/fsd/restore-default','admin','POST',undefined,'b')).status,200)
@@ -129,5 +130,19 @@ test('real HTTP routes scope writes from authenticated tenant and deny unauthori
     const production=await (await call('/api/account/templates/signoff','admin','GET',undefined,'b')).json();assert.equal(production.template.active,true)
     assert.equal((await call('/api/account/templates/golive/restore-default','admin','POST',undefined,'b')).status,200)
     const restoredLive=await (await call('/api/account/templates/golive','admin','GET',undefined,'b')).json();assert.equal(restoredLive.template.source,'built-in')
+    // UAT Sign Off, UAT Deployment Approval and Training Sign Off each have their own upload, tag check and built-in default.
+    for(const [kind,missingTag] of [['uat','{scope_of_uat}'],['uatdeploy','{enhancement_name}'],['training','{training_objectives}']] as const){
+      const bytes=await readFile(new URL(`../templates/${kind}-template.docx`,import.meta.url))
+      assert.equal((await call(`/api/account/templates/${kind}`,'docs-admin','PUT',{name:`${kind}.docx`,content_base64:bytes.toString('base64')},'b')).status,200)
+      const custom=await (await call(`/api/account/templates/${kind}`,'admin','GET',undefined,'b')).json();assert.equal(custom.template.source,'custom');assert.equal(custom.template.name,`${kind}.docx`)
+      assert.equal((await (await call(`/api/account/templates/${kind}`,'admin','GET',undefined,'a')).json()).template.source,'built-in')
+      const incomplete=new PizZip(bytes);incomplete.file('word/document.xml',incomplete.file('word/document.xml')!.asText().replace(missingTag,''))
+      const rejected=await call(`/api/account/templates/${kind}`,'admin','PUT',{name:'incomplete.docx',content_base64:incomplete.generate({type:'base64'})},'b')
+      assert.equal(rejected.status,400);assert((await rejected.text()).includes(missingTag))
+      assert.equal((await call(`/api/account/templates/${kind}`,'admin','DELETE',undefined,'b')).status,200)
+      assert.equal((await (await call(`/api/account/templates/${kind}`,'admin','GET',undefined,'b')).json()).template.active,false)
+      assert.equal((await call(`/api/account/templates/${kind}/restore-default`,'admin','POST',undefined,'b')).status,200)
+      assert.equal((await (await call(`/api/account/templates/${kind}`,'admin','GET',undefined,'b')).json()).template.source,'built-in')
+    }
   } finally { await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve())) }
 })

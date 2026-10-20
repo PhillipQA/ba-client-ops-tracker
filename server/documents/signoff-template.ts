@@ -47,7 +47,7 @@ export function prepareSignoffTemplate(template: Buffer, details: SignoffInput) 
   if (!mapped) throw new Error('The template needs an approval table containing {iripple_name_1} and {client_name_1} to support additional signatories.')
   // Older custom production templates contain fixed section text rather than mapping tags.
   const fields: Record<string, string> = { Purpose: 'purpose', Scope: 'scope', 'Deployment Authorization': 'deployment_authorization' }
-  if (details.formType !== 'golive') body = body.replace(/<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g, row => {
+  if (!details.formType || details.formType === 'production') body = body.replace(/<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g, row => {
     const cells = row.match(/<w:tc(?:\s[^>]*)?>[\s\S]*?<\/w:tc>/g) || []
     const field = fields[visible(cells[0] || '')]
     if (!field || cells.length !== 2) return row

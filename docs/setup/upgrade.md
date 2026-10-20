@@ -34,11 +34,13 @@ For an existing Supabase database, the recent incremental migrations are:
 | v0.6.75 | [schema-v19](../../database/migrations/schema-v19-work-hub-github.sql) | Personal GitHub connections and issues |
 | v0.6.76 | [schema-v20](../../database/migrations/schema-v20-work-hub-gitlab.sql) | Personal GitLab connections and issues |
 | v0.6.80 | [schema-v21](../../database/migrations/schema-v21-golive-template.sql) | Optional custom Go Live templates |
+| Next release | [schema-v22](../../database/migrations/schema-v22-signoff-form-templates.sql) | Optional custom UAT Sign Off, UAT Deployment Approval and Training Sign Off templates |
 
 Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations missing the Git provider tables, the [combined v19/v20 upgrade](../../database/upgrades/schema-v19-v20-work-hub-git-providers.sql) is available. Do not run both the combined script and the same individual migrations.
 
 - **v0.6.78, v0.6.79, v0.6.81 and v0.6.82 add no new database migration.**
 - Built-in Go Live generation works with the existing template table; v21 enables custom Go Live uploads/removal.
+- The built-in UAT Sign Off, UAT Deployment Approval and Training Sign Off forms also work with the existing template table. Apply v22 before uploading or removing custom templates for them in Settings → Templates; until then those cards can only use the built-in template.
 - For installations earlier than these rows, consult the [historical release notes](../releases/README.md) for prior schema prerequisites.
 - PostgreSQL imports must contain the applicable schema and tracker functions. See the [cutover guide](northflank-postgres-cutover.md). Supabase-specific role/storage setup is not a fresh-install recipe for plain PostgreSQL; confirm compatibility before applying an older Supabase migration there.
 

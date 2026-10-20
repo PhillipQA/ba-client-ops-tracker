@@ -1728,7 +1728,7 @@ registerFsdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireT
 registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
 registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
 
-registerSignoffRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx'), goLiveTemplatePath: path.join(projectRoot, 'templates', 'golive-template.docx') })
+registerSignoffRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx'), goLiveTemplatePath: path.join(projectRoot, 'templates', 'golive-template.docx'), templatePaths: { uat: path.join(projectRoot, 'templates', 'uat-template.docx'), uatdeploy: path.join(projectRoot, 'templates', 'uatdeploy-template.docx'), training: path.join(projectRoot, 'templates', 'training-template.docx') } })
 
 async function sendDrfFailure(res: express.Response, user: SessionUser, stage: 'cor_ai' | 'template_render', status: number, message: string, cause: unknown, context: Record<string, any> = {}) {
   const diagnosticId = await recordDrfError(supabaseAdmin, {tenantId:tenantIdForUser(user)!,userId:user.id}, stage, 'server', cause, context)
