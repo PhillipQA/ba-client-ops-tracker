@@ -1,10 +1,18 @@
 # Changelog
 
-**Current application release: v0.6.81**
+**Current application release: v0.6.82**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
 
-## Unreleased — Fix blank page after a deploy
+## v0.6.82 — Task board, effort tracking and fixes
+Released October 20, 2026.
+
+### Schedule and waiting-on for linked tasks
+
+- Work Hub → GitHub/GitLab → Linked work → Create task now has a **Waiting on** field (default Me) and a **Task schedule** with optional start, due and follow-up dates, matching the main task form.
+- A due date earlier than the start date is blocked in the form and rejected by the server. Omitted fields keep the previous behaviour (waiting on Me, no dates).
+
+### Fix blank page after a deploy
 
 - Fixes a blank page with "Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of text/html" in browsers that had the site open or cached before a deploy. The browser kept an old `index.html` that pointed at asset files the new build no longer has, and the server answered those requests with the HTML page.
 - `index.html` is now sent with `Cache-Control: no-cache`, so browsers check for a new version on every load. Hashed files under `/assets` are cached for a year, since their names change with each build.
@@ -12,9 +20,7 @@ Changes are listed newest first. For installation, use the [README](README.md). 
 - A tab left open across a deploy reloads itself once when it can't load a code chunk.
 - After this is deployed, a browser that is already stuck needs one hard refresh (Ctrl+Shift+R). No further cache clearing is needed after that.
 
-**Database:** no new migration.
-
-## Unreleased — Task board and effort tracking
+### Task board and effort tracking
 
 - **Board view for Tasks.** Switch the Tasks page between Table and Board. Group columns by status (from your configured task statuses) or by who the task is waiting on. Drag a card to another column, or use its Move menu, to change its status or waiting-on. Closed statuses and Done start collapsed. Cards show priority, due or follow-up date, client and project, subtask progress, comments, assignee and effort. The chosen layout is remembered per user.
 - **Effort estimates.** Tasks and subtasks have an optional Estimate (hours) field. A main task without its own estimate uses the sum of its subtasks' estimates.
@@ -22,9 +28,7 @@ Changes are listed newest first. For installation, use the [README](README.md). 
 - **Effort report.** Reports has a new Effort panel for the selected range, client, project and user: hours logged, estimate vs actual, tasks with time but no estimate, hours by client (within vs over estimate), hours by category, hours by user against capacity (40h per week for now), the biggest overruns, and a CSV export of time entries.
 - Time entries are written only through `POST /api/tasks/:taskId/time-entries` and `DELETE /api/tasks/:taskId/time-entries/:entryId`, which record the signed-in user as the author. Workspace saves keep the stored entries and validate estimates. Logging time does not cause save conflicts for other people editing the workspace.
 
-**Database:** no new migration. Estimates and time entries are stored on the task record.
-
-## Unreleased — Security hardening
+### Security hardening
 
 - Changing your email address or password in My profile now requires your current password, with a limit on wrong guesses.
 - Sessions now expire on the server: 8 hours after sign-in, or 2 hours without activity (`SESSION_IDLE_TIMEOUT_MINUTES`). Expired sessions are cleaned up automatically.
@@ -35,7 +39,7 @@ Changes are listed newest first. For installation, use the [README](README.md). 
 - Evidence and DRF routes require a tenant workspace login like the rest of the workspace routes.
 - Add `npm test` and run the authentication tests in CI.
 
-**Database:** no new migration.
+**Database:** no new migration. Estimates and time entries are stored on the task record.
 
 ## v0.6.81 — Multiple tasks from one email
 Released October 12, 2026.

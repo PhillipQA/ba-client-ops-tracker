@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.82](v0.6.82.md) | Task board, effort tracking, linked-task schedule, security hardening and stale-cache fix |
 | [v0.6.81](v0.6.81.md) | Multiple tasks from one email and duplicate-title validation |
 | [v0.6.80](v0.6.80.md) | Sign Off Document forms and editable sections |
 | [v0.6.79](v0.6.79.md) | FSD missing-input/source coverage guidance |
