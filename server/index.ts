@@ -50,6 +50,7 @@ import { securityHeaders } from './auth/security-headers'
 import { sanitizeStateForClient } from './services/client-state'
 import { accountChangesAreSelfOnly } from './services/account-guard'
 import { addTimeEntry, applyEffortSaveRules, removeTimeEntry } from './services/time-entries'
+import { defaultWaitingOn, openWaitingOnOptions } from '../src/waitingOn'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -1427,10 +1428,14 @@ app.post('/api/internal-admin/users/:userId/password', requireAuth, requirePlatf
 
 const allowedKinds = new Set(['issue', 'requirement', 'follow_up', 'activity', 'draft_reply'])
 const allowedPriorities = new Set(['Low', 'Medium', 'High', 'Urgent'])
-const allowedWaiting = new Set(['Me', 'Developer', 'Client', 'QA', 'Design'])
+// AI may only propose the account's open waiting-on options; completion stays a human action.
+function allowedWaitingOn(taskSettings: unknown) {
+  return new Set(openWaitingOnOptions(taskSettings as any).map((option) => option.label))
+}
 
-function sanitizeSuggestions(value: unknown) {
+function sanitizeSuggestions(value: unknown, taskSettings?: unknown) {
   if (!Array.isArray(value)) return []
+  const allowedWaiting = allowedWaitingOn(taskSettings)
   return value.slice(0, 5).flatMap((raw) => {
     if (!raw || typeof raw !== 'object') return []
     const item = raw as Record<string, unknown>
@@ -1485,8 +1490,12 @@ app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res)
   // Resolve AI context from the authenticated tenant snapshot. The browser may request a
   // client/project focus, but it cannot supply records or impersonate another current user.
   let context: any
+  let waitingOnLabels = openWaitingOnOptions(undefined).map((option) => option.label)
+  let taskSettings: unknown
   try {
     const state = (await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))).data || emptyTenantData()
+    taskSettings = state.taskSettings
+    waitingOnLabels = openWaitingOnOptions(state.taskSettings).map((option) => option.label)
     context = buildAssistantContext(state, user, requestedContext, message, today, followUpTimeZone, module => moduleAllowed(user, module as any))
   } catch (error) {
     console.error('AI context load failed:', error)
@@ -1511,7 +1520,7 @@ Return JSON only with this shape:
       "rationale": "why this is suggested",
       "description": "optional record detail",
       "priority": "Low | Medium | High | Urgent",
-      "waitingOn": "Me | Developer | Client | QA | Design",
+      "waitingOn": "${waitingOnLabels.join(' | ')}",
       "followUpDate": "YYYY-MM-DD when useful",
       "activityDate": "YYYY-MM-DD when useful",
       "activityTime": "HH:MM when useful",
@@ -1538,7 +1547,7 @@ ${message}`,
     const parsed = parseModelJson(outputText)
     const responseMessage = String(parsed.message || '').trim()
     if (!responseMessage) throw new Error('The model returned no assessment.')
-    res.json({ message: responseMessage + (context.coverageNotice ? `\n\n${context.coverageNotice}` : ''), suggestions: sanitizeSuggestions(parsed.suggestions), contextCoverage: context.coverage })
+    res.json({ message: responseMessage + (context.coverageNotice ? `\n\n${context.coverageNotice}` : ''), suggestions: sanitizeSuggestions(parsed.suggestions, taskSettings), contextCoverage: context.coverage })
   } catch (error) {
     console.error('Account AI request failed.')
     res.status(502).json({ error: 'BA Assistant request failed. Check this account’s BA Assistant provider, key, selected model, quota, and connection.' })
@@ -1909,11 +1918,12 @@ async function assessDiscordInquiry(messageText: string, sender: string, state: 
   const projects = Array.isArray(state?.projects) ? state.projects : []
   const named = findNamedContext(messageText, clients, projects)
   const fallbackTitle = messageText.replace(/\s+/g, ' ').trim().slice(0, 110) || 'Discord inquiry'
+  const allowedWaiting = allowedWaitingOn(state?.taskSettings)
   const fallback = {
     title: fallbackTitle,
     summary: messageText.trim(),
     priority: 'Medium',
-    waitingOn: 'Me',
+    waitingOn: defaultWaitingOn(state?.taskSettings),
     followUpDate: '',
     clientId: named.clientId,
     projectId: named.projectId,
@@ -1931,7 +1941,7 @@ Return JSON only:
   "title": "concise inquiry title under 110 chars",
   "summary": "clean short summary preserving important facts and questions",
   "priority": "Low | Medium | High | Urgent",
-  "waitingOn": "Me | Developer | Client | QA | Design",
+  "waitingOn": "${[...allowedWaiting].join(' | ')}",
   "followUpDate": "YYYY-MM-DD or empty",
   "clientId": "an ID from the supplied clients or empty",
   "projectId": "an ID from the supplied projects or empty"

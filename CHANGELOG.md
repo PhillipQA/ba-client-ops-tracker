@@ -4,6 +4,17 @@
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
 
+## Unreleased
+
+### Configurable "Waiting on" options
+
+- Internal Admin → Platform settings → choose an account → **Task configuration** now has a **Waiting on options** list. Add, rename, reorder and remove options per account, the same way task statuses are managed.
+- The first option is the default for new and reopened tasks. One option marks a task as done (Done by default). It can be renamed but not removed, and completing a task still sets it.
+- Renaming an option moves every task that uses it to the new name when you save. An option that tasks still use can't be removed until they are moved.
+- The task forms, task filter, Board view, Work Hub → Create task, Reports, the BA Assistant and email/Discord capture all use the account's list. Accounts that never change it keep the previous six options, so nothing changes until an admin edits the list.
+- The Action Center "Waiting on Dev" card follows the Developer option (including a renamed one). If an account removes it, the card shows "Waiting on others".
+- Users should reload their workspace after the list changes, as with status changes.
+
 ## v0.6.82 — Task board, effort tracking and fixes
 Released October 20, 2026.
 

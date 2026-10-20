@@ -11,6 +11,7 @@ import {runTenantAi} from '../server/ai/tenant-ai'
 import {emptyFsdDraft,fsdSectionsForModules} from '../src/fsd-model'
 import {createWorkspaceGuard} from '../server/services/workspace-guard'
 import {defaultTaskSettings} from '../src/data'
+import {openWaitingOnOptions} from '../src/waitingOn'
 import {assertRtmMutation,reconcileRtm} from '../src/rtm'
 import {assertLifecycleMutation,LifecycleError} from '../src/lifecycle'
 import {applySubtaskAssignmentInheritance} from '../src/subtaskAssignment'
@@ -86,7 +87,7 @@ try{
   const state=()=>({schemaVersion:6,clients:[{id:'client',name:'Client',status:'Active',contact:'',email:'',health:'Good',notes:''}],projects:[{id:'project',name:'Project',status:'Active',summary:'',targetDate:''}],items:[],activity:[],planner:[],workEvents:[],accounts:[],notifications:[],rtms:[],taskSettings:defaultTaskSettings})
   let workspace:any=state()
   workspace.items=Array.from({length:161},(_,i)=>task(`task-${i}`,{assignedToUserId:'reviewer',priority:i===160?'Urgent':'Medium',description:i===160?'Critical missing legacy follow-up':''}))
-  mount([statement('sanitizeSuggestions'),statement('parseModelJson'),route('post','/api/assistant')].join('\n'),{app,buildAssistantContext,requireAuth:pass,requireTenantWorkspace:pass,moduleAllowed:(u:any,m:string)=>u.modules.includes(m),aiAgents,tenantIdForUser:(u:any)=>u.organizationId,dateKeyInTimeZone,followUpTimeZone:'Asia/Manila',ensureTenantFollowUpsCurrent:async()=>({data:workspace}),emptyTenantData:state,defaultTaskSettings,runTenantAi,allowedKinds:new Set(['issue','requirement','follow_up','activity','draft_reply']),allowedPriorities:new Set(['Low','Medium','High','Urgent']),allowedWaiting:new Set(['Me','Developer','Client','QA','Design'])})
+  mount([statement('allowedWaitingOn'),statement('sanitizeSuggestions'),statement('parseModelJson'),route('post','/api/assistant')].join('\n'),{app,openWaitingOnOptions,buildAssistantContext,requireAuth:pass,requireTenantWorkspace:pass,moduleAllowed:(u:any,m:string)=>u.modules.includes(m),aiAgents,tenantIdForUser:(u:any)=>u.organizationId,dateKeyInTimeZone,followUpTimeZone:'Asia/Manila',ensureTenantFollowUpsCurrent:async()=>({data:workspace}),emptyTenantData:state,defaultTaskSettings,runTenantAi,allowedKinds:new Set(['issue','requirement','follow_up','activity','draft_reply']),allowedPriorities:new Set(['Low','Medium','High','Urgent']),allowedWaiting:new Set(['Me','Developer','Client','QA','Design'])})
   wire=[];modelReply={message:'Fixture assistant result',suggestions:[]}
   result=await post('/api/assistant',{message:'What urgent work should I follow up?',context:{},history:[]});assert.equal(result.status,200)
   const assistantInput=wire[0].body.messages[0].content

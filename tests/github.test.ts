@@ -8,6 +8,7 @@ import WorkHub from '../src/WorkHub'
 import { WORK_HUB_TABS } from '../src/github-model'
 import { registerGithub } from '../server/integrations/github'
 import { decryptSecret } from '../server/integrations/tenant-integrations'
+import { linkedTaskSchedule } from '../server/integrations/linked-task-fields'
 
 const TOKEN_A='github_pat_'+ 'a'.repeat(30),TOKEN_B='github_pat_'+ 'b'.repeat(30)
 const now=new Date().toISOString()
@@ -206,4 +207,12 @@ test('Work Hub exposes exactly Email, Discord, GitHub and Manual Logs with ticke
   assert.deepEqual(WORK_HUB_TABS.map(t=>t.label),['Email','Discord','GitHub / GitLab','Manual Logs'])
   const hub=renderToStaticMarkup(createElement(WorkHub,props));assert.match(hub,/>Work Hub</);assert.match(hub,/>Email</);assert.match(hub,/>GitHub \/ GitLab</);assert.match(hub,/>Manual Logs</);assert.ok(!hub.includes('My Communications'))
   const github=renderToStaticMarkup(createElement(GithubHub,props));assert.match(github,/Assigned to me/);assert.match(github,/Created by me/);assert.match(github,/All my tickets/);assert.match(github,/My GitHub settings/);assert.match(github,/QA status/)
+})
+
+test('linked task waiting on follows the account options',()=>{
+  const state={taskSettings:{statuses:[],visibleColumns:['status'],waitingOn:[{id:'vendor',label:'Vendor',done:false},{id:'me',label:'Me',done:false},{id:'done',label:'Finished',done:true}]}}
+  assert.equal(linkedTaskSchedule({},state).waitingOn,'Vendor')
+  assert.equal(linkedTaskSchedule({waitingOn:'Me'},state).waitingOn,'Me')
+  assert.throws(()=>linkedTaskSchedule({waitingOn:'Developer'},state),/valid waiting on/)
+  assert.equal(linkedTaskSchedule({waitingOn:'Developer'}).waitingOn,'Developer')
 })

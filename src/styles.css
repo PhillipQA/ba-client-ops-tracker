@@ -275,6 +275,7 @@ select option { background: #181818; color: #fff; }
 .waiting-me { background: #3b291f; color: #ffc19e; }
 .waiting-qa, .waiting-design { background: #1f3329; color: #a9e4c3; }
 .waiting-done { background: #2b2b2b; color: #aaa; }
+.waiting-custom { background: #262a33; color: #c9d2e3; }
 .type-inquiry { background: #203141; color: #b9ddff; }
 .type-requirement { background: #222c43; color: #b6c8ff; }
 .type-issue { background: #3a2028; color: #ffb7ca; }
@@ -1430,6 +1431,14 @@ select option { background: #181818; color: #fff; }
 .platform-settings section { min-width: 0; padding: 16px 0; border-bottom: 1px solid #e2e8f0; }
 .platform-settings code { overflow-wrap: anywhere; white-space: normal; }
 @media(max-width: 800px) { .platform-settings-grid { grid-template-columns: 1fr; } }
+.waiting-on-editor { margin-top: 16px; }
+.platform-settings h5 { margin: 16px 0 6px; font-size: 12px; }
+.waiting-on-editor > p { margin: 0 0 8px; font-size: 11px; opacity: .8; }
+.waiting-on-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+.waiting-on-row input { min-width: 0; min-height: 32px; padding: 6px 8px; border-radius: 8px; }
+.task-status-row .waiting-on-role { margin: 0; white-space: nowrap; }
+.waiting-on-actions { display: flex; gap: 6px; }
+@media(max-width: 620px) { .waiting-on-row { grid-template-columns: minmax(0, 1fr) auto; } .waiting-on-row .waiting-on-role { grid-column: 1 / -1; grid-row: 2; } }
 
 /* Account user management and personal theme preferences. */
 .account-user-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }

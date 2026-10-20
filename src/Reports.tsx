@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Activity, AlertTriangle, CalendarRange, CheckCircle2, Clock3, Download, ListTodo, UsersRound } from 'lucide-react'
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
 import EffortReport from './EffortReport'
+import { defaultWaitingOn, isWaitingOnDone, openWaitingOnOptions } from './waitingOn'
 
 function localDateKey(date: Date) {
   const yyyy = date.getFullYear()
@@ -72,11 +73,11 @@ export default function Reports({ clients, projects, items, planner, taskSetting
   const resolvedInPeriod = useMemo(() => contextItems.filter((item) => item.resolvedDate && item.resolvedDate >= from && item.resolvedDate <= to), [contextItems, from, to])
   const raisedInPeriod = useMemo(() => contextItems.filter((item) => item.dateRaised >= from && item.dateRaised <= to), [contextItems, from, to])
   const isClosed = (status: string) => taskSettings.statuses.find((candidate) => candidate.label === status)?.closed ?? ['Resolved', 'Closed'].includes(status)
-  const openItems = useMemo(() => contextItems.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done'), [contextItems, taskSettings])
+  const openItems = useMemo(() => contextItems.filter((item) => !isClosed(item.status) && !isWaitingOnDone(item.waitingOn, taskSettings)), [contextItems, taskSettings])
   const overdueItems = useMemo(() => openItems.filter((item) => (item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)), [openItems, today])
   const parentTasks = useMemo(() => contextItems.filter((item) => !item.parentTaskId), [contextItems])
   const subtasks = useMemo(() => contextItems.filter((item) => Boolean(item.parentTaskId)), [contextItems])
-  const openSubtasks = useMemo(() => subtasks.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done'), [subtasks, taskSettings])
+  const openSubtasks = useMemo(() => subtasks.filter((item) => !isClosed(item.status) && !isWaitingOnDone(item.waitingOn, taskSettings)), [subtasks, taskSettings])
   const completedSubtasks = subtasks.length - openSubtasks.length
   const overdueSubtasks = useMemo(() => openSubtasks.filter((item) => (item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)), [openSubtasks, today])
   const subtasksRaisedInPeriod = useMemo(() => subtasks.filter((item) => item.dateRaised >= from && item.dateRaised <= to), [subtasks, from, to])
@@ -84,7 +85,7 @@ export default function Reports({ clients, projects, items, planner, taskSetting
   const subtaskCompletion = subtasks.length ? Math.round((completedSubtasks / subtasks.length) * 100) : 0
   const subtaskProgress = useMemo(() => parentTasks.map((parent) => {
     const children = subtasks.filter((item) => item.parentTaskId === parent.id)
-    const completed = children.filter((item) => isClosed(item.status) || item.waitingOn === 'Done').length
+    const completed = children.filter((item) => isClosed(item.status) || isWaitingOnDone(item.waitingOn, taskSettings)).length
     return { parent, total: children.length, completed, percent: children.length ? Math.round((completed / children.length) * 100) : 0 }
   }).filter((row) => row.total > 0).sort((a, b) => a.percent - b.percent || b.total - a.total), [parentTasks, subtasks, taskSettings])
 
@@ -94,7 +95,7 @@ export default function Reports({ clients, projects, items, planner, taskSetting
   const completedActivities = periodActivities.filter((activity) => activity.status === 'Done').length
   const activityCompletion = periodActivities.length ? Math.round((completedActivities / periodActivities.length) * 100) : 0
 
-  const waitingBreakdown = ['Me', 'Developer', 'Client', 'QA', 'Design'].map((waitingOn) => ({ waitingOn, count: openItems.filter((item) => item.waitingOn === waitingOn).length }))
+  const waitingBreakdown = openWaitingOnOptions(taskSettings).map(({ label: waitingOn }) => ({ waitingOn, count: openItems.filter((item) => item.waitingOn === waitingOn).length }))
   const maxWaiting = Math.max(1, ...waitingBreakdown.map((row) => row.count))
   const workload = clients
     .filter((client) => !clientId || client.id === clientId)
@@ -128,15 +129,15 @@ export default function Reports({ clients, projects, items, planner, taskSetting
   const ganttActivities = [...periodActivities].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
   const userItems = useMemo(() => items.filter((item) => (!effectiveUserId || item.assignedToUserId === effectiveUserId) && (!clientId || item.clientId === clientId) && (!projectId || item.projectId === projectId)), [items, effectiveUserId, clientId, projectId])
   const userEvents = useMemo(() => workEvents.map(event => ({ ...event, date: event.occurredAt && Number.isFinite(Date.parse(event.occurredAt)) ? businessDateKey(event.occurredAt) : event.date })).filter((event) => event.date >= from && event.date <= to && (!effectiveUserId || event.actorUserId === effectiveUserId || event.assignedToUserId === effectiveUserId || (event.field === 'assignedToUserId' && event.oldValue === effectiveUserId)) && (!clientId || event.clientId === clientId) && (!projectId || event.projectId === projectId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), [workEvents, from, to, effectiveUserId, clientId, projectId])
-  const userOpen = userItems.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done')
+  const userOpen = userItems.filter((item) => !isClosed(item.status) && !isWaitingOnDone(item.waitingOn, taskSettings))
   const userCompleted = userEvents.filter((event) => event.action === 'completed' && (!effectiveUserId || event.assignedToUserId === effectiveUserId || event.actorUserId === effectiveUserId))
   const userStarted = userEvents.filter((event) => event.action === 'started')
   const userOverdue = userOpen.filter((item) => Boolean(item.dueDate && item.dueDate < today))
   const userGanttItems = userItems.filter((item) => item.startDate && (item.dueDate || item.startDate) >= from && item.startDate! <= to).sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
   const teamWorkload = trackedUsers.filter(user => !effectiveUserId || user.id === effectiveUserId).map((user) => {
     const assigned = contextItems.filter((item) => item.assignedToUserId === user.id)
-    const active = assigned.filter((item) => !isClosed(item.status) && item.waitingOn !== 'Done')
-    return { user, active: active.length, waiting: active.filter((item) => item.waitingOn !== 'Me').length, overdue: active.filter((item) => Boolean(item.dueDate && item.dueDate < today)).length, completed: userEvents.filter((event) => event.assignedToUserId === user.id && event.action === 'completed' && event.date >= from && event.date <= to).length }
+    const active = assigned.filter((item) => !isClosed(item.status) && !isWaitingOnDone(item.waitingOn, taskSettings))
+    return { user, active: active.length, waiting: active.filter((item) => item.waitingOn !== defaultWaitingOn(taskSettings)).length, overdue: active.filter((item) => Boolean(item.dueDate && item.dueDate < today)).length, completed: userEvents.filter((event) => event.assignedToUserId === user.id && event.action === 'completed' && event.date >= from && event.date <= to).length }
   }).filter((row) => currentUser.role === 'Administrator' || row.user.id === currentUser.id)
 
   const exportCsv = () => {

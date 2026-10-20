@@ -4,7 +4,7 @@ import GitProviderHub from './GitProviderHub'
 import { workHubSync, integrationLabel, WORK_HUB_INTEGRATIONS, type WorkHubIntegration, type WorkHubSource } from './workHubSync'
 import { useWorkHubSync } from './useWorkHubSync'
 import { WORK_HUB_TABS } from './github-model'
-import type { Client, Project, UserAccount, WorkItem } from './types'
+import type { Client, Project, TaskSettings, UserAccount, WorkItem } from './types'
 import { findCommunicationTaskDuplicate } from './communicationTasks'
 
 type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;source_labels?:string[];thread_id?:string;attachments?:string[];status:string;received_at:string;linked_task_id?:string }
@@ -24,7 +24,7 @@ async function request(url:string,method='GET',body?:unknown,signal?:AbortSignal
   if(!response.ok) throw new CommunicationRequestError(result.error || 'Communication request failed.',result.code)
   return result
 }
-export default function WorkHub({clients,projects,accounts,tasks,currentUser,onTaskCreated}:{clients:Client[];projects:Project[];accounts:UserAccount[];tasks:WorkItem[];currentUser:UserAccount;onTaskCreated:()=>Promise<void>}) {
+export default function WorkHub({clients,projects,accounts,tasks,taskSettings,currentUser,onTaskCreated}:{clients:Client[];projects:Project[];accounts:UserAccount[];tasks:WorkItem[];taskSettings?:TaskSettings;currentUser:UserAccount;onTaskCreated:()=>Promise<void>}) {
   const [items,setItems]=useState<Message[]>([]),[settings,setSettings]=useState<Settings|null>(null),[labels,setLabels]=useState<Label[]>([])
   const [tab,setTab]=useState('Gmail'),[archived,setArchived]=useState(false),[labelFilter,setLabelFilter]=useState(''),[selected,setSelected]=useState<Message|null>(null),[compose,setCompose]=useState(false),[config,setConfig]=useState(false)
   const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[clientId,setClientId]=useState(''),[projectId,setProjectId]=useState(''),[assignee,setAssignee]=useState(currentUser.id)
@@ -145,7 +145,7 @@ export default function WorkHub({clients,projects,accounts,tasks,currentUser,onT
     </div>}
     <div className="panel communication-results">
       <div className="communication-tabs" role="group" aria-label="Work Hub source">{WORK_HUB_TABS.map(({id,label})=><button key={id} className={tab===id?'active':''} aria-pressed={tab===id} disabled={busy} onClick={()=>{setTab(id);setPage(1);setArchived(false);setSelected(null);setCompose(false)}}>{label}</button>)}</div>
-      {tab==='GitHub' ? <GitProviderHub key={viewKey} clients={clients} projects={projects} accounts={accounts} tasks={tasks} currentUser={currentUser} onTaskCreated={onTaskCreated}/> : <>
+      {tab==='GitHub' ? <GitProviderHub key={viewKey} clients={clients} projects={projects} accounts={accounts} tasks={tasks} taskSettings={taskSettings} currentUser={currentUser} onTaskCreated={onTaskCreated}/> : <>
 
       <div className="communication-toolbar">{source==='manual' ? <button className="secondary" disabled={loading || busy} onClick={reloadMessages}>Refresh logs</button> : <button className="secondary" disabled={busy || hubSync.integrations[source].phase==='syncing' || (source==='gmail'?!settings?.gmailConnected || !settings?.gmailAvailable || !settings?.gmailLabels.length:!settings?.discordUserId)} onClick={()=>void syncSource(source)}>{hubSync.integrations[source].phase==='syncing'?`Syncing ${integrationLabel[source]}…`:`Sync ${integrationLabel[source]}`}</button>}
         {tab==='Gmail' && settings?.gmailLabels.length ? <label className="communication-label-filter">Gmail label <select value={labelFilter} onChange={e=>{setLabelFilter(e.target.value);setPage(1)}}><option value="">All monitored labels</option>{settings.gmailLabels.map((id,index)=><option key={id} value={id}>{labels.find(x=>x.id===id)?.name || (labelsLoading?`Loading label ${index+1}…`:`Unavailable label ${index+1}`)}</option>)}</select></label> : <span className="communication-view-title">{tab==='Manual'?'Manual logs':tab==='Gmail'?'Email messages':'Discord messages'}</span>}

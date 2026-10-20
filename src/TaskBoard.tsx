@@ -1,7 +1,8 @@
 import { useMemo, useState, type DragEvent } from 'react'
 import { MessageSquareText, ListTree } from 'lucide-react'
 import { effortSummary, formatHours } from './effort'
-import { WAITING_ON_OPTIONS, boardColumns, type BoardGroup } from './taskBoardModel'
+import { boardColumns, type BoardGroup } from './taskBoardModel'
+import { isWaitingOnDone, openWaitingOnOptions, waitingOnTone } from './waitingOn'
 import type { Client, Project, TaskSettings, UserAccount, WaitingOn, WorkItem } from './types'
 import './effort.css'
 
@@ -77,7 +78,7 @@ export default function TaskBoard({ items, allItems, clients, projects, accounts
             const closed = column.tone === 'closed'
             const effort = effortSummary(item, showSubtasks ? [] : allItems)
             const children = allItems.filter((candidate) => candidate.parentTaskId === item.id)
-            const doneChildren = children.filter((child) => child.waitingOn === 'Done' || taskSettings.statuses.find((status) => status.label === child.status)?.closed).length
+            const doneChildren = children.filter((child) => isWaitingOnDone(child.waitingOn, taskSettings) || taskSettings.statuses.find((status) => status.label === child.status)?.closed).length
             const dueKind = !closed && item.dueDate ? (item.dueDate < today ? 'overdue' : item.dueDate === today ? 'today' : '') : ''
             const dueLabel = item.dueDate ? (dueKind === 'overdue' ? `Overdue · ${shortDate(item.dueDate)}` : dueKind === 'today' ? 'Due today' : `Due ${shortDate(item.dueDate)}`) : item.followUpDate ? `Follow-up ${shortDate(item.followUpDate)}` : ''
             const assignee = assigneeName(item)
@@ -92,7 +93,7 @@ export default function TaskBoard({ items, allItems, clients, projects, accounts
               <div className="board-card-chips">
                 <span className={`chip priority-${item.priority.toLowerCase()}`}>{item.priority}</span>
                 {group === 'status'
-                  ? <span className={`chip waiting-${item.waitingOn.toLowerCase()}`}>Waiting: {item.waitingOn}</span>
+                  ? <span className={`chip waiting-${waitingOnTone(item.waitingOn, taskSettings)}`}>Waiting: {item.waitingOn}</span>
                   : <span className="chip neutral">{item.status}</span>}
                 {dueLabel && <span className={`board-card-due${dueKind ? ` ${dueKind}` : ''}`}>{dueLabel}</span>}
               </div>
@@ -112,7 +113,7 @@ export default function TaskBoard({ items, allItems, clients, projects, accounts
                 {draggable && <label className="board-move" onClick={(event) => event.stopPropagation()}>
                   <span className="visually-hidden">Move {item.title} to</span>
                   <select value={group === 'status' ? item.status : item.waitingOn} onChange={(event) => moveTo(item, event.target.value)}>
-                    {(group === 'status' ? taskSettings.statuses.map((status) => status.label) : WAITING_ON_OPTIONS.filter((option) => option !== 'Done')).map((option) => <option key={option} value={option}>{option}</option>)}
+                    {(group === 'status' ? taskSettings.statuses.map((status) => status.label) : openWaitingOnOptions(taskSettings).map((option) => option.label)).map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                 </label>}
                 <span className="board-avatar" title={assignee || 'Unassigned'} aria-label={`Assigned to ${assignee || 'nobody'}`}>{assignee ? initials(assignee) : '–'}</span>

@@ -19,6 +19,7 @@
     "src/version.ts",
     "src/subtaskAssignment.ts",
     "src/types.ts",
-    "src/effort.ts"
+    "src/effort.ts",
+    "src/waitingOn.ts"
   ]
 }

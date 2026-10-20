@@ -236,7 +236,7 @@ export function registerGitlab(app: Express, deps: {
     if(!title || !clientId || !projectId || !state.clients?.some((c: any)=>c.id===clientId && !c.archived) || !state.projects?.some((p: any)=>p.id===projectId && !p.archived))throw new IntegrationError('Enter a task title and select an active client and project.')
     const account=state.accounts?.find((a: any)=>a.id===assignee && a.status!=='Disabled' && ['Administrator','Contributor'].includes(a.role))
     if(!account)throw new IntegrationError('Select an active team member.')
-    const schedule=linkedTaskSchedule(req.body)
+    const schedule=linkedTaskSchedule(req.body,state)
     const task={id:randomUUID(),clientId,projectId,title,type:'Task',priority:'Medium',status:deps.openStatus(state),waitingOn:schedule.waitingOn,owner:account.name || account.username,assignedToUserId:assignee,dateRaised:new Date().toISOString().slice(0,10),startDate:schedule.startDate,dueDate:schedule.dueDate,followUpDate:schedule.followUpDate,description,resolution:'',source:'Other'}
     // Reserve the private link before creating shared work, preventing duplicate submissions.
     await writeTicket(u,row,ticket.id,{linked_task_id:task.id},true)

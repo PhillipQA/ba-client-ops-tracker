@@ -9,7 +9,7 @@ export interface AISuggestion {
   rationale: string
   description?: string
   priority?: Priority
-  waitingOn?: Exclude<WaitingOn, 'Done'>
+  waitingOn?: WaitingOn
   followUpDate?: string
   activityDate?: string
   activityTime?: string

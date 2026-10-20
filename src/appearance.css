@@ -105,7 +105,7 @@ body:has(.app-shell[data-interface-mode="gray"]), .app-shell[data-interface-mode
 .app-shell.ui-refresh[data-interface-mode] :is(.document-status-message.error, .ai-error, .dochub-error, .rtm-error) { color: var(--ui-danger); background: var(--ui-danger-soft); border-color: var(--ui-danger); }
 .app-shell.ui-refresh[data-interface-mode] :is(.callout, .readonly-notice, .calendar-message, .document-processing-panel) { color: var(--ui-text); background: var(--ui-accent-soft); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(.callout, .readonly-notice, .document-processing-panel) :is(p, span, strong) { color: inherit; }
-.app-shell.ui-refresh[data-interface-mode] :is(.role-badge, .count-pill, .top-role-pill, .source-local, .neutral, .priority-low, .waiting-done) { color: var(--ui-muted); background: var(--ui-soft); border-color: var(--ui-border); }
+.app-shell.ui-refresh[data-interface-mode] :is(.role-badge, .count-pill, .top-role-pill, .source-local, .neutral, .priority-low, .waiting-done, .waiting-custom) { color: var(--ui-muted); background: var(--ui-soft); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(.back-link, a:not(.primary):not(.secondary), .document-section-title > svg, .document-flow-icon, .document-dropzone > svg) { color: var(--ui-accent); }
 .app-shell.ui-refresh[data-interface-mode] .back-link { background: var(--ui-surface); border-radius: 8px; padding: 8px 12px; }
 .app-shell.ui-refresh[data-interface-mode] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea):not(:where(.fsd-paper *)) { color: var(--ui-text); background-color: var(--ui-input); border-color: var(--ui-border); }

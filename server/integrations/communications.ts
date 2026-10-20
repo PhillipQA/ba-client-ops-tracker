@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type { Express, Request, Response, NextFunction } from 'express'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
 import { findCommunicationTaskDuplicate } from '../../src/communicationTasks'
+import { defaultWaitingOn } from '../../src/waitingOn'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 const CALLBACK = '/api/communications/gmail/callback'
@@ -258,7 +259,7 @@ export function registerCommunications(app: Express, deps: {
         res.status(409).json({ code: 'DUPLICATE_TASK', error: `A task named “${duplicate.title}” already exists for this client and project. Enter a different task title.`, taskId: duplicate.id })
         return
       }
-      const item={ id:randomUUID(),clientId,projectId,title,type:'Task',priority:'Medium',status:deps.openStatus(state),waitingOn:'Me',owner:account.name || account.username,
+      const item={ id:randomUUID(),clientId,projectId,title,type:'Task',priority:'Medium',status:deps.openStatus(state),waitingOn:defaultWaitingOn(state?.taskSettings),owner:account.name || account.username,
         assignedToUserId:assignee,dateRaised:new Date().toISOString().slice(0,10),dueDate:'',followUpDate:'',description,resolution:'',source:'Internal' }
       // Shared task contains only the fields explicitly submitted here; never a private source ID or thread.
       await deps.commit(user.organizationId,{ ...state,items:[item,...(state.items || [])] },user,'communication-task',state)

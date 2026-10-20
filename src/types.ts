@@ -1,7 +1,8 @@
 import type { AppTheme } from './theme'
 import type { InterfaceMode } from './appearance'
 export type ItemType = 'Task' | 'Requirement' | 'Issue' | 'Inquiry' | 'Decision' | 'Follow-up'
-export type WaitingOn = 'Me' | 'Developer' | 'Client' | 'QA' | 'Design' | 'Done'
+/** Label of one of the account's configured waiting-on options (see src/waitingOn.ts). */
+export type WaitingOn = string
 export type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
 export type UserRole = 'Administrator' | 'Contributor' | 'Viewer'
 export type AppModule = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'reports' | 'ai' | 'settings'
@@ -14,9 +15,18 @@ export interface TaskStatusDefinition {
   closed: boolean
 }
 
+export interface WaitingOnDefinition {
+  id: string
+  label: string
+  /** The single completion option. Completing a task sets it; work waiting on it counts as done. */
+  done: boolean
+}
+
 export interface TaskSettings {
   statuses: TaskStatusDefinition[]
   visibleColumns: TaskColumnKey[]
+  /** Optional for workspaces saved before v0.6.83; read through waitingOnOptions(). */
+  waitingOn?: WaitingOnDefinition[]
 }
 
 export interface Client {

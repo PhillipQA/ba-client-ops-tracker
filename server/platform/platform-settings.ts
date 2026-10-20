@@ -1,5 +1,6 @@
 import type { Express } from 'express'
 import { APP_VERSION } from '../../src/version'
+import { applyWaitingOnRenames, planWaitingOnUpdate, waitingOnOptions } from '../../src/waitingOn'
 import { encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
 
 export function registerPlatformSettings(app: Express, d: any) {
@@ -26,7 +27,8 @@ export function registerPlatformSettings(app: Express, d: any) {
   }))
   app.get('/api/internal-admin/organizations/:id/system', ...scope, wrap(async (req: any, res: any) => {
     const org = await organization(req), state = await d.loadTenantState(org.id)
-    res.json({ taskSettings: state.data?.taskSettings || d.defaultTaskSettings, sync: await d.normalizedSchemaStatus(org.id) })
+    const taskSettings = state.data?.taskSettings || d.defaultTaskSettings
+    res.json({ taskSettings: { ...taskSettings, waitingOn: waitingOnOptions(taskSettings) }, sync: await d.normalizedSchemaStatus(org.id) })
   }))
   app.put('/api/internal-admin/organizations/:id/task-settings', ...scope, wrap(async (req: any, res: any) => {
     const org = await organization(req), state = await d.loadTenantState(org.id)
@@ -39,9 +41,13 @@ export function registerPlatformSettings(app: Express, d: any) {
     const labels = new Set(statuses.map((s: any) => s.label))
     if ((state.data.items || []).some((item: any) => !labels.has(item.status))) throw new IntegrationError('A status used by existing tasks cannot be removed or renamed.')
     if (input.visibleColumns.some((c: any) => !columns.includes(c))) throw new IntegrationError('Unknown task column.')
-    const taskSettings = { statuses, visibleColumns: [...new Set(['status', ...input.visibleColumns])] }
-    await d.commitTenantState(org.id, { ...state.data, taskSettings }, req.authUser, 'platform-task-settings', state.data)
-    res.json({ ok: true, taskSettings })
+    const items = Array.isArray(state.data.items) ? state.data.items : []
+    // Older admin clients omit waitingOn; keep the account's current options.
+    const waiting = planWaitingOnUpdate(input.waitingOn === undefined ? waitingOnOptions(state.data.taskSettings) : input.waitingOn, state.data.taskSettings, items)
+    if (!waiting.ok) throw new IntegrationError(waiting.error)
+    const taskSettings = { statuses, visibleColumns: [...new Set(['status', ...input.visibleColumns])], waitingOn: waiting.update.options }
+    await d.commitTenantState(org.id, { ...state.data, items: applyWaitingOnRenames(items, waiting.update.renamed), taskSettings }, req.authUser, 'platform-task-settings', state.data)
+    res.json({ ok: true, taskSettings, renamedTasks: items.filter((item: any) => waiting.update.renamed.has(String(item?.waitingOn ?? ''))).length })
   }))
   app.post('/api/internal-admin/organizations/:id/import-legacy/:kind', ...scope, wrap(async (req: any, res: any) => {
     const org = await organization(req), kind = String(req.params.kind)
