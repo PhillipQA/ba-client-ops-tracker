@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit'
 import { aiProviderName, documentTemplateRow, IntegrationError, normalizeAiConfig } from '../integrations/tenant-integrations'
 import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
+import { parseAiJson, runAiJson } from '../ai/parse-ai-json'
 import { renderFsdDocx } from './fsd-export'
 import { FSD_SECTIONS, isCustomFsdFeature, isFsdFeatureSection, fsdExcludedModules, fsdSectionsForModules, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource, type FsdModule, type FsdSectionId, type FsdFeature } from '../../src/fsd-model'
 import { documentOutputName } from '../../src/documentFilename'
@@ -140,8 +141,8 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
       let parsed: any = { readability: 'unreadable', summary: 'No readable content was extracted from this source.', complete: true, requirements: [], gaps: ['Upload a clearer copy or correct the extracted text before generating.'] }
       if (sourceHasReadableText(source.text)) {
         const output = await runTenantAi(ai.secret, ai.config, sourceAnalysisInstructions(modules, features), JSON.stringify({ source, selectedModules: modules, features }), 180000, 18000)
-        try { parsed = JSON.parse(output.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) }
-        catch { throw new IntegrationError('The AI returned an invalid source review. Your source text is retained; retry analysis.', 422) }
+        try { parsed = parseAiJson(output) }
+        catch { throw new IntegrationError('The AI returned a source review that could not be read. Your source text is retained; retry analysis.', 422) }
       }
       const review = validateSourceAnalysis(parsed, source, modules)
       res.json({ ...review, fingerprint: sourceAnalysisFingerprint(source, modules, features), provider: aiProviderName(ai.config), model: normalizeAiConfig(ai.config).model, analyzedAt: new Date().toISOString() })
@@ -159,8 +160,8 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
         // Older open tabs still work; the current UI reviews each source on upload.
         const mapped = await runTenantAi(ai.secret, ai.config, fsdInterpretationInstructions(input.features) + `\nOnly analyze selected modules: ${JSON.stringify(input.modules)}. Ignore hard-excluded modules in every output field: ${JSON.stringify(input.excludedModules)}.`, JSON.stringify({ sources: input.sources, selectedModules: input.modules }), 180000, 18000)
         let interpretation: any
-        try { interpretation = JSON.parse(mapped.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')) }
-        catch { throw new IntegrationError('The AI returned an invalid source map. Your draft is retained; retry.', 422) }
+        try { interpretation = parseAiJson(mapped) }
+        catch { throw new IntegrationError('The AI returned a source map that could not be read. Your draft is retained; retry.', 422) }
         grounding = interpretRequirements(interpretation, input.sources, input.modules, input.allowIncomplete)
       }
       // Raw mixed-scope documents are never sent to the writing step.
@@ -170,9 +171,11 @@ export function registerFsdRoutes(app: Express, deps: { db: any; requireAuth: Re
       if (input.allowIncomplete && !grounding.requirements.length) {
         parsed = { sections: input.sections.map(([id, title]) => pendingFsdSection(id, title)), gaps: ['No supported requirements were identified. Paste the desired behavior, affected module and expected result to populate this draft.'], conflicts: [] }
       } else {
-        const result = await runTenantAi(ai.secret, ai.config, fsdInstructions(input.sections, input.excludedModules, input.allowIncomplete, input.features), JSON.stringify({ ...writingInput, ...(input.features ? { featureCodes: input.features.map((f, i) => ({ id: f.id, name: f.name, code: fsdFeatureCode(input.details.client, i) })) } : {}), requirements: grounding.requirements, sourceCatalog, sourceGaps: grounding.gaps }), 180000, 24000)
-        try { parsed = JSON.parse(result.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')) }
-        catch { throw new IntegrationError('The AI returned an invalid document. Your draft is retained; retry with a smaller scope.', 422) }
+        const writingRequest = JSON.stringify({ ...writingInput, ...(input.features ? { featureCodes: input.features.map((f, i) => ({ id: f.id, name: f.name, code: fsdFeatureCode(input.details.client, i) })) } : {}), requirements: grounding.requirements, sourceCatalog, sourceGaps: grounding.gaps })
+        const writingInstructions = fsdInstructions(input.sections, input.excludedModules, input.allowIncomplete, input.features)
+        // Long documents occasionally come back with a JSON slip; the reply is repaired where safe and otherwise asked for once more.
+        parsed = await runAiJson(note => runTenantAi(ai.secret, ai.config, note ? `${writingInstructions}\n${note}` : writingInstructions, writingRequest, 180000, 24000),
+          () => new IntegrationError('The AI replied twice with text that could not be read as a document. This is usually temporary — try again. If it keeps happening, reduce the number of features or sources.', 422), 'fsd-preview')
       }
       const expectedSectionIds = input.sections.map(([id]) => id)
       if (input.allowIncomplete) parsed = completeAvailableSections(parsed, input.sections)
