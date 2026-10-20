@@ -43,7 +43,7 @@ The Express production server serves both the app and API. `npm run preview` is 
 
 ## 4. Verify the deployment
 
-- Open the public app URL and confirm the current version, **v0.6.82**.
+- Open the public app URL and confirm the current version, **v0.6.83**.
 - Sign in using existing credentials, or the [fresh-install login accounts](../../README.md#5-sign-in).
 - Verify an existing workspace and an evidence download if reusing data.
 - Confirm that the server can reach the selected database.

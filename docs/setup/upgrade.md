@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.6.82.**
+**Current application version: v0.6.83.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.82**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.83**.
 
 ## Database requirements
 
@@ -34,7 +34,7 @@ For an existing Supabase database, the recent incremental migrations are:
 | v0.6.75 | [schema-v19](../../database/migrations/schema-v19-work-hub-github.sql) | Personal GitHub connections and issues |
 | v0.6.76 | [schema-v20](../../database/migrations/schema-v20-work-hub-gitlab.sql) | Personal GitLab connections and issues |
 | v0.6.80 | [schema-v21](../../database/migrations/schema-v21-golive-template.sql) | Optional custom Go Live templates |
-| Next release | [schema-v22](../../database/migrations/schema-v22-signoff-form-templates.sql) | Optional custom UAT Sign Off, UAT Deployment Approval and Training Sign Off templates |
+| v0.6.83 | [schema-v22](../../database/migrations/schema-v22-signoff-form-templates.sql) | Optional custom UAT Sign Off, UAT Deployment Approval and Training Sign Off templates |
 
 Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations missing the Git provider tables, the [combined v19/v20 upgrade](../../database/upgrades/schema-v19-v20-work-hub-git-providers.sql) is available. Do not run both the combined script and the same individual migrations.
 
@@ -67,6 +67,7 @@ Replace the ZIP path with the actual patch and follow its version-specific instr
 - Check the displayed application version.
 - Open an existing workspace and confirm clients, projects and tasks are present.
 - Check integrations you use, existing evidence downloads and document generation.
+- For v0.6.83, open Document Creation → Sign Off Document and confirm all five forms are listed, then generate a UAT Sign Off with a table row. In Internal Admin → Task configuration, confirm the Waiting on options list.
 - For v0.6.82, switch Tasks to Board view, log time on a task, and create a task from Work Hub → Linked work with a Waiting on value and dates. A browser that had the old version open needs one hard refresh (Ctrl+Shift+R) after this deploy.
 - For v0.6.81, create two differently named tasks from one email. The form should stay open; trying an existing title for the same client/project should show a duplicate warning.
 

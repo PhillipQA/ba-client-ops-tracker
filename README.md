@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current application version: v0.6.82**
+**Current application version: v0.6.83**
 
 A workspace for clients, projects, tasks, follow-ups, Work Hub communications, document creation, requirements traceability and reports. This guide covers installation, first login, deployment and updates.
 
@@ -158,7 +158,7 @@ npm run typecheck:server
 
 If your checkout contains local source edits, reconcile them before pulling. For an official patch ZIP, use the [patch instructions](docs/setup/upgrade.md#official-patch-zips); a source update does not require a patch ZIP.
 
-**v0.6.82 adds no database migration.** The optional v21 migration enables custom Go Live templates; built-in Sign Off generation does not require a new template row.
+**v0.6.83 adds one optional database migration.** Schema v22 enables custom templates for the UAT Sign Off, UAT Deployment Approval and Training Sign Off forms; the built-in forms and templates work without it. The optional v21 migration enables custom Go Live templates.
 
 ## Troubleshooting
 
