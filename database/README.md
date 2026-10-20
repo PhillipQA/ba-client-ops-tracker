@@ -1,6 +1,6 @@
 # Database setup
 
-The current fresh Supabase setup includes **schema versions 1–21**. Application v0.6.82 adds no migration beyond that schema.
+The current fresh Supabase setup includes **schema versions 1–22**. Application v0.6.83 adds one optional migration, schema v22 (custom templates for the UAT, UAT Deployment and Training sign-off forms).
 
 ## Choose the correct path
 
@@ -18,7 +18,7 @@ The fresh setup creates empty tables and the initial account placeholders. It do
 
 1. Create a new, empty Supabase project.
 2. Open SQL Editor, paste the complete [setup.sql](setup.sql), and run it once.
-3. Confirm the result reports `BA Client Ops Tracker database setup complete` and `schema_version = 21`.
+3. Confirm the result reports `BA Client Ops Tracker database setup complete` and `schema_version = 22`.
 4. Configure `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `TENANT_INTEGRATION_MASTER_KEY`, `APP_BASE_URL` and the two bootstrap passwords on the application server.
 5. Continue with the [installation and first-login guide](../README.md#install-locally).
 

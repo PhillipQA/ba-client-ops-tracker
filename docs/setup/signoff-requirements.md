@@ -1,6 +1,6 @@
 # BA Client Ops Tracker Sign Off Document
 
-## Unreleased update — UAT, UAT Deployment and Training forms
+## v0.6.83 update — UAT, UAT Deployment and Training forms
 
 Confirmed October 20, 2026. **Sign Off Document** now offers five forms: Production Deployment Form, Go Live Sign Off, **UAT Sign Off**, **UAT Deployment Approval** and **Training Sign Off**. The three new forms were supplied as separate Word templates; they were restyled to match the existing Production and Go Live templates, which are unchanged.
 

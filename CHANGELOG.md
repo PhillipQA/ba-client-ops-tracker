@@ -1,10 +1,11 @@
 # Changelog
 
-**Current application release: v0.6.82**
+**Current application release: v0.6.83**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
 
-## Unreleased
+## v0.6.83 — More Sign Off forms and configurable Waiting on
+Released October 21, 2026.
 
 ### More Sign Off documents
 
