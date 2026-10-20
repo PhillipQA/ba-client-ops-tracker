@@ -3,6 +3,7 @@ import type { Express, Request, Response, NextFunction } from 'express'
 import OpenAI from 'openai'
 import PizZip from 'pizzip'
 import rateLimit from 'express-rate-limit'
+import { requiredSignoffTags } from '../../src/signoff'
 
 export type IntegrationKind = 'discord' | 'openai'
 export type AiProvider = 'gemini' | 'openai' | 'anthropic' | 'deepseek'
@@ -71,13 +72,16 @@ export function cleanIntegrationConfig(kind: IntegrationKind, input: any) {
   return { allowedUserIds }
 }
 
-export type DocumentTemplateKind = 'drf' | 'brd' | 'fsd' | 'signoff' | 'golive'
-const documentTemplateKinds = ['drf', 'brd', 'fsd', 'signoff', 'golive'] as const
+export type DocumentTemplateKind = 'drf' | 'brd' | 'fsd' | 'signoff' | 'golive' | 'uat' | 'uatdeploy' | 'training'
+const documentTemplateKinds = ['drf', 'brd', 'fsd', 'signoff', 'golive', 'uat', 'uatdeploy', 'training'] as const
 const builtInTemplateNames: Partial<Record<DocumentTemplateKind, string>> = {
   brd: 'Built-in iRipple BRD template',
   fsd: 'Built-in iRipple FSD layout',
   signoff: 'Built-in iRipple Production Deployment template',
   golive: 'Built-in Go Live Sign Off template',
+  uat: 'Built-in UAT Sign Off template',
+  uatdeploy: 'Built-in UAT Deployment Approval template',
+  training: 'Built-in Training Sign Off template',
 }
 export function documentTemplateKind(value: unknown): DocumentTemplateKind {
   const kind = String(value || '').toLowerCase()
@@ -124,6 +128,10 @@ function decodeTemplateUpload(kind: DocumentTemplateKind, nameValue: unknown, co
     if (kind === 'golive') {
       const required = ['{client_name}','{project_name}','{document_reference}','{go_live_date}','{go_live_type}','{product}','{prepared_by}','{document_date}','{iripple_name_1}','{iripple_title_1}','{client_name_1}','{client_title_1}','{introduction}','{activities_completed}','{receipt_validation}','{mall_integration}','{branches_live}','{known_issues}','{acknowledgement}','{@attachments}']
       if (required.some(marker => !xmlText.includes(marker))) throw new IntegrationError('The Go Live template is missing required mapping fields. Keep the standard Go Live and editable-section tags.')
+    }
+    if (kind === 'uat' || kind === 'uatdeploy' || kind === 'training') {
+      const missing = requiredSignoffTags(kind).filter(marker => !xmlText.includes(marker))
+      if (missing.length) throw new IntegrationError(`The ${kind === 'uat' ? 'UAT Sign Off' : kind === 'uatdeploy' ? 'UAT Deployment Approval' : 'Training Sign Off'} template is missing required mapping fields (${missing.slice(0, 4).join(', ')}${missing.length > 4 ? ', …' : ''}). Keep the standard fields and table-loop tags.`)
     }
     if (kind === 'signoff') {
       const required = ['{client_name}','{document_reference}','{deployment_date}','{deployment_type}','{product}','{site}','{iripple_name_1}','{iripple_title_1}','{client_name_1}','{client_title_1}','{@attachments}']

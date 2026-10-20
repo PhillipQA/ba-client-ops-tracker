@@ -8,6 +8,7 @@ import { useDocumentOperation } from './useDocumentOperation'
 import type { Client, Project, WorkItem } from './types'
 import { DocHubOptions, DocHubResult, DocHubHistory, useDocHubDraft } from './DocHubPanel'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
+import { SIGNOFF_FORM_TYPES, SIGNOFF_TEMPLATE_KIND, type SignoffFormType, type SignoffTemplateKind } from './signoff'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
 import {
@@ -128,7 +129,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
   useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
   const [corFiles, setCorFiles] = useState<File[]>([])
-  const [documentTemplates, setDocumentTemplates] = useState<{ type: 'drf' | 'brd' | 'fsd' | 'signoff' | 'golive'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[]>([])
+  const [documentTemplates, setDocumentTemplates] = useState<{ type: 'drf' | 'brd' | 'fsd' | SignoffTemplateKind; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[]>([])
   const [corExtractionMode, setCorExtractionMode] = useState<'local' | 'ai'>('local')
   const [aiExtractionStatus, setAiExtractionStatus] = useState<{ available: boolean; provider?: string; model?: string; error?: string }>({ available: false })
 
@@ -143,7 +144,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     if (!active) return
     let alive = true
     void fetch('/api/account/templates', { credentials: 'same-origin' }).then(async response => {
-      const payload = await response.json().catch(() => ({})) as { templates?: { type: 'drf' | 'brd' | 'fsd' | 'signoff' | 'golive'; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[] }
+      const payload = await response.json().catch(() => ({})) as { templates?: { type: 'drf' | 'brd' | 'fsd' | SignoffTemplateKind; active: boolean; source: 'custom' | 'built-in' | 'none'; name: string; updated_at?: string | null }[] }
       if (response.ok && alive) setDocumentTemplates(Array.isArray(payload.templates) ? payload.templates : [])
     }).catch(() => undefined)
     return () => { alive = false }
@@ -230,8 +231,8 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const drfTemplate = documentTemplates.find(template => template.type === 'drf')
   const brdTemplate = documentTemplates.find(template => template.type === 'brd')
   const fsdTemplate = documentTemplates.find(template => template.type === 'fsd')
-  const goLiveTemplate = documentTemplates.find(template => template.type === 'golive')
-  const signoffTemplate = documentTemplates.find(template => template.type === 'signoff')
+  // One built-in or custom Word template per Sign Off form (Settings → Templates).
+  const signoffTemplatesReady = Object.fromEntries(SIGNOFF_FORM_TYPES.map(type => [type, Boolean(documentTemplates.find(template => template.type === SIGNOFF_TEMPLATE_KIND[type])?.active)])) as Record<SignoffFormType, boolean>
   const corFile = corFiles[0]
   const drfClientName=clients.find(client=>client.id===docHub.options.clientId)?.name || businessName || tradeName
   const suggestedDrfFileName=suggestedDocumentStem('DRF',drfClientName,branchName)
@@ -388,7 +389,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
         </button>
         <button type="button" className={`document-flow-card${flow === 'signoff' ? ' active' : ''}`} onClick={() => setFlow('signoff')}>
           <div className="document-flow-icon"><CheckCircle2 size={22} /></div>
-          <div><strong>Sign Off Document</strong><span>Production Deployment and Go Live forms with editable sections and supporting attachments.</span></div>
+          <div><strong>Sign Off Document</strong><span>Production Deployment, Go Live, UAT, UAT Deployment and Training forms with editable details, tables and attachments.</span></div>
           <small>Attachments supported</small>
         </button>
       </div>
@@ -396,7 +397,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
       <div className="panel document-workspace">
         <div className="panel-heading document-heading">
           <div><h2>{selectedTitle}</h2><p>{flow === 'drf' ? 'Upload a COR and use the account’s saved standard Excel DRF template. Extracted values and DRF-specific details remain editable before download.' : flow === 'brd' ? 'Add whatever business information is available. The Document Agent creates a best-effort BRD draft, flags inferred content, and keeps every section editable.' : flow === 'fsd' ? 'Add a BRD or other requirements, choose a preset, then review and export using the iRipple FSD template.' : flow === 'testcase' ? 'Upload requirement sources, select reusable QA skills, review the AI coverage map, then generate editable test cases and export to Excel.' : 'Choose a form, edit its details and sections, then add signatories and supporting attachments.'}</p></div>
-          <span className="document-stage-pill">{flow === 'drf' ? (drfTemplate?.active ? 'DRF template ready' : 'DRF template required') : flow === 'brd' ? (brdTemplate?.active ? 'BRD template ready' : 'BRD template required') : flow === 'signoff' ? (signoffTemplate?.active && goLiveTemplate?.active ? 'Both Sign Off templates ready' : 'Check the selected form’s template status') : flow === 'testcase' ? 'AI test suite workflow' : (fsdTemplate?.active ? 'FSD template ready' : 'FSD template required')}</span>
+          <span className="document-stage-pill">{flow === 'drf' ? (drfTemplate?.active ? 'DRF template ready' : 'DRF template required') : flow === 'brd' ? (brdTemplate?.active ? 'BRD template ready' : 'BRD template required') : flow === 'signoff' ? (Object.values(signoffTemplatesReady).every(Boolean) ? 'All Sign Off templates ready' : 'Check the selected form’s template status') : flow === 'testcase' ? 'AI test suite workflow' : (fsdTemplate?.active ? 'FSD template ready' : 'FSD template required')}</span>
         </div>
 
         {flow === 'drf' && (
@@ -543,7 +544,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
         <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /></div>
 
-        <div hidden={flow !== 'signoff'}><SignOffCreation active={active && flow === 'signoff'} clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} templateReady={Boolean(signoffTemplate?.active)} goLiveTemplateReady={Boolean(goLiveTemplate?.active)} /></div>
+        <div hidden={flow !== 'signoff'}><SignOffCreation active={active && flow === 'signoff'} clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} templateReady={signoffTemplatesReady} /></div>
       </div>
       <DocHubHistory active={active} />
     </section>

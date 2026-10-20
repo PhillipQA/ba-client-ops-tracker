@@ -2051,3 +2051,14 @@ select option { background: #181818; color: #fff; }
 .signoff-form-toggle { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
 .signoff-section-field { display: grid; gap: 8px; margin: 16px 0; font-weight: 600; }
 .signoff-section-field textarea { width: 100%; font-weight: 400; resize: vertical; }
+.signoff-table-block { display: grid; gap: 10px; margin: 18px 0; }
+.signoff-table-block h4 { margin: 0; }
+.signoff-table-scroll { overflow-x: auto; }
+.signoff-table-editor { width: 100%; min-width: 680px; border-collapse: collapse; }
+.signoff-table-editor th { padding: 0 6px 6px 0; color: #c9cdd4; font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; }
+.signoff-table-editor td { padding: 0 6px 6px 0; vertical-align: top; }
+.signoff-table-editor td:last-child, .signoff-table-editor th:last-child { width: 1%; padding-right: 0; }
+.signoff-table-editor input, .signoff-table-editor select { width: 100%; min-width: 96px; background: #15171a; border: 1px solid #3a3e45; color: #f1f3f5; }
+.signoff-table-editor input::placeholder { color: #737985; }
+.app-shell:not(.theme-default) .signoff-table-editor input,
+.app-shell:not(.theme-default) .signoff-table-editor select { background: rgba(9, 11, 15, .72); border-color: var(--theme-border); }

@@ -1,4 +1,4 @@
-export type DocumentKind = 'DRF' | 'FSD' | 'BRD' | 'SO'
+export type DocumentKind = 'DRF' | 'FSD' | 'BRD' | 'SO' | 'UAT' | 'UAD' | 'TRN'
 
 export function safeDocumentStem(value: string): string {
   return String(value || '')
@@ -17,6 +17,8 @@ export function suggestedDocumentStem(kind: DocumentKind, client = '', projectOr
   if (kind === 'BRD') return `BRD-${part(projectOrSite, 'Project')}`
   if (kind === 'FSD') return `FSD-${part(client, 'Client')}-${part(projectOrSite, 'Project')}`
   if (kind === 'SO') return `SO-${part(client, 'Client')}-${part(projectOrSite, 'Branch-Site')}`
+  // UAT Sign Off, UAT Deployment Approval and Training Sign Off.
+  if (kind === 'UAT' || kind === 'UAD' || kind === 'TRN') return `${kind}-${part(client, 'Client')}-${part(projectOrSite, 'Project')}`
   return `DRF-${part(client, 'Client')}-${part(projectOrSite, 'Branch-Site')}`
 }
 

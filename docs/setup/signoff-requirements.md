@@ -1,5 +1,33 @@
 # BA Client Ops Tracker Sign Off Document
 
+## Unreleased update — UAT, UAT Deployment and Training forms
+
+Confirmed October 20, 2026. **Sign Off Document** now offers five forms: Production Deployment Form, Go Live Sign Off, **UAT Sign Off**, **UAT Deployment Approval** and **Training Sign Off**. The three new forms were supplied as separate Word templates; they were restyled to match the existing Production and Go Live templates, which are unchanged.
+
+Confirmed decisions:
+
+- **Layout.** UAT Sign Off and Training Sign Off follow the Go Live layout (logo, title, Prepared By and Date header; Name / (Date) signature lines). UAT Deployment Approval follows the Production layout (logo, title, page-number header; stacked signature blocks with a Date line).
+- **Signers.** Two iRipple and two client signatories to start on every form; names and positions are editable and up to 20 per side can be added. No signer positions are fixed.
+- **Editable parts.** Detail values, the wording of every section and the table rows. Standard wording from the supplied forms is pre-filled and can be restored for the current form.
+- **Product.** Product Deployed uses the shared product list; version is free text.
+- **Tables.** Rows are typed in manually (no import). Up to 40 rows per table; blank rows are dropped and one blank row is kept so a table is never headings only.
+- **Templates.** Each form has its own built-in template and its own upload/remove/restore card in Settings → Templates.
+
+| Form | Template key | Header | References | Fields | Sections | Tables |
+| --- | --- | --- | --- | --- | --- | --- |
+| UAT Sign Off | `uat` | Prepared By / Date | `SOF-` | UAT date (start, optional end), version, testing environment, overall result | introduction, scope_of_uat, defects_classification, acceptance_criteria | tested_modules, high_priority_issues, remaining_issues |
+| UAT Deployment Approval | `uatdeploy` | Page | `PAF-` | target deployment date, enhancement name, deployment type, version, client name | purpose, scope, deployment_authorization | none |
+| Training Sign Off | `training` | Prepared By / Date | `SOF-` | training date (start, optional end), version, training mode, training facilitator | training_participants, training_scope, training_objectives, training_materials, training_modules | training_activities |
+
+Template notes for custom uploads:
+
+- Keep the mapping tags that appear in the built-in template for the form (`{client_name}`, `{document_reference}`, `{product}`, signer tags, `{@attachments}` and the form's own fields and sections). Upload is rejected if one is missing.
+- Each table is one repeating Word row. Put `{#table_name}` at the start of the first cell and `{/table_name}` at the end of the last cell of that row. Column tags are `{module_name}`, `{pct_passed}`, `{pct_failed}`, `{uat_cycles}`, `{status}` for tested modules; `{issue_name}`, `{description}`, `{environment}`, `{status}`, `{classification}` for the issue tables; `{module_name}`, `{attendees}`, `{venue}`, `{start_date}`, `{end_date}`, `{instructor}` for training activities.
+- UAT and Training dates print as `MM/DD/YYYY`, or `MM/DD/YYYY to MM/DD/YYYY` for a range, through `{uat_date}` and `{training_date}`.
+- Section wording is plain text. Bold, underline and superscript emphasis from the supplied forms is not carried.
+
+Built-in generation needs no new template row. Apply `database/migrations/schema-v22-signoff-form-templates.sql` to manage optional custom templates for the new forms in Settings.
+
 ## v0.6.80 update
 
 Confirmed October 11, 2026. The module is **Sign Off Document**, with a toggle for **Production Deployment Form** and **Sign Off Form**. The Sign Off Form uses the supplied Go Live Sign Off template. The October instructions supersede the older fixed signer counts and fixed retained wording below.

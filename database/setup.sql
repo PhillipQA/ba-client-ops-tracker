@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v0.6.80: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 21. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v0.6.82: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 22. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1369,6 +1369,15 @@ ALTER TABLE public.tenant_templates DROP CONSTRAINT IF EXISTS tenant_templates_t
 ALTER TABLE public.tenant_templates ADD CONSTRAINT tenant_templates_template_type_check
   CHECK (template_type IN ('drf', 'brd', 'fsd', 'signoff', 'golive'));
 
+-- Included source: migrations/schema-v22-signoff-form-templates.sql
+-- SHA-256: b68fbbc53bf1e057aeed4acf0a9eea5eda7d5935dac0430c52f06a0926f0beb9
+-- Enables optional custom templates for the UAT Sign Off, UAT Deployment Approval and
+-- Training Sign Off forms. Built-in generation needs no new row.
+
+ALTER TABLE public.tenant_templates DROP CONSTRAINT IF EXISTS tenant_templates_template_type_check;
+ALTER TABLE public.tenant_templates ADD CONSTRAINT tenant_templates_template_type_check
+  CHECK (template_type IN ('drf', 'brd', 'fsd', 'signoff', 'golive', 'uat', 'uatdeploy', 'training'));
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1392,4 +1401,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 21 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 22 as schema_version;
