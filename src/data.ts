@@ -1,4 +1,5 @@
 import { ALL_MODULES } from './access'
+import { DEFAULT_WAITING_ON } from './waitingOn'
 import type { ActivityLog, Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkItem } from './types'
 
 // The tracker intentionally starts without preset clients, projects, tasks, or activities.
@@ -17,6 +18,7 @@ export const defaultTaskSettings: TaskSettings = {
     { id: 'closed', label: 'Closed', closed: true },
   ],
   visibleColumns: ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'startDate', 'dueDate', 'followUpDate'],
+  waitingOn: DEFAULT_WAITING_ON.map((option) => ({ ...option })),
 }
 
 // Initial account metadata only. Password material is never seeded in client code;

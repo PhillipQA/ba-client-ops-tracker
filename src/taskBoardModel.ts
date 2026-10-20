@@ -1,9 +1,8 @@
-import type { TaskSettings, WaitingOn, WorkItem } from './types'
+import type { TaskSettings, WorkItem } from './types'
+import { waitingOnOptions, waitingOnTone } from './waitingOn'
 
 export type BoardGroup = 'status' | 'waiting'
 export type TaskLayout = 'table' | 'board'
-
-export const WAITING_ON_OPTIONS: WaitingOn[] = ['Me', 'Developer', 'Client', 'QA', 'Design', 'Done']
 
 export interface BoardColumn {
   key: string
@@ -11,7 +10,7 @@ export interface BoardColumn {
   tone: string
   /** Closed work starts collapsed so the board stays short. */
   collapsed: boolean
-  /** Whether cards can be dropped here. Moving work into "Done" happens through completion, not the board. */
+  /** Whether cards can be dropped here. Moving work into the completion option happens through completion, not the board. */
   acceptsDrops: boolean
   items: WorkItem[]
 }
@@ -37,14 +36,19 @@ function statusTone(label: string, closed: boolean) {
 
 export function boardColumns(items: readonly WorkItem[], group: BoardGroup, settings: TaskSettings): BoardColumn[] {
   if (group === 'waiting') {
-    return WAITING_ON_OPTIONS.map((waitingOn) => ({
-      key: waitingOn,
-      label: waitingOn,
-      tone: waitingOn === 'Done' ? 'closed' : waitingOn.toLowerCase(),
-      collapsed: waitingOn === 'Done',
-      acceptsDrops: waitingOn !== 'Done',
-      items: items.filter((item) => item.waitingOn === waitingOn).sort(boardCardOrder),
-    })).filter((column) => column.key !== 'Design' || column.items.length > 0)
+    const options = waitingOnOptions(settings)
+    const columns: BoardColumn[] = options.map((option) => ({
+      key: option.label,
+      label: option.label,
+      tone: option.done ? 'closed' : waitingOnTone(option.label, settings),
+      collapsed: option.done,
+      acceptsDrops: !option.done,
+      items: items.filter((item) => item.waitingOn === option.label).sort(boardCardOrder),
+    }))
+    const known = new Set(options.map((option) => option.label))
+    const unknown = items.filter((item) => !known.has(item.waitingOn))
+    if (unknown.length) columns.push({ key: '__other__', label: 'Other', tone: 'custom', collapsed: false, acceptsDrops: false, items: [...unknown].sort(boardCardOrder) })
+    return columns
   }
   const known = new Set(settings.statuses.map((status) => status.label))
   const columns: BoardColumn[] = settings.statuses.map((status) => ({

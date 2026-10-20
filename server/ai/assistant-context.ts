@@ -1,4 +1,5 @@
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
+import { isWaitingOnDone } from '../../src/waitingOn'
 
 const dayOffset = (date: string, days: number) => new Date(Date.parse(date + 'T12:00:00Z') + days * 86400000).toISOString().slice(0, 10)
 export function assistantPeriod(message: string, today: string) {
@@ -19,7 +20,7 @@ export function buildAssistantContext(state: any, user: any, requested: any, mes
   const items = allowed('items') || allowed('inbox') ? list('items').filter(inScope).filter(i => !(i.source === 'Discord' && i.externalSourceId)) : []
   const closed = new Set<string>()
   for (const status of state.taskSettings?.statuses || []) if (status.closed) closed.add(status.label)
-  const open = items.filter(i => !closed.has(i.status) && i.waitingOn !== 'Done')
+  const open = items.filter(i => !closed.has(i.status) && !isWaitingOnDone(i.waitingOn, state.taskSettings))
   const own = items.filter(i => i.assignedToUserId === user.id)
   const period = assistantPeriod(message, today)
   const events = list('workEvents').filter(inScope).filter(e => user.role === 'Administrator' || e.actorUserId === user.id || e.assignedToUserId === user.id || e.field === 'assignedToUserId' && e.oldValue === user.id).map(e => ({ ...e, date: e.occurredAt && Number.isFinite(Date.parse(e.occurredAt)) ? dateKeyInTimeZone(new Date(e.occurredAt), timeZone) : e.date })).filter(e => e.date >= period.from && e.date <= period.to).sort((a,b) => String(b.occurredAt).localeCompare(String(a.occurredAt)))

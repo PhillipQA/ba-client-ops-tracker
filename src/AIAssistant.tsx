@@ -3,6 +3,7 @@ import { Bot, CalendarPlus, CheckCircle2, Clipboard, FileText, Loader2, MessageS
 import { useDocumentOperation } from './useDocumentOperation'
 import { askBAAssistant, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
+import { isWaitingOnDone } from './waitingOn'
 
 const THREAD_STORAGE_KEY = 'ba-client-ops-ai-threads-v1'
 
@@ -86,7 +87,7 @@ export default function AIAssistant({
     const project = projects.find((value) => value.id === resolvedProjectId)
     const scopedItems = items.filter((item) => (!clientId || item.clientId === clientId) && (!resolvedProjectId || item.projectId === resolvedProjectId))
     const closedStatuses = new Set(taskSettings.statuses.filter((status) => status.closed).map((status) => status.label))
-    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && item.waitingOn !== 'Done')
+    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && !isWaitingOnDone(item.waitingOn, taskSettings))
     const upcomingActivities = planner.filter((activity) => (!clientId || activity.clientId === clientId) && (!resolvedProjectId || activity.projectId === resolvedProjectId) && activity.status === 'Planned')
     const myAssignments = scopedItems.filter((item) => item.assignedToUserId === currentUser.id)
     const myRecentActivity = workEvents.filter((event) => (event.actorUserId === currentUser.id || event.assignedToUserId === currentUser.id || (event.field === 'assignedToUserId' && event.oldValue === currentUser.id)) && (!clientId || event.clientId === clientId) && (!resolvedProjectId || event.projectId === resolvedProjectId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))

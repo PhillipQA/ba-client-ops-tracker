@@ -68,3 +68,11 @@ test('downtime catch-up advances to the current tenant day with a summarized com
 test('tenant date uses Asia/Manila by default', () => {
   assert.equal(dateKeyInTimeZone(new Date('2026-09-22T16:05:00.000Z')), '2026-09-23')
 })
+
+test('a renamed completion waiting-on option counts as done', () => {
+  const waitingOn = [{ id: 'me', label: 'Me', done: false }, { id: 'done', label: 'Finished', done: true }]
+  const items = [subtask({ id: 'finished', waitingOn: 'Finished' }), subtask({ id: 'open' })]
+  const result = rollOverOpenSubtaskFollowUps({ ...state(items), taskSettings: { statuses: [{ id: 'open', label: 'Open', closed: false }], waitingOn } }, { today: '2026-09-23' })
+  assert.equal(result.state.items.find((item: any) => item.id === 'finished').followUpDate, '2026-09-22')
+  assert.equal(result.state.items.find((item: any) => item.id === 'open').followUpDate, '2026-09-23')
+})

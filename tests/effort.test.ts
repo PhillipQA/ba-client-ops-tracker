@@ -123,6 +123,6 @@ test('board columns follow configured statuses or waiting-on, with closed work c
   assert.equal(byStatus[2].collapsed, true)
   assert.equal(byStatus[3].acceptsDrops, false)
   const byWaiting = boardColumns(items, 'waiting', settings)
-  assert.deepEqual(byWaiting.map((column) => column.key), ['Me', 'Developer', 'Client', 'QA', 'Done'])
+  assert.deepEqual(byWaiting.map((column) => column.key), ['Me', 'Developer', 'Client', 'QA', 'Design', 'Done'])
   assert.equal(byWaiting.find((column) => column.key === 'Done')?.acceptsDrops, false)
 })

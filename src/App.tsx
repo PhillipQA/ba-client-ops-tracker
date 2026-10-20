@@ -73,6 +73,7 @@ import './github.css'
 import AccountUsers from './AccountUsers'
 import ThemePreferences from './ThemePreferences'
 import { askBAAssistant, type AIMessage, type AISuggestion } from './ai'
+import { defaultWaitingOn, doneWaitingOn, findWaitingOn, isWaitingOnDone, openWaitingOnOptions, waitingOnOptions, waitingOnTone } from './waitingOn'
 import { defaultTaskSettings, seedAccounts, seedActivity, seedClients, seedItems, seedPlannerActivities, seedProjects } from './data'
 import GoogleCalendarPanel from './GoogleCalendarPanel'
 import { deleteTaskEvidence, TASK_EVIDENCE_MAX_BYTES, taskEvidenceUrl, uploadTaskEvidence, type TaskEvidenceMutationResult } from './taskEvidence'
@@ -182,7 +183,7 @@ function normalizeTaskSettings(value: Partial<TaskSettings> | undefined): TaskSe
     const dueIndex = visibleColumns.indexOf('dueDate')
     visibleColumns.splice(dueIndex >= 0 ? dueIndex : visibleColumns.length, 0, 'startDate')
   }
-  return { statuses: safeStatuses, visibleColumns: [...new Set(visibleColumns)] }
+  return { statuses: safeStatuses, visibleColumns: [...new Set(visibleColumns)], waitingOn: waitingOnOptions(value) }
 }
 
 function isTaskClosed(status: string, settings: TaskSettings) {
@@ -955,7 +956,7 @@ function App() {
   const projectName = (id?: string) => id ? store.projects.find((p) => p.id === id)?.name ?? 'Unknown project' : 'No project'
 
   const openItems = useMemo(
-    () => store.items.filter((item) => (currentUser?.role !== 'Contributor' || item.assignedToUserId === currentUser.id) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done'),
+    () => store.items.filter((item) => (currentUser?.role !== 'Contributor' || item.assignedToUserId === currentUser.id) && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings)),
     [store.items, store.taskSettings, currentUser],
   )
 
@@ -993,10 +994,7 @@ function App() {
 
   const overdue = openItems.filter((item) => item.followUpDate && item.followUpDate < today)
   const dueToday = openItems.filter((item) => item.followUpDate === today)
-  const waitingDev = openItems.filter((item) => item.waitingOn === 'Developer')
-  const waitingClient = openItems.filter((item) => item.waitingOn === 'Client')
   const attentionClientCount = new Set(openItems.map((item) => item.clientId).filter(Boolean)).size
-  const waitingDevOverdue = waitingDev.filter((item) => item.followUpDate && item.followUpDate < today).length
   const openInquiryCount = openItems.filter((item) => item.type === 'Inquiry').length
 
   const searchedItems = useMemo(() => {
@@ -1018,10 +1016,14 @@ function App() {
   const resolvedActionCenterScope = resolveActionCenterScope(actionCenterScope, currentUser?.id || '', currentUser?.role || 'Viewer', store.accounts)
   const actionCenterScopeLabel = resolvedActionCenterScope.kind === 'all' ? 'All Users’ Action Center' : resolvedActionCenterScope.kind === 'user' ? `${actionCenterUsers.find((account) => account.id === resolvedActionCenterScope.userId)?.name || 'User'}’s Action Center` : 'My Action Center'
   const matchesActionCenterScope = (item: WorkItem) => itemMatchesActionCenterScope(item, resolvedActionCenterScope)
-  const actionCenterWorkItems = store.items.filter((item) => matchesActionCenterScope(item) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
-  const actionItems = searchedItems.filter((item) => matchesActionCenterScope(item) && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+  const actionCenterWorkItems = store.items.filter((item) => matchesActionCenterScope(item) && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))
+  const actionItems = searchedItems.filter((item) => matchesActionCenterScope(item) && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))
   const canEditActionItem = (item: WorkItem) => canWriteTasks && (currentUser?.role === 'Administrator' || item.assignedToUserId === currentUser?.id)
-  const actionCenterWaitingDev = actionCenterWorkItems.filter((item) => item.waitingOn === 'Developer')
+  // The metric follows the built-in Developer option (by id, so a rename keeps it).
+  // If an account removed it, count everything waiting on someone other than the default assignee.
+  const developerWaitingOn = waitingOnOptions(store.taskSettings).find((option) => option.id === 'developer' && !option.done)
+  const actionCenterWaitingTitle = developerWaitingOn ? `Waiting on ${developerWaitingOn.label}` : 'Waiting on others'
+  const actionCenterWaitingDev = actionCenterWorkItems.filter((item) => developerWaitingOn ? item.waitingOn === developerWaitingOn.label : item.waitingOn !== defaultWaitingOn(store.taskSettings))
   const actionCenterClientCount = new Set(actionCenterWorkItems.map((item) => item.clientId).filter(Boolean)).size
   const actionCenterWaitingDevOverdue = actionCenterWaitingDev.filter((item) => item.followUpDate && item.followUpDate < today).length
   const actionCenterInquiryCount = actionCenterWorkItems.filter((item) => item.type === 'Inquiry').length
@@ -1033,7 +1035,7 @@ function App() {
     const project = store.projects.find((value) => value.id === aiProjectId)
     const scopedItems = store.items.filter((item) => (!aiClientId || item.clientId === aiClientId) && (!aiProjectId || item.projectId === aiProjectId))
     const closedStatuses = new Set(store.taskSettings.statuses.filter((status) => status.closed).map((status) => status.label))
-    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && item.waitingOn !== 'Done').slice(0, 20)
+    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && !isWaitingOnDone(item.waitingOn, store.taskSettings)).slice(0, 20)
     const upcomingActivities = store.planner.filter((activity) => (!aiClientId || activity.clientId === aiClientId) && (!aiProjectId || activity.projectId === aiProjectId) && activity.status === 'Planned').slice(0, 15)
     const contextUser = currentUser || seedAccounts[0]
     return { currentUser: { id: contextUser.id, name: contextUser.name, role: contextUser.role, modules: contextUser.modules }, client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities, myAssignments: scopedItems.filter((item) => item.assignedToUserId === contextUser.id).slice(0, 40), myRecentActivity: store.workEvents.filter((event) => event.actorUserId === contextUser.id || event.assignedToUserId === contextUser.id || (event.field === 'assignedToUserId' && event.oldValue === contextUser.id)).slice(0, 40) }
@@ -1042,14 +1044,14 @@ function App() {
   const archivedInquiryItems = useMemo(() => {
     const q = query.trim().toLowerCase()
     return store.items
-      .filter((item) => item.source === 'Discord' && (item.type !== 'Inquiry' || isTaskClosed(item.status, store.taskSettings) || item.waitingOn === 'Done'))
+      .filter((item) => item.source === 'Discord' && (item.type !== 'Inquiry' || isTaskClosed(item.status, store.taskSettings) || isWaitingOnDone(item.waitingOn, store.taskSettings)))
       .filter((item) => {
         const text = [item.title, item.description, clientName(item.clientId), projectName(item.projectId), item.type, item.status, item.sourceSender || ''].join(' ').toLowerCase()
         return !q || text.includes(q)
       })
       .sort((a, b) => (b.resolvedDate || b.dateRaised).localeCompare(a.resolvedDate || a.dateRaised))
   }, [store.items, store.taskSettings, store.clients, store.projects, query])
-  const newExternalInquiryCount = newExternalInquiryIds.filter((id) => store.items.some((item) => item.id === id && item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')).length
+  const newExternalInquiryCount = newExternalInquiryIds.filter((id) => store.items.some((item) => item.id === id && item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))).length
 
   const filteredTasks = useMemo(() => {
     const due3 = addDays(today, 3)
@@ -1077,7 +1079,7 @@ function App() {
     const now = new Date().toISOString().slice(0, 10)
     const target = store.items.find((item) => item.id === id)
     if (!target) return
-    const openSubtasks = store.items.filter((item) => item.parentTaskId === id && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+    const openSubtasks = store.items.filter((item) => item.parentTaskId === id && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))
     if (openSubtasks.length) {
       window.alert(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before completing this task.`)
       return
@@ -1085,7 +1087,7 @@ function App() {
     const closedStatus = defaultClosedTaskStatus(store.taskSettings)
     persist({
       ...store,
-      items: store.items.map((item) => (item.id === id ? { ...item, status: closedStatus, waitingOn: 'Done', followUpDate: '', resolvedDate: now } : item)),
+      items: store.items.map((item) => (item.id === id ? { ...item, status: closedStatus, waitingOn: doneWaitingOn(store.taskSettings), followUpDate: '', resolvedDate: now } : item)),
       activity: [
         { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: now, text: `Completed task: ${target.title}` },
         ...store.activity,
@@ -1098,7 +1100,7 @@ function App() {
     const target = store.items.find((item) => item.id === id)
     if (!target || target.status === status) return
     const closed = isTaskClosed(status, store.taskSettings)
-    const openSubtasks = closed ? store.items.filter((item) => item.parentTaskId === id && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done') : []
+    const openSubtasks = closed ? store.items.filter((item) => item.parentTaskId === id && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings)) : []
     if (openSubtasks.length) {
       window.alert(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`)
       return
@@ -1111,7 +1113,7 @@ function App() {
         status,
         startDate: status === 'In Progress' && !item.startDate ? today : item.startDate,
         resolvedDate: closed ? (item.resolvedDate || today) : undefined,
-        waitingOn: closed ? 'Done' : reopened && item.waitingOn === 'Done' ? 'Me' : item.waitingOn,
+        waitingOn: closed ? doneWaitingOn(store.taskSettings) : reopened && isWaitingOnDone(item.waitingOn, store.taskSettings) ? defaultWaitingOn(store.taskSettings) : item.waitingOn,
       } : item),
       activity: [
         { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Task status changed: ${target.title} → ${status}` },
@@ -1123,7 +1125,7 @@ function App() {
   const updateTaskWaitingOn = (id: string, waitingOn: WaitingOn) => {
     if (!canWriteTasks) return
     const target = store.items.find((item) => item.id === id)
-    if (!target || target.waitingOn === waitingOn || waitingOn === 'Done' || isTaskClosed(target.status, store.taskSettings)) return
+    if (!target || target.waitingOn === waitingOn || isWaitingOnDone(waitingOn, store.taskSettings) || !findWaitingOn(waitingOn, store.taskSettings) || isTaskClosed(target.status, store.taskSettings)) return
     persist({
       ...store,
       items: store.items.map((item) => item.id === id ? { ...item, waitingOn } : item),
@@ -1144,7 +1146,7 @@ function App() {
     const previous = current.items.find((item) => item.id === updated.id)
     if (!previous) throw new Error('This task is no longer available. Reload the workspace and try again.')
     const closed = isTaskClosed(updated.status, current.taskSettings)
-    const openSubtasks = closed ? current.items.filter((item) => item.parentTaskId === updated.id && !isTaskClosed(item.status, current.taskSettings) && item.waitingOn !== 'Done') : []
+    const openSubtasks = closed ? current.items.filter((item) => item.parentTaskId === updated.id && !isTaskClosed(item.status, current.taskSettings) && !isWaitingOnDone(item.waitingOn, current.taskSettings)) : []
     if (openSubtasks.length) {
       throw new Error(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`)
     }
@@ -1153,7 +1155,7 @@ function App() {
       title: previous.title,
       clientId: previous.clientId,
       projectId: previous.parentTaskId ? previous.projectId : updated.projectId,
-      waitingOn: closed ? 'Done' : updated.waitingOn === 'Done' ? 'Me' : updated.waitingOn,
+      waitingOn: closed ? doneWaitingOn(current.taskSettings) : isWaitingOnDone(updated.waitingOn, current.taskSettings) ? defaultWaitingOn(current.taskSettings) : updated.waitingOn,
       startDate: updated.status === 'In Progress' && !updated.startDate ? today : updated.startDate,
       resolvedDate: closed ? (previous.resolvedDate || today) : undefined,
     }
@@ -1372,7 +1374,7 @@ function App() {
       type,
       priority: suggestion.priority || 'Medium',
       status: defaultOpenTaskStatus(store.taskSettings),
-      waitingOn: suggestion.waitingOn || 'Me',
+      waitingOn: suggestion.waitingOn && openWaitingOnOptions(store.taskSettings).some((option) => option.label === suggestion.waitingOn) ? suggestion.waitingOn : defaultWaitingOn(store.taskSettings),
       assignedToUserId: currentUser?.id,
       owner: currentUser?.name || '',
       dateRaised: today,
@@ -1451,7 +1453,7 @@ function App() {
           <section className="page-stack dashboard-stack">
             <div className="metric-grid dashboard-metrics">
               <Metric title="Needs attention" value={actionCenterWorkItems.length} detail={`Across ${actionCenterClientCount} client${actionCenterClientCount === 1 ? '' : 's'}`} icon={<AlertTriangle size={18} />} />
-              <Metric title="Waiting on Dev" value={actionCenterWaitingDev.length} detail={`${actionCenterWaitingDevOverdue} overdue`} icon={<Settings2 size={18} />} />
+              <Metric title={actionCenterWaitingTitle} value={actionCenterWaitingDev.length} detail={`${actionCenterWaitingDevOverdue} overdue`} icon={<Settings2 size={18} />} />
               <Metric title="Activities today" value={todayActivities.length + todayFollowUps.length} detail={`${todayActivities.filter((item) => item.source === 'Google Calendar').length} meetings · ${todayActivities.filter((item) => item.source === 'Local').length} tracker activities · ${todayFollowUps.length} follow-ups`} icon={<CalendarDays size={18} />} />
               <Metric title="Open inquiries" value={actionCenterInquiryCount} detail="Need classification" icon={<Inbox size={18} />} />
             </div>
@@ -1564,18 +1566,18 @@ function App() {
 
         {!selectedClient && !selectedProject && view === 'inbox' && hasModule('inbox') && (
           <section className="page-stack">
-            <WorkHub key={`${currentUser.organizationId}:${currentUser.id}`} tasks={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} currentUser={currentUser} onTaskCreated={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
+            <WorkHub key={`${currentUser.organizationId}:${currentUser.id}`} tasks={store.items} taskSettings={store.taskSettings} clients={store.clients} projects={store.projects} accounts={store.accounts} currentUser={currentUser} onTaskCreated={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
             <details className="work-hub-shared-inquiries"><summary>Existing shared inquiries</summary>
             <div className="callout"><Inbox size={22} /><div><strong>Capture first, classify later.</strong><p>Client questions can stay here until you know whether they should become a requirement, issue, decision, or simply be answered.</p></div></div>
             <div className="panel">
               <div className="panel-heading"><div><h2>Existing shared inquiries</h2><p>Continue managing inquiries created in the earlier shared workspace workflow.</p></div><div className="inquiry-heading-actions">{newExternalInquiryCount > 0 && <button className="secondary" type="button" onClick={() => setNewExternalInquiryIds([])}>{newExternalInquiryCount} new · Mark seen</button>}{canWrite && <button className="primary" onClick={() => { setTaskPreset({ type: 'Inquiry' }); setModal('item') }}><Plus size={18} /> Capture inquiry</button>}</div></div>
-              <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} />
+              <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} options={waitingOnOptions(store.taskSettings).map((option) => option.label)} />
               {inquiryItems.length ? <div className="inquiry-list">{inquiryItems.map((item) => { const isNewDiscord = item.source === 'Discord' && newExternalInquiryIds.includes(item.id); return <div className={`inquiry-card${item.source === 'Discord' ? ' inquiry-discord' : ''}${isNewDiscord ? ' inquiry-new' : ''}`} key={item.id}><div><div className="row-meta"><PriorityChip value={item.priority} /><InquirySourceBadge source={item.source} isNew={isNewDiscord} /><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span></div><h3>{item.title}</h3><p>{item.description}</p><div className="row-meta"><span>Waiting on <b>{item.waitingOn}</b></span><span>Follow-up {niceDate(item.followUpDate)}</span>{item.sourceSender && <span>From: {item.sourceSender}</span>}</div></div><div className="inquiry-actions">{canUseAI && <button className="secondary" onClick={() => { setAiClientId(item.clientId ?? ''); setAiProjectId(item.projectId ?? ''); setAiPrompt(`Assess this client inquiry and recommend what I should do next.\n\nTitle: ${item.title}\nDetails: ${item.description}`); setView('ai') }}><Sparkles size={15} /> Ask AI</button>}{canWrite && <><button className="secondary" onClick={() => convertInquiry(item.id, 'Requirement')}>→ Requirement</button><button className="secondary" onClick={() => convertInquiry(item.id, 'Issue')}>→ Issue</button><button className="success" onClick={() => resolveItem(item.id)}><CheckCircle2 size={16} /> Answered</button></>}</div></div> })}</div> : <Empty text="No open inquiries match your filters." />}
               <details className="inquiry-archive">
                 <summary><span>Discord inquiry archive</span><b>{archivedInquiryItems.length}</b></summary>
                 <p className="inquiry-archive-help">Resolved Discord inquiries and inquiries converted into tasks remain here as a historical record.</p>
                 {archivedInquiryItems.length ? <div className="inquiry-archive-list">{archivedInquiryItems.map((item) => {
-                  const closed = isTaskClosed(item.status, store.taskSettings) || item.waitingOn === 'Done'
+                  const closed = isTaskClosed(item.status, store.taskSettings) || isWaitingOnDone(item.waitingOn, store.taskSettings)
                   const outcome = item.type !== 'Inquiry' ? `Converted to ${item.type}` : closed ? item.status : 'Archived'
                   return <div className="inquiry-archive-row" key={`archive-${item.id}`}>
                     <div><div className="row-meta"><InquirySourceBadge source={item.source} /><span>{outcome}</span><span>{clientName(item.clientId)} · {projectName(item.projectId)}</span>{item.sourceSender && <span>From: {item.sourceSender}</span>}</div><strong>{item.title}</strong>{item.docHubDocuments?.map(d=><span className="dochub-task-badge" key={d.id}>DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}</span>)}<small>{item.description || 'No description'}</small></div>
@@ -1592,7 +1594,7 @@ function App() {
           <section className="page-stack">
             <div className="panel">
               <div className="panel-heading"><div><h2>All tasks</h2><p>Tasks, requirements, issues, inquiries, decisions, and follow-ups in one searchable list.</p></div><span className="count-pill">{filteredTasks.length} shown · {store.items.length} total</span></div>
-              <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} />
+              <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} options={waitingOnOptions(store.taskSettings).map((option) => option.label)} />
               <div className="task-filter-grid">
                 <label>Status<select value={taskStatusFilter} onChange={(event) => setTaskStatusFilter(event.target.value)}><option value="">All statuses</option>{[...new Set([...store.taskSettings.statuses.map((status) => status.label), ...store.items.map((item) => item.status)])].filter(Boolean).map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
                 <label>Client<select value={taskClientFilter} onChange={(event) => { setTaskClientFilter(event.target.value); setTaskProjectFilter('') }}><option value="">All clients</option><option value="__none__">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
@@ -1910,8 +1912,8 @@ function Metric({ title, value, detail, tone = '', icon }: { title: string; valu
   return <div className={`metric-card ${tone}`}><div className="metric-icon">{icon}</div><div><span>{title}</span><strong>{value}</strong><small>{detail}</small></div></div>
 }
 
-function FilterBar({ query, setQuery, waiting, setWaiting }: { query: string; setQuery: (v: string) => void; waiting: 'All' | WaitingOn; setWaiting: (v: 'All' | WaitingOn) => void }) {
-  return <div className="filters"><label className="search-box"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, client, project..." /></label><select value={waiting} onChange={(e) => setWaiting(e.target.value as 'All' | WaitingOn)}><option>All</option><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></div>
+function FilterBar({ query, setQuery, waiting, setWaiting, options }: { query: string; setQuery: (v: string) => void; waiting: 'All' | WaitingOn; setWaiting: (v: 'All' | WaitingOn) => void; options: string[] }) {
+  return <div className="filters"><label className="search-box"><Search size={17} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, client, project..." /></label><select aria-label="Filter by waiting on" value={waiting} onChange={(e) => setWaiting(e.target.value as 'All' | WaitingOn)}><option>All</option>{(waiting === 'All' || options.includes(waiting) ? options : [...options, waiting]).map((option) => <option key={option}>{option}</option>)}</select></div>
 }
 
 function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve, onStatusChange, onEdit, onDelete, onCreateSubtask, onReorderSubtasks, canEdit = true, hiddenColumns = [] }: { items: WorkItem[]; allItems?: WorkItem[]; clients: Client[]; projects: Project[]; taskSettings: TaskSettings; onResolve: (id: string) => void; onStatusChange: (id: string, status: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onCreateSubtask: (id: string) => void; onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void; canEdit?: boolean; hiddenColumns?: TaskColumnKey[] }) {
@@ -1993,7 +1995,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
     const closed = isTaskClosed(item.status, taskSettings)
     const overdue = !closed && Boolean((item.dueDate && item.dueDate < businessDateKey()) || (item.followUpDate && item.followUpDate < businessDateKey()))
     const children = sortedChildren(item.id)
-    const completedChildren = children.filter((child) => isTaskClosed(child.status, taskSettings) || child.waitingOn === 'Done').length
+    const completedChildren = children.filter((child) => isTaskClosed(child.status, taskSettings) || isWaitingOnDone(child.waitingOn, taskSettings)).length
     const siblings = isSubtask && item.parentTaskId ? sortedChildren(item.parentTaskId) : []
     const siblingIndex = siblings.findIndex((candidate) => candidate.id === item.id)
     const rowClass = `${overdue ? 'overdue-row ' : ''}${isSubtask ? 'subtask-row ' : ''}${draggedSubtaskId === item.id ? 'subtask-dragging ' : ''}${dropTargetId === item.id ? 'subtask-drop-target' : ''}`.trim()
@@ -2008,7 +2010,7 @@ function TaskTable({ items, allItems, clients, projects, taskSettings, onResolve
       onDragEnd={isSubtask ? () => { setDraggedSubtaskId(null); setDropTargetId(null) } : undefined}
     >
       <td><div className={isSubtask ? 'subtask-title' : 'task-title-with-toggle'}>{isSubtask && <><span className="subtask-branch">↳</span>{rowEditable && <span className="subtask-drag-handle" title="Drag to reorder"><GripVertical size={15} /></span>}</>}{!isSubtask && children.length > 0 && <button className="subtask-collapse-button" type="button" title={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} aria-label={collapsedParents.has(item.id) ? 'Expand subtasks' : 'Collapse subtasks'} onClick={() => toggleParent(item.id)}>{collapsedParents.has(item.id) ? <ChevronRight size={16} /> : <ChevronDown size={16} />}</button>}<div><strong>{item.title}</strong>{item.docHubDocuments?.map(d=><span className="dochub-task-badge" key={d.id}>DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}</span>)}<small>{item.description || (isSubtask ? 'Subtask' : 'No description')}{isSubtask && item.evidence?.length ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}` : ''}{isSubtask && item.comments?.length ? ` · ${item.comments.length} system update${item.comments.length === 1 ? '' : 's'}` : ''}{!isSubtask && children.length ? ` · ${completedChildren}/${children.length} subtasks completed${collapsedParents.has(item.id) ? ' · collapsed' : ''}` : ''}</small>{isSubtask && <span className="subtask-schedule-summary">Start: {item.startDate ? niceDate(item.startDate) : 'Not set'} · Due: {item.dueDate ? niceDate(item.dueDate) : 'Not set'}</span>}</div></div></td>
-      {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || 'Unassigned' : column === 'startDate' ? niceDate(item.startDate || '') : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < businessDateKey() && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < businessDateKey() && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
+      {columns.map((column) => <td key={column}>{column === 'status' ? (rowEditable ? <select className="task-status-select" value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)}>{taskSettings.statuses.map((status) => <option key={status.id} value={status.label}>{status.label}</option>)}</select> : <StatusChip value={item.status} />) : column === 'client' ? clientName(item.clientId) : column === 'project' ? projectName(item.projectId) : column === 'type' ? <TypeChip value={item.type} /> : column === 'waitingOn' ? <WaitingChip value={item.waitingOn} settings={taskSettings} /> : column === 'priority' ? <PriorityChip value={item.priority} /> : column === 'owner' ? item.owner || 'Unassigned' : column === 'startDate' ? niceDate(item.startDate || '') : column === 'dueDate' ? <span className={item.dueDate && item.dueDate < businessDateKey() && !closed ? 'overdue-date' : ''}>{niceDate(item.dueDate || '')}</span> : <span className={item.followUpDate && item.followUpDate < businessDateKey() && !closed ? 'overdue-date' : ''}>{niceDate(item.followUpDate)}</span>}</td>)}
       <td><div className="task-row-actions">{!rowEditable && (item.evidence || []).map(entry => <a key={entry.id} className="secondary compact" href={taskEvidenceUrl(item.id, entry)} target="_blank" rel="noreferrer">{entry.fileName}</a>)}{rowEditable && isSubtask && <><button className="icon-button" title="Move subtask up" disabled={siblingIndex <= 0} onClick={() => moveSubtask(item, -1)}><ChevronUp size={16} /></button><button className="icon-button" title="Move subtask down" disabled={siblingIndex < 0 || siblingIndex >= siblings.length - 1} onClick={() => moveSubtask(item, 1)}><ChevronDown size={16} /></button></>}{rowEditable && !isSubtask && !item.parentTaskId && <button className="icon-button" title="Create subtask" onClick={() => onCreateSubtask(item.id)}><Plus size={17} /></button>}{rowEditable && isSubtask && <button className="icon-button" title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'} onClick={() => onEdit(item.id)}><Paperclip size={17} /></button>}{rowEditable && <button className="icon-button" title={isSubtask ? 'Edit subtask' : 'Edit task'} onClick={() => onEdit(item.id)}><Pencil size={17} /></button>}{rowEditable && !closed && <button className="icon-button" title={isSubtask ? 'Mark subtask completed' : 'Mark task completed'} onClick={() => onResolve(item.id)}><CheckCircle2 size={18} /></button>}{rowEditable && <button className="icon-button danger-button" title={isSubtask ? 'Delete subtask' : 'Delete task'} onClick={() => onDelete(item.id)}><Trash2 size={17} /></button>}</div></td>
     </tr>
   }
@@ -2039,9 +2041,9 @@ function ProjectDetail({ onOpenRtms, controls, project, clientContextId, store, 
   const tasks = clientContextId ? allProjectTasks.filter((item) => item.clientId === clientContextId) : allProjectTasks
   const parentTasks = tasks.filter((item) => !item.parentTaskId)
   const subtasks = tasks.filter((item) => Boolean(item.parentTaskId))
-  const openTasks = tasks.filter((item) => !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done')
+  const openTasks = tasks.filter((item) => !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))
   const dueSoon = openTasks.filter((item) => item.dueDate && item.dueDate >= businessDateKey() && item.dueDate <= addDays(businessDateKey(), 7))
-  const completedSubtasks = subtasks.filter((item) => isTaskClosed(item.status, store.taskSettings) || item.waitingOn === 'Done').length
+  const completedSubtasks = subtasks.filter((item) => isTaskClosed(item.status, store.taskSettings) || isWaitingOnDone(item.waitingOn, store.taskSettings)).length
   const clientCount = new Set(allProjectTasks.map((item) => item.clientId).filter(Boolean)).size
   const communication = store.activity.filter((entry) => entry.projectId === project.id && (!clientContextId || entry.clientId === clientContextId)).sort((a, b) => b.date.localeCompare(a.date))
   const [note, setNote] = useState('')
@@ -2095,7 +2097,7 @@ function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean
   const [type, setType] = useState<ItemType>(preset?.type || 'Task')
   const [status, setStatus] = useState(defaultOpenTaskStatus(store.taskSettings))
   const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
-  const workloadFor = (userId: string) => { const active = store.items.filter((item) => item.assignedToUserId === userId && !isTaskClosed(item.status, store.taskSettings) && item.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((item) => Boolean(item.dueDate && item.dueDate < businessDateKey())).length} overdue` }
+  const workloadFor = (userId: string) => { const active = store.items.filter((item) => item.assignedToUserId === userId && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings)); return `${active.length} active · ${active.filter((item) => Boolean(item.dueDate && item.dueDate < businessDateKey())).length} overdue` }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -2142,7 +2144,7 @@ function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
-    <label>Waiting on<select name="waitingOn" defaultValue="Me"><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
+    <label>Waiting on<select name="waitingOn" defaultValue={defaultWaitingOn(store.taskSettings)}>{waitingOnOptions(store.taskSettings).map((option) => <option key={option.id}>{option.label}</option>)}</select></label>
     {parent
       ? <label>Assigned to<input value={assignableUsers.find((account) => account.id === parent.assignedToUserId)?.name || 'Unassigned'} readOnly disabled /><small>Inherited from the main task. You can override it after creating the subtask.</small></label>
       : <label>Assigned to<select name="assignedToUserId" defaultValue=""><option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select></label>}
@@ -2167,7 +2169,7 @@ function TaskEditForm({ autoRefreshDocuments=true, canLinkRtm, store, item, onSu
   const inheritAssignmentValue = '__inherit_parent_assignment__'
   const inheritsParentAssignment = Boolean(parent && (typeof item.assignmentInherited === 'boolean' ? item.assignmentInherited : String(item.assignedToUserId || '') === String(parent.assignedToUserId || '')))
   const assignableUsers = store.accounts.filter((account) => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'))
-  const workloadFor = (userId: string) => { const active = store.items.filter((candidate) => candidate.assignedToUserId === userId && !isTaskClosed(candidate.status, store.taskSettings) && candidate.waitingOn !== 'Done'); return `${active.length} active · ${active.filter((candidate) => Boolean(candidate.dueDate && candidate.dueDate < businessDateKey())).length} overdue` }
+  const workloadFor = (userId: string) => { const active = store.items.filter((candidate) => candidate.assignedToUserId === userId && !isTaskClosed(candidate.status, store.taskSettings) && !isWaitingOnDone(candidate.waitingOn, store.taskSettings)); return `${active.length} active · ${active.filter((candidate) => Boolean(candidate.dueDate && candidate.dueDate < businessDateKey())).length} overdue` }
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (saving) return
@@ -2216,7 +2218,7 @@ function TaskEditForm({ autoRefreshDocuments=true, canLinkRtm, store, item, onSu
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue={item.priority}><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>
-    <label>Waiting on<select name="waitingOn" defaultValue={item.waitingOn}><option>Me</option><option>Developer</option><option>Client</option><option>QA</option><option>Design</option><option>Done</option></select></label>
+    <label>Waiting on<select name="waitingOn" defaultValue={item.waitingOn}>{waitingOnOptions(store.taskSettings).map((option) => <option key={option.id}>{option.label}</option>)}{item.waitingOn && !findWaitingOn(item.waitingOn, store.taskSettings) && <option>{item.waitingOn}</option>}</select></label>
     <label>Assigned to<select name="assignedToUserId" defaultValue={parent && inheritsParentAssignment ? inheritAssignmentValue : item.assignedToUserId || ''}>{parent && <option value={inheritAssignmentValue}>Same as main task · {assignableUsers.find((account) => account.id === parent.assignedToUserId)?.name || 'Unassigned'}</option>}<option value="">Unassigned</option>{assignableUsers.map((account) => <option key={account.id} value={account.id}>{account.name} · {workloadFor(account.id)}</option>)}</select>{parent && <small>{inheritsParentAssignment ? 'This subtask follows main-task assignment changes.' : 'This subtask has its own assignee override.'}</small>}</label>
     {canLinkRtm && <RtmTaskLinks store={store} clientId={item.clientId || parent?.clientId} projectId={editProjectId || parent?.projectId} value={rtmLinks} onChange={setRtmLinks} />}
     <label>QA result<select name="qaResult" defaultValue={item.qaResult || 'Not Run'}><option>Not Run</option><option>Passed</option><option>Failed</option><option>Blocked</option></select><small>Completed work without an explicit pass shows Done, not Passed.</small></label>
@@ -2402,7 +2404,7 @@ function Empty({ text }: { text: string }) { return <div className="empty"><Chec
 function TypeChip({ value }: { value: ItemType }) { return <span className={`chip type-${value.toLowerCase().replace(' ', '-')}`}>{value}</span> }
 function PriorityChip({ value }: { value: Priority }) { return <span className={`chip priority-${value.toLowerCase()}`}>{value}</span> }
 function InquirySourceBadge({ source, isNew = false }: { source: WorkItem['source']; isNew?: boolean }) { return <span className={`inquiry-source source-${source.toLowerCase().replace(/\s+/g, '-')} ${isNew ? 'is-new' : ''}`}>{source}{isNew ? ' · New' : ''}</span> }
-function WaitingChip({ value }: { value: WaitingOn }) { return <span className={`chip waiting-${value.toLowerCase()}`}>{value}</span> }
+function WaitingChip({ value, settings }: { value: WaitingOn; settings: TaskSettings }) { return <span className={`chip waiting-${waitingOnTone(value, settings)}`}>{value}</span> }
 function StatusChip({ value }: { value: string }) { return <span className="chip neutral">{value}</span> }
 function HealthChip({ value }: { value: Client['health'] }) { return <span className={`chip health-${value.toLowerCase().replace(' ', '-')}`}>{value}</span> }
 

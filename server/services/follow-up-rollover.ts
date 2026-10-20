@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { isWaitingOnDone } from '../../src/waitingOn'
 
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/
 const FALLBACK_CLOSED_STATUSES = new Set(['done', 'resolved', 'closed', 'complete', 'completed'])
@@ -43,7 +44,7 @@ export function dateKeyInTimeZone(now = new Date(), timeZone = 'Asia/Manila') {
 }
 
 function isClosed(item: any, state: any) {
-  if (String(item?.waitingOn || '').toLowerCase() === 'done' || item?.resolvedDate) return true
+  if (isWaitingOnDone(item?.waitingOn, state?.taskSettings) || item?.resolvedDate) return true
   const configured = new Set(
     (Array.isArray(state?.taskSettings?.statuses) ? state.taskSettings.statuses : [])
       .filter((status: any) => Boolean(status?.closed))
