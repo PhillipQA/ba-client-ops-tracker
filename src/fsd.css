@@ -153,3 +153,16 @@
 .fsd-draft-footer span {display:flex;align-items:center;gap:8px;}
 @media(max-width:1050px) {.fsd-columns{grid-template-columns:1fr}.fsd-topline{align-items:start;flex-direction:column}.fsd-paper{padding:24px}.fsd-paper table{min-width:500px}}
 @media(max-width:650px) {.fsd-fields,.fsd-module-checks{grid-template-columns:1fr}.fsd-card{padding:16px}.fsd-status,.fsd-draft-footer,.fsd-preview-toolbar{flex-direction:column;align-items:start}.fsd-paper{padding:14px}.fsd-preview-panel{padding:10px}.fsd-paper-header{grid-template-columns:1fr}.fsd-paper-header b{border:0}.fsd-signatories{grid-template-columns:1fr}}
+
+/* The preview papers stand for the exported Word documents, so they stay dark text on white whatever the interface
+   mode, wallpaper theme or operating-system color preference. Tokens are set on the paper itself so nothing inherited
+   from the dark workspace can reach it; the selectors below outrank the generic dark table and wallpaper rules. */
+.fsd-paper, .brd-paper {
+  color-scheme:light;
+  --fsd-heading:#17191d; --fsd-text:#24262b; --fsd-muted:#555b64; --fsd-subtle:#636b76; --fsd-label:#3e4550;
+  --fsd-border:#d9dde3; --fsd-border-soft:#dfe2e7; --fsd-focus:#7b8499; --fsd-input-bg:#fff; --fsd-input-text:#24262c;
+  --fsd-surface:#fff; --fsd-surface-soft:#f6f7f9; --fsd-surface-muted:#f8f9fb; --fsd-surface-panel:#eef0f4; --fsd-accent:#262c36; --fsd-accent-text:#fff;
+}
+.app-shell .fsd-creator .fsd-paper th {background:#fce5cd;color:#222;}
+.app-shell .fsd-creator .fsd-paper td {color:#222;}
+.fsd-warning :is(p,ul,li,strong,small,span) {color:inherit!important;}
