@@ -1,8 +1,19 @@
 # Changelog
 
-**Current application release: v0.6.84**
+**Current application release: v0.6.85**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.85 — Readable BRD and FSD previews
+Released October 21, 2026.
+
+### Fixed
+
+- The **BRD preview** was close to unreadable in the dark appearance and with wallpaper themes: headings, table cells, lists and the summary came out in pale grey on the white page (a contrast of about 1.1 to 1, where 4.5 to 1 is the minimum). The dark workspace's text colors were reaching the page that stands for the Word document.
+- The BRD and FSD previews now keep dark text on white in every appearance (dark, light and the older appearance), every wallpaper theme and both operating-system color preferences. Table headers on the FSD preview in the older appearance with a wallpaper theme, the notes inside the "Partial draft" warning, and the Edit preview inputs, delete buttons and "Add" buttons on the BRD page are covered too.
+- The Word exports are unchanged.
+
+No database migration is needed.
 
 ## v0.6.84 — FSD and BRD generation survive unreadable AI replies
 Released October 21, 2026.

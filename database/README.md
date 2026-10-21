@@ -1,6 +1,6 @@
 # Database setup
 
-The current fresh Supabase setup includes **schema versions 1–22**. Application v0.6.84 adds no migration beyond that schema (schema v22, optional custom templates for the UAT, UAT Deployment and Training sign-off forms, came with v0.6.83).
+The current fresh Supabase setup includes **schema versions 1–22**. Application v0.6.85 adds no migration beyond that schema (schema v22, optional custom templates for the UAT, UAT Deployment and Training sign-off forms, came with v0.6.83).
 
 ## Choose the correct path
 

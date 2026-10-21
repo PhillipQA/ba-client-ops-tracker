@@ -87,7 +87,7 @@ body:has(.app-shell[data-interface-mode="gray"]), .app-shell[data-interface-mode
 }
 .app-shell.ui-refresh[data-interface-mode] .page-heading { padding: 18px 20px; border: 1px solid var(--ui-border); border-radius: 14px; background: var(--ui-surface); }
 .app-shell.ui-refresh[data-interface-mode] :is(.panel-heading, .modal-head, .modal-actions, .filters, .quick-note, .activity-column-head, .ai-chat-head, .ai-composer, .document-heading, .document-workspace-grid, .document-drf-stack) { background: var(--ui-soft); border-color: var(--ui-border); color: var(--ui-text); }
-.app-shell.ui-refresh[data-interface-mode] :is(h1, h2, h3, h4, label, legend, summary):not(:where(.fsd-paper, .fsd-paper *)) { color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] :is(h1, h2, h3, h4, label, legend, summary):not(:where(.fsd-paper, .fsd-paper *, .brd-paper, .brd-paper *)) { color: var(--ui-text); }
 .app-shell.ui-refresh[data-interface-mode] :is(.panel-heading, .page-heading, .modal-head, .metric-card, .client-card, .client-hero, .project-hero, .project-stat, .activity-tile, .session-card, .workspace-chip, .document-heading, .document-flow-card, .document-extraction-panel, .document-upload-panel, .document-generate-bar) :is(strong, b) { color: var(--ui-text); }
 .app-shell.ui-refresh[data-interface-mode] :is(.panel-heading, .page-heading, .modal-head, .metric-card, .client-card, .client-hero, .project-hero, .project-stat, .activity-tile, .session-card, .workspace-chip, .document-heading, .document-flow-card, .document-extraction-panel, .document-upload-panel, .document-generate-bar) :is(p, small) { color: var(--ui-muted); }
 .app-shell.ui-refresh[data-interface-mode] :is(.eyebrow, .local-note, .row-meta, .card-stats, .next-line, .empty, .activity-empty, .activity-meta, .activity-main > small, .activity-main p, .topbar-subtitle, .settings-helper, .ai-agent-meta, .ai-agent-route span, .document-section-title span, .document-subsection-heading span, .document-flow-card span, .document-workspace > p, .document-file-row span, .document-generate-bar span, .profile-summary span) { color: var(--ui-muted); }
@@ -108,15 +108,15 @@ body:has(.app-shell[data-interface-mode="gray"]), .app-shell[data-interface-mode
 .app-shell.ui-refresh[data-interface-mode] :is(.role-badge, .count-pill, .top-role-pill, .source-local, .neutral, .priority-low, .waiting-done, .waiting-custom) { color: var(--ui-muted); background: var(--ui-soft); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(.back-link, a:not(.primary):not(.secondary), .document-section-title > svg, .document-flow-icon, .document-dropzone > svg) { color: var(--ui-accent); }
 .app-shell.ui-refresh[data-interface-mode] .back-link { background: var(--ui-surface); border-radius: 8px; padding: 8px 12px; }
-.app-shell.ui-refresh[data-interface-mode] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea):not(:where(.fsd-paper *)) { color: var(--ui-text); background-color: var(--ui-input); border-color: var(--ui-border); }
+.app-shell.ui-refresh[data-interface-mode] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea):not(:where(.fsd-paper *, .brd-paper *)) { color: var(--ui-text); background-color: var(--ui-input); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(input, textarea)::placeholder { color: var(--ui-muted); opacity: .85; }
 .app-shell.ui-refresh[data-interface-mode] .search-box { color: var(--ui-muted); background: var(--ui-input); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(button, input, select, textarea, summary, a, [tabindex]):focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; }
-.app-shell.ui-refresh[data-interface-mode] :is(table, th, td):not(:where(.fsd-paper, .fsd-paper *)) { border-color: var(--ui-border); }
-.app-shell.ui-refresh[data-interface-mode] th:not(:where(.fsd-paper *)) { color: var(--ui-muted); background: var(--ui-soft); }
-.app-shell.ui-refresh[data-interface-mode] td:not(:where(.fsd-paper *)) { color: var(--ui-text); }
-.app-shell.ui-refresh[data-interface-mode] td small:not(:where(.fsd-paper *)) { color: var(--ui-muted); }
-.app-shell.ui-refresh[data-interface-mode] tbody tr:hover:not(:where(.fsd-paper *)) { background: var(--ui-soft); }
+.app-shell.ui-refresh[data-interface-mode] :is(table, th, td):not(:where(.fsd-paper, .fsd-paper *, .brd-paper, .brd-paper *)) { border-color: var(--ui-border); }
+.app-shell.ui-refresh[data-interface-mode] th:not(:where(.fsd-paper *, .brd-paper *)) { color: var(--ui-muted); background: var(--ui-soft); }
+.app-shell.ui-refresh[data-interface-mode] td:not(:where(.fsd-paper *, .brd-paper *)) { color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] td small:not(:where(.fsd-paper *, .brd-paper *)) { color: var(--ui-muted); }
+.app-shell.ui-refresh[data-interface-mode] tbody tr:hover:not(:where(.fsd-paper *, .brd-paper *)) { background: var(--ui-soft); }
 .app-shell.ui-refresh[data-interface-mode] .overdue-row { background: var(--ui-danger-soft); }
 .app-shell.ui-refresh[data-interface-mode] :is(.inquiry-card, .mini-project, .activity-card, .activity-column, .next-line, .timeline > div, .document-subsection, .document-pos-table-wrap, .profile-summary, .sidebar-footer) { border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(.inquiry-card p, .mini-project p, .mini-project small, .timeline span, .metric-card span, .card-stats b, .ai-context-summary strong, .ai-empty h3, .ai-suggestion > strong, .ai-suggestion p, .ai-suggestion small) { color: var(--ui-muted); }
@@ -134,7 +134,7 @@ body:has(.app-shell[data-interface-mode="gray"]), .app-shell[data-interface-mode
 .app-shell.ui-refresh[data-interface-mode] .requirement-pending { color: var(--ui-warning); background: var(--ui-warning-soft); border-color: var(--ui-warning); }
 .app-shell.ui-refresh[data-interface-mode] .requirement-ok { color: var(--ui-success); background: var(--ui-success-soft); border-color: var(--ui-success); }
 .app-shell.ui-refresh[data-interface-mode] :is(.ai-agent-architecture b, .ai-agent-architecture .architecture-divider, .dashboard-ai-footer small, .dashboard-action-pagination span, .dashboard-page-buttons span, .report-empty, .gantt-label small, .report-bar-label strong, .report-mini-stats span, .subtask-report-summary span, .ai-context-summary span, .ai-prompts > span, .ai-chat-head span, .ai-empty p, .ai-composer-foot > span, .document-dropzone span) { color: var(--ui-muted); }
-.app-shell.ui-refresh[data-interface-mode] :is(td strong, .gantt-label strong, .report-bar-label span, .report-mini-stats strong, .subtask-report-summary strong, .subtask-progress-label strong):not(:where(.fsd-paper *)) { color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] :is(td strong, .gantt-label strong, .report-bar-label span, .report-mini-stats strong, .subtask-report-summary strong, .subtask-progress-label strong):not(:where(.fsd-paper *, .brd-paper *)) { color: var(--ui-text); }
 .app-shell.ui-refresh[data-interface-mode] :is(.client-layout-switch, .client-search, .gantt-header, .report-mini-stats > div, .subtask-report-summary > div, .subtask-row td, .project-context-banner, .subtask-comment-trail, .subtask-comment-entry, .subtask-evidence-panel, .subtask-evidence-item, .subtask-evidence-dropzone) { background: var(--ui-soft); color: var(--ui-text); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] .client-layout-switch button { color: var(--ui-muted); }
 .app-shell.ui-refresh[data-interface-mode] .client-layout-switch button[aria-pressed="true"] { background: var(--ui-accent-soft); color: var(--ui-accent); }
@@ -177,9 +177,11 @@ body:has(.app-shell[data-interface-mode]) .activity-comment-popover-head button 
   --tc-text: var(--ui-text); --tc-muted: var(--ui-muted); --tc-accent: var(--ui-primary);
   --tc-accent-text: var(--ui-on-primary); --tc-input: var(--ui-input); --tc-warn: var(--ui-warning);
 }
-.app-shell[data-interface-mode] .fsd-paper {
+/* The FSD and BRD preview papers keep their own light colors; see the end of fsd.css. */
+.app-shell[data-interface-mode] :is(.fsd-paper, .brd-paper) {
   --fsd-heading: #17191d; --fsd-text: #24262b; --fsd-muted: #555b64; --fsd-subtle: #636b76; --fsd-label: #3e4550;
   --fsd-border: #d9dde3; --fsd-border-soft: #dfe2e7; --fsd-focus: #7b8499; --fsd-input-bg: #fff; --fsd-input-text: #24262c;
+  --fsd-surface: #fff; --fsd-surface-soft: #f6f7f9; --fsd-surface-muted: #f8f9fb; --fsd-surface-panel: #eef0f4; --fsd-accent: #262c36; --fsd-accent-text: #fff;
 }
 .app-shell[data-interface-mode] .fsd-paper th { background: #fce5cd; color: #222; }
 .app-shell.ui-refresh[data-interface-mode] .rtm-page { --panel: var(--ui-surface); --text: var(--ui-text); --muted: var(--ui-muted); --border: var(--ui-border); }
