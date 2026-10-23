@@ -1,8 +1,15 @@
 # Changelog
 
-**Current application release: v0.6.96**
+**Current application release: v0.6.97**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.97 — Readable text over wallpapers
+Released October 24, 2026.
+
+No database migration and no new Google permission.
+
+- Page introductions, filter labels (Show clients, Client, Show archived), the client's Active status line and the "Archive requirements" note now sit on a soft, dark, rounded background, so they stay readable over clouds and sea. Text inside cards and panels is unchanged.
 
 ## v0.6.96 — Trackers: move rows, change column type, task links
 Released October 23, 2026.
