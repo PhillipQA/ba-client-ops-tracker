@@ -1,5 +1,6 @@
 import { registerGitlab } from './gitlab'
 import { registerGithub } from './github'
+import { registerDrive } from './google-drive'
 import { attachmentContentType, attachmentDisposition, gmailAttachmentParts, gmailAttachmentSummaries, gmailBodyText, gmailWindowStart, matchAttachmentPart, storedAttachment, syncGmailPages } from './gmail-content'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
@@ -115,6 +116,9 @@ export function registerCommunications(app: Express, deps: {
     if (!data) throw new IntegrationError('Communication not found.',404)
     return data
   }
+  const drive=registerDrive(app,{db,auth,guard,accountGate,gmailGate,wrap,current,liveUser,activeAccount,google,origin,callbackPath:CALLBACK,
+    sessionFromRequest:deps.sessionFromRequest,sessionByToken:deps.sessionByToken,own,attachment:(req,message,index)=>gmailAttachment(req,message,index),
+    load:deps.load,commit:deps.commit,inOrder:createTaskInOrder})
   app.get('/api/internal-admin/organizations/:organizationId/gmail', deps.requireAuth, deps.requirePlatformAdmin, wrap(async (req,res) => {
     const id=String(req.params.organizationId)
     if (!await deps.organizationById(id)) throw new IntegrationError('Account not found.',404)
@@ -193,11 +197,9 @@ export function registerCommunications(app: Express, deps: {
     if (error) throw error
     res.json({items:data || [],total:count || 0})
   }))
-  // Attachments are streamed from Gmail on request and never written to the database or disk.
-  app.get('/api/communications/:id/attachments/:index', ...auth, guard, gmailGate, wrap(async (req,res) => {
-    const message=await own(req,String(req.params.id))
+  /** Fetch one attachment of the user's own Gmail message straight from Gmail. Nothing is stored. */
+  const gmailAttachment = async (req: Request, message: any, index: number) => {
     const stored=Array.isArray(message.attachments) ? message.attachments : []
-    const index=Number(req.params.index)
     const wanted=Number.isSafeInteger(index) && index>=0 && index<stored.length ? storedAttachment(stored[index]) : null
     if(message.source!=='Gmail' || !message.external_id || !wanted) throw new IntegrationError('Attachment not found.',404)
     const token=await accessToken(req),headers={Authorization:`Bearer ${token}`}
@@ -208,9 +210,13 @@ export function registerCommunications(app: Express, deps: {
     if(!part) throw new IntegrationError('This attachment is no longer available in Gmail.',404)
     const encoded=part.data || (part.attachmentId ? String((await google(`${messageUrl}/attachments/${encodeURIComponent(part.attachmentId)}`,{headers},60000).catch(error=>missing(error,'This attachment is no longer available in Gmail.'))).data || '') : '')
     if(!encoded) throw new IntegrationError('This attachment is empty or unavailable in Gmail.',404)
-    const file=Buffer.from(encoded,'base64url')
-    res.setHeader('Content-Type',attachmentContentType(part.mimeType))
-    res.setHeader('Content-Disposition',attachmentDisposition(part.name))
+    return {name:part.name,mimeType:attachmentContentType(part.mimeType),file:Buffer.from(encoded,'base64url')}
+  }
+  // Attachments are streamed from Gmail on request and never written to the database or disk.
+  app.get('/api/communications/:id/attachments/:index', ...auth, guard, gmailGate, wrap(async (req,res) => {
+    const {name,mimeType,file}=await gmailAttachment(req,await own(req,String(req.params.id)),Number(req.params.index))
+    res.setHeader('Content-Type',mimeType)
+    res.setHeader('Content-Disposition',attachmentDisposition(name))
     res.setHeader('X-Content-Type-Options','nosniff')
     res.setHeader('Content-Security-Policy',"sandbox; default-src 'none'")
     res.setHeader('Content-Length',String(file.length))
@@ -288,6 +294,12 @@ export function registerCommunications(app: Express, deps: {
         const {error}=await db.from('user_communications').update({linked_task_id:item.id}).eq('id',communication.id).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id)
         if(error) warning = 'Task created, but the message badge could not be updated.'
       } catch { warning = 'Task created, but the message badge could not be updated.' }
+      // Private list of every task made from this message, used to pick a Drive folder.
+      // Kept separate so a database without schema v23 still records the badge above.
+      try {
+        const ids=[...new Set([...(Array.isArray(communication.linked_task_ids)?communication.linked_task_ids:[]),...(communication.linked_task_id?[communication.linked_task_id]:[]),item.id])].slice(-200)
+        await db.from('user_communications').update({linked_task_ids:ids}).eq('id',communication.id).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id)
+      } catch { /* Older schema: the latest-task badge still works. */ }
       res.status(201).json({ task:item, ...(warning ? { warning } : {}) })
     })
   }))
@@ -303,6 +315,7 @@ export function registerCommunications(app: Express, deps: {
     res.json({url:`https://accounts.google.com/o/oauth2/v2/auth?${query}`})
   }))
   app.get(CALLBACK, async (req,res) => {
+    if(drive.handles(req.query.state)) { await drive.callback(req,res); return }
     res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer')
     let result='error'
     try {

@@ -1,8 +1,23 @@
 # Changelog
 
-**Current application release: v0.6.86**
+**Current application release: v0.6.87**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.87 — Save Gmail attachments to Google Drive task folders
+Released October 23, 2026.
+
+**Database migration required:** apply [schema v23](database/migrations/schema-v23-drive-attachments.sql) before connecting Google Drive. It runs on Supabase and on plain PostgreSQL (Northflank).
+
+### Added
+
+- **One shared Google Drive per account.** An account administrator connects it in **Settings → Integrations → Google Drive — team folder**. It uses the account's existing Gmail OAuth client and callback address. In Google Cloud, only the Google Drive API needs to be enabled; no new redirect URI is needed.
+- The app asks only for access to files and folders it creates (`drive.file`). It creates a **BA Client Ops Tracker** folder and, inside it, one folder per client, project, task and subtask. Share that folder with your team, or move it into a shared drive.
+- **Save to Drive in Work Hub.** After you create a task from a Gmail message, each attachment has a **Save to Drive** button. Pick the task or one of its subtasks, and the file is copied from Gmail to `Client / Project / Task / Subtask` in Drive. The app keeps no copy.
+- The task, or subtask, shows the file under **Saved to Google Drive** with an **Open in Drive** link, and the activity log records the save.
+- An email that created several tasks lists all of them, with their subtasks. Archived work isn't offered. Saving the same file to the same task twice is refused.
+- Folders follow the records: if a task is renamed, its folder is renamed. If a folder is deleted in Drive, it is created again on the next save.
+- Only the email's owner can save its attachments, and only to tasks created from that email. Viewers cannot save. Drive links on tasks can only be written by the server, never by a browser save.
 
 ## v0.6.86 — Download Gmail attachments from Work Hub
 Released October 23, 2026.

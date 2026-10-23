@@ -42,6 +42,7 @@ import {
   List,
   Pencil,
   Paperclip,
+  HardDrive,
   Plus,
   RefreshCw,
   Search,
@@ -395,7 +396,8 @@ function App() {
 
   const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.hash.slice(1)).get('reset-password'))
   const [store, setStore] = useState<Store>(initialStore)
-  const [view, setView] = useState<View>('action')
+  // Returning from the Google Drive consent screen opens Settings so the result is shown; others fall back below.
+  const [view, setView] = useState<View>(() => new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'settings' : 'action')
   const [query, setQuery] = useState('')
   const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
   const [clientLayout, setClientLayout] = useState<ClientLayout>('tiles')
@@ -2230,6 +2232,7 @@ function TaskEditForm({ autoRefreshDocuments=true, canLinkRtm, store, item, onSu
     <TaskEffort item={item} allItems={store.items} currentUser={currentUser} canLog={currentUser.role !== 'Viewer'} today={today} onMutation={onTimeEntryMutation} />
     <WorkCommentTrail item={item} onMutation={onCommentMutation} />
     {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
+    <TaskDriveFiles item={item} />
     {saveError && <p className="record-editor-error span-2" role="alert">{saveError}</p>}
     <div className="form-actions span-2 task-edit-actions"><button type="button" className="secondary danger-button" disabled={saving} onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete {parent ? 'subtask' : 'task'}</button><button className="primary" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button></div>
   </form>
@@ -2298,6 +2301,24 @@ function evidenceSize(bytes: number) {
 function evidenceDate(value: string) {
   const date = value ? new Date(value) : null
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : 'Uploaded'
+}
+
+/** Gmail attachments saved to the team Google Drive from Work Hub. Links only; the files live in Drive. */
+function TaskDriveFiles({ item }: { item: WorkItem }) {
+  const files = (item.driveFiles || []).filter((file) => file && file.id && file.name && /^https:\/\/drive\.google\.com\//.test(String(file.url || '')))
+  if (!files.length) return null
+  return <section className="subtask-evidence-panel span-2 task-drive-files">
+    <div className="subtask-evidence-heading">
+      <div><strong><HardDrive size={15} /> Saved to Google Drive</strong><span>Email attachments filed in the team Drive under this {item.parentTaskId ? 'subtask' : 'task'}’s folder.</span></div>
+      <span className="count-pill">{files.length}</span>
+    </div>
+    <div className="subtask-evidence-list">
+      {files.map((file) => <div className="subtask-evidence-item" key={file.id}>
+        <div className="subtask-evidence-file"><Paperclip size={15} /><div><strong title={file.name}>{file.name}</strong><span>{file.size ? `${evidenceSize(file.size)} · ` : ''}{evidenceDate(file.savedAt)}{file.savedByName ? ` · ${file.savedByName}` : ''}</span></div></div>
+        <div className="subtask-evidence-actions"><a className="secondary compact" href={file.url} target="_blank" rel="noopener noreferrer">Open in Drive</a></div>
+      </div>)}
+    </div>
+  </section>
 }
 
 function SubtaskEvidencePanel({ item, onMutation }: { item: WorkItem; onMutation: (result: TaskEvidenceMutationResult) => void }) {

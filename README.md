@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current application version: v0.6.86**
+**Current application version: v0.6.87**
 
 A workspace for clients, projects, tasks, follow-ups, Work Hub communications, document creation, requirements traceability and reports. This guide covers installation, first login, deployment and updates.
 
@@ -132,6 +132,7 @@ The app can be installed before connecting external services.
 | Feature | Setup location |
 | --- | --- |
 | Gmail | Internal Admin enables access; the account administrator configures OAuth; each user connects Gmail and selects labels in Work Hub. |
+| Google Drive (Gmail attachments) | Needs Gmail first and schema v23. Enable the Google Drive API in the same Google Cloud project, then an account administrator connects one shared Drive in Settings → Integrations. Users save attachments to task folders from Work Hub. |
 | Discord | Account Settings configures the workspace bot; users link their Discord IDs in Work Hub. |
 | GitHub / GitLab | Each user's Work Hub integration settings. |
 | DocHub | Account Settings integration configuration. |
@@ -158,7 +159,7 @@ npm run typecheck:server
 
 If your checkout contains local source edits, reconcile them before pulling. For an official patch ZIP, use the [patch instructions](docs/setup/upgrade.md#official-patch-zips); a source update does not require a patch ZIP.
 
-**v0.6.86 adds no database migration.** The optional schema v22 migration (from v0.6.83) enables custom templates for the UAT Sign Off, UAT Deployment Approval and Training Sign Off forms; the built-in forms and templates work without it. The optional v21 migration enables custom Go Live templates.
+**v0.6.87 needs database migration schema v23** before Google Drive can be used for Gmail attachments; everything else works without it. See the [upgrade guide](docs/setup/upgrade.md#database-requirements). The optional schema v22 migration (from v0.6.83) enables custom templates for the UAT Sign Off, UAT Deployment Approval and Training Sign Off forms; the built-in forms and templates work without it. The optional v21 migration enables custom Go Live templates.
 
 ## Troubleshooting
 

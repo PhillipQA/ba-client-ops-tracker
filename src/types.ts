@@ -63,6 +63,17 @@ export interface TaskEvidence {
   kind: 'Screenshot' | 'File'
 }
 
+export interface TaskDriveFile {
+  id: string
+  name: string
+  url: string
+  mimeType: string
+  size: number
+  savedAt: string
+  savedBy: string
+  savedByName: string
+}
+
 export interface TaskComment {
   id: string
   text: string
@@ -81,6 +92,8 @@ export interface WorkItem {
   rtmLinks?: import('./rtm').RtmLink[]
   qaResult?: 'Not Run' | 'Passed' | 'Failed' | 'Blocked'
   docHubDocuments?: import('./dochub').DocHubLink[]
+  /** Gmail attachments saved to the account's Google Drive. Written only by the save-to-Drive API. */
+  driveFiles?: TaskDriveFile[]
   /** Optional estimate in hours. */
   estimateHours?: number
   /** Time logged against this task. Written only through the time-entry API. */

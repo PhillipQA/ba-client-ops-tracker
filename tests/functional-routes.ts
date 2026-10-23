@@ -106,4 +106,10 @@ try{
   const fresh=structuredClone(workspace);fresh.items[1].description='Reapplied B edit'
   const ok=await originalFetch(base+'/api/store',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({data:fresh,baseVersion:workspaceVersion(workspace)})});assert.equal(ok.status,200,JSON.stringify(await ok.json()));assert.equal(workspace.items[1].description,'Reapplied B edit');assert.equal(workspace.items.length,3)
   record('Fresh revision saves successfully',{status:ok.status})
+  // Drive links are written only by the save-to-Drive API; a browser save can neither drop nor forge them.
+  workspace.items[1].driveFiles=[{id:'drv-1',name:'survey.pdf',url:'https://drive.google.com/file/d/drv-1/view',mimeType:'application/pdf',size:1,savedAt:'2026-10-23T00:00:00Z',savedBy:'u',savedByName:'U'}]
+  const forged=structuredClone(workspace);forged.items[1].driveFiles=[{id:'evil',name:'x',url:'javascript:alert(1)'}];forged.items[0].driveFiles=[{id:'evil-2'}];forged.items[1].description='Edit beside forged links'
+  const kept=await originalFetch(base+'/api/store',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({data:forged,baseVersion:workspaceVersion(workspace)})});assert.equal(kept.status,200,JSON.stringify(await kept.json()))
+  assert.equal(workspace.items[1].description,'Edit beside forged links');assert.deepEqual(workspace.items[1].driveFiles.map((f:any)=>f.id),['drv-1']);assert.deepEqual(workspace.items[0].driveFiles,[])
+  record('Browser saves keep server-written Drive links',{status:kept.status})
 }finally{globalThis.fetch=originalFetch;server.close()}

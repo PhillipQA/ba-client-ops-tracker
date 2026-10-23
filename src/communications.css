@@ -109,7 +109,15 @@
 .communication-attachments { white-space: normal; margin-top: .9rem; padding-top: .75rem; border-top: 1px dashed var(--comm-border); }
 .communication-attachments > strong { display: block; margin-bottom: .4rem; color: var(--comm-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
 .communication-attachments ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
-.communication-attachments li { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; min-width: 0; }
+.communication-attachments li { display: grid; gap: .45rem; min-width: 0; }
+.communication-attachment-row { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; min-width: 0; }
+.communication-drive-button { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+.communication-drive-saved { color: var(--comm-accent); font-size: 12px; overflow-wrap: anywhere; }
+.communication-drive-picker { display: grid; gap: .5rem; padding: .75rem; border: 1px solid var(--comm-border); border-radius: 10px; background: var(--comm-surface); }
+.communication-drive-picker p { margin: 0; color: var(--comm-text); }
+.communication-drive-picker label { display: grid; gap: .35rem; margin: 0; color: var(--comm-text); font-weight: 600; }
+.communication-drive-picker select { width: 100%; min-width: 0; }
+.communication-drive-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .communication-attachments small { color: var(--comm-muted); }
 .communication-attachments p[role="alert"] { margin: .5rem 0 0; color: #b42318; }
 .communication-attachment-link, .communication-attachment-name { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-align: left; }

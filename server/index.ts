@@ -1074,7 +1074,7 @@ app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
       const comments = Array.isArray(currentItem?.comments) ? currentItem.comments : []
       const effort = applyEffortSaveRules(currentItem, item)
       if (!effort.ok) throw new TenantSaveError(effort.error, effort.status)
-      return { ...effort.value, comments, evidence: currentItem?.evidence || [], docHubDocuments: currentItem?.docHubDocuments || [], assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
+      return { ...effort.value, comments, evidence: currentItem?.evidence || [], docHubDocuments: currentItem?.docHubDocuments || [], driveFiles: currentItem?.driveFiles || [], assignedToUserId: assignedToUserId || undefined, owner: assignedToUserId ? String(assignableUsers.get(assignedToUserId)?.name || '') : '' }
     })
     // Work history is derived on the server from the authenticated actor. Browser-supplied
     // event identities are never trusted, so assignment and action reports remain auditable.
