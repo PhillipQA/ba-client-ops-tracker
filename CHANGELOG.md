@@ -1,8 +1,26 @@
 # Changelog
 
-**Current application release: v0.6.90**
+**Current application release: v0.6.91**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.91 — Replies copy everyone on the email
+Released October 23, 2026.
+
+No database change and no new Google permission.
+
+### Changed
+
+- **Reply by email now works like Reply all.** The sender gets the reply, and everyone else who was on the original email is added to Cc automatically. You no longer have to type them in. Your own address, including an alias the email was delivered to, is left out, and nobody is listed twice.
+- **Remove them in one click.** The composer says how many people were copied and shows **Reply to sender only**. The Cc line stays editable.
+- **A "Reply-To" address is honoured.** If the sender asked for replies to go elsewhere (a help desk address, for example), the reply goes there.
+- **Replying to an email you wrote** goes to the people you sent it to, not back to you.
+- **Works for emails already in Work Hub.** The recipients are read from Gmail when you click Reply, so earlier emails are covered too. If Gmail cannot be reached, the reply opens with the sender only and a short note asks you to add anyone else to Cc yourself.
+
+### Notes
+
+- Everyone who is copied sees your reply. Blind-copy recipients of the original are not visible to you, so they are not added.
+- The limit of 25 recipients per email still applies. If an email has more people on it, the composer asks you to remove some before sending.
 
 ## v0.6.90 — Send document emails from the tracker
 Released October 23, 2026.

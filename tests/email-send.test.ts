@@ -4,7 +4,7 @@ import express from 'express'
 import { registerOutbound } from '../server/integrations/gmail-outbound'
 import { buildMessage, hasScope, messageIds, mimeWords, SEND_SCOPE, READ_SCOPE } from '../server/integrations/gmail-send'
 import { IntegrationError } from '../server/integrations/tenant-integrations'
-import { blockedAttachmentReason, extractAddress, parseRecipients, quoteReply, recipientSummary, replySubject, splitAddresses } from '../src/emailCompose'
+import { blockedAttachmentReason, extractAddress, parseRecipients, quoteReply, recipientSummary, replyRecipients, replySubject, splitAddresses } from '../src/emailCompose'
 
 /** Minimal MIME reader for the messages this feature writes: unfolds headers and splits one level of multipart. */
 function readMime(raw: Buffer) {
@@ -274,5 +274,57 @@ test('a sent email stays reported as sent when saving the copy or the activity n
     const result = await ask('/api/communications/send', valid())
     assert.equal(result.status, 200);assert.equal(result.body.warning, undefined)
     assert.equal(synced.rows.length, 1);assert.deepEqual(synced.rows[0].linked_task_ids, ['s1', 't1']);assert.equal(synced.rows[0].linked_task_id, 's1')
+  })
+})
+
+test('a reply goes to the sender and copies everyone else on the email, never you', () => {
+  const me = ['me@acme.com']
+  // The usual case: the sender gets the reply, the other people are copied.
+  assert.deepEqual(replyRecipients({ from: 'Ana Cruz <ana@acme.com>', to: 'me@acme.com, Kim <kim@acme.com>', cc: 'sam@acme.com' }, me), { to: ['ana@acme.com'], cc: ['kim@acme.com', 'sam@acme.com'] })
+  // Your own address is left out in any case, and an address listed twice is copied once.
+  assert.deepEqual(replyRecipients({ from: 'ana@acme.com', to: 'ME@Acme.com, kim@acme.com', cc: 'KIM@acme.com, ana@acme.com' }, me), { to: ['ana@acme.com'], cc: ['kim@acme.com'] })
+  // A display name with a comma in it stays one person.
+  assert.deepEqual(replyRecipients({ from: '"Cruz, Ana" <ana@acme.com>', to: '"Lee, Bo" <bo@acme.com>, me@acme.com' }, me), { to: ['ana@acme.com'], cc: ['bo@acme.com'] })
+  // Reply-To wins over From.
+  assert.deepEqual(replyRecipients({ from: 'ana@acme.com', replyTo: 'support@acme.com', to: 'me@acme.com' }, me), { to: ['support@acme.com'], cc: [] })
+  // A Reply-To that points back at you falls back to the sender.
+  assert.deepEqual(replyRecipients({ from: 'list@acme.com', replyTo: 'me@acme.com', to: 'team@acme.com' }, me), { to: ['list@acme.com'], cc: ['team@acme.com'] })
+  // Another address of yours (an alias the email was delivered to) is also left out.
+  assert.deepEqual(replyRecipients({ from: 'ana@acme.com', to: 'jose@alias.com, kim@acme.com' }, [...me, 'jose@alias.com']), { to: ['ana@acme.com'], cc: ['kim@acme.com'] })
+  // An email you wrote yourself is answered by the people you sent it to.
+  assert.deepEqual(replyRecipients({ from: 'José <me@acme.com>', to: 'ana@acme.com, kim@acme.com', cc: 'sam@acme.com' }, me), { to: ['ana@acme.com', 'kim@acme.com'], cc: ['sam@acme.com'] })
+  // Nothing usable is lost or invented: bad addresses are dropped, a note to yourself leaves nobody, and a lone Cc is promoted.
+  assert.deepEqual(replyRecipients({ from: 'ana@acme.com', to: 'undisclosed-recipients:;, not an address' }, me), { to: ['ana@acme.com'], cc: [] })
+  assert.deepEqual(replyRecipients({ from: 'me@acme.com', to: 'me@acme.com' }, me), { to: [], cc: [] })
+  assert.deepEqual(replyRecipients({ from: 'me@acme.com', to: '', cc: 'kim@acme.com' }, me), { to: ['kim@acme.com'], cc: [] })
+  assert.deepEqual(replyRecipients({}, me), { to: [], cc: [] })
+})
+
+test('the reply recipients are read from Gmail for an email that was saved earlier', async () => {
+  const asked: string[] = []
+  const h = harness({
+    gmail: (url: URL) => {
+      asked.push(url.search)
+      return { id: 'orig', threadId: 'thread-orig', payload: { headers: [
+        { name: 'From', value: 'Ana Cruz <ana@acme.com>' }, { name: 'To', value: 'José <me@acme.com>, kim@acme.com' }, { name: 'Cc', value: 'sam@acme.com' },
+        { name: 'Delivered-To', value: 'me@acme.com' }, { name: 'Bcc', value: 'secret@acme.com' },
+      ] } }
+    },
+  })
+  await serve(h, async ask => {
+    const result = await ask('/api/communications/mail-1/reply-recipients')
+    assert.equal(result.status, 200, JSON.stringify(result.body))
+    assert.deepEqual(result.body, { to: ['ana@acme.com'], cc: ['kim@acme.com', 'sam@acme.com'] })
+    // Only the address headers are requested, and nothing is sent or saved.
+    const query = new URLSearchParams(asked[0])
+    assert.equal(query.get('format'), 'metadata');assert.deepEqual(query.getAll('metadataHeaders'), ['From', 'Reply-To', 'To', 'Cc', 'Delivered-To'])
+    assert.equal(h.calls.sent.length, 0);assert.equal(h.rows.length, 0)
+    // Another person's message cannot be probed.
+    assert.equal((await ask('/api/communications/someone-elses/reply-recipients')).status, 404)
+  })
+  const gone = harness({ gmail: () => { throw Object.assign(new IntegrationError('Not Found', 502), { upstreamStatus: 404 }) } })
+  await serve(gone, async ask => {
+    const result = await ask('/api/communications/mail-1/reply-recipients')
+    assert.equal(result.status, 404);assert.match(result.body.error, /no longer in Gmail/)
   })
 })
