@@ -5,6 +5,9 @@ import { EMAIL_LIMITS, blockedAttachmentReason, formatBytes, isValidEmail, parse
 import { outbox, UNDO_SECONDS, type DriveRef, type EmailDraft, type OutboxEntry, type Upload } from './emailOutbox'
 import { driveFileGroups, placeOf, taskOptions } from './documentDriveTargets'
 import { workHubSync } from './workHubSync'
+import { RecipientInput, addressesOn, type Suggestion } from './RecipientInput'
+import { knownPeople } from './knownPeople'
+import { searchContacts } from './contactSearch'
 import './emailComposer.css'
 
 /**
@@ -34,6 +37,8 @@ export function useEmailEnabled() {
 
 type Status = { writer: boolean; available: boolean; connected: boolean; canSend: boolean; reconnectRequired: boolean; email: string; message: string }
 type Scope = { items: WorkItem[]; clients: Client[]; projects: Project[] }
+/** Teammates whose addresses can be suggested. */
+type Team = { accounts?: UserAccount[] }
 
 function readBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -54,7 +59,7 @@ async function allowSending() {
   window.location.assign(result.url)
 }
 
-export function EmailComposerHost({ enabled: allowed, items, clients, projects, currentUser, onSent }: Scope & { enabled: boolean; currentUser: UserAccount; onSent?: () => void | Promise<void> }) {
+export function EmailComposerHost({ enabled: allowed, items, clients, projects, accounts, currentUser, onSent }: Scope & Team & { enabled: boolean; currentUser: UserAccount; onSent?: () => void | Promise<void> }) {
   const [open, setOpen] = useState<{ prefill: ComposePrefill; key: number } | null>(null)
   useEffect(() => { setEmailEnabled(allowed); return () => setEmailEnabled(false) }, [allowed])
   useEffect(() => {
@@ -73,7 +78,7 @@ export function EmailComposerHost({ enabled: allowed, items, clients, projects, 
   if (!allowed) return null
   const edit = (draft: EmailDraft) => setOpen({ prefill: { ...draft, restored: true }, key: Date.now() })
   return <>
-    {open && <EmailComposer key={open.key} prefill={open.prefill} items={items} clients={clients} projects={projects} currentUser={currentUser} onClose={() => setOpen(null)} />}
+    {open && <EmailComposer key={open.key} prefill={open.prefill} items={items} clients={clients} projects={projects} accounts={accounts} currentUser={currentUser} onClose={() => setOpen(null)} />}
     <EmailOutboxBar onEdit={edit} />
   </>
 }
@@ -107,7 +112,7 @@ function EmailOutboxBar({ onEdit }: { onEdit: (draft: EmailDraft) => void }) {
   </div>
 }
 
-export function EmailComposer({ prefill, items, clients, projects, currentUser, onClose }: Scope & { prefill: ComposePrefill; currentUser: UserAccount; onClose: () => void }) {
+export function EmailComposer({ prefill, items, clients, projects, accounts, currentUser, onClose }: Scope & Team & { prefill: ComposePrefill; currentUser: UserAccount; onClose: () => void }) {
   const scope: Scope = { items, clients, projects }
   const dialog = useRef<HTMLDialogElement>(null), titleId = useId()
   const primary = items.find(item => item.id === prefill.taskIds?.[0])
@@ -126,6 +131,11 @@ export function EmailComposer({ prefill, items, clients, projects, currentUser, 
   const [clientFilter, setClientFilter] = useState(primary?.clientId ?? ''), [pickTask, setPickTask] = useState('')
   const [driveOpen, setDriveOpen] = useState(false), [fileQuery, setFileQuery] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  // Type-ahead for the recipient lines: clients and teammates are known here; people emailed before come from the server.
+  const people = useMemo<Suggestion[]>(() => knownPeople({ clients, accounts, leaveOut: { id: currentUser.id, email: currentUser.email } }), [clients, accounts, currentUser.id, currentUser.email])
+  const taken = useMemo(() => [...addressesOn(to), ...addressesOn(cc), ...addressesOn(bcc)], [to, cc, bcc])
+  // Ask once as the composer opens, so the list is ready by the time someone types.
+  useEffect(() => { searchContacts('').catch(() => {}) }, [])
   const initial = useRef(JSON.stringify([to, cc, bcc, subject, message, taskIds, driveFiles, uploads.map(file => file.name)]))
   const dirty = () => Boolean(prefill.restored) || JSON.stringify([to, cc, bcc, subject, message, taskIds, driveFiles, uploads.map(file => file.name)]) !== initial.current
 
@@ -222,9 +232,10 @@ export function EmailComposer({ prefill, items, clients, projects, currentUser, 
       {needsPermission && <div className="email-permission" role="alert"><p>The tracker needs your permission to send email as you. You approve it once on Google’s page, then return to Work Hub. This email will not be kept, so start it again after approving.</p>
         <button type="button" className="primary" disabled={busy} onClick={() => { setBusy(true); void allowSending().catch(e => { setError(e instanceof Error ? e.message : 'Could not start the Google permission step.'); setBusy(false) }) }}>Allow sending</button></div>}
       <div className="email-fields">
-        <label>To<input value={to} onChange={e => setTo(e.target.value)} placeholder="name@company.com, another@company.com" autoComplete="off" /></label>
+        <RecipientInput label="To" value={to} onChange={setTo} local={people} taken={taken} search={searchContacts} placeholder="name@company.com, another@company.com" />
         {!showCopies && <button type="button" className="link-button email-copies-toggle" onClick={() => setShowCopies(true)}>Add Cc or Bcc</button>}
-        {showCopies && <><label>Cc<input value={cc} onChange={e => setCc(e.target.value)} autoComplete="off" /></label><label>Bcc<input value={bcc} onChange={e => setBcc(e.target.value)} autoComplete="off" /><small>Bcc recipients are not shown to the others, and are left out of the note on the task.</small></label></>}
+        {showCopies && <><RecipientInput label="Cc" value={cc} onChange={setCc} local={people} taken={taken} search={searchContacts} />
+          <RecipientInput label="Bcc" value={bcc} onChange={setBcc} local={people} taken={taken} search={searchContacts}><small>Bcc recipients are not shown to the others, and are left out of the note on the task.</small></RecipientInput></>}
         {copiedFromOriginal && <p className="email-note" role="status">{copiedCount} {copiedCount === 1 ? 'other person from the original email is' : 'other people from the original email are'} copied and will see your reply. <button type="button" className="link-button email-copies-toggle" onClick={() => setCc('')}>Reply to sender only</button></p>}
         <label>Subject<input value={subject} maxLength={EMAIL_LIMITS.subject} onChange={e => setSubject(e.target.value)} /></label>
         <label>Message<textarea rows={9} value={message} maxLength={EMAIL_LIMITS.body} onChange={e => setMessage(e.target.value)} /></label>

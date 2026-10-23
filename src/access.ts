@@ -8,6 +8,7 @@ export const MODULE_DEFINITIONS: { id: AppModule; label: string; description: st
   { id: 'items', label: 'Tasks', description: 'Tasks, requirements, issues, decisions, and follow-ups.' },
   { id: 'documents', label: 'Document Creation', description: 'Create DRF, FSD, and Sign Off documents from source files.' },
   { id: 'requirements', label: 'Requirements & Traceability', description: 'Client-specific RTMs, requirements, linked work, coverage and impact history.' },
+  { id: 'trackers', label: 'Trackers', description: 'Sheets you shape yourself: your own columns, rows, saved views, and cells that fill from linked tasks.' },
   { id: 'reports', label: 'Reports', description: 'Gantt, turnaround time, workload, and exports.' },
   { id: 'ai', label: 'AI BA Assistant', description: 'Contextual AI assessment and suggested actions.' },
   { id: 'settings', label: 'Settings', description: 'Account templates and integration credentials.' },
@@ -17,6 +18,6 @@ export const ALL_MODULES = MODULE_DEFINITIONS.map((module) => module.id)
 
 export function defaultModulesForRole(role: UserRole): AppModule[] {
   if (role === 'Administrator') return [...ALL_MODULES]
-  if (role === 'Contributor') return ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'requirements', 'reports', 'ai']
+  if (role === 'Contributor') return ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'requirements', 'trackers', 'reports', 'ai']
   return ['reports']
 }

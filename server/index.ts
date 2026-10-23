@@ -42,6 +42,7 @@ import { markAllNotificationsReadForUser, reconcileNotifications, updateNotifica
 import { preserveTaskSettings } from './services/tenant-save-settings'
 import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
 import { registerCommunications } from './integrations/communications'
+import { registerTrackerRoutes } from './trackers/trackers'
 import { applySubtaskAssignmentInheritance } from '../src/subtaskAssignment'
 import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transport'
 import { createLoginLimiter, type LoginIdentity } from './auth/login-limiter'
@@ -146,7 +147,7 @@ function discordUserRateLimited(userId: string) {
   return ++current.count > 10
 }
 
-const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'requirements', 'reports', 'ai', 'settings']
+const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'requirements', 'trackers', 'reports', 'ai', 'settings']
 const BXI_CORE_ORG_ID = '00000000-0000-0000-0000-000000000001'
 const BXI_CORE_ORG_NAME = 'BXI-Core'
 const BXI_CORE_ORG_SLUG = 'bxi-core'
@@ -1727,6 +1728,7 @@ registerFsdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireT
 
 registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
 registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
+registerTrackerRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, load: loadTenantState })
 
 registerSignoffRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx'), goLiveTemplatePath: path.join(projectRoot, 'templates', 'golive-template.docx'), templatePaths: { uat: path.join(projectRoot, 'templates', 'uat-template.docx'), uatdeploy: path.join(projectRoot, 'templates', 'uatdeploy-template.docx'), training: path.join(projectRoot, 'templates', 'training-template.docx') } })
 

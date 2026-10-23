@@ -5,6 +5,7 @@ import { LifecycleError } from '../../src/lifecycle'
 import { EMAIL_LIMITS, blockedAttachmentReason, formatBytes, parseRecipients, recipientSummary, replyRecipients } from '../../src/emailCompose'
 import { buildMessage, hasScope, messageIds, SEND_SCOPE, type OutgoingAttachment } from './gmail-send'
 import { driveName } from './google-drive'
+import { createContactBook } from './gmail-contacts'
 
 /**
  * Send an email from a person's own Gmail account, link it to tasks or subtasks, and keep a private copy in Work Hub.
@@ -46,6 +47,25 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
   const clock = () => (deps.now ? deps.now() : Date.now())
   const replays = new Map<string, { at: number; promise: Promise<any> }>()
   const recent = new Map<string, number[]>()
+  const contacts = createContactBook({ db: deps.db, google: deps.google, now: deps.now })
+
+  /**
+   * Type-ahead for the To, Cc and Bcc lines: people this person has emailed (their Gmail Sent folder) or who emailed them.
+   * Private to the caller. An empty search warms the list while the composer is open.
+   */
+  app.get('/api/communications/contacts', ...auth, guard, gmailGate, wrap(async (req, res) => {
+    const user = current(req)
+    res.setHeader('Cache-Control', 'no-store')
+    let mailbox = ''
+    try {
+      const config = await deps.activeAccount(user.organizationId)
+      const row = await deps.settings(user.organizationId, user.id)
+      if (row?.gmail_refresh_token && row.gmail_config_revision === config.row.revision) mailbox = String(row.gmail_email || '')
+    } catch (error) { if (!(error instanceof IntegrationError)) throw error }
+    // Disconnected: nothing is suggested, and nothing about the old mailbox is kept.
+    if (!mailbox) { contacts.forget(user); res.json({ people: [], partial: false }); return }
+    res.json(await contacts.search(user, mailbox, async () => (await deps.accessGrant(req)).token, String(req.query.q ?? '').slice(0, 100)))
+  }))
 
   /**
    * Who a reply to this message should go to: the sender, with everyone else on the email copied.
@@ -227,6 +247,7 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
     }
 
     // 6. The email is out. Record it; problems here become warnings, never failures.
+    contacts.remember(user, fromEmail, [...to.addresses, ...cc.addresses, ...bcc.addresses])
     const warnings: string[] = []
     const first = tasks[0]
     const sentAt = new Date().toISOString()

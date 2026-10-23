@@ -23,7 +23,7 @@ files.forEach((file, index) => { if (file.number !== index + 1) throw new Error(
 if (!files.length) throw new Error('No migrations found.')
 const tables = [...new Set(files.flatMap(file => [...file.source.matchAll(/create table if not exists public\.([a-z_]+)/gi)].map(match => match[1])))].sort()
 const tableArray = `array[${tables.map(name => `'${name}'`).join(',')}]`
-const modules = '["action","clients","projects","inbox","items","documents","requirements","reports","ai","settings"]'
+const modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'
 const sections = files.map(file => {
   const { name, source } = file
   // Only remove standalone SQL transaction statements, never PL/pgSQL BEGIN blocks.

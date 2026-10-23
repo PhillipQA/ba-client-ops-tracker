@@ -76,5 +76,5 @@ export function workspaceAutoRefreshAllowed(view: string, clientId?: string | nu
   if (view === 'inbox') return false
   if (clientId || projectId) return true
   // The All Items / Tasks overview is deliberately cache-only until Refresh now.
-  return ['action', 'clients', 'projects', 'requirements', 'documents', 'reports', 'ai'].includes(view)
+  return ['action', 'clients', 'projects', 'requirements', 'trackers', 'documents', 'reports', 'ai'].includes(view)
 }

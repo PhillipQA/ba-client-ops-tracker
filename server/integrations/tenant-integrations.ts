@@ -42,14 +42,14 @@ export function encryptionKey(value = process.env.TENANT_INTEGRATION_MASTER_KEY 
   if (!/^[a-fA-F0-9]{64}$/.test(value)) throw new IntegrationError('Integration storage needs a 64-character hex TENANT_INTEGRATION_MASTER_KEY on the server.', 503)
   return Buffer.from(value, 'hex')
 }
-export function encryptSecret(secret: string, tenantId: string, kind: IntegrationKind | 'dochub' | 'dochub-webhook' | 'gmail-refresh' | 'gmail-oauth' | 'github-token' | 'gitlab-token' | 'drive-refresh', key = encryptionKey()) {
+export function encryptSecret(secret: string, tenantId: string, kind: IntegrationKind | 'dochub' | 'dochub-webhook' | 'gmail-refresh' | 'gmail-oauth' | 'github-token' | 'gitlab-token' | 'drive-refresh' | 'tracker-secret', key = encryptionKey()) {
   const iv = randomBytes(12)
   const cipher = createCipheriv('aes-256-gcm', key, iv)
   cipher.setAAD(Buffer.from(`${tenantId}:${kind}:v1`))
   const encrypted = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()])
   return ['v1', iv.toString('base64'), cipher.getAuthTag().toString('base64'), encrypted.toString('base64')].join('.')
 }
-export function decryptSecret(value: string, tenantId: string, kind: IntegrationKind | 'dochub' | 'dochub-webhook' | 'gmail-refresh' | 'gmail-oauth' | 'github-token' | 'gitlab-token' | 'drive-refresh', key = encryptionKey()) {
+export function decryptSecret(value: string, tenantId: string, kind: IntegrationKind | 'dochub' | 'dochub-webhook' | 'gmail-refresh' | 'gmail-oauth' | 'github-token' | 'gitlab-token' | 'drive-refresh' | 'tracker-secret', key = encryptionKey()) {
   try {
     const [version, iv, tag, body] = value.split('.')
     if (version !== 'v1') throw new Error()
