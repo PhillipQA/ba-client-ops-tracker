@@ -2,12 +2,12 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { AlertTriangle, ArrowLeft, ChevronDown, Download, Lock, Maximize2, Minimize2, Plus, RotateCcw, Search, Upload, X } from 'lucide-react'
 import {
   TRACKER_LIMITS, emptyCell, filterOpsFor, isEmptyCell, randomId,
-  type Cell, type Tracker, type TrackerColumn, type TrackerRow, type TrackerView,
+  type Cell, type ColumnAlign, type Tracker, type TrackerColumn, type TrackerRow, type TrackerView, isFrozenColumn,
 } from './trackerModel'
 import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
 import { exportCsv, exportFileName } from './trackerExport'
 import { TrackerApiError, loadAllRows, trackerApi } from './trackerApi'
-import TrackerGrid, { type Entry, type GridFocus } from './TrackerGrid'
+import TrackerGrid, { NUMBER_COLUMN_WIDTH, widthOf, type Entry, type GridFocus } from './TrackerGrid'
 import TrackerToolbar, { emptyWork, type Work } from './TrackerToolbar'
 import TrackerRowPanel from './TrackerRowPanel'
 import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
@@ -127,7 +127,13 @@ export default function TrackerScreen(props: Props) {
   const lookup = useMemo(() => makeLookup(props.items, props.accounts, props.today), [props.items, props.accounts, props.today])
   const people = useMemo(() => props.accounts.filter(account => account.status === 'Active').map(account => ({ id: account.id, name: account.name || account.username })), [props.accounts])
   const search = useDeferredValue(work.search)
-  const shownColumns = useMemo(() => { const list = columns.filter(column => !work.hidden.includes(column.id)); return list.length ? list : columns.slice(0, 1) }, [columns, work.hidden])
+  // Frozen columns come first, in their own order, so they can stay in view while the rest scrolls.
+  const shownColumns = useMemo(() => {
+    const list = columns.filter(column => !work.hidden.includes(column.id))
+    const shown = list.length ? list : columns.slice(0, 1)
+    return [...shown.filter(column => isFrozenColumn(column, columns)), ...shown.filter(column => !isFrozenColumn(column, columns))]
+  }, [columns, work.hidden])
+  const frozenIds = useMemo(() => new Set(shownColumns.filter(column => isFrozenColumn(column, columns)).map(column => column.id)), [shownColumns, columns])
   const visible = useMemo(() => visibleRows(rows, columns, { search, filters: work.filters, sort: work.sort, hidden: work.hidden }, lookup), [rows, columns, search, work.filters, work.sort, work.hidden, lookup])
   const entries = useMemo<Entry[]>(() => {
     const groupColumn = work.groupBy ? columns.find(column => column.id === work.groupBy) : undefined
@@ -282,6 +288,22 @@ export default function TrackerScreen(props: Props) {
     try { await applyColumns(next) } catch (error) { say('error', error instanceof Error ? error.message : 'The column could not be moved.') }
   }
 
+  /** Changes how one column looks (frozen, aligned, wider). It is saved with the tracker, so everyone sees it. */
+  const styleColumn = async (column: TrackerColumn, patch: Partial<Pick<TrackerColumn, 'frozen' | 'align' | 'width'>>) => {
+    const next = columns.map(item => {
+      if (item.id !== column.id) return item
+      const copy: TrackerColumn = { ...item, ...patch }
+      if (patch.width === undefined && 'width' in patch) delete copy.width
+      return copy
+    })
+    const widthNow = (item: TrackerColumn) => item.id === column.id && patch.width !== undefined ? patch.width : widthOf(item, item.id === columns[0]?.id)
+    if (patch.frozen === true || patch.width !== undefined) {
+      const used = next.filter(item => isFrozenColumn(item, next)).reduce((sum, item) => sum + widthNow(item), NUMBER_COLUMN_WIDTH)
+      if (used > 700 && (patch.frozen === true || isFrozenColumn(column, columns))) { say('error', 'The frozen columns would take up too much of the screen. Make them narrower, or unfreeze one first.'); return }
+    }
+    try { await applyColumns(next) } catch (error) { say('error', error instanceof Error ? error.message : 'The column could not be changed.') }
+  }
+
   // ---- views ----
   const applyView = (view?: TrackerView) => {
     setActiveViewId(view?.id || '')
@@ -419,11 +441,12 @@ export default function TrackerScreen(props: Props) {
 
     <section className="trk-grid-panel" aria-label={`${tracker.name} rows`}>
       <TrackerGrid
-        columns={shownColumns} entries={entries} lookup={lookup} people={people} canEdit={canEdit} sort={work.sort} selected={selected} focus={focus}
+        columns={shownColumns} frozen={frozenIds} primaryId={columns[0]?.id || ''} entries={entries} lookup={lookup} people={people} canEdit={canEdit} sort={work.sort} selected={selected} focus={focus}
         taskTitle={row => lookup.task(row.taskId)?.title || 'a deleted task'} rowName={row => rowTitle(columns, row)}
         onEdit={editCell} onOpenRow={row => setDrawerId(row.id)} onInvalid={message => say('error', message)}
         onHeader={(column, button) => { headerAnchor.current = button; setHeaderMenu(column) }}
         onAddColumn={canEdit ? () => setColumnDialog({ mode: 'add' }) : undefined}
+        onResize={canEdit ? (column, width) => void styleColumn(column, { width: width ?? undefined }) : undefined}
         onToggleRow={(rowId, on) => setSelected(current => { const next = new Set(current); if (on) next.add(rowId); else next.delete(rowId); return next })}
         onToggleAll={on => setSelected(on ? new Set(entries.flatMap(entry => entry.kind === 'row' ? [entry.row.id] : [])) : new Set())} />
       {rows.length === 0 && <div className="trk-empty"><p><strong>No rows yet.</strong></p><p className="trk-muted-text">{canEdit ? 'Add a row, or bring in a sheet you already keep.' : 'Nothing has been added to this tracker.'}</p>
@@ -446,6 +469,20 @@ export default function TrackerScreen(props: Props) {
         <button type="button" role="menuitem" onClick={() => { if (work.filters.length < TRACKER_LIMITS.filtersPerView) setWork({ ...work, filters: [...work.filters, { columnId: menuColumn.id, op: filterOpsFor(menuColumn.type)[0], value: '' }] }); setHeaderMenu(null); setPanel('filter') }}>Filter by this column</button>
         {menuColumn.type !== 'secret' && menuColumn.type !== 'longtext' && <button type="button" role="menuitem" onClick={() => { setWork({ ...work, groupBy: menuColumn.id }); setHeaderMenu(null) }}>Group by this column</button>}
         {shownColumns.length > 1 && <button type="button" role="menuitem" onClick={() => { setWork({ ...work, hidden: [...work.hidden, menuColumn.id] }); setHeaderMenu(null) }}>Hide in this view</button>}
+        {canEdit && <hr />}
+        {canEdit && <button type="button" role="menuitem" onClick={() => { setHeaderMenu(null); void styleColumn(menuColumn, { frozen: !isFrozenColumn(menuColumn, columns) }) }}>{isFrozenColumn(menuColumn, columns) ? 'Unfreeze column' : 'Freeze column'}</button>}
+        {canEdit && <div className="trk-menu-label" id="trk-align-label">Align text</div>}
+        {canEdit && <div className="trk-seg" role="group" aria-labelledby="trk-align-label">
+          {(['left', 'center', 'right'] as ColumnAlign[]).map(side => <button key={side} type="button" aria-pressed={(menuColumn.align || (menuColumn.type === 'number' ? 'right' : menuColumn.type === 'checkbox' ? 'center' : 'left')) === side}
+            onClick={() => { setHeaderMenu(null); void styleColumn(menuColumn, { align: side }) }}>{side[0].toUpperCase() + side.slice(1)}</button>)}
+        </div>}
+        {canEdit && <div className="trk-menu-label" id="trk-width-label">Width <small>(or drag the header edge)</small></div>}
+        {canEdit && <div className="trk-seg" role="group" aria-labelledby="trk-width-label">
+          {([['Narrow', 120], ['Standard', 0], ['Wide', 360], ['Extra wide', 560]] as const).map(([label, width]) => {
+            const now = menuColumn.width || 0
+            return <button key={label} type="button" aria-pressed={width === 0 ? now === 0 : now === width} onClick={() => { setHeaderMenu(null); void styleColumn(menuColumn, { width: width || undefined }) }}>{label}</button>
+          })}
+        </div>}
         {canEdit && <hr />}
         {canEdit && <button type="button" role="menuitem" onClick={() => { setHeaderMenu(null); setColumnDialog({ mode: 'edit', id: menuColumn.id }) }}>Edit column…</button>}
         {canEdit && menuIndex > 0 && <button type="button" role="menuitem" onClick={() => { setHeaderMenu(null); void moveColumn(menuColumn, -1) }}>Move left</button>}

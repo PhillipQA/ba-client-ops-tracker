@@ -40,7 +40,7 @@ export const COLUMN_TYPES: { type: ColumnType; label: string; group: ColumnGroup
   { type: 'select', label: 'Select', group: 'basic', about: 'One choice from a list you define.' },
   { type: 'multiselect', label: 'Multi-select', group: 'basic', about: 'Several choices from a list you define.' },
   { type: 'person', label: 'Person', group: 'basic', about: 'A teammate on this account.' },
-  { type: 'link', label: 'Link', group: 'basic', about: 'A web address, such as a Git issue or a Drive folder.' },
+  { type: 'link', label: 'Link', group: 'basic', about: 'A web address, such as a Git issue or a Drive folder. Type a short label first to show it instead of the address, like #1234 https://…' },
   { type: 'task_status', label: 'Task status', group: 'connected', about: 'The status of the task this row is linked to.' },
   { type: 'task_due', label: 'Task due date', group: 'connected', about: 'The due date of the linked task.' },
   { type: 'task_owner', label: 'Task owner', group: 'connected', about: 'Who the linked task is assigned to.' },
@@ -55,12 +55,38 @@ export const isColumnType = (type: unknown): type is ColumnType => typeof type =
 export const columnTypeLabel = (type: string) => COLUMN_TYPES.find(item => item.type === type)?.label || type
 
 export type SelectOption = { id: string; label: string; color: OptionColor }
+/**
+ * A Link cell holds a web address, optionally with a short label that is shown instead of the address: `[#1234](https://…)`.
+ * People can type `#1234 https://…` or `[#1234](https://…)`; both are stored in the bracket form.
+ */
+const LINK_MARKDOWN = /^\[([^\]\n]{1,120})\]\((\S+)\)$/
+const LINK_LABELLED = /^(.{1,120}?)\s+(https?:\/\/\S+)$/i
+const cleanLabel = (label: string) => label.replace(/[\u0000-\u001f\u007f\[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+export function splitLink(text: string): { label: string; address: string } {
+  const markdown = LINK_MARKDOWN.exec(text)
+  if (markdown) return { label: cleanLabel(markdown[1]), address: markdown[2] }
+  const labelled = LINK_LABELLED.exec(text)
+  if (labelled && !/^https?:\/\//i.test(labelled[1])) return { label: cleanLabel(labelled[1]), address: labelled[2] }
+  return { label: '', address: text }
+}
+/** Splits a stored Link value into what to show and where it goes. */
+export const parseLink = (value: string) => { const { label, address } = splitLink(value); return { label, href: address } }
+/** A stored Link value as people type and read it: `label address`. */
+export const linkToInput = (value: string) => { const { label, href } = parseLink(value); return label ? `${label} ${href}` : href }
+
 export type RevealBy = 'editors' | 'admins'
+export type ColumnAlign = 'left' | 'center' | 'right'
+export const COLUMN_WIDTH = { min: 60, max: 800 }
+/** The first column stays in view unless it was explicitly unfrozen; any other column only when it was frozen. */
+export const isFrozenColumn = (column: TrackerColumn, all: TrackerColumn[]) => column.frozen ?? all[0]?.id === column.id
 export type TrackerColumn = {
   id: string
   name: string
   type: ColumnType
   width?: number
+  /** Kept in view while scrolling sideways. Unset means "the first column only". */
+  frozen?: boolean
+  align?: ColumnAlign
   options?: SelectOption[]
   revealBy?: RevealBy
 }
@@ -172,8 +198,10 @@ export function normalizeColumns(input: unknown, previous: TrackerColumn[] = [])
     const column: TrackerColumn = { id, name, type: raw.type }
     if (raw.width !== undefined && raw.width !== null) {
       const width = Number(raw.width)
-      if (Number.isFinite(width)) column.width = Math.max(60, Math.min(800, Math.round(width)))
+      if (Number.isFinite(width)) column.width = Math.max(COLUMN_WIDTH.min, Math.min(COLUMN_WIDTH.max, Math.round(width)))
     }
+    if (typeof raw.frozen === 'boolean') column.frozen = raw.frozen
+    if (raw.align === 'left' || raw.align === 'center' || raw.align === 'right') column.align = raw.align
     if (raw.type === 'select' || raw.type === 'multiselect') column.options = normalizeOptions(raw.options, known?.options)
     if (raw.type === 'secret') column.revealBy = raw.revealBy === 'admins' ? 'admins' : 'editors'
     return column
@@ -245,13 +273,14 @@ export function cleanCell(column: TrackerColumn, raw: unknown): { ok: true; valu
       if (raw === null || raw === undefined || raw === '') return { ok: true, value: '' }
       const text = String(raw).trim()
       if (text.length > TRACKER_LIMITS.link) return bad(`${column.name} is too long.`)
+      const { label, address } = splitLink(text)
       try {
         // Keep the address as typed; only add https:// when no scheme was given.
-        const href = /^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `https://${text}`
+        const href = /^[a-z][a-z0-9+.-]*:/i.test(address) ? address : `https://${address}`
         const url = new URL(href)
         if (!['http:', 'https:'].includes(url.protocol) || !url.hostname.includes('.')) throw new Error()
-        return { ok: true, value: href }
-      } catch { return bad(`${column.name} needs a web address.`) }
+        return { ok: true, value: label ? `[${label}](${href})` : href }
+      } catch { return bad(`${column.name} needs a web address, optionally after a short label such as "#1234 https://…".`) }
     }
     case 'secret': return bad(`${column.name} is a Secret column. Its value is set separately.`)
     default: return bad(`${column.name} fills itself from the linked task.`)

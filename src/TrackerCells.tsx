@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Check, Link2 } from 'lucide-react'
-import { cleanCell, type Cell, type SelectOption, type TrackerColumn, type TrackerRow } from './trackerModel'
+import { cleanCell, linkToInput, parseLink, type Cell, type SelectOption, type TrackerColumn, type TrackerRow } from './trackerModel'
 import { shown, type Lookup } from './trackerQuery'
 import { Avatar, Pill, Popover, niceDate } from './trackerUi'
 
@@ -16,12 +16,12 @@ function linkLabel(href: string) {
 export function CellView({ column, row, lookup, canEdit, onToggle }: { column: TrackerColumn; row: TrackerRow; lookup: Lookup; canEdit: boolean; onToggle: (value: boolean) => void }): ReactNode {
   const value = row.cells[column.id]
   switch (column.type) {
-    case 'text': case 'longtext': return <span className="trk-text">{typeof value === 'string' ? value : ''}</span>
+    case 'text': case 'longtext': return <span className="trk-text" title={typeof value === 'string' && value.length > 24 ? value : undefined}>{typeof value === 'string' ? value : ''}</span>
     case 'number': return <span className="trk-number">{typeof value === 'number' ? numberFormat.format(value) : ''}</span>
     case 'date': return <span>{typeof value === 'string' && value ? niceDate(value) : ''}</span>
     case 'link': {
-      const href = typeof value === 'string' ? value : ''
-      return href ? <a className="trk-link" href={href} target="_blank" rel="noopener noreferrer" onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>{linkLabel(href)}</a> : null
+      const { label, href } = parseLink(typeof value === 'string' ? value : '')
+      return href ? <a className="trk-link" href={href} target="_blank" rel="noopener noreferrer" title={label ? href : undefined} onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}>{label || linkLabel(href)}</a> : null
     }
     case 'checkbox': return <input type="checkbox" className="trk-check" checked={value === true} disabled={!canEdit} aria-label={`${column.name}: ${value === true ? 'yes' : 'no'}`}
       onClick={event => event.stopPropagation()} onChange={event => onToggle(event.target.checked)} />
@@ -53,7 +53,7 @@ export const editable = (column: TrackerColumn) => ['text', 'number', 'date', 'l
 /** Text for the editing box. */
 function draftOf(column: TrackerColumn, value: Cell | undefined) {
   if (value === undefined || value === null) return ''
-  return column.type === 'number' ? String(value) : typeof value === 'string' ? value : ''
+  return column.type === 'number' ? String(value) : column.type === 'link' && typeof value === 'string' ? linkToInput(value) : typeof value === 'string' ? value : ''
 }
 
 type EditorProps = {
