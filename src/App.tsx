@@ -1657,7 +1657,7 @@ function App() {
         return record ? <RecordEditDialog key={`${editingRecord.kind}:${record.id}`} kind={editingRecord.kind} record={record} canRenameClient={currentUser.role === 'Administrator'} onClose={() => setEditingRecord(null)} onSave={updated => saveLifecycleRecord(editingRecord.kind, updated)} /> : null
       })()}
       {profileOpen && currentUser.accountType !== 'platform' && <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />}
-      <EmailComposerHost enabled={hasModule('inbox') && currentUser.role !== 'Viewer'} items={store.items} clients={store.clients} projects={store.projects} currentUser={currentUser} onSent={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
+      <EmailComposerHost enabled={hasModule('inbox') && currentUser.role !== 'Viewer'} items={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} currentUser={currentUser} onSent={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
     </div>
   )
 }

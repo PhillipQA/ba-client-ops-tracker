@@ -35,10 +35,21 @@ export function extractAddress(value: unknown): string {
   return (angle ? angle[1] : text).trim().replace(/^mailto:/i, '')
 }
 
+const splitParts = (input: unknown): string[] => Array.isArray(input) ? input.map(String) : String(input ?? '').split(/[;\n]|,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+
 /** Split a pasted list at commas, semicolons or new lines. Commas inside quotes belong to a display name. */
 export function splitAddresses(input: unknown): string[] {
-  const parts = Array.isArray(input) ? input.map(String) : String(input ?? '').split(/[;\n]|,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
-  return parts.map(extractAddress).filter(Boolean)
+  return splitParts(input).map(extractAddress).filter(Boolean)
+}
+
+/** Like splitAddresses, but keeps each display name: "Ana Cruz <ana@acme.com>" gives { name: "Ana Cruz", email: "ana@acme.com" }. */
+export function splitMailboxes(input: unknown): { name: string; email: string }[] {
+  return splitParts(input).map(part => {
+    const text = part.trim()
+    const angle = text.match(/^(.*?)<([^<>]+)>\s*$/)
+    const name = angle ? angle[1].trim().replace(/^"(.*)"$/, '$1').replace(/\\(.)/g, '$1').trim() : ''
+    return { name, email: extractAddress(text) }
+  }).filter(entry => entry.email)
 }
 
 export type ParsedRecipients = { addresses: string[]; invalid: string[] }

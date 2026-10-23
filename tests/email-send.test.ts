@@ -71,8 +71,8 @@ test('the message builder writes safe, readable MIME', () => {
 
 // ---- the send route ----
 type Calls = { sent: any[]; metadata: string[]; driveReads: string[]; commits: any[]; statusScope: string }
-function harness(options: { scope?: string; gmail?: (url: URL, init: any) => any; failInsert?: any; existing?: any } = {}) {
-  const rows: any[] = options.existing ? [options.existing] : []
+function harness(options: { scope?: string; gmail?: (url: URL, init: any) => any; failInsert?: any; existing?: any; disconnected?: boolean } = {}) {
+  const rows: any[] = options.existing ? ([] as any[]).concat(options.existing) : []
   const calls: Calls = { sent: [], metadata: [], driveReads: [], commits: [], statusScope: options.scope ?? `${READ_SCOPE} ${SEND_SCOPE}` }
   let state: any = {
     clients: [{ id: 'c1', name: 'Acme' }], projects: [{ id: 'p1', name: 'Rollout' }], activity: [],
@@ -84,6 +84,8 @@ function harness(options: { scope?: string; gmail?: (url: URL, init: any) => any
   class Query {
     conditions: ((x: any) => boolean)[] = []; action = 'read'; value: any
     select() { return this }
+    order() { return this }
+    limit() { return this }
     eq(key: string, value: any) { this.conditions.push(x => x[key] === value); return this }
     insert(value: any) { this.action = 'insert'; this.value = value; return this }
     update(value: any) { this.action = 'update'; this.value = value; return this }
@@ -113,7 +115,7 @@ function harness(options: { scope?: string; gmail?: (url: URL, init: any) => any
     db: { from: () => new Query() }, auth: [pass], guard: pass, gmailGate: pass, wrap: (fn: any) => async (req: any, res: any) => { try { await fn(req, res) } catch (e: any) { res.status(e instanceof IntegrationError ? e.status : 503).json({ error: e.message }) } },
     current: (req: any) => req.authUser,
     google: async (url: string, init: any) => { googleCalls.push(url); return (options.gmail || gmailDefault)(new URL(url), init) },
-    settings: async () => ({ gmail_email: 'me@acme.com', gmail_refresh_token: 'x', gmail_config_revision: 'v1' }),
+    settings: async () => options.disconnected ? {} : ({ gmail_email: 'me@acme.com', gmail_refresh_token: 'x', gmail_config_revision: 'v1' }),
     activeAccount: async () => ({ row: { revision: 'v1' } }),
     accessGrant: async () => ({ token: 'gmail-access', scope: calls.statusScope }),
     own: async (_req: any, id: string) => { if (id !== 'mail-1') throw new IntegrationError('Communication not found.', 404); return { id, source: 'Gmail', external_id: 'orig' } },
@@ -327,4 +329,30 @@ test('the reply recipients are read from Gmail for an email that was saved earli
     const result = await ask('/api/communications/mail-1/reply-recipients')
     assert.equal(result.status, 404);assert.match(result.body.error, /no longer in Gmail/)
   })
+})
+
+test('the composer can suggest people from the Sent folder and saved emails, and a new send adds its recipients', async () => {
+  const sentMessages: Record<string, string> = { m1: 'Ana Cruz <ana@acme.com>', m2: 'ana@acme.com, kim@acme.com' }
+  const h = harness({
+    existing: [{ tenant_id: 't', owner_user_id: 'u1', source: 'Gmail', sender: 'Sam Reyes <sam@acme.com>', received_at: '2026-10-20T00:00:00Z', source_labels: [] }],
+    gmail: (url: URL, init: any) => {
+      if (url.pathname.endsWith('/messages/send')) { const body = JSON.parse(init.body); return { id: 'sent-1', threadId: body.threadId || 'thread-1' } }
+      if (url.pathname.endsWith('/messages')) return { messages: Object.keys(sentMessages).map(id => ({ id })) }
+      return { internalDate: '1760000000000', payload: { headers: [{ name: 'To', value: sentMessages[decodeURIComponent(url.pathname.split('/').pop() || '')] }] } }
+    },
+  })
+  await serve(h, async ask => {
+    const found = await ask('/api/communications/contacts?q=an')
+    assert.equal(found.status, 200, JSON.stringify(found.body))
+    assert.deepEqual(found.body, { people: [{ email: 'ana@acme.com', name: 'Ana Cruz', hint: 'Emailed 2 times' }], partial: false })
+    assert.deepEqual((await ask('/api/communications/contacts?q=reyes')).body.people.map((p: any) => p.email), ['sam@acme.com'], 'Saved emails count too')
+    assert.deepEqual((await ask('/api/communications/contacts?q=lee')).body.people, [])
+    // Each person sees only their own list.
+    assert.deepEqual((await ask('/api/communications/contacts?q=ana', undefined, { 'x-user': 'u2' })).status, 200)
+    // An email sent from the tracker adds its recipients straight away.
+    assert.equal((await ask('/api/communications/send', valid({ to: 'Lee Park <lee.park@acme.com>', cc: '', driveFiles: [] }))).status, 200)
+    assert.deepEqual((await ask('/api/communications/contacts?q=lee')).body.people.map((p: any) => p.email), ['lee.park@acme.com'])
+  })
+  const off = harness({ disconnected: true })
+  await serve(off, async ask => assert.deepEqual((await ask('/api/communications/contacts?q=an')).body, { people: [], partial: false }))
 })

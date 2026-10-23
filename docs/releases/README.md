@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.92](v0.6.92.md) | Recipient suggestions in the email composer: people you emailed, people who emailed you, clients and teammates |
 | [v0.6.91](v0.6.91.md) | Reply by email copies everyone else on the original email in Cc, with one click to reply to the sender only |
 | [v0.6.90](v0.6.90.md) | Send document emails from the tracker, from your own Gmail, with Drive or computer attachments, a 10-second undo and a link to the task |
 | [v0.6.89](v0.6.89.md) | Google Drive in Document Creation: signed DRF and Sign Off PDFs file themselves, pick a COR from Drive, save generated documents |

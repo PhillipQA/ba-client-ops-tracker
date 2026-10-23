@@ -1,8 +1,25 @@
 # Changelog
 
-**Current application release: v0.6.91**
+**Current application release: v0.6.92**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.92 — Recipient suggestions in the email composer
+Released October 23, 2026.
+
+No database change and no new Google permission.
+
+### Added
+
+- **Suggestions while you type in To, Cc and Bcc**, like Gmail. Type part of a name or address and the matching people appear. Use the arrow keys with Enter or Tab, or click, to add one. The line stays plain text, so pasting a list still works, and typing in the middle of a line only replaces the person under the cursor.
+- **Where the suggestions come from:** people you have emailed (read from your Gmail Sent folder, most emailed first), people who emailed you (from the emails saved in Work Hub), the email addresses on your clients, and your active teammates. Each suggestion says where it came from. Automatic senders such as no-reply addresses are left out, and so is anyone already on the email.
+- **Ready as the composer opens.** The Sent folder is read in the background when the composer opens and kept for 10 minutes, so suggestions are quick. Someone you have just emailed from the tracker is available straight away.
+- **Private to you.** The list is built from your own mailbox, kept only in server memory (never saved in the database), and never shown to anyone else. It is dropped when you disconnect Gmail.
+
+### Notes
+
+- Only the recent Sent folder is read (the latest 120 sent emails), plus the last 500 saved emails. People you emailed longer ago, or Google Contacts and the company directory, are not included.
+- If Gmail cannot be reached, suggestions still come from saved emails, clients and teammates, and the Sent folder is tried again after two minutes.
 
 ## v0.6.91 — Replies copy everyone on the email
 Released October 23, 2026.
