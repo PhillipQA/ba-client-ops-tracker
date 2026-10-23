@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.93](v0.6.93.md) | Collapsible left menu (icons only, with name tooltips), colour fixes for the Light and Gray looks and Document Hub, and the Inter font bundled with the app |
 | [v0.6.92](v0.6.92.md) | Trackers: sheets you shape yourself, with Secret columns and task-connected columns (needs schema v24); recipient suggestions in the email composer and Document Creation |
 | [v0.6.91](v0.6.91.md) | Reply by email copies everyone else on the original email in Cc, with one click to reply to the sender only |
 | [v0.6.90](v0.6.90.md) | Send document emails from the tracker, from your own Gmail, with Drive or computer attachments, a 10-second undo and a link to the task |

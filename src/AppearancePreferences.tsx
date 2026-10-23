@@ -30,6 +30,6 @@ export default function AppearancePreferences({ user, onSave }: {
     </fieldset>
     <div className="appearance-footer"><p id={`${id}-note`}>Your background themes and document templates stay as they are.{!selected && ' Your original theme appearance is currently active.'}</p><button type="button" className="secondary" disabled={busy || !selected} onClick={() => void save(null)}>Use original theme appearance</button></div>
     {busy && <p className="settings-message" role="status">Saving appearance…</p>}
-    {feedback && <p className="settings-message" role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}
+    {feedback && <p className={feedback.error ? 'settings-message error' : 'settings-message'} role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}
   </div>
 }

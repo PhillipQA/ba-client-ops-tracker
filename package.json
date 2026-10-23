@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.6.92",
+  "version": "0.6.93",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -48,6 +48,7 @@
     "test:postgres": "node --import tsx --test tests/postgres-client.test.ts",
     "test:work-hub-tasks": "node --import tsx --test tests/work-hub-task-creation.test.mjs",
     "test:effort": "node --import tsx --test tests/effort.test.ts",
+    "test:sidebar": "node --import tsx --test tests/sidebar-state.test.ts",
     "test:trackers": "node --import tsx --test tests/trackers.test.ts tests/tracker-logic.test.ts"
   },
   "dependencies": {

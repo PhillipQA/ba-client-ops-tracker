@@ -143,7 +143,7 @@
 .trk-edit-anchor { display: flex; align-items: center; gap: 6px; width: 100%; height: 100%; padding: 0 10px; min-width: 0; }
 .trk-pills { display: inline-flex; gap: 4px; min-width: 0; overflow: hidden; }
 .trk-person { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-.trk-avatar { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--trk-accent-soft); color: var(--trk-accent); font-size: 10.5px; font-weight: 700; }
+.trk-avatar { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--trk-accent-soft); color: var(--trk-accent); font-size: 11.5px; font-weight: 700; }
 .trk-group-row { background: color-mix(in srgb, var(--trk-text) 4%, var(--trk-solid)); border-bottom: 1px solid var(--trk-line); }
 .trk-group-cell { position: sticky; left: 0; display: flex; align-items: center; gap: 8px; width: fit-content; height: 44px; padding: 0 14px; font-size: 13px; }
 .trk-group-cell span { color: var(--trk-muted); }

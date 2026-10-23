@@ -37,7 +37,7 @@
 .github-ticket-table small { display: block; margin-top: .35rem; color: var(--comm-muted); }
 .github-ticket-table time { display: block; font-size: 11px; min-width: 85px; color: var(--comm-muted); }
 .github-ticket-title { text-align: left; display: grid; gap: .5rem; border: 0; background: transparent; color: var(--comm-text); padding: 0; font-size: 13px; line-height: 1.5; width: 100%; }
-.github-ticket-title span { font-size: 10px; color: var(--comm-muted); }
+.github-ticket-title span { font-size: 11px; color: var(--comm-muted); }
 .github-state, .github-qa, .github-label { display: inline-flex; border: 1px solid var(--comm-border); border-radius: 6px; padding: .25rem .4rem; font-size: 11px; line-height: 1.4; white-space: nowrap; }
 .github-state--open { background: color-mix(in srgb,#22c55e 12%,var(--comm-surface)); }
 .github-state--closed { background: color-mix(in srgb,#a78bfa 15%,var(--comm-surface)); }
