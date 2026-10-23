@@ -1,8 +1,22 @@
 # Changelog
 
-**Current application release: v0.6.85**
+**Current application release: v0.6.86**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.86 — Download Gmail attachments from Work Hub
+Released October 23, 2026.
+
+### Added
+
+- Gmail attachments in **Work Hub** are now links. Click a file name in a message or its thread to download that file.
+- The file is fetched from Gmail at the moment you click and passed straight to your browser. It is **not saved** in the database or on the server. If the email or the attachment has since been deleted in Gmail, Work Hub says so.
+- Only the user whose mailbox the message came from can download its attachments. Every download checks the user, the account and Work Hub access first.
+- Newly synced messages also show each file's size. Messages synced before this version download the same way; they just don't show a size.
+- Files always download and never open inside the app. This also applies to HTML and image files, so a file sent by email cannot run inside the app.
+- No new Gmail permission is needed. Gmail continues to use read-only access.
+
+No database migration is needed.
 
 ## v0.6.85 — Readable BRD and FSD previews
 Released October 21, 2026.

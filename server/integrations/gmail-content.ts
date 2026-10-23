@@ -28,7 +28,59 @@ export async function gmailBodyText(payload: any, attachment: (id: string) => Pr
   for (const part of parts) { const text = await gmailBodyText(part,attachment); if(text) texts.push(text) }
   return texts.join('\n\n')
 }
-export type GmailSyncState = { labels: string[]; cursors: Record<string,string|null>; windowStart?: number; nextLabelIndex?: number; nextHeadIndex?: number }
+/** Metadata kept for each Gmail attachment. File contents are never stored; they are fetched from Gmail on download. */
+export type GmailAttachmentSummary = { name: string; partId: string; mimeType: string; size: number }
+export type GmailAttachmentPart = GmailAttachmentSummary & { attachmentId: string; data: string }
+export const GMAIL_MAX_ATTACHMENTS = 50
+/** Every named part, depth first, in the same order the earlier name-only list used, so stored indexes stay valid. */
+export function gmailAttachmentParts(payload: any): GmailAttachmentPart[] {
+  const found: GmailAttachmentPart[] = []
+  const visit = (part: any) => {
+    if (!part) return
+    if (part.filename) found.push({
+      name: String(part.filename).slice(0,255),
+      partId: String(part.partId ?? ''),
+      mimeType: String(part.mimeType || 'application/octet-stream').slice(0,255),
+      size: Number.isSafeInteger(part.body?.size) && part.body.size > 0 ? part.body.size : 0,
+      attachmentId: String(part.body?.attachmentId || ''),
+      data: String(part.body?.data || ''),
+    })
+    for (const child of part.parts || []) visit(child)
+  }
+  visit(payload)
+  return found.slice(0,GMAIL_MAX_ATTACHMENTS)
+}
+export function gmailAttachmentSummaries(payload: any): GmailAttachmentSummary[] {
+  return gmailAttachmentParts(payload).map(({name,partId,mimeType,size}) => ({name,partId,mimeType,size}))
+}
+/** Rows synced before attachment metadata existed hold plain file names. */
+export function storedAttachment(entry: unknown): { name: string; partId?: string } | null {
+  if (typeof entry === 'string') return entry ? { name: entry } : null
+  if (entry && typeof entry === 'object' && typeof (entry as any).name === 'string' && (entry as any).name) {
+    const partId = (entry as any).partId
+    return { name: (entry as any).name, ...(typeof partId === 'string' && partId ? { partId } : {}) }
+  }
+  return null
+}
+/** Find the Gmail part for a stored attachment. Part ids are stable for a message; attachment ids are not. */
+export function matchAttachmentPart(parts: GmailAttachmentPart[], wanted: { name: string; partId?: string }, index: number) {
+  if (wanted.partId) return parts.find(part => part.partId === wanted.partId && part.name === wanted.name) || null
+  if (parts[index]?.name === wanted.name) return parts[index]
+  const sameName = parts.filter(part => part.name === wanted.name)
+  return sameName.length === 1 ? sameName[0] : null
+}
+/** Content-Disposition that always downloads and cannot be used to inject headers or paths. */
+export function attachmentDisposition(name: string) {
+  const clean = name.replace(/[\u0000-\u001f\u007f"\\/]/g,'_').replace(/^\.+/,'').trim().slice(0,200) || 'attachment'
+  const ascii = clean.replace(/[^\x20-\x7e]/g,'_')
+  const encoded = encodeURIComponent(clean).replace(/['()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`
+}
+/** Only pass through a well-formed MIME type; anything else downloads as generic binary. */
+export function attachmentContentType(mimeType: string) {
+  return /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/i.test(mimeType) ? mimeType.toLowerCase() : 'application/octet-stream'
+}
+export type GmailSyncState ={ labels: string[]; cursors: Record<string,string|null>; windowStart?: number; nextLabelIndex?: number; nextHeadIndex?: number }
 export const GMAIL_SYNC_WINDOW_DAYS = 10
 export function gmailWindowStart(previous: GmailSyncState | undefined, now = Date.now()) {
   const current = Math.floor(now / 1000)

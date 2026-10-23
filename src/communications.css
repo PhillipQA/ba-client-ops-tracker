@@ -106,3 +106,15 @@
 
 .work-hub-shared-inquiries > summary { cursor: pointer; padding: 1rem; font-weight: 650; }
 .work-hub-shared-inquiries > .callout { margin: .7rem 0; }
+.communication-attachments { white-space: normal; margin-top: .9rem; padding-top: .75rem; border-top: 1px dashed var(--comm-border); }
+.communication-attachments > strong { display: block; margin-bottom: .4rem; color: var(--comm-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.communication-attachments ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.communication-attachments li { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; min-width: 0; }
+.communication-attachments small { color: var(--comm-muted); }
+.communication-attachments p[role="alert"] { margin: .5rem 0 0; color: #b42318; }
+.communication-attachment-link, .communication-attachment-name { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.communication-attachment-link { padding: 0; border: 0; background: none; color: var(--comm-accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.communication-attachment-link:hover:not(:disabled) { text-decoration-thickness: 2px; }
+.communication-attachment-link:focus-visible { outline: 2px solid var(--comm-accent); outline-offset: 2px; border-radius: 4px; }
+.communication-attachment-link:disabled { cursor: progress; opacity: .7; }
+.communication-attachment-link svg, .communication-attachment-name svg { flex-shrink: 0; }
