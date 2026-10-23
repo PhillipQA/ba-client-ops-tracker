@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.88](v0.6.88.md) | Save to Drive works on every message in an email thread |
 | [v0.6.87](v0.6.87.md) | Save Gmail attachments to a shared Google Drive under Client / Project / Task / Subtask |
 | [v0.6.86](v0.6.86.md) | Download Gmail attachments from Work Hub without storing them |
 | [v0.6.85](v0.6.85.md) | Readable BRD and FSD preview pages in dark appearance and wallpaper themes |

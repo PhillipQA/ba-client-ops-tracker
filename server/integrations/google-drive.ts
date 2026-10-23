@@ -288,10 +288,21 @@ export function registerDrive(app: Express, deps: Deps) {
     try { await liveConnection(user.organizationId); available = canWriteTasks(user) } catch { available = false }
     res.json({ available })
   }))
+  /** A task is linked to the message that was open when it was created, but a thread shows every message in it, each with its own attachments. So the whole thread, owned by this user, counts. */
+  const threadTaskIds = async (message: any, tenantId: string, userId: string) => {
+    const own = linkedTaskIds(message)
+    if (!message?.thread_id) return own
+    try {
+      const { data, error } = await db.from('user_communications').select('linked_task_id,linked_task_ids')
+        .eq('tenant_id', tenantId).eq('owner_user_id', userId).eq('source', message.source).eq('thread_id', message.thread_id).limit(500)
+      if (error) return own
+      return [...new Set([...own, ...(data || []).flatMap((row: any) => linkedTaskIds(row))])]
+    } catch { return own }
+  }
   app.get('/api/communications/:id/drive-targets', ...auth, guard, gmailGate, wrap(async (req, res) => {
-    const message = await deps.own(req, String(req.params.id)), state = (await deps.load(current(req).organizationId)).data
+    const user = current(req), message = await deps.own(req, String(req.params.id)), state = (await deps.load(user.organizationId)).data
     if (!state) throw new IntegrationError('Workspace data is unavailable.', 503)
-    res.json({ targets: driveTargets(state, linkedTaskIds(message)) })
+    res.json({ targets: driveTargets(state, await threadTaskIds(message, user.organizationId, user.id)) })
   }))
   app.post('/api/communications/:id/attachments/:index/drive', ...auth, guard, gmailGate, wrap(async (req, res) => {
     const user = current(req), tenantId = user.organizationId
@@ -303,7 +314,7 @@ export function registerDrive(app: Express, deps: Deps) {
     await deps.inOrder(tenantId, async () => {
       const before = (await deps.load(tenantId)).data
       if (!before) throw new IntegrationError('Workspace data is unavailable.', 503)
-      if (!driveTargets(before, linkedTaskIds(message)).some(target => target.id === taskId)) throw new IntegrationError('Choose an active task or subtask created from this email.', 404)
+      if (!driveTargets(before, await threadTaskIds(message, tenantId, user.id)).some(target => target.id === taskId)) throw new IntegrationError('Choose an active task or subtask created from this email.', 404)
       const { row, config } = await liveConnection(tenantId)
       const download = await deps.attachment(req, message, index)
       const task = before.items.find((item: any) => item.id === taskId)

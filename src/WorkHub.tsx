@@ -43,8 +43,8 @@ function AttachmentList({message,drive}:{message:Message;drive?:DriveOptions}) {
     finally { setPending(null) }
   }
   const openPicker=async(index:number)=>{
-    setError('');setDriveNote('');setPicking(index)
-    if(targets) return
+    // Always reload: a task may have been created since the picker was last opened.
+    setError('');setDriveNote('');setPicking(index);setTargets(null)
     try {
       const result=await request(`/api/communications/${encodeURIComponent(message.id)}/drive-targets`) as {targets:DriveTarget[]}
       setTargets(result.targets);setTarget(result.targets[0]?.id || '')
@@ -75,7 +75,7 @@ function AttachmentList({message,drive}:{message:Message;drive?:DriveOptions}) {
     {pending===index ? <small role="status">{picking===index ? 'Saving to Drive…' : 'Downloading…'}</small> : null}
     {saved[index] && <a className="communication-drive-saved" href={saved[index].url} target="_blank" rel="noopener noreferrer">Saved to {saved[index].where} · Open in Drive</a>}</div>
     {picking===index && <div className="communication-drive-picker">{targets===null ? <small role="status">Loading tasks…</small> : targets.length===0
-      ? <><p>Create a task from this email first, then save the file to it or one of its subtasks.</p><button type="button" className="secondary compact" onClick={()=>setPicking(null)}>Close</button></>
+      ? <><p>No task has been created from this email thread yet. Use “Create a project task” below (tasks made on the Tasks page are not linked to emails), then save the file to it or one of its subtasks.</p><button type="button" className="secondary compact" onClick={()=>setPicking(null)}>Close</button></>
       : <><label>Save “{file.name}” to<select value={target} disabled={pending!==null} onChange={e=>setTarget(e.target.value)}>{targets.map(t=><option key={t.id} value={t.id}>{targetLabel(t)}</option>)}</select></label>
         <small>Goes to the team Drive folder Client / Project / Task{targets.find(t=>t.id===target)?.kind==='Subtask' ? ' / Subtask' : ''}. Everyone with access to that Drive can open it.</small>
         <div className="communication-drive-actions"><button type="button" className="primary compact" disabled={pending!==null || !target} onClick={()=>void saveToDrive(index)}>{pending===index ? 'Saving…' : 'Save'}</button><button type="button" className="secondary compact" disabled={pending!==null} onClick={()=>setPicking(null)}>Cancel</button></div></>}</div>}
