@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowLeft, ChevronDown, Download, Lock, Plus, RotateCcw, Search, Upload, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ChevronDown, Download, Lock, Maximize2, Minimize2, Plus, RotateCcw, Search, Upload, X } from 'lucide-react'
 import {
   TRACKER_LIMITS, emptyCell, filterOpsFor, isEmptyCell, randomId,
   type Cell, type Tracker, type TrackerColumn, type TrackerRow, type TrackerView,
@@ -62,6 +62,15 @@ export default function TrackerScreen(props: Props) {
   const [viewName, setViewName] = useState('')
   const headerAnchor = useRef<HTMLElement | null>(null)
   const moreButton = useRef<HTMLButtonElement>(null)
+  // Full-width view: the page header (Add client, Add task…) is hidden so the grid gets the whole height. The left menu stays.
+  const [expanded, setExpanded] = useState(() => { try { return localStorage.getItem('ba.tracker.expanded') === '1' } catch { return false } })
+  const toggleExpanded = () => setExpanded(current => { const next = !current; try { localStorage.setItem('ba.tracker.expanded', next ? '1' : '0') } catch { /* not remembered */ } return next })
+  useEffect(() => {
+    const shell = document.querySelector('.app-shell')
+    if (!shell || !expanded) return
+    shell.classList.add('trk-expanded')
+    return () => shell.classList.remove('trk-expanded')
+  }, [expanded])
   const saveViewButton = useRef<HTMLButtonElement>(null)
   const queues = useRef(new Map<string, { tail: Promise<void>; pending: number }>())
   const focusNonce = useRef(0)
@@ -358,6 +367,7 @@ export default function TrackerScreen(props: Props) {
       <div className="trk-header-actions">
         {canEdit && <button type="button" className="trk-button" onClick={() => setImporting(true)}><Upload size={14} aria-hidden="true" /> Import</button>}
         <button type="button" className="trk-button" onClick={download} title="Exports the rows and columns you see now"><Download size={14} aria-hidden="true" /> Export CSV</button>
+        <button type="button" className="trk-button" aria-pressed={expanded} onClick={toggleExpanded} title={expanded ? 'Show the page header again' : 'Hide the page header to give the grid the whole screen'}>{expanded ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />} {expanded ? 'Exit full view' : 'Full view'}</button>
         <button type="button" className="trk-button" ref={moreButton} aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen(open => !open)}>More <ChevronDown size={14} aria-hidden="true" /></button>
       </div>
     </header>

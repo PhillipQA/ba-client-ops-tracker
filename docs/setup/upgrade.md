@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.6.93.**
+**Current application version: v0.6.94.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.93**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.94**.
 
 ## Database requirements
 
@@ -43,7 +43,7 @@ Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations m
 - **v0.6.78, v0.6.79, v0.6.81, v0.6.82, v0.6.84, v0.6.85 and v0.6.86 add no new database migration.**
 - **v0.6.87:** apply v23 before connecting Google Drive. It works on Supabase and on plain PostgreSQL such as Northflank: Supabase-only roles and row-level security are applied only where those roles exist. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_drive_accounts` table afterwards. Until v23 is applied, Settings and Work Hub say so and nothing else changes. Tasks created from an email before v23 are still offered when saving that email's attachments, but only the most recent one.
 - **v0.6.92:** apply v24 before using Trackers. It works on Supabase and on plain PostgreSQL such as Northflank (row-level security is applied only where the Supabase roles exist). On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_trackers`, `tenant_tracker_rows` and `tenant_tracker_changes` tables afterwards. Until v24 is applied, the Trackers page says the migration is missing and nothing else changes. After applying it, Administrators see **Trackers** when they next sign in; give other people the **Trackers** module under Users & Permissions → Module access. Secret cells are encrypted with `TENANT_INTEGRATION_MASTER_KEY`, so keep that key: if it changes, stored Secret values can no longer be revealed. The recipient suggestions in the same release need no database change.
-- **v0.6.93 adds no new database migration.**
+- **v0.6.93 and v0.6.94 add no new database migration.**
 - Built-in Go Live generation works with the existing template table; v21 enables custom Go Live uploads/removal.
 - The built-in UAT Sign Off, UAT Deployment Approval and Training Sign Off forms also work with the existing template table. Apply v22 before uploading or removing custom templates for them in Settings → Templates; until then those cards can only use the built-in template.
 - For installations earlier than these rows, consult the [historical release notes](../releases/README.md) for prior schema prerequisites.
@@ -72,6 +72,7 @@ Replace the ZIP path with the actual patch and follow its version-specific instr
 - Check the displayed application version.
 - Open an existing workspace and confirm clients, projects and tasks are present.
 - Check integrations you use, existing evidence downloads and document generation.
+- For v0.6.94 (no database change): hard refresh, open a tracker and click **Full view**. Confirm the top bar (Add client, Add task) disappears, the left menu stays and the grid fills the screen, then click **Exit full view**.
 - For v0.6.93 (no database change): hard refresh (Ctrl+Shift+R). Click the panel button beside the logo to collapse the left menu to icons, hover an icon and confirm its name appears, then reload and confirm the menu stays collapsed. In **My Themes** switch between Dark, Light and Gray and confirm no panel stays dark in the light looks.
 - For v0.6.92, after applying v24: open **Trackers**, create a tracker from a template and add a row. Add a **Secret** column, save a fictional value, and confirm the grid shows only dots until you click **Reveal** in the row panel, and that the row's **History** lists the reveal without the value. Link the row to a task and confirm **Task status** fills in. Sign in as a Viewer and confirm the tracker opens but cannot be changed. Recipient suggestions (no database change): open **New email**, type the first letters of someone you have emailed before, and confirm they appear in the suggestions with how often you emailed them. Choose one with the arrow keys and Enter and confirm the address is added. In Document Creation, type a teammate's or client contact's full name in a signatory **Name** field, click away, and confirm their email fills in with a note to check it; a name nobody knows must leave the email empty.
 - For v0.6.91 (no database change): open an email in Work Hub that was sent to several people, click **Reply by email**, and confirm the other people appear in Cc with a note offering **Reply to sender only**.
