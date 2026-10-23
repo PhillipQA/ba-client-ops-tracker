@@ -1,4 +1,4 @@
-import { type Cell, type TrackerColumn, type TrackerRow, type ViewFilter, type TrackerView } from './trackerModel'
+import { linkToInput, type Cell, type TrackerColumn, type TrackerRow, type ViewFilter, type TrackerView } from './trackerModel'
 import type { DocHubLink } from './dochub'
 import type { UserAccount, WorkItem } from './types'
 
@@ -85,7 +85,8 @@ function connected(column: TrackerColumn, row: TrackerRow, lookup: Lookup): Show
 export function shown(column: TrackerColumn, row: TrackerRow, lookup: Lookup): Shown {
   const value: Cell | undefined = row.cells[column.id]
   switch (column.type) {
-    case 'text': case 'longtext': case 'link': { const text = typeof value === 'string' ? value : ''; return { text, key: text.toLowerCase() } }
+    case 'link': { const text = typeof value === 'string' ? linkToInput(value) : ''; return { text, key: text.toLowerCase() } }
+    case 'text': case 'longtext': { const text = typeof value === 'string' ? value : ''; return { text, key: text.toLowerCase() } }
     case 'number': return typeof value === 'number' ? { text: String(value), key: value } : { text: '', key: '' }
     case 'date': { const text = typeof value === 'string' ? value : ''; return { text, key: text } }
     case 'checkbox': return value === true ? { text: 'Yes', key: 1, tone: 'green' } : { text: 'No', key: 0 }
