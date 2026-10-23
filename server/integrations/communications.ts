@@ -2,6 +2,8 @@ import { registerGitlab } from './gitlab'
 import { registerGithub } from './github'
 import { registerDrive } from './google-drive'
 import { attachmentContentType, attachmentDisposition, gmailAttachmentParts, gmailAttachmentSummaries, gmailBodyText, gmailWindowStart, matchAttachmentPart, storedAttachment, syncGmailPages } from './gmail-content'
+import { registerOutbound } from './gmail-outbound'
+import { hasScope, READ_SCOPE, SEND_SCOPE } from './gmail-send'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
@@ -11,7 +13,7 @@ import { defaultWaitingOn } from '../../src/waitingOn'
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 const CALLBACK = '/api/communications/gmail/callback'
 const COOKIE = 'ba_gmail_oauth'
-const oauthStates = new Map<string, { token: string; userId: string; tenantId: string; verifier: string; cookie: string; revision: string; expires: number }>()
+const oauthStates = new Map<string, { token: string; userId: string; tenantId: string; verifier: string; cookie: string; revision: string; expires: number; send?: boolean }>()
 const gmailKind = 'gmail-refresh' as const
 type GmailCredentials = { clientId: string; clientSecret: string; redirectUri: string }
 const google = async (url: string, init: RequestInit, timeout = 20000) => {
@@ -309,9 +311,12 @@ export function registerCommunications(app: Express, deps: {
     const verifier=randomBytes(32).toString('base64url'),state=randomBytes(32).toString('hex'),cookie=randomBytes(32).toString('hex')
     for(const [key,value] of oauthStates) if(value.userId===user.id && value.tenantId===user.organizationId) oauthStates.delete(key)
     if(oauthStates.size>1000) throw new IntegrationError('Too many pending Gmail connections. Try again shortly.',429)
-    oauthStates.set(state,{token:session.token,userId:user.id,tenantId:user.organizationId,verifier,cookie,revision:config.row.revision,expires:Date.now()+600000})
+    // Sending is opt-in (?send=1). A plain reconnect keeps it if the person had already allowed it, so reconnecting never drops it.
+    let send=req.query.send==='1'
+    if(!send) { try { send=hasScope((await accessGrant(req)).scope,SEND_SCOPE) } catch { /* Not connected yet, or the old token no longer works. */ } }
+    oauthStates.set(state,{token:session.token,userId:user.id,tenantId:user.organizationId,verifier,cookie,revision:config.row.revision,expires:Date.now()+600000,send})
     res.cookie(COOKIE,cookie,{httpOnly:true,secure:origin(req).startsWith('https:'),sameSite:'lax',path:CALLBACK,maxAge:600000})
-    const query=new URLSearchParams({client_id:config.credentials.clientId,redirect_uri:config.credentials.redirectUri,response_type:'code',scope:'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email',access_type:'offline',prompt:'consent select_account',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
+    const query=new URLSearchParams({client_id:config.credentials.clientId,redirect_uri:config.credentials.redirectUri,response_type:'code',scope:`${READ_SCOPE}${send?` ${SEND_SCOPE}`:''} https://www.googleapis.com/auth/userinfo.email`,access_type:'offline',prompt:'consent select_account',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
     res.json({url:`https://accounts.google.com/o/oauth2/v2/auth?${query}`})
   }))
   app.get(CALLBACK, async (req,res) => {
@@ -331,7 +336,7 @@ export function registerCommunications(app: Express, deps: {
       if(req.query.error) {result='denied';throw new Error('Denied')}
       if(typeof req.query.code!=='string' || req.query.code.length>4096) throw new Error('Missing code')
       const grant=await google('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code:req.query.code,client_id:config.credentials.clientId,client_secret:config.credentials.clientSecret,redirect_uri:config.credentials.redirectUri,code_verifier:saved.verifier,grant_type:'authorization_code'})})
-      if(!grant.access_token || !grant.refresh_token || !String(grant.scope || '').split(' ').includes('https://www.googleapis.com/auth/gmail.readonly')) throw new Error('Gmail did not grant offline read access')
+      if(!grant.access_token || !grant.refresh_token || !hasScope(grant.scope,READ_SCOPE)) throw new Error('Gmail did not grant offline read access')
       const identity=await google('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:`Bearer ${grant.access_token}`}})
       if(!identity.email || identity.email_verified!==true) throw new Error('Google identity is unverified')
       const stillSignedIn=deps.sessionByToken(saved.token)
@@ -346,7 +351,8 @@ export function registerCommunications(app: Express, deps: {
         gmail_sync_state:{},gmail_config_revision:saved.revision,gmail_labels:sameMailbox?previous?.gmail_labels || []:[],
         gmail_label_catalog:sameMailbox?previous?.gmail_label_catalog || []:[],updated_at:new Date().toISOString()},{onConflict:'tenant_id,user_id'})
       if(error) throw error
-      result='connected'
+      // Google lets people untick individual permissions, so report what was actually granted.
+      result=saved.send ? (hasScope(grant.scope,SEND_SCOPE)?'send-enabled':'send-denied') : 'connected'
     } catch { /* Never log authorization codes, tokens, or provider details. */ }
     res.clearCookie(COOKIE,{path:CALLBACK,httpOnly:true,sameSite:'lax'})
     res.redirect(303,`/#gmail=${result}`)
@@ -426,14 +432,18 @@ export function registerCommunications(app: Express, deps: {
       throw error
     } finally {if(gmailSyncJobs.get(key)===job)gmailSyncJobs.delete(key)}
   }))
-  async function accessToken(req: Request) {
+  /** A fresh Gmail access token and the permissions it carries. */
+  async function accessGrant(req: Request) {
     const user=current(req),row=await settings(user.organizationId,user.id)
     const config=await activeAccount(user.organizationId)
     if(!row?.gmail_refresh_token || row.gmail_config_revision!==config.row.revision) throw new IntegrationError('Connect your Gmail account again. The account OAuth configuration changed.',409)
     const refresh=decryptSecret(row.gmail_refresh_token,`${user.organizationId}:${user.id}`,gmailKind)
     const grant=await google('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:config.credentials.clientId,client_secret:config.credentials.clientSecret,refresh_token:refresh,grant_type:'refresh_token'})})
-    return String(grant.access_token)
+    return {token:String(grant.access_token),scope:String(grant.scope || '')}
   }
+  async function accessToken(req: Request) { return (await accessGrant(req)).token }
+  // Sending email from the tracker: composer status and the send call. Needs Drive's file lookup for attachments.
+  registerOutbound(app,{db,auth,guard,gmailGate,wrap,current,google,settings,activeAccount,accessGrant,own,load:deps.load,commit:deps.commit,inOrder:createTaskInOrder,driveFile:drive.taskFile})
   registerGithub(app,{db,requireAuth:deps.requireAuth,requireTenant:deps.requireTenant,guard,load:deps.load,commit:deps.commit,openStatus:deps.openStatus})
   registerGitlab(app,{db,requireAuth:deps.requireAuth,requireTenant:deps.requireTenant,guard,load:deps.load,commit:deps.commit,openStatus:deps.openStatus})
   const timer=setInterval(()=>{const now=Date.now();for(const [key,value] of oauthStates) if(value.expires<now) oauthStates.delete(key)},60000);timer.unref()

@@ -7,6 +7,7 @@ import RequirementsTraceability from './RequirementsTraceability'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
 import { DocHubHistory } from './DocHubPanel'
+import { composeEmail, EmailComposerHost, useEmailEnabled } from './EmailComposer'
 import { docHubLabels } from './dochub'
 import ActivityCommentPreview from './ActivityCommentPreview'
 import NotificationCenter from './NotificationCenter'
@@ -397,7 +398,7 @@ function App() {
   const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.hash.slice(1)).get('reset-password'))
   const [store, setStore] = useState<Store>(initialStore)
   // Returning from the Google Drive consent screen opens Settings so the result is shown; others fall back below.
-  const [view, setView] = useState<View>(() => new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'settings' : 'action')
+  const [view, setView] = useState<View>(() => { const hash = new URLSearchParams(window.location.hash.slice(1)); return hash.has('drive') ? 'settings' : hash.has('gmail') ? 'inbox' : 'action' })
   const [query, setQuery] = useState('')
   const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
   const [clientLayout, setClientLayout] = useState<ClientLayout>('tiles')
@@ -1656,6 +1657,7 @@ function App() {
         return record ? <RecordEditDialog key={`${editingRecord.kind}:${record.id}`} kind={editingRecord.kind} record={record} canRenameClient={currentUser.role === 'Administrator'} onClose={() => setEditingRecord(null)} onSave={updated => saveLifecycleRecord(editingRecord.kind, updated)} /> : null
       })()}
       {profileOpen && currentUser.accountType !== 'platform' && <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />}
+      <EmailComposerHost enabled={hasModule('inbox') && currentUser.role !== 'Viewer'} items={store.items} clients={store.clients} projects={store.projects} currentUser={currentUser} onSent={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
     </div>
   )
 }
@@ -2305,17 +2307,18 @@ function evidenceDate(value: string) {
 
 /** Gmail attachments saved to the team Google Drive from Work Hub. Links only; the files live in Drive. */
 function TaskDriveFiles({ item }: { item: WorkItem }) {
+  const canEmail = useEmailEnabled()
   const files = (item.driveFiles || []).filter((file) => file && file.id && file.name && /^https:\/\/drive\.google\.com\//.test(String(file.url || '')))
   if (!files.length) return null
   return <section className="subtask-evidence-panel span-2 task-drive-files">
     <div className="subtask-evidence-heading">
-      <div><strong><HardDrive size={15} /> Saved to Google Drive</strong><span>Email attachments filed in the team Drive under this {item.parentTaskId ? 'subtask' : 'task'}’s folder.</span></div>
+      <div><strong><HardDrive size={15} /> Saved to Google Drive</strong><span>Email attachments and documents filed in the team Drive under this {item.parentTaskId ? 'subtask' : 'task'}’s folder.</span></div>
       <span className="count-pill">{files.length}</span>
     </div>
     <div className="subtask-evidence-list">
       {files.map((file) => <div className="subtask-evidence-item" key={file.id}>
         <div className="subtask-evidence-file"><Paperclip size={15} /><div><strong title={file.name}>{file.name}</strong><span>{file.size ? `${evidenceSize(file.size)} · ` : ''}{evidenceDate(file.savedAt)}{file.savedByName ? ` · ${file.savedByName}` : ''}</span></div></div>
-        <div className="subtask-evidence-actions"><a className="secondary compact" href={file.url} target="_blank" rel="noopener noreferrer">Open in Drive</a></div>
+        <div className="subtask-evidence-actions"><a className="secondary compact" href={file.url} target="_blank" rel="noopener noreferrer">Open in Drive</a>{canEmail && <button type="button" className="secondary compact" title="Email this file from your Gmail, linked to this work" onClick={() => composeEmail({ taskIds: [item.id], driveFiles: [{ taskId: item.id, fileId: file.id, name: file.name, size: file.size || 0 }], subject: file.name.replace(/\.[^.]+$/, '') })}>Email</button>}</div>
       </div>)}
     </div>
   </section>

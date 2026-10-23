@@ -174,6 +174,30 @@ test('account OAuth setup is gated; Gmail callback and persisted label names sta
     const callback=await local(`/api/communications/gmail/callback?state=${state}&code=authorization-code`,'GET',undefined,'user-a',cookie.split(';')[0])
     assert.equal(callback.status,303);assert.equal(callback.headers.get('location'),' /#gmail=connected'.trim())
     const status=await local('/api/communications/settings');assert.equal((await status.json()).gmailConnected,true)
+    // Reading mail never asks for permission to send. Sending is a separate, opt-in step.
+    assert.doesNotMatch(url.searchParams.get('scope') || '',/gmail\.send/)
+    assert.deepEqual((await (await local('/api/communications/send/status')).json()).canSend,false)
+    {
+      const readFetch=globalThis.fetch
+      const withScope=(scope:string)=>{globalThis.fetch=(async(input:any,init:any)=>{
+        if(String(input)==='https://oauth2.googleapis.com/token'){return new Response(JSON.stringify({access_token:'access',refresh_token:'refresh-send',scope,expires_in:3600}),{status:200,headers:{'Content-Type':'application/json'}})}
+        return readFetch(input,init)}) as typeof fetch}
+      const allow=async(scope:string)=>{
+        const start=await local('/api/communications/gmail/connect?send=1');const link=new URL((await start.json()).url)
+        assert.match(link.searchParams.get('scope') || '',/gmail\.readonly/);assert.match(link.searchParams.get('scope') || '',/gmail\.send/)
+        withScope(scope)
+        return local(`/api/communications/gmail/callback?state=${link.searchParams.get('state')}&code=send-code`,'GET',undefined,'user-a',(start.headers.get('set-cookie') || '').split(';')[0])
+      }
+      // Google lets people untick one permission: the connection still works, and the tracker says sending was not allowed.
+      const denied=await allow('https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email');assert.equal(denied.headers.get('location'),'/#gmail=send-denied')
+      assert.equal((await (await local('/api/communications/settings')).json()).gmailConnected,true)
+      assert.equal((await (await local('/api/communications/send/status')).json()).canSend,false)
+      const allowed=await allow('https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email');assert.equal(allowed.headers.get('location'),'/#gmail=send-enabled')
+      const ready=await (await local('/api/communications/send/status')).json();assert.deepEqual([ready.connected,ready.canSend,ready.email],[true,true,'alice@example.com'])
+      // Reconnecting later keeps the permission instead of silently dropping it.
+      const again=new URL((await (await local('/api/communications/gmail/connect')).json()).url);assert.match(again.searchParams.get('scope') || '',/gmail\.send/)
+      globalThis.fetch=readFetch
+    }
     assert.equal((await local('/api/communications/gmail/labels')).status,200)
     assert.deepEqual((await (await local('/api/communications/settings')).json()).gmailLabelCatalog,[{id:'Label_123',name:'POS Registration'}])
     assert.equal(labelCalls,1,'Reloading settings must use stored label names without calling Google')

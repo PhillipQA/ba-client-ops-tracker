@@ -1,0 +1,57 @@
+/* Sending email from the tracker. Colors inherit from the surrounding theme; the floating bar is theme-independent like the comment popover. */
+.modal.email-composer { position: fixed; inset: 0; margin: auto; width: min(760px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); padding: 0; overflow: hidden; box-shadow: 0 24px 70px rgba(0, 0, 0, .4); }
+.email-composer[open] { display: flex; flex-direction: column; }
+.email-composer::backdrop { background: rgba(0, 0, 0, .64); }
+.email-composer .modal-head { flex: 0 0 auto; gap: 16px; padding: 16px 20px; }
+.email-composer .modal-head > div { min-width: 0; }
+.email-composer .modal-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; }
+.email-composer .modal-head p { margin: 4px 0 0; font-size: 12px; opacity: .75; overflow-wrap: anywhere; }
+.email-composer .modal-head .icon-button { flex: 0 0 auto; }
+.email-composer-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; gap: 14px; align-content: start; padding: 16px 20px; }
+.email-composer-body p { margin: 0; }
+.email-fields { display: grid; gap: 10px; min-width: 0; }
+.email-fields label { display: grid; gap: 4px; min-width: 0; font-size: 12px; font-weight: 700; }
+.email-fields :is(input, select, textarea) { width: 100%; min-width: 0; font-weight: 400; box-sizing: border-box; }
+.email-fields textarea { resize: vertical; }
+.email-fields small, .email-section small { font-weight: 400; opacity: .75; overflow-wrap: anywhere; }
+.email-pick { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.email-copies-toggle { justify-self: start; background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font-size: 12px; }
+.email-signature summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+.email-signature textarea { margin-top: 6px; }
+.email-section { display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 10px; }
+.email-section h3 { margin: 0; font-size: 14px; }
+.email-section > p { font-size: 12px; opacity: .8; }
+.email-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; }
+.email-chips li { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 999px; font-size: 12px; }
+.email-chips li span { min-width: 0; overflow-wrap: anywhere; }
+.email-chips button { display: inline-flex; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; opacity: .75; }
+.email-chips button:hover { opacity: 1; }
+.email-attach-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.email-drive-panel { display: grid; gap: 8px; padding: 10px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 8px; background: color-mix(in srgb, currentColor 4%, transparent); }
+.email-drive-panel label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; }
+.email-drive-panel input { width: 100%; box-sizing: border-box; font-weight: 400; }
+.email-drive-groups, .email-drive-groups ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.email-drive-groups { max-height: 16rem; overflow: auto; }
+.email-drive-groups > li { display: grid; gap: 2px; padding-bottom: 6px; border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
+.email-drive-groups ul li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-left: 8px; }
+.email-drive-groups ul li > span { display: grid; min-width: 0; overflow-wrap: anywhere; }
+.email-note { font-size: 12px; opacity: .8; }
+.email-error { color: var(--ui-danger, #b42318); font-size: 13px; overflow-wrap: anywhere; }
+.email-permission { display: grid; gap: 8px; justify-items: start; padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 8px; }
+.email-composer-actions { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 20px; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+.email-composer-actions small { opacity: .75; min-width: 0; flex: 1 1 240px; }
+.email-composer-actions > div { display: flex; gap: 8px; margin-left: auto; }
+.email-composer-actions button svg { vertical-align: -2px; margin-right: 4px; }
+@media (max-width: 480px) { .email-composer .modal-head, .email-composer-body, .email-composer-actions { padding-left: 14px; padding-right: 14px; } }
+
+.email-outbox { position: fixed; left: 16px; bottom: 16px; z-index: 10001; display: grid; gap: 8px; width: min(440px, calc(100vw - 32px)); }
+.email-outbox-item { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid #626b78; border-radius: 12px; background: #171c24; color: #f3f5f7; box-shadow: 0 16px 45px #0008; }
+.email-outbox-item.failed { border-color: #ff8f8f; }
+.email-outbox-item.sent { border-color: #6bc795; }
+.email-outbox-text { display: grid; gap: 2px; min-width: 0; font-size: 13px; }
+.email-outbox-text strong { overflow-wrap: anywhere; }
+.email-outbox-text span { opacity: .85; overflow-wrap: anywhere; }
+.email-outbox-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.email-outbox-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 8px; border: 1px solid #8f98a6; background: transparent; color: #f3f5f7; font: inherit; font-size: 13px; cursor: pointer; }
+.email-outbox-actions button.primary { background: #f3f5f7; color: #171c24; border-color: #f3f5f7; font-weight: 700; }
+@media (max-width: 640px) { .email-outbox { left: 12px; right: 12px; bottom: 12px; width: auto; } }

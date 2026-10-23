@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.90](v0.6.90.md) | Send document emails from the tracker, from your own Gmail, with Drive or computer attachments, a 10-second undo and a link to the task |
 | [v0.6.89](v0.6.89.md) | Google Drive in Document Creation: signed DRF and Sign Off PDFs file themselves, pick a COR from Drive, save generated documents |
 | [v0.6.88](v0.6.88.md) | Save to Drive works on every message in an email thread |
 | [v0.6.87](v0.6.87.md) | Save Gmail attachments to a shared Google Drive under Client / Project / Task / Subtask |
