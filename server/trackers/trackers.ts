@@ -197,6 +197,95 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     res.status(201).json({ tracker: trackerOut(row, user, 0) })
   }))
 
+  // Task links: a row, or one cell of it, linked to any number of tasks and subtasks. The Action Center reads them
+  // to say where a task came from. They have their own table, so the rest of Trackers works before it is applied.
+  const LINK_LIMIT = 40
+  const linkCheck = (error: any) => { if (error) throw new TrackerError('Task links need database/migrations/schema-v25-tracker-task-links.sql. Apply it and try again.', 503) }
+  const titleOf = (columns: TrackerColumn[], data: any) => {
+    const column = columns.find(item => item.type === 'text')
+    const value = column ? data?.[column.id] : ''
+    return typeof value === 'string' && value ? value : 'Untitled row'
+  }
+  async function linksOut(tenant: string, trackers: any[], rowFilter?: string) {
+    if (!trackers.length) return []
+    const byTracker = new Map<string, any>(trackers.map(tracker => [tracker.id, tracker]))
+    let query = db.from('tenant_tracker_task_links').select('*').eq('tenant_id', tenant)
+    if (trackers.length === 1) query = query.eq('tracker_id', trackers[0].id)
+    if (rowFilter) query = query.eq('row_id', rowFilter)
+    const found = await query.order('created_at', { ascending: true }).limit(2000)
+    linkCheck(found.error)
+    const links = (found.data || []).filter((link: any) => byTracker.has(link.tracker_id))
+    const rowIds = [...new Set<string>(links.map((link: any) => link.row_id))]
+    const titles = new Map<string, string>()
+    for (let at = 0; at < rowIds.length; at += 200) {
+      const rows = await db.from('tenant_tracker_rows').select('*').eq('tenant_id', tenant).in('id', rowIds.slice(at, at + 200))
+      check(rows.error)
+      for (const row of rows.data || []) titles.set(row.id, titleOf(columnsOf(byTracker.get(row.tracker_id) || {}), row.data))
+    }
+    return links.filter((link: any) => titles.has(link.row_id)).map((link: any) => {
+      const tracker = byTracker.get(link.tracker_id), column = columnsOf(tracker).find(item => item.id === link.column_id)
+      return {
+        id: link.id, trackerId: link.tracker_id, trackerName: tracker.name, rowId: link.row_id, rowTitle: titles.get(link.row_id) || 'Untitled row',
+        columnId: column ? column.id : '', columnName: column ? column.name : '', taskId: link.task_id, createdByName: link.created_by_name || '', createdAt: link.created_at,
+      }
+    })
+  }
+
+  app.get('/api/trackers/task-links', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId
+    const r = await db.from('tenant_trackers').select('*').eq('tenant_id', tenant).limit(TRACKER_LIMITS.trackers + 100)
+    check(r.error)
+    const visible = (r.data || []).filter((row: any) => !row.private || row.created_by === user.id)
+    res.json({ links: await linksOut(tenant, visible) })
+  }))
+
+  app.get('/api/trackers/:id/links', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    res.json({ links: await linksOut(tenant, [tracker]) })
+  }))
+
+  app.post('/api/trackers/:id/links', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to change links.', 409)
+    const rowId = String(req.body?.rowId ?? '')
+    if (!UUID.test(rowId)) throw new TrackerError('Choose a row to link the task to.')
+    const columnId = String(req.body?.columnId ?? '').trim()
+    if (columnId && !columnsOf(tracker).some(column => column.id === columnId)) throw new TrackerError('That column was not found in this tracker.')
+    const state = await workspace(tenant)
+    const taskId = taskIdOf(state, req.body?.taskId)
+    if (!taskId) throw new TrackerError('Choose a task or subtask to link.')
+    const row = await oneRow(tenant, id, rowId)
+    if (!row) throw new TrackerError('That row was not found.', 404)
+    const existing = await db.from('tenant_tracker_task_links').select('*').eq('tenant_id', tenant).eq('tracker_id', id).eq('row_id', rowId)
+    linkCheck(existing.error)
+    const here = existing.data || []
+    if (here.some((link: any) => link.column_id === columnId && link.task_id === taskId)) throw new TrackerError(columnId ? 'That task is already linked to this cell.' : 'That task is already linked to this row.', 409)
+    if (here.length >= LINK_LIMIT) throw new TrackerError(`A row can have up to ${LINK_LIMIT} linked tasks.`)
+    const made = { id: randomUUID(), tenant_id: tenant, tracker_id: id, row_id: rowId, column_id: columnId, task_id: taskId, created_by: user.id, created_by_name: user.name, created_at: now() }
+    const saved = await db.from('tenant_tracker_task_links').insert(made)
+    linkCheck(saved.error)
+    const title = ((state.items || []).find((item: any) => item.id === taskId) || {}).title || ''
+    await record(tenant, id, rowId, user, 'subtask_linked', { taskId, title, columnId })
+    await touch(tenant, id)
+    const links = await linksOut(tenant, [tracker], rowId)
+    res.status(201).json({ link: links.find((link: any) => link.id === made.id), links })
+  }))
+
+  app.delete('/api/trackers/:id/links/:linkId', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const linkId = String(req.params.linkId || '')
+    if (!UUID.test(linkId)) throw new TrackerError('Link not found.', 404)
+    const tracker = await trackerRow(tenant, id, user)
+    if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to change links.', 409)
+    const removed = await db.from('tenant_tracker_task_links').delete().eq('tenant_id', tenant).eq('tracker_id', id).eq('id', linkId).select('*')
+    linkCheck(removed.error)
+    const gone = (removed.data || [])[0]
+    if (gone) { await record(tenant, id, gone.row_id, user, 'subtask_unlinked', { taskId: gone.task_id, columnId: gone.column_id }); await touch(tenant, id) }
+    res.json({ removed: gone ? 1 : 0 })
+  }))
+
   app.get('/api/trackers/:id', ...scope, route(async (req, res) => {
     const user = who(req), id = idParam(req)
     const row = await trackerRow(user.organizationId, id, user)
@@ -461,6 +550,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     if (!ids.length || ids.length > TRACKER_LIMITS.importBatch || ids.some(value => !UUID.test(value))) throw new TrackerError(`Choose between 1 and ${TRACKER_LIMITS.importBatch} rows to delete.`)
     const removed = await db.from('tenant_tracker_rows').delete().eq('tenant_id', tenant).eq('tracker_id', id).in('id', ids).select('id')
     check(removed.error)
+    // Links are best effort: before the links table exists there is nothing to clean up.
+    if (removed.data?.length) await db.from('tenant_tracker_task_links').delete().eq('tenant_id', tenant).eq('tracker_id', id).in('row_id', ids)
     const count = removed.data?.length ?? 0
     if (count) { await record(tenant, id, ids.length === 1 ? ids[0] : '', user, 'rows_deleted', { count }); await touch(tenant, id) }
     res.json({ deleted: count })

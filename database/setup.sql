@@ -19,7 +19,7 @@ begin
       raise exception 'Supabase role % is missing. Use a new Supabase project for this setup.', object_name;
     end if;
   end loop;
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     if to_regclass(format('public.%I', object_name)) is not null then
       raise exception 'Fresh setup stopped: public.% already exists. No changes were applied. Use newer migrations for an existing installation; do not replay old migrations.', object_name;
     end if;
@@ -1473,6 +1473,22 @@ create table if not exists public.tenant_tracker_changes (
 );
 create index if not exists tenant_tracker_changes_row on public.tenant_tracker_changes(tenant_id, tracker_id, row_id, created_at desc);
 
+-- Tracker task links: a row, or one cell of it, linked to any number of tasks and subtasks.
+create table if not exists public.tenant_tracker_task_links (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null,
+  tracker_id uuid not null,
+  row_id uuid not null,
+  column_id text not null default '',
+  task_id text not null,
+  created_by text not null default '',
+  created_by_name text not null default '',
+  created_at timestamptz not null default now(),
+  foreign key (tenant_id, tracker_id) references public.tenant_trackers(tenant_id, id) on delete cascade
+);
+create unique index if not exists tenant_tracker_task_links_unique on public.tenant_tracker_task_links(tenant_id, tracker_id, row_id, column_id, task_id);
+create index if not exists tenant_tracker_task_links_task on public.tenant_tracker_task_links(tenant_id, task_id);
+
 -- Supabase only: lock the tables to the service role, as for the other private tables.
 -- Plain PostgreSQL (Northflank) has no anon/service_role, and enabling row level security
 -- there would block the app's database user, so it is skipped.
@@ -1482,10 +1498,13 @@ begin
     execute 'alter table public.tenant_trackers enable row level security';
     execute 'alter table public.tenant_tracker_rows enable row level security';
     execute 'alter table public.tenant_tracker_changes enable row level security';
+    execute 'alter table public.tenant_tracker_task_links enable row level security';
+    execute 'revoke all on public.tenant_tracker_task_links from public, anon, authenticated';
     execute 'revoke all on public.tenant_trackers, public.tenant_tracker_rows, public.tenant_tracker_changes from public, anon, authenticated';
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     execute 'grant all on public.tenant_trackers, public.tenant_tracker_rows, public.tenant_tracker_changes to service_role';
+    execute 'grant all on public.tenant_tracker_task_links to service_role';
   end if;
 end $$;
 
@@ -1507,7 +1526,7 @@ do $setup_grants$
 declare
   object_name text;
 begin
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     execute format('alter table public.%I enable row level security', object_name);
     execute format('revoke all on table public.%I from public, anon, authenticated', object_name);
     execute format('grant all on table public.%I to service_role', object_name);

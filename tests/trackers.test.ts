@@ -5,11 +5,11 @@ import { registerTrackerRoutes } from '../server/trackers/trackers'
 import { TRACKER_LIMITS } from '../src/trackerModel'
 
 type Row = Record<string, any>
-const KEYS: Record<string, string[]> = { tenant_trackers: ['tenant_id', 'id'], tenant_tracker_rows: ['tenant_id', 'tracker_id', 'id'], tenant_tracker_changes: ['id'] }
+const KEYS: Record<string, string[]> = { tenant_trackers: ['tenant_id', 'id'], tenant_tracker_rows: ['tenant_id', 'tracker_id', 'id'], tenant_tracker_changes: ['id'], tenant_tracker_task_links: ['id'] }
 
 /** A small in-memory stand-in for the database client, with the query methods the tracker routes use. */
 function memoryDb(options: { failChanges?: boolean } = {}) {
-  const tables: Record<string, Row[]> = { tenant_trackers: [], tenant_tracker_rows: [], tenant_tracker_changes: [] }
+  const tables: Record<string, Row[]> = { tenant_trackers: [], tenant_tracker_rows: [], tenant_tracker_changes: [], tenant_tracker_task_links: [] }
   class Query {
     action = 'read'; values: Row[] = []; filters: ((row: Row) => boolean)[] = []; sorts: [string, boolean][] = []
     take?: number; skip = 0; returning = false; counted = false; head = false; one: 'single' | 'maybe' | null = null
@@ -43,6 +43,7 @@ function memoryDb(options: { failChanges?: boolean } = {}) {
         const gone = new Set(matched)
         tables[this.table] = rows.filter(row => !gone.has(row))
         if (this.table === 'tenant_trackers') for (const t of matched) tables.tenant_tracker_rows = tables.tenant_tracker_rows.filter(row => !(row.tenant_id === t.tenant_id && row.tracker_id === t.id))
+        if (this.table === 'tenant_trackers') for (const t of matched) tables.tenant_tracker_task_links = tables.tenant_tracker_task_links.filter(row => !(row.tenant_id === t.tenant_id && row.tracker_id === t.id))
         return { data: this.returning ? matched : null, error: null, count: null }
       }
       let result = matched.map(row => structuredClone(row))
@@ -58,7 +59,7 @@ function memoryDb(options: { failChanges?: boolean } = {}) {
 
 function harness(options: { failChanges?: boolean } = {}) {
   const db = memoryDb(options)
-  const state = { clients: [{ id: 'c1', name: 'Acme' }], projects: [{ id: 'p1', name: 'Rollout' }], items: [{ id: 't1', title: 'Davao store' }] }
+  const state = { clients: [{ id: 'c1', name: 'Acme' }], projects: [{ id: 'p1', name: 'Rollout' }], items: [{ id: 't1', title: 'Davao store' }, { id: 't2', title: 'Train the staff', parentTaskId: 't1' }] }
   const app = express(); app.use(express.json({ limit: '10mb' }))
   app.use((req: any, _res, next) => {
     const modules = req.headers['x-modules'] === 'none' ? ['clients'] : ['clients', 'trackers']
@@ -356,5 +357,49 @@ test('saved views keep only references to columns that exist', async () => {
     // Deleting a column also removes it from saved views.
     const trimmed = await ask('PUT', `/api/trackers/${t.id}/columns`, { columns: t.columns.filter((c: any) => c.id !== status), revision: 2 })
     assert.equal(trimmed.body.tracker.views[0].filters.length, 0)
+  })
+})
+
+test('a row or one of its cells can be linked to many tasks and subtasks, and the links follow the row', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = await makeTracker(ask)
+    const made = await ask('POST', `/api/trackers/${tracker.id}/rows`, { rows: [{ cells: { [idOf(tracker, 'Site')]: 'Davao' } }, { cells: { [idOf(tracker, 'Site')]: 'Cebu' } }] })
+    const [davao, cebu] = made.body.rows
+    const link = (body: any, headers?: Record<string, string>) => ask('POST', `/api/trackers/${tracker.id}/links`, body, headers)
+    const row = await link({ rowId: davao.id, taskId: 't1' })
+    assert.equal(row.status, 201, JSON.stringify(row.body))
+    assert.equal(row.body.link.rowTitle, 'Davao'); assert.equal(row.body.link.columnId, '')
+    const cell = await link({ rowId: davao.id, taskId: 't2', columnId: idOf(tracker, 'Go-live') })
+    assert.equal(cell.status, 201); assert.equal(cell.body.link.columnName, 'Go-live')
+    assert.equal(cell.body.links.length, 2, 'The row now has two links')
+    assert.equal((await link({ rowId: davao.id, taskId: 't2', columnId: idOf(tracker, 'Go-live') })).status, 409, 'The same task is not linked twice to one cell')
+    assert.equal((await link({ rowId: davao.id, taskId: 't2' })).status, 201, 'The same task can also be linked to the whole row')
+    assert.equal((await link({ rowId: davao.id, taskId: 'nope' })).status, 400)
+    assert.equal((await link({ rowId: davao.id, taskId: 't1', columnId: 'missing' })).status, 400)
+    assert.equal((await link({ rowId: cebu.id, taskId: 't2' }, { 'x-role': 'Viewer' })).status, 403)
+    await link({ rowId: cebu.id, taskId: 't2' })
+    const all = await ask('GET', '/api/trackers/task-links')
+    assert.equal(all.status, 200); assert.equal(all.body.links.filter((l: any) => l.taskId === 't2').length, 3)
+    assert.deepEqual(all.body.links.filter((l: any) => l.rowId === cebu.id).map((l: any) => l.trackerName), ['Site rollout'])
+    const history = await ask('GET', `/api/trackers/${tracker.id}/rows/${davao.id}/history`)
+    assert.ok(history.body.changes.some((c: any) => c.kind === 'subtask_linked'))
+    const gone = await ask('DELETE', `/api/trackers/${tracker.id}/links/${row.body.link.id}`)
+    assert.equal(gone.body.removed, 1)
+    assert.equal((await ask('GET', `/api/trackers/${tracker.id}/links`)).body.links.length, 3)
+    await ask('POST', `/api/trackers/${tracker.id}/rows/delete`, { ids: [davao.id] })
+    assert.deepEqual((await ask('GET', '/api/trackers/task-links')).body.links.map((l: any) => l.rowId), [cebu.id], 'Deleting a row removes its links')
+  })
+})
+
+test('links to a private tracker are visible only to its creator', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = await makeTracker(ask, { private: true }, { 'x-user': 'u1' })
+    const rows = await ask('POST', `/api/trackers/${tracker.id}/rows`, { rows: [{ cells: {} }] }, { 'x-user': 'u1' })
+    await ask('POST', `/api/trackers/${tracker.id}/links`, { rowId: rows.body.rows[0].id, taskId: 't1' }, { 'x-user': 'u1' })
+    assert.equal((await ask('GET', '/api/trackers/task-links', undefined, { 'x-user': 'u1' })).body.links.length, 1)
+    assert.equal((await ask('GET', '/api/trackers/task-links', undefined, { 'x-user': 'u2' })).body.links.length, 0)
+    assert.equal((await ask('POST', `/api/trackers/${tracker.id}/links`, { rowId: rows.body.rows[0].id, taskId: 't2' }, { 'x-user': 'u2' })).status, 404)
   })
 })

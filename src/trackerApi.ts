@@ -29,6 +29,8 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
 
 /** What changing a column's type would do (applied: false), or what it did (applied: true). */
 export type ConvertReport = { applied: false; rows: number; filled: number; failed: number; samples: { row: number; value: string }[] } | { applied: true; tracker: Tracker; failed: number }
+/** A task or subtask linked to a tracker row, or to one cell of it (columnId is empty for the whole row). */
+export type TaskLink = { id: string; trackerId: string; trackerName: string; rowId: string; rowTitle: string; columnId: string; columnName: string; taskId: string; createdByName: string; createdAt: string }
 export type TrackerChange = { id: string; actorName: string; kind: string; detail: any; at: string }
 export type NewRow = { cells?: Record<string, Cell>; secrets?: Record<string, string | null>; taskId?: string }
 export type RowPatch = { version: number; cells?: Record<string, Cell>; secrets?: Record<string, string | null>; taskId?: string | null }
@@ -48,6 +50,11 @@ export const trackerApi = {
   reveal: (id: string, rowId: string, columnId: string) => call<{ value: string; seconds: number }>('POST', `/${id}/rows/${rowId}/reveal`, { columnId }),
   convertColumn: (id: string, columnId: string, body: { type: string; revision: number; confirm: boolean; clearUnfit?: boolean }) => call<ConvertReport>('POST', `/${id}/columns/${columnId}/convert`, body),
   moveRows: (id: string, ids: string[], before: string | 'start' | null) => call<{ moved: number; positions: Record<string, number> }>('POST', `/${id}/rows/move`, { ids, before }),
+  links: (id: string, signal?: AbortSignal) => call<{ links: TaskLink[] }>('GET', `/${id}/links`, undefined, signal),
+  addLink: (id: string, body: { rowId: string; taskId: string; columnId?: string }) => call<{ link: TaskLink; links: TaskLink[] }>('POST', `/${id}/links`, body),
+  removeLink: (id: string, linkId: string) => call<{ removed: number }>('DELETE', `/${id}/links/${linkId}`),
+  /** Every link in every tracker this person can see, for the Action Center. */
+  allLinks: (signal?: AbortSignal) => call<{ links: TaskLink[] }>('GET', '/task-links', undefined, signal),
   history: (id: string, rowId: string, signal?: AbortSignal) => call<{ changes: TrackerChange[] }>('GET', `/${id}/rows/${rowId}/history`, undefined, signal),
 }
 

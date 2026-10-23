@@ -6,7 +6,7 @@ import {
 } from './trackerModel'
 import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
 import { exportCsv, exportFileName } from './trackerExport'
-import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport } from './trackerApi'
+import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type TaskLink } from './trackerApi'
 import TrackerGrid, { NUMBER_COLUMN_WIDTH, widthOf, type Entry, type GridFocus } from './TrackerGrid'
 import TrackerToolbar, { emptyWork, type Work } from './TrackerToolbar'
 import TrackerRowPanel from './TrackerRowPanel'
@@ -14,6 +14,7 @@ import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
 import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
 import { Notice, Popover, plural } from './trackerUi'
+import { takeTrackerRow } from './trackerNav'
 import { useVisiblePolling } from './useVisiblePolling'
 import type { Client, Project, UserAccount, WorkItem } from './types'
 
@@ -51,6 +52,7 @@ export default function TrackerScreen(props: Props) {
   const [activeViewId, setActiveViewId] = useState('')
   const [panel, setPanel] = useState<PanelId>(null)
   const [drawerId, setDrawerId] = useState('')
+  const [links, setLinks] = useState<TaskLink[]>([])
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [focus, setFocus] = useState<GridFocus | null>(null)
   const [columnDialog, setColumnDialog] = useState<{ mode: 'add' } | { mode: 'edit'; id: string } | null>(null)
@@ -94,17 +96,28 @@ export default function TrackerScreen(props: Props) {
   useEffect(() => {
     const controller = new AbortController()
     setStatus('loading'); setTracker(null); setRows([]); setDrawerId(''); setSelected(new Set()); setWork(emptyWork); setActiveViewId('')
+    setLinks([])
+    // Links have their own table. If it is missing the tracker still opens, just without them.
+    trackerApi.links(trackerId, controller.signal).then(result => setLinks(result.links)).catch(() => undefined)
     load(controller.signal).then(result => { setTracker(result.tracker); setRows(result.rows); setStatus('ready') })
       .catch(error => { if (error?.name === 'AbortError') return; setLoadError(error instanceof Error ? error.message : 'The tracker could not be loaded.'); setStatus('error') })
     return () => controller.abort()
   }, [trackerId, load])
+
+  // Arriving from a task's tracker link opens that row's details.
+  useEffect(() => {
+    if (status !== 'ready') return
+    const wanted = takeTrackerRow(trackerId)
+    if (wanted && rowsRef.current.some(row => row.id === wanted)) setDrawerId(wanted)
+  }, [status, trackerId])
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const result = await load(signal)
     // Never replace rows underneath an edit that is still being saved.
     if (!alive.current || queues.current.size) return
     setTracker(result.tracker); setRows(result.rows)
-  }, [load])
+    trackerApi.links(trackerId, signal).then(found => { if (alive.current) setLinks(found.links) }).catch(() => undefined)
+  }, [load, trackerId])
   useVisiblePolling(refresh, { enabled: status === 'ready' && saving === 0 && !columnDialog && !importing && !details, interval: 60_000, scope: trackerId, immediate: false })
 
   // Keep the working view pointing at columns that exist.
@@ -260,6 +273,25 @@ export default function TrackerScreen(props: Props) {
     setRows(rowsRef.current.map(item => item.id === row.id ? { ...item, taskId: taskId || '' } : item))
     patchRow(row.id, { taskId })
   }
+  const addLink = async (row: TrackerRow, taskId: string, columnId: string) => {
+    if (!canEdit) return
+    const result = await trackerApi.addLink(trackerId, { rowId: row.id, taskId, columnId })
+    setLinks(current => [...current.filter(link => link.rowId !== row.id), ...result.links])
+  }
+  const removeLink = async (link: TaskLink) => {
+    if (!canEdit) return
+    await trackerApi.removeLink(trackerId, link.id)
+    setLinks(current => current.filter(item => item.id !== link.id))
+  }
+  const linkMap = useMemo(() => {
+    const map = new Map<string, { count: number; cells: Set<string> }>()
+    for (const link of links) {
+      const entry = map.get(link.rowId) || { count: 0, cells: new Set<string>() }
+      entry.count += 1; if (link.columnId) entry.cells.add(link.columnId)
+      map.set(link.rowId, entry)
+    }
+    return map
+  }, [links])
   const setSecret = (row: TrackerRow, column: TrackerColumn, value: string | null) => {
     if (!canEdit) return
     patchRow(row.id, { secrets: { [column.id]: value } })
@@ -488,7 +520,7 @@ export default function TrackerScreen(props: Props) {
     <section className="trk-grid-panel" aria-label={`${tracker.name} rows`}>
       <TrackerGrid
         columns={shownColumns} frozen={frozenIds} primaryId={columns[0]?.id || ''} entries={entries} lookup={lookup} people={people} canEdit={canEdit} sort={work.sort} selected={selected} focus={focus}
-        taskTitle={row => lookup.task(row.taskId)?.title || 'a deleted task'} rowName={row => rowTitle(columns, row)}
+        taskTitle={row => lookup.task(row.taskId)?.title || 'a deleted task'} links={linkMap} rowName={row => rowTitle(columns, row)}
         onEdit={editCell} onOpenRow={row => setDrawerId(row.id)} onInvalid={message => say('error', message)}
         onHeader={(column, button) => { headerAnchor.current = button; setHeaderMenu(column) }}
         onAddColumn={canEdit ? () => setColumnDialog({ mode: 'add' }) : undefined}
@@ -538,7 +570,7 @@ export default function TrackerScreen(props: Props) {
     </Popover>}
 
     {drawerRow && <TrackerRowPanel tracker={tracker} row={drawerRow} lookup={lookup} people={people} items={props.items} clientName={clientName} canEdit={canEdit} isAdmin={props.isAdmin}
-      onClose={() => setDrawerId('')} onEdit={editCell} onSecret={setSecret} onLink={linkTask} onDelete={row => void removeRows([row.id])} onOpenTask={props.onOpenTask} onReveal={reveal} />}
+      onClose={() => setDrawerId('')} onEdit={editCell} onSecret={setSecret} onLink={linkTask} links={links} onAddLink={addLink} onRemoveLink={removeLink} onDelete={row => void removeRows([row.id])} onOpenTask={props.onOpenTask} onReveal={reveal} />}
 
     {columnDialog && (columnDialog.mode === 'add' || editingColumn) && <TrackerColumnDialog mode={columnDialog.mode} columns={columns} column={editingColumn} onClose={() => setColumnDialog(null)}
       onSave={draft => saveColumn(draft, editingColumn)} onDelete={editingColumn ? () => deleteColumn(editingColumn) : undefined}

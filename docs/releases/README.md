@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.96](v0.6.96.md) | Trackers: move rows, change a column's type, link several tasks and subtasks to a row or cell (shown in the Action Center), readable footer and a compact full view |
 | [v0.6.95](v0.6.95.md) | Trackers: freeze any column, resize columns by dragging or by size, align text left, center or right; full text on hover |
 | [v0.6.94](v0.6.94.md) | Trackers: Full view hides the page header so the grid fills the screen; the tracker no longer sits flush against the menu |
 | [v0.6.93](v0.6.93.md) | Collapsible left menu (icons only, with name tooltips), colour fixes for the Light and Gray looks and Document Hub, and the Inter font bundled with the app |

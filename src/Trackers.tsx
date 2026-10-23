@@ -3,6 +3,7 @@ import { Lock, Plus, Search, Table2, Upload } from 'lucide-react'
 import { TRACKER_LIMITS, columnTypeLabel, type Tracker } from './trackerModel'
 import { TRACKER_TEMPLATES, templateById } from './trackerTemplates'
 import { trackerApi } from './trackerApi'
+import { rememberTracker, rememberedTracker } from './trackerNav'
 import TrackerScreen from './TrackerScreen'
 import TrackerImportDialog from './TrackerImportDialog'
 import { Dialog, Notice, niceTime, plural } from './trackerUi'
@@ -20,9 +21,8 @@ type Props = {
   onOpenTask?: (taskId: string) => void
 }
 
-const OPEN_KEY = 'ba.trackers.open'
-const remembered = () => { try { return window.sessionStorage.getItem(OPEN_KEY) || '' } catch { return '' } }
-const remember = (id: string) => { try { if (id) window.sessionStorage.setItem(OPEN_KEY, id); else window.sessionStorage.removeItem(OPEN_KEY) } catch { /* Storage can be blocked. The list still works. */ } }
+const remembered = rememberedTracker
+const remember = rememberTracker
 
 function NewTrackerDialog({ initialTemplate, clients, projects, onClose, onCreated }: { initialTemplate: string; clients: Client[]; projects: Project[]; onClose: () => void; onCreated: (tracker: Tracker) => void }) {
   const [templateId, setTemplateId] = useState(initialTemplate)

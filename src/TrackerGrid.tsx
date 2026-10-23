@@ -34,6 +34,8 @@ type Props = {
   selected: ReadonlySet<string>
   focus: GridFocus | null
   taskTitle: (row: TrackerRow) => string
+  /** Per row: how many tasks are linked, and which cells have their own. */
+  links?: ReadonlyMap<string, { count: number; cells: ReadonlySet<string> }>
   rowName: (row: TrackerRow) => string
   onEdit: (row: TrackerRow, column: TrackerColumn, value: Cell) => void
   onOpenRow: (row: TrackerRow) => void
@@ -204,12 +206,14 @@ export default function TrackerGrid(props: Props) {
         onDragStart={props.onMove ? event => { const ids = selected.has(row.id) ? new Set(selected) : new Set([row.id]); setDragIds(ids); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', `${ids.size} row${ids.size === 1 ? '' : 's'}`) } : undefined}
         onDragEnd={props.onMove ? endDrag : undefined}>
         <span className="trk-n">{n}</span>
+        {props.links?.get(row.id) && <span className="trk-linkcount" title={`${props.links.get(row.id)!.count} linked task${props.links.get(row.id)!.count === 1 ? '' : 's'} or subtask${props.links.get(row.id)!.count === 1 ? '' : 's'}`} aria-label={`${props.links.get(row.id)!.count} linked tasks`}>{props.links.get(row.id)!.count}</span>}
         <input type="checkbox" className="trk-pick" checked={isSelected} aria-label={`Select row ${n}`} onChange={event => props.onToggleRow(row.id, event.target.checked)} />
       </div>
       {columns.map((column, at) => {
         const on = rowActive && active?.columnId === column.id
         const isEditing = on && editing !== null
         const classes = ['trk-cell', `trk-t-${column.type}`]
+        if (props.links?.get(row.id)?.cells.has(column.id)) classes.push('trk-has-link')
         if (column.id === first) classes.push('trk-first')
         const place = stick.get(column.id)
         if (place) classes.push('trk-frozen'); if (place?.edge) classes.push('trk-edge')
