@@ -113,8 +113,7 @@
 .trk-add { justify-content: center; }
 .trk-add-column { display: grid; place-items: center; width: 100%; height: 100%; border: 0; background: transparent; color: var(--trk-accent); cursor: pointer; }
 .trk-s1 { position: sticky; left: 0; z-index: 3; }
-.trk-s2 { position: sticky; left: 56px; z-index: 3; box-shadow: 1px 0 0 var(--trk-border); }
-.trk-head .trk-s1, .trk-head .trk-s2 { z-index: 6; }
+.trk-head .trk-s1 { z-index: 6; }
 .trk-num { justify-content: center; padding: 0; font-size: 12px; color: var(--trk-muted); }
 .trk-num .trk-pick { position: absolute; opacity: 0; cursor: pointer; }
 .trk-row:hover .trk-num .trk-n, .trk-row.selected .trk-num .trk-n, .trk-num:focus-within .trk-n { visibility: hidden; }
@@ -308,3 +307,25 @@ dialog.trk-dialog::backdrop { background: rgba(8, 10, 14, .62); }
 .app-shell.trk-expanded .trk-title h2 { font-size: 20px; line-height: 26px; }
 .app-shell.trk-expanded .trk-grid-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .app-shell.trk-expanded .trk-scroll { flex: 1 1 auto; max-height: none; min-height: 0; }
+
+/* Frozen columns, alignment and resizing */
+.trk-hcell:not(.trk-s1, .trk-frozen) { position: relative; }
+.trk-frozen { position: sticky; z-index: 3; }
+.trk-head .trk-frozen { z-index: 6; }
+.trk-frozen.trk-edge { box-shadow: 1px 0 0 var(--trk-border), 6px 0 8px -6px rgb(0 0 0 / .45); }
+.trk-al-left { justify-content: flex-start; text-align: left; }
+.trk-al-center { justify-content: center; text-align: center; }
+.trk-al-right { justify-content: flex-end; text-align: right; }
+.trk-hcell.trk-al-center .trk-hbutton { justify-content: center; }
+.trk-hcell.trk-al-right .trk-hbutton { justify-content: flex-end; }
+.trk-hcell.trk-al-center .trk-hchev, .trk-hcell.trk-al-right .trk-hchev { margin-left: 0; }
+.trk-cell.trk-al-center :is(input, textarea, select) { text-align: center; }
+.trk-cell.trk-al-right :is(input, textarea, select) { text-align: right; }
+.trk-resize { position: absolute; top: 0; right: -4px; bottom: 0; width: 9px; z-index: 7; cursor: col-resize; touch-action: none; }
+.trk-resize::after { content: ""; position: absolute; top: 8px; bottom: 8px; left: 4px; width: 2px; border-radius: 2px; background: transparent; }
+.trk-resize:hover::after, .trk-resize:active::after { background: var(--trk-accent); }
+.trk-menu-label { padding: 6px 9px 2px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--trk-muted); }
+.trk-menu-label small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.trk-menu .trk-seg { display: flex; gap: 4px; padding: 2px 9px 6px; }
+.trk-menu .trk-seg button { justify-content: center; flex: 1 1 0; padding: 6px 4px; border: 1px solid var(--trk-border); font-size: 12px; }
+.trk-menu .trk-seg button[aria-pressed="true"] { border-color: var(--trk-accent); background: var(--trk-accent-soft); color: var(--trk-accent); font-weight: 650; }

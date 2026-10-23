@@ -16,7 +16,7 @@ function linkLabel(href: string) {
 export function CellView({ column, row, lookup, canEdit, onToggle }: { column: TrackerColumn; row: TrackerRow; lookup: Lookup; canEdit: boolean; onToggle: (value: boolean) => void }): ReactNode {
   const value = row.cells[column.id]
   switch (column.type) {
-    case 'text': case 'longtext': return <span className="trk-text">{typeof value === 'string' ? value : ''}</span>
+    case 'text': case 'longtext': return <span className="trk-text" title={typeof value === 'string' && value.length > 24 ? value : undefined}>{typeof value === 'string' ? value : ''}</span>
     case 'number': return <span className="trk-number">{typeof value === 'number' ? numberFormat.format(value) : ''}</span>
     case 'date': return <span>{typeof value === 'string' && value ? niceDate(value) : ''}</span>
     case 'link': {

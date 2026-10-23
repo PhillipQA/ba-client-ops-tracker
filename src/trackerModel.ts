@@ -56,11 +56,18 @@ export const columnTypeLabel = (type: string) => COLUMN_TYPES.find(item => item.
 
 export type SelectOption = { id: string; label: string; color: OptionColor }
 export type RevealBy = 'editors' | 'admins'
+export type ColumnAlign = 'left' | 'center' | 'right'
+export const COLUMN_WIDTH = { min: 60, max: 800 }
+/** The first column stays in view unless it was explicitly unfrozen; any other column only when it was frozen. */
+export const isFrozenColumn = (column: TrackerColumn, all: TrackerColumn[]) => column.frozen ?? all[0]?.id === column.id
 export type TrackerColumn = {
   id: string
   name: string
   type: ColumnType
   width?: number
+  /** Kept in view while scrolling sideways. Unset means "the first column only". */
+  frozen?: boolean
+  align?: ColumnAlign
   options?: SelectOption[]
   revealBy?: RevealBy
 }
@@ -172,8 +179,10 @@ export function normalizeColumns(input: unknown, previous: TrackerColumn[] = [])
     const column: TrackerColumn = { id, name, type: raw.type }
     if (raw.width !== undefined && raw.width !== null) {
       const width = Number(raw.width)
-      if (Number.isFinite(width)) column.width = Math.max(60, Math.min(800, Math.round(width)))
+      if (Number.isFinite(width)) column.width = Math.max(COLUMN_WIDTH.min, Math.min(COLUMN_WIDTH.max, Math.round(width)))
     }
+    if (typeof raw.frozen === 'boolean') column.frozen = raw.frozen
+    if (raw.align === 'left' || raw.align === 'center' || raw.align === 'right') column.align = raw.align
     if (raw.type === 'select' || raw.type === 'multiselect') column.options = normalizeOptions(raw.options, known?.options)
     if (raw.type === 'secret') column.revealBy = raw.revealBy === 'admins' ? 'admins' : 'editors'
     return column

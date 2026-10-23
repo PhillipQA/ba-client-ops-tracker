@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
-import { emptyCell, type Cell, type TrackerColumn, type TrackerRow, type TrackerView } from './trackerModel'
+import { COLUMN_WIDTH, emptyCell, type Cell, type TrackerColumn, type TrackerRow, type TrackerView } from './trackerModel'
 import { type Lookup } from './trackerQuery'
 import { CellEditor, CellView, LinkedIcon, editable, type Person } from './TrackerCells'
 import { ColumnIcon } from './trackerUi'
@@ -16,11 +16,16 @@ const WIDTHS: Record<string, number> = {
   task_status: 160, task_due: 140, task_owner: 170, signoff: 170, drive_files: 140, secret: 150,
 }
 export const widthOf = (column: TrackerColumn, first: boolean) => column.width || (first ? 260 : WIDTHS[column.type] || 160)
+export const NUMBER_COLUMN_WIDTH = NUMBER_WIDTH
 
 export type GridFocus = { rowId: string; columnId: string; edit: boolean; nonce: number }
 
 type Props = {
   columns: TrackerColumn[]
+  /** Ids of the columns kept in view while scrolling sideways. They come first in `columns`. */
+  frozen: ReadonlySet<string>
+  /** The tracker's first column (it carries the open-row button), whether or not it is shown. */
+  primaryId: string
   entries: Entry[]
   lookup: Lookup
   people: Person[]
@@ -34,6 +39,8 @@ type Props = {
   onOpenRow: (row: TrackerRow) => void
   onHeader: (column: TrackerColumn, button: HTMLElement) => void
   onAddColumn?: () => void
+  /** Present only for people who can change columns; dragging a header edge calls it with the new width (or null to reset). */
+  onResize?: (column: TrackerColumn, width: number | null) => void
   onToggleRow: (rowId: string, on: boolean) => void
   onToggleAll: (on: boolean) => void
   onInvalid: (message: string) => void
@@ -92,8 +99,36 @@ export default function TrackerGrid(props: Props) {
     if (!request.edit || !editable(column)) scroller.current?.focus({ preventScroll: true })
   }, [props.focus, rowPlace, columnPlace, rowEntries, columns, canEdit, scrollTo])
 
-  const first = columns[0]?.id
-  const template = useMemo(() => `${NUMBER_WIDTH}px ${columns.map((column, at) => `${widthOf(column, at === 0)}px`).join(' ')} ${props.onAddColumn ? '56px' : '0px'}`, [columns, props.onAddColumn])
+  const first = props.primaryId
+  const [drag, setDrag] = useState<{ id: string; width: number } | null>(null)
+  const widthFor = useCallback((column: TrackerColumn) => drag?.id === column.id ? drag.width : widthOf(column, column.id === first), [drag, first])
+  const template = useMemo(() => `${NUMBER_WIDTH}px ${columns.map(column => `${widthFor(column)}px`).join(' ')} ${props.onAddColumn ? '56px' : '0px'}`, [columns, widthFor, props.onAddColumn])
+  // Frozen columns stick to the left, one after another, starting after the row-number column.
+  const stick = useMemo(() => {
+    const places = new Map<string, { left: number; edge: boolean }>()
+    let left = NUMBER_WIDTH, last = ''
+    for (const column of columns) { if (!props.frozen.has(column.id)) break; places.set(column.id, { left, edge: false }); left += widthFor(column); last = column.id }
+    if (last) places.get(last)!.edge = true
+    return places
+  }, [columns, props.frozen, widthFor])
+  const startResize = (column: TrackerColumn, event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (!props.onResize || event.button !== 0) return
+    event.preventDefault(); event.stopPropagation()
+    const handle = event.currentTarget, x0 = event.clientX, w0 = widthFor(column)
+    handle.setPointerCapture(event.pointerId)
+    const clamp = (value: number) => Math.max(COLUMN_WIDTH.min, Math.min(COLUMN_WIDTH.max, Math.round(value)))
+    const move = (e: PointerEvent) => setDrag({ id: column.id, width: clamp(w0 + e.clientX - x0) })
+    const finish = (e: PointerEvent) => {
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', finish); handle.removeEventListener('pointercancel', finish)
+      const width = clamp(w0 + e.clientX - x0); setDrag(null)
+      if (e.type === 'pointerup' && width !== w0) props.onResize?.(column, width)
+    }
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', finish); handle.addEventListener('pointercancel', finish)
+  }
+  const placeClasses = (column: TrackerColumn) => {
+    const place = stick.get(column.id)
+    return `${place ? ' trk-frozen' : ''}${place?.edge ? ' trk-edge' : ''}${column.align ? ` trk-al-${column.align}` : ''}`
+  }
   const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
   const end = Math.min(entries.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + OVERSCAN)
   const allSelected = rowEntries.length > 0 && rowEntries.every(item => selected.has(item.entry.row.id))
@@ -159,10 +194,13 @@ export default function TrackerGrid(props: Props) {
         const on = rowActive && active?.columnId === column.id
         const isEditing = on && editing !== null
         const classes = ['trk-cell', `trk-t-${column.type}`]
-        if (column.id === first) classes.push('trk-s2', 'trk-first')
+        if (column.id === first) classes.push('trk-first')
+        const place = stick.get(column.id)
+        if (place) classes.push('trk-frozen'); if (place?.edge) classes.push('trk-edge')
+        if (column.align) classes.push(`trk-al-${column.align}`)
         if (on) classes.push('active')
         if (isEditing) classes.push('editing')
-        return <div key={column.id} role="gridcell" aria-colindex={at + 2} className={classes.join(' ')} data-column={column.id}
+        return <div key={column.id} role="gridcell" aria-colindex={at + 2} className={classes.join(' ')} data-column={column.id} style={place ? { left: place.left } : undefined}
           onClick={() => { if (on && !isEditing && canEdit && editable(column)) beginEdit(row, column); else if (!on) { setActive({ rowId: row.id, columnId: column.id }); setEditing(null); scroller.current?.focus({ preventScroll: true }) } }}
           onDoubleClick={() => { if (!isEditing) beginEdit(row, column) }}>
           {isEditing
@@ -189,13 +227,15 @@ export default function TrackerGrid(props: Props) {
           const connected = !['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'multiselect', 'person', 'link', 'secret'].includes(column.type)
           const sorted = sort?.columnId === column.id ? sort.dir : null
           return <div key={column.id} role="columnheader" aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
-            className={`trk-hcell${at === 0 ? ' trk-s2' : ''}${connected ? ' connected' : ''}${column.type === 'secret' ? ' secret' : ''}`}>
+            className={`trk-hcell${placeClasses(column)}${connected ? ' connected' : ''}${column.type === 'secret' ? ' secret' : ''}`} style={stick.has(column.id) ? { left: stick.get(column.id)!.left } : undefined}>
             <button type="button" className="trk-hbutton" aria-haspopup="dialog" title={connected ? `${column.name}. Fills itself from the linked task.` : column.type === 'secret' ? `${column.name}. Protected.` : column.name} onClick={event => props.onHeader(column, event.currentTarget)}>
               <ColumnIcon type={column.type} />
               <span className="trk-hname">{column.name}</span>
               {sorted && <span className="trk-sorted" aria-hidden="true">{sorted === 'asc' ? '↑' : '↓'}</span>}
               <ChevronDown size={13} className="trk-hchev" aria-hidden="true" />
             </button>
+            {props.onResize && <span className="trk-resize" role="separator" aria-orientation="vertical" aria-label={`Resize ${column.name}. Double-click to reset.`} title="Drag to resize. Double-click to reset."
+              onPointerDown={event => startResize(column, event)} onDoubleClick={event => { event.stopPropagation(); props.onResize?.(column, null) }} />}
           </div>
         })}
         <div role="columnheader" className="trk-hcell trk-add">

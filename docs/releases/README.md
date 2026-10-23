@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.95](v0.6.95.md) | Trackers: freeze any column, resize columns by dragging or by size, align text left, center or right; full text on hover |
 | [v0.6.94](v0.6.94.md) | Trackers: Full view hides the page header so the grid fills the screen; the tracker no longer sits flush against the menu |
 | [v0.6.93](v0.6.93.md) | Collapsible left menu (icons only, with name tooltips), colour fixes for the Light and Gray looks and Document Hub, and the Inter font bundled with the app |
 | [v0.6.92](v0.6.92.md) | Trackers: sheets you shape yourself, with Secret columns and task-connected columns (needs schema v24); recipient suggestions in the email composer and Document Creation |

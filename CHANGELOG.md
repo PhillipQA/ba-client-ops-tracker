@@ -1,8 +1,19 @@
 # Changelog
 
-**Current application release: v0.6.94**
+**Current application release: v0.6.95**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.95 — Trackers: freeze, resize and align columns
+Released October 23, 2026.
+
+No database migration and no new Google permission.
+
+- **Freeze columns.** Open a column's menu and choose **Freeze column**. Frozen columns come first and stay in view while you scroll sideways, so a long sheet keeps its Branch or Name visible. The first column stays frozen unless you unfreeze it. The frozen columns together are limited to about 700 px so the rest of the sheet stays usable.
+- **Resize columns.** Drag the right edge of a column header (double-click it to reset), or choose **Narrow**, **Standard**, **Wide** or **Extra wide** in the column menu. Widths go from 60 to 800 px.
+- **Align text.** Choose **Left**, **Center** or **Right** in the column menu. Numbers stay right-aligned and checkboxes centered unless you choose otherwise.
+- **Full text on hover.** Long text that is cut off in a cell now shows in full when you point at it.
+- These settings belong to the tracker, so everyone who opens it sees the same layout. Only people who can edit the tracker can change them. Cells still show one line; the row panel shows the whole value.
 
 ## v0.6.94 — Trackers: Full view
 Released October 23, 2026.
