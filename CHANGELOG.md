@@ -1,8 +1,36 @@
 # Changelog
 
-**Current application release: v0.6.89**
+**Current application release: v0.6.90**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.90 — Send document emails from the tracker
+Released October 23, 2026.
+
+No database change. Each person who wants to send approves one extra Google permission, once.
+
+### Added
+
+- **Send an email from the tracker, from your own Gmail.** The email goes out from your real address and appears in your Gmail Sent folder, like any email you send yourself. Open it from **Email** on a file saved to a task or subtask, **Email signed PDF** on a fully signed document, **Reply by email** on a Work Hub message, or **New email** in Work Hub.
+- **Attach from Google Drive or your computer.** The Drive list shows the files the tracker saved to tasks and subtasks (signed DRF and Sign Off PDFs, saved email attachments, generated documents), with search and a client filter. Attachments can total 12 MB, which keeps the email under Gmail's 25 MB limit. Program files such as `.exe` are refused up front, as Gmail refuses them.
+- **Linked to the task or subtask.** Every email must be linked to at least one task or subtask. A private copy is kept in Work Hub, marked **Sent**, and appears in the conversation thread. A short note (recipient, subject and file names, never the message) is added to the task's activity so the team can see that the email went out. Blind-copy recipients are left out of the note.
+- **10 seconds to undo.** After you press Send, a bar shows a countdown with **Undo** and **Send now**. Undo reopens the email so you can correct it. Keep the page open during the countdown; the browser asks before you close the tab while an email is waiting.
+- **Replies stay in the conversation.** Replying from Work Hub keeps the email in the same Gmail thread, with the recipient, subject and quoted message filled in.
+- **No double sends.** Each email carries a one-time reference, so a double click, a retry after a dropped connection, or a slow network cannot send it twice. If Google cannot confirm that an email was sent, the tracker says so and asks you to check your Gmail Sent folder rather than sending it again.
+- **Optional signature.** A signature you type in the composer is added to new emails on that browser. Gmail does not add your Gmail signature to emails sent through the API.
+
+### Setup
+
+1. In your Google Cloud project, open **Google Auth Platform → Data Access** and add the scope `https://www.googleapis.com/auth/gmail.send`. Google lists it as a *sensitive* scope (`gmail.readonly`, which Work Hub already uses, is *restricted*).
+2. Each person who will send opens **Work Hub → My integration settings** and chooses **Allow sending email**, then approves sending on Google's page and leaves every box ticked. This is needed once. Plain reconnects keep the permission.
+3. People who only read email are not asked for anything new.
+
+### Notes
+
+- Sending uses each person's own Gmail account. There is no shared mailbox.
+- It is for document emails: plain text, with attachments. There are no drafts, no scheduled sending and no HTML formatting.
+- If your Google app is still in **Testing**, Google expires each connection after 7 days and people must reconnect. Publishing the app removes that limit.
+- Files can only be attached if the tracker saved them to a task. A signed document with no linked task is saved to its Client / Project folder and cannot be attached from the list.
 
 ## v0.6.89 — Google Drive in Document Creation
 Released October 23, 2026.

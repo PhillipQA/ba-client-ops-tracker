@@ -24,11 +24,11 @@ export function taskOptions(scope: DriveScope, clientId: string) {
   return rows
 }
 
-/** Tasks that have saved Drive files of an accepted type, with only the matching files. */
-export function driveFileGroups(scope: DriveScope, options: { allowed: Set<string>; clientId: string; query: string }) {
+/** Tasks that have saved Drive files of an accepted type (any type when `allowed` is null), with only the matching files. */
+export function driveFileGroups(scope: DriveScope, options: { allowed: Set<string> | null; clientId: string; query: string }) {
   const needle = options.query.trim().toLowerCase()
   return scope.items
     .filter(item => !archivedContext(scope, item) && (!options.clientId || item.clientId === options.clientId))
-    .map(item => ({ item, files: (item.driveFiles || []).filter((file: TaskDriveFile) => options.allowed.has(extensionOf(file.name)) && (!needle || file.name.toLowerCase().includes(needle) || item.title.toLowerCase().includes(needle))) }))
+    .map(item => ({ item, files: (item.driveFiles || []).filter((file: TaskDriveFile) => (!options.allowed || options.allowed.has(extensionOf(file.name))) && (!needle || file.name.toLowerCase().includes(needle) || item.title.toLowerCase().includes(needle))) }))
     .filter(group => group.files.length)
 }

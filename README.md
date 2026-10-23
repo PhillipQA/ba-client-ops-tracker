@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current application version: v0.6.89**
+**Current application version: v0.6.90**
 
 A workspace for clients, projects, tasks, follow-ups, Work Hub communications, document creation, requirements traceability and reports. This guide covers installation, first login, deployment and updates.
 
@@ -131,7 +131,7 @@ The app can be installed before connecting external services.
 
 | Feature | Setup location |
 | --- | --- |
-| Gmail | Internal Admin enables access; the account administrator configures OAuth; each user connects Gmail and selects labels in Work Hub. |
+| Gmail | Internal Admin enables access; the account administrator configures OAuth; each user connects Gmail and selects labels in Work Hub. To send document emails from the tracker, add the `gmail.send` scope to the Google consent screen and have each sender choose **Allow sending email** in Work Hub (once). |
 | Google Drive (Gmail attachments) | Needs Gmail first and schema v23. Enable the Google Drive API in the same Google Cloud project, then an account administrator connects one shared Drive in Settings → Integrations. Users save attachments to task folders from Work Hub. Document Creation can use a COR saved there, files generated BRD, FSD and test case documents, and files every fully signed DRF and Sign Off PDF automatically. |
 | Discord | Account Settings configures the workspace bot; users link their Discord IDs in Work Hub. |
 | GitHub / GitLab | Each user's Work Hub integration settings. |

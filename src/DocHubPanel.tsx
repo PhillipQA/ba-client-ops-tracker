@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Archive, Bell, CheckCircle2, ChevronLeft, ChevronRight, CloudUpload, ExternalLink, FileSignature, FolderOpen, LayoutGrid, List, RefreshCw, UserRound, X } from 'lucide-react'
+import { Archive, Bell, CheckCircle2, ChevronLeft, ChevronRight, CloudUpload, ExternalLink, FileSignature, FolderOpen, LayoutGrid, List, Mail, RefreshCw, UserRound, X } from 'lucide-react'
 import type { Client, Project, WorkItem } from './types'
 import { canNotifyDocHubSigner, dochubRequest, docHubGuidance, docHubLabels, isArchivedDocHubStatus, isDocHubSignerSigned, validateSigners, type DocHubDocument, type DocHubSigner, type GeneratedDocument } from './dochub'
 import './dochub.css'
 import { useDocumentOperation } from './useDocumentOperation'
 import { useDocumentDrive } from './documentDrive'
+import { composeEmail, useEmailEnabled } from './EmailComposer'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
@@ -82,6 +83,8 @@ function DocHubCard({doc,refresh,busy=false}:{doc:DocHubDocument;refresh:()=>Pro
   const guidance=docHubGuidance(doc)
   // Signed documents are filed to Google Drive automatically; this button files older ones or retries a failed save.
   const driveReady=useDocumentDrive(doc.status==='COMPLETED'&&!doc.driveFile)
+  // The signed PDF can be emailed once it is saved on the linked task, because that is where the tracker finds it.
+  const canEmail=useEmailEnabled()&&doc.status==='COMPLETED'&&Boolean(doc.driveFile?.id&&doc.taskId)
   const [driveBusy,setDriveBusy]=useState(false),[driveError,setDriveError]=useState('')
   const saveToDrive=async()=>{
     if(driveBusy)return
@@ -101,7 +104,7 @@ function DocHubCard({doc,refresh,busy=false}:{doc:DocHubDocument;refresh:()=>Pro
   return <article className={`dochub-card${doc.status==='COMPLETED'?' complete':''}`}><div className="dochub-card-head"><div><strong>{doc.title}</strong><span>{docHubLabels[doc.status] || doc.status}</span></div><span className="count-pill">{signed}/{signers.length} signed</span></div>
     {doc.createdByName&&<div className="dochub-created-by"><UserRound size={14}/><span>Created by <strong>{doc.createdByName}</strong> · {dateTime(doc.createdAt)}</span></div>}
     {doc.error&&<p className="dochub-error" role="alert">{doc.error}</p>}{guidance&&<p className="dochub-guidance">{guidance}</p>}
-    <div className="dochub-actions">{doc.documentUrl&&<a className="secondary" href={doc.documentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15}/> Open in DocHub</a>}<button type="button" className="secondary" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={15}/>{busy?'Refreshing…':'Refresh status'}</button>{doc.status==='COMPLETED'&&<a className="secondary" href={`/api/dochub/documents/${doc.id}/pdf`} target="_blank" rel="noopener noreferrer">View signed PDF</a>}{doc.driveFile?.url&&<a className="secondary" href={doc.driveFile.url} target="_blank" rel="noopener noreferrer"><CloudUpload size={15}/> Open in Google Drive</a>}{doc.status==='COMPLETED'&&!doc.driveFile&&driveReady&&<button type="button" className="secondary" disabled={busy||driveBusy} onClick={()=>void saveToDrive()}><CloudUpload size={15}/>{driveBusy?'Saving…':doc.driveError?'Retry saving to Google Drive':'Save to Google Drive'}</button>}</div>
+    <div className="dochub-actions">{doc.documentUrl&&<a className="secondary" href={doc.documentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15}/> Open in DocHub</a>}<button type="button" className="secondary" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={15}/>{busy?'Refreshing…':'Refresh status'}</button>{doc.status==='COMPLETED'&&<a className="secondary" href={`/api/dochub/documents/${doc.id}/pdf`} target="_blank" rel="noopener noreferrer">View signed PDF</a>}{doc.driveFile?.url&&<a className="secondary" href={doc.driveFile.url} target="_blank" rel="noopener noreferrer"><CloudUpload size={15}/> Open in Google Drive</a>}{canEmail&&<button type="button" className="secondary" title="Email the signed PDF from your Gmail, linked to this work" onClick={()=>composeEmail({taskIds:[doc.taskId as string],driveFiles:[{taskId:doc.taskId as string,fileId:doc.driveFile!.id,name:doc.driveFile!.name,size:0}],subject:`Signed ${doc.title}`})}><Mail size={15}/> Email signed PDF</button>}{doc.status==='COMPLETED'&&!doc.driveFile&&driveReady&&<button type="button" className="secondary" disabled={busy||driveBusy} onClick={()=>void saveToDrive()}><CloudUpload size={15}/>{driveBusy?'Saving…':doc.driveError?'Retry saving to Google Drive':'Save to Google Drive'}</button>}</div>
     {doc.driveFile?.path&&<p className="dochub-guidance">Signed PDF saved to Google Drive: {doc.driveFile.path}</p>}{doc.driveNote&&!doc.driveFile&&<p className="dochub-guidance">{doc.driveNote}</p>}{doc.driveError&&!doc.driveFile&&<p className="dochub-error" role="alert">{doc.driveError}</p>}{driveError&&<p className="dochub-error" role="alert">{driveError}</p>}
     <small>Last checked: {dateTime(doc.checkedAt)}{doc.followUpDate?` · Follow-up: ${doc.followUpDate}`:''}</small>
     <details><summary>Signatories and activity</summary>

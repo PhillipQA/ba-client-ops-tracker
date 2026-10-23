@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type { Express, Request, Response, NextFunction } from 'express'
 import { decryptSecret, encryptSecret, IntegrationError } from './tenant-integrations'
 import { archivedWorkReason, LifecycleError } from '../../src/lifecycle'
+import { attachmentContentType } from './gmail-content'
 
 /**
  * One shared Google Drive per account. An account administrator connects it with
@@ -279,6 +280,16 @@ export function registerDrive(app: Express, deps: Deps) {
   }
   /** Whether Drive is connected with the current OAuth client, without raising. */
   const driveReady = async (tenantId: string) => { try { await liveConnection(tenantId); return true } catch { return false } }
+  /** Bytes of a file the tracker saved on a task. Only files listed on that task can be fetched; nothing is stored. */
+  const taskFile = async (tenantId: string, taskId: string, fileId: string, maxBytes: number) => {
+    const state = (await deps.load(tenantId)).data
+    const task = (state?.items || []).find((item: any) => item.id === taskId)
+    const entry = (Array.isArray(task?.driveFiles) ? task.driveFiles : []).find((file: any) => file.id === fileId)
+    if (!entry) throw new IntegrationError('This file is not saved on that task.', 404)
+    const { row, config } = await liveConnection(tenantId)
+    const bytes = await driveClient(await accessToken(tenantId, row, config)).download(fileId, maxBytes)
+    return { name: String(entry.name || 'attachment'), mimeType: attachmentContentType(String(entry.mimeType || '')), bytes }
+  }
 
   // Account settings
   app.get('/api/account/drive', ...auth, accountGate, wrap(async (req, res) => {
@@ -419,15 +430,9 @@ export function registerDrive(app: Express, deps: Deps) {
   app.get('/api/documents/drive/file', ...auth, documentUser, wrap(async (req, res) => {
     const tenantId = current(req).organizationId, taskId = String(req.query.taskId || ''), fileId = String(req.query.fileId || '')
     const maxBytes = Math.min(Number(req.query.maxBytes) || MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BYTES)
-    const state = (await deps.load(tenantId)).data
-    const task = (state?.items || []).find((item: any) => item.id === taskId)
-    const entry = (Array.isArray(task?.driveFiles) ? task.driveFiles : []).find((file: any) => file.id === fileId)
-    if (!entry) throw new IntegrationError('This file is not saved on that task.', 404)
-    const { row, config } = await liveConnection(tenantId)
-    const bytes = await driveClient(await accessToken(tenantId, row, config)).download(fileId, maxBytes)
-    const mime = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/i.test(String(entry.mimeType)) ? String(entry.mimeType).toLowerCase() : 'application/octet-stream'
-    res.setHeader('Content-Type', mime); res.setHeader('Content-Length', String(bytes.length)); res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.send(bytes)
+    const file = await taskFile(tenantId, taskId, fileId, maxBytes)
+    res.setHeader('Content-Type', file.mimeType); res.setHeader('Content-Length', String(file.bytes.length)); res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.send(file.bytes)
   }))
   // File a generated BRD, FSD, test case suite or similar document under a task or subtask.
   app.post('/api/documents/drive/save', ...auth, documentUser, wrap(async (req, res) => {
@@ -457,5 +462,5 @@ export function registerDrive(app: Express, deps: Deps) {
     })
   }))
   const filer: DriveFiler = { ready: driveReady, file: fileInDrive }
-  return { handles, callback, filer }
+  return { handles, callback, filer, taskFile }
 }
