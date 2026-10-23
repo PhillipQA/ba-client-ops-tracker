@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.6.86.**
+**Current application version: v0.6.87.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.86**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.87**.
 
 ## Database requirements
 
@@ -35,10 +35,12 @@ For an existing Supabase database, the recent incremental migrations are:
 | v0.6.76 | [schema-v20](../../database/migrations/schema-v20-work-hub-gitlab.sql) | Personal GitLab connections and issues |
 | v0.6.80 | [schema-v21](../../database/migrations/schema-v21-golive-template.sql) | Optional custom Go Live templates |
 | v0.6.83 | [schema-v22](../../database/migrations/schema-v22-signoff-form-templates.sql) | Optional custom UAT Sign Off, UAT Deployment Approval and Training Sign Off templates |
+| v0.6.87 | [schema-v23](../../database/migrations/schema-v23-drive-attachments.sql) | Shared Google Drive for Gmail attachments; private list of tasks created from each email |
 
 Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations missing the Git provider tables, the [combined v19/v20 upgrade](../../database/upgrades/schema-v19-v20-work-hub-git-providers.sql) is available. Do not run both the combined script and the same individual migrations.
 
-- **v0.6.78, v0.6.79, v0.6.81 and v0.6.82 add no new database migration.**
+- **v0.6.78, v0.6.79, v0.6.81, v0.6.82, v0.6.84, v0.6.85 and v0.6.86 add no new database migration.**
+- **v0.6.87:** apply v23 before connecting Google Drive. It works on Supabase and on plain PostgreSQL such as Northflank: Supabase-only roles and row-level security are applied only where those roles exist. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_drive_accounts` table afterwards. Until v23 is applied, Settings and Work Hub say so and nothing else changes. Tasks created from an email before v23 are still offered when saving that email's attachments, but only the most recent one.
 - Built-in Go Live generation works with the existing template table; v21 enables custom Go Live uploads/removal.
 - The built-in UAT Sign Off, UAT Deployment Approval and Training Sign Off forms also work with the existing template table. Apply v22 before uploading or removing custom templates for them in Settings → Templates; until then those cards can only use the built-in template.
 - For installations earlier than these rows, consult the [historical release notes](../releases/README.md) for prior schema prerequisites.
@@ -67,6 +69,7 @@ Replace the ZIP path with the actual patch and follow its version-specific instr
 - Check the displayed application version.
 - Open an existing workspace and confirm clients, projects and tasks are present.
 - Check integrations you use, existing evidence downloads and document generation.
+- For v0.6.87, after applying v23 and enabling the Google Drive API: as an account administrator open Settings → Integrations → Google Drive and connect. In Work Hub, create a task from a Gmail message with an attachment, click **Save to Drive**, pick the task or a subtask, and confirm the file appears under BA Client Ops Tracker / Client / Project / Task in Drive and as **Saved to Google Drive** on the task.
 - For v0.6.86, open Work Hub, select a Gmail message that has an attachment and click the file name. It should download. Messages synced before this version download the same way.
 - For v0.6.85, generate a BRD preview and an FSD preview and confirm the page text is dark on white, in dark and light appearance and with a wallpaper theme.
 - For v0.6.84, generate an FSD preview and a BRD preview. A reply the AI formats badly is now repaired or retried automatically instead of stopping with "The AI returned an invalid document".

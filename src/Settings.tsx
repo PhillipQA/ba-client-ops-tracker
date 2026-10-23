@@ -3,6 +3,7 @@ import type { UserAccount } from './types'
 import { DocHubSettings } from './DocHubPanel'
 import { CalendarAccountSettings } from './GoogleCalendarPanel'
 import { GmailAccountSettings } from './GmailAccountSettings'
+import { DriveAccountSettings } from './DriveAccountSettings'
 import type { SignoffTemplateKind } from './signoff'
 
 export async function settingsRequest(url: string, method = 'GET', data?: unknown) {
@@ -184,7 +185,7 @@ function Templates() {
 export default function Settings({ currentUser }: { currentUser: UserAccount }) {
   const [data,setData] = useState<any>(null), [error,setError] = useState('')
   const isAdmin = currentUser.role === 'Administrator'
-  const [activeTab, setActiveTab] = useState<'templates'|'agents'|'integrations'>('templates')
+  const [activeTab, setActiveTab] = useState<'templates'|'agents'|'integrations'>(() => new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'integrations' : 'templates')
   const tabs = isAdmin ? [{ id: 'templates' as const, label: 'Templates' }, { id: 'agents' as const, label: 'AI Agents' }, { id: 'integrations' as const, label: 'Integrations' }] : []
   const load = async () => { setData(await settingsRequest('/api/account/integrations')); setError('') }
   useEffect(() => { if (isAdmin) void load().catch(e => setError(e.message)) }, [currentUser.id, currentUser.organizationId, isAdmin])
@@ -203,7 +204,7 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
         <div className="settings-section-heading"><div><h2>Account integrations</h2><p>Manage connections used by your account.</p></div><button type="button" className="secondary" onClick={() => void load().catch(e => setError(e.message))}>Refresh status</button></div>
         {error && <p role="alert" className="settings-message">{error}</p>}{data && !data.encryptionReady && <p role="alert" className="settings-message">Integration storage needs setup by Internal Admin.</p>}
         {data?.integrations.map((value: Integration) => <IntegrationCard key={value.kind} value={value} runtime={data.discord} refresh={load} />)}
-        <DocHubSettings key={`dochub:${currentUser.organizationId}`} /><CalendarAccountSettings key={currentUser.organizationId} /><GmailAccountSettings key={`gmail:${currentUser.organizationId}`} />
+        <DocHubSettings key={`dochub:${currentUser.organizationId}`} /><CalendarAccountSettings key={currentUser.organizationId} /><GmailAccountSettings key={`gmail:${currentUser.organizationId}`} /><DriveAccountSettings key={`drive:${currentUser.organizationId}`} />
       </div>
     </> : <div className="panel"><h2>Account settings</h2><p>Your account administrator manages templates, AI agents, and integrations.</p><p className="settings-helper">Use <strong>My Themes</strong> in the left panel for interface mode and workspace background preferences.</p></div>}
   </section>

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { LayoutGrid, List, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react'
+import { LayoutGrid, List, ChevronLeft, ChevronRight, Paperclip, CloudUpload } from 'lucide-react'
 import GitProviderHub from './GitProviderHub'
 import { workHubSync, integrationLabel, WORK_HUB_INTEGRATIONS, type WorkHubIntegration, type WorkHubSource } from './workHubSync'
 import { useWorkHubSync } from './useWorkHubSync'
@@ -21,11 +21,16 @@ function fileSize(bytes?:number) {
   if(!bytes || bytes<0) return ''
   return bytes<1024 ? `${bytes} B` : bytes<1048576 ? `${Math.round(bytes/1024)} KB` : `${(bytes/1048576).toFixed(1)} MB`
 }
+type DriveTarget = { id:string;title:string;kind:'Task'|'Subtask';parentTaskId?:string;clientName:string;projectName:string }
+type DriveOptions = { available:boolean;onSaved:()=>Promise<void> }
 /** Gmail attachments are fetched from Gmail when clicked; the app never stores the file. */
-function AttachmentList({message}:{message:Message}) {
+function AttachmentList({message,drive}:{message:Message;drive?:DriveOptions}) {
   const [pending,setPending]=useState<number|null>(null),[error,setError]=useState('')
+  const [picking,setPicking]=useState<number|null>(null),[targets,setTargets]=useState<DriveTarget[]|null>(null),[target,setTarget]=useState('')
+  const [saved,setSaved]=useState<Record<number,{url:string;where:string}>>({}),[driveNote,setDriveNote]=useState('')
   const files=(message.attachments || []).map(entry=>typeof entry==='string'?{name:entry}:entry).filter(entry=>entry?.name)
   if(!files.length) return null
+  const gmail=message.source==='Gmail',canSave=gmail && Boolean(drive?.available)
   const download=async(index:number,name:string)=>{
     setPending(index);setError('')
     try {
@@ -37,10 +42,45 @@ function AttachmentList({message}:{message:Message}) {
     } catch(e) { setError(e instanceof Error ? e.message : 'Could not download this attachment.') }
     finally { setPending(null) }
   }
-  return <div className="communication-attachments"><strong>Attachments</strong><ul>{files.map((file,index)=><li key={`${index}:${file.name}`}>{message.source==='Gmail'
+  const openPicker=async(index:number)=>{
+    setError('');setDriveNote('');setPicking(index)
+    if(targets) return
+    try {
+      const result=await request(`/api/communications/${encodeURIComponent(message.id)}/drive-targets`) as {targets:DriveTarget[]}
+      setTargets(result.targets);setTarget(result.targets[0]?.id || '')
+    } catch(e) { setPicking(null);setError(e instanceof Error ? e.message : 'Could not load tasks for this email.') }
+  }
+  const targetLabel=(t:DriveTarget)=>t.kind==='Subtask' ? `↳ ${t.title}` : `${t.title}${t.clientName || t.projectName ? ` — ${[t.clientName,t.projectName].filter(Boolean).join(' / ')}` : ''}`
+  const saveToDrive=async(index:number)=>{
+    const chosen=targets?.find(t=>t.id===target)
+    if(!chosen) return
+    setPending(index);setError('');setDriveNote('')
+    try {
+      const response=await fetch(`/api/communications/${encodeURIComponent(message.id)}/attachments/${index}/drive`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({taskId:chosen.id})})
+      const result=await response.json().catch(()=>({}))
+      if(!response.ok && result.code!=='ALREADY_SAVED') throw new Error(result.error || 'Could not save this attachment to Google Drive.')
+      const where=chosen.kind==='Subtask' ? `subtask “${chosen.title}”` : `task “${chosen.title}”`
+      if(result.file?.url) setSaved(previous=>({...previous,[index]:{url:result.file.url,where}}))
+      setPicking(null)
+      if(result.code==='ALREADY_SAVED') { setDriveNote(result.error);return }
+      try { await drive?.onSaved() } catch { setDriveNote('Saved to Google Drive. Refresh the workspace to see the link on the task.') }
+    } catch(e) { setError(e instanceof Error ? e.message : 'Could not save this attachment to Google Drive.') }
+    finally { setPending(null) }
+  }
+  return <div className="communication-attachments"><strong>Attachments</strong><ul>{files.map((file,index)=><li key={`${index}:${file.name}`}><div className="communication-attachment-row">{gmail
     ? <button type="button" className="communication-attachment-link" disabled={pending!==null} onClick={()=>void download(index,file.name)} aria-label={`Download ${file.name}`}><Paperclip size={14} aria-hidden="true" /><span>{file.name}</span></button>
     : <span className="communication-attachment-name"><Paperclip size={14} aria-hidden="true" />{file.name}</span>}
-    {'size' in file && fileSize(file.size) ? <small>{fileSize(file.size)}</small> : null}{pending===index ? <small role="status">Downloading…</small> : null}</li>)}</ul>
+    {'size' in file && fileSize(file.size) ? <small>{fileSize(file.size)}</small> : null}
+    {canSave && picking!==index && <button type="button" className="secondary compact communication-drive-button" disabled={pending!==null} onClick={()=>void openPicker(index)}><CloudUpload size={14} aria-hidden="true" /> Save to Drive</button>}
+    {pending===index ? <small role="status">{picking===index ? 'Saving to Drive…' : 'Downloading…'}</small> : null}
+    {saved[index] && <a className="communication-drive-saved" href={saved[index].url} target="_blank" rel="noopener noreferrer">Saved to {saved[index].where} · Open in Drive</a>}</div>
+    {picking===index && <div className="communication-drive-picker">{targets===null ? <small role="status">Loading tasks…</small> : targets.length===0
+      ? <><p>Create a task from this email first, then save the file to it or one of its subtasks.</p><button type="button" className="secondary compact" onClick={()=>setPicking(null)}>Close</button></>
+      : <><label>Save “{file.name}” to<select value={target} disabled={pending!==null} onChange={e=>setTarget(e.target.value)}>{targets.map(t=><option key={t.id} value={t.id}>{targetLabel(t)}</option>)}</select></label>
+        <small>Goes to the team Drive folder Client / Project / Task{targets.find(t=>t.id===target)?.kind==='Subtask' ? ' / Subtask' : ''}. Everyone with access to that Drive can open it.</small>
+        <div className="communication-drive-actions"><button type="button" className="primary compact" disabled={pending!==null || !target} onClick={()=>void saveToDrive(index)}>{pending===index ? 'Saving…' : 'Save'}</button><button type="button" className="secondary compact" disabled={pending!==null} onClick={()=>setPicking(null)}>Cancel</button></div></>}</div>}
+    </li>)}</ul>
+    {driveNote && <p role="status">{driveNote}</p>}
     {error && <p role="alert">{error}</p>}</div>
 }
 class CommunicationRequestError extends Error {
@@ -58,6 +98,14 @@ export default function WorkHub({clients,projects,accounts,tasks,taskSettings,cu
   const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[clientId,setClientId]=useState(''),[projectId,setProjectId]=useState(''),[assignee,setAssignee]=useState(currentUser.id)
   const [message,setMessage]=useState(''),[busy,setBusy]=useState(false)
   const hubSync=useWorkHubSync()
+  const [driveAvailable,setDriveAvailable]=useState(false)
+  useEffect(()=>{
+    if(!settings?.gmailAvailable){setDriveAvailable(false);return}
+    const controller=new AbortController()
+    void request('/api/communications/drive','GET',undefined,controller.signal).then(r=>setDriveAvailable(Boolean(r.available))).catch(()=>{if(!controller.signal.aborted)setDriveAvailable(false)})
+    return()=>controller.abort()
+  },[settings?.gmailAvailable])
+  const driveOptions:DriveOptions={available:driveAvailable,onSaved:onTaskCreated}
   const alive=useRef(true)
   useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
   const detailRef=useRef<HTMLDivElement>(null)
@@ -193,7 +241,7 @@ export default function WorkHub({clients,projects,accounts,tasks,taskSettings,cu
     </>}
     </div>
     {tab!=='GitHub' && (selected || compose) && <div className="panel communication-detail" ref={detailRef} tabIndex={-1} role="region" aria-label="Message details"><div className="panel-heading"><div><h2>{selected ? selected.subject || 'Communication' : 'New private manual log'}</h2><p>{selected ? `${selected.source} · ${selected.sender} · ${selected.status}` : 'Visible only to your account'}</p></div><button className="secondary" disabled={busy} onClick={()=>{setSelected(null);setCompose(false)}}>Close</button></div>
-      {selected ? <><div className="communication-body">{threadLoading && !selectedThread.length ? <p role="status">Loading thread…</p> : threadError && !selectedThread.length ? <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p> : selectedThread.length > 1 ? selectedThread.map(entry=><article key={entry.id} className="communication-thread-message"><strong>{entry.sender} · {new Date(entry.received_at).toLocaleString()}</strong><p>{entry.body || 'No plain text body available.'}</p><AttachmentList message={entry} /></article>) : <>{selected.body || 'No plain text body available.'}<AttachmentList message={selected} /></>}{threadError && selectedThread.length>0 && <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p>}{!threadError && selectedThread.length>0 && selectedThread.length<threadTotal && <button className="secondary" disabled={threadLoading} onClick={()=>setThreadPage(value=>value+1)}>{threadLoading?'Loading…':`Load more thread messages (${selectedThread.length} of ${threadTotal})`}</button>}</div><div className="integration-actions">{selected.status!=='Resolved' && <button className="secondary" disabled={busy} onClick={()=>update('Resolved')}>Resolve</button>}{selected.status!=='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Archived')}>Archive</button>}{selected.status==='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Open')}>Restore</button>}</div></>:null}
+      {selected ? <><div className="communication-body">{threadLoading && !selectedThread.length ? <p role="status">Loading thread…</p> : threadError && !selectedThread.length ? <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p> : selectedThread.length > 1 ? selectedThread.map(entry=><article key={entry.id} className="communication-thread-message"><strong>{entry.sender} · {new Date(entry.received_at).toLocaleString()}</strong><p>{entry.body || 'No plain text body available.'}</p><AttachmentList message={entry} drive={driveOptions} /></article>) : <>{selected.body || 'No plain text body available.'}<AttachmentList message={selected} drive={driveOptions} /></>}{threadError && selectedThread.length>0 && <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p>}{!threadError && selectedThread.length>0 && selectedThread.length<threadTotal && <button className="secondary" disabled={threadLoading} onClick={()=>setThreadPage(value=>value+1)}>{threadLoading?'Loading…':`Load more thread messages (${selectedThread.length} of ${threadTotal})`}</button>}</div><div className="integration-actions">{selected.status!=='Resolved' && <button className="secondary" disabled={busy} onClick={()=>update('Resolved')}>Resolve</button>}{selected.status!=='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Archived')}>Archive</button>}{selected.status==='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Open')}>Restore</button>}</div></>:null}
       {!selected && compose ? <><label>Subject<input value={title} onChange={e=>setTitle(e.target.value)} /></label><label>Message<textarea value={description} onChange={e=>setDescription(e.target.value)} /></label><button className="primary" disabled={busy} onClick={()=>void act(async()=>{await request('/api/communications','POST',{subject:title,body:description});await load();reloadMessages();setCompose(false)})}>Save private log</button></>:null}
       {selected && currentUser.role!=='Viewer' && <div className="communication-task-form"><h3>Create a project task</h3><p>Enter only the information User B should see. The email or Discord thread and sender are never copied into the task.</p><div className="communication-fields"><label>Task title<input ref={taskTitleRef} disabled={busy} value={title} maxLength={200} onChange={e=>setTitle(e.target.value)} /></label><label>Client<select disabled={busy} value={clientId} onChange={e=>setClientId(e.target.value)}><option value="">Select client</option>{clients.filter(x=>!x.archived).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Project<select disabled={busy} value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Select project</option>{projects.filter(x=>!x.archived).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Assign to<select disabled={busy} value={assignee} onChange={e=>setAssignee(e.target.value)}>{accounts.filter(x=>x.status!=='Disabled' && x.role!=='Viewer').map(x=><option key={x.id} value={x.id}>{x.name || x.username}</option>)}</select></label></div><label>Shared task description<textarea disabled={busy} value={description} maxLength={5000} onChange={e=>setDescription(e.target.value)} placeholder="Write a summary for the assignee. The private message is not included." /></label><button className="primary" disabled={busy || !title.trim() || !clientId || !projectId || !assignee} onClick={createTask}>Create task without sharing thread</button></div>}
     </div>}

@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v0.6.86: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 22. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v0.6.87: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 23. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -19,7 +19,7 @@ begin
       raise exception 'Supabase role % is missing. Use a new Supabase project for this setup.', object_name;
     end if;
   end loop;
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     if to_regclass(format('public.%I', object_name)) is not null then
       raise exception 'Fresh setup stopped: public.% already exists. No changes were applied. Use newer migrations for an existing installation; do not replay old migrations.', object_name;
     end if;
@@ -1378,6 +1378,42 @@ ALTER TABLE public.tenant_templates DROP CONSTRAINT IF EXISTS tenant_templates_t
 ALTER TABLE public.tenant_templates ADD CONSTRAINT tenant_templates_template_type_check
   CHECK (template_type IN ('drf', 'brd', 'fsd', 'signoff', 'golive', 'uat', 'uatdeploy', 'training'));
 
+-- Included source: migrations/schema-v23-drive-attachments.sql
+-- SHA-256: 7f3c95a7625b6237ba44e5f74e5c0a24ac5dc4bceecb5050d7a97f8f11af1b9a
+-- Apply once to existing v0.6.86 databases (Supabase or Northflank PostgreSQL).
+-- One shared Google Drive per account for saving Gmail attachments to task folders.
+-- File contents are never stored here: only the encrypted Drive connection, the
+-- app-created root folder and the folder id used for each client, project and task.
+
+create table if not exists public.tenant_drive_accounts (
+  tenant_id uuid primary key references public.organizations(id) on delete cascade,
+  drive_email text not null,
+  encrypted_refresh_token text not null,
+  gmail_config_revision uuid not null,
+  root_folder_id text,
+  folders jsonb not null default '{}'::jsonb,
+  connected_by text,
+  updated_at timestamptz not null default now()
+);
+-- Private list of every task created from a message. The shared task never
+-- stores the private message id; this column lets the owner pick among them.
+alter table public.user_communications add column if not exists linked_task_ids text[] not null default '{}'::text[];
+update public.user_communications set linked_task_ids = array[linked_task_id]
+  where linked_task_id is not null and linked_task_id <> '' and cardinality(linked_task_ids) = 0;
+-- Supabase only: lock the table to the service role, as for the other private tables.
+-- Plain PostgreSQL (Northflank) has no anon/service_role, and enabling row level
+-- security there would block the app's database user, so it is skipped.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'alter table public.tenant_drive_accounts enable row level security';
+    execute 'revoke all on public.tenant_drive_accounts from public, anon, authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant all on public.tenant_drive_accounts to service_role';
+  end if;
+end $$;
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1391,7 +1427,7 @@ do $setup_grants$
 declare
   object_name text;
 begin
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_integrations','tenant_state','tenant_templates','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     execute format('alter table public.%I enable row level security', object_name);
     execute format('revoke all on table public.%I from public, anon, authenticated', object_name);
     execute format('grant all on table public.%I to service_role', object_name);
@@ -1401,4 +1437,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 22 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 23 as schema_version;

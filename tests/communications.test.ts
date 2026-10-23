@@ -7,6 +7,7 @@ import { registerCommunications } from '../server/integrations/communications'
 function fixture(options: { failLink?: boolean } = {}) {
   const records:any[]=[{id:'11111111-1111-4111-8111-111111111111',tenant_id:'tenant',owner_user_id:'user-a',source:'Gmail',external_id:'secret-mail',thread_id:'thread-a',subject:'Private subject',body:'Private full email thread',sender:'private@example.com',status:'New',received_at:new Date().toISOString()}]
   const gmailAccounts:any[]=[]
+  const driveRows:any[]=[]
   const users:any[]=[{id:'user-a',role:'Contributor',status:'Active',modules:['inbox','items'],organization_id:'tenant'},{id:'user-b',role:'Contributor',status:'Active',modules:['inbox','items'],organization_id:'tenant'}]
   const prefs:any[]=[{tenant_id:'tenant',user_id:'user-a',discord_user_id:'123456789012345678',discord_capture_mentions:true},{tenant_id:'tenant',user_id:'user-b',discord_user_id:'234567890123456789',discord_capture_mentions:true}]
   let saved:any
@@ -26,14 +27,17 @@ function fixture(options: { failLink?: boolean } = {}) {
     range(start:number,end:number){this.start=start;this.end=end;return this}
     insert(value:any){this.action='insert';this.value=value;return this}
     update(value:any){this.action='update';this.value=value;return this}
-    upsert(value:any){this.action='upsert';this.value=value;return this}
+    upsert(value:any,options?:any){this.action='upsert';this.value=value;this.conflict=String(options?.onConflict||'tenant_id,user_id').split(',');return this}
+    delete(){this.action='delete';return this}
+    conflict:string[]=[]
     maybeSingle(){this.many=false;return this.run()}
     single(){this.many=false;return this.run()}
     then(resolve:any,reject:any){return this.run().then(resolve,reject)}
-    async run(){const rows=this.table==='user_communications'?records:this.table==='user_communication_settings'?prefs:this.table==='gmail_accounts'?gmailAccounts:users
+    async run(){const rows=this.table==='user_communications'?records:this.table==='user_communication_settings'?prefs:this.table==='gmail_accounts'?gmailAccounts:this.table==='tenant_drive_accounts'?driveRows:users
       if(this.action==='insert'){const record={id:crypto.randomUUID(),...this.value};rows.push(record);return {data:this.many?null:record,error:null}}
       if(this.action==='update'){if(options.failLink && this.table==='user_communications' && this.value.linked_task_id)return {data:null,error:{message:'Badge write failed'}};const found=rows.filter(x=>this.conditions.every(c=>c(x)));for(const row of found)Object.assign(row,this.value);return {data:this.many?null:found[0]||null,error:null}}
-      if(this.action==='upsert'){const found=rows.find(x=>x.tenant_id===this.value.tenant_id && x.user_id===this.value.user_id);if(found)Object.assign(found,this.value);else rows.push(this.value);return {data:null,error:null}}
+      if(this.action==='delete'){for(let i=rows.length-1;i>=0;i--)if(this.conditions.every(c=>c(rows[i])))rows.splice(i,1);return {data:null,error:null}}
+      if(this.action==='upsert'){const found=rows.find(x=>this.conflict.every(key=>x[key]===this.value[key]));if(found)Object.assign(found,this.value);else rows.push(this.value);return {data:null,error:null}}
       const matched=rows.filter(x=>this.conditions.every(c=>c(x))).sort((a,b)=>{for(const {key,ascending} of this.orders){const result=String(a[key]).localeCompare(String(b[key]));if(result)return ascending?result:-result}return 0})
       if(this.start>0 && this.start>=matched.length)return {data:null,count:null,error:{code:'PGRST103'}}
       return {data:this.head?null:this.many?matched.slice(this.start,this.end+1):matched[0]||null,count:matched.length,error:null}
@@ -41,7 +45,7 @@ function fixture(options: { failLink?: boolean } = {}) {
   }
   const app=express();app.use(express.json());app.use((req:any,_res,next)=>{const id=String(req.headers['x-test-user']||'user-a');req.authUser={id,organizationId:'tenant',name:id,role:String(req.headers['x-test-role']||'Contributor'),modules:['inbox','items'],status:'Active'};next()})
   const hub=registerCommunications(app,{db:{from:(table:string)=>new Query(table)},requireAuth:(_req,_res,next)=>next(),requireTenant:(_req,_res,next)=>next(),sessionFromRequest:()=>({token:'session-a',user:null}),sessionByToken:(token:string)=>token==='session-a'?{id:'user-a',organizationId:'tenant',status:'Active'}:null,requirePlatformAdmin:(_req,_res,next)=>next(),organizationById:async()=>({id:'tenant',status:'Active',enabledModules:['inbox','items','settings']}),load:async()=>({data:saved || state}),commit:async(_tenant,next)=>{saved=next},openStatus:()=> 'Open'})
-  return {app,records,users,gmailAccounts,prefs,hub,state,getSaved:()=>saved}
+  return {app,records,users,gmailAccounts,driveRows,prefs,hub,state,getSaved:()=>saved}
 }
 
 test('private communications reject cross-user reads and task conversion',async()=>{
@@ -416,5 +420,169 @@ test('Gmail attachments download from Gmail on demand for the owner only and are
   assert.equal(gone.status,404);assert.match((await gone.json()).error,/no longer available in Gmail/)
 
   assert.equal(JSON.stringify(records),before,'Downloads must not write anything')
+ } finally {globalThis.fetch=original;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
+})
+
+test('Drive helpers pick linked tasks and subtasks, skip archived work and build Client/Project/Task folders',async()=>{
+ const {driveName,linkedTaskIds,driveTargets,driveFolderPath,ensureDrivePath}=await import('../server/integrations/google-drive')
+ assert.equal(driveName('  Q3\u0000 report\n'),'Q3 report');assert.equal(driveName(''),'Untitled');assert.equal(driveName('x'.repeat(300)).length,200)
+ assert.deepEqual(linkedTaskIds({linked_task_id:'t2',linked_task_ids:['t1','t2']}),['t1','t2'])
+ assert.deepEqual(linkedTaskIds({linked_task_id:'t9'}),['t9'],'Messages linked before schema v23 still count')
+ assert.deepEqual(linkedTaskIds({}),[])
+ const state:any={clients:[{id:'c1',name:'Acme Bank'},{id:'c2',name:'Old Co',archived:true}],projects:[{id:'p1',name:'POS Rollout'}],items:[
+  {id:'t1',title:'Install terminals',clientId:'c1',projectId:'p1'},
+  {id:'s2',title:'Site B',clientId:'c1',projectId:'p1',parentTaskId:'t1',subtaskOrder:2},
+  {id:'s1',title:'Site A',clientId:'c1',projectId:'p1',parentTaskId:'t1',subtaskOrder:1},
+  {id:'t2',title:'Archived client work',clientId:'c2',projectId:'p1'},
+  {id:'t3',title:'Unrelated',clientId:'c1',projectId:'p1'}]}
+ const targets=driveTargets(state,['t1','t2','missing'])
+ assert.deepEqual(targets.map(t=>[t.id,t.kind]),[['t1','Task'],['s1','Subtask'],['s2','Subtask']],'Linked task first, then its subtasks in order; archived and unknown ids are skipped')
+ assert.equal(targets[0].clientName,'Acme Bank');assert.equal(targets[0].projectName,'POS Rollout')
+ assert.deepEqual(driveTargets(state,['s2']).map(t=>t.id),['s2'],'A linked subtask does not pull in its siblings')
+ assert.deepEqual(driveFolderPath(state,'s1'),[{key:'client:c1',name:'Acme Bank'},{key:'project:c1:p1',name:'POS Rollout'},{key:'task:t1',name:'Install terminals'},{key:'task:s1',name:'Site A'}])
+ assert.deepEqual(driveFolderPath({items:[{id:'x',title:'Loose'}]},'x').map(s=>s.name),['No client','No project','Loose'])
+ assert.throws(()=>driveFolderPath(state,'nope'),/Task not found/)
+ const calls:string[]=[]
+ const fake={existingFolder:async(id:string,name:string)=>{calls.push(`check:${id}:${name}`);return id==='gone'?null:id},createFolder:async(name:string,parent?:string)=>{calls.push(`create:${name}:${parent}`);return `new-${name}`},upload:async()=>''}
+ const result=await ensureDrivePath(fake as any,'root',{'client:c1':'keep','project:c1:p1':'gone'},driveFolderPath(state,'t1'))
+ assert.equal(result.folderId,'new-Install terminals')
+ assert.deepEqual(result.folders,{'client:c1':'keep','project:c1:p1':'new-POS Rollout','task:t1':'new-Install terminals'})
+ assert.deepEqual(calls,['check:keep:Acme Bank','check:gone:POS Rollout','create:POS Rollout:keep','create:Install terminals:new-POS Rollout'],'Existing folders are reused, deleted ones recreated under the right parent')
+})
+
+test('Admin connects one shared Drive; attachments save into Client/Project/Task/Subtask folders and link on the task',async()=>{
+ const oldKey=process.env.TENANT_INTEGRATION_MASTER_KEY,original=globalThis.fetch
+ process.env.TENANT_INTEGRATION_MASTER_KEY='f'.repeat(64)
+ const {app,records,users,gmailAccounts,driveRows,prefs,state,getSaved}=fixture()
+ users[0].role='Administrator';users[0].modules.push('settings')
+ const server=app.listen(0)
+ const address=server.address();if(!address||typeof address==='string')throw new Error('No port')
+ const base=`http://127.0.0.1:${address.port}`,callback=`${base}/api/communications/gmail/callback`
+ gmailAccounts.push({tenant_id:'tenant',platform_enabled:true,account_enabled:true,revision:'v1',encrypted_config:encryptSecret(JSON.stringify({clientId:'test.apps.googleusercontent.com',clientSecret:'fixture-secret',redirectUri:callback}),'tenant','gmail-oauth')})
+ Object.assign(prefs[0],{gmail_labels:['L1'],gmail_config_revision:'v1',gmail_refresh_token:encryptSecret('gmail-refresh','tenant:user-a','gmail-refresh')})
+ const mail=records[0];mail.attachments=[{name:'site-survey.pdf',partId:'1',mimeType:'application/pdf',size:9},{name:'photo.png',partId:'2',mimeType:'image/png',size:4}]
+ const pdf=Buffer.from('%PDF-1.7'),png=Buffer.from('PNG!')
+ // Fake Google: OAuth, Gmail and a Drive that remembers folders and files.
+ const drive=new Map<string,any>();let nextId=0,uploads:any[]=[],tokenGrants:string[]=[],pendingUpload:any=null,identity='files@acme.example',grantedScope='https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email'
+ globalThis.fetch=(async(input:any,init:any={})=>{
+  const url=new URL(String(input)),method=String(init.method||'GET')
+  const json=(body:any,status=200,headers:Record<string,string>={})=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json',...headers}})
+  if(url.hostname==='oauth2.googleapis.com'&&url.pathname==='/token'){const form=new URLSearchParams(String(init.body));tokenGrants.push(`${form.get('grant_type')}:${form.get('refresh_token')||form.get('code')}`)
+   return form.get('grant_type')==='authorization_code'?json({access_token:'drive-access',refresh_token:'drive-refresh-secret',expires_in:3600,scope:grantedScope}):json({access_token:form.get('refresh_token')==='drive-refresh-secret'?'drive-access':'gmail-access',expires_in:3600})}
+  if(url.pathname==='/oauth2/v3/userinfo')return json({email:identity,email_verified:true})
+  if(url.hostname==='oauth2.googleapis.com'&&url.pathname==='/revoke')return json({})
+  if(url.hostname==='gmail.googleapis.com'){
+   if(url.pathname.endsWith('/attachments/att-pdf'))return json({data:pdf.toString('base64url'),size:pdf.length})
+   return json({id:'secret-mail',payload:{mimeType:'multipart/mixed',parts:[{partId:'1',mimeType:'application/pdf',filename:'site-survey.pdf',body:{attachmentId:'att-pdf',size:pdf.length}},{partId:'2',mimeType:'image/png',filename:'photo.png',body:{data:png.toString('base64url'),size:png.length}}]}})
+  }
+  assert.equal(init.headers?.Authorization,'Bearer drive-access','Drive calls use the Drive token, never the Gmail one')
+  if(url.pathname==='/drive/v3/files'&&method==='POST'){const body=JSON.parse(String(init.body)),id=`folder-${++nextId}`;drive.set(id,{...body,id});return json({id})}
+  const file=/^\/drive\/v3\/files\/([^/]+)$/.exec(url.pathname)
+  if(file){const found=drive.get(decodeURIComponent(file[1]));if(!found)return json({error:{message:'File not found'}},404)
+   if(method==='PATCH'){found.name=JSON.parse(String(init.body)).name;return json({id:found.id})}
+   return json({id:found.id,name:found.name,mimeType:found.mimeType,trashed:Boolean(found.trashed)})}
+  if(url.pathname==='/upload/drive/v3/files'&&method==='POST'){pendingUpload={...JSON.parse(String(init.body)),type:init.headers['X-Upload-Content-Type']};return new Response('',{status:200,headers:{location:'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=u1'}})}
+  if(url.pathname==='/upload/drive/v3/files'&&method==='PUT'){const id=`file-${++nextId}`;uploads.push({...pendingUpload,id,bytes:Buffer.from(init.body)});return json({id})}
+  throw new Error(`Unexpected request ${method} ${url}`)
+ }) as typeof fetch
+ const local=(path:string,method='GET',body?:any,headers:Record<string,string>={})=>original(base+path,{method,headers:{'x-test-user':'user-a','x-test-role':'Administrator','content-type':'application/json',...headers},body:body?JSON.stringify(body):undefined,redirect:'manual'})
+ try {
+  assert.deepEqual(await (await local('/api/account/drive')).json(),{gmailReady:true,connected:false,email:'',rootFolderUrl:'',reconnectRequired:false})
+  assert.equal((await local('/api/account/drive/connect','POST',undefined,{'x-test-user':'user-b','x-test-role':'Contributor'})).status,403,'Only an account administrator connects Drive')
+  assert.equal((await (await local('/api/communications/drive')).json()).available,false)
+
+  // Connect: one shared Drive, through the existing Gmail OAuth client and callback address.
+  const connect=await local('/api/account/drive/connect','POST');assert.equal(connect.status,200)
+  const auth=new URL((await connect.json()).url)
+  assert.equal(auth.searchParams.get('redirect_uri'),callback,'Reuses the Gmail redirect URI, so no Google Cloud redirect change is needed')
+  assert.match(auth.searchParams.get('scope')||'',/auth\/drive\.file/);assert.doesNotMatch(auth.searchParams.get('scope')||'',/auth\/drive( |$)/,'Only the narrow drive.file scope is requested')
+  const cookie=(connect.headers.get('set-cookie')||'').split(';')[0]
+  assert.equal((await local(`/api/communications/gmail/callback?state=${auth.searchParams.get('state')}&code=x`,'GET',undefined,{cookie:'ba_drive_oauth=wrong'})).headers.get('location'),'/#drive=error','A bad cookie is not accepted')
+  const connect2=await local('/api/account/drive/connect','POST'),auth2=new URL((await connect2.json()).url),cookie2=(connect2.headers.get('set-cookie')||'').split(';')[0]
+  const done=await local(`/api/communications/gmail/callback?state=${auth2.searchParams.get('state')}&code=good-code`,'GET',undefined,{cookie:cookie2})
+  assert.equal(done.status,303);assert.equal(done.headers.get('location'),'/#drive=connected')
+  assert.equal(driveRows.length,1);assert.equal(driveRows[0].drive_email,'files@acme.example')
+  assert.ok(!JSON.stringify(driveRows).includes('drive-refresh-secret'),'The refresh token is stored encrypted')
+  const root=driveRows[0].root_folder_id;assert.equal(drive.get(root).name,'BA Client Ops Tracker')
+  void cookie
+  const status=await (await local('/api/account/drive')).json()
+  assert.equal(status.connected,true);assert.equal(status.rootFolderUrl,`https://drive.google.com/drive/folders/${root}`)
+  assert.equal((await (await local('/api/communications/drive')).json()).available,true)
+
+  // Two tasks from the email, then a subtask under the first.
+  const id='11111111-1111-4111-8111-111111111111'
+  for(const title of ['Install terminals','Train staff']) assert.equal((await local(`/api/communications/${id}/create-task`,'POST',{title,description:'From email',clientId:'client',projectId:'project',assignedToUserId:'user-a'})).status,201)
+  assert.equal(mail.linked_task_ids.length,2,'Every task made from the email is remembered privately')
+  const [train,install]=getSaved().items
+  assert.ok(!JSON.stringify(getSaved().items).includes(id),'Shared tasks still never hold the private message id')
+  getSaved().items.push({id:'sub-1',title:'Site A',type:'Task',parentTaskId:install.id,clientId:'client',projectId:'project',subtaskOrder:1})
+  const targets=(await (await local(`/api/communications/${id}/drive-targets`)).json()).targets
+  assert.deepEqual(targets.map((t:any)=>t.title),['Install terminals','Site A','Train staff'])
+  assert.equal((await local(`/api/communications/${id}/drive-targets`,'GET',undefined,{'x-test-user':'user-b'})).status,404,'Another user cannot see the targets of a private email')
+
+  // Save the PDF to the subtask.
+  const saved=await local(`/api/communications/${id}/attachments/0/drive`,'POST',{taskId:'sub-1'})
+  assert.equal(saved.status,201)
+  const result=await saved.json()
+  assert.equal(result.file.name,'site-survey.pdf');assert.equal(result.file.url,`https://drive.google.com/file/d/${result.file.id}/view`)
+  const folderPath=(fid:string):string[]=>{const f=drive.get(fid);return f.parents?.[0]?[...folderPath(f.parents[0]),f.name]:[f.name]}
+  assert.equal(uploads.length,1);assert.deepEqual(uploads[0].bytes,pdf);assert.equal(uploads[0].type,'application/pdf')
+  assert.deepEqual(folderPath(uploads[0].parents[0]),['BA Client Ops Tracker','Client','Project','Install terminals','Site A'])
+  const sub=getSaved().items.find((x:any)=>x.id==='sub-1')
+  assert.equal(sub.driveFiles.length,1);assert.equal(sub.driveFiles[0].savedByName,'user-a')
+  assert.match(getSaved().activity[0].text,/Saved “site-survey\.pdf” to Google Drive for subtask "Site A"/)
+  assert.deepEqual(Object.keys(driveRows[0].folders).sort(),['client:client','project:client:project',`task:${install.id}`,'task:sub-1'].sort())
+  assert.ok(!JSON.stringify([records,getSaved(),driveRows]).includes(pdf.toString('base64')),'File contents are never stored')
+
+  // Same file again is refused; a second file reuses the folders.
+  const again=await local(`/api/communications/${id}/attachments/0/drive`,'POST',{taskId:'sub-1'})
+  assert.equal(again.status,409);assert.equal((await again.json()).code,'ALREADY_SAVED')
+  const foldersBefore=[...drive.values()].filter(f=>f.mimeType==='application/vnd.google-apps.folder').length
+  assert.equal((await local(`/api/communications/${id}/attachments/1/drive`,'POST',{taskId:'sub-1'})).status,201)
+  assert.equal([...drive.values()].filter(f=>f.mimeType==='application/vnd.google-apps.folder').length,foldersBefore,'Existing folders are reused')
+
+  // A renamed task renames its folder; a deleted folder is recreated.
+  getSaved().items.find((x:any)=>x.id===train.id).title='Train branch staff'
+  drive.delete(driveRows[0].folders['project:client:project'])
+  assert.equal((await local(`/api/communications/${id}/attachments/1/drive`,'POST',{taskId:train.id})).status,201)
+  assert.deepEqual(folderPath(uploads.at(-1).parents[0]),['BA Client Ops Tracker','Client','Project','Train branch staff'])
+
+  // Renaming a task renames its existing folder instead of making a new one.
+  const installFolder=driveRows[0].folders[`task:${install.id}`]
+  getSaved().items.find((x:any)=>x.id===install.id).title='Install POS terminals'
+  assert.equal((await local(`/api/communications/${id}/attachments/1/drive`,'POST',{taskId:install.id})).status,201)
+  assert.equal(uploads.at(-1).parents[0],installFolder);assert.equal(drive.get(installFolder).name,'Install POS terminals')
+
+  // Reconnecting: refused without Drive access, refused if no longer an administrator, new root for another Google account.
+  const reconnect=async()=>{const r=await local('/api/account/drive/connect','POST');const u=new URL((await r.json()).url);return local(`/api/communications/gmail/callback?state=${u.searchParams.get('state')}&code=good-code`,'GET',undefined,{cookie:(r.headers.get('set-cookie')||'').split(';')[0]})}
+  const rootBefore=driveRows[0].root_folder_id,foldersBeforeReconnect={...driveRows[0].folders}
+  grantedScope='https://www.googleapis.com/auth/userinfo.email'
+  assert.equal((await reconnect()).headers.get('location'),'/#drive=denied','Unchecked Drive permission is refused')
+  grantedScope='https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email'
+  { const r=await local('/api/account/drive/connect','POST');const u=new URL((await r.json()).url)
+    users[0].role='Contributor'
+    assert.equal((await local(`/api/communications/gmail/callback?state=${u.searchParams.get('state')}&code=good-code`,'GET',undefined,{cookie:(r.headers.get('set-cookie')||'').split(';')[0]})).headers.get('location'),'/#drive=error','Admin rights are re-checked when Google returns')
+    users[0].role='Administrator' }
+  assert.equal(driveRows[0].root_folder_id,rootBefore)
+  assert.equal((await reconnect()).headers.get('location'),'/#drive=connected')
+  assert.equal(driveRows[0].root_folder_id,rootBefore,'Same Google account keeps its root folder');assert.deepEqual(driveRows[0].folders,foldersBeforeReconnect)
+  identity='other@acme.example'
+  assert.equal((await reconnect()).headers.get('location'),'/#drive=connected')
+  assert.notEqual(driveRows[0].root_folder_id,rootBefore,'Another Google account gets its own root folder');assert.deepEqual(driveRows[0].folders,{})
+
+  // Refusals reach neither Gmail nor Drive.
+  const uploadsBefore=uploads.length
+  getSaved().items.push({id:'other',title:'Unrelated',type:'Task',clientId:'client',projectId:'project'})
+  assert.equal((await local(`/api/communications/${id}/attachments/0/drive`,'POST',{taskId:'other'})).status,404,'Only tasks made from this email')
+  assert.equal((await local(`/api/communications/${id}/attachments/0/drive`,'POST',{taskId:'sub-1'},{'x-test-user':'user-b'})).status,404,'Not another user’s email')
+  assert.equal((await local(`/api/communications/${id}/attachments/0/drive`,'POST',{taskId:'sub-1'},{'x-test-role':'Viewer'})).status,403,'Viewers cannot save')
+  assert.equal((await local(`/api/communications/${id}/attachments/9/drive`,'POST',{taskId:install.id})).status,404)
+  assert.equal(uploads.length,uploadsBefore)
+
+  // Disconnect.
+  assert.equal((await local('/api/account/drive','DELETE')).status,200)
+  assert.equal(driveRows.length,0);assert.equal((await (await local('/api/communications/drive')).json()).available,false)
+  assert.equal((await local(`/api/communications/${id}/attachments/0/drive`,'POST',{taskId:install.id})).status,409)
+  assert.ok(tokenGrants.includes('authorization_code:good-code'))
  } finally {globalThis.fetch=original;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
 })

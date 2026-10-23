@@ -20,7 +20,7 @@ test('workspace revisions detect stale edits, inserts and deletions, while dedic
  assert.notEqual(workspaceVersion({...state,items:[{...state.items[0],priority:'High'}]}),initial)
  assert.notEqual(workspaceVersion({...state,items:[...state.items,{id:'b'}]}),initial)
  assert.notEqual(workspaceVersion({...state,items:[]}),initial)
- assert.equal(workspaceVersion({...state,items:[{...state.items[0],comments:[{id:'c'}],evidence:[{id:'e'}]}],notifications:[{id:'n'}]}),initial)
+ assert.equal(workspaceVersion({...state,items:[{...state.items[0],comments:[{id:'c'}],evidence:[{id:'e'}],driveFiles:[{id:'d'}]}],notifications:[{id:'n'}]}),initial)
  assert.deepEqual(mergeActivity([{id:'old',text:'Original'}],[{id:'old',text:'Stale'},{id:'new'}]),[{id:'new'},{id:'old',text:'Original'}])
 })
 test('coverage rejects duplicate IDs and quotations absent from cited sources',()=>{

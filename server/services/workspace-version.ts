@@ -6,7 +6,7 @@ import { stableRecord } from '../../src/lifecycle'
 export function workspaceVersion(state: any): string {
   const editable = Object.fromEntries(['clients', 'projects', 'planner', 'rtms'].map(key => [key, state?.[key] || []]))
   editable.items = (state?.items || []).filter((item: any) => !(item.source === 'Discord' && item.externalSourceId)).map((item: any) => {
-    const { comments, evidence, docHubDocuments, timeEntries, ...fields } = item
+    const { comments, evidence, docHubDocuments, driveFiles, timeEntries, ...fields } = item
     return fields
   })
   return createHash('sha256').update(stableRecord(editable)).digest('hex')
