@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit'
 import type { Express, Request, RequestHandler, Response } from 'express'
 import { decryptSecret, encryptSecret, encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
 import {
-  TRACKER_LIMITS, TrackerError, cleanCell, cleanName, cleanSecret, isBasicType, isEmptyCell, normalizeColumns, normalizeViews,
+  TRACKER_LIMITS, TrackerError, canConvertType, cleanCell, cleanName, cleanSecret, isBasicType, isColumnType, isEmptyCell, normalizeColumns, normalizeViews, planConversion,
   type Cell, type Tracker, type TrackerColumn, type TrackerRow,
 } from '../../src/trackerModel'
 
@@ -279,6 +279,84 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       }
     }
     res.json({ tracker })
+  }))
+
+  /** Changes a column to another basic type. Without `confirm`, nothing is changed and the answer says how many values would be cleared. */
+  app.post('/api/trackers/:id/columns/:columnId/convert', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const row = await trackerRow(tenant, id, user)
+    if (row.archived_at) throw new TrackerError('This tracker is archived. Restore it to change its columns.', 409)
+    const before = columnsOf(row)
+    const column = before.find(item => item.id === String(req.params.columnId))
+    if (!column) throw new TrackerError('That column no longer exists.', 404)
+    const toType = req.body?.type
+    if (!isColumnType(toType) || !canConvertType(toType) || !canConvertType(column.type) || toType === column.type) throw new TrackerError('This column cannot be changed to that type.')
+    const loaded = await db.from('tenant_tracker_rows').select('id,data,version,position').eq('tenant_id', tenant).eq('tracker_id', id).order('position').order('created_at').limit(TRACKER_LIMITS.rows + 100)
+    check(loaded.error)
+    const entries: any[] = loaded.data || []
+    const plan = planConversion(column, toType, entries.map(entry => entry.data?.[column.id]))
+    const samples = entries.flatMap((entry, at) => plan.cells[at].ok ? [] : [{ row: at + 1, value: plan.cells[at].before.slice(0, 80) }]).slice(0, 8)
+    if (req.body?.confirm !== true) return void res.json({ applied: false, rows: entries.length, filled: plan.cells.filter(cell => cell.before).length, failed: plan.failed, samples })
+    await requireRevision(tenant, row, req.body, user)
+    if (plan.failed && req.body?.clearUnfit !== true) throw new TrackerError(`${plan.failed} value${plan.failed === 1 ? '' : 's'} cannot be converted. Confirm that they will be cleared, or fix them first.`, 409)
+    // Rows first, then the column: if this stops part-way, the values are still all here and the change can simply be run again.
+    const stamp = now()
+    const todo = entries.map((entry, at) => ({ entry, cell: plan.cells[at] })).filter(({ entry, cell }) => JSON.stringify(entry.data?.[column.id] ?? null) !== JSON.stringify(cell.value))
+    for (let i = 0; i < todo.length; i += 25) {
+      await Promise.all(todo.slice(i, i + 25).map(async ({ entry, cell }) => {
+        const saved = await db.from('tenant_tracker_rows').update({ data: { ...(entry.data || {}), [column.id]: cell.value }, version: Number(entry.version || 1) + 1, updated_at: stamp, updated_by: user.id })
+          .eq('tenant_id', tenant).eq('tracker_id', id).eq('id', entry.id)
+        check(saved.error)
+      }))
+    }
+    const columns = before.map(item => {
+      if (item.id !== column.id) return item
+      const { options: _options, ...rest } = item
+      return { ...rest, type: toType, ...(plan.options ? { options: plan.options } : {}) } as TrackerColumn
+    })
+    // Saved views that filter, sort or group by this column are cleaned of it, since the old settings may not fit the new type.
+    const views = normalizeViews(row.views, columns).map(view => ({ ...view, filters: view.filters.filter(filter => filter.columnId !== column.id), sort: view.sort?.columnId === column.id ? null : view.sort, groupBy: view.groupBy === column.id ? '' : view.groupBy }))
+    const tracker = await replaceTracker(tenant, row, { columns, views }, user)
+    await record(tenant, id, '', user, 'columns', { converted: column.name, from: column.type, to: toType, cleared: plan.failed })
+    res.json({ applied: true, tracker, failed: plan.failed })
+  }))
+
+  /** Moves rows to just before another row, or to the end. The rest keep their order. */
+  app.post('/api/trackers/:id/rows/move', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to move rows.', 409)
+    const ids = Array.isArray(req.body?.ids) ? [...new Set<string>(req.body.ids.map(String))] : []
+    if (!ids.length || ids.length > TRACKER_LIMITS.importBatch || ids.some(value => !UUID.test(value))) throw new TrackerError(`Choose between 1 and ${TRACKER_LIMITS.importBatch} rows to move.`)
+    const target = req.body?.before
+    if (target !== null && target !== undefined && target !== 'start' && !UUID.test(String(target))) throw new TrackerError('Choose where to move the rows.')
+    const all = await db.from('tenant_tracker_rows').select('id,position').eq('tenant_id', tenant).eq('tracker_id', id).order('position').order('created_at').limit(TRACKER_LIMITS.rows + 100)
+    check(all.error)
+    const current: { id: string; position: number }[] = (all.data || []).map((entry: any) => ({ id: entry.id, position: Number(entry.position) }))
+    const wanted = new Set(ids)
+    const moving = current.filter(entry => wanted.has(entry.id)).map(entry => entry.id)
+    if (!moving.length) throw new TrackerError('Those rows no longer exist.', 404)
+    const rest = current.filter(entry => !wanted.has(entry.id)).map(entry => entry.id)
+    let at = rest.length
+    if (target === 'start') at = 0
+    else if (typeof target === 'string') {
+      at = rest.indexOf(target)
+      if (at < 0) throw new TrackerError(wanted.has(target) ? 'Choose a row that is not being moved.' : 'That row no longer exists. Refresh and try again.', wanted.has(target) ? 400 : 404)
+    }
+    const order = [...rest.slice(0, at), ...moving, ...rest.slice(at)]
+    const sorted = current.map(entry => entry.position)
+    const distinct = new Set(sorted).size === sorted.length
+    const slots = distinct ? sorted : order.map((_, index) => index + 1)
+    const old = new Map(current.map(entry => [entry.id, entry.position]))
+    const changes = order.map((rowId, index) => ({ rowId, position: slots[index] })).filter(item => old.get(item.rowId) !== item.position)
+    for (let i = 0; i < changes.length; i += 25) {
+      await Promise.all(changes.slice(i, i + 25).map(async item => {
+        const saved = await db.from('tenant_tracker_rows').update({ position: item.position }).eq('tenant_id', tenant).eq('tracker_id', id).eq('id', item.rowId)
+        check(saved.error)
+      }))
+    }
+    if (changes.length) { await record(tenant, id, moving.length === 1 ? moving[0] : '', user, 'rows_moved', { count: moving.length }); await touch(tenant, id) }
+    res.json({ moved: moving.length, positions: Object.fromEntries(changes.map(item => [item.rowId, item.position])) })
   }))
 
   app.put('/api/trackers/:id/views', ...scope, route(async (req, res) => {

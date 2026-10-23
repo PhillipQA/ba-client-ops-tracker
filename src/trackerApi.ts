@@ -27,6 +27,8 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
   return data as T
 }
 
+/** What changing a column's type would do (applied: false), or what it did (applied: true). */
+export type ConvertReport = { applied: false; rows: number; filled: number; failed: number; samples: { row: number; value: string }[] } | { applied: true; tracker: Tracker; failed: number }
 export type TrackerChange = { id: string; actorName: string; kind: string; detail: any; at: string }
 export type NewRow = { cells?: Record<string, Cell>; secrets?: Record<string, string | null>; taskId?: string }
 export type RowPatch = { version: number; cells?: Record<string, Cell>; secrets?: Record<string, string | null>; taskId?: string | null }
@@ -44,6 +46,8 @@ export const trackerApi = {
   updateRow: (id: string, rowId: string, patch: RowPatch) => call<{ row: TrackerRow }>('PATCH', `/${id}/rows/${rowId}`, patch),
   deleteRows: (id: string, ids: string[]) => call<{ deleted: number }>('POST', `/${id}/rows/delete`, { ids }),
   reveal: (id: string, rowId: string, columnId: string) => call<{ value: string; seconds: number }>('POST', `/${id}/rows/${rowId}/reveal`, { columnId }),
+  convertColumn: (id: string, columnId: string, body: { type: string; revision: number; confirm: boolean; clearUnfit?: boolean }) => call<ConvertReport>('POST', `/${id}/columns/${columnId}/convert`, body),
+  moveRows: (id: string, ids: string[], before: string | 'start' | null) => call<{ moved: number; positions: Record<string, number> }>('POST', `/${id}/rows/move`, { ids, before }),
   history: (id: string, rowId: string, signal?: AbortSignal) => call<{ changes: TrackerChange[] }>('GET', `/${id}/rows/${rowId}/history`, undefined, signal),
 }
 

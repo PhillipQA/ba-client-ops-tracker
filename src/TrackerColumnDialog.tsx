@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { Plus, Search, Trash2 } from 'lucide-react'
+import type { ConvertReport } from './trackerApi'
 import {
-  COLUMN_TYPES, OPTION_COLORS, TRACKER_LIMITS, randomId, type ColumnGroup, type ColumnType, type OptionColor, type RevealBy, type SelectOption, type TrackerColumn,
+  CONVERTIBLE_TYPES, canConvertType, COLUMN_TYPES, OPTION_COLORS, TRACKER_LIMITS, randomId, type ColumnGroup, type ColumnType, type OptionColor, type RevealBy, type SelectOption, type TrackerColumn,
 } from './trackerModel'
 import { ColumnIcon, Dialog, Pill } from './trackerUi'
 
@@ -14,6 +15,8 @@ type Props = {
   onClose: () => void
   onSave: (draft: ColumnDraft) => Promise<void>
   onDelete?: () => Promise<void>
+  /** Checks (confirm false) or applies (confirm true) a change of the column's type. */
+  onConvert?: (type: ColumnType, confirm: boolean, clearUnfit: boolean) => Promise<ConvertReport>
 }
 
 const GROUPS: { id: ColumnGroup; label: string; about: string }[] = [
@@ -24,7 +27,7 @@ const GROUPS: { id: ColumnGroup; label: string; about: string }[] = [
 
 const nextColor = (count: number): OptionColor => OPTION_COLORS[(count % (OPTION_COLORS.length - 1)) + 1]
 
-export default function TrackerColumnDialog({ mode, columns, column, onClose, onSave, onDelete }: Props) {
+export default function TrackerColumnDialog({ mode, columns, column, onClose, onSave, onDelete, onConvert }: Props) {
   const adding = mode === 'add'
   const [type, setType] = useState<ColumnType>(column?.type || 'text')
   const [name, setName] = useState(column?.name || '')
@@ -35,7 +38,10 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
   const [error, setError] = useState('')
   const lastOption = useRef<HTMLInputElement>(null)
   const info = COLUMN_TYPES.find(item => item.type === type)!
-  const hasOptions = type === 'select' || type === 'multiselect'
+  const converting = !adding && Boolean(column) && type !== column!.type
+  const hasOptions = (type === 'select' || type === 'multiselect') && !converting
+  const [report, setReport] = useState<Extract<ConvertReport, { applied: false }> | null>(null)
+  const [clearUnfit, setClearUnfit] = useState(false)
 
   const shown = useMemo(() => {
     const wanted = query.trim().toLowerCase()
@@ -77,8 +83,26 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
     if (adding && columns.length >= TRACKER_LIMITS.columns) return setError(`A tracker can have at most ${TRACKER_LIMITS.columns} columns.`)
     const cleaned = options.map(option => ({ ...option, label: option.label.trim() })).filter(option => option.label)
     if (new Set(cleaned.map(option => option.label.toLowerCase())).size !== cleaned.length) return setError('Two options have the same name.')
+    if (converting && onConvert && !report) {
+      // First ask what the change would do, and show it before anything is touched.
+      setBusy(true); setError('')
+      try {
+        const result = await onConvert(type, false, false)
+        if (!result.applied) setReport(result)
+      } catch (e) { setError(e instanceof Error ? e.message : 'The type could not be checked.') }
+      setBusy(false); return
+    }
+    if (converting && report && report.failed > 0 && !clearUnfit) return setError('Tick the box to confirm those values will be cleared, or cancel and fix them first.')
     setBusy(true); setError('')
-    try { await onSave({ name: trimmed, type, ...(hasOptions ? { options: cleaned } : {}), ...(type === 'secret' ? { revealBy } : {}) }); onClose() }
+    try {
+      const sameType = { name: trimmed, type: column?.type || type, ...((column?.type === 'select' || column?.type === 'multiselect') ? { options: cleaned } : {}), ...(column?.type === 'secret' ? { revealBy } : {}) }
+      const renamed = column && (trimmed !== column.name || (sameType.options && JSON.stringify(sameType.options) !== JSON.stringify(column.options || [])) || (column.type === 'secret' && revealBy !== (column.revealBy || 'editors')))
+      if (converting && onConvert) {
+        if (renamed) await onSave(sameType as ColumnDraft)
+        await onConvert(type, true, clearUnfit)
+      } else await onSave({ name: trimmed, type, ...(hasOptions ? { options: cleaned } : {}), ...(type === 'secret' ? { revealBy } : {}) })
+      onClose()
+    }
     catch (e) { setError(e instanceof Error ? e.message : 'The column could not be saved.'); setBusy(false) }
   }
   const remove = async () => {
@@ -133,13 +157,27 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
           <label className="trk-radio"><input type="radio" name="reveal" checked={revealBy === 'admins'} onChange={() => setRevealBy('admins')} /> Administrators only</label>
           <p className="trk-muted-text">Values are encrypted before they are stored and never appear in exports, search, or filters. Each reveal is logged with who and when.</p>
         </fieldset>}
-        {!adding && <p className="trk-muted-text">The type of a column cannot be changed after it is created. Add a new column and delete this one instead.</p>}
+        {!adding && column && canConvertType(column.type) && onConvert && <label className="trk-field-block">Type
+          <select value={type} disabled={busy} onChange={event => { setType(event.target.value as ColumnType); setReport(null); setClearUnfit(false); setError('') }}>
+            {CONVERTIBLE_TYPES.map(item => <option key={item} value={item}>{COLUMN_TYPES.find(entry => entry.type === item)?.label}</option>)}
+          </select>
+        </label>}
+        {!adding && column && (!canConvertType(column.type) || !onConvert) && <p className="trk-muted-text">This type of column cannot be changed after it is created. Add a new column and delete this one instead.</p>}
+        {converting && !report && <p className="trk-muted-text">{type === 'select' ? 'The choices are made from the values already in the column. ' : ''}Next you will see how many values convert before anything changes.</p>}
+        {report && <div className="trk-notice trk-notice-info" role="status"><div>
+          <strong>{report.filled - report.failed} of {report.filled} filled value{report.filled === 1 ? '' : 's'} will convert to {COLUMN_TYPES.find(item => item.type === type)?.label}.</strong>
+          {report.failed > 0 && <>
+            <p>{report.failed} cannot be converted and will be cleared, for example {report.samples.slice(0, 4).map(sample => `row ${sample.row} “${sample.value}”`).join(', ')}.</p>
+            <label className="trk-checkline"><input type="checkbox" checked={clearUnfit} onChange={event => setClearUnfit(event.target.checked)} /> Clear those {report.failed} value{report.failed === 1 ? '' : 's'}</label>
+          </>}
+          {report.failed === 0 && <p>Nothing will be lost. Saved views that filter or sort by this column are reset.</p>}
+        </div></div>}
         {error && <p className="trk-field-error" role="alert">{error}</p>}
         <div className="trk-dialog-actions">
           {!adding && onDelete && <button type="button" className="trk-button danger" disabled={busy} onClick={() => void remove()}><Trash2 size={14} aria-hidden="true" /> Delete column</button>}
           <span className="trk-spacer" />
           <button type="button" className="trk-button" disabled={busy} onClick={onClose}>Cancel</button>
-          <button type="submit" className="trk-button primary" disabled={busy}>{busy ? 'Saving…' : adding ? 'Add column' : 'Save'}</button>
+          <button type="submit" className="trk-button primary" disabled={busy}>{busy ? 'Working…' : adding ? 'Add column' : report ? 'Change type' : converting ? 'Check the change' : 'Save'}</button>
         </div>
       </div>
     </form>

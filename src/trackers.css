@@ -329,3 +329,23 @@ dialog.trk-dialog::backdrop { background: rgba(8, 10, 14, .62); }
 .trk-menu .trk-seg { display: flex; gap: 4px; padding: 2px 9px 6px; }
 .trk-menu .trk-seg button { justify-content: center; flex: 1 1 0; padding: 6px 4px; border: 1px solid var(--trk-border); font-size: 12px; }
 .trk-menu .trk-seg button[aria-pressed="true"] { border-color: var(--trk-accent); background: var(--trk-accent-soft); color: var(--trk-accent); font-weight: 650; }
+
+/* Small notes on the page background (breadcrumb, save state, legend) sit on a soft pill so a wallpaper cannot hide them. */
+.trk-crumbs, .trk-legend, .trk-save-state { width: fit-content; max-width: 100%; padding: 5px 14px; border-radius: 999px; background: color-mix(in srgb, var(--trk-solid) 86%, transparent); border: 1px solid color-mix(in srgb, var(--trk-border) 60%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: color-mix(in srgb, var(--trk-text) 82%, var(--trk-muted)); }
+.trk-legend { font-size: 12.5px; align-items: center; }
+.trk-save-state { padding: 4px 12px; }
+
+/* Full view: the page actions shrink to small icon buttons so the grid gets the space. */
+.app-shell.trk-expanded .trk-header { flex-wrap: nowrap; align-items: center; gap: 10px; }
+.app-shell.trk-expanded .trk-header-actions { gap: 4px; flex-wrap: nowrap; }
+.app-shell.trk-expanded .trk-header-actions .trk-button { min-height: 30px; width: 30px; padding: 0; gap: 0; border-color: transparent; background: transparent; }
+.app-shell.trk-expanded .trk-header-actions .trk-button:hover, .app-shell.trk-expanded .trk-header-actions .trk-button[aria-expanded="true"] { background: var(--trk-soft); border-color: var(--trk-border); }
+.app-shell.trk-expanded .trk-header-actions .trk-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Moving rows */
+.trk-num.movable { cursor: grab; }
+.trk-row.dragging { opacity: .45; }
+.trk-row.drop-before .trk-cell { box-shadow: inset 0 2px 0 var(--trk-accent); }
+.trk-row.drop-after .trk-cell { box-shadow: inset 0 -2px 0 var(--trk-accent); }
+.trk-move-group { display: inline-flex; gap: 4px; }
+.trk-move-group .trk-button { min-height: 30px; padding: 0 10px; }

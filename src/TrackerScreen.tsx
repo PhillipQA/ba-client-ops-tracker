@@ -1,12 +1,12 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowLeft, ChevronDown, Download, Lock, Maximize2, Minimize2, Plus, RotateCcw, Search, Upload, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, Download, Lock, Maximize2, Minimize2, Plus, RotateCcw, Search, Upload, X } from 'lucide-react'
 import {
   TRACKER_LIMITS, emptyCell, filterOpsFor, isEmptyCell, randomId,
-  type Cell, type ColumnAlign, type Tracker, type TrackerColumn, type TrackerRow, type TrackerView, isFrozenColumn,
+  COLUMN_TYPES, type Cell, type ColumnAlign, type ColumnType, type Tracker, type TrackerColumn, type TrackerRow, type TrackerView, isFrozenColumn,
 } from './trackerModel'
 import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
 import { exportCsv, exportFileName } from './trackerExport'
-import { TrackerApiError, loadAllRows, trackerApi } from './trackerApi'
+import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport } from './trackerApi'
 import TrackerGrid, { NUMBER_COLUMN_WIDTH, widthOf, type Entry, type GridFocus } from './TrackerGrid'
 import TrackerToolbar, { emptyWork, type Work } from './TrackerToolbar'
 import TrackerRowPanel from './TrackerRowPanel'
@@ -127,6 +127,45 @@ export default function TrackerScreen(props: Props) {
   const lookup = useMemo(() => makeLookup(props.items, props.accounts, props.today), [props.items, props.accounts, props.today])
   const people = useMemo(() => props.accounts.filter(account => account.status === 'Active').map(account => ({ id: account.id, name: account.name || account.username })), [props.accounts])
   const search = useDeferredValue(work.search)
+  // Rows can be moved only while the grid shows them in their saved order.
+  const moveRows = async (ids: string[], before: string | 'start' | null) => {
+    if (!canEdit || !ids.length) return
+    const moving = new Set(ids), current = rowsRef.current
+    const rest = current.filter(row => !moving.has(row.id))
+    const at = before === 'start' ? 0 : before === null ? rest.length : rest.findIndex(row => row.id === before)
+    if (at < 0) return
+    const next = [...rest.slice(0, at), ...current.filter(row => moving.has(row.id)), ...rest.slice(at)]
+    if (next.every((row, index) => row.id === current[index].id)) return
+    setRows(next)
+    try { await trackerApi.moveRows(trackerId, ids, before) }
+    catch (error) { say('error', error instanceof Error ? error.message : 'The rows could not be moved.'); void refresh().catch(() => undefined) }
+  }
+  /** Where the selected rows go for a one-step move: the row they should end up just before. */
+  const stepTarget = (direction: -1 | 1): string | null => {
+    const current = rowsRef.current
+    const rest = current.filter(row => !selected.has(row.id))
+    const first = current.findIndex(row => selected.has(row.id))
+    const unselectedAbove = current.slice(0, first).filter(row => !selected.has(row.id)).length
+    const at = Math.max(0, Math.min(rest.length, unselectedAbove + direction))
+    return rest[at]?.id ?? null
+  }
+  const convertColumn = async (column: TrackerColumn, type: ColumnType, confirm: boolean, clearUnfit: boolean): Promise<ConvertReport> => {
+    const current = trackerRef.current!
+    try {
+      const result = await trackerApi.convertColumn(trackerId, column.id, { type, revision: current.revision, confirm, clearUnfit })
+      if (result.applied && alive.current) {
+        setTracker(result.tracker)
+        setWork(w => ({ ...w, filters: w.filters.filter(filter => filter.columnId !== column.id), sort: w.sort?.columnId === column.id ? null : w.sort, groupBy: w.groupBy === column.id ? '' : w.groupBy }))
+        await refresh().catch(() => undefined)
+        say('info', `“${column.name}” is now a ${COLUMN_TYPES.find(item => item.type === type)?.label || type} column.`)
+      }
+      return result
+    } catch (error) {
+      if (error instanceof TrackerApiError && error.body.tracker && alive.current) setTracker(error.body.tracker)
+      throw error
+    }
+  }
+
   // Frozen columns come first, in their own order, so they can stay in view while the rest scrolls.
   const shownColumns = useMemo(() => {
     const list = columns.filter(column => !work.hidden.includes(column.id))
@@ -147,6 +186,7 @@ export default function TrackerScreen(props: Props) {
     return out
   }, [visible, columns, work.groupBy, lookup])
   const canEdit = Boolean(tracker?.canEdit && !tracker.archived)
+  const orderable = canEdit && !work.sort && !work.groupBy && work.filters.length === 0 && !work.search.trim()
   const activeView = tracker?.views.find(view => view.id === activeViewId)
   const baseline = activeView ? stripWork({ ...emptyWork, ...activeView }) : stripWork(emptyWork)
   const dirty = !sameValue(stripWork(work), baseline)
@@ -387,10 +427,10 @@ export default function TrackerScreen(props: Props) {
         {tracker.archived && <span className="trk-chip warn">Archived</span>}
       </div>
       <div className="trk-header-actions">
-        {canEdit && <button type="button" className="trk-button" onClick={() => setImporting(true)}><Upload size={14} aria-hidden="true" /> Import</button>}
-        <button type="button" className="trk-button" onClick={download} title="Exports the rows and columns you see now"><Download size={14} aria-hidden="true" /> Export CSV</button>
-        <button type="button" className="trk-button" aria-pressed={expanded} onClick={toggleExpanded} title={expanded ? 'Show the page header again' : 'Hide the page header to give the grid the whole screen'}>{expanded ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />} {expanded ? 'Exit full view' : 'Full view'}</button>
-        <button type="button" className="trk-button" ref={moreButton} aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen(open => !open)}>More <ChevronDown size={14} aria-hidden="true" /></button>
+        {canEdit && <button type="button" className="trk-button" onClick={() => setImporting(true)} title="Import a sheet" aria-label="Import a sheet"><Upload size={14} aria-hidden="true" /><span className="trk-label">Import</span></button>}
+        <button type="button" className="trk-button" onClick={download} title="Export CSV: the rows and columns you see now" aria-label="Export CSV"><Download size={14} aria-hidden="true" /><span className="trk-label">Export CSV</span></button>
+        <button type="button" className="trk-button" aria-pressed={expanded} onClick={toggleExpanded} title={expanded ? 'Exit full view: show the page header again' : 'Full view: hide the page header to give the grid the whole screen'} aria-label={expanded ? 'Exit full view' : 'Full view'}>{expanded ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />}<span className="trk-label">{expanded ? 'Exit full view' : 'Full view'}</span></button>
+        <button type="button" className="trk-button" ref={moreButton} aria-haspopup="menu" aria-expanded={moreOpen} aria-label="More" title="More options" onClick={() => setMoreOpen(open => !open)}><span className="trk-label">More</span><ChevronDown size={14} aria-hidden="true" /></button>
       </div>
     </header>
     {moreOpen && <Popover anchor={moreButton} onClose={() => setMoreOpen(false)} className="trk-menu" label="Tracker options" minWidth={240}>
@@ -435,6 +475,12 @@ export default function TrackerScreen(props: Props) {
     </div>
     {selected.size > 0 && <div className="trk-selection" role="status">
       <strong>{plural(selected.size, 'row')} selected</strong>
+      {canEdit && <span className="trk-move-group" role="group" aria-label="Move the selected rows">
+        <button type="button" className="trk-button" disabled={!orderable} onClick={() => void moveRows([...selected], 'start')} title={orderable ? 'Move to the top' : 'Clear the sort, grouping, search and filters to move rows'}>Top</button>
+        <button type="button" className="trk-button" disabled={!orderable} onClick={() => void moveRows([...selected], stepTarget(-1))} title={orderable ? 'Move up one row' : 'Clear the sort, grouping, search and filters to move rows'} aria-label="Move up"><ArrowUp size={14} aria-hidden="true" /></button>
+        <button type="button" className="trk-button" disabled={!orderable} onClick={() => void moveRows([...selected], stepTarget(1))} title={orderable ? 'Move down one row' : 'Clear the sort, grouping, search and filters to move rows'} aria-label="Move down"><ArrowDown size={14} aria-hidden="true" /></button>
+        <button type="button" className="trk-button" disabled={!orderable} onClick={() => void moveRows([...selected], null)} title={orderable ? 'Move to the bottom' : 'Clear the sort, grouping, search and filters to move rows'}>Bottom</button>
+      </span>}
       {canEdit && <button type="button" className="trk-button danger" onClick={() => void removeRows([...selected])}>Delete</button>}
       <button type="button" className="trk-text-button" onClick={() => setSelected(new Set())}>Clear selection</button>
     </div>}
@@ -446,6 +492,7 @@ export default function TrackerScreen(props: Props) {
         onEdit={editCell} onOpenRow={row => setDrawerId(row.id)} onInvalid={message => say('error', message)}
         onHeader={(column, button) => { headerAnchor.current = button; setHeaderMenu(column) }}
         onAddColumn={canEdit ? () => setColumnDialog({ mode: 'add' }) : undefined}
+        onMove={orderable ? (ids, before) => void moveRows(ids, before) : undefined}
         onResize={canEdit ? (column, width) => void styleColumn(column, { width: width ?? undefined }) : undefined}
         onToggleRow={(rowId, on) => setSelected(current => { const next = new Set(current); if (on) next.add(rowId); else next.delete(rowId); return next })}
         onToggleAll={on => setSelected(on ? new Set(entries.flatMap(entry => entry.kind === 'row' ? [entry.row.id] : [])) : new Set())} />
@@ -494,7 +541,8 @@ export default function TrackerScreen(props: Props) {
       onClose={() => setDrawerId('')} onEdit={editCell} onSecret={setSecret} onLink={linkTask} onDelete={row => void removeRows([row.id])} onOpenTask={props.onOpenTask} onReveal={reveal} />}
 
     {columnDialog && (columnDialog.mode === 'add' || editingColumn) && <TrackerColumnDialog mode={columnDialog.mode} columns={columns} column={editingColumn} onClose={() => setColumnDialog(null)}
-      onSave={draft => saveColumn(draft, editingColumn)} onDelete={editingColumn ? () => deleteColumn(editingColumn) : undefined} />}
+      onSave={draft => saveColumn(draft, editingColumn)} onDelete={editingColumn ? () => deleteColumn(editingColumn) : undefined}
+      onConvert={editingColumn ? (type, confirm, clearUnfit) => convertColumn(editingColumn, type, confirm, clearUnfit) : undefined} />}
     {importing && <TrackerImportDialog tracker={tracker} clients={props.clients} projects={props.projects} people={people} today={props.today} onClose={() => setImporting(false)}
       onDone={(_, imported) => { setImporting(false); props.onListChanged(); void refresh().then(() => say('info', `${plural(imported, 'row')} imported.`)).catch(error => say('error', error instanceof Error ? error.message : 'Imported, but the tracker could not be refreshed.')) }} />}
     {details && <TrackerDetailsDialog tracker={tracker} clients={props.clients} projects={props.projects} onClose={() => setDetails(false)}
