@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ClipboardCheck, Copy, Download, FileSearch, FileText, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { announceGeneratedDocument } from './documentDrive'
 import { readFsdSource } from './fsd-sources'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
 import DocumentReset from './DocumentReset'
@@ -65,7 +66,7 @@ export default function TestCaseCreation({canGenerate,draftKey,active}:{canGener
   function removeCase(index:number){if(!draft.preview)return;const preview=structuredClone(draft.preview);preview.cases.splice(index,1);setDraft(d=>({...d,preview}))}
   function duplicateCase(index:number){if(!draft.preview)return;const preview=structuredClone(draft.preview),row=structuredClone(preview.cases[index]);row.id=tcId(preview.cases);preview.cases.splice(index+1,0,row);setDraft(d=>({...d,preview}))}
   function addCase(){if(!draft.preview)return;const preview=structuredClone(draft.preview);preview.cases.push({id:tcId(preview.cases),module:'General',requirementRef:draft.coverage?.requirements[0]?.id||'REQ-001',scenario:'',preconditions:'None specified',steps:'1. ',expectedResult:'',priority:'Medium',type:'Functional',testData:'As required',platform:'As specified',automationCandidate:'Review',remarks:''});setDraft(d=>({...d,preview}))}
-  async function exportCases(){if(!draft.preview||busy||previewStale)return;const job=operation.begin();setBusy('Preparing Excel test case suite…');setError('');try{const result=await request<{fileData:string;fileName:string;mimeType:string}>('export',{suiteName:draft.suiteName,cases:draft.preview.cases,coverage:draft.coverage,sources:draft.sources},job.signal);if(!job.isCurrent())return;downloadBase64(result.fileData,result.mimeType,result.fileName)}catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'Excel export failed.')}finally{if(job.isCurrent())setBusy('')}}
+  async function exportCases(){if(!draft.preview||busy||previewStale)return;const job=operation.begin();setBusy('Preparing Excel test case suite…');setError('');try{const result=await request<{fileData:string;fileName:string;mimeType:string}>('export',{suiteName:draft.suiteName,cases:draft.preview.cases,coverage:draft.coverage,sources:draft.sources},job.signal);if(!job.isCurrent())return;downloadBase64(result.fileData,result.mimeType,result.fileName);announceGeneratedDocument('testcase',result)}catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'Excel export failed.')}finally{if(job.isCurrent())setBusy('')}}
   function reset(){
     operation.cancel()
     const next=freshDraft();next.customSkills=draftRef.current.customSkills;draftRef.current=next

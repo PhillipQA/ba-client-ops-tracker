@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Download, FileText, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { announceGeneratedDocument } from './documentDrive'
 import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
 import type { Client, Project } from './types'
@@ -199,6 +200,7 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
       if (!job.isCurrent()) return
       const bytes=Uint8Array.from(atob(result.fileData),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:result.mimeType}))
       const a=document.createElement('a');a.href=url;a.download=result.fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
+      announceGeneratedDocument('fsd',result)
     } catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'Export failed.')}
     finally{if(job.isCurrent())setBusy('')}
   }

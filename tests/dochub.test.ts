@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHmac, randomUUID } from 'node:crypto'
 import express from 'express'
-import { encryptSecret, decryptSecret } from '../server/integrations/tenant-integrations'
+import { encryptSecret, decryptSecret, IntegrationError } from '../server/integrations/tenant-integrations'
 import { apiClient, DocHubError, docHubUrl, storageUrl, verifyDocHubWebhook, draftPacket, signingStatus } from '../server/integrations/dochub-api'
 import { applyDocumentToWorkspace, createDocHubService, publicDocument, registerDocHubRoutes, registerDocHubWebhook, signedPdfFileName, validatePreparation } from '../server/integrations/dochub'
 import { assertLifecycleMutation } from '../src/lifecycle'
@@ -214,7 +214,7 @@ test('DocHub egress: active-tab scans use small pending metadata and skip unchan
  await f.service.scan(tenantA)
  assert.equal(workspaceLoads,0)
  assert(f.calls.length>0);assert(f.calls.every(call=>call.headers['X-API-Token']===keyA))
- const query=f.db.queries.find((q:any)=>q.columns==='id,status:data->status,error:data->error,checkedAt:data->checkedAt')
+ const query=f.db.queries.find((q:any)=>q.columns==='id,status:data->status,error:data->error,checkedAt:data->checkedAt,driveAutoSave:data->driveAutoSave,driveFile:data->driveFile,driveError:data->driveError,driveSkipped:data->driveSkipped,driveAttempts:data->driveAttempts')
  assert(query);assert(query.filters.some(([key,value]:any[])=>key==='tenant_id'&&value===tenantA))
  const calls=f.calls.length;await f.service.scan(tenantA);assert.equal(f.calls.length,calls)
 })
@@ -227,4 +227,76 @@ test('DocHub egress: completed documents do not cause repeated full reads during
  await f.service.scan(tenantA)
  assert.equal(workspaceLoads,0);assert.equal(f.calls.length,0)
  assert(!f.db.queries.some((query:any)=>query.table==='tenant_dochub_documents'&&query.columns==='data'))
+})
+
+// ---- Fully signed documents are filed into the shared Google Drive ----
+function driveFake(options:{ready?:boolean;fail?:number}={}) {
+ const jobs:any[]=[];let failures=options.fail||0
+ const filer={
+  ready:async()=>options.ready!==false,
+  file:async(job:any)=>{jobs.push(job);if(failures>0){failures--;throw new IntegrationError('Google Drive is busy. Wait a minute, then try again.',429)}
+   return {file:{id:`drive-${jobs.length}`,url:`https://drive.google.com/file/d/drive-${jobs.length}/view`,name:job.name,savedAt:'2026-10-23T05:00:00.000Z'},path:['BA','Acme','Create DRF'],duplicate:false}},
+ }
+ return {filer,jobs}
+}
+async function signedFixture(drive:ReturnType<typeof driveFake>,input:any={}) {
+ const f=fixture();f.deps.driveFiler=drive.filer;f.remote.importComplete=true
+ let doc=await f.service.prepare(tenantA,f.user,{...f.input,...input});doc=await f.service.refresh(tenantA,doc.id,true)
+ f.remote.fields=true;doc=await f.service.refresh(tenantA,doc.id,true)
+ f.remote.status='IN_PROGRESS';doc=await f.service.refresh(tenantA,doc.id,true)
+ return {f,doc}
+}
+test('Drive: a document that becomes fully signed is filed once, under its task, as the signed PDF',async()=>{
+ const drive=driveFake(),{f,doc:sent}=await signedFixture(drive)
+ assert.equal(drive.jobs.length,0,'Nothing is filed before the last signature')
+ f.remote.status='FINALIZED';f.remote.signed=true
+ const doc=await f.service.refresh(tenantA,sent.id,true)
+ assert.equal(doc.status,'COMPLETED');assert.equal(drive.jobs.length,1)
+ const job=drive.jobs[0]
+ assert.equal(job.tenantId,tenantA);assert.equal(job.taskId,'task');assert.equal(job.clientId,'client');assert.equal(job.name,'DRF.pdf');assert.equal(job.mimeType,'application/pdf')
+ assert.equal(job.user,null,'DocHub files it as the system');assert.equal(job.source,'dochub');assert.equal(job.bytes.subarray(0,5).toString(),'%PDF-');assert.equal(typeof job.commit,'function')
+ assert.deepEqual({id:doc.driveFile.id,path:doc.driveFile.path},{id:'drive-1',path:'BA / Acme / Create DRF'})
+ assert(doc.events.some((e:any)=>e.key==='drive:saved'&&e.message==='Signed PDF saved to Google Drive: BA / Acme / Create DRF.'))
+ assert(f.states.get(tenantA).items[0].comments.some((c:any)=>c.text.includes('Signed PDF saved to Google Drive')),'The task shows the filing as a system comment')
+ await f.service.refresh(tenantA,sent.id,true);await f.service.scan(tenantA)
+ assert.equal(drive.jobs.length,1,'Refreshing or scanning again never files it twice')
+ assert(!('fileData' in publicDocument(doc)));assert.equal(publicDocument(doc).driveFile.url,'https://drive.google.com/file/d/drive-1/view')
+})
+test('Drive: a failed filing keeps the signed record, is retried by the scan a few times, then the button works',async()=>{
+ const drive=driveFake({fail:2}),{f,doc:sent}=await signedFixture(drive)
+ f.remote.status='FINALIZED';f.remote.signed=true
+ let doc=await f.service.refresh(tenantA,sent.id,true)
+ assert.equal(doc.status,'COMPLETED','The signature itself is unaffected');assert.equal(doc.driveFile,undefined);assert.equal(doc.driveAttempts,1);assert.match(doc.driveError,/busy/)
+ const saved=await f.service.load(tenantA,sent.id);saved.checkedAt='2020-01-01T00:00:00.000Z';await f.service.save(tenantA,saved)
+ await f.service.scan(tenantA)
+ assert.equal(drive.jobs.length,2,'The scan retried the filing');doc=await f.service.load(tenantA,sent.id);assert.equal(doc.driveAttempts,2);assert.match(doc.driveError,/busy/)
+ doc=await f.service.saveToDrive(tenantA,sent.id)
+ assert.equal(drive.jobs.length,3);assert.equal(doc.driveFile.id,'drive-3');assert.equal(doc.driveError,'')
+ assert.equal((await f.service.saveToDrive(tenantA,sent.id)).driveFile.id,'drive-3');assert.equal(drive.jobs.length,3,'A document already filed is not filed again')
+})
+test('Drive: no connection or no task and client leaves a clear note, and the button files older signed documents',async()=>{
+ const off=driveFake({ready:false}),a=await signedFixture(off)
+ a.f.remote.status='FINALIZED';a.f.remote.signed=true
+ let doc=await a.f.service.refresh(tenantA,a.doc.id,true)
+ assert.equal(off.jobs.length,0);assert.match(doc.driveNote,/not connected/);assert.equal(doc.driveError,'')
+ const on=driveFake();a.f.deps.driveFiler=on.filer
+ doc=await a.f.service.saveToDrive(tenantA,a.doc.id);assert.equal(on.jobs.length,1);assert.equal(doc.driveFile.id,'drive-1')
+
+ // No task or client: nothing to file under.
+ const loose=driveFake(),b=await signedFixture(loose,{id:randomUUID(),taskId:'',clientId:''})
+ b.f.remote.status='FINALIZED';b.f.remote.signed=true
+ doc=await b.f.service.refresh(tenantA,b.doc.id,true)
+ assert.equal(loose.jobs.length,0);assert.match(doc.driveNote,/no linked task or client/);assert.equal(doc.driveSkipped,true)
+ await assert.rejects(()=>b.f.service.saveToDrive(tenantA,'missing'),(e:any)=>e.status===404)
+ // Only a fully signed document can be filed.
+ const c=await signedFixture(driveFake());await assert.rejects(()=>c.f.service.saveToDrive(tenantA,c.doc.id),(e:any)=>e.status===409)
+})
+test('Drive: with no filer the signing flow is unchanged, and a task removed before listing still counts as filed',async()=>{
+ const none=await signedFixture(driveFake());none.f.deps.driveFiler=undefined
+ none.f.remote.status='FINALIZED';none.f.remote.signed=true
+ const doc=await none.f.service.refresh(tenantA,none.doc.id,true);assert.equal(doc.status,'COMPLETED');assert.equal(doc.driveFile,undefined);assert.equal(doc.driveError || '','')
+ const gone={ready:async()=>true,file:async()=>{throw Object.assign(new IntegrationError('task removed',409),{code:'TASK_REMOVED',file:{id:'orphan',url:'https://drive.google.com/file/d/orphan/view',name:'DRF.pdf',savedAt:'2026-10-23T05:00:00.000Z'}})}}
+ const orphan=await signedFixture(driveFake());orphan.f.deps.driveFiler=gone as any
+ orphan.f.remote.status='FINALIZED';orphan.f.remote.signed=true
+ const filed=await orphan.f.service.refresh(tenantA,orphan.doc.id,true);assert.equal(filed.driveFile.id,'orphan');assert.equal(filed.driveError,'')
 })

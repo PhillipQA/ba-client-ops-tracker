@@ -438,6 +438,8 @@ export function registerCommunications(app: Express, deps: {
   registerGitlab(app,{db,requireAuth:deps.requireAuth,requireTenant:deps.requireTenant,guard,load:deps.load,commit:deps.commit,openStatus:deps.openStatus})
   const timer=setInterval(()=>{const now=Date.now();for(const [key,value] of oauthStates) if(value.expires<now) oauthStates.delete(key)},60000);timer.unref()
   return {
+    /** Files a document into the shared Google Drive; used by DocHub when a signature completes. */
+    driveFiler: drive.filer,
     async captureDiscord(message:any,tenantId:string) {
       const ids=[...new Set((message.mentions?.users ? [...message.mentions.users.keys()] : []) as string[])]
       const {data:linked,error}=await db.from('user_communication_settings').select('user_id,discord_user_id,discord_capture_mentions').eq('tenant_id',tenantId).in('discord_user_id',ids.length ? ids : ['0'])
