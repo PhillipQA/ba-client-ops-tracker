@@ -1,8 +1,16 @@
 # Changelog
 
-**Current application release: v0.6.93**
+**Current application release: v0.6.94**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.94 — Trackers: Full view
+Released October 23, 2026.
+
+No database migration and no new Google permission.
+
+- **Full view.** Open a tracker and click **Full view** (next to Export CSV). The top bar with Add client, Add task and the other page buttons is hidden, the left menu stays, and the grid uses the whole screen height so more rows show at once. **Exit full view** brings the top bar back. The choice is remembered in this browser, and leaving the tracker always shows the top bar again.
+- **Room around the tracker.** The tracker pages sat flush against the left menu. They now have the same breathing space as other pages, and the grid height fits the screen so the page no longer scrolls just to reach the bottom.
 
 ## v0.6.93 — Collapsible left menu, colour fixes and a bundled font
 Released October 23, 2026.
