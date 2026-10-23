@@ -66,3 +66,9 @@
 .email-outbox-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 8px; border: 1px solid #8f98a6; background: transparent; color: #f3f5f7; font: inherit; font-size: 13px; cursor: pointer; }
 .email-outbox-actions button.primary { background: #f3f5f7; color: #171c24; border-color: #f3f5f7; font-weight: 700; }
 @media (max-width: 640px) { .email-outbox { left: 12px; right: 12px; bottom: 12px; width: auto; } }
+
+/* Name fields that suggest people in Document Creation. */
+.person-field { display: grid; gap: 4px; min-width: 0; }
+.person-anchor { position: relative; min-width: 0; }
+.person-anchor .email-suggestions { top: 100%; right: auto; width: max(100%, 18rem); max-width: min(30rem, calc(100vw - 32px)); }
+.person-note { font-size: 11px; opacity: .85; overflow-wrap: anywhere; }

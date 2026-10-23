@@ -5,7 +5,9 @@ import SignOffCreation from './SignOffCreation'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
 import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
-import type { Client, Project, WorkItem } from './types'
+import type { Client, Project, UserAccount, WorkItem } from './types'
+import { PersonNameInput } from './PersonNameInput'
+import { knownPeople } from './knownPeople'
 import { DocHubOptions, DocHubResult, DocHubHistory, useDocHubDraft } from './DocHubPanel'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { SIGNOFF_FORM_TYPES, SIGNOFF_TEMPLATE_KIND, type SignoffFormType, type SignoffTemplateKind } from './signoff'
@@ -123,7 +125,7 @@ const defaultSignatories: Signatory[] = [
   { label: 'Approved By', name: '', title: 'Accounting Head' },
 ]
 
-export default function DocumentCreation({ clients, projects, items, launch, canGenerate, draftKey, active }: { clients: Client[]; projects: Project[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; draftKey: string; active: boolean }) {
+export default function DocumentCreation({ clients, projects, accounts, items, launch, canGenerate, draftKey, active }: { clients: Client[]; projects: Project[]; accounts?: UserAccount[]; items: WorkItem[]; launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }; canGenerate: boolean; draftKey: string; active: boolean }) {
   const docHubReporter = useRef<(error:Error)=>void>(()=>undefined)
   const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'brd' || value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
   const docHub = useDocHubDraft('DRF',error=>docHubReporter.current(error),active && flow === 'drf')
@@ -260,6 +262,8 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     setDocumentError('');setDocumentMessage('');setCorFiles([file])
   }
 
+  // Clients and teammates whose email can be suggested for a signatory name.
+  const people = useMemo(() => knownPeople({ clients, accounts }), [clients, accounts])
   const updateSignatory = (index: number, patch: Partial<Signatory>) => {
     setSignatories((current) => current.map((signatory, currentIndex) => currentIndex === index ? { ...signatory, ...patch } : signatory))
   }
@@ -489,7 +493,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
                       <div className="document-signatory-number">{index + 1}</div>
                       <div className="document-signatory-fields">
                         <label>Label<input value={signatory.label} onChange={(event) => updateSignatory(index, { label: event.target.value })} placeholder="Prepared By" /></label>
-                        <label>Name<input value={signatory.name} onChange={(event) => updateSignatory(index, { name: event.target.value })} placeholder="Signatory name" /></label>
+                        <PersonNameInput label="Name" value={signatory.name} email={signatory.email || ''} onName={name => updateSignatory(index, { name })} onEmail={email => updateSignatory(index, { email })} local={people} placeholder="Signatory name" />
                         <label>Email (DocHub only)<input type="email" value={signatory.email || ''} onChange={event => updateSignatory(index, { email: event.target.value })} placeholder="signer@company.com" /></label>
                         <label>Title / Position<input value={signatory.title} onChange={(event) => updateSignatory(index, { title: event.target.value })} placeholder="Account Manager" /></label>
                       </div>
@@ -553,7 +557,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
 
         <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /><SaveToDriveBar flow="testcase" label="test case suite" items={items} clients={clients} projects={projects} /></div>
 
-        <div hidden={flow !== 'signoff'}><SignOffCreation active={active && flow === 'signoff'} clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} templateReady={signoffTemplatesReady} /></div>
+        <div hidden={flow !== 'signoff'}><SignOffCreation active={active && flow === 'signoff'} clients={clients} projects={projects} accounts={accounts} items={items} launch={launch} canGenerate={canGenerate} templateReady={signoffTemplatesReady} /></div>
       </div>
       <DocHubHistory active={active} />
     </section>

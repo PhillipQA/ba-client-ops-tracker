@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { FolderOpen, Mail, Paperclip, Send, Undo2, X } from 'lucide-react'
 import type { Client, Project, UserAccount, WorkItem } from './types'
 import { EMAIL_LIMITS, blockedAttachmentReason, formatBytes, isValidEmail, parseRecipients, splitAddresses } from './emailCompose'
@@ -6,6 +6,8 @@ import { outbox, UNDO_SECONDS, type DriveRef, type EmailDraft, type OutboxEntry,
 import { driveFileGroups, placeOf, taskOptions } from './documentDriveTargets'
 import { workHubSync } from './workHubSync'
 import { RecipientInput, addressesOn, type Suggestion } from './RecipientInput'
+import { knownPeople } from './knownPeople'
+import { searchContacts } from './contactSearch'
 import './emailComposer.css'
 
 /**
@@ -130,21 +132,10 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
   const [driveOpen, setDriveOpen] = useState(false), [fileQuery, setFileQuery] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   // Type-ahead for the recipient lines: clients and teammates are known here; people emailed before come from the server.
-  const people = useMemo<Suggestion[]>(() => {
-    const own = (currentUser.email || '').toLowerCase()
-    const team: Suggestion[] = (accounts || []).filter(account => account.status === 'Active' && account.id !== currentUser.id && account.email && account.email.toLowerCase() !== own)
-      .map(account => ({ email: account.email.trim(), name: account.name, hint: 'Teammate' }))
-    const customers: Suggestion[] = clients.filter(client => client.email && !client.archived)
-      .map(client => ({ email: client.email.trim(), name: client.contact ? `${client.contact} (${client.name})` : client.name, hint: 'Client' }))
-    return [...customers, ...team]
-  }, [clients, accounts, currentUser.id, currentUser.email])
+  const people = useMemo<Suggestion[]>(() => knownPeople({ clients, accounts, leaveOut: { id: currentUser.id, email: currentUser.email } }), [clients, accounts, currentUser.id, currentUser.email])
   const taken = useMemo(() => [...addressesOn(to), ...addressesOn(cc), ...addressesOn(bcc)], [to, cc, bcc])
-  const searchPeople = useCallback(async (query: string, signal: AbortSignal) => {
-    const response = await fetch(`/api/communications/contacts?q=${encodeURIComponent(query)}`, { credentials: 'same-origin', signal })
-    return response.ok ? await response.json() as { people: Suggestion[]; partial?: boolean } : { people: [] }
-  }, [])
   // Ask once as the composer opens, so the list is ready by the time someone types.
-  useEffect(() => { fetch('/api/communications/contacts?q=', { credentials: 'same-origin' }).catch(() => {}) }, [])
+  useEffect(() => { searchContacts('').catch(() => {}) }, [])
   const initial = useRef(JSON.stringify([to, cc, bcc, subject, message, taskIds, driveFiles, uploads.map(file => file.name)]))
   const dirty = () => Boolean(prefill.restored) || JSON.stringify([to, cc, bcc, subject, message, taskIds, driveFiles, uploads.map(file => file.name)]) !== initial.current
 
@@ -241,10 +232,10 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
       {needsPermission && <div className="email-permission" role="alert"><p>The tracker needs your permission to send email as you. You approve it once on Google’s page, then return to Work Hub. This email will not be kept, so start it again after approving.</p>
         <button type="button" className="primary" disabled={busy} onClick={() => { setBusy(true); void allowSending().catch(e => { setError(e instanceof Error ? e.message : 'Could not start the Google permission step.'); setBusy(false) }) }}>Allow sending</button></div>}
       <div className="email-fields">
-        <RecipientInput label="To" value={to} onChange={setTo} local={people} taken={taken} search={searchPeople} placeholder="name@company.com, another@company.com" />
+        <RecipientInput label="To" value={to} onChange={setTo} local={people} taken={taken} search={searchContacts} placeholder="name@company.com, another@company.com" />
         {!showCopies && <button type="button" className="link-button email-copies-toggle" onClick={() => setShowCopies(true)}>Add Cc or Bcc</button>}
-        {showCopies && <><RecipientInput label="Cc" value={cc} onChange={setCc} local={people} taken={taken} search={searchPeople} />
-          <RecipientInput label="Bcc" value={bcc} onChange={setBcc} local={people} taken={taken} search={searchPeople}><small>Bcc recipients are not shown to the others, and are left out of the note on the task.</small></RecipientInput></>}
+        {showCopies && <><RecipientInput label="Cc" value={cc} onChange={setCc} local={people} taken={taken} search={searchContacts} />
+          <RecipientInput label="Bcc" value={bcc} onChange={setBcc} local={people} taken={taken} search={searchContacts}><small>Bcc recipients are not shown to the others, and are left out of the note on the task.</small></RecipientInput></>}
         {copiedFromOriginal && <p className="email-note" role="status">{copiedCount} {copiedCount === 1 ? 'other person from the original email is' : 'other people from the original email are'} copied and will see your reply. <button type="button" className="link-button email-copies-toggle" onClick={() => setCc('')}>Reply to sender only</button></p>}
         <label>Subject<input value={subject} maxLength={EMAIL_LIMITS.subject} onChange={e => setSubject(e.target.value)} /></label>
         <label>Message<textarea rows={9} value={message} maxLength={EMAIL_LIMITS.body} onChange={e => setMessage(e.target.value)} /></label>

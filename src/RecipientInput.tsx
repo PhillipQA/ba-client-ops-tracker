@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { isValidEmail, splitAddresses } from './emailCompose'
 import { applySuggestion, currentToken, matchPeople, type RankedPerson } from './emailSuggest'
+import { SuggestionList, suggestionStatus } from './SuggestionList'
 
 /**
  * A To, Cc or Bcc line that suggests people while you type, like Gmail: people you have emailed, people who emailed you,
@@ -100,15 +101,8 @@ export function RecipientInput({ label, value, onChange, local, taken, search, p
         onClick={event => read(event.currentTarget.value, event.currentTarget.selectionStart)}
         onFocus={event => { setFocused(true); read(event.currentTarget.value, event.currentTarget.selectionStart) }}
         onBlur={() => setFocused(false)} />
-      {open && <ul id={listId} role="listbox" aria-label={`${label} suggestions`} className="email-suggestions">
-        {suggestions.map((person, index) => <li key={person.email} id={optionId(index)} role="option" aria-selected={index === highlighted} className={index === highlighted ? 'active' : undefined}
-          // Mouse down, not click, so the field keeps focus and the choice is not lost to the blur.
-          onMouseDown={event => { event.preventDefault(); choose(person) }} onMouseMove={() => { if (index !== highlighted) setActive(index) }}>
-          <span><strong>{person.name || person.email}</strong>{person.name && <small>{person.email}</small>}</span>
-          {person.hint && <em>{person.hint}</em>}
-        </li>)}
-      </ul>}
-      <span className="email-sr" role="status" aria-live="polite">{open ? `${suggestions.length} ${suggestions.length === 1 ? 'suggestion' : 'suggestions'} available. Use the up and down arrow keys.` : ''}</span>
+      {open && <SuggestionList id={listId} label={label} people={suggestions} highlighted={highlighted} optionId={optionId} onChoose={choose} onHover={setActive} />}
+      <span className="email-sr" role="status" aria-live="polite">{open ? suggestionStatus(suggestions.length) : ''}</span>
     </span>
     {children}
   </div>

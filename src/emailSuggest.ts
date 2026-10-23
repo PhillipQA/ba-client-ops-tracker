@@ -55,3 +55,23 @@ export function matchPeople<T extends RankedPerson>(people: T[], query: string, 
   scored.sort((a, b) => a.rank - b.rank || (b.person.count || 0) - (a.person.count || 0) || (b.person.last || 0) - (a.person.last || 0) || a.person.email.localeCompare(b.person.email))
   return scored.slice(0, options.limit ?? 8).map(entry => entry.person)
 }
+
+/** A name reduced to its words, lower-case and in a fixed order, so "Ana Cruz", "ana  cruz" and "Cruz, Ana" are the same person. */
+export function nameKey(name: string): string {
+  return String(name || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(Boolean).sort().join(' ')
+}
+
+/**
+ * The one person a typed name clearly refers to, or null.
+ * The name must be the same name (ignoring case, spacing and "Last, First" order) and belong to a single address.
+ * Two different addresses for the same name is a guess, so nothing is chosen.
+ */
+export function emailForName<T extends RankedPerson>(people: T[], typed: string): T | null {
+  const wanted = nameKey(typed)
+  if (wanted.replace(/ /g, '').length < 3) return null
+  const found = new Map<string, T>()
+  for (const person of people) {
+    if (person.name && nameKey(person.name) === wanted && isValidEmail(person.email) && !isAutomaticAddress(person.email) && !found.has(person.email.toLowerCase())) found.set(person.email.toLowerCase(), person)
+  }
+  return found.size === 1 ? [...found.values()][0] : null
+}

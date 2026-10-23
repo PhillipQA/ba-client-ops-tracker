@@ -4,7 +4,7 @@
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
 
-## v0.6.92 — Recipient suggestions in the email composer
+## v0.6.92 — Recipient suggestions in the email composer and Document Creation
 Released October 23, 2026.
 
 No database change and no new Google permission.
@@ -15,6 +15,9 @@ No database change and no new Google permission.
 - **Where the suggestions come from:** people you have emailed (read from your Gmail Sent folder, most emailed first), people who emailed you (from the emails saved in Work Hub), the email addresses on your clients, and your active teammates. Each suggestion says where it came from. Automatic senders such as no-reply addresses are left out, and so is anyone already on the email.
 - **Ready as the composer opens.** The Sent folder is read in the background when the composer opens and kept for 10 minutes, so suggestions are quick. Someone you have just emailed from the tracker is available straight away.
 - **Private to you.** The list is built from your own mailbox, kept only in server memory (never saved in the database), and never shown to anyone else. It is dropped when you disconnect Gmail.
+
+- **Emails for signatories in Document Creation.** The **Name** field of each DRF signatory and each Sign Off signatory suggests people as you type (from the same sources, including your teammates and your own name). Choosing a suggestion fills in the name and the **Email (DocHub only)** field. If you type a full name that is exactly one known person and the email is still empty, the email is filled in when you leave the field, with a note to check it. If nobody matches, the email stays empty. If the same name has two different addresses, nothing is guessed: both are offered to choose from.
+- **Safe with hand-typed emails.** An email you typed yourself is never replaced. An email that was filled in for a name is removed again if you change the name to someone else, so a signing request cannot go to the wrong person by accident. Enter only takes a suggestion you picked with the arrow keys.
 
 ### Notes
 

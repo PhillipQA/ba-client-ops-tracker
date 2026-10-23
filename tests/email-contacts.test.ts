@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createContactBook } from '../server/integrations/gmail-contacts'
-import { applySuggestion, cleanName, currentToken, isAutomaticAddress, matchPeople } from '../src/emailSuggest'
+import { applySuggestion, cleanName, currentToken, emailForName, isAutomaticAddress, matchPeople, nameKey } from '../src/emailSuggest'
+import { knownPeople } from '../src/knownPeople'
 import { splitMailboxes } from '../src/emailCompose'
 
 test('names and addresses are read from a pasted list', () => {
@@ -134,4 +135,41 @@ test('a first build that is still running is reported as partial, and one build 
   release()
   const [a, b] = await Promise.all([first, second])
   assert.deepEqual([a.people.map(p => p.email), b.people.map(p => p.email), lists], [['ana@acme.com'], ['ana@acme.com'], 1])
+})
+
+test('a typed name finds its email only when it clearly means one person', () => {
+  assert.equal(nameKey('Cruz, Ana'), nameKey('  ana   CRUZ '), 'Order, case and spacing do not matter')
+  assert.notEqual(nameKey('Ana Cruz'), nameKey('Ana Cruz Jr'))
+  const people = [
+    { email: 'ana@acme.com', name: 'Ana Cruz' }, { email: 'kim@acme.com', name: 'Kim Lee' }, { email: 'kim.lee@other.com', name: 'Kim Lee' },
+    { email: 'KIM@acme.com', name: 'Kim Lee' }, { email: 'bo@acme.com', name: 'Cruz, Bo' }, { email: 'help@acme.com', name: 'Help Desk' }, { email: 'no-reply@acme.com', name: 'Billing Bot' }, { email: 'plain@acme.com', name: '' },
+    { email: 'bad address', name: 'Pat Doe' },
+  ]
+  assert.equal(emailForName(people, 'ana cruz')?.email, 'ana@acme.com')
+  assert.equal(emailForName(people, 'Cruz, Ana')?.email, 'ana@acme.com')
+  assert.equal(emailForName(people, 'Bo Cruz')?.email, 'bo@acme.com', '"Last, First" in the list matches "First Last"')
+  assert.equal(emailForName(people, 'Kim Lee'), null, 'Two different addresses for one name is a guess, so nothing is filled in')
+  assert.equal(emailForName(people, 'Ana'), null, 'A first name alone does not match a full name')
+  assert.equal(emailForName(people, 'Ana Cruz Jr'), null)
+  assert.equal(emailForName(people, 'Billing Bot'), null, 'Automatic senders are never suggested')
+  assert.equal(emailForName(people, 'Pat Doe'), null, 'An invalid address is never suggested')
+  assert.equal(emailForName(people, 'Nobody Here'), null, 'No match means nothing')
+  assert.equal(emailForName(people, ''), null);assert.equal(emailForName(people, 'ab'), null)
+  assert.equal(emailForName([{ email: 'ana@acme.com', name: 'Ana Cruz' }, { email: 'ANA@acme.com', name: 'ana cruz' }], 'Ana Cruz')?.email, 'ana@acme.com', 'The same address twice is still one person')
+})
+
+test('clients and teammates are the people the tracker already knows', () => {
+  const clients: any[] = [
+    { id: 'c1', name: 'Acme', contact: 'Kiara Santos', email: ' kiara@acme-corp.com ' }, { id: 'c2', name: 'Sorsogon City', contact: '', email: 'ops@sorsogon.gov' },
+    { id: 'c3', name: 'Old Co', contact: 'Old Contact', email: 'old@old.co', archived: true }, { id: 'c4', name: 'No Email', contact: 'Someone', email: '' },
+  ]
+  const accounts: any[] = [
+    { id: 'u1', name: 'José Cruz', email: 'me@acme.com', status: 'Active' }, { id: 'u2', name: 'Kim Teammate', email: 'kim.t@ba-team.com', status: 'Active' },
+    { id: 'u3', name: 'Gone Person', email: 'gone@ba-team.com', status: 'Disabled' }, { id: 'u4', name: 'No Email', email: '', status: 'Active' },
+  ]
+  assert.deepEqual(knownPeople({ clients, accounts }), [
+    { email: 'kiara@acme-corp.com', name: 'Kiara Santos', hint: 'Client · Acme' }, { email: 'ops@sorsogon.gov', name: 'Sorsogon City', hint: 'Client' },
+    { email: 'me@acme.com', name: 'José Cruz', hint: 'Teammate' }, { email: 'kim.t@ba-team.com', name: 'Kim Teammate', hint: 'Teammate' },
+  ], 'Archived clients, disabled accounts and entries without an address are left out')
+  assert.ok(!knownPeople({ clients, accounts, leaveOut: { id: 'u1', email: 'me@acme.com' } }).some(person => person.email === 'me@acme.com'), 'The composer leaves the sender out')
 })
