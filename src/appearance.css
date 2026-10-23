@@ -294,3 +294,57 @@ body:has(.app-shell[data-interface-mode]) .activity-comment-popover-head button 
   .settings-page .integration-actions > button { flex: 1 1 auto; }
   .ui-refresh .account-users-page .panel:not(:has(> .panel-heading)), .ui-refresh .platform-settings { padding: 16px; }
 }
+
+/* ---- Pieces that were only drawn dark -------------------------------------------------------
+   In the personal Dark, Light and Gray appearances these use the same colours as the rest of
+   the page, so nothing stays black on a light page. The default look (no choice made) is
+   unchanged. */
+.app-shell.ui-refresh[data-interface-mode] :is(.session-avatar, .template-current, .template-manager-card, .action-center-scope, .inquiry-archive, .activity-legend span, .dashboard-activity-badges span) { background: var(--ui-soft); border-color: var(--ui-border); color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] .session-avatar { color: var(--ui-accent); }
+.app-shell.ui-refresh[data-interface-mode] :is(.action-center-scope svg, .ai-title-line svg) { color: var(--ui-accent); }
+.app-shell.ui-refresh[data-interface-mode] .action-center-scope > span { color: var(--ui-muted); }
+.app-shell.ui-refresh[data-interface-mode] .action-center-scope select { color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] .action-center-scope select option { background: var(--ui-surface); color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] :is(.template-manager-card > p, .template-manager-card-head > div > span, .template-current span, .inquiry-archive-help, .inquiry-archive-row small, .inquiry-archive-meta, .activity-legend span, .dashboard-activity-badges span) { color: var(--ui-muted); }
+.app-shell.ui-refresh[data-interface-mode] :is(.template-current strong, .inquiry-archive > summary, .inquiry-archive-row strong) { color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] .inquiry-archive > summary b { background: var(--ui-surface); color: var(--ui-muted); border: 1px solid var(--ui-border); }
+.app-shell.ui-refresh[data-interface-mode] :is(.inquiry-archive[open] > summary, .inquiry-archive-help, .inquiry-archive-row) { border-color: var(--ui-border); }
+.app-shell.ui-refresh[data-interface-mode] .ai-safety-note { background: var(--ui-success-soft); border-color: color-mix(in srgb, var(--ui-success) 38%, transparent); color: var(--ui-success); }
+.app-shell.ui-refresh[data-interface-mode] .ai-safety-note span { color: var(--ui-muted); }
+.app-shell.ui-refresh[data-interface-mode] :is(.activity-column + .activity-column, .task-filter-grid, .activity-empty) { border-color: var(--ui-border); }
+.app-shell.ui-refresh[data-interface-mode] .settings-message { background: var(--ui-accent-soft); border-color: color-mix(in srgb, var(--ui-accent) 38%, transparent); color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] .settings-message.error { background: var(--ui-danger-soft); border-color: color-mix(in srgb, var(--ui-danger) 40%, transparent); color: var(--ui-danger); }
+
+/* ---- Document workspaces follow the app, not the computer's light/dark setting ---------------
+   FSD, BRD and Test Case creation used to switch with the operating system, so a dark app could
+   open a bright white workspace (and the reverse). The document preview paper stays white on
+   purpose: it stands for the exported Word file. */
+.app-shell .fsd-creator {
+  color-scheme: dark;
+  --fsd-page-bg: #17191d; --fsd-surface: #20242b; --fsd-surface-soft: #252a32; --fsd-surface-muted: #1d2128; --fsd-surface-panel: #1b1f25;
+  --fsd-text: #e7e9ed; --fsd-heading: #f5f6f8; --fsd-muted: #b9c0ca; --fsd-subtle: #9fa8b5; --fsd-label: #d3d8df;
+  --fsd-border: #3b424d; --fsd-border-soft: #343b45; --fsd-accent: #e5e8ed; --fsd-accent-text: #17191d; --fsd-focus: #9ca8ba;
+  --fsd-input-bg: #171b21; --fsd-input-text: #eef1f5;
+}
+.app-shell[data-interface-mode="light"] .fsd-creator, .app-shell[data-interface-mode="gray"] .fsd-creator {
+  color-scheme: light;
+  --fsd-page-bg: #f4f5f7; --fsd-surface: #ffffff; --fsd-surface-soft: #f6f7f9; --fsd-surface-muted: #f8f9fb; --fsd-surface-panel: #eef0f4;
+  --fsd-text: #24262b; --fsd-heading: #17191d; --fsd-muted: #555b64; --fsd-subtle: #636b76; --fsd-label: #3e4550;
+  --fsd-border: #d9dde3; --fsd-border-soft: #dfe2e7; --fsd-accent: #262c36; --fsd-accent-text: #ffffff; --fsd-focus: #7b8499;
+  --fsd-input-bg: #ffffff; --fsd-input-text: #24262c;
+}
+.app-shell .tc-creator { color-scheme: dark; --tc-bg: #17191d; --tc-surface: #20242b; --tc-soft: #181d24; --tc-border: #39414c; --tc-text: #eef1f5; --tc-muted: #aab3c0; --tc-accent: #e4e8ee; --tc-accent-text: #17191d; --tc-input: #161a20; --tc-warn: #f1cf82; }
+.app-shell .tc-creator .tc-table-scroll th { background: #303845; }
+.app-shell .tc-creator .tc-gaps { background: #2a2418; border-color: #5c4b26; color: #ead18f; }
+.app-shell[data-interface-mode="light"] .tc-creator, .app-shell[data-interface-mode="gray"] .tc-creator { color-scheme: light; --tc-bg: #f4f6f9; --tc-surface: #fff; --tc-soft: #f8fafc; --tc-border: #dfe4eb; --tc-text: #202938; --tc-muted: #677386; --tc-accent: #263247; --tc-accent-text: #fff; --tc-input: #fff; --tc-warn: #805a12; }
+.app-shell[data-interface-mode="light"] .tc-creator .tc-table-scroll th, .app-shell[data-interface-mode="gray"] .tc-creator .tc-table-scroll th { background: #263247; }
+.app-shell[data-interface-mode="light"] .tc-creator .tc-gaps, .app-shell[data-interface-mode="gray"] .tc-creator .tc-gaps { background: #fff9eb; border-color: #e7d099; color: #72520f; }
+
+/* Final colour and size cleanups found by the contrast audit. */
+label > small { font-size: 11px; }
+.app-shell.ui-refresh[data-interface-mode] :is(.empty-start-card, .no-access-panel) h2,
+.app-shell.ui-refresh[data-interface-mode] :is(.empty-start-card, .no-access-panel) h3 { color: var(--ui-text); }
+.app-shell.ui-refresh[data-interface-mode] :is(.empty-start-card, .no-access-panel) p { color: var(--ui-muted); }
+/* Wallpaper themes are all dark, but Document Hub styles read --surface/--text/--border/--muted, which only exist in the personal
+   interface modes. Without them it fell back to light-theme values (white buttons on a dark panel). */
+.app-shell.ui-refresh:not([data-interface-mode]) [class*="dochub-"] { --surface: #2a2f37; --text: #eef2f7; --border: #46505e; --muted: #aab7c8; }

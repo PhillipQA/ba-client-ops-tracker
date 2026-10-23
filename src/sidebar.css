@@ -1,0 +1,47 @@
+/* Left menu: full width by default, or collapsed to a narrow rail of icons (the toggle at the top).
+   In the rail each icon shows its name in a tag on hover or keyboard focus (see RailTip.tsx).
+   Loaded after styles.css and appearance.css so it can adjust their sidebar rules. */
+.app-shell.ui-refresh { --sidebar-w: 252px; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); transition: grid-template-columns .18s ease; }
+@media (max-width: 1100px) { .app-shell.ui-refresh { --sidebar-w: 220px; } }
+.sidebar { overflow: hidden; }
+.sidebar nav { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 2px; margin: -2px; }
+.sidebar-footer { flex: none; }
+
+.brand { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.brand-logo { flex: 0 1 auto; min-width: 0; max-width: 150px; }
+.ui-refresh .brand-logo { max-width: 150px; }
+.brand-icon { display: none; }
+.sidebar-toggle { flex: none; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ui-muted, #bdbdbd); cursor: pointer; transition: background .15s ease, color .15s ease; }
+.sidebar-toggle:hover { background: var(--ui-soft, #222); color: var(--ui-text, #fff); }
+.nav-button:focus-visible, .sidebar-toggle:focus-visible, .session-card-button:focus-visible { outline: 2px solid var(--ui-accent, #8aa1ff); outline-offset: -2px; }
+
+/* The name tag beside an icon. Dark on every appearance so it stands out from the page behind it. */
+.rail-tip { position: fixed; z-index: 1000; transform: translateY(-50%); max-width: 300px; padding: 7px 11px; border-radius: 8px; border: 1px solid #3a4658; background: #0b0f16; color: #f5f7fb; box-shadow: 0 8px 24px rgb(0 0 0 / .35); font-size: 12.5px; font-weight: 600; line-height: 1.3; white-space: nowrap; pointer-events: none; animation: rail-tip-in .12s ease-out; }
+.rail-tip::before { content: ''; position: absolute; left: -5px; top: 50%; width: 8px; height: 8px; background: #0b0f16; border-left: 1px solid #3a4658; border-bottom: 1px solid #3a4658; transform: translateY(-50%) rotate(45deg); }
+@keyframes rail-tip-in { from { opacity: 0; margin-left: -4px; } to { opacity: 1; margin-left: 0; } }
+@media (prefers-reduced-motion: reduce) { .app-shell.ui-refresh { transition: none; } .rail-tip { animation: none; } }
+
+@media (min-width: 821px) {
+  .app-shell.ui-refresh.nav-collapsed { --sidebar-w: 76px; }
+  .nav-collapsed .brand { flex-direction: column; justify-content: flex-start; gap: 10px; min-height: 0; padding: 2px 0 14px; }
+  .nav-collapsed .brand-logo { display: none; }
+  .nav-collapsed .brand-icon { display: block; width: 44px; height: 44px; border-radius: 12px; }
+  .nav-collapsed .nav-button { position: relative; justify-content: center; gap: 0; min-height: 44px; padding: 0; }
+  .nav-collapsed .nav-button:hover { transform: none; }
+  /* The text stays for screen readers; it is only taken out of sight. */
+  .nav-collapsed .nav-button > span { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .nav-collapsed .nav-button > b { position: absolute; top: 3px; right: 6px; margin: 0; min-width: 18px; height: 18px; padding: 0 4px; font-size: 11px; }
+  .nav-collapsed .platform-admin-nav { margin-inline: 0; }
+  .nav-collapsed .workspace-chip { justify-content: center; min-height: 40px; padding: 0; }
+  .nav-collapsed .workspace-chip > span, .nav-collapsed .local-note > span { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .nav-collapsed .session-card { width: 100%; margin: 10px 0 0; padding: 6px; grid-template-columns: 1fr; justify-items: center; }
+  .nav-collapsed .session-card > div:nth-child(2), .nav-collapsed .session-card > svg { display: none; }
+  .nav-collapsed .local-note { position: relative; justify-content: center; padding: 12px 0 0; }
+}
+@media (max-width: 820px) {
+  .app-shell.ui-refresh, .app-shell.ui-refresh.nav-collapsed { grid-template-columns: 1fr; transition: none; }
+  .sidebar-toggle { display: none; }
+  .brand { justify-content: flex-start; }
+  .sidebar { overflow: visible; }
+  .sidebar nav { overflow-y: visible; overflow-x: auto; padding: 0; margin: 0; }
+}

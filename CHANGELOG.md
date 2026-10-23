@@ -1,8 +1,33 @@
 # Changelog
 
-**Current application release: v0.6.92**
+**Current application release: v0.6.93**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.93 — Collapsible left menu, colour fixes and a bundled font
+Released October 23, 2026.
+
+No database migration and no new Google permission.
+
+### Collapsible left menu
+
+- **More room for the page.** The panel button beside the logo collapses the left menu to a narrow strip of icons, and the same button opens it again. Hover an icon, or move to it with the keyboard, and a tooltip shows the module name. The unread count on Work Hub stays visible on its icon.
+- **Remembered in this browser.** The choice is saved in the browser you used, not on your account, so a second computer starts with the menu open.
+- **Still readable by screen readers.** The names stay in the page for screen readers, the current page is announced, and Escape closes a tooltip.
+- **Small screens keep the existing layout.** Under 820 px wide the menu behaves as before and the button is hidden.
+
+### Colours
+
+- **Light and Gray looks.** Panels that stayed dark in these looks (the signed-in card, template cards, Action Center filters and activity badges, the archive note, drop-downs) now follow the chosen look, and grey helper text is darker so it can be read.
+- **FSD and Test Case creators** follow the look chosen in the app instead of the computer's light or dark setting. The document paper stays white.
+- **Messages.** Confirmations are blue and errors are red, so a failure no longer looks like a success.
+- **Default look.** Primary buttons such as **Add task** are a clearer blue with white text.
+- **Document Hub history.** The Active and Archive tabs, Row and Tile switch and the page-size drop-down were white on the dark wallpaper looks. They now match the page.
+- **Smallest text.** Labels and badges that were 8 to 10 px are now 11 px. The text inside Gantt bars stays at 10 px.
+
+### Font
+
+- **Inter is now bundled with the app** (Latin letters, weights 400 to 700, SIL Open Font License) and loaded from the app itself, with no outside font service. The app already named Inter but never loaded it, so computers without Inter installed fell back to their system font. Numbers line up in table columns. Characters outside Western European languages still use the system font.
 
 ## v0.6.92 — Trackers, and recipient suggestions in the email composer and Document Creation
 Released October 23, 2026.

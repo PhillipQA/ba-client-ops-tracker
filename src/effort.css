@@ -24,16 +24,16 @@
 .effort-heading span:not(.count-pill) { display: block; margin-top: 3px; color: var(--ef-muted); font-size: 11px; }
 .effort-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .effort-tiles > div { border: 1px solid var(--ef-border); border-radius: 10px; padding: 10px 12px; background: var(--ef-surface); min-width: 0; }
-.effort-tiles span { display: block; color: var(--ef-muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.effort-tiles span { display: block; color: var(--ef-muted); font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .effort-tiles strong { display: block; margin-top: 4px; font-size: 20px; letter-spacing: -.01em; }
-.effort-tiles small { display: block; margin-top: 2px; color: var(--ef-muted); font-size: 10.5px; }
+.effort-tiles small { display: block; margin-top: 2px; color: var(--ef-muted); font-size: 11.5px; }
 .effort-tiles .effort-over { background: var(--ef-warn-soft); border-color: var(--ef-warn); }
 .effort-tiles .effort-over :is(span, strong, small) { color: var(--ef-warn); }
 .effort-progress { display: grid; gap: 6px; }
 .effort-progress-track { display: flex; height: 8px; border-radius: 999px; background: var(--ef-track); overflow: hidden; }
 .effort-progress-within { background: var(--ef-accent); }
 .effort-progress-over { background: #dc6803; }
-.effort-category-line { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ef-muted); font-size: 10.5px; }
+.effort-category-line { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ef-muted); font-size: 11.5px; }
 .effort-log { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--ef-border); border-radius: 10px; background: var(--ef-surface); }
 .effort-log-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .effort-log-head strong { font-size: 12.5px; }
@@ -50,7 +50,7 @@
 .effort-entries li:last-child { border-bottom: 0; }
 .effort-entries time { color: var(--ef-muted); font-weight: 600; font-size: 11px; }
 .effort-entries strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.effort-entries small { display: block; margin-top: 2px; color: var(--ef-muted); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.effort-entries small { display: block; margin-top: 2px; color: var(--ef-muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .effort-entries .icon-button { width: 32px; height: 32px; }
 @media (max-width: 640px) {
   .effort-tiles { grid-template-columns: 1fr; }
@@ -68,7 +68,7 @@
 .board-column-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px; }
 .board-column-head h3 { margin: 0; font-size: 13px; color: var(--ef-text); }
 .board-column-head .count-pill { padding: 2px 8px; }
-.board-column-head small { margin-left: auto; color: var(--ef-muted); font-size: 10.5px; font-weight: 600; }
+.board-column-head small { margin-left: auto; color: var(--ef-muted); font-size: 11.5px; font-weight: 600; }
 .board-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; background: var(--ef-muted); }
 .board-dot.tone-progress { background: #6366f1; }
 .board-dot.tone-blocked { background: #d92d20; }
@@ -82,17 +82,17 @@
 .board-card:hover, .board-card:focus-visible { border-color: var(--ef-accent); }
 .board-card.dragging { opacity: .45; }
 .board-card-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.board-card-due { margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--ef-muted); white-space: nowrap; }
+.board-card-due { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--ef-muted); white-space: nowrap; }
 .board-card-due.overdue { color: var(--ef-danger); }
 .board-card-due.today { color: var(--ef-warn); }
 .board-card h4 { margin: 0; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
 .board-card-where { margin: 0; color: var(--ef-muted); font-size: 11px; overflow-wrap: anywhere; }
 .board-card-effort { display: flex; align-items: center; gap: 8px; }
 .board-card-effort .effort-progress-track { flex: 1; height: 5px; }
-.board-card-effort span { font-size: 10.5px; font-weight: 700; color: var(--ef-muted); white-space: nowrap; }
+.board-card-effort span { font-size: 11.5px; font-weight: 700; color: var(--ef-muted); white-space: nowrap; }
 .board-card-effort.over span { color: var(--ef-warn); }
-.board-card-foot { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--ef-border); font-size: 10.5px; color: var(--ef-muted); }
-.board-avatar { margin-left: auto; width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center; background: var(--ef-accent-soft); color: var(--ef-accent); font-size: 9.5px; font-weight: 800; flex: 0 0 auto; }
+.board-card-foot { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--ef-border); font-size: 11.5px; color: var(--ef-muted); }
+.board-avatar { margin-left: auto; width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center; background: var(--ef-accent-soft); color: var(--ef-accent); font-size: 11px; font-weight: 800; flex: 0 0 auto; }
 .board-move { display: flex; gap: 6px; align-items: center; }
 .board-move select { min-height: 30px; border: 1px solid var(--ef-border); border-radius: 7px; background: var(--ef-input); color: var(--ef-text); font: inherit; font-size: 11px; padding: 0 6px; max-width: 100%; }
 .board-collapsed { min-height: 40px; border: 1px dashed var(--ef-border); border-radius: 10px; background: transparent; color: var(--ef-muted); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
@@ -115,7 +115,7 @@
 .effort-report .effort-util .effort-progress-track { flex: 1; height: 6px; }
 .effort-report .effort-util.high { color: var(--ef-warn); font-weight: 700; }
 .effort-report .effort-util.high .effort-progress-within { background: #dc6803; }
-.effort-over-chip { display: inline-flex; padding: 2px 8px; border-radius: 999px; background: var(--ef-warn-soft); color: var(--ef-warn); font-weight: 750; font-size: 10.5px; }
+.effort-over-chip { display: inline-flex; padding: 2px 8px; border-radius: 999px; background: var(--ef-warn-soft); color: var(--ef-warn); font-weight: 750; font-size: 11.5px; }
 .board-card-title { all: unset; cursor: pointer; font: inherit; color: inherit; }
 .board-card-title:focus-visible { outline: 2px solid var(--ef-accent); outline-offset: 2px; border-radius: 4px; }
 .board-card-foot > span[title] { display: inline-flex; align-items: center; gap: 4px; }
