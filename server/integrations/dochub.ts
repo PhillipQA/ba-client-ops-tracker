@@ -2,15 +2,19 @@ import rateLimit from 'express-rate-limit'
 import express, { type Express, type Request, type Response, type RequestHandler } from 'express'
 import { createHash, randomUUID } from 'node:crypto'
 import PizZip from 'pizzip'
-import { encryptSecret, decryptSecret, encryptionKey } from './tenant-integrations'
+import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
 import { apiClient, DocHubError, docHubId, docHubUrl, storageUrl, verifyDocHubWebhook, draftPacket, signingStatus } from './dochub-api'
 import { archivedWorkReason, workContext, LifecycleError } from '../../src/lifecycle'
-type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; organizationById: (id: string) => Promise<any>; load: (id: string) => Promise<any>; commit: (id: string, state: any, actor: any, reason: string, before: any, sync?: boolean) => Promise<any>; request?: typeof fetch }
+import type { DriveFiler } from './google-drive'
+type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; organizationById: (id: string) => Promise<any>; load: (id: string) => Promise<any>; commit: (id: string, state: any, actor: any, reason: string, before: any, sync?: boolean) => Promise<any>; request?: typeof fetch
+  /** Set once Google Drive is wired; a fully signed PDF is then filed under its task. */
+  driveFiler?: DriveFiler }
 const terminal = new Set(['DONE','COMPLETE','COMPLETED','REJECTED','VOID','VOIDED','EXPIRED'])
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const types: Record<string,string> = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
 const SIGNED_PDF_MAX_BYTES = 25 * 1024 * 1024
+const DRIVE_MAX_ATTEMPTS = 6
 
 export function signedPdfFileName(doc: any): string {
   const source = String(doc?.fileName || doc?.title || 'signed-document').trim()
@@ -81,7 +85,7 @@ export function applyDocumentToWorkspace(state: any, doc: any) {
   return { next, changed: JSON.stringify(next) !== JSON.stringify(state) }
 }
 
-const documentFields = ['id','kind','title','fileName','taskId','clientId','projectId','status','documentUrl','documentId','signRequestId','error','setupNote','createdAt','createdBy','createdByName','updatedAt','checkedAt','followUpDate','signers','events']
+const documentFields = ['id','kind','title','fileName','taskId','clientId','projectId','status','documentUrl','documentId','signRequestId','error','setupNote','createdAt','createdBy','createdByName','updatedAt','checkedAt','followUpDate','signers','events','driveFile','driveNote','driveError']
 const documentProjection = documentFields.map(field => `${field}:data->${field}`).join(',')
 export function documentHistoryRevision(rows: any[]) {
   return createHash('sha256').update(JSON.stringify(rows.map(row => [row.id,row.updated_at]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))))).digest('hex')
@@ -128,10 +132,54 @@ export function createDocHubService(deps: Deps) {
       } catch(e) { if (!(e instanceof LifecycleError) || attempt===3) throw e }
     }
   }
+  /** The signed PDF from DocHub. Used for the download link and for filing to Drive. */
+  async function signedPdf(tenant: string,doc: any) {
+    if(doc.status!=='COMPLETED'||!doc.documentId)throw new DocHubError('The signed PDF is available after completion.',409)
+    const api=await active(tenant),remote=await api.call(doc.compiledPdfId?`/compiled-pdfs/${docHubId(doc.compiledPdfId)}/download-url?documentId=${docHubId(doc.documentId)}`:`/documents/${docHubId(doc.documentId)}/pdf-url`)
+    const url=storageUrl(remote.url),request=deps.request || fetch
+    let response:Awaited<ReturnType<typeof fetch>>
+    try{response=await request(url,{method:'GET',headers:{Accept:'application/pdf'},redirect:'error',signal:AbortSignal.timeout(60_000)})}catch{throw new DocHubError('The signed PDF could not be downloaded from DocHub. Refresh the document and try again.',502)}
+    if(!response.ok)throw new DocHubError('DocHub storage could not provide the signed PDF.',502,response.status)
+    const announcedSize=Number(response.headers.get('content-length') || 0)
+    if(announcedSize>SIGNED_PDF_MAX_BYTES)throw new DocHubError('The signed PDF is too large to download through the tracker.',413)
+    const buffer=Buffer.from(await response.arrayBuffer())
+    if(!buffer.length||buffer.length>SIGNED_PDF_MAX_BYTES||buffer.subarray(0,5).toString()!=='%PDF-')throw new DocHubError('DocHub returned an invalid signed PDF.',502)
+    return {buffer,fileName:signedPdfFileName(doc)}
+  }
+  /**
+   * File the fully signed PDF into the shared Google Drive, under the linked subtask (or task), or the
+   * Client / Project folder when no task is linked. Never throws: the outcome is recorded on the document
+   * so the signing record is not affected by a Drive problem, and it can be retried.
+   */
+  async function fileToDrive(tenant: string,doc: any) {
+    const filer=deps.driveFiler
+    if(!filer||doc.driveFile)return
+    doc.driveError='';doc.driveNote=''
+    try{
+      if(!await filer.ready(tenant)){doc.driveNote='Google Drive is not connected, so the signed PDF was not filed. Ask your account Administrator to connect it in Settings, then choose Save to Google Drive.';return}
+      const current=(await deps.load(tenant)).data
+      const task=doc.taskId?(current?.items || []).find((i:any)=>i.id===doc.taskId):undefined
+      if(!task&&!doc.clientId){doc.driveNote='Not filed to Google Drive: this document has no linked task or client. Link one when preparing a document so the signed PDF has a folder.';doc.driveSkipped=true;return}
+      const {buffer,fileName}=await signedPdf(tenant,doc)
+      let result:{file:any;path:string[]}
+      try{result=await filer.file({tenantId:tenant,name:fileName,mimeType:'application/pdf',bytes:buffer,taskId:task?doc.taskId:undefined,clientId:doc.clientId || undefined,projectId:doc.projectId || undefined,user:null,commit:deps.commit,source:'dochub'})}
+      catch(e){
+        // The file is in Drive but the task vanished before it could be listed there: the file is still filed.
+        if((e as any)?.code==='TASK_REMOVED'&&(e as any).file)result={file:(e as any).file,path:[]};else throw e
+      }
+      doc.driveFile={id:result.file.id,url:result.file.url,name:result.file.name,savedAt:result.file.savedAt || new Date().toISOString(),path:result.path.join(' / ')}
+      doc.driveAttempts=0
+      addEvent(doc,'drive:saved',`Signed PDF saved to Google Drive${result.path.length?`: ${result.path.join(' / ')}`:''}.`)
+    }catch(e){
+      doc.driveAttempts=(Number(doc.driveAttempts) || 0)+1
+      doc.driveError=e instanceof DocHubError || e instanceof IntegrationError ? e.message : 'The signed PDF could not be saved to Google Drive. It will be retried; you can also choose Save to Google Drive.'
+    }
+  }
   async function refresh(tenant: string,id: string,force=false) {
     return locked(`${tenant}:${id}`,async()=> {
       const doc = await load(tenant,id)
       if (!force && Date.now()-Date.parse(doc.checkedAt || '')<15_000) return doc
+      const previousStatus = doc.status
       const org = await deps.organizationById(tenant)
       if (!org || org.status !== 'Active') throw new DocHubError('This account is unavailable.',403)
       const api = await active(tenant)
@@ -221,6 +269,9 @@ export function createDocHubService(deps: Deps) {
           if (messages[doc.status]) addEvent(doc,`status:${doc.status}`,messages[doc.status],doc.status==='COMPLETED')
         }
       } catch(e) { doc.error=e instanceof DocHubError ? e.message : 'Document preparation could not finish. Refresh to continue the existing preparation.'; if(!doc.documentId && !doc.importId)doc.status=doc.importAttemptAt?'REVIEW_REQUIRED':'UPLOAD_FAILED' }
+      // Only documents that become fully signed while this feature is on are filed automatically; older ones can be filed with the button.
+      if (doc.status==='COMPLETED' && previousStatus!=='COMPLETED' && !doc.driveFile) doc.driveAutoSave=true
+      if (doc.status==='COMPLETED' && doc.driveAutoSave && !doc.driveFile && !doc.driveSkipped && (Number(doc.driveAttempts) || 0)<DRIVE_MAX_ATTEMPTS && !doc.error) await fileToDrive(tenant,doc)
       await save(tenant,doc)
       try { await mirror(tenant,doc) } catch { doc.error=[doc.error,'Task updates are pending synchronization; refresh to retry.'].filter(Boolean).join(' ');await save(tenant,doc) }
       return doc
@@ -285,9 +336,11 @@ export function createDocHubService(deps: Deps) {
     const work=(async()=>{
       const configured=await database().from('tenant_dochub_accounts').select('enabled').eq('tenant_id',tenant).maybeSingle();check(configured.error)
       if(!configured.data?.enabled)return
-      const result=await documentQuery(tenant,'id,status:data->status,error:data->error,checkedAt:data->checkedAt',taskId);check(result.error)
+      const result=await documentQuery(tenant,'id,status:data->status,error:data->error,checkedAt:data->checkedAt,driveAutoSave:data->driveAutoSave,driveFile:data->driveFile,driveError:data->driveError,driveSkipped:data->driveSkipped,driveAttempts:data->driveAttempts',taskId);check(result.error)
       const pending=(result.data || []).filter((doc:any)=>{
         if(doc.error?.includes('synchronization'))return true
+        // A signed document whose Drive filing failed is tried again, a few times.
+        if(doc.status==='COMPLETED')return Boolean(doc.driveAutoSave && !doc.driveFile && !doc.driveSkipped && doc.driveError && (Number(doc.driveAttempts) || 0)<DRIVE_MAX_ATTEMPTS)
         return !terminal.has(doc.status) && !['REVIEW_REQUIRED','IMPORT_FAILED','UPLOAD_FAILED'].includes(doc.status)
       }).sort((a:any,b:any)=>String(a.checkedAt || '').localeCompare(String(b.checkedAt || ''))).slice(0,10)
       for(const doc of pending)await refresh(tenant,doc.id).catch(()=>undefined)
@@ -296,7 +349,17 @@ export function createDocHubService(deps: Deps) {
     scans.set(key,work)
     try{await work}finally{if(scans.get(key)===work)scans.delete(key)}
   }
-  return {account,active,load,save,list,revision,mirror,prepare,refresh,notifySigner,scan,locked,check}
+  /** Manual filing of a signed document, also for ones signed before automatic filing existed. */
+  async function saveToDrive(tenant: string,id: string) {
+    return locked(`${tenant}:${id}`,async()=>{
+      const doc=await load(tenant,id)
+      if(doc.status!=='COMPLETED')throw new DocHubError('Only a fully signed document can be saved to Google Drive.',409)
+      if(!deps.driveFiler)throw new DocHubError('Google Drive is not available.',503)
+      if(!doc.driveFile){doc.driveSkipped=false;doc.driveAttempts=0;await fileToDrive(tenant,doc);await save(tenant,doc);try{await mirror(tenant,doc)}catch{}}
+      return doc
+    })
+  }
+  return {account,active,load,save,list,revision,mirror,prepare,refresh,notifySigner,scan,locked,check,signedPdf,saveToDrive}
 }
 
 export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubService(deps)) {
@@ -363,22 +426,16 @@ export function registerDocHubRoutes(app:Express,deps:Deps,service=createDocHubS
       doc.documentId=documentId;doc.status='UPLOADED';delete doc.fileData;delete doc.uploadKey;await service.save(id,doc)})
     res.json({document:publicDocument(await service.refresh(id,key,true))})
   }))
-  app.get('/api/dochub/documents/:id/pdf',...scope,wrap(async(req,res)=>{const doc=await service.load(tenant(req),String(req.params.id));if(doc.status!=='COMPLETED'||!doc.documentId)throw new DocHubError('The signed PDF is available after completion.',409)
-    const api=await service.active(tenant(req)),remote=await api.call(doc.compiledPdfId?`/compiled-pdfs/${docHubId(doc.compiledPdfId)}/download-url?documentId=${docHubId(doc.documentId)}`:`/documents/${docHubId(doc.documentId)}/pdf-url`)
-    const url=storageUrl(remote.url),request=deps.request || fetch
-    let response:Awaited<ReturnType<typeof fetch>>
-    try{response=await request(url,{method:'GET',headers:{Accept:'application/pdf'},redirect:'error',signal:AbortSignal.timeout(60_000)})}catch{throw new DocHubError('The signed PDF could not be downloaded from DocHub. Refresh the document and try again.',502)}
-    if(!response.ok)throw new DocHubError('DocHub storage could not provide the signed PDF.',502,response.status)
-    const announcedSize=Number(response.headers.get('content-length') || 0)
-    if(announcedSize>SIGNED_PDF_MAX_BYTES)throw new DocHubError('The signed PDF is too large to download through the tracker.',413)
-    const buffer=Buffer.from(await response.arrayBuffer())
-    if(!buffer.length||buffer.length>SIGNED_PDF_MAX_BYTES||buffer.subarray(0,5).toString()!=='%PDF-')throw new DocHubError('DocHub returned an invalid signed PDF.',502)
-    const fileName=signedPdfFileName(doc)
+  app.get('/api/dochub/documents/:id/pdf',...scope,wrap(async(req,res)=>{const doc=await service.load(tenant(req),String(req.params.id));const {buffer,fileName}=await service.signedPdf(tenant(req),doc)
     res.setHeader('Content-Type','application/pdf')
     res.setHeader('Content-Length',String(buffer.length))
     res.setHeader('Cache-Control','private, no-store')
     res.setHeader('Content-Disposition',signedPdfContentDisposition(fileName))
     res.send(buffer)
+  }))
+  app.post('/api/dochub/documents/:id/drive',...scope,wrap(async(req,res)=>{
+    write(req)
+    res.json({document:publicDocument(await service.saveToDrive(tenant(req),String(req.params.id)))})
   }))
   return service
 }

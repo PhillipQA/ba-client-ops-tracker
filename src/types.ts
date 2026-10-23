@@ -72,6 +72,7 @@ export interface TaskDriveFile {
   savedAt: string
   savedBy: string
   savedByName: string
+  source?: 'gmail' | 'generated' | 'dochub'
 }
 
 export interface TaskComment {

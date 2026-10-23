@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.6.88.**
+**Current application version: v0.6.89.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.88**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.89**.
 
 ## Database requirements
 
@@ -69,6 +69,7 @@ Replace the ZIP path with the actual patch and follow its version-specific instr
 - Check the displayed application version.
 - Open an existing workspace and confirm clients, projects and tasks are present.
 - Check integrations you use, existing evidence downloads and document generation.
+- For v0.6.89 (no database change): sign a test DRF in DocHub with a task or subtask linked, and confirm the signed PDF appears in that task's folder in Drive and on the task under **Saved to Google Drive**. In Document Creation → DRF, **Choose from Google Drive** lists the files saved on tasks.
 - For v0.6.87, after applying v23 and enabling the Google Drive API: as an account administrator open Settings → Integrations → Google Drive and connect. In Work Hub, create a task from a Gmail message with an attachment, click **Save to Drive**, pick the task or a subtask, and confirm the file appears under BA Client Ops Tracker / Client / Project / Task in Drive and as **Saved to Google Drive** on the task.
 - For v0.6.86, open Work Hub, select a Gmail message that has an attachment and click the file name. It should download. Messages synced before this version download the same way.
 - For v0.6.85, generate a BRD preview and an FSD preview and confirm the page text is dark on white, in dark and light appearance and with a wallpaper theme.

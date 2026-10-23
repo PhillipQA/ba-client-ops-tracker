@@ -43,7 +43,7 @@ function fixture(options: { failLink?: boolean } = {}) {
       return {data:this.head?null:this.many?matched.slice(this.start,this.end+1):matched[0]||null,count:matched.length,error:null}
     }
   }
-  const app=express();app.use(express.json());app.use((req:any,_res,next)=>{const id=String(req.headers['x-test-user']||'user-a');req.authUser={id,organizationId:'tenant',name:id,role:String(req.headers['x-test-role']||'Contributor'),modules:['inbox','items'],status:'Active'};next()})
+  const app=express();app.use(express.json());app.use((req:any,_res,next)=>{const id=String(req.headers['x-test-user']||'user-a');req.authUser={id,organizationId:'tenant',name:id,role:String(req.headers['x-test-role']||'Contributor'),modules:String(req.headers['x-test-modules']||'inbox,items').split(','),status:'Active'};next()})
   const hub=registerCommunications(app,{db:{from:(table:string)=>new Query(table)},requireAuth:(_req,_res,next)=>next(),requireTenant:(_req,_res,next)=>next(),sessionFromRequest:()=>({token:'session-a',user:null}),sessionByToken:(token:string)=>token==='session-a'?{id:'user-a',organizationId:'tenant',status:'Active'}:null,requirePlatformAdmin:(_req,_res,next)=>next(),organizationById:async()=>({id:'tenant',status:'Active',enabledModules:['inbox','items','settings']}),load:async()=>({data:saved || state}),commit:async(_tenant,next)=>{saved=next},openStatus:()=> 'Open'})
   return {app,records,users,gmailAccounts,driveRows,prefs,hub,state,getSaved:()=>saved}
 }
@@ -477,6 +477,7 @@ test('Admin connects one shared Drive; attachments save into Client/Project/Task
   }
   assert.equal(init.headers?.Authorization,'Bearer drive-access','Drive calls use the Drive token, never the Gmail one')
   if(url.pathname==='/drive/v3/files'&&method==='POST'){const body=JSON.parse(String(init.body)),id=`folder-${++nextId}`;drive.set(id,{...body,id});return json({id})}
+  if(url.searchParams.get('alt')==='media'){const up=uploads.find(u=>u.id===decodeURIComponent(url.pathname.split('/').pop()||''));return up?new Response(up.bytes,{status:200,headers:{'content-type':up.type}}):json({error:{message:'File not found'}},404)}
   const file=/^\/drive\/v3\/files\/([^/]+)$/.exec(url.pathname)
   if(file){const found=drive.get(decodeURIComponent(file[1]));if(!found)return json({error:{message:'File not found'}},404)
    if(method==='PATCH'){found.name=JSON.parse(String(init.body)).name;return json({id:found.id})}
@@ -564,6 +565,35 @@ test('Admin connects one shared Drive; attachments save into Client/Project/Task
   getSaved().items.find((x:any)=>x.id===install.id).title='Install POS terminals'
   assert.equal((await local(`/api/communications/${id}/attachments/1/drive`,'POST',{taskId:install.id})).status,201)
   assert.equal(uploads.at(-1).parents[0],installFolder);assert.equal(drive.get(installFolder).name,'Install POS terminals')
+
+
+  // Document Creation: pick a saved COR from Drive, and file generated documents under a task.
+  const docs=(path:string,method='GET',body?:any,headers:Record<string,string>={})=>local(path,method,body,{'x-test-modules':'inbox,items,documents',...headers})
+  assert.equal((await docs('/api/documents/drive')).status,200);assert.equal((await (await docs('/api/documents/drive')).json()).available,true)
+  assert.equal((await local('/api/documents/drive')).status,403,'Document Creation access is required')
+  assert.equal((await docs('/api/documents/drive','GET',undefined,{'x-test-role':'Viewer'})).status,403,'Viewers cannot use Drive from Document Creation')
+  const savedFile=getSaved().items.find((x:any)=>x.id==='sub-1').driveFiles[0]
+  const got=await docs(`/api/documents/drive/file?taskId=sub-1&fileId=${savedFile.id}`)
+  assert.equal(got.status,200);assert.equal(got.headers.get('content-type'),'application/pdf');assert.deepEqual(Buffer.from(await got.arrayBuffer()),pdf,'The saved file comes back from Drive unchanged')
+  assert.equal((await docs(`/api/documents/drive/file?taskId=sub-1&fileId=${savedFile.id}&maxBytes=3`)).status,413,'A file above the size limit is refused')
+  assert.equal((await docs(`/api/documents/drive/file?taskId=${train.id}&fileId=${savedFile.id}`)).status,404,'A file is only served for the task it is listed on')
+  assert.equal((await docs('/api/documents/drive/file?taskId=sub-1&fileId=not-listed')).status,404,'Arbitrary Drive ids are refused')
+  assert.equal((await local(`/api/documents/drive/file?taskId=sub-1&fileId=${savedFile.id}`)).status,403)
+  const docx=Buffer.concat([Buffer.from('PK'),Buffer.from('docx-body')]),brd={taskId:'sub-1',fileName:'BRD-Acme.docx',fileData:docx.toString('base64')}
+  const filed=await docs('/api/documents/drive/save','POST',brd)
+  assert.equal(filed.status,201);const filedBody=await filed.json()
+  assert.deepEqual(filedBody.path,['Client','Project','Install POS terminals','Site A'])
+  assert.deepEqual(uploads.at(-1).bytes,docx);assert.equal(uploads.at(-1).type,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');assert.equal(uploads.at(-1).name,'BRD-Acme.docx')
+  const listed=getSaved().items.find((x:any)=>x.id==='sub-1').driveFiles.find((x:any)=>x.name==='BRD-Acme.docx')
+  assert.equal(listed.source,'generated');assert.equal(listed.savedByName,'user-a')
+  const twice=await docs('/api/documents/drive/save','POST',brd);assert.equal(twice.status,409);assert.equal((await twice.json()).code,'ALREADY_SAVED')
+  for(const bad of [{...brd,fileName:'notes.exe'},{...brd,fileName:'x.docx',fileData:Buffer.from('not a zip').toString('base64')},{...brd,fileName:'x.pdf',fileData:docx.toString('base64')},{...brd,taskId:''},{...brd,fileData:'***'}])assert.equal((await docs('/api/documents/drive/save','POST',bad)).status,400)
+  assert.equal((await docs('/api/documents/drive/save','POST',{...brd,taskId:'missing'})).status,404)
+  assert.equal((await docs('/api/documents/drive/save','POST',brd,{'x-test-role':'Viewer'})).status,403)
+  const clientRecord=getSaved().clients.find((x:any)=>x.id==='client');clientRecord.archived=true
+  assert.equal((await docs('/api/documents/drive/save','POST',{...brd,fileName:'FSD.docx'})).status,409,'Archived work is not filed to');clientRecord.archived=false
+  const uploadsBeforeFsd=uploads.length
+  assert.equal((await docs('/api/documents/drive/save','POST',{...brd,fileName:'FSD.docx'})).status,201);assert.equal(uploads.length,uploadsBeforeFsd+1)
 
   // Reconnecting: refused without Drive access, refused if no longer an administrator, new root for another Google account.
   const reconnect=async()=>{const r=await local('/api/account/drive/connect','POST');const u=new URL((await r.json()).url);return local(`/api/communications/gmail/callback?state=${u.searchParams.get('state')}&code=good-code`,'GET',undefined,{cookie:(r.headers.get('set-cookie')||'').split(';')[0]})}

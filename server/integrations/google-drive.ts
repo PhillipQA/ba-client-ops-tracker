@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { decryptSecret, encryptSecret, IntegrationError } from './tenant-integrations'
-import { archivedWorkReason } from '../../src/lifecycle'
+import { archivedWorkReason, LifecycleError } from '../../src/lifecycle'
 
 /**
  * One shared Google Drive per account. An account administrator connects it with
@@ -24,7 +24,7 @@ const MAX_FILES_PER_TASK = 200
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 export type DriveTarget = { id: string; title: string; kind: 'Task' | 'Subtask'; parentTaskId?: string; clientName: string; projectName: string }
 export type DriveFolderStep = { key: string; name: string }
-export type TaskDriveFile = { id: string; name: string; url: string; mimeType: string; size: number; savedAt: string; savedBy: string; savedByName: string }
+export type TaskDriveFile = { id: string; name: string; url: string; mimeType: string; size: number; savedAt: string; savedBy: string; savedByName: string; source?: 'gmail' | 'generated' | 'dochub' }
 
 /** Drive allows almost any name; strip control characters and keep it readable. */
 export function driveName(value: unknown, fallback = 'Untitled') {
@@ -79,6 +79,17 @@ export function driveFolderPath(state: any, taskId: string): DriveFolderStep[] {
   ]
 }
 
+/** Folders for a file that belongs to a client or project but to no task: Client / Project. Same keys as task paths, so the folders are shared. */
+export function driveContextPath(state: any, clientId?: string, projectId?: string): DriveFolderStep[] {
+  const client = (state?.clients || []).find((x: any) => x.id === clientId)
+  const project = (state?.projects || []).find((x: any) => x.id === projectId)
+  if (!clientId) throw new IntegrationError('Link a task or choose a client so the file has a Drive folder.', 409)
+  return [
+    { key: `client:${clientId}`, name: driveName(client?.name, 'No client') },
+    ...(projectId ? [{ key: `project:${clientId}:${projectId}`, name: driveName(project?.name, 'No project') }] : []),
+  ]
+}
+
 export function driveFileUrl(id: string) { return `https://drive.google.com/file/d/${encodeURIComponent(id)}/view` }
 export function driveFolderUrl(id: string) { return `https://drive.google.com/drive/folders/${encodeURIComponent(id)}` }
 
@@ -111,6 +122,18 @@ export function driveClient(token: string) {
         return id
       } catch (error) { if ((error as any)?.upstreamStatus === 404) return null; throw error }
     },
+    /** File bytes, refused above maxBytes. Never stored by the app. */
+    async download(id: string, maxBytes: number) {
+      let response: Response
+      try { response = await fetch(`${DRIVE}/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(60000) }) }
+      catch { throw new IntegrationError('Google Drive could not be reached. Try again.', 502) }
+      if (response.status === 404) throw new IntegrationError('This file is no longer in Google Drive. It may have been deleted or moved to the trash.', 404)
+      if (!response.ok) throw new IntegrationError('Google Drive could not provide this file.', response.status === 429 ? 429 : 502)
+      if (Number(response.headers.get('content-length') || 0) > maxBytes) throw new IntegrationError('This file is too large.', 413)
+      const bytes = Buffer.from(await response.arrayBuffer())
+      if (!bytes.length || bytes.length > maxBytes) throw new IntegrationError(bytes.length ? 'This file is too large.' : 'This file is empty.', 413)
+      return bytes
+    },
     async upload(parentId: string, name: string, mimeType: string, file: Buffer) {
       const { response } = await call(`${UPLOAD}/files?uploadType=resumable&fields=id&supportsAllDrives=true`, {
         method: 'POST',
@@ -139,6 +162,16 @@ export async function ensureDrivePath(drive: DriveClient, rootId: string, folder
   }
   return { folderId: parent, folders: map }
 }
+
+export type FileJob = {
+  tenantId: string; name: string; mimeType: string; bytes: Buffer
+  taskId?: string; clientId?: string; projectId?: string
+  user: { id: string; name: string } | null
+  commit?: (id: string, next: any, user: any, source: string, current: any) => Promise<any>
+  source: 'gmail' | 'generated' | 'dochub'
+}
+export type FileResult = { file: TaskDriveFile; path: string[]; task?: any; duplicate: boolean }
+export type DriveFiler = { ready: (tenantId: string) => Promise<boolean>; file: (job: FileJob) => Promise<FileResult> }
 
 type Deps = {
   db: any
@@ -203,6 +236,49 @@ export function registerDrive(app: Express, deps: Deps) {
     }
   }
   const canWriteTasks = (user: any) => user.role !== 'Viewer' && (user.role === 'Administrator' || user.modules?.includes('items'))
+
+  /**
+   * Put one file into the shared Drive under Client / Project / Task / Subtask and list it on the task.
+   * Without a task, the file goes to the Client / Project folder and nothing is listed on a task.
+   * A null user means the system acts (DocHub finishing a signature).
+   */
+  const fileInDrive = async (job: FileJob): Promise<FileResult> => {
+    const { tenantId } = job
+    const before = (await deps.load(tenantId)).data
+    if (!before) throw new IntegrationError('Workspace data is unavailable.', 503)
+    const task = job.taskId ? (before.items || []).find((item: any) => item.id === job.taskId) : undefined
+    if (job.taskId && !task && !job.clientId) throw new IntegrationError('The task for this file no longer exists.', 404)
+    const steps = task ? driveFolderPath(before, task.id) : driveContextPath(before, job.clientId, job.projectId)
+    const path = steps.map(step => step.name)
+    if (task) {
+      const files: any[] = Array.isArray(task.driveFiles) ? task.driveFiles : []
+      const duplicate = files.find(file => file.name === job.name && file.size === job.bytes.length)
+      if (duplicate) return { file: duplicate, path, task, duplicate: true }
+      if (files.length >= MAX_FILES_PER_TASK) throw new IntegrationError(`A task can list up to ${MAX_FILES_PER_TASK} Drive files.`)
+    }
+    const { row, config } = await liveConnection(tenantId)
+    const drive = driveClient(await accessToken(tenantId, row, config))
+    const rootId = (row.root_folder_id && await drive.existingFolder(row.root_folder_id, DRIVE_ROOT_NAME)) || await drive.createFolder(DRIVE_ROOT_NAME)
+    const resolved = await ensureDrivePath(drive, rootId, rootId === row.root_folder_id ? row.folders || {} : {}, steps)
+    await saveFolders(tenantId, { root_folder_id: rootId, folders: resolved.folders })
+    const fileId = await drive.upload(resolved.folderId, driveName(job.name, 'attachment'), job.mimeType, job.bytes)
+    const entry: TaskDriveFile = { id: fileId, name: job.name, url: driveFileUrl(fileId), mimeType: job.mimeType, size: job.bytes.length, savedAt: new Date().toISOString(), savedBy: job.user?.id || 'system:dochub', savedByName: job.user?.name || 'DocHub', source: job.source }
+    if (!task) return { file: entry, path, duplicate: false }
+    // Re-read after the upload so edits made meanwhile are kept.
+    for (let attempt = 0; ; attempt++) {
+      const latest = (await deps.load(tenantId)).data
+      const fresh = latest?.items?.find((item: any) => item.id === task.id)
+      if (!latest || !fresh) throw Object.assign(new IntegrationError('The file was saved to Google Drive, but the task was removed before it could be linked.', 409), { code: 'TASK_REMOVED', file: entry })
+      const updated = { ...fresh, driveFiles: [...(Array.isArray(fresh.driveFiles) ? fresh.driveFiles : []), entry] }
+      const activity = { id: randomUUID(), clientId: fresh.clientId || undefined, projectId: fresh.projectId || undefined, date: entry.savedAt.slice(0, 10), text: `Saved “${entry.name}” to Google Drive for ${fresh.parentTaskId ? 'subtask' : 'task'} "${fresh.title}"` }
+      try {
+        await (job.commit || deps.commit)(tenantId, { ...latest, items: latest.items.map((item: any) => item.id === task.id ? updated : item), activity: [activity, ...(latest.activity || [])] }, job.user ? { ...job.user } : null, job.source === 'gmail' ? 'drive-attachment' : 'drive-document', latest)
+        return { file: entry, path, task: updated, duplicate: false }
+      } catch (error) { if (!(error instanceof LifecycleError) || attempt >= 3) throw error }
+    }
+  }
+  /** Whether Drive is connected with the current OAuth client, without raising. */
+  const driveReady = async (tenantId: string) => { try { await liveConnection(tenantId); return true } catch { return false } }
 
   // Account settings
   app.get('/api/account/drive', ...auth, accountGate, wrap(async (req, res) => {
@@ -315,27 +391,71 @@ export function registerDrive(app: Express, deps: Deps) {
       const before = (await deps.load(tenantId)).data
       if (!before) throw new IntegrationError('Workspace data is unavailable.', 503)
       if (!driveTargets(before, await threadTaskIds(message, tenantId, user.id)).some(target => target.id === taskId)) throw new IntegrationError('Choose an active task or subtask created from this email.', 404)
-      const { row, config } = await liveConnection(tenantId)
+      await liveConnection(tenantId)
       const download = await deps.attachment(req, message, index)
-      const task = before.items.find((item: any) => item.id === taskId)
-      const duplicate = (Array.isArray(task.driveFiles) ? task.driveFiles : []).find((file: any) => file.name === download.name && file.size === download.file.length)
-      if (duplicate) { res.status(409).json({ code: 'ALREADY_SAVED', error: `“${download.name}” is already saved to this ${task.parentTaskId ? 'subtask' : 'task'}.`, file: duplicate }); return }
-      if ((task.driveFiles || []).length >= MAX_FILES_PER_TASK) throw new IntegrationError(`A task can list up to ${MAX_FILES_PER_TASK} Drive files.`)
-      const drive = driveClient(await accessToken(tenantId, row, config))
-      const rootId = (row.root_folder_id && await drive.existingFolder(row.root_folder_id, DRIVE_ROOT_NAME)) || await drive.createFolder(DRIVE_ROOT_NAME)
-      const resolved = await ensureDrivePath(drive, rootId, rootId === row.root_folder_id ? row.folders || {} : {}, driveFolderPath(before, taskId))
-      await saveFolders(tenantId, { root_folder_id: rootId, folders: resolved.folders })
-      const fileId = await drive.upload(resolved.folderId, driveName(download.name, 'attachment'), download.mimeType, download.file)
-      const entry: TaskDriveFile = { id: fileId, name: download.name, url: driveFileUrl(fileId), mimeType: download.mimeType, size: download.file.length, savedAt: new Date().toISOString(), savedBy: user.id, savedByName: String(user.name || user.username || 'User') }
-      // Re-read after the upload so edits made meanwhile are kept.
-      const latest = (await deps.load(tenantId)).data
-      const fresh = latest?.items?.find((item: any) => item.id === taskId)
-      if (!latest || !fresh) { res.status(409).json({ code: 'TASK_REMOVED', error: 'The file was saved to Google Drive, but the task was removed before it could be linked.', file: entry }); return }
-      const updated = { ...fresh, driveFiles: [...(Array.isArray(fresh.driveFiles) ? fresh.driveFiles : []), entry] }
-      const activity = { id: randomUUID(), clientId: fresh.clientId || undefined, projectId: fresh.projectId || undefined, date: entry.savedAt.slice(0, 10), text: `Saved “${entry.name}” to Google Drive for ${fresh.parentTaskId ? 'subtask' : 'task'} "${fresh.title}"` }
-      await deps.commit(tenantId, { ...latest, items: latest.items.map((item: any) => item.id === taskId ? updated : item), activity: [activity, ...(latest.activity || [])] }, user, 'drive-attachment', latest)
-      res.status(201).json({ file: entry, task: updated })
+      try {
+        const result = await fileInDrive({ tenantId, name: download.name, mimeType: download.mimeType, bytes: download.file, taskId, user: { id: user.id, name: String(user.name || user.username || 'User') }, source: 'gmail' })
+        if (result.duplicate) { res.status(409).json({ code: 'ALREADY_SAVED', error: `“${download.name}” is already saved to this ${result.task?.parentTaskId ? 'subtask' : 'task'}.`, file: result.file }); return }
+        res.status(201).json({ file: result.file, task: result.task })
+      } catch (error) {
+        if ((error as any)?.code === 'TASK_REMOVED') { res.status(409).json({ code: 'TASK_REMOVED', error: (error as Error).message, file: (error as any).file }); return }
+        throw error
+      }
     })
   }))
-  return { handles, callback }
+
+  // Document Creation: pick a COR already in Drive, and file generated documents.
+  const documentUser: Middleware = (req, res, next) => {
+    const user = current(req)
+    if (user.role === 'Viewer' || !user.modules?.includes('documents')) { res.status(403).json({ error: 'Document Creation write access is required.' }); return }
+    res.setHeader('Cache-Control', 'no-store'); next()
+  }
+  const DOCUMENT_TYPES: Record<string, string> = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', zip: 'application/zip' }
+  const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
+  app.get('/api/documents/drive', ...auth, documentUser, wrap(async (req, res) => {
+    res.json({ available: await driveReady(current(req).organizationId) })
+  }))
+  // Stream a file the tracker saved to a task folder. Only files listed on a task can be fetched.
+  app.get('/api/documents/drive/file', ...auth, documentUser, wrap(async (req, res) => {
+    const tenantId = current(req).organizationId, taskId = String(req.query.taskId || ''), fileId = String(req.query.fileId || '')
+    const maxBytes = Math.min(Number(req.query.maxBytes) || MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BYTES)
+    const state = (await deps.load(tenantId)).data
+    const task = (state?.items || []).find((item: any) => item.id === taskId)
+    const entry = (Array.isArray(task?.driveFiles) ? task.driveFiles : []).find((file: any) => file.id === fileId)
+    if (!entry) throw new IntegrationError('This file is not saved on that task.', 404)
+    const { row, config } = await liveConnection(tenantId)
+    const bytes = await driveClient(await accessToken(tenantId, row, config)).download(fileId, maxBytes)
+    const mime = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/i.test(String(entry.mimeType)) ? String(entry.mimeType).toLowerCase() : 'application/octet-stream'
+    res.setHeader('Content-Type', mime); res.setHeader('Content-Length', String(bytes.length)); res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.send(bytes)
+  }))
+  // File a generated BRD, FSD, test case suite or similar document under a task or subtask.
+  app.post('/api/documents/drive/save', ...auth, documentUser, wrap(async (req, res) => {
+    const user = current(req), tenantId = user.organizationId
+    if (!canWriteTasks(user)) throw new IntegrationError('Task write access is required.', 403)
+    const taskId = typeof req.body?.taskId === 'string' ? req.body.taskId : '', encoded = String(req.body?.fileData || '')
+    const name = driveName(String(req.body?.fileName || '').replace(/[\\/\r\n]/g, '_'), '').slice(0, 180), ext = name.split('.').pop()?.toLowerCase() || ''
+    if (!taskId) throw new IntegrationError('Choose a task or subtask.')
+    if (!name || !DOCUMENT_TYPES[ext] || encoded.length > 21 * 1024 * 1024 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new IntegrationError('Use a generated PDF, DOCX, XLSX or ZIP up to 15 MB.')
+    const bytes = Buffer.from(encoded, 'base64')
+    if (!bytes.length || bytes.length > MAX_DOCUMENT_BYTES) throw new IntegrationError('Document must be between 1 byte and 15 MB.')
+    if (ext === 'pdf' ? bytes.subarray(0, 5).toString() !== '%PDF-' : bytes.subarray(0, 2).toString() !== 'PK') throw new IntegrationError('This does not look like a valid document.')
+    await deps.inOrder(tenantId, async () => {
+      const before = (await deps.load(tenantId)).data
+      const task = (before?.items || []).find((item: any) => item.id === taskId)
+      if (!task) throw new IntegrationError('Select an existing task or subtask.', 404)
+      const reason = archivedWorkReason(before, task)
+      if (reason) throw new IntegrationError(reason, 409)
+      try {
+        const result = await fileInDrive({ tenantId, name, mimeType: DOCUMENT_TYPES[ext], bytes, taskId, user: { id: user.id, name: String(user.name || user.username || 'User') }, source: 'generated' })
+        if (result.duplicate) { res.status(409).json({ code: 'ALREADY_SAVED', error: `“${name}” is already saved to this ${task.parentTaskId ? 'subtask' : 'task'}.`, file: result.file, path: result.path }); return }
+        res.status(201).json({ file: result.file, path: result.path })
+      } catch (error) {
+        if ((error as any)?.code === 'TASK_REMOVED') { res.status(409).json({ code: 'TASK_REMOVED', error: (error as Error).message, file: (error as any).file }); return }
+        throw error
+      }
+    })
+  }))
+  const filer: DriveFiler = { ready: driveReady, file: fileInDrive }
+  return { handles, callback, filer }
 }

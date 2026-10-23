@@ -11,6 +11,7 @@ import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { SIGNOFF_FORM_TYPES, SIGNOFF_TEMPLATE_KIND, type SignoffFormType, type SignoffTemplateKind } from './signoff'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
+import { DriveFilePicker, SaveToDriveBar, useDocumentDrive } from './documentDrive'
 import {
   BriefcaseBusiness,
   CheckCircle2,
@@ -126,6 +127,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
   const docHubReporter = useRef<(error:Error)=>void>(()=>undefined)
   const [flow, setFlow] = useState<DocumentFlow>(() => { try { const value = sessionStorage.getItem(`ba-doc-flow:${draftKey}`); if (value === 'brd' || value === 'fsd' || value === 'testcase' || value === 'signoff') return value } catch {} return 'drf' })
   const docHub = useDocHubDraft('DRF',error=>docHubReporter.current(error),active && flow === 'drf')
+  const driveAvailable = useDocumentDrive(active)
   useEffect(() => { if (!launch) return; setFlow(launch.flow); const item=items.find(i=>i.id===launch.taskId); if(launch.flow==='drf') docHub.setOptions(o=>({...o,taskId:launch.taskId,clientId:item?.clientId || ''})) }, [launch])
   useEffect(() => { try { sessionStorage.setItem(`ba-doc-flow:${draftKey}`, flow) } catch {} }, [flow, draftKey])
   const [corFiles, setCorFiles] = useState<File[]>([])
@@ -250,6 +252,12 @@ export default function DocumentCreation({ clients, projects, items, launch, can
     setDocumentMessage('')
     setter(selected)
     event.target.value = ''
+  }
+
+  // A COR already saved in Google Drive takes the same path as one chosen from this computer.
+  const pickCorFromDrive = (file: File) => {
+    if (file.size > MAX_COR_BYTES) { void showDrfFailure('cor_upload',new Error(`File is too large. Maximum allowed size is ${formatBytes(MAX_COR_BYTES)}.`),{fileType:file.type,fileBytes:file.size}); return }
+    setDocumentError('');setDocumentMessage('');setCorFiles([file])
   }
 
   const updateSignatory = (index: number, patch: Partial<Signatory>) => {
@@ -426,6 +434,7 @@ export default function DocumentCreation({ clients, projects, items, launch, can
                   <strong>{corFiles.length ? 'Replace COR file' : 'Choose a COR file'}</strong>
                   <span>{corExtractionMode === 'local' ? 'The COR stays in your browser and no AI API key is used.' : 'The COR file stays in your browser; only locally extracted text is sent to the Document Agent.'}</span>
                 </label>
+                {driveAvailable && <DriveFilePicker items={items} clients={clients} projects={projects} accept={COR_ACCEPT} maxBytes={MAX_COR_BYTES} disabled={!canGenerate || extracting || generating || docHub.busy} onPick={pickCorFromDrive} onError={message => setDocumentError(message)} />}
                 <FileSummary files={corFiles} onRemove={removeCor} disabled={!canGenerate || generating || docHub.busy} />
                 <button type="button" className="secondary document-wide-button" disabled={!canGenerate || !corFile || extracting || generating || docHub.busy} onClick={extractCor}><ScanLine size={16} /> {extracting ? 'Extracting…' : corExtractionMode === 'ai' ? 'Extract COR details with AI' : 'Extract COR details locally'}</button>
               </div>
@@ -538,11 +547,11 @@ export default function DocumentCreation({ clients, projects, items, launch, can
           </div>
         )}
 
-        <div className="fsd-retained" hidden={flow !== 'brd'}><BrdCreation projects={projects} canGenerate={canGenerate} templateReady={Boolean(brdTemplate?.active)} draftKey={draftKey} active={active && flow === 'brd'} onUseInFsd={(handoff) => { try { sessionStorage.setItem(`ba-brd-handoff:${draftKey}`, JSON.stringify(handoff)); setFlow('fsd') } catch { window.alert('Browser session storage is unavailable. Download the BRD and upload it to FSD Creation instead.') } }} /></div>
+        <div className="fsd-retained" hidden={flow !== 'brd'}><BrdCreation projects={projects} canGenerate={canGenerate} templateReady={Boolean(brdTemplate?.active)} draftKey={draftKey} active={active && flow === 'brd'} onUseInFsd={(handoff) => { try { sessionStorage.setItem(`ba-brd-handoff:${draftKey}`, JSON.stringify(handoff)); setFlow('fsd') } catch { window.alert('Browser session storage is unavailable. Download the BRD and upload it to FSD Creation instead.') } }} /><SaveToDriveBar flow="brd" label="BRD" items={items} clients={clients} projects={projects} /></div>
 
-        <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} projects={projects} canGenerate={canGenerate} templateReady={Boolean(fsdTemplate?.active)} draftKey={draftKey} active={active && flow === 'fsd'} /></div>
+        <div className="fsd-retained" hidden={flow !== 'fsd'}><FsdCreation clients={clients} projects={projects} canGenerate={canGenerate} templateReady={Boolean(fsdTemplate?.active)} draftKey={draftKey} active={active && flow === 'fsd'} /><SaveToDriveBar flow="fsd" label="FSD" items={items} clients={clients} projects={projects} /></div>
 
-        <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /></div>
+        <div className="testcase-retained" hidden={flow !== 'testcase'}><TestCaseCreation canGenerate={canGenerate} draftKey={draftKey} active={active && flow === 'testcase'} /><SaveToDriveBar flow="testcase" label="test case suite" items={items} clients={clients} projects={projects} /></div>
 
         <div hidden={flow !== 'signoff'}><SignOffCreation active={active && flow === 'signoff'} clients={clients} projects={projects} items={items} launch={launch} canGenerate={canGenerate} templateReady={signoffTemplatesReady} /></div>
       </div>

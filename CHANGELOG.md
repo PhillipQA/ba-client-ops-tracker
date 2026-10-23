@@ -1,8 +1,25 @@
 # Changelog
 
-**Current application release: v0.6.88**
+**Current application release: v0.6.89**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.89 — Google Drive in Document Creation
+Released October 23, 2026.
+
+No database change. It uses the Google Drive connection from v0.6.87, so an account administrator must have connected Google Drive in **Settings → Integrations**.
+
+### Added
+
+- **Signed documents file themselves.** When DocHub shows a DRF or Sign Off document as fully signed, the signed PDF is saved to the shared Google Drive under **Client / Project / Task / Subtask**, following the task or subtask linked in DocHub options (for example, DRF Creation). It is also listed on that task under **Saved to Google Drive**, and a system comment records where it went. If no task is linked, it goes to the **Client / Project** folder. If neither a task nor a client is linked, or Drive is not connected, the document says why and nothing is lost.
+- **Failed saves are retried.** A Google Drive problem never affects the signature. The save is retried by the background check a few times, and the document card shows a **Save to Google Drive** (or **Retry**) button. The same button files documents that were signed before this release. Only documents that become fully signed after this release are filed automatically.
+- **Choose from Google Drive in DRF Creation.** Next to the COR upload, a picker lists the files the tracker saved to task and subtask folders (for example a COR saved from an email), with search and a client filter. The chosen file is used exactly like one chosen from the computer. It passes through the tracker to your browser and is not stored.
+- **Save to Google Drive for generated documents.** After you generate a BRD, FSD or test case suite, a bar offers to file it under a task or subtask you choose.
+
+### Notes
+
+- The app can only see files it created (the narrow `drive.file` permission), so the picker lists files saved through the tracker. Files added to those folders by hand in Drive are not listed.
+- Requirements Traceability exports are not filed to Drive yet.
 
 ## v0.6.88 — Save to Drive works on every message in an email thread
 Released October 23, 2026.

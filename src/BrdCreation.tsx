@@ -7,6 +7,7 @@ import { isFsdImageFile, readFsdSource } from './fsd-sources'
 import type { Project } from './types'
 import { APP_VERSION } from './version'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
+import { announceGeneratedDocument } from './documentDrive'
 import {
   BRD_TEMPLATE_NAME, brdHandoffText, brdReference, emptyBrdDraft,
   type BrdDraft, type BrdDetails, type BrdMappingRow, type BrdPreview,
@@ -70,7 +71,7 @@ export default function BrdCreation({ projects, canGenerate, templateReady, draf
   async function exportBrd(){
     if(!draft.preview||stale||!draft.reviewed||!templateReady||busy)return
     const job=operation.begin();setStage('export');setBusy('Mapping reviewed BRD content to your template…');setError('')
-    try{const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true,fileName:documentOutputName(fileName,'docx',suggestedFileName)},job.signal);if(!job.isCurrent())return;downloadBase64(result.fileData,result.mimeType,result.fileName)}catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'BRD export failed.')}finally{if(job.isCurrent())setBusy('')}
+    try{const result=await request<{fileData:string;fileName:string;mimeType:string}>('generate',{details:draft.details,preview:draft.preview,reviewed:true,fileName:documentOutputName(fileName,'docx',suggestedFileName)},job.signal);if(!job.isCurrent())return;downloadBase64(result.fileData,result.mimeType,result.fileName);announceGeneratedDocument('brd',result)}catch(e){if(job.isCurrent())setError(e instanceof Error?e.message:'BRD export failed.')}finally{if(job.isCurrent())setBusy('')}
   }
   function reset(){operation.cancel();const next=emptyBrdDraft();try{sessionStorage.removeItem(storageKey)}catch{}if(fileInput.current)fileInput.current.value='';setDraft(next);setShowPreview(false);setEditPreview(false);setError('');setBusy('');setSaveError('');setUploadKind('Requirements');setStage('reading')}
   const setPreview=(preview:BrdPreview)=>setDraft(d=>({...d,preview,reviewed:false}))

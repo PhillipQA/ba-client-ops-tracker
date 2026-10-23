@@ -128,7 +128,7 @@ const supabaseAdmin: any = databaseProvider === 'postgres'
 
 const integrations = createIntegrationStore(supabaseAdmin)
 const aiAgents = createAiAgentManager(supabaseAdmin, integrations)
-const docHubDeps = { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, organizationById, load: loadTenantState, commit: commitTenantState }
+const docHubDeps: Parameters<typeof createDocHubService>[0] = { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, organizationById, load: loadTenantState, commit: commitTenantState }
 const docHubService = createDocHubService(docHubDeps)
 registerDocHubWebhook(app, docHubDeps, docHubService)
 app.use(express.json({ limit: '24mb' }))
@@ -2069,6 +2069,9 @@ const communications = registerCommunications(app, { db: supabaseAdmin, requireA
     const notified = reconcileNotifications({ ...next, workEvents }, { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds }).state
     return commitTenantState(id, notified, user, reason, current)
   }, openStatus: openTaskStatus })
+
+// Fully signed DocHub documents are filed into the shared Google Drive by the same filer.
+docHubDeps.driveFiler = communications.driveFiler
 
 app.get('/api/integrations/discord/inquiries', requireAuth, requireTenantWorkspace, async (req, res) => {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
