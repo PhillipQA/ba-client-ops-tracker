@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.89**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.92**.
 
 ## Database requirements
 
@@ -36,11 +36,13 @@ For an existing Supabase database, the recent incremental migrations are:
 | v0.6.80 | [schema-v21](../../database/migrations/schema-v21-golive-template.sql) | Optional custom Go Live templates |
 | v0.6.83 | [schema-v22](../../database/migrations/schema-v22-signoff-form-templates.sql) | Optional custom UAT Sign Off, UAT Deployment Approval and Training Sign Off templates |
 | v0.6.87 | [schema-v23](../../database/migrations/schema-v23-drive-attachments.sql) | Shared Google Drive for Gmail attachments; private list of tasks created from each email |
+| v0.6.92 | [schema-v24](../../database/migrations/schema-v24-trackers.sql) | Trackers: sheets with your own columns, saved views, encrypted Secret cells, row history and a log of every Secret reveal. Also adds Trackers to each account's enabled modules |
 
 Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations missing the Git provider tables, the [combined v19/v20 upgrade](../../database/upgrades/schema-v19-v20-work-hub-git-providers.sql) is available. Do not run both the combined script and the same individual migrations.
 
 - **v0.6.78, v0.6.79, v0.6.81, v0.6.82, v0.6.84, v0.6.85 and v0.6.86 add no new database migration.**
 - **v0.6.87:** apply v23 before connecting Google Drive. It works on Supabase and on plain PostgreSQL such as Northflank: Supabase-only roles and row-level security are applied only where those roles exist. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_drive_accounts` table afterwards. Until v23 is applied, Settings and Work Hub say so and nothing else changes. Tasks created from an email before v23 are still offered when saving that email's attachments, but only the most recent one.
+- **v0.6.92:** apply v24 before using Trackers. It works on Supabase and on plain PostgreSQL such as Northflank (row-level security is applied only where the Supabase roles exist). On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_trackers`, `tenant_tracker_rows` and `tenant_tracker_changes` tables afterwards. Until v24 is applied, the Trackers page says the migration is missing and nothing else changes. After applying it, Administrators see **Trackers** when they next sign in; give other people the **Trackers** module under Users & Permissions → Module access. Secret cells are encrypted with `TENANT_INTEGRATION_MASTER_KEY`, so keep that key: if it changes, stored Secret values can no longer be revealed. The recipient suggestions in the same release need no database change.
 - Built-in Go Live generation works with the existing template table; v21 enables custom Go Live uploads/removal.
 - The built-in UAT Sign Off, UAT Deployment Approval and Training Sign Off forms also work with the existing template table. Apply v22 before uploading or removing custom templates for them in Settings → Templates; until then those cards can only use the built-in template.
 - For installations earlier than these rows, consult the [historical release notes](../releases/README.md) for prior schema prerequisites.
@@ -69,7 +71,7 @@ Replace the ZIP path with the actual patch and follow its version-specific instr
 - Check the displayed application version.
 - Open an existing workspace and confirm clients, projects and tasks are present.
 - Check integrations you use, existing evidence downloads and document generation.
-- For v0.6.92 (no database change): open **New email**, type the first letters of someone you have emailed before, and confirm they appear in the suggestions with how often you emailed them. Choose one with the arrow keys and Enter and confirm the address is added. In Document Creation, type a teammate's or client contact's full name in a signatory **Name** field, click away, and confirm their email fills in with a note to check it; a name nobody knows must leave the email empty.
+- For v0.6.92, after applying v24: open **Trackers**, create a tracker from a template and add a row. Add a **Secret** column, save a fictional value, and confirm the grid shows only dots until you click **Reveal** in the row panel, and that the row's **History** lists the reveal without the value. Link the row to a task and confirm **Task status** fills in. Sign in as a Viewer and confirm the tracker opens but cannot be changed. Recipient suggestions (no database change): open **New email**, type the first letters of someone you have emailed before, and confirm they appear in the suggestions with how often you emailed them. Choose one with the arrow keys and Enter and confirm the address is added. In Document Creation, type a teammate's or client contact's full name in a signatory **Name** field, click away, and confirm their email fills in with a note to check it; a name nobody knows must leave the email empty.
 - For v0.6.91 (no database change): open an email in Work Hub that was sent to several people, click **Reply by email**, and confirm the other people appear in Cc with a note offering **Reply to sender only**.
 - For v0.6.90 (no database change): add the `gmail.send` scope to your Google Cloud consent screen (Data Access). In Work Hub → My integration settings choose **Allow sending email** and approve it on Google's page. Open a task that has a saved Drive file, click **Email**, send it to yourself, and confirm the 10-second Undo bar, the email in your Gmail Sent folder, a copy marked **Sent** in Work Hub linked to the task, and a short note in the task's activity.
 - For v0.6.89 (no database change): sign a test DRF in DocHub with a task or subtask linked, and confirm the signed PDF appears in that task's folder in Drive and on the task under **Saved to Google Drive**. In Document Creation → DRF, **Choose from Google Drive** lists the files saved on tasks.
@@ -87,4 +89,5 @@ Focused automated checks:
 npm run test:communications
 npm run test:work-hub-tasks
 npm run test:work-hub-sync
+npm run test:trackers
 ```

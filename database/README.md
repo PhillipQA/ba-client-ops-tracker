@@ -1,6 +1,6 @@
 # Database setup
 
-The current fresh Supabase setup includes **schema versions 1–23**. Application v0.6.87 adds schema v23 (the shared Google Drive connection for Gmail attachments and a private list of tasks created from each email).
+The current fresh Supabase setup includes **schema versions 1–24**. Application v0.6.92 adds schema v24 (Trackers: custom sheets with saved views, encrypted Secret cells, row history and a log of Secret reveals). Application v0.6.87 added schema v23 (the shared Google Drive connection for Gmail attachments and a private list of tasks created from each email).
 
 ## Choose the correct path
 

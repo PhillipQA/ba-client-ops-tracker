@@ -4,6 +4,7 @@ import { workspaceAutoRefreshAllowed } from './activePolling'
 import { workHubSync, WORK_HUB_INTEGRATIONS } from './workHubSync'
 import { useWorkHubSync } from './useWorkHubSync'
 import RequirementsTraceability from './RequirementsTraceability'
+import Trackers from './Trackers'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
 import { DocHubHistory } from './DocHubPanel'
@@ -91,7 +92,7 @@ import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTION
 import { normalizeInterfaceMode, type InterfaceMode } from './appearance'
 import { APP_VERSION } from './version'
 
-type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
+type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'trackers' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
 type ClientLayout = 'tiles' | 'list' | 'table'
 
 type Store = {
@@ -324,6 +325,7 @@ function workEventsForItemChanges(current: Store, next: Store, actor: AuthUser |
 
 const labels: Record<View, string> = {
   requirements: 'Requirements & Traceability',
+  trackers: 'Trackers',
   action: 'My Action Center',
   clients: 'Clients',
   projects: 'Projects',
@@ -345,6 +347,7 @@ const navItems: { id: AppModule; label: string; icon: typeof LayoutDashboard }[]
   { id: 'inbox', label: 'Work Hub', icon: Inbox },
   { id: 'items', label: 'Tasks', icon: Archive },
   { id: 'requirements', label: 'Requirements & Traceability', icon: Table2 },
+  { id: 'trackers', label: 'Trackers', icon: Columns3 },
   { id: 'documents', label: 'Document Creation', icon: FileText },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'ai', label: 'AI BA Assistant', icon: Sparkles },
@@ -1627,6 +1630,7 @@ function App() {
         )}
 
         {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && <RequirementsTraceability key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`} store={store} canEdit={canWrite} canLink={canWrite && hasModule('items')} canOverride={currentUser?.role === 'Administrator'} context={rtmContext} onSave={saveRtms} onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined} />}
+        {!selectedClient && !selectedProject && view === 'trackers' && hasModule('trackers') && <Trackers key={`${authUser?.organizationId}:${authUser?.id}`} isAdmin={currentUser?.role === 'Administrator'} canCreate={canWrite} items={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} today={today} onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined} />}
         {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} accounts={store.accounts} items={store.items} launch={documentLaunch} canGenerate={canWrite} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={pageActive && !selectedClient && !selectedProject && view === 'documents'} /></div>}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} />}

@@ -4,12 +4,28 @@
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
 
-## v0.6.92 — Recipient suggestions in the email composer and Document Creation
+## v0.6.92 — Trackers, and recipient suggestions in the email composer and Document Creation
 Released October 23, 2026.
 
-No database change and no new Google permission.
+One database migration (schema v24, for Trackers) and no new Google permission.
 
-### Added
+### Trackers (new)
+
+A new **Trackers** page for sheets you shape yourself, for the things that never fitted a fixed screen: site rollouts, permit lists, defect logs, client ticket lists.
+
+**Needs database migration schema v24.** Apply it before using Trackers (see the [upgrade guide](docs/setup/upgrade.md#database-requirements)). Everything else works without it, and the Trackers page says so if it is missing.
+
+- **Your own columns and rows.** Start from a template (Site rollout, POS installation & BIR permits, Defect & enhancement log, Client ticket tracker) or a blank tracker, then add, rename, move and delete columns. Column types: text, long text, number, date, checkbox, select, multi-select, person, link, and the protected and connected types below. A column's type cannot be changed after it is made. Limits: 100 columns, 5,000 rows per tracker, 200 trackers per account.
+- **A fast grid.** Click or use the arrow keys to move, Enter or typing to edit, Tab to move right, Space to tick a checkbox, Delete to clear a cell, and a panel for each row. Long lists stay quick: only the rows on screen are drawn, and a tracker at the 5,000-row limit loaded, scrolled, searched and sorted smoothly in testing.
+- **Filter, sort, group and views.** Filter by any column, sort, group, hide columns, then **Save as view** to keep it as a tab. Search looks across every shown column (never Secret columns). **Export CSV** downloads exactly what is on screen.
+- **Link a row to a task, optionally.** Rows stand alone, and you can link any row to a task. Connected columns then fill themselves and are never typed in: **Task status**, **Task due date**, **Task owner**, **Sign-off status** (DocHub, including subtasks) and **Drive files** (including subtasks). Unlink and they go blank. A Git issue is a plain **Link** column.
+- **Secret columns for access details.** Values are encrypted with the integration master key, masked on screen, never sent back with the rows, never in the CSV export and never in the row's history. **Reveal** shows a value for 30 seconds and is recorded (who, when, which column) in the row's history. If the record cannot be saved, nothing is shown. Each Secret column is revealable by editors or by Administrators only. Deleting a Secret column deletes its stored values.
+- **Import a sheet.** Paste from Excel or Google Sheets, or choose a CSV file (up to 5 MB), then check what each column becomes: it guesses dates, numbers, yes/no, links and choice lists, flags password-like headings as Secret, and reports unreadable values instead of dropping them silently. Import into an existing tracker or create a new one.
+- **Safe to share.** Changes save row by row. If two people edit the same row, the second is told and sees the current values instead of overwriting. Each row has a history of who changed what. A tracker can be made private (only you), archived (read-only, restorable) and, once archived, deleted permanently.
+- **Access.** Trackers is a new module. Administrators receive it after signing in again; other people need it assigned under Users & Permissions → Module access (new Contributors have it by default). Viewers can open trackers but not change them, and cannot reveal secrets.
+
+### Recipient suggestions
+
 
 - **Suggestions while you type in To, Cc and Bcc**, like Gmail. Type part of a name or address and the matching people appear. Use the arrow keys with Enter or Tab, or click, to add one. The line stays plain text, so pasting a list still works, and typing in the middle of a line only replaces the person under the cursor.
 - **Where the suggestions come from:** people you have emailed (read from your Gmail Sent folder, most emailed first), people who emailed you (from the emails saved in Work Hub), the email addresses on your clients, and your active teammates. Each suggestion says where it came from. Automatic senders such as no-reply addresses are left out, and so is anyone already on the email.
