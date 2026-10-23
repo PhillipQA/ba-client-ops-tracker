@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.6.90.**
+**Current application version: v0.6.91.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -69,6 +69,7 @@ Replace the ZIP path with the actual patch and follow its version-specific instr
 - Check the displayed application version.
 - Open an existing workspace and confirm clients, projects and tasks are present.
 - Check integrations you use, existing evidence downloads and document generation.
+- For v0.6.91 (no database change): open an email in Work Hub that was sent to several people, click **Reply by email**, and confirm the other people appear in Cc with a note offering **Reply to sender only**.
 - For v0.6.90 (no database change): add the `gmail.send` scope to your Google Cloud consent screen (Data Access). In Work Hub → My integration settings choose **Allow sending email** and approve it on Google's page. Open a task that has a saved Drive file, click **Email**, send it to yourself, and confirm the 10-second Undo bar, the email in your Gmail Sent folder, a copy marked **Sent** in Work Hub linked to the task, and a short note in the task's activity.
 - For v0.6.89 (no database change): sign a test DRF in DocHub with a task or subtask linked, and confirm the signed PDF appears in that task's folder in Drive and on the task under **Saved to Google Drive**. In Document Creation → DRF, **Choose from Google Drive** lists the files saved on tasks.
 - For v0.6.87, after applying v23 and enabling the Google Drive API: as an account administrator open Settings → Integrations → Google Drive and connect. In Work Hub, create a task from a Gmail message with an attachment, click **Save to Drive**, pick the task or a subtask, and confirm the file appears under BA Client Ops Tracker / Client / Project / Task in Drive and as **Saved to Google Drive** on the task.

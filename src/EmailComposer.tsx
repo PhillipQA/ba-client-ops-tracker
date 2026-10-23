@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { FolderOpen, Mail, Paperclip, Send, Undo2, X } from 'lucide-react'
 import type { Client, Project, UserAccount, WorkItem } from './types'
-import { EMAIL_LIMITS, blockedAttachmentReason, formatBytes, isValidEmail, parseRecipients } from './emailCompose'
+import { EMAIL_LIMITS, blockedAttachmentReason, formatBytes, isValidEmail, parseRecipients, splitAddresses } from './emailCompose'
 import { outbox, UNDO_SECONDS, type DriveRef, type EmailDraft, type OutboxEntry, type Upload } from './emailOutbox'
 import { driveFileGroups, placeOf, taskOptions } from './documentDriveTargets'
 import { workHubSync } from './workHubSync'
@@ -14,6 +14,10 @@ import './emailComposer.css'
 export type ComposePrefill = {
   taskIds?: string[]; to?: string; cc?: string; bcc?: string; subject?: string; message?: string
   driveFiles?: DriveRef[]; uploads?: Upload[]; replyToId?: string
+  /** A reply that copied the other people on the original email, so the composer can say so and offer to remove them. */
+  autoCc?: boolean
+  /** A short message shown above the form, for example when part of the prefill could not be filled in. */
+  notice?: string
   /** An email taken back with Undo: closing it asks first, because it would otherwise be lost. */
   restored?: boolean
 }
@@ -201,6 +205,8 @@ export function EmailComposer({ prefill, items, clients, projects, currentUser, 
     onClose()
   }
   const reasonBlocked = !status ? '' : !status.writer ? 'Viewer accounts cannot send email.' : !status.available || !status.connected ? (status.message || (status.reconnectRequired ? 'Reconnect your Gmail account in Work Hub → My integration settings.' : 'Connect your Gmail account in Work Hub → My integration settings first.')) : ''
+  // The people copied automatically from the original email, until the person edits the Cc line.
+  const copiedFromOriginal = Boolean(prefill.autoCc && prefill.cc && cc === prefill.cc), copiedCount = copiedFromOriginal ? splitAddresses(cc).length : 0
   const needsPermission = Boolean(status && !reasonBlocked && !status.canSend)
   const ready = Boolean(status && !reasonBlocked && status.canSend)
 
@@ -219,6 +225,7 @@ export function EmailComposer({ prefill, items, clients, projects, currentUser, 
         <label>To<input value={to} onChange={e => setTo(e.target.value)} placeholder="name@company.com, another@company.com" autoComplete="off" /></label>
         {!showCopies && <button type="button" className="link-button email-copies-toggle" onClick={() => setShowCopies(true)}>Add Cc or Bcc</button>}
         {showCopies && <><label>Cc<input value={cc} onChange={e => setCc(e.target.value)} autoComplete="off" /></label><label>Bcc<input value={bcc} onChange={e => setBcc(e.target.value)} autoComplete="off" /><small>Bcc recipients are not shown to the others, and are left out of the note on the task.</small></label></>}
+        {copiedFromOriginal && <p className="email-note" role="status">{copiedCount} {copiedCount === 1 ? 'other person from the original email is' : 'other people from the original email are'} copied and will see your reply. <button type="button" className="link-button email-copies-toggle" onClick={() => setCc('')}>Reply to sender only</button></p>}
         <label>Subject<input value={subject} maxLength={EMAIL_LIMITS.subject} onChange={e => setSubject(e.target.value)} /></label>
         <label>Message<textarea rows={9} value={message} maxLength={EMAIL_LIMITS.body} onChange={e => setMessage(e.target.value)} /></label>
         <details className="email-signature"><summary>Signature</summary>
@@ -254,6 +261,7 @@ export function EmailComposer({ prefill, items, clients, projects, currentUser, 
                 <button type="button" className="secondary compact" disabled={attached} onClick={() => addDrive(item.id, file)}>{attached ? 'Attached' : 'Attach'}</button></li> })}</ul></li>)}</ul>}
         </div>}
       </section>
+      {prefill.notice && <p className="email-note" role="status">{prefill.notice}</p>}
       {prefill.replyToId && <p className="email-note">This reply stays in the same Gmail conversation.</p>}
       {error && <p role="alert" className="email-error">{error}</p>}
     </div>

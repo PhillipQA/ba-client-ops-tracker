@@ -53,6 +53,30 @@ export function parseRecipients(input: unknown): ParsedRecipients {
   return { addresses, invalid }
 }
 
+export type ReplyHeaders = { from?: string; replyTo?: string; to?: string; cc?: string }
+export type ReplyRecipients = { to: string[]; cc: string[] }
+
+/**
+ * Who a reply goes to, like Reply all: the person who wrote the email (or the "Reply-To" address they set) gets it directly,
+ * and everyone else who was on it is copied. Your own addresses are never included.
+ * If you wrote the email yourself, the reply goes to the people you sent it to.
+ */
+export function replyRecipients(headers: ReplyHeaders, mine: string[]): ReplyRecipients {
+  const me = new Set(mine.flatMap(value => parseRecipients(value).addresses).map(address => address.toLowerCase()))
+  const list = (value?: string) => parseRecipients(value || '').addresses
+  const others = (addresses: string[]) => addresses.filter(address => !me.has(address.toLowerCase()))
+  const from = list(headers.from), replyTo = list(headers.replyTo), to = list(headers.to), cc = list(headers.cc)
+  const wroteIt = from.length > 0 && from.every(address => me.has(address.toLowerCase()))
+  let primary = wroteIt ? others(to) : others(replyTo.length ? replyTo : from)
+  if (!primary.length && !wroteIt) primary = others(from)
+  const rest = wroteIt ? others(cc) : others([...to, ...cc])
+  const seen = new Set<string>()
+  const unique = (addresses: string[]) => addresses.filter(address => { const key = address.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true })
+  let main = unique(primary), copied = unique(rest)
+  if (!main.length && copied.length) { main = copied; copied = [] }
+  return { to: main, cc: copied }
+}
+
 export function replySubject(subject: string): string {
   const clean = String(subject || '').trim()
   return /^re\s*:/i.test(clean) ? clean : `Re: ${clean || '(no subject)'}`.slice(0, EMAIL_LIMITS.subject)

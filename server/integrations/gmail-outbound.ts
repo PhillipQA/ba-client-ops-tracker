@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { IntegrationError } from './tenant-integrations'
 import { LifecycleError } from '../../src/lifecycle'
-import { EMAIL_LIMITS, blockedAttachmentReason, formatBytes, parseRecipients, recipientSummary } from '../../src/emailCompose'
+import { EMAIL_LIMITS, blockedAttachmentReason, formatBytes, parseRecipients, recipientSummary, replyRecipients } from '../../src/emailCompose'
 import { buildMessage, hasScope, messageIds, SEND_SCOPE, type OutgoingAttachment } from './gmail-send'
 import { driveName } from './google-drive'
 
@@ -46,6 +46,31 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
   const clock = () => (deps.now ? deps.now() : Date.now())
   const replays = new Map<string, { at: number; promise: Promise<any> }>()
   const recent = new Map<string, number[]>()
+
+  /**
+   * Who a reply to this message should go to: the sender, with everyone else on the email copied.
+   * Read from Gmail when the person clicks Reply, so it also works for emails that were saved earlier.
+   */
+  app.get('/api/communications/:id/reply-recipients', ...auth, guard, gmailGate, wrap(async (req, res) => {
+    const user = current(req)
+    const original = await deps.own(req, String(req.params.id))
+    if (original.source !== 'Gmail' || !original.external_id) throw new SendError('Only Gmail messages can be replied to.')
+    const row = await deps.settings(user.organizationId, user.id)
+    const { token } = await deps.accessGrant(req)
+    const wanted = ['From', 'Reply-To', 'To', 'Cc', 'Delivered-To']
+    let meta: any
+    try {
+      meta = await deps.google(`${GMAIL}/messages/${encodeURIComponent(original.external_id)}?${new URLSearchParams([['format', 'metadata'], ...wanted.map(name => ['metadataHeaders', name])])}`, { headers: { Authorization: `Bearer ${token}` } })
+    } catch (error) {
+      if ((error as any)?.upstreamStatus === 404) throw new SendError('The original email is no longer in Gmail, so its other recipients cannot be read.', 404, 'REPLY_UNAVAILABLE')
+      throw error
+    }
+    const found = (name: string) => (meta.payload?.headers || []).filter((x: any) => String(x.name).toLowerCase() === name).map((x: any) => String(x.value || ''))
+    // Delivered-To is the mailbox that received it, which covers an alias the person uses besides the connected address.
+    const mine = [String(row?.gmail_email || ''), ...found('delivered-to')]
+    res.setHeader('Cache-Control', 'no-store')
+    res.json(replyRecipients({ from: found('from').join(','), replyTo: found('reply-to').join(','), to: found('to').join(','), cc: found('cc').join(',') }, mine))
+  }))
 
   /** What the composer needs to know before it opens: is Gmail connected, and was sending allowed. */
   app.get('/api/communications/send/status', ...auth, guard, gmailGate, wrap(async (req, res) => {
