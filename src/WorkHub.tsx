@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react'
+import { LayoutGrid, List, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react'
 import GitProviderHub from './GitProviderHub'
 import { workHubSync, integrationLabel, WORK_HUB_INTEGRATIONS, type WorkHubIntegration, type WorkHubSource } from './workHubSync'
 import { useWorkHubSync } from './useWorkHubSync'
@@ -7,13 +7,41 @@ import { WORK_HUB_TABS } from './github-model'
 import type { Client, Project, TaskSettings, UserAccount, WorkItem } from './types'
 import { findCommunicationTaskDuplicate } from './communicationTasks'
 
-type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;source_labels?:string[];thread_id?:string;attachments?:string[];status:string;received_at:string;linked_task_id?:string }
+type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;source_labels?:string[];thread_id?:string;attachments?:Attachment[];status:string;received_at:string;linked_task_id?:string }
+// Older Gmail rows stored only file names; newer rows also carry part id, type and size.
+type Attachment = string | { name:string;partId?:string;mimeType?:string;size?:number }
 type Settings = { discordUserId:string;captureMentions:boolean;gmailEmail:string;gmailLabels:string[];gmailLabelCatalog:Label[];gmailConnected:boolean;gmailReconnectRequired:boolean;gmailAvailable:boolean;gmailPlatformEnabled:boolean;callbackUrl:string }
 type Label = {id:string;name:string}
 type ViewPreferences = {layout:'cards'|'rows';pageSize:5|10|15}
 function readView(key:string):ViewPreferences {
   try { const value=JSON.parse(localStorage.getItem(key) || '{}');return {layout:value.layout==='rows'?'rows':'cards',pageSize:value.pageSizeVersion===2 && [5,10,15].includes(value.pageSize)?value.pageSize:5} }
   catch { return {layout:'cards',pageSize:5} }
+}
+function fileSize(bytes?:number) {
+  if(!bytes || bytes<0) return ''
+  return bytes<1024 ? `${bytes} B` : bytes<1048576 ? `${Math.round(bytes/1024)} KB` : `${(bytes/1048576).toFixed(1)} MB`
+}
+/** Gmail attachments are fetched from Gmail when clicked; the app never stores the file. */
+function AttachmentList({message}:{message:Message}) {
+  const [pending,setPending]=useState<number|null>(null),[error,setError]=useState('')
+  const files=(message.attachments || []).map(entry=>typeof entry==='string'?{name:entry}:entry).filter(entry=>entry?.name)
+  if(!files.length) return null
+  const download=async(index:number,name:string)=>{
+    setPending(index);setError('')
+    try {
+      const response=await fetch(`/api/communications/${encodeURIComponent(message.id)}/attachments/${index}`,{credentials:'same-origin'})
+      if(!response.ok) { const result=await response.json().catch(()=>({})); throw new Error(result.error || 'Could not download this attachment.') }
+      const url=URL.createObjectURL(await response.blob()),link=document.createElement('a')
+      link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove()
+      setTimeout(()=>URL.revokeObjectURL(url),10000)
+    } catch(e) { setError(e instanceof Error ? e.message : 'Could not download this attachment.') }
+    finally { setPending(null) }
+  }
+  return <div className="communication-attachments"><strong>Attachments</strong><ul>{files.map((file,index)=><li key={`${index}:${file.name}`}>{message.source==='Gmail'
+    ? <button type="button" className="communication-attachment-link" disabled={pending!==null} onClick={()=>void download(index,file.name)} aria-label={`Download ${file.name}`}><Paperclip size={14} aria-hidden="true" /><span>{file.name}</span></button>
+    : <span className="communication-attachment-name"><Paperclip size={14} aria-hidden="true" />{file.name}</span>}
+    {'size' in file && fileSize(file.size) ? <small>{fileSize(file.size)}</small> : null}{pending===index ? <small role="status">Downloading…</small> : null}</li>)}</ul>
+    {error && <p role="alert">{error}</p>}</div>
 }
 class CommunicationRequestError extends Error {
   constructor(message: string, public code?: string) { super(message) }
@@ -165,7 +193,7 @@ export default function WorkHub({clients,projects,accounts,tasks,taskSettings,cu
     </>}
     </div>
     {tab!=='GitHub' && (selected || compose) && <div className="panel communication-detail" ref={detailRef} tabIndex={-1} role="region" aria-label="Message details"><div className="panel-heading"><div><h2>{selected ? selected.subject || 'Communication' : 'New private manual log'}</h2><p>{selected ? `${selected.source} · ${selected.sender} · ${selected.status}` : 'Visible only to your account'}</p></div><button className="secondary" disabled={busy} onClick={()=>{setSelected(null);setCompose(false)}}>Close</button></div>
-      {selected ? <><div className="communication-body">{threadLoading && !selectedThread.length ? <p role="status">Loading thread…</p> : threadError && !selectedThread.length ? <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p> : selectedThread.length > 1 ? selectedThread.map(entry=><article key={entry.id} className="communication-thread-message"><strong>{entry.sender} · {new Date(entry.received_at).toLocaleString()}</strong><p>{entry.body || 'No plain text body available.'}</p>{entry.attachments?.length ? <small>Attachments: {entry.attachments.join(', ')}</small> : null}</article>) : <>{selected.body || 'No plain text body available.'}{selected.attachments?.length ? <p>Attachments: {selected.attachments.join(', ')}</p> : null}</>}{threadError && selectedThread.length>0 && <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p>}{!threadError && selectedThread.length>0 && selectedThread.length<threadTotal && <button className="secondary" disabled={threadLoading} onClick={()=>setThreadPage(value=>value+1)}>{threadLoading?'Loading…':`Load more thread messages (${selectedThread.length} of ${threadTotal})`}</button>}</div><div className="integration-actions">{selected.status!=='Resolved' && <button className="secondary" disabled={busy} onClick={()=>update('Resolved')}>Resolve</button>}{selected.status!=='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Archived')}>Archive</button>}{selected.status==='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Open')}>Restore</button>}</div></>:null}
+      {selected ? <><div className="communication-body">{threadLoading && !selectedThread.length ? <p role="status">Loading thread…</p> : threadError && !selectedThread.length ? <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p> : selectedThread.length > 1 ? selectedThread.map(entry=><article key={entry.id} className="communication-thread-message"><strong>{entry.sender} · {new Date(entry.received_at).toLocaleString()}</strong><p>{entry.body || 'No plain text body available.'}</p><AttachmentList message={entry} /></article>) : <>{selected.body || 'No plain text body available.'}<AttachmentList message={selected} /></>}{threadError && selectedThread.length>0 && <p role="alert">{threadError} <button className="secondary" onClick={()=>setThreadRetry(value=>value+1)}>Retry thread</button></p>}{!threadError && selectedThread.length>0 && selectedThread.length<threadTotal && <button className="secondary" disabled={threadLoading} onClick={()=>setThreadPage(value=>value+1)}>{threadLoading?'Loading…':`Load more thread messages (${selectedThread.length} of ${threadTotal})`}</button>}</div><div className="integration-actions">{selected.status!=='Resolved' && <button className="secondary" disabled={busy} onClick={()=>update('Resolved')}>Resolve</button>}{selected.status!=='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Archived')}>Archive</button>}{selected.status==='Archived' && <button className="secondary" disabled={busy} onClick={()=>update('Open')}>Restore</button>}</div></>:null}
       {!selected && compose ? <><label>Subject<input value={title} onChange={e=>setTitle(e.target.value)} /></label><label>Message<textarea value={description} onChange={e=>setDescription(e.target.value)} /></label><button className="primary" disabled={busy} onClick={()=>void act(async()=>{await request('/api/communications','POST',{subject:title,body:description});await load();reloadMessages();setCompose(false)})}>Save private log</button></>:null}
       {selected && currentUser.role!=='Viewer' && <div className="communication-task-form"><h3>Create a project task</h3><p>Enter only the information User B should see. The email or Discord thread and sender are never copied into the task.</p><div className="communication-fields"><label>Task title<input ref={taskTitleRef} disabled={busy} value={title} maxLength={200} onChange={e=>setTitle(e.target.value)} /></label><label>Client<select disabled={busy} value={clientId} onChange={e=>setClientId(e.target.value)}><option value="">Select client</option>{clients.filter(x=>!x.archived).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Project<select disabled={busy} value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Select project</option>{projects.filter(x=>!x.archived).map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><label>Assign to<select disabled={busy} value={assignee} onChange={e=>setAssignee(e.target.value)}>{accounts.filter(x=>x.status!=='Disabled' && x.role!=='Viewer').map(x=><option key={x.id} value={x.id}>{x.name || x.username}</option>)}</select></label></div><label>Shared task description<textarea disabled={busy} value={description} maxLength={5000} onChange={e=>setDescription(e.target.value)} placeholder="Write a summary for the assignee. The private message is not included." /></label><button className="primary" disabled={busy || !title.trim() || !clientId || !projectId || !assignee} onClick={createTask}>Create task without sharing thread</button></div>}
     </div>}

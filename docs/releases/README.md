@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.6.86](v0.6.86.md) | Download Gmail attachments from Work Hub without storing them |
 | [v0.6.85](v0.6.85.md) | Readable BRD and FSD preview pages in dark appearance and wallpaper themes |
 | [v0.6.84](v0.6.84.md) | FSD and BRD generation repair or retry unreadable AI replies |
 | [v0.6.83](v0.6.83.md) | More Sign Off forms (UAT, UAT Deployment, Training) and configurable Waiting on options |

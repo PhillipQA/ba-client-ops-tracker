@@ -301,3 +301,120 @@ test('Gmail quota errors pause new checks and resume without losing the scan sta
   assert.equal(resumed.status,200);assert.equal((await resumed.json()).hasMore,false);assert.equal(listCalls,2)
  } finally {globalThis.fetch=original;Date.now=realNow;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
 })
+
+test('Gmail attachment helpers keep stored order, match safely and build safe download headers',async()=>{
+ const {gmailAttachmentParts,gmailAttachmentSummaries,storedAttachment,matchAttachmentPart,attachmentDisposition,attachmentContentType}=await import('../server/integrations/gmail-content')
+ const payload={mimeType:'multipart/mixed',parts:[
+  {partId:'0',mimeType:'multipart/alternative',parts:[{partId:'0.0',mimeType:'text/plain',body:{data:'aGk'}}]},
+  {partId:'1',mimeType:'application/pdf',filename:'report.pdf',body:{attachmentId:'att-1',size:2048}},
+  {partId:'2',mimeType:'multipart/related',parts:[{partId:'2.1',mimeType:'image/png',filename:'logo.png',body:{data:'iVBO',size:4}}]},
+ ]}
+ const parts=gmailAttachmentParts(payload)
+ assert.deepEqual(parts.map(p=>[p.name,p.partId]),[['report.pdf','1'],['logo.png','2.1']])
+ assert.deepEqual(gmailAttachmentSummaries(payload),[{name:'report.pdf',partId:'1',mimeType:'application/pdf',size:2048},{name:'logo.png',partId:'2.1',mimeType:'image/png',size:4}])
+ assert.ok(!JSON.stringify(gmailAttachmentSummaries(payload)).includes('att-1'),'Unstable attachment ids and file data must not be stored')
+ assert.deepEqual(storedAttachment('legacy.txt'),{name:'legacy.txt'})
+ assert.deepEqual(storedAttachment({name:'report.pdf',partId:'1',size:9}),{name:'report.pdf',partId:'1'})
+ assert.equal(storedAttachment(''),null);assert.equal(storedAttachment({partId:'1'}),null);assert.equal(storedAttachment(null),null)
+ assert.equal(matchAttachmentPart(parts,{name:'report.pdf',partId:'1'},5)?.partId,'1')
+ assert.equal(matchAttachmentPart(parts,{name:'other.pdf',partId:'1'},0),null,'A part id must also match the stored name')
+ assert.equal(matchAttachmentPart(parts,{name:'logo.png'},1)?.partId,'2.1')
+ assert.equal(matchAttachmentPart(parts,{name:'logo.png'},0)?.partId,'2.1','Legacy rows fall back to a unique name')
+ assert.equal(matchAttachmentPart([...parts,{...parts[1],partId:'3'}],{name:'logo.png'},0),null,'Ambiguous legacy names are not guessed')
+ const header=attachmentDisposition('../evil"\r\nSet-Cookie: x=1.pdf')
+ assert.match(header,/^attachment; /);assert.ok(!/[\r\n]/.test(header));assert.ok(!header.includes('../'));assert.ok(!/filename="[^"]*"[^;]*"/.test(header))
+ assert.match(attachmentDisposition('Ü-Bericht.pdf'),/filename="_-Bericht\.pdf"; filename\*=UTF-8''%C3%9C-Bericht\.pdf$/)
+ assert.equal(attachmentDisposition('...'),'attachment; filename="attachment"; filename*=UTF-8\'\'attachment')
+ assert.equal(attachmentContentType('Application/PDF'),'application/pdf')
+ assert.equal(attachmentContentType('text/html\r\nX-Bad: 1'),'application/octet-stream')
+ assert.equal(attachmentContentType(''),'application/octet-stream')
+})
+
+test('Gmail sync stores attachment metadata only',async()=>{
+ const oldKey=process.env.TENANT_INTEGRATION_MASTER_KEY,original=globalThis.fetch
+ process.env.TENANT_INTEGRATION_MASTER_KEY='d'.repeat(64)
+ const {app,records,gmailAccounts,prefs}=fixture()
+ gmailAccounts.push({tenant_id:'tenant',platform_enabled:true,account_enabled:true,revision:'v1',encrypted_config:encryptSecret(JSON.stringify({clientId:'test',clientSecret:'fixture',redirectUri:'http://localhost'}),'tenant','gmail-oauth')})
+ Object.assign(prefs[0],{gmail_labels:['L1'],gmail_config_revision:'v1',gmail_refresh_token:encryptSecret('fixture-refresh','tenant:user-a','gmail-refresh')})
+ const server=app.listen(0)
+ try {
+  const address=server.address();if(!address||typeof address==='string')throw new Error('No port')
+  globalThis.fetch=(async(input:any)=>{
+   const url=new URL(String(input));let body:any
+   if(url.hostname==='oauth2.googleapis.com') body={access_token:'fixture-access'}
+   else if(url.pathname.endsWith('/messages')) body={messages:[{id:'with-files'}]}
+   else body={id:'with-files',threadId:'t',labelIds:['L1'],internalDate:String(Date.now()),payload:{mimeType:'multipart/mixed',headers:[{name:'Subject',value:'Files'}],parts:[{partId:'0',mimeType:'text/plain',body:{data:Buffer.from('See attached').toString('base64url')}},{partId:'1',mimeType:'application/pdf',filename:'invoice.pdf',body:{attachmentId:'secret-attachment-id',size:1234}}]}}
+   return new Response(JSON.stringify(body),{status:200,headers:{'content-type':'application/json'}})
+  }) as typeof fetch
+  assert.equal((await original(`http://127.0.0.1:${address.port}/api/communications/gmail/sync`,{method:'POST'})).status,200)
+  const saved=records.find(r=>r.external_id==='with-files')
+  assert.deepEqual(saved.attachments,[{name:'invoice.pdf',partId:'1',mimeType:'application/pdf',size:1234}])
+  assert.ok(!JSON.stringify(saved).includes('secret-attachment-id'))
+ } finally {globalThis.fetch=original;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
+})
+
+test('Gmail attachments download from Gmail on demand for the owner only and are never stored',async()=>{
+ const oldKey=process.env.TENANT_INTEGRATION_MASTER_KEY,original=globalThis.fetch
+ process.env.TENANT_INTEGRATION_MASTER_KEY='e'.repeat(64)
+ const {app,records,gmailAccounts,prefs}=fixture()
+ gmailAccounts.push({tenant_id:'tenant',platform_enabled:true,account_enabled:true,revision:'v1',encrypted_config:encryptSecret(JSON.stringify({clientId:'test',clientSecret:'fixture',redirectUri:'http://localhost'}),'tenant','gmail-oauth')})
+ Object.assign(prefs[0],{gmail_labels:['L1'],gmail_config_revision:'v1',gmail_refresh_token:encryptSecret('fixture-refresh','tenant:user-a','gmail-refresh')})
+ const withFiles='22222222-2222-4222-8222-222222222222',legacy='33333333-3333-4333-8333-333333333333',removed='44444444-4444-4444-8444-444444444444'
+ records.push(
+  {id:withFiles,tenant_id:'tenant',owner_user_id:'user-a',source:'Gmail',external_id:'msg-files',subject:'Files',body:'',sender:'a@example.com',status:'New',received_at:new Date().toISOString(),attachments:[{name:'report.pdf',partId:'1',mimeType:'application/pdf',size:11},{name:'page.html',partId:'2',mimeType:'text/html',size:28}]},
+  {id:legacy,tenant_id:'tenant',owner_user_id:'user-a',source:'Gmail',external_id:'msg-files',subject:'Legacy',body:'',sender:'a@example.com',status:'New',received_at:new Date().toISOString(),attachments:['report.pdf']},
+  {id:removed,tenant_id:'tenant',owner_user_id:'user-a',source:'Gmail',external_id:'msg-gone',subject:'Gone',body:'',sender:'a@example.com',status:'New',received_at:new Date().toISOString(),attachments:['old.pdf']})
+ const pdf=Buffer.from('%PDF-1.4 ok'),html=Buffer.from('<script>alert(1)</script>ok')
+ let gmailCalls=0,detailFetches=0
+ const server=app.listen(0)
+ try {
+  const address=server.address();if(!address||typeof address==='string')throw new Error('No port')
+  const base=`http://127.0.0.1:${address.port}`
+  globalThis.fetch=(async(input:any)=>{
+   const url=new URL(String(input));gmailCalls++
+   const json=(body:any,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}})
+   if(url.hostname==='oauth2.googleapis.com') return json({access_token:'fixture-access'})
+   if(url.pathname.includes('/messages/msg-gone')) return json({error:{message:'Requested entity was not found.'}},404)
+   const attachment=/\/attachments\/(.+)$/.exec(url.pathname)
+   if(attachment) {
+    // Gmail issues a different attachment id on every message fetch; only the latest must be used.
+    assert.ok(attachment[1].endsWith(`-${detailFetches}`),'The download must use the attachment id from the fresh message fetch')
+    return json({size:pdf.length,data:pdf.toString('base64url')})
+   }
+   detailFetches++
+   return json({id:'msg-files',payload:{mimeType:'multipart/mixed',parts:[{partId:'0',mimeType:'text/plain',body:{data:'aGk'}},{partId:'1',mimeType:'application/pdf',filename:'report.pdf',body:{attachmentId:`pdf-${detailFetches}`,size:pdf.length}},{partId:'2',mimeType:'text/html',filename:'page.html',body:{data:html.toString('base64url'),size:html.length}}]}})
+  }) as typeof fetch
+  const before=JSON.stringify(records)
+  const get=(id:string,index:string|number,user='user-a')=>original(`${base}/api/communications/${id}/attachments/${index}`,{headers:{'x-test-user':user}})
+
+  const download=await get(withFiles,0)
+  assert.equal(download.status,200)
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()),pdf)
+  assert.equal(download.headers.get('content-type'),'application/pdf')
+  assert.equal(download.headers.get('content-disposition'),`attachment; filename="report.pdf"; filename*=UTF-8''report.pdf`)
+  assert.equal(download.headers.get('x-content-type-options'),'nosniff')
+  assert.match(download.headers.get('content-security-policy') || '',/sandbox/)
+  assert.equal(download.headers.get('cache-control'),'no-store')
+
+  const page=await get(withFiles,1)
+  assert.equal(page.status,200);assert.deepEqual(Buffer.from(await page.arrayBuffer()),html)
+  assert.match(page.headers.get('content-disposition') || '',/^attachment; filename="page\.html"/,'HTML must download, never render on the app origin')
+  assert.match(page.headers.get('content-security-policy') || '',/sandbox/)
+
+  const old=await get(legacy,0);assert.equal(old.status,200,'Rows synced before metadata existed still download by name')
+  assert.deepEqual(Buffer.from(await old.arrayBuffer()),pdf)
+
+  gmailCalls=0
+  assert.equal((await get(withFiles,0,'user-b')).status,404,'Another user cannot download')
+  assert.equal((await get(withFiles,2)).status,404)
+  assert.equal((await get(withFiles,-1)).status,404)
+  assert.equal((await get(withFiles,'x')).status,404)
+  assert.equal((await get('11111111-1111-4111-8111-111111111111',0)).status,404,'Messages without attachments have nothing to download')
+  assert.equal(gmailCalls,0,'Rejected requests must not reach Gmail')
+
+  const gone=await get(removed,0)
+  assert.equal(gone.status,404);assert.match((await gone.json()).error,/no longer available in Gmail/)
+
+  assert.equal(JSON.stringify(records),before,'Downloads must not write anything')
+ } finally {globalThis.fetch=original;server.close();if(oldKey===undefined)delete process.env.TENANT_INTEGRATION_MASTER_KEY;else process.env.TENANT_INTEGRATION_MASTER_KEY=oldKey}
+})

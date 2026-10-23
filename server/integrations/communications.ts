@@ -1,6 +1,6 @@
 import { registerGitlab } from './gitlab'
 import { registerGithub } from './github'
-import { gmailBodyText, gmailWindowStart, syncGmailPages } from './gmail-content'
+import { attachmentContentType, attachmentDisposition, gmailAttachmentParts, gmailAttachmentSummaries, gmailBodyText, gmailWindowStart, matchAttachmentPart, storedAttachment, syncGmailPages } from './gmail-content'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
@@ -13,14 +13,14 @@ const COOKIE = 'ba_gmail_oauth'
 const oauthStates = new Map<string, { token: string; userId: string; tenantId: string; verifier: string; cookie: string; revision: string; expires: number }>()
 const gmailKind = 'gmail-refresh' as const
 type GmailCredentials = { clientId: string; clientSecret: string; redirectUri: string }
-const google = async (url: string, init: RequestInit) => {
-  const response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(20000) })
+const google = async (url: string, init: RequestInit, timeout = 20000) => {
+  const response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(timeout) })
   const data: any = await response.json()
   if (!response.ok) {
     const message = data.error_description || data.error?.message || 'Gmail request failed.'
     if (response.status === 429 || (response.status === 403 && /quota|rate.?limit|userRateLimitExceeded/i.test(message)))
       throw new IntegrationError('Gmail quota is temporarily exceeded. Wait a minute, then click Sync Gmail again.',429)
-    throw new IntegrationError(message, 502)
+    throw Object.assign(new IntegrationError(message, 502), { upstreamStatus: response.status })
   }
   return data
 }
@@ -46,11 +46,6 @@ function validateCredentials(input: any, appOrigin: string): GmailCredentials {
 function requireText(input: unknown, field: string, max = 4000) {
   if (typeof input !== 'string' || input.trim().length > max) throw new IntegrationError(`${field} is invalid.`)
   return input.trim()
-}
-function attachmentNames(payload:any): string[] {
-  const names:string[]=[]
-  function visit(part:any) { if(part?.filename) names.push(String(part.filename).slice(0,255));for(const child of part?.parts || []) visit(child) }
-  visit(payload);return names.slice(0,50)
 }
 export function registerCommunications(app: Express, deps: {
   db: any; requireAuth: Middleware; requireTenant: Middleware; requirePlatformAdmin: Middleware;
@@ -197,6 +192,29 @@ export function registerCommunications(app: Express, deps: {
       .order('received_at',{ascending:true}).order('id',{ascending:true}).range((page-1)*pageSize,page*pageSize-1)
     if (error) throw error
     res.json({items:data || [],total:count || 0})
+  }))
+  // Attachments are streamed from Gmail on request and never written to the database or disk.
+  app.get('/api/communications/:id/attachments/:index', ...auth, guard, gmailGate, wrap(async (req,res) => {
+    const message=await own(req,String(req.params.id))
+    const stored=Array.isArray(message.attachments) ? message.attachments : []
+    const index=Number(req.params.index)
+    const wanted=Number.isSafeInteger(index) && index>=0 && index<stored.length ? storedAttachment(stored[index]) : null
+    if(message.source!=='Gmail' || !message.external_id || !wanted) throw new IntegrationError('Attachment not found.',404)
+    const token=await accessToken(req),headers={Authorization:`Bearer ${token}`}
+    const messageUrl=`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(message.external_id)}`
+    const missing=(error:unknown,text:string)=>{ if((error as any)?.upstreamStatus===404) throw new IntegrationError(text,404); throw error }
+    const detail=await google(`${messageUrl}?format=full`,{headers}).catch(error=>missing(error,'This email is no longer available in Gmail.'))
+    const part=matchAttachmentPart(gmailAttachmentParts(detail.payload),wanted,index)
+    if(!part) throw new IntegrationError('This attachment is no longer available in Gmail.',404)
+    const encoded=part.data || (part.attachmentId ? String((await google(`${messageUrl}/attachments/${encodeURIComponent(part.attachmentId)}`,{headers},60000).catch(error=>missing(error,'This attachment is no longer available in Gmail.'))).data || '') : '')
+    if(!encoded) throw new IntegrationError('This attachment is empty or unavailable in Gmail.',404)
+    const file=Buffer.from(encoded,'base64url')
+    res.setHeader('Content-Type',attachmentContentType(part.mimeType))
+    res.setHeader('Content-Disposition',attachmentDisposition(part.name))
+    res.setHeader('X-Content-Type-Options','nosniff')
+    res.setHeader('Content-Security-Policy',"sandbox; default-src 'none'")
+    res.setHeader('Content-Length',String(file.length))
+    res.end(file)
   }))
   app.get('/api/communications/settings', ...auth, guard, wrap(async (req,res) => {
     const user=current(req),row = await settings(user.organizationId,user.id),config=await account(user.organizationId)
@@ -374,7 +392,7 @@ export function registerCommunications(app: Express, deps: {
           })
           const body=extracted || `${String(detail.snippet || '')}\n[Only a Gmail snippet is available; review the original email before interpreting it.]`
           const sourceLabels=Array.isArray(detail.labelIds)?detail.labelIds.map(String):[label]
-          const fields={thread_id:String(detail.threadId || ''),subject:head('subject').slice(0,500),sender:head('from').slice(0,500),body:body.length>30000?body.slice(0,29850)+'\n[Body shortened at 30,000 characters. Review the original email for remaining content.]':body,attachments:attachmentNames(detail.payload),source_label:sourceLabels.find((id:string)=>labels.includes(id)) || '',source_labels:sourceLabels,received_at:new Date(Number(detail.internalDate || Date.now())).toISOString()}
+          const fields={thread_id:String(detail.threadId || ''),subject:head('subject').slice(0,500),sender:head('from').slice(0,500),body:body.length>30000?body.slice(0,29850)+'\n[Body shortened at 30,000 characters. Review the original email for remaining content.]':body,attachments:gmailAttachmentSummaries(detail.payload),source_label:sourceLabels.find((id:string)=>labels.includes(id)) || '',source_labels:sourceLabels,received_at:new Date(Number(detail.internalDate || Date.now())).toISOString()}
           const query=found?db.from('user_communications').update(fields).eq('id',found.id).eq('tenant_id',user.organizationId).eq('owner_user_id',user.id):db.from('user_communications').insert({tenant_id:user.organizationId,owner_user_id:user.id,source:'Gmail',external_id:externalId,...fields})
           const {error}=await query
           if(error && error.code!=='23505') throw error
