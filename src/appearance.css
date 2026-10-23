@@ -348,3 +348,19 @@ label > small { font-size: 11px; }
 /* Wallpaper themes are all dark, but Document Hub styles read --surface/--text/--border/--muted, which only exist in the personal
    interface modes. Without them it fell back to light-theme values (white buttons on a dark panel). */
 .app-shell.ui-refresh:not([data-interface-mode]) [class*="dochub-"] { --surface: #2a2f37; --text: #eef2f7; --border: #46505e; --muted: #aab7c8; }
+
+/* Loose text that sits straight on a wallpaper (page introductions, filter labels, small status lines) gets a soft, dark,
+   rounded background so it stays readable over clouds and sea. Text inside cards and panels is unchanged. */
+.app-shell.ui-refresh :is(.page-stack > section > .section-actions > .page-intro, .page-heading > div > p, .trk-title .trk-muted-text, .lifecycle-availability, .lifecycle-requirements, .lifecycle-toolbar-row > :is(span, p, small), .client-hero > div > p) {
+  display: inline-block; width: fit-content; max-width: min(100%, 760px); padding: 6px 14px; border-radius: 14px;
+  background: rgba(14, 20, 30, .72); color: #eef3fa; box-shadow: 0 0 0 1px rgba(255, 255, 255, .1); backdrop-filter: blur(6px);
+}
+.app-shell.ui-refresh :is(.lifecycle-filter, .trk-inline-select) {
+  padding: 4px 10px; border-radius: 999px; background: rgba(14, 20, 30, .72); color: #eef3fa; box-shadow: 0 0 0 1px rgba(255, 255, 255, .1);
+}
+.app-shell.ui-refresh .lifecycle-availability { display: inline-flex; align-items: center; gap: 8px; }
+.app-shell.ui-refresh .lifecycle-requirements summary { color: #eef3fa; }
+.app-shell.ui-refresh .trk-page .trk-checkline { padding: 4px 12px; border-radius: 999px; background: rgba(14, 20, 30, .72); color: #eef3fa; box-shadow: 0 0 0 1px rgba(255, 255, 255, .1); }
+.app-shell.ui-refresh .trk-page .trk-checkline small { color: inherit; }
+.app-shell.ui-refresh .lifecycle-toolbar:not(:has(button)) { background: transparent; }
+.app-shell.ui-refresh .row-meta { width: fit-content; padding: 4px 10px; border-radius: 999px; background: rgba(14, 20, 30, .72); }

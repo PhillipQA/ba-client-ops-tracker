@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.6.96.**
+**Current application version: v0.6.97.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.96**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.97**.
 
 ## Database requirements
 
