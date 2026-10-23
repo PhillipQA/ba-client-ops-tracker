@@ -57,6 +57,8 @@ import {
   Sparkles,
   Table2,
   Trash2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Upload,
   Users,
   X,
@@ -90,6 +92,8 @@ import type { TimeEntryMutationResult } from './timeEntries'
 import type { ActivityLog, AppModule, AppNotification, Client, ItemType, PlannerActivity, Priority, Project, TaskColumnKey, TaskEvidence, TaskSettings, UserAccount, WaitingOn, WorkActivityEvent, WorkItem } from './types'
 import { normalizeAppTheme, normalizeClientThemes, themeForContext, THEME_OPTIONS, type AppTheme } from './theme'
 import { normalizeInterfaceMode, type InterfaceMode } from './appearance'
+import { readSidebarCollapsed, writeSidebarCollapsed } from './sidebarState'
+import { useRailTip } from './RailTip'
 import { APP_VERSION } from './version'
 
 type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'trackers' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
@@ -446,6 +450,9 @@ function App() {
   const [loginBusy, setLoginBusy] = useState(false)
   const [logoutBusy, setLogoutBusy] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(readSidebarCollapsed)
+  const railTip = useRailTip(navCollapsed)
+  const toggleNav = () => { const next = !navCollapsed; railTip.hide(); setNavCollapsed(next); writeSidebarCollapsed(next) }
   const [newExternalInquiryIds, setNewExternalInquiryIds] = useState<string[]>([])
   const [notificationBusy, setNotificationBusy] = useState(false)
   const [rtmContext, setRtmContext] = useState<{ clientId?: string; projectId?: string }>({})
@@ -1406,32 +1413,39 @@ function App() {
   const currentTheme = themeForContext(currentUser)
 
   return (
-    <div className={`app-shell ui-refresh theme-${currentTheme}`} data-theme={currentTheme} data-interface-mode={normalizeInterfaceMode(currentUser.interfaceMode) || undefined}>
-      <aside className="sidebar">
-        <div className="brand"><img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" /></div>
-        <nav>
+    <div className={`app-shell ui-refresh theme-${currentTheme}${navCollapsed ? ' nav-collapsed' : ''}`} data-theme={currentTheme} data-interface-mode={normalizeInterfaceMode(currentUser.interfaceMode) || undefined}>
+      <aside className="sidebar" aria-label="Main menu">
+        <div className="brand">
+          <img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" />
+          <img className="brand-icon" src="/ba-app-icon.png" alt="" />
+          <button type="button" className="sidebar-toggle" aria-label={navCollapsed ? 'Expand menu' : 'Collapse menu'} aria-expanded={!navCollapsed} aria-controls="app-menu" onClick={toggleNav} {...railTip.bind('Expand menu')}>
+            {navCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+        </div>
+        <nav id="app-menu">
           {visibleNavItems.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={view === id ? 'nav-button active' : 'nav-button'} onClick={() => { setView(id); if (id === 'requirements') setRtmContext({}); setSelectedClientId(null); setSelectedProjectId(null) }}>
+            <button key={id} className={view === id ? 'nav-button active' : 'nav-button'} aria-current={view === id ? 'page' : undefined} {...railTip.bind(id === 'inbox' && inquiryItems.length > 0 ? `${label} · ${newExternalInquiryCount > 0 ? `${newExternalInquiryCount} new` : `${openInquiryCount} open`}` : label)} onClick={() => { setView(id); if (id === 'requirements') setRtmContext({}); setSelectedClientId(null); setSelectedProjectId(null) }}>
               <Icon size={18} /><span>{label}</span>{id === 'inbox' && inquiryItems.length > 0 && <b className={newExternalInquiryCount > 0 ? 'has-new' : ''} title={newExternalInquiryCount > 0 ? `${newExternalInquiryCount} new external inquiry${newExternalInquiryCount === 1 ? '' : 'ies'}` : `${inquiryItems.length} open inquiries`}>{newExternalInquiryCount > 0 ? newExternalInquiryCount : openInquiryCount}</b>}
             </button>
           ))}
           {currentUser.accountType !== 'platform' && <>
-            {canManageAccounts && <button className={view === 'users' ? 'nav-button active' : 'nav-button'} onClick={() => { setView('users'); setSelectedClientId(null); setSelectedProjectId(null) }}><Users size={18} /><span>Users &amp; Permissions</span></button>}
-            <button className={view === 'themes' ? 'nav-button active' : 'nav-button'} onClick={() => { setView('themes'); setSelectedClientId(null); setSelectedProjectId(null) }}><Sparkles size={18} /><span>My Themes</span></button>
+            {canManageAccounts && <button className={view === 'users' ? 'nav-button active' : 'nav-button'} aria-current={view === 'users' ? 'page' : undefined} {...railTip.bind('Users & Permissions')} onClick={() => { setView('users'); setSelectedClientId(null); setSelectedProjectId(null) }}><Users size={18} /><span>Users &amp; Permissions</span></button>}
+            <button className={view === 'themes' ? 'nav-button active' : 'nav-button'} aria-current={view === 'themes' ? 'page' : undefined} {...railTip.bind('My Themes')} onClick={() => { setView('themes'); setSelectedClientId(null); setSelectedProjectId(null) }}><Sparkles size={18} /><span>My Themes</span></button>
           </>}
         </nav>
-        {currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && <div className="platform-admin-nav"><button className={view === 'internal-admin' ? 'nav-button active' : 'nav-button'} onClick={() => { setView('internal-admin'); setSelectedClientId(null); setSelectedProjectId(null) }}><ShieldCheck size={18} /><span>BXI-Core Admin</span></button></div>}
+        {currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && <div className="platform-admin-nav"><button className={view === 'internal-admin' ? 'nav-button active' : 'nav-button'} aria-current={view === 'internal-admin' ? 'page' : undefined} {...railTip.bind('BXI-Core Admin')} onClick={() => { setView('internal-admin'); setSelectedClientId(null); setSelectedProjectId(null) }}><ShieldCheck size={18} /><span>BXI-Core Admin</span></button></div>}
         <div className="sidebar-footer">
-          {currentUser.organizationName && <div className="workspace-chip"><Building2 size={14} /><span>{currentUser.organizationName}</span></div>}
-          {currentUser.accountType === 'platform' ? <div className="session-card platform-session-card">
+          {currentUser.organizationName && <div className="workspace-chip" {...railTip.bind(currentUser.organizationName)}><Building2 size={14} /><span>{currentUser.organizationName}</span></div>}
+          {currentUser.accountType === 'platform' ? <div className="session-card platform-session-card" {...railTip.bind(`${currentUser.name} · Platform Admin`)}>
             <div className="session-avatar"><ShieldCheck size={17} /></div><div><strong>{currentUser.name}</strong><span>internal_admin · Platform Admin</span></div>
-          </div> : <button className="session-card session-card-button" type="button" onClick={() => setProfileOpen(true)} title="Edit your profile">
+          </div> : <button className="session-card session-card-button" type="button" onClick={() => setProfileOpen(true)} title={navCollapsed ? undefined : 'Edit your profile'} {...railTip.bind(`${currentUser.name} · ${currentUser.role} · My profile`)}>
             <div className="session-avatar"><UserRound size={17} /></div><div><strong>{currentUser.name}</strong><span>{currentUser.role} · My profile</span></div><Pencil size={14} />
           </button>}
-          <button className="nav-button signout-button" type="button" disabled={logoutBusy} onClick={() => void handleLogout()}><LogOut size={18} /><span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span></button>
-          <div className={`local-note storage-${cloudStatus}`} title={lastCloudSync ? `Last cloud sync: ${lastCloudSync}` : undefined}><CircleDot size={12} /> {cloudMessage}</div>
+          <button className="nav-button signout-button" type="button" disabled={logoutBusy} {...railTip.bind('Sign out')} onClick={() => void handleLogout()}><LogOut size={18} /><span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span></button>
+          <div className={`local-note storage-${cloudStatus}`} title={navCollapsed ? undefined : lastCloudSync ? `Last cloud sync: ${lastCloudSync}` : undefined} {...railTip.bind(lastCloudSync ? `${cloudMessage} · last sync ${lastCloudSync}` : cloudMessage)}><CircleDot size={12} /> <span>{cloudMessage}</span></div>
         </div>
       </aside>
+      {railTip.tip}
 
       <main>
         {saveConflict && <div className="panel" role="alert"><strong>Save conflict — your edits are kept locally.</strong><p>{saveConflict}</p><p>Download your pending workspace copy and reload, then reapply your edits to the current records. Open editors stay open for reference; reopen them before saving.</p><button className="secondary" disabled={recoveringCloud} onClick={() => void recoverCloud()}>{recoveringCloud ? 'Reloading…' : 'Download edits and reload latest'}</button></div>}
