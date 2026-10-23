@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { Copy, ExternalLink, Eye, EyeOff, LockKeyhole, Search, Trash2, X } from 'lucide-react'
+import { Copy, ExternalLink, Eye, EyeOff, ListChecks, LockKeyhole, Search, Trash2, X } from 'lucide-react'
 import type { Cell, Tracker, TrackerColumn, TrackerRow } from './trackerModel'
 import { cleanCell, isBasicType, isConnectedType } from './trackerModel'
 import { rowTitle, shown, type Lookup } from './trackerQuery'
-import { trackerApi, type TrackerChange } from './trackerApi'
+import { trackerApi, type TaskLink, type TrackerChange } from './trackerApi'
 import { CellView, type Person } from './TrackerCells'
 import { ColumnIcon, Pill, Popover, niceTime } from './trackerUi'
 import type { WorkItem } from './types'
@@ -23,6 +23,10 @@ type Props = {
   onLink: (row: TrackerRow, taskId: string | null) => void
   onDelete: (row: TrackerRow) => void
   onOpenTask?: (taskId: string) => void
+  /** Tasks and subtasks linked to this row or to one of its cells. */
+  links: TaskLink[]
+  onAddLink: (row: TrackerRow, taskId: string, columnId: string) => Promise<void>
+  onRemoveLink: (link: TaskLink) => Promise<void>
   onReveal: (row: TrackerRow, column: TrackerColumn) => Promise<string>
 }
 
@@ -41,6 +45,8 @@ function describe(change: TrackerChange, columns: TrackerColumn[], people: Perso
     case 'reveal': return `revealed ${detail.name || 'a secret'}`
     case 'task_linked': return `linked the task “${detail.title || 'Untitled'}”`
     case 'task_unlinked': return 'unlinked the task'
+    case 'subtask_linked': return `linked “${detail.title || 'a task'}”${detail.columnId ? ` to ${columns.find(item => item.id === detail.columnId)?.name || 'a cell'}` : ''}`
+    case 'subtask_unlinked': return 'removed a task link'
     default: return change.kind.replace(/_/g, ' ')
   }
 }
@@ -103,24 +109,75 @@ function Field({ column, row, people, canEdit, onEdit }: { column: TrackerColumn
   </div>
 }
 
-function TaskPicker({ anchor, items, tracker, clientName, onPick, onClose }: { anchor: RefObject<HTMLElement | null>; items: WorkItem[]; tracker: Tracker; clientName: (id: string) => string; onPick: (id: string) => void; onClose: () => void }) {
+function TaskPicker({ anchor, items, tracker, clientName, onPick, onClose, subtasks = false, taken }: { anchor: RefObject<HTMLElement | null>; items: WorkItem[]; tracker: Tracker; clientName: (id: string) => string; onPick: (id: string) => void; onClose: () => void; subtasks?: boolean; taken?: ReadonlySet<string> }) {
   const [query, setQuery] = useState('')
   const matches = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
     const rank = (item: WorkItem) => (tracker.projectId && item.projectId === tracker.projectId ? 0 : 2) + (tracker.clientId && item.clientId === tracker.clientId ? 0 : 1)
     return items
-      .filter(item => !item.parentTaskId && words.every(word => `${item.title} ${item.status} ${clientName(item.clientId || '')}`.toLowerCase().includes(word)))
+      .filter(item => (subtasks || !item.parentTaskId) && !taken?.has(item.id) && words.every(word => `${item.title} ${item.status} ${clientName(item.clientId || '')}`.toLowerCase().includes(word)))
       .sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title)).slice(0, 40)
   }, [items, query, tracker.clientId, tracker.projectId, clientName])
   return <Popover anchor={anchor} onClose={onClose} className="trk-picker wide" label="Choose a task" minWidth={360}>
     <label className="trk-picker-find"><Search size={14} aria-hidden="true" /><input autoFocus placeholder="Search tasks" value={query} onChange={event => setQuery(event.target.value)} aria-label="Search tasks" /></label>
     <div className="trk-picker-list">
       {matches.map(item => <button type="button" key={item.id} data-item onClick={() => onPick(item.id)}>
-        <span className="trk-task-line"><strong>{item.title}</strong><small>{[clientName(item.clientId || ''), item.status].filter(Boolean).join(' · ')}</small></span>
+        <span className="trk-task-line"><strong>{item.title}</strong><small>{[item.parentTaskId ? `Subtask of ${items.find(other => other.id === item.parentTaskId)?.title || 'a task'}` : '', clientName(item.clientId || ''), item.status, item.followUpDate].filter(Boolean).join(' · ')}</small></span>
       </button>)}
       {!matches.length && <p className="trk-picker-empty">{items.length ? 'No task matches.' : 'There are no tasks yet.'}</p>}
     </div>
   </Popover>
+}
+
+/** Tasks and subtasks linked to this row, or to one cell of it. The Action Center shows them on their follow-up date. */
+function TaskLinksCard({ props }: { props: Props }) {
+  const { tracker, row, lookup, canEdit, links } = props
+  const button = useRef<HTMLButtonElement>(null)
+  const [picking, setPicking] = useState(false)
+  const [columnId, setColumnId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const mine = links.filter(link => link.rowId === row.id)
+  useEffect(() => { setPicking(false); setError('') }, [row.id])
+  useEffect(() => { if (columnId && !tracker.columns.some(column => column.id === columnId)) setColumnId('') }, [columnId, tracker.columns])
+  const taken = useMemo(() => new Set(mine.filter(link => link.columnId === columnId).map(link => link.taskId)), [mine, columnId])
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true); setError('')
+    try { await action() } catch (e) { setError(e instanceof Error ? e.message : 'That could not be saved.') } finally { setBusy(false) }
+  }
+  return <section className="trk-card" aria-label="Tasks and subtasks">
+    <h3><ListChecks size={14} aria-hidden="true" /> Tasks and subtasks</h3>
+    <p className="trk-muted-text">Link as many as you need to this row or to one cell. They show in the Action Center on their follow-up date.</p>
+    {mine.length > 0 && <ul className="trk-link-list">
+      {mine.map(link => {
+        const task = lookup.task(link.taskId)
+        const owner = task?.assignedToUserId ? lookup.person(task.assignedToUserId) : ''
+        const when = task?.followUpDate || task?.dueDate || ''
+        return <li key={link.id}>
+          <span className="trk-task-line">
+            <strong>{task ? task.title : 'A deleted task'}</strong>
+            <small>{[task?.parentTaskId ? 'Subtask' : task ? 'Task' : '', task?.status, when ? `${task?.followUpDate ? 'Follow-up' : 'Due'} ${when}` : '', owner].filter(Boolean).join(' · ')}</small>
+          </span>
+          <span className="trk-link-where">{link.columnName ? link.columnName : 'Whole row'}</span>
+          {task && <Pill tone={/^(done|complete|completed|closed|resolved)/i.test(task.status) ? 'green' : 'gray'}>{task.status}</Pill>}
+          {task && props.onOpenTask && <button type="button" className="trk-icon-button small" aria-label={`Open ${task.title}`} title="Open task" onClick={() => props.onOpenTask!(task.id)}><ExternalLink size={13} /></button>}
+          {canEdit && <button type="button" className="trk-icon-button small" aria-label={`Remove link to ${task ? task.title : 'deleted task'}`} title="Remove link" disabled={busy} onClick={() => void run(() => props.onRemoveLink(link))}><X size={13} /></button>}
+        </li>
+      })}
+    </ul>}
+    {!mine.length && <p className="trk-muted-text">Nothing linked yet.</p>}
+    {canEdit && <div className="trk-link-add">
+      <label><span>Applies to</span>
+        <select value={columnId} onChange={event => setColumnId(event.target.value)} aria-label="Link applies to">
+          <option value="">Whole row</option>
+          {tracker.columns.map(column => <option key={column.id} value={column.id}>{column.name}</option>)}
+        </select></label>
+      <button type="button" className="trk-text-button strong" ref={button} disabled={busy} onClick={() => setPicking(true)}>Link a task or subtask</button>
+    </div>}
+    {error && <p className="trk-field-error" role="alert">{error}</p>}
+    {picking && <TaskPicker anchor={button} items={props.items} tracker={tracker} clientName={props.clientName} subtasks taken={taken} onClose={() => setPicking(false)}
+      onPick={id => { setPicking(false); void run(() => props.onAddLink(row, id, columnId)) }} />}
+  </section>
 }
 
 export default function TrackerRowPanel(props: Props) {
@@ -206,6 +263,8 @@ export default function TrackerRowPanel(props: Props) {
         </>}
         {picking && <TaskPicker anchor={linkButton} items={props.items} tracker={tracker} clientName={props.clientName} onClose={() => setPicking(false)} onPick={id => { setPicking(false); props.onLink(row, id) }} />}
       </section>
+
+      <TaskLinksCard props={props} />
 
       <section className="trk-fields" aria-label="Fields">
         {basic.map(column => <Field key={column.id} column={column} row={row} people={people} canEdit={canEdit} onEdit={value => props.onEdit(row, column, value)} />)}

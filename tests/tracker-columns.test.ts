@@ -47,3 +47,34 @@ test('a Link cell still rejects anything that is not a web address', async () =>
     assert.equal(cleanCell(column, bad).ok, false, bad)
   }
 })
+
+test('changing a type converts what fits and reports what does not', async () => {
+  const { planConversion } = await import('../src/trackerModel')
+  const column = { id: 'c_a', name: 'Go-Live', type: 'text' as const }
+  const plan = planConversion(column, 'date', ['2026-02-28', 'Feb 28, 2026', '3 March 2026', 'No Date yet', '', undefined])
+  assert.deepEqual(plan.cells.map(cell => cell.value), ['2026-02-28', '2026-02-28', '2026-03-03', '', '', ''])
+  assert.deepEqual(plan.cells.map(cell => cell.ok), [true, true, true, false, true, true])
+  assert.equal(plan.failed, 1)
+  const numbers = planConversion({ ...column, type: 'text' as const }, 'number', ['1,250', '12abc', '7'])
+  assert.deepEqual(numbers.cells.map(cell => cell.value), [1250, null, 7])
+  assert.equal(numbers.failed, 1)
+  const back = planConversion({ id: 'c_n', name: 'Units', type: 'number' as const }, 'text', [12, null, 3.5])
+  assert.deepEqual(back.cells.map(cell => cell.value), ['12', '', '3.5'])
+})
+
+test('a text column can become a select made from its values, and back', async () => {
+  const { planConversion } = await import('../src/trackerModel')
+  const plan = planConversion({ id: 'c_s', name: 'Stage', type: 'text' as const }, 'select', ['Live', 'new', 'Live', 'LIVE', ''])
+  assert.deepEqual(plan.options?.map(option => option.label), ['Live', 'new'])
+  const live = plan.options![0].id
+  assert.deepEqual(plan.cells.map(cell => cell.value), [live, plan.options![1].id, live, live, ''])
+  const back = planConversion({ id: 'c_s', name: 'Stage', type: 'select' as const, options: plan.options }, 'text', plan.cells.map(cell => cell.value))
+  assert.deepEqual(back.cells.map(cell => cell.value), ['Live', 'new', 'Live', 'Live', ''])
+})
+
+test('only basic text-like types can be converted', async () => {
+  const { planConversion } = await import('../src/trackerModel')
+  assert.throws(() => planConversion({ id: 'c_x', name: 'Secret', type: 'secret' as const }, 'text', []))
+  assert.throws(() => planConversion({ id: 'c_x', name: 'Done', type: 'checkbox' as const }, 'text', []))
+  assert.throws(() => planConversion({ id: 'c_x', name: 'Name', type: 'text' as const }, 'text', []))
+})

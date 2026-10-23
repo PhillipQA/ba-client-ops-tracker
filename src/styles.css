@@ -1549,6 +1549,11 @@ select option { background: #181818; color: #fff; }
 .activity-tile.activity-tile-done h3 { text-decoration: line-through; opacity: .7; }
 .activity-tile-context, .activity-tile-parent { margin: 0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .activity-tile-parent { opacity: .75; }
+.tracker-link-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.tracker-link-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 999px; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; font: inherit; font-size: 11px; line-height: 1.5; cursor: pointer; }
+.tracker-link-chip.static { cursor: default; }
+.tracker-link-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracker-link-chip:hover:not(.static), .tracker-link-chip:focus-visible { background: color-mix(in srgb, currentColor 16%, transparent); }
 .activity-tile-details { display: flex; flex-wrap: wrap; gap: 7px 12px; font-size: 11.5px; line-height: 1.5; }
 .activity-tile-details > span { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .activity-comment-preview { width: 100%; border: 1px solid var(--theme-border, #414141); border-radius: 9px; background: rgba(127,127,127,.08); color: inherit; padding: 10px; text-align: left; cursor: pointer; font: inherit; }
