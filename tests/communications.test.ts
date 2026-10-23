@@ -520,6 +520,18 @@ test('Admin connects one shared Drive; attachments save into Client/Project/Task
   assert.deepEqual(targets.map((t:any)=>t.title),['Install terminals','Site A','Train staff'])
   assert.equal((await local(`/api/communications/${id}/drive-targets`,'GET',undefined,{'x-test-user':'user-b'})).status,404,'Another user cannot see the targets of a private email')
 
+  // A thread shows every message in it. The tasks were made from the message that was open, so an
+  // attachment on an older message of the same thread still sees them; other threads and other owners do not.
+  const base={tenant_id:'tenant',source:'Gmail',subject:'Re',body:'',sender:'x@example.com',status:'New',received_at:new Date().toISOString(),attachments:[{name:'older.pdf',partId:'1',mimeType:'application/pdf',size:9}]}
+  records.push({...base,id:'22222222-2222-4222-8222-222222222222',owner_user_id:'user-a',external_id:'older-mail',thread_id:'thread-a'},
+    {...base,id:'33333333-3333-4333-8333-333333333333',owner_user_id:'user-a',external_id:'other-thread-mail',thread_id:'thread-b'},
+    {...base,id:'44444444-4444-4444-8444-444444444444',owner_user_id:'user-b',external_id:'bobs-mail',thread_id:'thread-a'})
+  const older=(await (await local('/api/communications/22222222-2222-4222-8222-222222222222/drive-targets')).json()).targets
+  assert.deepEqual(older.map((t:any)=>t.title),['Install terminals','Site A','Train staff'],'Older message of the same thread offers the thread tasks')
+  assert.deepEqual((await (await local('/api/communications/33333333-3333-4333-8333-333333333333/drive-targets')).json()).targets,[],'A different thread does not')
+  assert.deepEqual((await (await local('/api/communications/44444444-4444-4444-8444-444444444444/drive-targets','GET',undefined,{'x-test-user':'user-b'})).json()).targets,[],'Another user with the same thread id gets nothing')
+  assert.equal((await local('/api/communications/33333333-3333-4333-8333-333333333333/attachments/0/drive','POST',{taskId:'sub-1'})).status,404,'A different thread cannot file into these tasks')
+
   // Save the PDF to the subtask.
   const saved=await local(`/api/communications/${id}/attachments/0/drive`,'POST',{taskId:'sub-1'})
   assert.equal(saved.status,201)

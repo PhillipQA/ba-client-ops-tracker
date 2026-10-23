@@ -1,8 +1,19 @@
 # Changelog
 
-**Current application release: v0.6.87**
+**Current application release: v0.6.88**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.88 — Save to Drive works on every message in an email thread
+Released October 23, 2026.
+
+No database change.
+
+### Fixed
+
+- **"Create a task from this email first" appeared even after a task was created.** A thread in Work Hub lists every message in it, each with its own attachments, but a task was linked only to the message that was open when it was created. An attachment on an older message in the same thread therefore saw no tasks. **Save to Drive** now offers the tasks, and their subtasks, created from any message in that thread. The same check applies when saving, so a different thread, or another user's copy of the thread, still cannot file into those tasks.
+- The task list in the picker is now reloaded each time it opens, so a task created after the picker was first opened shows up without leaving the page.
+- The empty-picker message now says that tasks made on the Tasks page are not linked to an email, and points to **Create a project task** in Work Hub.
 
 ## v0.6.87 — Save Gmail attachments to Google Drive task folders
 Released October 23, 2026.
