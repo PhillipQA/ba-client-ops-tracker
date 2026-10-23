@@ -34,11 +34,15 @@ type Props = {
   selected: ReadonlySet<string>
   focus: GridFocus | null
   taskTitle: (row: TrackerRow) => string
+  /** Per row: how many tasks are linked, and which cells have their own. */
+  links?: ReadonlyMap<string, { count: number; cells: ReadonlySet<string> }>
   rowName: (row: TrackerRow) => string
   onEdit: (row: TrackerRow, column: TrackerColumn, value: Cell) => void
   onOpenRow: (row: TrackerRow) => void
   onHeader: (column: TrackerColumn, button: HTMLElement) => void
   onAddColumn?: () => void
+  /** Present while rows can be reordered; called with the rows to move and the row they go just before (null for the end). */
+  onMove?: (ids: string[], before: string | null) => void
   /** Present only for people who can change columns; dragging a header edge calls it with the new width (or null to reset). */
   onResize?: (column: TrackerColumn, width: number | null) => void
   onToggleRow: (rowId: string, on: boolean) => void
@@ -100,6 +104,15 @@ export default function TrackerGrid(props: Props) {
   }, [props.focus, rowPlace, columnPlace, rowEntries, columns, canEdit, scrollTo])
 
   const first = props.primaryId
+  const [dragIds, setDragIds] = useState<ReadonlySet<string> | null>(null)
+  const [dropAt, setDropAt] = useState<{ rowId: string; after: boolean } | null>(null)
+  const endDrag = () => { setDragIds(null); setDropAt(null) }
+  const dropTarget = () => {
+    if (!dropAt || !dragIds || dragIds.has(dropAt.rowId)) return undefined
+    const place = rowPlace.get(dropAt.rowId)
+    if (place === undefined) return undefined
+    return { before: dropAt.after ? rowEntries[place + 1]?.entry.row.id ?? null : dropAt.rowId }
+  }
   const [drag, setDrag] = useState<{ id: string; width: number } | null>(null)
   const widthFor = useCallback((column: TrackerColumn) => drag?.id === column.id ? drag.width : widthOf(column, column.id === first), [drag, first])
   const template = useMemo(() => `${NUMBER_WIDTH}px ${columns.map(column => `${widthFor(column)}px`).join(' ')} ${props.onAddColumn ? '56px' : '0px'}`, [columns, widthFor, props.onAddColumn])
@@ -185,15 +198,22 @@ export default function TrackerGrid(props: Props) {
     }
     const { row, n } = entry
     const isSelected = selected.has(row.id), rowActive = active?.rowId === row.id
-    rendered.push(<div key={row.id} role="row" aria-rowindex={index + 2} aria-selected={isSelected} className={`trk-row${isSelected ? ' selected' : ''}${rowActive ? ' current' : ''}`} style={{ gridTemplateColumns: template, height: ROW_HEIGHT }}>
-      <div role="gridcell" className="trk-cell trk-num trk-s1">
+    rendered.push(<div key={row.id} role="row" aria-rowindex={index + 2} aria-selected={isSelected} className={`trk-row${isSelected ? ' selected' : ''}${rowActive ? ' current' : ''}${dragIds?.has(row.id) ? ' dragging' : ''}${dropAt?.rowId === row.id && dragIds && !dragIds.has(row.id) ? (dropAt.after ? ' drop-after' : ' drop-before') : ''}`} style={{ gridTemplateColumns: template, height: ROW_HEIGHT }}
+      onDragOver={dragIds ? event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; const box = event.currentTarget.getBoundingClientRect(); const after = event.clientY > box.top + box.height / 2; if (dropAt?.rowId !== row.id || dropAt.after !== after) setDropAt({ rowId: row.id, after }) } : undefined}
+      onDrop={dragIds ? event => { event.preventDefault(); const target = dropTarget(); if (target) props.onMove?.([...dragIds], target.before); endDrag() } : undefined}>
+      <div role="gridcell" className={`trk-cell trk-num trk-s1${props.onMove ? ' movable' : ''}`}
+        draggable={Boolean(props.onMove)} title={props.onMove ? 'Drag to move this row' : undefined}
+        onDragStart={props.onMove ? event => { const ids = selected.has(row.id) ? new Set(selected) : new Set([row.id]); setDragIds(ids); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', `${ids.size} row${ids.size === 1 ? '' : 's'}`) } : undefined}
+        onDragEnd={props.onMove ? endDrag : undefined}>
         <span className="trk-n">{n}</span>
+        {props.links?.get(row.id) && <span className="trk-linkcount" title={`${props.links.get(row.id)!.count} linked task${props.links.get(row.id)!.count === 1 ? '' : 's'} or subtask${props.links.get(row.id)!.count === 1 ? '' : 's'}`} aria-label={`${props.links.get(row.id)!.count} linked tasks`}>{props.links.get(row.id)!.count}</span>}
         <input type="checkbox" className="trk-pick" checked={isSelected} aria-label={`Select row ${n}`} onChange={event => props.onToggleRow(row.id, event.target.checked)} />
       </div>
       {columns.map((column, at) => {
         const on = rowActive && active?.columnId === column.id
         const isEditing = on && editing !== null
         const classes = ['trk-cell', `trk-t-${column.type}`]
+        if (props.links?.get(row.id)?.cells.has(column.id)) classes.push('trk-has-link')
         if (column.id === first) classes.push('trk-first')
         const place = stick.get(column.id)
         if (place) classes.push('trk-frozen'); if (place?.edge) classes.push('trk-edge')

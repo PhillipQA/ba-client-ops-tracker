@@ -5,6 +5,9 @@ import { workHubSync, WORK_HUB_INTEGRATIONS } from './workHubSync'
 import { useWorkHubSync } from './useWorkHubSync'
 import RequirementsTraceability from './RequirementsTraceability'
 import Trackers from './Trackers'
+import TrackerLinkChips from './TrackerLinkChips'
+import { trackerApi, type TaskLink } from './trackerApi'
+import { rememberTrackerRow } from './trackerNav'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
 import { DocHubHistory } from './DocHubPanel'
@@ -435,6 +438,7 @@ function App() {
   const [aiPrompt, setAiPrompt] = useState('')
   const [activityRange, setActivityRange] = useState<'today' | 'week'>('today')
   const [actionCenterScope, setActionCenterScope] = useState<ActionCenterScopeSelection>('mine')
+  const [trackerLinks, setTrackerLinks] = useState<TaskLink[]>([])
   const [dashboardAiPrompt, setDashboardAiPrompt] = useState('')
   const [dashboardAiBusy, setDashboardAiBusy] = useState(false)
   const [dashboardAiError, setDashboardAiError] = useState('')
@@ -1237,6 +1241,18 @@ function App() {
     }
   }
 
+  const hasTrackers = Boolean(currentUser?.modules.includes('trackers'))
+  // Tasks linked from a tracker say so in the Action Center. Without the Trackers module, or before its links table exists, there is simply nothing to show.
+  useEffect(() => {
+    if (view !== 'action' || !hasTrackers) return
+    const controller = new AbortController()
+    trackerApi.allLinks(controller.signal).then(result => setTrackerLinks(result.links)).catch(() => { if (!controller.signal.aborted) setTrackerLinks([]) })
+    return () => controller.abort()
+  }, [view, hasTrackers, currentUser?.id])
+  const openTrackerLink = (link: TaskLink) => {
+    rememberTrackerRow(link.trackerId, link.rowId)
+    setSelectedClientId(null); setSelectedProjectId(null); setView('trackers')
+  }
   const openTaskEditor = (id: string) => {
     if (!canWriteTasks) return
     const target = store.items.find(item => item.id === id)
@@ -1495,6 +1511,8 @@ function App() {
                 mode={activityRange}
                 items={activityRange === 'today' ? todayActivities : weekActivities}
                 followUps={activityRange === 'today' ? todayFollowUps : weekFollowUps}
+                trackerLinks={trackerLinks}
+                onOpenTracker={openTrackerLink}
                 allItems={store.items}
                 accounts={store.accounts}
                 clients={store.clients}
@@ -1532,7 +1550,7 @@ function App() {
 
             <div className="panel dashboard-panel action-center-panel">
               <div className="panel-heading dashboard-panel-heading"><div><h2>{actionCenterScopeLabel}</h2><p>Open tasks and subtasks for the selected user view. {resolvedActionCenterScope.kind === 'all' ? 'Unassigned work is included.' : ''}</p></div>{hasModule('items') && <button className="secondary" onClick={() => setView('items')}>View all tasks</button>}</div>
-              <DashboardActionTable key={actionCenterScope} items={actionItems} accounts={store.accounts} clients={store.clients} projects={store.projects} planner={store.planner} />
+              <DashboardActionTable key={actionCenterScope} items={actionItems} accounts={store.accounts} clients={store.clients} projects={store.projects} planner={store.planner} trackerLinks={trackerLinks} onOpenTracker={openTrackerLink} />
             </div>
           </section>
         )}
@@ -1789,7 +1807,7 @@ function ProfileModal({ user, onClose, onSave }: { user: UserAccount; onClose: (
 
 
 
-function DashboardActivityTimeline({ mode, items, followUps, allItems, accounts, clients, projects, onEdit, onToggle, onEditTask, canEdit, canEditTask }: { mode: 'today' | 'week'; items: PlannerActivity[]; followUps: WorkItem[]; allItems: WorkItem[]; accounts: UserAccount[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void; onEditTask: (id: string) => void; canEdit: boolean; canEditTask: (item: WorkItem) => boolean }) {
+function DashboardActivityTimeline({ mode, items, followUps, allItems, accounts, clients, projects, onEdit, onToggle, onEditTask, canEdit, canEditTask, trackerLinks, onOpenTracker }: { trackerLinks: TaskLink[]; onOpenTracker?: (link: TaskLink) => void; mode: 'today' | 'week'; items: PlannerActivity[]; followUps: WorkItem[]; allItems: WorkItem[]; accounts: UserAccount[]; clients: Client[]; projects: Project[]; onEdit: (activity: PlannerActivity) => void; onToggle: (id: string) => void; onEditTask: (id: string) => void; canEdit: boolean; canEditTask: (item: WorkItem) => boolean }) {
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name : ''
   const projectName = (id?: string) => id ? projects.find((project) => project.id === id)?.name : ''
   const entries = [
@@ -1810,6 +1828,7 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, accounts,
         <h3>{canEditThisItem ? <button type="button" className="activity-tile-title" onClick={() => onEditTask(item.id)}>{item.title}</button> : item.title}</h3>
         <p className="activity-tile-context">{context || 'General'}</p>
         {parent && <p className="activity-tile-parent">Parent task: {parent.title}</p>}
+        <TrackerLinkChips links={trackerLinks} taskId={item.id} onOpen={onOpenTracker} />
         <div className="activity-tile-badges"><StatusChip value={item.status} /><PriorityChip value={item.priority} /></div>
         <div className="activity-tile-details"><span>Assigned to: <b>{assignedTo}</b></span><span>Follow-up: <b>{niceDate(item.followUpDate)}</b></span>{item.dueDate && <span>Due: <b>{niceDate(item.dueDate)}</b></span>}<span>Waiting on: <b>{item.waitingOn}</b></span></div>
         {item.docHubDocuments?.map(d=><span className="dochub-task-badge" key={d.id}>DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}</span>)}
@@ -1836,7 +1855,7 @@ function DashboardActivityTimeline({ mode, items, followUps, allItems, accounts,
   })}</div>
 }
 
-function DashboardActionTable({ items, accounts, clients, projects, planner }: { items: WorkItem[]; accounts: UserAccount[]; clients: Client[]; projects: Project[]; planner: PlannerActivity[] }) {
+function DashboardActionTable({ items, accounts, clients, projects, planner, trackerLinks, onOpenTracker }: { items: WorkItem[]; accounts: UserAccount[]; clients: Client[]; projects: Project[]; planner: PlannerActivity[]; trackerLinks: TaskLink[]; onOpenTracker?: (link: TaskLink) => void }) {
   const [pageSize, setPageSize] = useState(10)
   const [page, setPage] = useState(1)
   const clientName = (id?: string) => id ? clients.find((client) => client.id === id)?.name ?? 'Unknown' : 'General'
@@ -1854,7 +1873,7 @@ function DashboardActionTable({ items, accounts, clients, projects, planner }: {
       const activity = nextActivity(item)
       const activityLabel = activity ? `${activity.date === businessDateKey() ? activityTime(activity) : `${niceDate(activity.date)} · ${activityTime(activity)}`} — ${activity.title}` : '—'
       const assignee = accounts.find((account) => account.id === item.assignedToUserId)?.name || 'Unassigned'
-      return <tr key={item.id}><td><strong>{clientName(item.clientId)}</strong></td><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small></td><td>{assignee}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < businessDateKey() ? 'overdue-date' : ''}>{item.followUpDate === businessDateKey() ? 'Today' : niceDate(item.followUpDate)}</td><td>{activityLabel}</td></tr>
+      return <tr key={item.id}><td><strong>{clientName(item.clientId)}</strong></td><td><strong>{item.title}</strong><small>{projects.find((project) => project.id === item.projectId)?.name ?? ''}</small><TrackerLinkChips links={trackerLinks} taskId={item.id} onOpen={onOpenTracker} /></td><td>{assignee}</td><td>{item.waitingOn}</td><td className={item.followUpDate && item.followUpDate < businessDateKey() ? 'overdue-date' : ''}>{item.followUpDate === businessDateKey() ? 'Today' : niceDate(item.followUpDate)}</td><td>{activityLabel}</td></tr>
     })}</tbody></table></div>
     <div className="dashboard-action-pagination">
       <label>Items per page<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1) }}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label>

@@ -339,3 +339,69 @@ export const filterOpLabel: Record<FilterOp, string> = {
   gt: 'is greater than', lt: 'is less than', before: 'is before', after: 'is after', checked: 'is checked', unchecked: 'is not checked',
 }
 export const filterNeedsValue = (op: FilterOp) => !['is_empty', 'not_empty', 'checked', 'unchecked'].includes(op)
+
+// ---- changing a column's type ----
+
+/** Types a column can be changed between. Connected, Secret, Person, Checkbox and Multi-select columns keep their type. */
+export const CONVERTIBLE_TYPES: ColumnType[] = ['text', 'longtext', 'number', 'date', 'link', 'select']
+export const canConvertType = (type: string) => (CONVERTIBLE_TYPES as string[]).includes(type)
+
+const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+/** A date as typed in a sheet: 2026-02-28, "Feb 28, 2026" or "28 February 2026". Numeric forms such as 03/04/2026 are ambiguous and are not guessed. */
+export function looseDate(text: string): string | null {
+  const value = text.trim()
+  if (validDate(value)) return value
+  const named = /^(?:[A-Za-z]+,?\s+)?([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/.exec(value) || null
+  const swapped = /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})$/.exec(value) || null
+  const [month, day, year] = named ? [named[1], named[2], named[3]] : swapped ? [swapped[2], swapped[1], swapped[3]] : []
+  if (!month) return null
+  const at = MONTH_NAMES.indexOf(month.slice(0, 3).toLowerCase())
+  if (at < 0) return null
+  const iso = `${year}-${String(at + 1).padStart(2, '0')}-${String(Number(day)).padStart(2, '0')}`
+  return validDate(iso) ? iso : null
+}
+
+function cellAsText(column: TrackerColumn, value: Cell | undefined): string {
+  if (value === undefined || value === null || value === false) return ''
+  if (column.type === 'select') return column.options?.find(option => option.id === value)?.label || ''
+  if (column.type === 'link') return typeof value === 'string' ? linkToInput(value) : ''
+  return typeof value === 'string' ? value : String(value)
+}
+
+export type ConversionPlan = {
+  options?: SelectOption[]
+  cells: { value: Cell; ok: boolean; before: string }[]
+  failed: number
+}
+
+/**
+ * Works out what every value in a column becomes when it changes type. A value that does not fit comes back with `ok: false`
+ * and the empty value, so the caller can show how many would be cleared before anything is changed.
+ */
+export function planConversion(column: TrackerColumn, toType: ColumnType, values: (Cell | undefined)[]): ConversionPlan {
+  if (!canConvertType(column.type) || !canConvertType(toType) || column.type === toType) throw new TrackerError('This column cannot be changed to that type.')
+  const texts = values.map(value => cellAsText(column, value).trim())
+  let options: SelectOption[] | undefined
+  let optionByKey: Map<string, string> | undefined
+  if (toType === 'select') {
+    const labels = new Map<string, string>()
+    for (const text of texts) if (text && text.length <= TRACKER_LIMITS.optionLabel && !labels.has(text.toLowerCase())) labels.set(text.toLowerCase(), text)
+    if (labels.size > TRACKER_LIMITS.optionsPerColumn) throw new TrackerError(`This column has ${labels.size} different values, and a Select column holds at most ${TRACKER_LIMITS.optionsPerColumn} choices. Keep it as text, or tidy the values first.`)
+    options = normalizeOptions([...labels.values()].map(label => ({ label })))
+    optionByKey = new Map(options.map(option => [option.label.toLowerCase(), option.id]))
+  }
+  const target: TrackerColumn = { id: column.id, name: column.name, type: toType }
+  let failed = 0
+  const cells = texts.map(text => {
+    const empty = emptyCell(toType)
+    if (!text) return { value: empty, ok: true, before: '' }
+    let result: { ok: true; value: Cell } | { ok: false }
+    if (toType === 'select') { const id = optionByKey!.get(text.toLowerCase()); result = id ? { ok: true, value: id } : { ok: false } }
+    else if (toType === 'date') { const iso = looseDate(text); result = iso ? { ok: true, value: iso } : { ok: false } }
+    else { const cleaned = cleanCell(target, text); result = cleaned.ok ? { ok: true, value: cleaned.value } : { ok: false } }
+    if (result.ok) return { value: result.value, ok: true, before: text }
+    failed++
+    return { value: empty, ok: false, before: text }
+  })
+  return { options, cells, failed }
+}

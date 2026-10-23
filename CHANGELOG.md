@@ -1,8 +1,19 @@
 # Changelog
 
-**Current application release: v0.6.95**
+**Current application release: v0.6.96**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.96 — Trackers: move rows, change column type, task links
+Released October 23, 2026.
+
+**Optional database migration:** apply [schema v25](database/migrations/schema-v25-tracker-task-links.sql) to use task links. Everything else in this release works without it. No new Google permission.
+
+- **Move rows.** Select one or more rows and use **Top**, **Move up**, **Move down** or **Bottom**, or drag a row by its number. The order is saved for everyone. Moving is available only while no sort, grouping, search or filter is active, because the order you see must be the saved order.
+- **Change a column's type.** In **Edit column…** choose a new type: Text, Long text, Number, Date, Link or Select. **Check the change** shows how many values convert and which would be cleared, with examples. Nothing is cleared until you tick the box and confirm, and saved views that sort or filter by the column are reset. Checkbox, Multi-select, Person, Secret and the columns that fill themselves cannot be converted.
+- **Link tasks and subtasks to a row or a cell.** A row's panel has a new **Tasks and subtasks** card. Link as many tasks and subtasks as you need to the whole row or to one column's cell. The grid shows the count beside the row number and marks cells that have their own link. In the **Action Center**, each linked task and subtask shows the tracker, row and cell it came from, on its follow-up date in the Activities tiles and in the table; click it to open that row.
+- **Readable footer.** The row count, legend, breadcrumb and save status sit on a solid rounded background, so they stay readable over a wallpaper.
+- **More room in Full view.** Import, Export and Exit full view become small icon buttons, and the page title and spacing shrink, so the grid takes more of the window.
 
 ## v0.6.95 — Trackers: freeze, resize and align columns
 Released October 23, 2026.
