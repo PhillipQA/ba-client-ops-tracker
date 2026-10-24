@@ -1,8 +1,8 @@
 import { type AppState, type SignedInUser } from '../../app/useAppState'
 import { DashboardActionTable, DashboardActivityTimeline, Metric } from './ActionCenterParts'
 import { AlertTriangle, CalendarDays, ChevronRight, Inbox, Plus, Settings2, Sparkles, Users } from 'lucide-react'
-import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from '../../actionCenterScope'
-import GoogleCalendarPanel from '../../GoogleCalendarPanel'
+import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from './actionCenterScope'
+import GoogleCalendarPanel from '../integrations/GoogleCalendarPanel'
 import ClientSelect from '../../shared/ui/SearchSelect'
 
 /** Action Center screen. It reads the app state; see app/useAppState. */

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { documentOutputName, suggestedDocumentStem } from '../src/documentFilename'
+import { documentOutputName, suggestedDocumentStem } from '../src/features/documents/documentFilename'
 
 test('document filenames follow the requested client, project and site patterns', () => {
   assert.equal(suggestedDocumentStem('DRF', 'Acme Retail', 'Main / North'), 'DRF-Acme-Retail-Main-North')

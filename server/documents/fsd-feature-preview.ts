@@ -1,5 +1,5 @@
-import { fsdFeatureCode } from '../../src/fsd-features'
-import type { FsdBlock, FsdFeature, FsdSection } from '../../src/fsd-model'
+import { fsdFeatureCode } from '../../src/features/documents/fsd-features'
+import type { FsdBlock, FsdFeature, FsdSection } from '../../src/features/documents/fsd-model'
 
 export const FSD_PROCESS_LABELS = ['PROCESS NAME','SCENARIO','SUB SCENARIO','PROCESS SCOPE','PROCESS DESCRIPTION','PROCESS INPUT','PROCESS FLOW','PROCESS OUTPUT']
 

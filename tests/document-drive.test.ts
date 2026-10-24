@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { driveFileGroups, extensionOf, fileSize, taskOptions } from '../src/documentDriveTargets'
+import { driveFileGroups, extensionOf, fileSize, taskOptions } from '../src/features/documents/documentDriveTargets'
 
 const file = (id: string, name: string, size = 2048) => ({ id, name, url: `https://drive.google.com/file/d/${id}/view`, mimeType: 'application/pdf', size, savedAt: '2026-10-22T00:00:00Z', savedBy: 'u', savedByName: 'Una' })
 const scope: any = {
@@ -40,7 +40,7 @@ test('Drive picker helpers format sizes and extensions', () => {
 })
 
 test('task pickers can leave out closed and resolved work', async () => {
-  const { taskOptions } = await import('../src/documentDriveTargets')
+  const { taskOptions } = await import('../src/features/documents/documentDriveTargets')
   const scope: any = { clients: [{ id: 'c1', name: 'Acme' }], projects: [], items: [
     { id: 't1', title: 'Roll out', clientId: 'c1', status: 'Open' },
     { id: 's1', title: 'DRF', clientId: 'c1', parentTaskId: 't1', status: 'Resolved' },

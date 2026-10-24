@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isFrozenColumn, normalizeColumns } from '../src/trackerModel'
+import { isFrozenColumn, normalizeColumns } from '../src/features/trackers/trackerModel'
 
 const base = [{ name: 'Branch', type: 'text' }, { name: 'Address', type: 'text' }, { name: 'Units', type: 'number' }]
 
@@ -28,7 +28,7 @@ test('only the first column is frozen until someone chooses otherwise', () => {
 })
 
 test('a Link cell can carry a short label that is shown instead of the address', async () => {
-  const { cleanCell, parseLink, linkToInput } = await import('../src/trackerModel')
+  const { cleanCell, parseLink, linkToInput } = await import('../src/features/trackers/trackerModel')
   const column = { id: 'c_l', name: 'Ticket', type: 'link' as const }
   const typed = cleanCell(column, '#1234 https://git.example.com/acme/app/issues/1234')
   assert.deepEqual(typed, { ok: true, value: '[#1234](https://git.example.com/acme/app/issues/1234)' })
@@ -41,7 +41,7 @@ test('a Link cell can carry a short label that is shown instead of the address',
 })
 
 test('a Link cell still rejects anything that is not a web address', async () => {
-  const { cleanCell } = await import('../src/trackerModel')
+  const { cleanCell } = await import('../src/features/trackers/trackerModel')
   const column = { id: 'c_l', name: 'Ticket', type: 'link' as const }
   for (const bad of ['javascript:alert(1)', '#1234 javascript:alert(1)', '[x](javascript:alert(1))', '[x](data:text/html,hi)', 'just words', 'ftp://example.com/file']) {
     assert.equal(cleanCell(column, bad).ok, false, bad)
@@ -49,7 +49,7 @@ test('a Link cell still rejects anything that is not a web address', async () =>
 })
 
 test('changing a type converts what fits and reports what does not', async () => {
-  const { planConversion } = await import('../src/trackerModel')
+  const { planConversion } = await import('../src/features/trackers/trackerModel')
   const column = { id: 'c_a', name: 'Go-Live', type: 'text' as const }
   const plan = planConversion(column, 'date', ['2026-02-28', 'Feb 28, 2026', '3 March 2026', 'No Date yet', '', undefined])
   assert.deepEqual(plan.cells.map(cell => cell.value), ['2026-02-28', '2026-02-28', '2026-03-03', '', '', ''])
@@ -63,7 +63,7 @@ test('changing a type converts what fits and reports what does not', async () =>
 })
 
 test('a text column can become a select made from its values, and back', async () => {
-  const { planConversion } = await import('../src/trackerModel')
+  const { planConversion } = await import('../src/features/trackers/trackerModel')
   const plan = planConversion({ id: 'c_s', name: 'Stage', type: 'text' as const }, 'select', ['Live', 'new', 'Live', 'LIVE', ''])
   assert.deepEqual(plan.options?.map(option => option.label), ['Live', 'new'])
   const live = plan.options![0].id
@@ -73,7 +73,7 @@ test('a text column can become a select made from its values, and back', async (
 })
 
 test('only basic text-like types can be converted', async () => {
-  const { planConversion } = await import('../src/trackerModel')
+  const { planConversion } = await import('../src/features/trackers/trackerModel')
   assert.throws(() => planConversion({ id: 'c_x', name: 'Secret', type: 'secret' as const }, 'text', []))
   assert.throws(() => planConversion({ id: 'c_x', name: 'Done', type: 'checkbox' as const }, 'text', []))
   assert.throws(() => planConversion({ id: 'c_x', name: 'Name', type: 'text' as const }, 'text', []))

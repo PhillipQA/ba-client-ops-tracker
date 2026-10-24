@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
 import { once } from 'node:events'
-import { newPhases, assertRtmMutation, reviseMatrix, reconcileRtm, type RtmMatrix, type RtmStore } from '../src/rtm'
-import { defaultTaskSettings } from '../src/data'
-import { validateRtmSources, validateRtmAiOutput, applyRtmAiSelection, type RtmAiPreview } from '../src/rtm-ai'
+import { newPhases, assertRtmMutation, reviseMatrix, reconcileRtm, type RtmMatrix, type RtmStore } from '../src/features/requirements/rtm'
+import { defaultTaskSettings } from '../src/app/data'
+import { validateRtmSources, validateRtmAiOutput, applyRtmAiSelection, type RtmAiPreview } from '../src/features/requirements/rtm-ai'
 import { registerRtmAiRoutes } from '../server/documents/rtm-ai'
 
 const sources = [

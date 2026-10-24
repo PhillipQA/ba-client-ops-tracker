@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Server } from 'node:http'
 import type { Request, Response, NextFunction } from 'express'
-import { APP_VERSION } from '../../src/version'
+import { APP_VERSION } from '../../src/shared/version'
 
 // Render recommends longer timeouts when its proxy reuses Node connections.
 // Keep the header timeout above the idle timeout; request limits stay unchanged.

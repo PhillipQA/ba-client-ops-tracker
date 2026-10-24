@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { capacityHoursBetween, effortRows, effortSummary, formatHours, normalizeEstimate, validateTimeEntryInput, workingDaysBetween, type TimeEntry } from '../src/effort'
+import { capacityHoursBetween, effortRows, effortSummary, formatHours, normalizeEstimate, validateTimeEntryInput, workingDaysBetween, type TimeEntry } from '../src/features/tasks/effort'
 import { addTimeEntry, applyEffortSaveRules, removeTimeEntry } from '../server/services/time-entries'
-import { boardColumns } from '../src/taskBoardModel'
+import { boardColumns } from '../src/features/tasks/taskBoardModel'
 import { workspaceVersion } from '../server/services/workspace-version'
-import type { TaskSettings, WorkItem } from '../src/types'
+import type { TaskSettings, WorkItem } from '../src/shared/types'
 
 const entry = (overrides: Partial<TimeEntry> = {}): TimeEntry => ({ id: crypto.randomUUID(), date: '2026-10-15', hours: 1, category: 'Analysis', note: '', userId: 'maria', userName: 'Maria', createdAt: '2026-10-15T01:00:00.000Z', ...overrides })
 

@@ -1,5 +1,5 @@
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
-import { isWaitingOnDone } from '../../src/waitingOn'
+import { isWaitingOnDone } from '../../src/features/tasks/waitingOn'
 
 const dayOffset = (date: string, days: number) => new Date(Date.parse(date + 'T12:00:00Z') + days * 86400000).toISOString().slice(0, 10)
 export function assistantPeriod(message: string, today: string) {

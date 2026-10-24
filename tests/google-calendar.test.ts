@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import express from 'express'
 import { CALENDAR_CALLBACK, CALENDAR_SCOPES, calendarRange, createCalendarStore, mapCalendarEvent, openCalendar, registerGoogleCalendarRoutes, sealCalendar, validateCredentials } from '../server/integrations/google-calendar'
-import { scheduleRange } from '../src/googleCalendar'
+import { scheduleRange } from '../src/features/integrations/googleCalendar'
 import { requirePlatformAdmin } from '../server/platform/platform-auth'
 
 process.env.TENANT_INTEGRATION_MASTER_KEY = 'ab'.repeat(32)

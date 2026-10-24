@@ -1,5 +1,5 @@
 import express, { type Express } from 'express'
-import { openWaitingOnOptions } from '../../src/waitingOn'
+import { openWaitingOnOptions } from '../../src/features/tasks/waitingOn'
 import { moduleAllowed, requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
 import { followUpTimeZone } from '../core/config'
 import { aiAgents, integrations } from '../core/services'

@@ -3,9 +3,9 @@ import rateLimit from 'express-rate-limit'
 import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
 import { aiProviderName, IntegrationError, normalizeAiConfig } from '../integrations/tenant-integrations'
-import { archivedWorkReason } from '../../src/lifecycle'
-import type { RtmStore } from '../../src/rtm'
-import { validateRtmSources, validateRtmAiOutput } from '../../src/rtm-ai'
+import { archivedWorkReason } from '../../src/features/tasks/lifecycle'
+import type { RtmStore } from '../../src/features/requirements/rtm'
+import { validateRtmSources, validateRtmAiOutput } from '../../src/features/requirements/rtm-ai'
 
 export const RTM_AI_INSTRUCTIONS = `You are the Document Agent assisting a BA with a requirements traceability matrix.
 Return ONLY JSON: {"candidates":[{"key":"R1","parentKey":"","title":"...","description":"...","priority":"Medium","existingRequirementId":"","matchReason":"...","warnings":[],"evidence":[{"sourceId":"...","reference":"...","excerpt":"..."}]}],"gaps":[],"conflicts":[]}.

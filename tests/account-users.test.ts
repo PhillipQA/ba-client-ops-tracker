@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
 import { registerAccountUsers } from '../server/accounts/account-users'
-import { normalizeClientThemes, themeForContext } from '../src/theme'
-import { normalizeInterfaceMode } from '../src/appearance'
+import { normalizeClientThemes, themeForContext } from '../src/features/settings/theme'
+import { normalizeInterfaceMode } from '../src/features/settings/appearance'
 import { preserveInterfaceModes } from '../server/accounts/preferences'
 
 async function fixture(run: (f: any) => Promise<void>) {

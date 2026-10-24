@@ -4,9 +4,9 @@ import Docxtemplater from 'docxtemplater'
 import { PDFDocument } from 'pdf-lib'
 import type { Express, RequestHandler } from 'express'
 import { documentTemplateRow, IntegrationError } from '../integrations/tenant-integrations'
-import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_FORM_TYPES, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, SIGNOFF_TABLE_MAX_ROWS, SIGNOFF_TEMPLATE_KIND, extraSignoffForm, formatDeploymentDate, signoffReference, GO_LIVE_TYPES, signoffSectionFields, SIGNOFF_MAX_SIGNATORIES, signoffSectionDefaults, type SignoffFormType, type SignoffInput } from '../../src/signoff'
+import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_FORM_TYPES, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, SIGNOFF_TABLE_MAX_ROWS, SIGNOFF_TEMPLATE_KIND, extraSignoffForm, formatDeploymentDate, signoffReference, GO_LIVE_TYPES, signoffSectionFields, SIGNOFF_MAX_SIGNATORIES, signoffSectionDefaults, type SignoffFormType, type SignoffInput } from '../../src/features/documents/signoff'
 import { prepareSignoffTemplate } from './signoff-template'
-import { safeDocumentStem } from '../../src/documentFilename'
+import { safeDocumentStem } from '../../src/features/documents/documentFilename'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const supported = new Set(['png', 'jpg', 'jpeg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'zip'])

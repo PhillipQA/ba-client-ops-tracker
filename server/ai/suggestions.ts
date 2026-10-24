@@ -1,5 +1,5 @@
 // Cleaning up task suggestions the AI returns.
-import { openWaitingOnOptions } from '../../src/waitingOn'
+import { openWaitingOnOptions } from '../../src/features/tasks/waitingOn'
 
 const allowedKinds = new Set(['issue', 'requirement', 'follow_up', 'activity', 'draft_reply'])
 

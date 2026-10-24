@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { itemMatchesActionCenterScope, resolveActionCenterScope, trackedActionCenterUsers } from '../src/actionCenterScope'
-import type { UserAccount } from '../src/types'
+import { itemMatchesActionCenterScope, resolveActionCenterScope, trackedActionCenterUsers } from '../src/features/action-center/actionCenterScope'
+import type { UserAccount } from '../src/shared/types'
 
 const accounts = [
   { id: 'admin', name: 'Admin', role: 'Administrator', status: 'Active' },

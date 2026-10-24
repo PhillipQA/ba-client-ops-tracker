@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { defaultTaskSettings } from '../src/data'
-import { assertRtmMutation, reconcileRtm, reviseMatrix, newPhases, stageResult, matrixCoverage, type RtmMatrix, type RtmStore, type RtmActor } from '../src/rtm'
-import { importRequirements, parseCsv } from '../src/rtm-export'
-import type { WorkItem } from '../src/types'
+import { defaultTaskSettings } from '../src/app/data'
+import { assertRtmMutation, reconcileRtm, reviseMatrix, newPhases, stageResult, matrixCoverage, type RtmMatrix, type RtmStore, type RtmActor } from '../src/features/requirements/rtm'
+import { importRequirements, parseCsv } from '../src/features/requirements/rtm-export'
+import type { WorkItem } from '../src/shared/types'
 const actor: RtmActor = { id: 'a', name: 'Test BA', role: 'Administrator', modules: ['requirements', 'items', 'clients', 'projects'] }
 export function fixture(): RtmStore {
   const matrix: RtmMatrix = { id: 'm', name: 'POS Enhancement', clientId: 'c', projectId: 'p', enhancement: 'Authentication', contract: 'CRF-001', version: '1.0', ownerId: '', environment: 'UAT', status: 'Active', revision: 1, nextRequirementNumber: 2, createdAt: '2026-09-25T01:00:00Z', updatedAt: '2026-09-25T01:00:00Z', history: [], requirements: [{ id: 'r', code: 'REQ-001', title: 'Sign on', description: 'Valid credentials allow access', parentId: '', environment: 'UAT', priority: 'High', revision: 1, needsReview: false, phases: newPhases() }] }

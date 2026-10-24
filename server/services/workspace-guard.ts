@@ -1,9 +1,9 @@
-import { assertLifecycleMutation, LifecycleError, stableRecord, type LifecycleActor, type LifecycleStore } from '../../src/lifecycle'
+import { assertLifecycleMutation, LifecycleError, stableRecord, type LifecycleActor, type LifecycleStore } from '../../src/features/tasks/lifecycle'
 
 /** Serialize snapshot commits per tenant and recheck the authoritative state immediately before saving. */
 export function createWorkspaceGuard(load: (id: string) => Promise<LifecycleStore | null>, fallback: () => LifecycleStore) {
   const pending = new Map<string, Promise<unknown>>()
-  return async function guarded<T>(id: string, next: LifecycleStore, actor: LifecycleActor | null, before: LifecycleStore | undefined, write: (current: LifecycleStore & { rtms?: import('../../src/rtm').RtmMatrix[] }) => Promise<T>): Promise<T> {
+  return async function guarded<T>(id: string, next: LifecycleStore, actor: LifecycleActor | null, before: LifecycleStore | undefined, write: (current: LifecycleStore & { rtms?: import('../../src/features/requirements/rtm').RtmMatrix[] }) => Promise<T>): Promise<T> {
     const previous = pending.get(id) || Promise.resolve()
     const job = previous.catch(() => undefined).then(async () => {
       const current = await load(id) || fallback()

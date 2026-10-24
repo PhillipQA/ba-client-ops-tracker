@@ -1,7 +1,7 @@
 import { type AppState, type SignedInUser } from '../../app/useAppState'
 import { ChevronRight, Clock3, LayoutGrid, List, Pencil, Plus, Search, Table2, Users } from 'lucide-react'
 import { StatusChip } from '../../shared/ui/Chips'
-import { isArchived } from '../../lifecycle'
+import { isArchived } from '../tasks/lifecycle'
 import { niceDate } from '../../shared/dates'
 
 /** Clients screen. It reads the app state; see app/useAppState. */

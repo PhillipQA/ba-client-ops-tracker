@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeSync, planSync, sheetIdFrom, tabRange, type SyncRow } from '../src/trackerSync'
-import type { TrackerColumn } from '../src/trackerModel'
+import { describeSync, planSync, sheetIdFrom, tabRange, type SyncRow } from '../src/features/trackers/trackerSync'
+import type { TrackerColumn } from '../src/features/trackers/trackerModel'
 
 const columns: TrackerColumn[] = [
   { id: 'c_branch', name: 'Branch #', type: 'text', synced: true },

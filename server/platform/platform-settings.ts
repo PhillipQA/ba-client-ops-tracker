@@ -1,6 +1,6 @@
 import type { Express } from 'express'
-import { APP_VERSION } from '../../src/version'
-import { applyWaitingOnRenames, planWaitingOnUpdate, waitingOnOptions } from '../../src/waitingOn'
+import { APP_VERSION } from '../../src/shared/version'
+import { applyWaitingOnRenames, planWaitingOnUpdate, waitingOnOptions } from '../../src/features/tasks/waitingOn'
 import { encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
 
 export function registerPlatformSettings(app: Express, d: any) {

@@ -1,5 +1,5 @@
-import { ForgotPassword } from '../PasswordRecovery'
-import { APP_VERSION } from '../version'
+import { ForgotPassword } from '../features/accounts/PasswordRecovery'
+import { APP_VERSION } from '../shared/version'
 import { ArrowRight, Building2, Eye, EyeOff, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react'
 import { FormEvent, useState } from 'react'
 

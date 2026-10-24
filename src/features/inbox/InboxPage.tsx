@@ -1,13 +1,13 @@
 import { type AppState, type SignedInUser } from '../../app/useAppState'
-import WorkHub from '../../WorkHub'
-import { loadCloudStore } from '../../cloudStore'
+import WorkHub from '../work-hub/WorkHub'
+import { loadCloudStore } from '../../app/cloudStore'
 import { isTaskClosed, normalizeStore, seedStore, type Store } from '../../app/store'
 import { CheckCircle2, Inbox, Plus, Sparkles } from 'lucide-react'
 import { FilterBar } from '../tasks/TaskTable'
-import { isWaitingOnDone, waitingOnOptions } from '../../waitingOn'
+import { isWaitingOnDone, waitingOnOptions } from '../tasks/waitingOn'
 import { Empty, InquirySourceBadge, PriorityChip, StatusChip } from '../../shared/ui/Chips'
 import { niceDate } from '../../shared/dates'
-import { docHubLabels } from '../../dochub'
+import { docHubLabels } from '../documents/dochub'
 
 /** Inbox screen. It reads the app state; see app/useAppState. */
 export function InboxPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {

@@ -5,7 +5,7 @@ import PizZip from 'pizzip'
 import { aiProviderName, IntegrationError, normalizeAiConfig } from '../integrations/tenant-integrations'
 import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
-import { reviewCoverage, requirementRefs, TEST_CASE_COLUMNS, type CoverageMap, type CoverageRequirement, type TestCasePreview, type TestCaseRow, type TestCaseSource } from '../../src/testcase-model'
+import { reviewCoverage, requirementRefs, TEST_CASE_COLUMNS, type CoverageMap, type CoverageRequirement, type TestCasePreview, type TestCaseRow, type TestCaseSource } from '../../src/features/documents/testcase-model'
 
 function clean(value: unknown, label: string, max: number, required = false) {
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) throw new IntegrationError(`Invalid ${label}.`)

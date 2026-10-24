@@ -1,5 +1,5 @@
-import { type Client, type ItemType, type Priority, type TaskSettings, type WaitingOn, type WorkItem } from '../../types'
-import { waitingOnTone } from '../../waitingOn'
+import { type Client, type ItemType, type Priority, type TaskSettings, type WaitingOn, type WorkItem } from '../types'
+import { waitingOnTone } from '../../features/tasks/waitingOn'
 import { CheckCircle2 } from 'lucide-react'
 
 export function Empty({ text }: { text: string }) { return <div className="empty"><CheckCircle2 size={28} /><p>{text}</p></div> }

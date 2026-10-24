@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createContactBook } from '../server/integrations/gmail-contacts'
-import { applySuggestion, cleanName, currentToken, emailForName, isAutomaticAddress, matchPeople, nameKey } from '../src/emailSuggest'
-import { knownPeople } from '../src/knownPeople'
-import { splitMailboxes } from '../src/emailCompose'
+import { applySuggestion, cleanName, currentToken, emailForName, isAutomaticAddress, matchPeople, nameKey } from '../src/features/email/emailSuggest'
+import { knownPeople } from '../src/shared/knownPeople'
+import { splitMailboxes } from '../src/features/email/emailCompose'
 
 test('names and addresses are read from a pasted list', () => {
   assert.deepEqual(splitMailboxes('"Cruz, Ana" <ana@acme.com>, kim@acme.com; Bo \\"B\\" <bo@x.com>'), [

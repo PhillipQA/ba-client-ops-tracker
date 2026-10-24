@@ -3,7 +3,7 @@ import type { Express, Request, Response, NextFunction } from 'express'
 import OpenAI from 'openai'
 import PizZip from 'pizzip'
 import rateLimit from 'express-rate-limit'
-import { requiredSignoffTags } from '../../src/signoff'
+import { requiredSignoffTags } from '../../src/features/documents/signoff'
 
 export type IntegrationKind = 'discord' | 'openai'
 export type AiProvider = 'gemini' | 'openai' | 'anthropic' | 'deepseek'

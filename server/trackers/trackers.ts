@@ -5,8 +5,8 @@ import { decryptSecret, encryptSecret, encryptionKey, IntegrationError } from '.
 import {
   TRACKER_LIMITS, TrackerError, TRACKER_CLIENTS, canConvertType, cleanCell, splitClientIds, cleanName, cleanSecret, isBasicType, isColumnType, isEmptyCell, normalizeColumns, normalizeViews, planConversion,
   type Cell, type SyncReport, type Tracker, type TrackerColumn, type TrackerRow, type TrackerSource,
-} from '../../src/trackerModel'
-import { SYNC_LIMITS, describeSync, planSync, sheetIdFrom, tabRange } from '../../src/trackerSync'
+} from '../../src/features/trackers/trackerModel'
+import { SYNC_LIMITS, describeSync, planSync, sheetIdFrom, tabRange } from '../../src/features/trackers/trackerSync'
 
 /**
  * Trackers: user-defined sheets. A tracker owns its columns and views; its rows live in their own table so one

@@ -1,9 +1,9 @@
 import { type AppState, type SignedInUser } from '../../app/useAppState'
 import { FilterBar, TaskTable } from './TaskTable'
-import { waitingOnOptions } from '../../waitingOn'
+import { waitingOnOptions } from './waitingOn'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { Columns3, Table2 } from 'lucide-react'
-import TaskBoard from '../../TaskBoard'
+import TaskBoard from './TaskBoard'
 
 /** Tasks screen. It reads the app state; see app/useAppState. */
 export function TasksPage({ app }: { app: AppState }) {

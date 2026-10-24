@@ -1,5 +1,5 @@
-import { isValidEmail, splitMailboxes } from '../../src/emailCompose'
-import { cleanName, isAutomaticAddress, matchPeople, type RankedPerson } from '../../src/emailSuggest'
+import { isValidEmail, splitMailboxes } from '../../src/features/email/emailCompose'
+import { cleanName, isAutomaticAddress, matchPeople, type RankedPerson } from '../../src/features/email/emailSuggest'
 
 /**
  * The people a person has written to or heard from, for type-ahead in the email composer.

@@ -1,4 +1,4 @@
-import { FSD_MODULES, isCustomFsdFeature, type FsdFeature, type FsdModule } from '../../src/fsd-model'
+import { FSD_MODULES, isCustomFsdFeature, type FsdFeature, type FsdModule } from '../../src/features/documents/fsd-model'
 import { IntegrationError } from '../integrations/tenant-integrations'
 
 export function validateFsdScope(body: any, allowUnnamed = false): { modules: FsdModule[]; features?: FsdFeature[] } {

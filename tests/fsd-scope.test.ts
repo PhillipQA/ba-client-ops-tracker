@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { FSD_MODULES, FSD_SECTIONS, fsdExcludedModules, fsdSectionsForModules } from '../src/fsd-model'
+import { FSD_MODULES, FSD_SECTIONS, fsdExcludedModules, fsdSectionsForModules } from '../src/features/documents/fsd-model'
 
 const ids = (modules: Parameters<typeof fsdSectionsForModules>[0]) => fsdSectionsForModules(modules).map(([id]) => id)
 

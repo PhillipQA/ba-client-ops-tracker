@@ -1,4 +1,4 @@
-import { canRemoveTimeEntry, MAX_ENTRIES_PER_TASK, normalizeEstimate, validateTimeEntryInput, type TimeEntry } from '../../src/effort'
+import { canRemoveTimeEntry, MAX_ENTRIES_PER_TASK, normalizeEstimate, validateTimeEntryInput, type TimeEntry } from '../../src/features/tasks/effort'
 
 type Actor = { id: string; name?: string; username?: string; role?: string }
 type Result<T> = { ok: true; value: T } | { ok: false; status: number; error: string }

@@ -7,8 +7,8 @@ import { hasScope, READ_SCOPE, SEND_SCOPE } from './gmail-send'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
-import { findCommunicationTaskDuplicate } from '../../src/communicationTasks'
-import { defaultWaitingOn } from '../../src/waitingOn'
+import { findCommunicationTaskDuplicate } from '../../src/features/work-hub/communicationTasks'
+import { defaultWaitingOn } from '../../src/features/tasks/waitingOn'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 const CALLBACK = '/api/communications/gmail/callback'

@@ -4,7 +4,7 @@ import express from 'express'
 import { registerOutbound } from '../server/integrations/gmail-outbound'
 import { buildMessage, hasScope, messageIds, mimeWords, SEND_SCOPE, READ_SCOPE } from '../server/integrations/gmail-send'
 import { IntegrationError } from '../server/integrations/tenant-integrations'
-import { blockedAttachmentReason, extractAddress, parseRecipients, quoteReply, recipientSummary, replyRecipients, replySubject, splitAddresses } from '../src/emailCompose'
+import { blockedAttachmentReason, extractAddress, parseRecipients, quoteReply, recipientSummary, replyRecipients, replySubject, splitAddresses } from '../src/features/email/emailCompose'
 
 /** Minimal MIME reader for the messages this feature writes: unfolds headers and splits one level of multipart. */
 function readMime(raw: Buffer) {

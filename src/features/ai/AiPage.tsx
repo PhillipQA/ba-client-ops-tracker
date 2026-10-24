@@ -1,6 +1,6 @@
 import { type AppState, type SignedInUser } from '../../app/useAppState'
-import AIAssistant from '../../AIAssistant'
-import { isArchived } from '../../lifecycle'
+import AIAssistant from './AIAssistant'
+import { isArchived } from '../tasks/lifecycle'
 
 /** Ai screen. It reads the app state; see app/useAppState. */
 export function AiPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {

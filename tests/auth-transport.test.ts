@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import express from 'express'
 import { authRequestDiagnostics, configureHttpServer } from '../server/auth/auth-transport'
-import { getAuthSession, login, logout } from '../src/auth'
-import { APP_VERSION } from '../src/version'
+import { getAuthSession, login, logout } from '../src/features/accounts/auth'
+import { APP_VERSION } from '../src/shared/version'
 
 const originalFetch = globalThis.fetch
 

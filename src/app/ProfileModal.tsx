@@ -1,5 +1,5 @@
-import { type AppTheme, THEME_OPTIONS, normalizeAppTheme } from '../theme'
-import { type UserAccount } from '../types'
+import { type AppTheme, THEME_OPTIONS, normalizeAppTheme } from '../features/settings/theme'
+import { type UserAccount } from '../shared/types'
 import { X } from 'lucide-react'
 import { FormEvent, useState } from 'react'
 

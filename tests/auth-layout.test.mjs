@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 // Source-level CSS contract checks. These do not replace a browser layout test.
-const source = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+const source = readFileSync(new URL('../src/styles/styles.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 const rules = [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selectors, body]) => ({
   selectors: selectors.split(',').map((selector) => selector.trim()),
   declarations: Object.fromEntries(body.split(';').filter((line) => line.includes(':')).map((line) => {
@@ -20,7 +20,7 @@ const firstRule = (selector) => {
 test('login and recovery both use the shared 470px responsive card width', () => {
   assert.equal(firstRule('.account-login-card').width, 'min(470px, 100%)')
   const login = readFileSync(new URL('../src/app/AuthScreens.tsx', import.meta.url), 'utf8')
-  const recovery = readFileSync(new URL('../src/PasswordRecovery.tsx', import.meta.url), 'utf8')
+  const recovery = readFileSync(new URL('../src/features/accounts/PasswordRecovery.tsx', import.meta.url), 'utf8')
   assert.match(login, /className="auth-card account-login-card auth-card-modern"/)
   assert.match(recovery, /className="auth-card account-login-card"/)
 })

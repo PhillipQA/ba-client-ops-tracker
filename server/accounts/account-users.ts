@@ -1,7 +1,7 @@
 import type { Express, Request, RequestHandler } from 'express'
 import { randomUUID } from 'node:crypto'
-import { normalizeAppTheme, THEME_IDS } from '../../src/theme'
-import { normalizeInterfaceMode } from '../../src/appearance'
+import { normalizeAppTheme, THEME_IDS } from '../../src/features/settings/theme'
+import { normalizeInterfaceMode } from '../../src/features/settings/appearance'
 
 type Dependencies = {
   requireAuth: RequestHandler

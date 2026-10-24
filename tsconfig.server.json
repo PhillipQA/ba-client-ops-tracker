@@ -11,15 +11,15 @@
   "include": [
     "server.ts",
     "server/**/*.ts",
-    "src/lifecycle.ts",
-    "src/theme.ts",
-    "src/signoff.ts",
-    "src/fsd-model.ts",
-    "src/testcase-model.ts",
-    "src/version.ts",
-    "src/subtaskAssignment.ts",
-    "src/types.ts",
-    "src/effort.ts",
-    "src/waitingOn.ts"
+    "src/features/tasks/lifecycle.ts",
+    "src/features/settings/theme.ts",
+    "src/features/documents/signoff.ts",
+    "src/features/documents/fsd-model.ts",
+    "src/features/documents/testcase-model.ts",
+    "src/shared/version.ts",
+    "src/features/tasks/subtaskAssignment.ts",
+    "src/shared/types.ts",
+    "src/features/tasks/effort.ts",
+    "src/features/tasks/waitingOn.ts"
   ]
 }

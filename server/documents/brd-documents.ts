@@ -7,8 +7,8 @@ import { aiProviderName, documentTemplateRow, IntegrationError, normalizeAiConfi
 import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
 import { runAiJson } from '../ai/parse-ai-json'
-import { brdReference, type BrdDetails, type BrdMappingRow, type BrdPreview, type BrdRequirement, type BrdSource, type BrdStakeholder } from '../../src/brd-model'
-import { documentOutputName } from '../../src/documentFilename'
+import { brdReference, type BrdDetails, type BrdMappingRow, type BrdPreview, type BrdRequirement, type BrdSource, type BrdStakeholder } from '../../src/features/documents/brd-model'
+import { documentOutputName } from '../../src/features/documents/documentFilename'
 
 const DOCX_MIME='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 function text(value:unknown,label:string,max:number,required=false){

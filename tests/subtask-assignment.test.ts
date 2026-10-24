@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applySubtaskAssignmentInheritance, normalizeSubtaskAssignmentInheritance, type AssignmentItem } from '../src/subtaskAssignment'
+import { applySubtaskAssignmentInheritance, normalizeSubtaskAssignmentInheritance, type AssignmentItem } from '../src/features/tasks/subtaskAssignment'
 
 const parent = (assignedToUserId?: string): AssignmentItem => ({ id: 'task-1', assignedToUserId })
 const subtask = (assignedToUserId?: string, assignmentInherited?: boolean): AssignmentItem => ({

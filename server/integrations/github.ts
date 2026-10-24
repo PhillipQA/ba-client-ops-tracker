@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
-import { GITHUB_QA_STATUSES, type GithubRepository } from '../../src/github-model'
+import { GITHUB_QA_STATUSES, type GithubRepository } from '../../src/features/integrations/github-model'
 import { linkedTaskSchedule } from './linked-task-fields'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
 import { GithubError, githubIdentity, githubIssue, githubRepoPath, githubRepositoryName, githubRequest } from './github-api'

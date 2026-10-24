@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { columnTotal, evaluateFormula, formulaCycle, formulaFromText, formulaToText, normalizeColumns, splitClientIds, type TrackerColumn } from '../src/trackerModel'
+import { columnTotal, evaluateFormula, formulaCycle, formulaFromText, formulaToText, normalizeColumns, splitClientIds, type TrackerColumn } from '../src/features/trackers/trackerModel'
 
 const cols = (): TrackerColumn[] => [
   { id: 'c_name', name: 'Site', type: 'text' },

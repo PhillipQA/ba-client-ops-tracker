@@ -1,6 +1,6 @@
 import { type AppState, type SignedInUser } from '../../app/useAppState'
 import { Pencil, Plus } from 'lucide-react'
-import { isArchived } from '../../lifecycle'
+import { isArchived } from '../tasks/lifecycle'
 import { Empty, StatusChip } from '../../shared/ui/Chips'
 import { niceDate } from '../../shared/dates'
 

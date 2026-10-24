@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { stableRecord } from '../../src/lifecycle'
+import { stableRecord } from '../../src/features/tasks/lifecycle'
 
 /** Only fields saved by the workspace editor. Dedicated APIs own attachments,
  * comments, time entries, accounts and append-only activity; those are preserved on PUT. */

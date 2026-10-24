@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import express from 'express'
 import { registerTrackerRoutes } from '../server/trackers/trackers'
-import { TRACKER_LIMITS } from '../src/trackerModel'
+import { TRACKER_LIMITS } from '../src/features/trackers/trackerModel'
 
 type Row = Record<string, any>
 const KEYS: Record<string, string[]> = { tenant_trackers: ['tenant_id', 'id'], tenant_tracker_rows: ['tenant_id', 'tracker_id', 'id'], tenant_tracker_changes: ['id'], tenant_tracker_task_links: ['id'] }

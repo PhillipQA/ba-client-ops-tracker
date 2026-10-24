@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createWorkHubSync, WORK_HUB_INTEGRATIONS } from '../src/workHubSync'
-import type { AuthUser } from '../src/auth'
+import { createWorkHubSync, WORK_HUB_INTEGRATIONS } from '../src/features/work-hub/workHubSync'
+import type { AuthUser } from '../src/features/accounts/auth'
 
 const user: AuthUser = { id: 'alice', organizationId: 'tenant-a', username: 'alice', name: 'Alice', email: '', phone: '', role: 'Contributor', status: 'Active', modules: ['inbox', 'items'], accountType: 'tenant', lastLoginAt: '2026-10-08T02:00:00Z' }
 const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }

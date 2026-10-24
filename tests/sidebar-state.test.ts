@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SIDEBAR_COLLAPSED_KEY, readSidebarCollapsed, writeSidebarCollapsed } from '../src/sidebarState'
+import { SIDEBAR_COLLAPSED_KEY, readSidebarCollapsed, writeSidebarCollapsed } from '../src/app/sidebarState'
 
 function fakeStore(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial))

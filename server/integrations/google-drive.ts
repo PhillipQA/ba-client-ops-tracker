@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { decryptSecret, encryptSecret, IntegrationError } from './tenant-integrations'
-import { archivedWorkReason, LifecycleError } from '../../src/lifecycle'
+import { archivedWorkReason, LifecycleError } from '../../src/features/tasks/lifecycle'
 import { attachmentContentType } from './gmail-content'
 
 /**

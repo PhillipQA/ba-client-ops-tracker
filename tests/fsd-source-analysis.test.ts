@@ -3,7 +3,7 @@ import test from 'node:test'
 import express from 'express'
 import { registerFsdRoutes } from '../server/documents/fsd-documents'
 import { groundingFromSourceAnalyses, sourceAnalysisFingerprint, validateSourceAnalysis } from '../server/documents/fsd-source-analysis'
-import { emptyFsdDraft, fsdSectionsForModules, type FsdSource, type FsdSourceAnalysis } from '../src/fsd-model'
+import { emptyFsdDraft, fsdSectionsForModules, type FsdSource, type FsdSourceAnalysis } from '../src/features/documents/fsd-model'
 
 const source: FsdSource = { id:'SRC-001',name:'BRD.txt',kind:'BRD',target:'',text:'MMS Report lists stock. The report shows amounts in PHP.' }
 const modules = ['MMS Report'] as const

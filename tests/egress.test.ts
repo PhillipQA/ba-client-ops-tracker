@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { startActivePolling, workspaceAutoRefreshAllowed, type PollEnvironment } from '../src/activePolling'
-import { loadCloudStore, queueCloudStoreSave, resetCloudSession } from '../src/cloudStore'
+import { startActivePolling, workspaceAutoRefreshAllowed, type PollEnvironment } from '../src/app/activePolling'
+import { loadCloudStore, queueCloudStoreSave, resetCloudSession } from '../src/app/cloudStore'
 import { readNotificationState, readWorkspaceRevision, workspaceRevision } from '../server/services/workspace-reads'
 
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }

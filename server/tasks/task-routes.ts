@@ -1,6 +1,6 @@
 import express, { type Express } from 'express'
 import { randomUUID } from 'node:crypto'
-import { archivedWorkReason, LifecycleError } from '../../src/lifecycle'
+import { archivedWorkReason, LifecycleError } from '../../src/features/tasks/lifecycle'
 import { moduleAllowed, requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
 import { followUpTimeZone } from '../core/config'
 import { supabaseAdmin } from '../core/database'

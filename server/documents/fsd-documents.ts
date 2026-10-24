@@ -8,12 +8,12 @@ import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
 import { parseAiJson, runAiJson } from '../ai/parse-ai-json'
 import { renderFsdDocx } from './fsd-export'
-import { FSD_SECTIONS, isCustomFsdFeature, isFsdFeatureSection, fsdExcludedModules, fsdSectionsForModules, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource, type FsdModule, type FsdSectionId, type FsdFeature } from '../../src/fsd-model'
-import { documentOutputName } from '../../src/documentFilename'
+import { FSD_SECTIONS, isCustomFsdFeature, isFsdFeatureSection, fsdExcludedModules, fsdSectionsForModules, type FsdDetails, type FsdPreview, type FsdSection, type FsdBlock, type FsdSource, type FsdModule, type FsdSectionId, type FsdFeature } from '../../src/features/documents/fsd-model'
+import { documentOutputName } from '../../src/features/documents/documentFilename'
 import { availableFsdGaps, completeAvailableSections, pendingFsdSection, unavailableFsdInputs, fsdInputCoverage } from './fsd-available'
 import { validateFsdScope } from './fsd-scope'
 import { normalizeFeaturePreview } from './fsd-feature-preview'
-import { fsdFeatureCode } from '../../src/fsd-features'
+import { fsdFeatureCode } from '../../src/features/documents/fsd-features'
 
 function text(value: unknown, label: string, max = 200, required = false) {
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) throw new IntegrationError(`Invalid ${label} (maximum ${max} characters).`)

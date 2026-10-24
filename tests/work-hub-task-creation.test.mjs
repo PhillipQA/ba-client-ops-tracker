@@ -13,8 +13,8 @@ dom.window.HTMLElement.prototype.scrollIntoView = () => {}
 
 const React = await import('react')
 const { createRoot } = await import('react-dom/client')
-const { default: WorkHub } = await import('../src/WorkHub.tsx')
-const { workHubSync } = await import('../src/workHubSync.ts')
+const { default: WorkHub } = await import('../src/features/work-hub/WorkHub.tsx')
+const { workHubSync } = await import('../src/features/work-hub/workHubSync.ts')
 after(() => { dom.window.close(); for (const [key, descriptor] of restored) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] } })
 
 async function fixture({ tasks = [], serverDuplicate = false, refreshFails = false, validationFails = false } = {}) {

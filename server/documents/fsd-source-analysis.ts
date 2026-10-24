@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { FSD_SECTIONS, isCustomFsdFeature, fsdExcludedModules, fsdSectionsForModules, type FsdFeature, type FsdModule, type FsdSource, type FsdSourceAnalysis, type FsdSourceCoverage } from '../../src/fsd-model'
+import { FSD_SECTIONS, isCustomFsdFeature, fsdExcludedModules, fsdSectionsForModules, type FsdFeature, type FsdModule, type FsdSource, type FsdSourceAnalysis, type FsdSourceCoverage } from '../../src/features/documents/fsd-model'
 import { IntegrationError } from '../integrations/tenant-integrations'
 import { fsdInterpretationInstructions, interpretRequirements, rejectExcludedMentions } from './fsd-grounding'
 import { validateFsdScope } from './fsd-scope'

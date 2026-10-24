@@ -1,8 +1,8 @@
 // Loading and saving each organisation's workspace.
-import { normalizeInterfaceMode } from '../../src/appearance'
-import { LifecycleError } from '../../src/lifecycle'
-import { assertRtmMutation, reconcileRtm } from '../../src/rtm'
-import { normalizeAppTheme, normalizeClientThemes } from '../../src/theme'
+import { normalizeInterfaceMode } from '../../src/features/settings/appearance'
+import { LifecycleError } from '../../src/features/tasks/lifecycle'
+import { assertRtmMutation, reconcileRtm } from '../../src/features/requirements/rtm'
+import { normalizeAppTheme, normalizeClientThemes } from '../../src/features/settings/theme'
 import { dateKeyInTimeZone, type FollowUpRolloverChange, rollOverOpenSubtaskFollowUps } from '../services/follow-up-rollover'
 import { reconcileNotifications } from '../services/notification-engine'
 import { createWorkspaceGuard } from '../services/workspace-guard'

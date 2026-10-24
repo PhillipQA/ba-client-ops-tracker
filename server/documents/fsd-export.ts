@@ -1,5 +1,5 @@
 import PizZip from 'pizzip'
-import { isFsdFeatureSection, FSD_NOTICE, fsdReference, type FsdDetails, type FsdPreview, type FsdBlock } from '../../src/fsd-model'
+import { isFsdFeatureSection, FSD_NOTICE, fsdReference, type FsdDetails, type FsdPreview, type FsdBlock } from '../../src/features/documents/fsd-model'
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 const xml = (v: string) => v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;')

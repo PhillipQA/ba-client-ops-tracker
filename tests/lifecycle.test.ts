@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { assertLifecycleMutation, archiveBlockers, archivedWorkReason, LifecycleError, type LifecycleStore } from '../src/lifecycle'
+import { assertLifecycleMutation, archiveBlockers, archivedWorkReason, LifecycleError, type LifecycleStore } from '../src/features/tasks/lifecycle'
 import { createWorkspaceGuard } from '../server/services/workspace-guard'
 
 const admin = { role: 'Administrator', modules: ['clients', 'projects', 'items', 'action'], accountType: 'tenant' }

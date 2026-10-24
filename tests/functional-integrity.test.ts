@@ -2,13 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { workspaceVersion, mergeActivity } from '../server/services/workspace-version'
 import { validateCoverage, validatePreview } from '../server/documents/testcase-documents'
-import { reviewCoverage } from '../src/testcase-model'
+import { reviewCoverage } from '../src/features/documents/testcase-model'
 import { assertFsdGrounding, interpretRequirements } from '../server/documents/fsd-grounding'
 import { buildAssistantContext, assistantPeriod } from '../server/ai/assistant-context'
 import { gmailBodyText, gmailWindowStart, syncGmailPages } from '../server/integrations/gmail-content'
-import { businessDateKey, setBusinessTimeZone } from '../src/businessDate'
+import { businessDateKey, setBusinessTimeZone } from '../src/shared/businessDate'
 import { reconcileNotifications } from '../server/services/notification-engine'
-import { defaultTaskSettings } from '../src/data'
+import { defaultTaskSettings } from '../src/app/data'
 const sources: any[]=[{id:'s',name:'BRD',kind:'BRD',text:'Stock is shown. Supervisor approval is required for refunds.',target:''}]
 const req=(id:string,quote:string)=>({id,title:quote,sourceIds:['s'],evidence:[{sourceId:'s',quote}],scenarios:['Check this requirement']})
 const coverage={requirements:[req('R1','Stock is shown.'),req('R2','Supervisor approval is required for refunds.')],gaps:[]}

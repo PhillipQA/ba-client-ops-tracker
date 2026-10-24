@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import {
   DEFAULT_WAITING_ON, applyWaitingOnRenames, defaultWaitingOn, doneWaitingOn, isWaitingOnDone,
   openWaitingOnOptions, planWaitingOnUpdate, waitingOnOptions, waitingOnTone,
-} from '../src/waitingOn'
-import { boardColumns } from '../src/taskBoardModel'
-import type { TaskSettings, WaitingOnDefinition, WorkItem } from '../src/types'
+} from '../src/features/tasks/waitingOn'
+import { boardColumns } from '../src/features/tasks/taskBoardModel'
+import type { TaskSettings, WaitingOnDefinition, WorkItem } from '../src/shared/types'
 
 const custom: WaitingOnDefinition[] = [
   { id: 'me', label: 'Me', done: false },

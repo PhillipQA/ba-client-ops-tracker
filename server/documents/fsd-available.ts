@@ -1,5 +1,5 @@
-import { fsdReadiness, suggestedFsdSectionInput } from '../../src/fsd-readiness'
-import type { FsdSectionId, FsdSource, FsdModule, FsdBlock, FsdFeature } from '../../src/fsd-model'
+import { fsdReadiness, suggestedFsdSectionInput } from '../../src/features/documents/fsd-readiness'
+import type { FsdSectionId, FsdSource, FsdModule, FsdBlock, FsdFeature } from '../../src/features/documents/fsd-model'
 import { IntegrationError } from '../integrations/tenant-integrations'
 
 /** Failed uploads are diagnostics, never empty requirement sources. */

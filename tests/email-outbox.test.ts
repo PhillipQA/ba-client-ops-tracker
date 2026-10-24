@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, mock, test } from 'node:test'
-import { outbox, UNDO_SECONDS, type EmailDraft } from '../src/emailOutbox'
+import { outbox, UNDO_SECONDS, type EmailDraft } from '../src/features/email/emailOutbox'
 
 const draft = (extra: Partial<EmailDraft> = {}): EmailDraft => ({
   to: 'Ana <ana@acme.com>, kim@acme.com', cc: '', bcc: '', subject: 'Signed DRF', message: 'Attached.', taskIds: ['s1'],

@@ -1,5 +1,5 @@
 import { IntegrationError } from './tenant-integrations'
-import { defaultWaitingOn, waitingOnOptions } from '../../src/waitingOn'
+import { defaultWaitingOn, waitingOnOptions } from '../../src/features/tasks/waitingOn'
 
 export type LinkedTaskSchedule = { waitingOn: string; startDate: string; dueDate: string; followUpDate: string }
 

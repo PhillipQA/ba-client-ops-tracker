@@ -3,11 +3,11 @@ import { test } from 'node:test'
 import {
   TRACKER_LIMITS, cleanCell, cleanSecret, normalizeColumns, normalizeViews, validDate,
   type TrackerColumn, type TrackerRow,
-} from '../src/trackerModel'
-import { filterRows, groupRows, makeLookup, rowTitle, searchRows, shown, signoffSummary, sortRows, visibleRows } from '../src/trackerQuery'
-import { csvField, exportCsv, exportFileName } from '../src/trackerExport'
-import { TRACKER_TEMPLATES, templateById } from '../src/trackerTemplates'
-import { defaultMappings, guessColumn, looksDayFirst, parseLooseDate, parseTable, planImport, toSource } from '../src/trackerImport'
+} from '../src/features/trackers/trackerModel'
+import { filterRows, groupRows, makeLookup, rowTitle, searchRows, shown, signoffSummary, sortRows, visibleRows } from '../src/features/trackers/trackerQuery'
+import { csvField, exportCsv, exportFileName } from '../src/features/trackers/trackerExport'
+import { TRACKER_TEMPLATES, templateById } from '../src/features/trackers/trackerTemplates'
+import { defaultMappings, guessColumn, looksDayFirst, parseLooseDate, parseTable, planImport, toSource } from '../src/features/trackers/trackerImport'
 
 const TODAY = '2026-10-23'
 

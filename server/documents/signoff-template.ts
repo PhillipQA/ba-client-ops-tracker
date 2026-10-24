@@ -1,5 +1,5 @@
 import PizZip from 'pizzip'
-import type { SignoffInput } from '../../src/signoff'
+import type { SignoffInput } from '../../src/features/documents/signoff'
 
 const visible = (value: string) => value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
 function emptyCell(cell: string) {

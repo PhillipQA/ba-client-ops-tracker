@@ -1,4 +1,4 @@
-import { normalizeInterfaceMode } from '../../src/appearance'
+import { normalizeInterfaceMode } from '../../src/features/settings/appearance'
 
 // Workspace snapshots can be stale in another user's tab. Only the authenticated
 // profile endpoint owns interface-mode changes, including restoring legacy mode.

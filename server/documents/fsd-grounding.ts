@@ -1,4 +1,4 @@
-import { FSD_MODULES, fsdModuleSection, isCustomFsdFeature, type FsdFeature, type FsdModule, type FsdPreview, type FsdSource } from '../../src/fsd-model'
+import { FSD_MODULES, fsdModuleSection, isCustomFsdFeature, type FsdFeature, type FsdModule, type FsdPreview, type FsdSource } from '../../src/features/documents/fsd-model'
 import { IntegrationError } from '../integrations/tenant-integrations'
 import { validateEvidence, type SourceEvidence } from './source-evidence'
 import { pendingFeatureMetadataTable } from './fsd-feature-preview'
