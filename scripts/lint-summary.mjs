@@ -56,5 +56,15 @@ const errors = diagnostics.filter(d => d.severity === 'error' && d.category !== 
 const text = d =>
   `${d.category} ${d.location?.path?.file ?? ''} ${JSON.stringify(d.location?.span ?? d.location?.start ?? '')} ${String(d.description ?? d.message ?? '').slice(0, 160)} | ${String(d.location?.sourceCode ?? '').slice(0, 0)}`
 for (let i = 0; i < Math.min(4, Math.ceil(errors.length / 15)); i++)
-  console.log(`::warning title=Lint errors ${i + 1}::${escape(errors.slice(i * 15, i * 15 + 15).map(text).join('\n'))}`)
-if (diagnostics[0]) console.log(`::notice title=Lint report shape::${escape(JSON.stringify(Object.keys(diagnostics[0])) + ' ' + JSON.stringify(diagnostics[0].location).slice(0, 600))}`)
+  console.log(
+    `::warning title=Lint errors ${i + 1}::${escape(
+      errors
+        .slice(i * 15, i * 15 + 15)
+        .map(text)
+        .join('\n'),
+    )}`,
+  )
+if (diagnostics[0])
+  console.log(
+    `::notice title=Lint report shape::${escape(JSON.stringify(Object.keys(diagnostics[0])) + ' ' + JSON.stringify(diagnostics[0].location).slice(0, 600))}`,
+  )
