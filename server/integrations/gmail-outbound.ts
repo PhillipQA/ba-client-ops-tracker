@@ -336,7 +336,7 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
       const blocked = blockedAttachmentReason(String(listed.name))
       if (blocked) throw new SendError(blocked)
       if (Number(listed.size) > remaining) throw tooLarge(String(listed.name))
-      let file
+      let file: Awaited<ReturnType<typeof deps.driveFile>>
       try {
         file = await deps.driveFile(tenantId, ref.taskId, ref.fileId, remaining)
       } catch (error) {

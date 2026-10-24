@@ -128,7 +128,7 @@ export function registerRtmAiRoutes(app: Express, deps: Deps) {
           422,
         )
       }
-      let preview
+      let preview: ReturnType<typeof validateRtmAiOutput>
       try {
         preview = validateRtmAiOutput(parsed, sources, matrix)
       } catch (e) {

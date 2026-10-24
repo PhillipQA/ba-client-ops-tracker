@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Copy, ExternalLink, Eye, EyeOff, ListChecks, LockKeyhole, Search, Trash2, X } from 'lucide-react'
 import type { Cell, Tracker, TrackerColumn, TrackerRow } from './trackerModel'
 import { cleanCell, isBasicType, isConnectedType } from './trackerModel'
@@ -100,7 +100,7 @@ function Field({
     setError('')
     onEdit(result.value)
   }
-  let control
+  let control: ReactNode
   switch (column.type) {
     case 'longtext':
       control = (

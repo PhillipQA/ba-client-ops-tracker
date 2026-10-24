@@ -50,7 +50,7 @@ export default function ActivityCommentPreview({ text, title }: { text: string; 
     const dismiss = (event: PointerEvent) => {
       if (!trigger.current?.contains(event.target as Node) && !panel.current?.contains(event.target as Node)) close()
     }
-    const escape = (event: KeyboardEvent) => {
+    const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
         close()
@@ -61,12 +61,12 @@ export default function ActivityCommentPreview({ text, title }: { text: string; 
       if (!panel.current?.contains(event.target as Node)) close()
     }
     document.addEventListener('pointerdown', dismiss)
-    document.addEventListener('keydown', escape)
+    document.addEventListener('keydown', closeOnEscape)
     window.addEventListener('resize', dismissOnMove)
     window.addEventListener('scroll', dismissOnMove, true)
     return () => {
       document.removeEventListener('pointerdown', dismiss)
-      document.removeEventListener('keydown', escape)
+      document.removeEventListener('keydown', closeOnEscape)
       window.removeEventListener('resize', dismissOnMove)
       window.removeEventListener('scroll', dismissOnMove, true)
     }

@@ -37,8 +37,8 @@ const names = [
   'an override can opt back into main-task inheritance',
   'unassigning the main task also unassigns inherited subtasks',
 ]
-const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const pattern = '^(?:' + names.map(escape).join('|') + ')$'
+const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const pattern = '^(?:' + names.map(escapeRegExp).join('|') + ')$'
 const files = [
   'tests/dochub.test.ts',
   'tests/follow-up-rollover.test.ts',

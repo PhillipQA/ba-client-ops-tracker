@@ -48,14 +48,14 @@ export default function NotificationCenter({
     const dismiss = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false)
     }
-    const escape = (event: KeyboardEvent) => {
+    const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
     }
     document.addEventListener('pointerdown', dismiss)
-    document.addEventListener('keydown', escape)
+    document.addEventListener('keydown', closeOnEscape)
     return () => {
       document.removeEventListener('pointerdown', dismiss)
-      document.removeEventListener('keydown', escape)
+      document.removeEventListener('keydown', closeOnEscape)
     }
   }, [open])
   return (
