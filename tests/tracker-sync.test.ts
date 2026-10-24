@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeSync, planSync, sheetIdFrom, tabRange, type SyncRow } from '../src/features/trackers/trackerSync'
+import {
+  checkKeyColumns,
+  describeSync,
+  planSync,
+  sheetIdFrom,
+  suggestedKeyColumn,
+  tabRange,
+  type SyncRow,
+} from '../src/features/trackers/trackerSync'
 import type { TrackerColumn } from '../src/features/trackers/trackerModel'
 
 const columns: TrackerColumn[] = [
@@ -121,4 +129,40 @@ test('a missing key column, an empty tab and the row limit are reported', () => 
   ])
   if ('error' in gone) return assert.fail(gone.error)
   assert.deepEqual(gone.report.missingHeaders.sort(), ['Go-live', 'Status', 'Terminals'])
+})
+
+test('key column check: which columns keep every row, and why the others drop rows', () => {
+  const headers = ['Client', 'Git #', 'Ticket Title', 'Notes']
+  const rows = [
+    ['EGG', '', '', ''],
+    ['', '101', 'Login fails', ''],
+    ['', '102', 'Report totals', 'x'],
+    ['PUMA', '', '', ''],
+    ['', '103', 'login fails', ''],
+    ['', '', '', ''],
+    ['egg', '104', 'Export', ''],
+  ]
+  const checks = checkKeyColumns(headers, rows)
+  const client = checks.find(check => check.header === 'Client')!
+  assert.deepEqual(
+    { kept: client.kept, blank: client.blank, repeated: client.repeated, unique: client.unique },
+    { kept: 2, blank: 3, repeated: 1, unique: false },
+    'blank rows are skipped, the empty row is ignored, and egg repeats EGG (case does not matter)',
+  )
+  assert.deepEqual(client.examples, ['egg'])
+  const git = checks.find(check => check.header === 'Git #')!
+  assert.equal(git.blank, 2)
+  assert.equal(git.unique, false)
+  const title = checks.find(check => check.header === 'Ticket Title')!
+  assert.equal(title.repeated, 1, 'Login fails and login fails are the same key')
+  assert.equal(suggestedKeyColumn(checks), 'Git #', 'no column is unique, so the one keeping most rows is suggested')
+
+  const branches = [
+    ['North', 'B1'],
+    ['North', 'B2'],
+  ]
+  const clean = checkKeyColumns(['Branch', 'Branch #'], branches)
+  assert.equal(suggestedKeyColumn(clean), 'Branch #', 'the first column unique on every row wins')
+  assert.equal(clean[1].unique, true)
+  assert.equal(checkKeyColumns(['A'], [])[0].unique, false, 'an empty tab has no usable key')
 })

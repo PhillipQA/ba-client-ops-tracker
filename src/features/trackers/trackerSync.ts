@@ -203,3 +203,59 @@ export function describeSync(report: SyncReport) {
 }
 
 export const SYNC_LIMITS = { rows: TRACKER_LIMITS.rows, columns: 200, minSeconds: 60, autoMinutes: 5 } as const
+
+/** How well one Sheet column would work as the key column, using the same rules as the sync. */
+export type KeyColumnCheck = {
+  header: string
+  /** Rows that would come into the tracker with this key. */
+  kept: number
+  /** Rows with nothing in this column: skipped. */
+  blank: number
+  /** Rows whose value an earlier row already has: skipped. */
+  repeated: number
+  /** A few of the repeated values, to show. */
+  examples: string[]
+  /** Every row has its own value. */
+  unique: boolean
+}
+
+/** Checks each column of a Sheet tab as a possible key. `rows` are the data rows, without the header row. */
+export function checkKeyColumns(headers: string[], rows: string[][]): KeyColumnCheck[] {
+  const filled = rows.filter(row => row.some(cell => String(cell ?? '').trim()))
+  return headers.map((header, index) => {
+    const seen = new Set<string>(),
+      examples = new Set<string>()
+    let blank = 0,
+      repeated = 0
+    for (const row of filled) {
+      const key = String(row[index] ?? '').trim()
+      if (!key) {
+        blank += 1
+        continue
+      }
+      if (seen.has(key.toLowerCase())) {
+        repeated += 1
+        if (examples.size < 3) examples.add(key)
+        continue
+      }
+      seen.add(key.toLowerCase())
+    }
+    return {
+      header,
+      kept: seen.size,
+      blank,
+      repeated,
+      examples: [...examples],
+      unique: filled.length > 0 && blank === 0 && repeated === 0,
+    }
+  })
+}
+
+/** The key to suggest: the first column unique on every row, or else the one that keeps the most rows. */
+export function suggestedKeyColumn(checks: KeyColumnCheck[]): string {
+  const unique = checks.find(check => check.unique)
+  if (unique) return unique.header
+  let best: KeyColumnCheck | null = null
+  for (const check of checks) if (!best || check.kept > best.kept) best = check
+  return best?.header ?? ''
+}

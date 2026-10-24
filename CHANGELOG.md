@@ -1,8 +1,17 @@
 # Changelog
 
-**Current application release: v1.0.1**
+**Current application release: v1.0.2**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.0.2 — Help choosing the key column
+Released October 24, 2026.
+
+**No database migration and no new setting.**
+
+- **Each column says how many rows it keeps.** When you connect a tracker to a Google Sheet, the key column list shows each column with "different on every row" or how many rows it would keep, such as "Client — 2 of 320 rows". Rows are matched by the key, so a row whose key is blank, or repeats an earlier row's, is left out.
+- **The best column is chosen for you.** The first column with a different value on every row is picked; if there is none, the one that keeps the most rows.
+- **A warning before rows are left out.** If the chosen column repeats or has blank cells, the dialog says how many rows would sync, why (for example "5 rows have no Client and 1 row repeats a value already used (ACME)"), and what to pick instead. Connecting with that column needs **Connect anyway** ticked. Blank cells on heading or note rows are fine.
 
 ## v1.0.1 — Clearer Google Sheet errors
 Released October 24, 2026.

@@ -2172,6 +2172,33 @@
   border: 1px dashed var(--k-accent);
   border-radius: 10px;
 }
+.trk-key-note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.trk-key-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+.trk-key-note.ok {
+  color: var(--k-text);
+}
+.trk-key-note.ok svg {
+  color: #22c55e;
+}
+.trk-key-note.warn {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--k-warning-soft);
+  color: var(--k-text);
+}
+.trk-key-note.warn svg {
+  color: var(--k-warning);
+}
 .trk-key.synced {
   background: color-mix(in srgb, #16a34a 55%, var(--k-solid));
 }

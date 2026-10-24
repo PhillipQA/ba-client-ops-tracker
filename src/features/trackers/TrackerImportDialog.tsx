@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ExternalLink, LockKeyhole, Search, Upload } from 'lucide-react'
+import { AlertTriangle, Check, ExternalLink, LockKeyhole, Search, Upload } from 'lucide-react'
 import { COLUMN_TYPES, TRACKER_LIMITS, type ColumnType, type Tracker } from './trackerModel'
 import {
   defaultMappings,
@@ -11,7 +11,7 @@ import {
   type Source,
 } from './trackerImport'
 import { trackerApi, TrackerApiError, type SheetFile } from './trackerApi'
-import { sheetIdFrom } from './trackerSync'
+import { checkKeyColumns, sheetIdFrom, suggestedKeyColumn, type KeyColumnCheck } from './trackerSync'
 import { rememberReview } from './trackerNav'
 import { Dialog, plural } from './trackerUi'
 import TrackerClientPicker from './TrackerClientPicker'
@@ -51,6 +51,8 @@ export default function TrackerImportDialog({
   const [sheet, setSheet] = useState<{ id: string; name: string; tabs: { title: string; rows: number }[] } | null>(null)
   const [tab, setTab] = useState('')
   const [keyHeader, setKeyHeader] = useState('')
+  // A key that repeats or is blank on some rows drops those rows; connecting with one needs a second, deliberate click.
+  const [keyAccepted, setKeyAccepted] = useState('')
   const [looking, setLooking] = useState(false)
   const [text, setText] = useState('')
   const [fileName, setFileName] = useState('')
@@ -130,7 +132,7 @@ export default function TrackerImportDialog({
           mapping.type === 'secret' ? { ...mapping, type: 'text' } : mapping,
         ),
       )
-      setKeyHeader(parsed.source.headers[0] || '')
+      setKeyHeader(suggestedKeyColumn(checkKeyColumns(parsed.source.headers, parsed.source.rows)))
       setStep('map')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The Sheet could not be read.')
@@ -226,6 +228,13 @@ export default function TrackerImportDialog({
     }
   }
 
+  const keyChecks = useMemo(
+    () => (source && fromSheet ? checkKeyColumns(source.headers, source.rows) : []),
+    [source, fromSheet],
+  )
+  const keyCheck = keyChecks.find(check => check.header === keyHeader)
+  const keyRows = keyCheck ? keyCheck.kept + keyCheck.blank + keyCheck.repeated : 0
+
   /** A new tracker that follows the Sheet: columns from the mapping, then the connection, then the first sync. */
   const connect = async () => {
     if (!plan || !sheet || busy) return
@@ -234,6 +243,10 @@ export default function TrackerImportDialog({
     if (!chosen.length) return setError('Choose at least one column to follow.')
     if (!keyHeader || !chosen.some(mapping => source?.headers[mapping.index] === keyHeader))
       return setError('Choose the key column, and keep it ticked: it is how each row is recognised on every sync.')
+    if (keyCheck && !keyCheck.unique && keyAccepted !== keyHeader)
+      return setError(
+        `Only ${keyCheck.kept} of ${plural(keyRows, 'row')} would come in with “${keyHeader}” as the key. Choose a column with a different value on every row, or tick “Connect anyway” under the key column.`,
+      )
     setBusy(true)
     setError('')
     try {
@@ -547,12 +560,23 @@ export default function TrackerImportDialog({
               Key column: what names each row, such as a branch number. Rows are matched by it on every sync, so it
               should be unique and not change.
               <select value={keyHeader} onChange={event => setKeyHeader(event.target.value)}>
-                {source.headers.map(item => (
-                  <option key={item} value={item}>
-                    {item}
+                {keyChecks.map(check => (
+                  <option key={check.header} value={check.header}>
+                    {`${check.header} — ${keyOptionNote(check)}`}
                   </option>
                 ))}
               </select>
+              {keyCheck && <KeyColumnNote check={keyCheck} total={keyRows} />}
+              {keyCheck && !keyCheck.unique && (
+                <span className="trk-checkline">
+                  <input
+                    type="checkbox"
+                    checked={keyAccepted === keyHeader}
+                    onChange={event => setKeyAccepted(event.target.checked ? keyHeader : '')}
+                  />
+                  {` Connect anyway: only ${keyCheck.kept} of ${plural(keyRows, 'row')} will sync`}
+                </span>
+              )}
             </label>
           )}
           <div className="trk-map-scroll">
@@ -744,5 +768,42 @@ export default function TrackerImportDialog({
         </div>
       )}
     </Dialog>
+  )
+}
+
+/** Short note beside each column in the key list. */
+function keyOptionNote(check: KeyColumnCheck) {
+  const total = check.kept + check.blank + check.repeated
+  if (check.unique) return 'different on every row'
+  return `${check.kept} of ${total} rows`
+}
+
+/** Says whether the chosen key keeps every row, and if not, which rows it would leave out. */
+function KeyColumnNote({ check, total }: { check: KeyColumnCheck; total: number }) {
+  if (check.unique) {
+    const message = `Every row has its own ${check.header}: all ${plural(total, 'row')} will sync.`
+    return (
+      <span className="trk-key-note ok">
+        <Check size={14} aria-hidden="true" />
+        {message}
+      </span>
+    )
+  }
+  const examples = check.examples.length ? ` (${check.examples.join(', ')})` : ''
+  const reasons = [
+    check.blank ? `${plural(check.blank, 'row')} ${check.blank === 1 ? 'has' : 'have'} no ${check.header}` : '',
+    check.repeated
+      ? `${plural(check.repeated, 'row')} ${check.repeated === 1 ? 'repeats' : 'repeat'} a value already used${examples}`
+      : '',
+  ].filter(Boolean)
+  const advice = check.repeated
+    ? 'Choose a column with a different value on every row, such as an ID or ticket number.'
+    : 'If those are heading or note rows, that is fine; otherwise choose a column filled in on every row.'
+  const message = `Only ${check.kept} of ${plural(total, 'row')} will sync: ${reasons.join(' and ')}. Rows are matched by the key, so those rows are left out. ${advice}`
+  return (
+    <span className="trk-key-note warn" role="alert">
+      <AlertTriangle size={14} aria-hidden="true" />
+      {message}
+    </span>
   )
 }

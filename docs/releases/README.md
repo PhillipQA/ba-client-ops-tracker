@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v1.0.2](v1.0.2.md) | Help choosing the key column when connecting a Google Sheet: rows kept per column, the best column chosen, a warning before rows are left out |
 | [v1.0.1](v1.0.1.md) | Clearer Google Sheet errors: Excel files kept in Drive and a switched-off Sheets API get their own messages |
 | [v1.0.0](v1.0.0.md) | Code reorganised by feature, server split into modules, one shared UI kit and HTTP helper, Biome formatting and lint; no change for users |
 | [v0.9.0](v0.9.0.md) | Trackers that follow a Google Sheet (one-way, ready for two-way), and a review step that turns new or imported rows into tasks, subtasks, a new project or plain rows |
