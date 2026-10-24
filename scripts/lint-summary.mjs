@@ -57,4 +57,11 @@ const errors = diagnostics.filter(d => d.severity === 'error' && d.category !== 
 const text = d =>
   `${d.category} ${fileOf(d)}:${d.location?.start?.line ?? '?'} ${String(d.description ?? d.message ?? '').slice(0, 160)}`
 for (let i = 0; i < Math.min(4, Math.ceil(errors.length / 15)); i++)
-  console.log(`::warning title=Lint errors ${i + 1}::${annotation(errors.slice(i * 15, i * 15 + 15).map(text).join('\n'))}`)
+  console.log(
+    `::warning title=Lint errors ${i + 1}::${annotation(
+      errors
+        .slice(i * 15, i * 15 + 15)
+        .map(text)
+        .join('\n'),
+    )}`,
+  )
