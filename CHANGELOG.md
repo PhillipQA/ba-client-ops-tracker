@@ -1,8 +1,16 @@
 # Changelog
 
-**Current application release: v0.6.98**
+**Current application release: v0.6.99**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.99 — Only open tasks in task pickers
+Released October 24, 2026.
+
+No database migration and no new Google permission.
+
+- Lists that ask you to choose a task or subtask now leave out closed and resolved work: the linked task in **New email**, **Save to Drive** in Document Creation, the DocHub task in document generation, linking a Git ticket to a task, and saving an email attachment to Drive in Work Hub. "Closed" follows your own task statuses (Settings → Task statuses); without them, Resolved and Closed count as closed.
+- An open subtask of a closed task is still offered. A task already linked keeps showing as linked.
 
 ## v0.6.98 — Trackers: clients, task and subtask cells, calculations
 Released October 24, 2026.

@@ -9,6 +9,7 @@ import { RecipientInput, addressesOn, type Suggestion } from './RecipientInput'
 import { knownPeople } from './knownPeople'
 import { searchContacts } from './contactSearch'
 import './emailComposer.css'
+import { useIsClosed } from './openWork'
 
 /**
  * Send an email from the tracker, from the person's own Gmail account.
@@ -164,7 +165,8 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
   const usedBytes = uploads.reduce((sum, file) => sum + file.size, 0) + driveFiles.reduce((sum, file) => sum + (file.size || 0), 0)
   const attachmentCount = uploads.length + driveFiles.length
   const taskLabel = (id: string) => { const item = items.find(candidate => candidate.id === id); return item ? `${item.parentTaskId ? '↳ ' : ''}${item.title}` : 'Removed task' }
-  const options = useMemo(() => taskOptions(scope, clientFilter).filter(option => !taskIds.includes(option.id)), [items, clients, projects, clientFilter, taskIds])
+  const isClosed = useIsClosed()
+  const options = useMemo(() => taskOptions(scope, clientFilter, isClosed).filter(option => !taskIds.includes(option.id)), [items, clients, projects, clientFilter, taskIds, isClosed])
   const linkedFirst = (id: string) => taskIds.includes(id) || taskIds.includes(items.find(item => item.id === id)?.parentTaskId || '')
   const groups = useMemo(() => driveFileGroups(scope, { allowed: null, clientId: clientFilter, query: fileQuery })
     .sort((a, b) => Number(linkedFirst(b.item.id)) - Number(linkedFirst(a.item.id))), [items, clients, projects, clientFilter, fileQuery, taskIds])

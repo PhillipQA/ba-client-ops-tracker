@@ -9,6 +9,7 @@ import TrackerLinkChips from './TrackerLinkChips'
 import { trackerApi, type TaskLink } from './trackerApi'
 import type { TaskDraft } from './TrackerWork'
 import { rememberTrackerRow } from './trackerNav'
+import { ClosedStatusContext } from './openWork'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
 import { DocHubHistory } from './DocHubPanel'
@@ -21,7 +22,7 @@ import LifecycleControls from './LifecycleControls'
 import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from './lifecycle'
 import { canBrowseTeamActionCenter, itemMatchesActionCenterScope, resolveActionCenterScope, trackedActionCenterUsers, type ActionCenterScopeSelection } from './actionCenterScope'
 import { applySubtaskAssignmentInheritance, normalizeSubtaskAssignmentInheritance } from './subtaskAssignment'
-import { FormEvent, type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, type ClipboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -1242,6 +1243,8 @@ function App() {
     }
   }
 
+  // Task pickers across the app (email, documents, DocHub, Git tickets) offer only open work, by this account's statuses.
+  const closedStatus = useCallback((status: string) => isTaskClosed(status, store.taskSettings), [store.taskSettings])
   const hasTrackers = Boolean(currentUser?.modules.includes('trackers'))
   // Tasks linked from a tracker say so in the Action Center. Without the Trackers module, or before its links table exists, there is simply nothing to show.
   useEffect(() => {
@@ -1462,6 +1465,7 @@ function App() {
   const currentTheme = themeForContext(currentUser)
 
   return (
+    <ClosedStatusContext.Provider value={closedStatus}>
     <div className={`app-shell ui-refresh theme-${currentTheme}${navCollapsed ? ' nav-collapsed' : ''}`} data-theme={currentTheme} data-interface-mode={normalizeInterfaceMode(currentUser.interfaceMode) || undefined}>
       <aside className="sidebar" aria-label="Main menu">
         <div className="brand">
@@ -1728,6 +1732,7 @@ function App() {
       {profileOpen && currentUser.accountType !== 'platform' && <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />}
       <EmailComposerHost enabled={hasModule('inbox') && currentUser.role !== 'Viewer'} items={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} currentUser={currentUser} onSent={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
     </div>
+    </ClosedStatusContext.Provider>
   )
 }
 

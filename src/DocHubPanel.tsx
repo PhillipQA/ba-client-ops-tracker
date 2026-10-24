@@ -7,6 +7,7 @@ import { useDocumentOperation } from './useDocumentOperation'
 import { useDocumentDrive } from './documentDrive'
 import { composeEmail, useEmailEnabled } from './EmailComposer'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
+import { useIsClosed } from './openWork'
 
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
 const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
@@ -61,7 +62,8 @@ export function DocHubOptions({draft,clients,projects,items,disabled=false}:{dra
   const [projectId,setProjectId]=useState('')
   const selected=items.find(i=>i.id===draft.options.taskId)
   useEffect(()=>{if(selected?.projectId)setProjectId(selected.projectId)},[draft.options.taskId])
-  const allowed=items.filter(i=>(!draft.options.clientId||i.clientId===draft.options.clientId)&&(!projectId||i.projectId===projectId)&&!clients.find(c=>c.id===i.clientId)?.archived&&!projects.find(p=>p.id===i.projectId)?.archived)
+  const isClosed=useIsClosed()
+  const allowed=items.filter(i=>(i.id===draft.options.taskId||!isClosed(i.status))&&(!draft.options.clientId||i.clientId===draft.options.clientId)&&(!projectId||i.projectId===projectId)&&!clients.find(c=>c.id===i.clientId)?.archived&&!projects.find(p=>p.id===i.projectId)?.archived)
   return <section className="document-extraction-panel dochub-options"><h3><FileSignature size={18}/> DocHub signature preparation</h3><p>Signer emails are used for signing only and stay off the generated form.</p>
     <label className="dochub-check"><input type="checkbox" checked={draft.enabled} disabled={disabled||!draft.available||draft.busy} onChange={e=>draft.setEnabled(e.target.checked)}/> Prepare an unsent DocHub draft after generation</label>
     {!draft.available&&<p>Ask your account Administrator to add and enable the DocHub API key in Settings.</p>}

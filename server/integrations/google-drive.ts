@@ -39,7 +39,7 @@ export function linkedTaskIds(message: any): string[] {
   return [...new Set(ids.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0))]
 }
 
-/** Tasks the attachment may be filed under: tasks made from the message and their subtasks, never archived work. */
+/** Tasks the attachment may be filed under: tasks made from the message and their subtasks, never archived or closed work. */
 export function driveTargets(state: any, taskIds: string[]): DriveTarget[] {
   const items: any[] = Array.isArray(state?.items) ? state.items : []
   const byId = new Map(items.map(item => [String(item?.id), item]))
@@ -49,7 +49,10 @@ export function driveTargets(state: any, taskIds: string[]): DriveTarget[] {
     ...(item.parentTaskId ? { parentTaskId: String(item.parentTaskId) } : {}),
     clientName: name(state?.clients, item.clientId), projectName: name(state?.projects, item.projectId),
   })
-  const usable = (item: any) => item && !archivedWorkReason(state, item)
+  // Closed or resolved work is not offered, by the account's own task statuses (Resolved and Closed when none are set).
+  const statuses: any[] = Array.isArray(state?.taskSettings?.statuses) ? state.taskSettings.statuses : []
+  const closed = (status: unknown) => { const known = statuses.find((entry: any) => entry?.label === status); return known ? Boolean(known.closed) : status === 'Resolved' || status === 'Closed' }
+  const usable = (item: any) => item && !archivedWorkReason(state, item) && !closed(item.status)
   const seen = new Set<string>(), result: DriveTarget[] = []
   const add = (item: any) => { if (usable(item) && !seen.has(String(item.id))) { seen.add(String(item.id)); result.push(target(item)) } }
   for (const id of taskIds) {

@@ -5,6 +5,7 @@ import type { Client, Project, TaskSettings, UserAccount, WaitingOn, WorkItem } 
 import { defaultWaitingOn, waitingOnOptions } from './waitingOn'
 import { workHubSync } from './workHubSync'
 import { useWorkHubSync } from './useWorkHubSync'
+import { useIsClosed } from './openWork'
 
 class ApiError extends Error { constructor(message: string, public retryAfterSeconds?: number) { super(message) } }
 async function apiRequest(root: string, path: string, method='GET', body?: unknown, signal?: AbortSignal) {
@@ -111,7 +112,8 @@ export default function GithubHub({clients,projects,accounts,tasks,taskSettings,
     const result=await request(`/tickets/${selected.id}/create-task`,'POST',{title,description,clientId,projectId,assignedToUserId:assignee,waitingOn,startDate,dueDate,followUpDate});updateTicket(result.ticket);setForm(null);setMessage(`Task created. Your ${providerLabel} ticket and comments remain private.`);await onTaskCreated()
   })
   const linkTask = (id=taskId) => void act(async()=>{if(!selected)return;const result=await request(`/tickets/${selected.id}/link-task`,'POST',{taskId:id});updateTicket(result.ticket);setForm(null);setMessage(id?'Ticket linked to the selected task.':'Task link removed.')})
-  const availableTasks=tasks.filter(t=>t.type==='Task' && (!taskSearch || `${t.title} ${clientName(t.clientId)} ${projectName(t.projectId)}`.toLowerCase().includes(taskSearch.toLowerCase())))
+  const isClosed=useIsClosed()
+  const availableTasks=tasks.filter(t=>t.type==='Task' && !isClosed(t.status) && (!taskSearch || `${t.title} ${clientName(t.clientId)} ${projectName(t.projectId)}`.toLowerCase().includes(taskSearch.toLowerCase())))
   const linkedTask=tasks.find(t=>t.id===selected?.linked_task_id)
   const latestComment=comments[comments.length-1]
 

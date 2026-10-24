@@ -4,6 +4,7 @@ import type { TaskDriveFile, WorkItem } from './types'
 import type { GeneratedDocument } from './dochub'
 import { driveFileGroups, fileSize, placeOf, taskOptions, type DriveScope } from './documentDriveTargets'
 import './documentDrive.css'
+import { useIsClosed } from './openWork'
 
 /** Google Drive in Document Creation: pick a saved COR for a DRF, and file generated documents under a task. */
 
@@ -90,7 +91,8 @@ export function SaveToDriveBar({ flow, label, items, clients, projects }: DriveS
     window.addEventListener(GENERATED, listen)
     return () => window.removeEventListener(GENERATED, listen)
   }, [flow])
-  const options = useMemo(() => taskOptions({ items, clients, projects }, clientId), [items, clients, projects, clientId])
+  const isClosed = useIsClosed()
+  const options = useMemo(() => taskOptions({ items, clients, projects }, clientId, isClosed), [items, clients, projects, clientId, isClosed])
   if (!available || !file) return null
   const save = async () => {
     if (!taskId || busy) return
