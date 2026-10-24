@@ -1,8 +1,17 @@
 # Changelog
 
-**Current application release: v1.0.0**
+**Current application release: v1.0.1**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.0.1 — Clearer Google Sheet errors
+Released October 24, 2026.
+
+**No database migration and no new setting.**
+
+- **Excel files get their own message.** Connecting a tracker to a link that is an Excel file kept in Google Drive (not a Google Sheet) used to say the Sheet cannot be opened. It now names the file and says to open it in Google Drive and choose **File → Save as Google Sheets**, then use the new Sheet's link.
+- **A switched-off API says so.** If the Google Sheets API or Google Drive API is turned off in the Google Cloud project used for Gmail, the message says an admin needs to enable it.
+- A Google Sheet that is not shared with you still says it cannot be opened.
 
 ## v1.0.0 — The code, reorganised
 Released October 24, 2026.
