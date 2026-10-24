@@ -1,6 +1,6 @@
 # One-off for v1.0.0: adds Biome to the lock file, formats the code and applies safe lint fixes,
 # then commits the result to this branch. Removed again before the pull request is merged.
-name: Biome bootstrap
+name: Biome autoformat (temporary)
 on:
   push:
     branches: [refactor/v1]

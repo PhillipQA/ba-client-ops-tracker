@@ -15,6 +15,15 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run build
+      # Formatting and lint errors. Reported but not yet blocking, until the code is clean.
+      - name: Biome check
+        run: |
+          set +e
+          npx biome ci . --reporter=json --max-diagnostics=none > biome.json.out
+          status=$?
+          node scripts/lint-summary.mjs biome.json.out
+          exit $status
+        continue-on-error: true
 
   test:
     runs-on: ubuntu-latest

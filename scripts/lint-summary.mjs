@@ -9,19 +9,37 @@ try {
   console.log(`::warning title=Lint summary::Could not read the report: ${error.message}`)
 }
 const diagnostics = Array.isArray(report.diagnostics) ? report.diagnostics : []
+const sources = new Map()
+// file:line for a byte offset, so a finding can be found without running Biome
+function lineOf(file, offset) {
+  if (typeof offset !== 'number') return file
+  if (!sources.has(file)) {
+    try {
+      sources.set(file, readFileSync(file))
+    } catch {
+      sources.set(file, null)
+    }
+  }
+  const bytes = sources.get(file)
+  if (!bytes) return file
+  let line = 1
+  for (let i = 0; i < offset && i < bytes.length; i++) if (bytes[i] === 10) line++
+  return `${file}:${line}`
+}
 const escape = value => value.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
 const byRule = new Map()
 for (const d of diagnostics) {
   const rule = d.category || 'unknown'
   const file = d.location?.path?.file || d.location?.path || '?'
+  const where = lineOf(file, d.location?.span?.[0] ?? d.location?.span?.start)
   if (!byRule.has(rule)) byRule.set(rule, new Map())
   const files = byRule.get(rule)
-  files.set(file, (files.get(file) || 0) + 1)
+  files.set(where, (files.get(where) || 0) + 1)
 }
 const count = files => [...files.values()].reduce((a, b) => a + b, 0)
 const rules = [...byRule].sort((a, b) => count(b[1]) - count(a[1]))
 console.log(
-  `::notice title=Lint (${diagnostics.length} findings)::${escape(rules.map(([rule, files]) => `${count(files)}  ${rule}`).join('\n') || 'none')}`,
+  `::notice title=Lint (${diagnostics.length} findings, ${diagnostics.filter(d => d.severity === 'error').length} errors)::${escape(rules.map(([rule, files]) => `${count(files)}  ${rule}`).join('\n') || 'none')}`,
 )
 const detail = rules.map(
   ([rule, files]) => `${rule}: ${[...files].map(([f, n]) => `${f}${n > 1 ? ` x${n}` : ''}`).join(', ')}`,
