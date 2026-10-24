@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.7.1.**
+**Current application version: v0.8.0.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.7.1**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.8.0**.
 
 ## Database requirements
 
@@ -38,6 +38,7 @@ For an existing Supabase database, the recent incremental migrations are:
 | v0.6.87 | [schema-v23](../../database/migrations/schema-v23-drive-attachments.sql) | Shared Google Drive for Gmail attachments; private list of tasks created from each email |
 | v0.6.92 | [schema-v24](../../database/migrations/schema-v24-trackers.sql) | Trackers: sheets with your own columns, saved views, encrypted Secret cells, row history and a log of every Secret reveal. Also adds Trackers to each account's enabled modules |
 | v0.6.96 | [schema-v25](../../database/migrations/schema-v25-tracker-task-links.sql) | Optional: link tasks and subtasks to tracker rows and cells, and show them in the Action Center |
+| v0.8.0 | [schema-v26](../../database/migrations/schema-v26-email-templates.sql) | Email signatures saved per person, and shared or private email templates |
 
 Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations missing the Git provider tables, the [combined v19/v20 upgrade](../../database/upgrades/schema-v19-v20-work-hub-git-providers.sql) is available. Do not run both the combined script and the same individual migrations.
 
@@ -45,6 +46,7 @@ Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations m
 - **v0.6.87:** apply v23 before connecting Google Drive. It works on Supabase and on plain PostgreSQL such as Northflank: Supabase-only roles and row-level security are applied only where those roles exist. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_drive_accounts` table afterwards. Until v23 is applied, Settings and Work Hub say so and nothing else changes. Tasks created from an email before v23 are still offered when saving that email's attachments, but only the most recent one.
 - **v0.6.92:** apply v24 before using Trackers. It works on Supabase and on plain PostgreSQL such as Northflank (row-level security is applied only where the Supabase roles exist). On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_trackers`, `tenant_tracker_rows` and `tenant_tracker_changes` tables afterwards. Until v24 is applied, the Trackers page says the migration is missing and nothing else changes. After applying it, Administrators see **Trackers** when they next sign in; give other people the **Trackers** module under Users & Permissions → Module access. Secret cells are encrypted with `TENANT_INTEGRATION_MASTER_KEY`, so keep that key: if it changes, stored Secret values can no longer be revealed. The recipient suggestions in the same release need no database change.
 - **v0.6.96:** apply v25 to link tasks and subtasks to tracker rows and cells. It is optional: without it Trackers, move rows and change column type all work, and the link card says the migration is missing. It adds one table, `tenant_tracker_task_links`, and works on Supabase and plain PostgreSQL such as Northflank. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new table afterwards.
+- **v0.8.0:** apply v26 for email signatures and templates. It adds two tables, `user_email_signatures` and `tenant_email_templates`, and works on Supabase and plain PostgreSQL such as Northflank. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to them afterwards. Until it is applied, email works as before: the signature stays in each browser and the Templates field is hidden.
 - **v0.6.97, v0.6.98, v0.7.0 and v0.7.1 add no new database migration.** v0.6.98's subtask cells use the v25 task links table, so apply v25 first if you skipped it.
 - **v0.6.93, v0.6.94 and v0.6.95 add no new database migration.**
 - Built-in Go Live generation works with the existing template table; v21 enables custom Go Live uploads/removal.
@@ -75,6 +77,7 @@ Replace the ZIP path with the actual patch and follow its version-specific instr
 - Check the displayed application version.
 - Open an existing workspace and confirm clients, projects and tasks are present.
 - Check integrations you use, existing evidence downloads and document generation.
+- For v0.8.0 (apply schema v26 first): hard refresh, open **Work Hub → New email**, open **Signature** and type one; open New email on another browser or computer and confirm it appears. Click **Manage templates** (or **Email templates** in Work Hub), create a shared template and one marked **Only me**, edit and delete one, then pick a template in New email and confirm the subject and message fill in above your signature. Ask a teammate to confirm they see the shared one but not the private one. In **Linked task or subtask**, type a few letters of a task.
 - For v0.6.98 (schema v25 needed for subtask cells): hard refresh, open a tracker's details and add two clients. Point at a row's first cell, click **+ Task**, create the task for one of the clients, then click **+** in another column and create its subtask; confirm both appear in Tasks under the right client and project and that closed tasks are not offered. Select a few rows and use **Create tasks**. Add a **Calculated** column such as `[Qty] * [Price]`, tick **Show the SUM in the totals row**, and confirm the totals row at the bottom.
 - For v0.6.96 (apply schema v25 first for links): hard refresh, open a tracker, select a row and use **Move up**, **Move down**, **Top** or **Bottom** (or drag the row number); with a sort, filter, group or search active, moving is turned off. Open a column's **Edit column…** and change its type, then **Check the change** to see what would be cleared before confirming. Open a row, link a subtask under **Tasks and subtasks** (whole row or one column), set that subtask's follow-up date, and confirm it shows on that day in the Action Center with the tracker, row and cell, and that clicking the chip opens the row. In full view, confirm Import, Export and Exit full view are small icon buttons.
 - For v0.6.95 (no database change): hard refresh, open a tracker with a long text column, open that column's menu and choose **Wide**, **Freeze column** and an alignment. In a Link column type `#1234 https://example.com/ticket` and confirm the cell shows #1234 and opens the address. Confirm the frozen columns stay in view when you scroll sideways, drag a header edge to resize, and reload to confirm the choices stay.

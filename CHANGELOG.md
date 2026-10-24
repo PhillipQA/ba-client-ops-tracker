@@ -1,8 +1,19 @@
 # Changelog
 
-**Current application release: v0.7.1**
+**Current application release: v0.8.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.8.0 — Email signatures and templates
+Released October 24, 2026.
+
+**Database migration:** apply [schema v26](database/migrations/schema-v26-email-templates.sql) for signatures and templates. Until then, email works as before. No new Google permission.
+
+- **Your signature, everywhere.** The signature in New email is now saved to your account, so it follows you to any browser or computer, and each person has their own. A signature you had typed before is moved to your account the first time you open New email. It is added under the message of each new email and stays plain text.
+- **Email templates.** Ready-made subjects and messages for the emails you send to clients and teammates. In New email, type in **Template** to pick one: the subject and message fill in, your signature stays underneath, and you can still edit before sending.
+- **Create, view, edit and delete templates** with **Manage templates** in New email or **Email templates** in Work Hub. **Save as template** turns the email you are writing into a template.
+- **Shared or only you.** A template is shared with everyone on the account unless you choose **Only me**. Anyone who can send email can edit or delete a shared template; only its creator can make it private again. Viewers can use templates but not change them.
+- **Type-to-search task fields.** The **Task or subtask** lists in New email, Save to Drive and DocHub are now fields you type into, like the client field: subtasks sit under their task, the client and project show beside each task, and only open work is listed.
 
 ## v0.7.1 — Client field fixes
 Released October 24, 2026.

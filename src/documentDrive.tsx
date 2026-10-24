@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { CloudUpload, FolderOpen, X } from 'lucide-react'
 import type { TaskDriveFile, WorkItem } from './types'
 import type { GeneratedDocument } from './dochub'
-import { driveFileGroups, fileSize, placeOf, taskOptions, type DriveScope } from './documentDriveTargets'
+import { driveFileGroups, fileSize, placeOf, taskChoices, type DriveScope } from './documentDriveTargets'
 import './documentDrive.css'
 import { useIsClosed } from './openWork'
 import ClientSelect from './ClientSelect'
+import { SearchSelect } from './ClientSelect'
 
 /** Google Drive in Document Creation: pick a saved COR for a DRF, and file generated documents under a task. */
 
@@ -93,7 +94,7 @@ export function SaveToDriveBar({ flow, label, items, clients, projects }: DriveS
     return () => window.removeEventListener(GENERATED, listen)
   }, [flow])
   const isClosed = useIsClosed()
-  const options = useMemo(() => taskOptions({ items, clients, projects }, clientId, isClosed), [items, clients, projects, clientId, isClosed])
+  const options = useMemo(() => [{ value: '', label: 'Choose a task or subtask' }, ...taskChoices({ items, clients, projects }, clientId, isClosed)], [items, clients, projects, clientId, isClosed])
   if (!available || !file) return null
   const save = async () => {
     if (!taskId || busy) return
@@ -110,7 +111,7 @@ export function SaveToDriveBar({ flow, label, items, clients, projects }: DriveS
     <p>Files “{file.fileName}” in the team Drive under Client / Project / Task / Subtask. The app keeps no copy.</p>
     <div className="document-drive-filters">
       <label>Client<ClientSelect clients={clients.filter(c => !c.archived)} value={clientId} onChange={(value) => { setClientId(value); setTaskId('') }} extra={[{ value: '', label: 'All clients' }]} disabled={busy} /></label>
-      <label className="document-field-wide">Task or subtask<select value={taskId} disabled={busy} onChange={e => setTaskId(e.target.value)}><option value="">Choose a task or subtask</option>{options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+      <label className="document-field-wide">Task or subtask<SearchSelect choices={options} value={taskId} disabled={busy} onChange={setTaskId} placeholder="Type a task or subtask" empty="No open task or subtask matches" /></label>
     </div>
     <div className="document-drive-actions"><button type="button" className="primary" disabled={!taskId || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save to Google Drive'}</button></div>
     {error && <p role="alert" className="document-drive-error">{error}</p>}

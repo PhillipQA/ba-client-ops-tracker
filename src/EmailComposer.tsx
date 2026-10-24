@@ -3,14 +3,16 @@ import { FolderOpen, Mail, Paperclip, Send, Undo2, X } from 'lucide-react'
 import type { Client, Project, UserAccount, WorkItem } from './types'
 import { EMAIL_LIMITS, blockedAttachmentReason, formatBytes, isValidEmail, parseRecipients, splitAddresses } from './emailCompose'
 import { outbox, UNDO_SECONDS, type DriveRef, type EmailDraft, type OutboxEntry, type Upload } from './emailOutbox'
-import { driveFileGroups, placeOf, taskOptions } from './documentDriveTargets'
+import { driveFileGroups, placeOf, taskChoices } from './documentDriveTargets'
 import { workHubSync } from './workHubSync'
 import { RecipientInput, addressesOn, type Suggestion } from './RecipientInput'
 import { knownPeople } from './knownPeople'
 import { searchContacts } from './contactSearch'
 import './emailComposer.css'
 import { useIsClosed } from './openWork'
-import ClientSelect from './ClientSelect'
+import ClientSelect, { SearchSelect } from './ClientSelect'
+import { applyTemplateBody, emailStore, signatureBlock, type EmailTemplate } from './emailStore'
+import { EmailTemplatesManager } from './EmailTemplates'
 
 /**
  * Send an email from the tracker, from the person's own Gmail account.
@@ -119,12 +121,20 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
   const dialog = useRef<HTMLDialogElement>(null), titleId = useId()
   const primary = items.find(item => item.id === prefill.taskIds?.[0])
   const clientEmail = clients.find(client => client.id === primary?.clientId)?.email || ''
+  // The signature lives on the person's account. The copy in this browser shows at once and is used if the server
+  // cannot be reached or does not have the email templates migration yet.
   const signature = useRef(readSignature(currentUser))
+  const [signatureText, setSignatureText] = useState(signature.current)
+  const [signatureNote, setSignatureNote] = useState('')
+  const signatureTimer = useRef<number | undefined>(undefined)
   const [to, setTo] = useState(prefill.to ?? (isValidEmail(clientEmail) ? clientEmail : ''))
   const [cc, setCc] = useState(prefill.cc ?? ''), [bcc, setBcc] = useState(prefill.bcc ?? '')
   const [showCopies, setShowCopies] = useState(Boolean(prefill.cc || prefill.bcc))
   const [subject, setSubject] = useState(prefill.subject ?? '')
-  const [message, setMessage] = useState(prefill.message ?? (signature.current ? `\n\n-- \n${signature.current}` : ''))
+  const [message, setMessage] = useState(prefill.message ?? signatureBlock(signature.current))
+  const [templates, setTemplates] = useState<EmailTemplate[] | null>(null)
+  const [managing, setManaging] = useState(false)
+  const [saveAs, setSaveAs] = useState<{ subject: string; body: string } | undefined>(undefined)
   const [taskIds, setTaskIds] = useState<string[]>(prefill.taskIds ?? [])
   const [driveFiles, setDriveFiles] = useState<DriveRef[]>(prefill.driveFiles ?? [])
   const [uploads, setUploads] = useState<Upload[]>(prefill.uploads ?? [])
@@ -163,11 +173,50 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
   }, [])
   const close = () => { if (!busy && (!dirty() || window.confirm('Discard this email?'))) onClose() }
 
+  // Load the account's signature. A signature only kept in this browser (before v0.8.0) is moved to the account once.
+  useEffect(() => {
+    let live = true
+    emailStore.signature().then(async result => {
+      if (!live) return
+      let next = result.signature
+      if (!result.saved && signature.current.trim()) { next = (await emailStore.saveSignature(signature.current).catch(() => ({ signature: signature.current }))).signature }
+      if (!live || next === signature.current) return
+      const before = signatureBlock(signature.current)
+      signature.current = next; setSignatureText(next); writeSignature(currentUser, next)
+      // Swap it into a new, untouched email only.
+      if (prefill.message === undefined) setMessage(current => {
+        if (current !== before) return current
+        const swapped = signatureBlock(next)
+        initial.current = initial.current.replace(JSON.stringify(before), JSON.stringify(swapped))
+        return swapped
+      })
+    }).catch(error => { if (live && error?.status === 503) setSignatureNote('Saved on this browser only until your Administrator applies the email templates update (schema v26).') })
+    return () => { live = false; window.clearTimeout(signatureTimer.current) }
+  }, [])
+  const editSignature = (value: string) => {
+    signature.current = value; setSignatureText(value); writeSignature(currentUser, value)
+    window.clearTimeout(signatureTimer.current)
+    signatureTimer.current = window.setTimeout(() => {
+      emailStore.saveSignature(value).then(() => setSignatureNote('Saved to your account. It is added to your new emails on any device.'))
+        .catch(error => setSignatureNote(error?.status === 503 ? 'Saved on this browser only until your Administrator applies the email templates update (schema v26).' : error instanceof Error ? error.message : 'The signature could not be saved.'))
+    }, 700)
+  }
+  // Before the templates update (schema v26) is applied there is nothing to show, so the Template field stays hidden.
+  const loadTemplates = () => emailStore.templates().then(result => setTemplates(result.templates)).catch(error => setTemplates(error?.status === 503 || error?.status === 403 ? null : []))
+  useEffect(() => { void loadTemplates() }, [])
+  const applyTemplate = (template: EmailTemplate) => {
+    const typed = message.trim() !== signatureBlock(signature.current).trim() || (subject.trim() !== '' && subject !== template.subject)
+    if (typed && !window.confirm(`Replace the subject and message with the template “${template.name}”?`)) return false
+    if (template.subject) setSubject(template.subject)
+    setMessage(applyTemplateBody(template.body, signature.current))
+    return true
+  }
+
   const usedBytes = uploads.reduce((sum, file) => sum + file.size, 0) + driveFiles.reduce((sum, file) => sum + (file.size || 0), 0)
   const attachmentCount = uploads.length + driveFiles.length
   const taskLabel = (id: string) => { const item = items.find(candidate => candidate.id === id); return item ? `${item.parentTaskId ? '↳ ' : ''}${item.title}` : 'Removed task' }
   const isClosed = useIsClosed()
-  const options = useMemo(() => taskOptions(scope, clientFilter, isClosed).filter(option => !taskIds.includes(option.id)), [items, clients, projects, clientFilter, taskIds, isClosed])
+  const taskPicks = useMemo(() => [{ value: '', label: taskIds.length ? 'Link another task or subtask' : 'Choose a task or subtask' }, ...taskChoices(scope, clientFilter, isClosed).filter(option => !taskIds.includes(option.value))], [items, clients, projects, clientFilter, taskIds, isClosed])
   const linkedFirst = (id: string) => taskIds.includes(id) || taskIds.includes(items.find(item => item.id === id)?.parentTaskId || '')
   const groups = useMemo(() => driveFileGroups(scope, { allowed: null, clientId: clientFilter, query: fileQuery })
     .sort((a, b) => Number(linkedFirst(b.item.id)) - Number(linkedFirst(a.item.id))), [items, clients, projects, clientFilter, fileQuery, taskIds])
@@ -223,6 +272,9 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
   const needsPermission = Boolean(status && !reasonBlocked && !status.canSend)
   const ready = Boolean(status && !reasonBlocked && status.canSend)
 
+  const manager = managing && <EmailTemplatesManager userId={currentUser.id} canWrite={currentUser.role !== 'Viewer'} onClose={() => { setManaging(false); setSaveAs(undefined); void loadTemplates() }}
+    onUse={template => { if (applyTemplate(template)) { setManaging(false); void loadTemplates() } }}
+    startWith={saveAs ? { name: '', subject: saveAs.subject, body: saveAs.body, shared: true } : undefined} />
   return <dialog ref={dialog} className="modal email-composer" aria-labelledby={titleId} aria-modal="true"
     onCancel={event => { event.preventDefault(); close() }}>
     <div className="modal-head"><div><h2 id={titleId}><Mail size={18} aria-hidden="true" /> {prefill.replyToId ? 'Reply by email' : 'New email'}</h2>
@@ -240,11 +292,22 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
         {showCopies && <><RecipientInput label="Cc" value={cc} onChange={setCc} local={people} taken={taken} search={searchContacts} />
           <RecipientInput label="Bcc" value={bcc} onChange={setBcc} local={people} taken={taken} search={searchContacts}><small>Bcc recipients are not shown to the others, and are left out of the note on the task.</small></RecipientInput></>}
         {copiedFromOriginal && <p className="email-note" role="status">{copiedCount} {copiedCount === 1 ? 'other person from the original email is' : 'other people from the original email are'} copied and will see your reply. <button type="button" className="link-button email-copies-toggle" onClick={() => setCc('')}>Reply to sender only</button></p>}
+        {templates !== null && <div className="email-template-bar">
+          <label>Template<SearchSelect value="" onChange={id => { const template = templates.find(item => item.id === id); if (template) applyTemplate(template) }}
+            choices={[{ value: '', label: templates.length ? 'Start from a template' : 'No templates yet' }, ...templates.map(template => ({ value: template.id, label: template.name, hint: template.shared ? template.subject : `Only me · ${template.subject}` }))]}
+            placeholder="Type a template name" empty="No template matches" /></label>
+          <span className="email-template-buttons">
+            <button type="button" className="secondary compact" onClick={() => { setSaveAs(undefined); setManaging(true) }}>Manage templates</button>
+            {currentUser.role !== 'Viewer' && (subject.trim() || message.trim() !== signatureBlock(signature.current).trim()) && <button type="button" className="secondary compact" title="Make a template from this subject and message"
+              onClick={() => { const block = signatureBlock(signature.current); setSaveAs({ subject, body: block && message.endsWith(block) ? message.slice(0, -block.length) : message }); setManaging(true) }}>Save as template</button>}
+          </span>
+        </div>}
         <label>Subject<input value={subject} maxLength={EMAIL_LIMITS.subject} onChange={e => setSubject(e.target.value)} /></label>
         <label>Message<textarea rows={9} value={message} maxLength={EMAIL_LIMITS.body} onChange={e => setMessage(e.target.value)} /></label>
         <details className="email-signature"><summary>Signature</summary>
-          <textarea rows={3} defaultValue={signature.current} aria-label="Email signature" onChange={e => { signature.current = e.target.value; writeSignature(currentUser, e.target.value) }} placeholder="Name, title, phone" />
-          <small>Added to new emails on this browser. Gmail does not add your Gmail signature to emails sent by the tracker.</small></details>
+          <textarea rows={3} value={signatureText} maxLength={2000} aria-label="Email signature" onChange={e => editSignature(e.target.value)} placeholder="Name, title, phone" />
+          <small>Yours only, saved to your account and added to your new emails. Gmail does not add your Gmail signature to emails sent by the tracker.</small>
+          {signatureNote && <small className="email-signature-status" role="status">{signatureNote}</small>}</details>
       </div>
       <section className="email-section" aria-label="Linked work">
         <h3>Linked task or subtask</h3>
@@ -252,7 +315,7 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
         {taskIds.length > 0 && <ul className="email-chips">{taskIds.map(id => <li key={id}><span>{taskLabel(id)}</span><button type="button" aria-label={`Unlink ${taskLabel(id)}`} onClick={() => setTaskIds(previous => previous.filter(x => x !== id))}><X size={13} /></button></li>)}</ul>}
         {taskIds.length < EMAIL_LIMITS.taskLinks && <div className="email-fields email-pick">
           <label>Client<ClientSelect clients={clients.filter(client => !client.archived)} value={clientFilter} onChange={(value) => { setClientFilter(value); setPickTask('') }} extra={[{ value: '', label: 'All clients' }]} /></label>
-          <label>{taskIds.length ? 'Link another' : 'Task or subtask'}<select value={pickTask} onChange={e => { const id = e.target.value; setPickTask(''); if (id) setTaskIds(previous => [...previous, id]) }}><option value="">Choose a task or subtask</option>{options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+          <label>{taskIds.length ? 'Link another' : 'Task or subtask'}<SearchSelect choices={taskPicks} value="" onChange={id => { if (id) setTaskIds(previous => [...previous, id]) }} placeholder="Type a task or subtask" empty="No open task or subtask matches" /></label>
         </div>}
       </section>
       <section className="email-section" aria-label="Attachments">
@@ -283,5 +346,6 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
       <small>After you press Send you have {UNDO_SECONDS} seconds to undo. Keep this page open until it is sent.</small>
       <div><button type="button" className="secondary" disabled={busy} onClick={close}>Cancel</button><button type="button" className="primary" disabled={busy || !ready} onClick={submit}><Send size={15} aria-hidden="true" /> Send email</button></div>
     </div>
+    {manager}
   </dialog>
 }

@@ -35,3 +35,22 @@ export function driveFileGroups(scope: DriveScope, options: { allowed: Set<strin
     .map(item => ({ item, files: (item.driveFiles || []).filter((file: TaskDriveFile) => (!options.allowed || options.allowed.has(extensionOf(file.name))) && (!needle || file.name.toLowerCase().includes(needle) || item.title.toLowerCase().includes(needle))) }))
     .filter(group => group.files.length)
 }
+
+/**
+ * The same tasks and subtasks as `taskOptions`, for a type-to-search field: the title is the label, the client and
+ * project are a hint (searched too), and subtasks are marked so they show under their task. A subtask's hint names its
+ * task, so typing a task's name also finds its subtasks.
+ */
+export function taskChoices(scope: DriveScope, clientId: string, isClosed?: (status: string) => boolean) {
+  const open = scope.items.filter(item => !archivedContext(scope, item) && (!clientId || item.clientId === clientId) && !isClosed?.(item.status))
+  const byId = new Map(scope.items.map(item => [item.id, item]))
+  const rows: { value: string; label: string; hint?: string; depth?: number }[] = []
+  const child = (item: WorkItem) => ({ value: item.id, label: item.title, hint: `under ${byId.get(item.parentTaskId || '')?.title || 'a task'}`, depth: 1 })
+  for (const parent of open.filter(item => !item.parentTaskId)) {
+    rows.push({ value: parent.id, label: parent.title, hint: placeOf(scope, parent) || undefined })
+    open.filter(item => item.parentTaskId === parent.id).sort((a, b) => (a.subtaskOrder ?? 0) - (b.subtaskOrder ?? 0)).forEach(item => rows.push(child(item)))
+  }
+  const known = new Set(rows.map(row => row.value))
+  open.filter(item => item.parentTaskId && !known.has(item.id)).forEach(item => rows.push(child(item)))
+  return rows
+}

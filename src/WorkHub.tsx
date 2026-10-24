@@ -9,6 +9,7 @@ import { findCommunicationTaskDuplicate } from './communicationTasks'
 import { composeEmail, useEmailEnabled } from './EmailComposer'
 import { extractAddress, quoteReply, replySubject } from './emailCompose'
 import ClientSelect from './ClientSelect'
+import { EmailTemplatesManager } from './EmailTemplates'
 
 type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;source_labels?:string[];thread_id?:string;attachments?:Attachment[];status:string;received_at:string;linked_task_id?:string;linked_task_ids?:string[] }
 // Older Gmail rows stored only file names; newer rows also carry part id, type and size.
@@ -103,6 +104,7 @@ export default function WorkHub({clients,projects,accounts,tasks,taskSettings,cu
   const hubSync=useWorkHubSync()
   const canEmail=useEmailEnabled()
   const [replying,setReplying]=useState(false)
+  const [templatesOpen,setTemplatesOpen]=useState(false)
   const [sendStatus,setSendStatus]=useState<{canSend:boolean}|null>(null)
   const [driveAvailable,setDriveAvailable]=useState(false)
   useEffect(()=>{
@@ -239,7 +241,8 @@ export default function WorkHub({clients,projects,accounts,tasks,taskSettings,cu
   const pages=Math.max(1,Math.ceil(total/view.pageSize))
   const openMessage=(item:Message)=>{if(busy)return;setSelected(item);setOpenCount(value=>value+1);setSelectedThread([]);setThreadPage(1);setThreadTotal(0);setThreadError('');setThreadRetry(value=>value+1);setCompose(false);setMessage('');setTitle(item.subject || 'Follow up');setDescription('');setClientId('');setProjectId('');setAssignee(currentUser.id)}
   return <section className="communications-hub page-stack">
-    <div className="panel communications-heading"><div><h2>Work Hub</h2><p>Your email, Discord messages, GitHub/GitLab tickets and manual logs in one place. Your imported content stays private; you choose what to share through tasks.</p><small>Connected integrations sync once at sign-in. Refresh now syncs all integrations; each Sync button refreshes only its own integration.</small></div><div className="integration-actions"><button className="secondary" disabled={hubSync.allRunning || WORK_HUB_INTEGRATIONS.some(id=>hubSync.integrations[id].phase==='syncing')} onClick={()=>void workHubSync.syncAll()}>{hubSync.allRunning?'Refreshing…':'Refresh now'}</button><button className="secondary" onClick={()=>setConfig(!config)}>My integration settings</button>{canEmail && <button className="secondary" disabled={busy} onClick={()=>composeEmail({})}>New email</button>}<button className="primary" disabled={busy || currentUser.role==='Viewer'} onClick={()=>{setTab('Manual');setArchived(false);setSelected(null);setCompose(true);setTitle('');setDescription('')}}>+ New manual log</button></div></div>
+    {templatesOpen && <EmailTemplatesManager userId={currentUser.id} canWrite={currentUser.role!=='Viewer'} onClose={()=>setTemplatesOpen(false)}/>}
+    <div className="panel communications-heading"><div><h2>Work Hub</h2><p>Your email, Discord messages, GitHub/GitLab tickets and manual logs in one place. Your imported content stays private; you choose what to share through tasks.</p><small>Connected integrations sync once at sign-in. Refresh now syncs all integrations; each Sync button refreshes only its own integration.</small></div><div className="integration-actions"><button className="secondary" disabled={hubSync.allRunning || WORK_HUB_INTEGRATIONS.some(id=>hubSync.integrations[id].phase==='syncing')} onClick={()=>void workHubSync.syncAll()}>{hubSync.allRunning?'Refreshing…':'Refresh now'}</button><button className="secondary" onClick={()=>setConfig(!config)}>My integration settings</button>{canEmail && <button className="secondary" disabled={busy} onClick={()=>composeEmail({})}>New email</button>}{canEmail && <button className="secondary" onClick={()=>setTemplatesOpen(true)}>Email templates</button>}<button className="primary" disabled={busy || currentUser.role==='Viewer'} onClick={()=>{setTab('Manual');setArchived(false);setSelected(null);setCompose(true);setTitle('');setDescription('')}}>+ New manual log</button></div></div>
     {message && <p className="settings-message" role="status">{message}</p>}
     <div className="work-hub-sync-status" aria-live="polite">{WORK_HUB_INTEGRATIONS.filter(id=>['syncing','success','error'].includes(hubSync.integrations[id].phase)).map(id=><p className="settings-message" key={id} role={hubSync.integrations[id].phase==='error'?'alert':'status'}>{hubSync.integrations[id].message}</p>)}</div>
     {config && settings && <div className="panel communication-settings"><div className="panel-heading"><h2>My integration settings</h2></div>

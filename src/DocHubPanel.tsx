@@ -9,6 +9,8 @@ import { composeEmail, useEmailEnabled } from './EmailComposer'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 import { useIsClosed } from './openWork'
 import ClientSelect from './ClientSelect'
+import { SearchSelect } from './ClientSelect'
+import { taskChoices } from './documentDriveTargets'
 
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
 const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
@@ -70,7 +72,7 @@ export function DocHubOptions({draft,clients,projects,items,disabled=false}:{dra
     {!draft.available&&<p>Ask your account Administrator to add and enable the DocHub API key in Settings.</p>}
     {draft.enabled&&<div className="document-field-grid"><label>Link to client<ClientSelect clients={clients.filter(c=>!c.archived)} value={draft.options.clientId} onChange={(value) => draft.setOptions(o=>({...o,clientId:value,taskId:''}))} extra={[{ value: '', label: 'No client selected' }]} disabled={disabled||draft.busy} /></label>
     <label>Filter by project<select disabled={disabled||draft.busy} value={projectId} onChange={e=>{setProjectId(e.target.value);draft.setOptions(o=>({...o,taskId:''}))}}><option value="">All projects</option>{projects.filter(p=>!p.archived).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-    <label className="document-field-wide">Existing task or subtask<select disabled={disabled||draft.busy} value={draft.options.taskId} onChange={e=>{const task=items.find(i=>i.id===e.target.value);draft.setOptions(o=>({...o,taskId:e.target.value,clientId:task?.clientId||o.clientId}))}}><option value="">No task association</option>{allowed.map(i=><option key={i.id} value={i.id}>{i.parentTaskId?`${items.find(t=>t.id===i.parentTaskId)?.title || 'Task'} → `:''}{i.title}{!draft.options.clientId?` · ${clients.find(c=>c.id===i.clientId)?.name || 'No client'}`:''}</option>)}</select><small>{selected?'Updates will appear in this work item’s comments.':'Choose the existing work item to keep signing updates in one place.'}</small></label>
+    <label className="document-field-wide">Existing task or subtask<SearchSelect disabled={disabled||draft.busy} value={draft.options.taskId} onChange={id=>{const task=items.find(i=>i.id===id);draft.setOptions(o=>({...o,taskId:id,clientId:task?.clientId||o.clientId}))}} choices={[{value:'',label:'No task association'},...taskChoices({items:allowed,clients,projects},'')]} placeholder="Type a task or subtask" empty="No open task or subtask matches"/><small>{selected?'Updates will appear in this work item’s comments.':'Choose the existing work item to keep signing updates in one place.'}</small></label>
     <label>Signing order<select disabled={disabled||draft.busy} value={draft.options.sequential?'yes':'no'} onChange={e=>draft.setOptions(o=>({...o,sequential:e.target.value==='yes'}))}><option value="no">All at once</option><option value="yes">Sequential · form order</option></select></label>
     <label>Follow up after sending<select disabled={disabled||draft.busy} value={draft.options.followUpDays} onChange={e=>draft.setOptions(o=>({...o,followUpDays:Number(e.target.value)}))}>{[0,1,3,5,7,14,30].map(n=><option key={n} value={n}>{n?`${n} days`:'No automatic follow-up'}</option>)}</select><small>Sets the linked work item’s follow-up if it has no date. Existing dates are kept.</small></label></div>}
     {draft.enabled&&<p className="dochub-note">You will place and assign signature fields in DocHub, then review and send there. Generation does not send invitations.</p>}

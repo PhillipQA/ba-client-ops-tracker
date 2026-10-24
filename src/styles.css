@@ -2087,5 +2087,8 @@ label > .client-combo, .client-combo { width: 100%; }
 .client-combo-list li.extra { color: color-mix(in srgb, currentColor 72%, transparent); font-style: italic; }
 .client-combo-list li[data-active="true"] { background: color-mix(in srgb, var(--combo-accent, #4f6bed) 24%, transparent); }
 .client-combo-list li.chosen { font-weight: 700; }
+.client-combo-list li.sub { padding-left: 22px; }
+.client-combo-list li .client-combo-branch { color: color-mix(in srgb, currentColor 55%, transparent); }
+.client-combo-list li small { margin-left: 8px; font-size: 11px; font-weight: 400; color: color-mix(in srgb, currentColor 60%, transparent); }
 .client-combo-list li.chosen::after { content: ' ✓'; }
 .client-combo-list .client-combo-empty { cursor: default; color: color-mix(in srgb, currentColor 60%, transparent); }
