@@ -40,7 +40,7 @@ for (const d of diagnostics) {
 const count = files => [...files.values()].reduce((a, b) => a + b, 0)
 const rules = [...byRule].sort((a, b) => count(b[1]) - count(a[1]))
 console.log(
-  `::notice title=Lint (${diagnostics.length} findings, ${diagnostics.filter(d => d.severity === 'error').length} errors)::${annotation(rules.map(([rule, files]) => `${count(files)}  ${rule}`).join('\n') || 'none')}`,
+  `::notice title=Lint (${diagnostics.length} findings · ${diagnostics.filter(d => d.severity === 'error').length} errors)::${annotation(rules.map(([rule, files]) => `${count(files)}  ${rule}`).join('\n') || 'none')}`,
 )
 const detail = rules.map(
   ([rule, files]) => `${rule}: ${[...files].map(([f, n]) => `${f}${n > 1 ? ` x${n}` : ''}`).join(', ')}`,
