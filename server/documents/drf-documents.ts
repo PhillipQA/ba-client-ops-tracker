@@ -292,11 +292,9 @@ export function registerDrfRoutes(app: Express) {
       req.body.context || {},
     )
     if (!diagnosticId)
-      return void res
-        .status(503)
-        .json({
-          error: 'DRF error could not be saved. Apply schema-v18-drf-error-logs.sql and check database connectivity.',
-        })
+      return void res.status(503).json({
+        error: 'DRF error could not be saved. Apply schema-v18-drf-error-logs.sql and check database connectivity.',
+      })
     res.status(201).json({ diagnosticId })
   })
 
@@ -438,12 +436,10 @@ export function registerDrfRoutes(app: Express) {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     if (!documentAccessAllowed(user))
       return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
-    res
-      .status(410)
-      .json({
-        error:
-          'COR extraction now runs through the browser. Use Local Extractor or AI Enhanced extraction from DRF Creation.',
-      })
+    res.status(410).json({
+      error:
+        'COR extraction now runs through the browser. Use Local Extractor or AI Enhanced extraction from DRF Creation.',
+    })
   })
 
   app.post('/api/documents/drf/render-template', requireAuth, requireTenantWorkspace, async (req, res) => {

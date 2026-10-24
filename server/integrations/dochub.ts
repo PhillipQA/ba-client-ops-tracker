@@ -934,14 +934,12 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
       try {
         await fn(req, res)
       } catch (e) {
-        res
-          .status(e instanceof DocHubError ? e.status : 503)
-          .json({
-            error:
-              e instanceof DocHubError
-                ? e.message
-                : 'DocHub is unavailable. Check the account settings and database migration.',
-          })
+        res.status(e instanceof DocHubError ? e.status : 503).json({
+          error:
+            e instanceof DocHubError
+              ? e.message
+              : 'DocHub is unavailable. Check the account settings and database migration.',
+        })
       }
     }
   const guard =

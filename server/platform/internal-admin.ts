@@ -25,12 +25,10 @@ import { requirePlatformAdmin } from './platform-auth'
 export function registerInternalAdminRoutes(app: Express) {
   app.get('/api/internal-admin/dashboard', requireAuth, requirePlatformAdmin, async (_req, res) => {
     if (!supabaseAdmin || !(await multiTenantSchemaReady()) || !(await platformAuthSchemaReady()))
-      return void res
-        .status(409)
-        .json({
-          error:
-            'Run supabase/schema-v3-multitenant.sql and supabase/schema-v4-account-login.sql before using Internal Admin.',
-        })
+      return void res.status(409).json({
+        error:
+          'Run supabase/schema-v3-multitenant.sql and supabase/schema-v4-account-login.sql before using Internal Admin.',
+      })
     try {
       const [{ data: organizations, error: orgError }, { data: users, error: userError }] = await Promise.all([
         supabaseAdmin

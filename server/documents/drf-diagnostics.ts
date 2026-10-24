@@ -58,18 +58,16 @@ export async function recordDrfError(
       : {}),
   }
   try {
-    const { error: writeError } = await db
-      .from('drf_error_logs')
-      .insert({
-        id,
-        tenant_id: actor.tenantId,
-        user_id: actor.userId,
-        stage,
-        source,
-        message: safeDrfMessage(error),
-        error_code: typeof (error as any)?.code === 'string' ? String((error as any).code).slice(0, 80) : null,
-        context: safeContext,
-      })
+    const { error: writeError } = await db.from('drf_error_logs').insert({
+      id,
+      tenant_id: actor.tenantId,
+      user_id: actor.userId,
+      stage,
+      source,
+      message: safeDrfMessage(error),
+      error_code: typeof (error as any)?.code === 'string' ? String((error as any).code).slice(0, 80) : null,
+      context: safeContext,
+    })
     if (writeError) throw writeError
     return id
   } catch (writeError) {

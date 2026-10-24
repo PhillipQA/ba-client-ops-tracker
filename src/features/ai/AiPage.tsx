@@ -4,16 +4,7 @@ import { isArchived } from '../tasks/lifecycle'
 
 /** Ai screen. It reads the app state; see app/useAppState. */
 export function AiPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
-  const {
-    aiClientId,
-    aiProjectId,
-    aiPrompt,
-    applyAISuggestion,
-    setAiClientId,
-    setAiProjectId,
-    setAiPrompt,
-    store,
-  } =
+  const { aiClientId, aiProjectId, aiPrompt, applyAISuggestion, setAiClientId, setAiProjectId, setAiPrompt, store } =
     app
   return (
     <section className="page-stack">

@@ -229,12 +229,10 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
       res.json(await entry.promise)
     } catch (error) {
       const known = error instanceof IntegrationError
-      res
-        .status(known ? error.status : 503)
-        .json({
-          error: known ? error.message : 'Email could not be sent right now.',
-          ...(error instanceof SendError && error.code ? { code: error.code } : {}),
-        })
+      res.status(known ? error.status : 503).json({
+        error: known ? error.message : 'Email could not be sent right now.',
+        ...(error instanceof SendError && error.code ? { code: error.code } : {}),
+      })
     }
   })
 

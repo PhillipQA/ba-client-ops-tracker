@@ -62,11 +62,9 @@ function enforceLoginFailureLimit(req: express.Request, res: express.Response, n
     return
   }
   res.setHeader('Retry-After', String(result.retryAfterSeconds))
-  res
-    .status(429)
-    .json({
-      error: `Too many failed login attempts. Please try again in ${Math.ceil(result.retryAfterSeconds / 60)} minute${result.retryAfterSeconds > 60 ? 's' : ''}.`,
-    })
+  res.status(429).json({
+    error: `Too many failed login attempts. Please try again in ${Math.ceil(result.retryAfterSeconds / 60)} minute${result.retryAfterSeconds > 60 ? 's' : ''}.`,
+  })
 }
 
 function rejectInvalidLogin(req: express.Request, res: express.Response) {
@@ -106,11 +104,9 @@ export function registerAuthRoutes(app: Express) {
       // The Internal Admin control plane is intentionally separate from tenant workspaces.
       if (accountKey === INTERNAL_ADMIN_ACCOUNT_KEY) {
         if (!supabaseAdmin || !(await platformAuthSchemaReady())) {
-          res
-            .status(409)
-            .json({
-              error: 'Internal Admin authentication is not initialized. Run the latest account/security schema first.',
-            })
+          res.status(409).json({
+            error: 'Internal Admin authentication is not initialized. Run the latest account/security schema first.',
+          })
           return
         }
 
@@ -132,12 +128,10 @@ export function registerAuthRoutes(app: Express) {
         let storedHash = String(platformAccount.password_hash || '')
         if (storedHash === PASSWORD_BOOTSTRAP_MARKER) {
           if (!bootstrapPasswordUsable(internalAdminBootstrapPassword)) {
-            res
-              .status(503)
-              .json({
-                error:
-                  'Internal Admin requires a secure bootstrap password. Set INTERNAL_ADMIN_BOOTSTRAP_PASSWORD (12+ characters) in Render, then redeploy.',
-              })
+            res.status(503).json({
+              error:
+                'Internal Admin requires a secure bootstrap password. Set INTERNAL_ADMIN_BOOTSTRAP_PASSWORD (12+ characters) in Render, then redeploy.',
+            })
             return
           }
           if (!safeEqualText(password, internalAdminBootstrapPassword)) {
@@ -200,12 +194,10 @@ export function registerAuthRoutes(app: Express) {
         if (storedHash === PASSWORD_BOOTSTRAP_MARKER) {
           const isBxiBootstrap = organization.id === BXI_CORE_ORG_ID && username.toLowerCase() === 'admin'
           if (!isBxiBootstrap || !bootstrapPasswordUsable(bxiCoreBootstrapPassword)) {
-            res
-              .status(503)
-              .json({
-                error:
-                  'This bootstrap account requires a secure server password. Configure BXI_CORE_BOOTSTRAP_PASSWORD (12+ characters) and redeploy.',
-              })
+            res.status(503).json({
+              error:
+                'This bootstrap account requires a secure server password. Configure BXI_CORE_BOOTSTRAP_PASSWORD (12+ characters) and redeploy.',
+            })
             return
           }
           if (!safeEqualText(password, bxiCoreBootstrapPassword)) {

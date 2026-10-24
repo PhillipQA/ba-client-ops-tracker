@@ -387,14 +387,12 @@ export function registerFsdRoutes(
         analyzedAt: new Date().toISOString(),
       })
     } catch (e) {
-      res
-        .status(e instanceof IntegrationError ? e.status : 502)
-        .json({
-          error:
-            e instanceof IntegrationError
-              ? e.message
-              : 'Source analysis failed. Check the Document Agent key, model access, quota and connection. Your source text is retained.',
-        })
+      res.status(e instanceof IntegrationError ? e.status : 502).json({
+        error:
+          e instanceof IntegrationError
+            ? e.message
+            : 'Source analysis failed. Check the Document Agent key, model access, quota and connection. Your source text is retained.',
+      })
     }
   })
   app.post('/api/documents/fsd/preview', ...scope, limiter, async (req, res) => {
@@ -577,14 +575,12 @@ export function registerFsdRoutes(
         generatedAt: new Date().toISOString(),
       })
     } catch (e) {
-      res
-        .status(e instanceof IntegrationError ? e.status : 502)
-        .json({
-          error:
-            e instanceof IntegrationError
-              ? e.message
-              : 'FSD generation failed. Check the Document Agent key, model access, quota and connection. Your draft is retained.',
-        })
+      res.status(e instanceof IntegrationError ? e.status : 502).json({
+        error:
+          e instanceof IntegrationError
+            ? e.message
+            : 'FSD generation failed. Check the Document Agent key, model access, quota and connection. Your draft is retained.',
+      })
     }
   })
   app.post('/api/documents/fsd/generate', ...scope, limiter, async (req, res) => {
@@ -670,14 +666,12 @@ export function registerFsdRoutes(
         mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       })
     } catch (e) {
-      res
-        .status(e instanceof IntegrationError ? e.status : 500)
-        .json({
-          error:
-            e instanceof IntegrationError
-              ? e.message
-              : 'Could not export the FSD. Confirm the FSD template assets are installed.',
-        })
+      res.status(e instanceof IntegrationError ? e.status : 500).json({
+        error:
+          e instanceof IntegrationError
+            ? e.message
+            : 'Could not export the FSD. Confirm the FSD template assets are installed.',
+      })
     }
   })
 }

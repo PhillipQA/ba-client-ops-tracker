@@ -53,15 +53,13 @@ export function registerGithub(
         await fn(req, res)
       } catch (e) {
         if (e instanceof GithubError && e.retryAfterSeconds) res.setHeader('Retry-After', String(e.retryAfterSeconds))
-        res
-          .status(e instanceof IntegrationError ? e.status : 503)
-          .json({
-            error:
-              e instanceof IntegrationError
-                ? e.message
-                : 'GitHub storage is unavailable. Apply schema-v19-work-hub-github.sql and retry.',
-            ...(e instanceof GithubError && e.retryAfterSeconds ? { retryAfterSeconds: e.retryAfterSeconds } : {}),
-          })
+        res.status(e instanceof IntegrationError ? e.status : 503).json({
+          error:
+            e instanceof IntegrationError
+              ? e.message
+              : 'GitHub storage is unavailable. Apply schema-v19-work-hub-github.sql and retry.',
+          ...(e instanceof GithubError && e.retryAfterSeconds ? { retryAfterSeconds: e.retryAfterSeconds } : {}),
+        })
       }
     }
   const locked = async <T>(u: any, fn: () => Promise<T>) => {
@@ -182,24 +180,22 @@ export function registerGithub(
         const identity = githubIdentity(await githubRequest(token, '/user')),
           previous = await connection(u)
         const same = previous?.github_user_id === identity.id
-        const result = await db
-          .from('user_github_connections')
-          .upsert(
-            {
-              tenant_id: u.organizationId,
-              user_id: u.id,
-              github_user_id: identity.id,
-              github_login: identity.login,
-              encrypted_token: encryptSecret(token, key(u), 'github-token'),
-              repositories: same ? previous.repositories || [] : [],
-              sync_cursor: null,
-              last_synced_at: same ? previous.last_synced_at : null,
-              retry_after: null,
-              revision: randomUUID(),
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'tenant_id,user_id' },
-          )
+        const result = await db.from('user_github_connections').upsert(
+          {
+            tenant_id: u.organizationId,
+            user_id: u.id,
+            github_user_id: identity.id,
+            github_login: identity.login,
+            encrypted_token: encryptSecret(token, key(u), 'github-token'),
+            repositories: same ? previous.repositories || [] : [],
+            sync_cursor: null,
+            last_synced_at: same ? previous.last_synced_at : null,
+            retry_after: null,
+            revision: randomUUID(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'tenant_id,user_id' },
+        )
         if (result.error) throw result.error
         res.json(summary(await connection(u)))
       }),

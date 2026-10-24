@@ -295,14 +295,12 @@ export function registerTestCaseRoutes(
         generatedAt: new Date().toISOString(),
       })
     } catch (e) {
-      res
-        .status(e instanceof IntegrationError ? e.status : 502)
-        .json({
-          error:
-            e instanceof IntegrationError
-              ? e.message
-              : 'Coverage mapping failed. Check the Document Agent key, model access, quota and connection.',
-        })
+      res.status(e instanceof IntegrationError ? e.status : 502).json({
+        error:
+          e instanceof IntegrationError
+            ? e.message
+            : 'Coverage mapping failed. Check the Document Agent key, model access, quota and connection.',
+      })
     }
   })
   app.post('/api/documents/test-cases/generate', ...scope, limiter, async (req, res) => {
@@ -333,14 +331,12 @@ export function registerTestCaseRoutes(
         generatedAt: new Date().toISOString(),
       })
     } catch (e) {
-      res
-        .status(e instanceof IntegrationError ? e.status : 502)
-        .json({
-          error:
-            e instanceof IntegrationError
-              ? e.message
-              : 'Test case generation failed. Check the Document Agent key, model access, quota and connection.',
-        })
+      res.status(e instanceof IntegrationError ? e.status : 502).json({
+        error:
+          e instanceof IntegrationError
+            ? e.message
+            : 'Test case generation failed. Check the Document Agent key, model access, quota and connection.',
+      })
     }
   })
   app.post('/api/documents/test-cases/export', ...scope, async (req, res) => {

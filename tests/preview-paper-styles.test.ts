@@ -20,7 +20,10 @@ test('both papers set their own light tokens, whatever the workspace theme', () 
     squashed('features/documents/fsd.css'),
     /\.fsd-paper,\.brd-paper\{[^}]*color-scheme:light[^}]*--fsd-heading:#17191d[^}]*--fsd-surface:#fff/,
   )
-  assert.match(squashed('styles/appearance.css'), /data-interface-mode\]:is\(\.fsd-paper,\.brd-paper\)\{[^}]*--fsd-heading:#17191d/)
+  assert.match(
+    squashed('styles/appearance.css'),
+    /data-interface-mode\]:is\(\.fsd-paper,\.brd-paper\)\{[^}]*--fsd-heading:#17191d/,
+  )
 })
 
 test('paper tables and text outrank the generic dark and wallpaper rules', () => {

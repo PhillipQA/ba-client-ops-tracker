@@ -20,12 +20,10 @@ export function requirePlatformAdmin(req: express.Request, res: express.Response
       .split('?')[0]
       .replace(/\/+$/, '')
     if (!ALLOWED_BEFORE_PASSWORD_CHANGE.has(path)) {
-      res
-        .status(403)
-        .json({
-          error: 'Change the Internal Admin bootstrap password before making other changes.',
-          code: 'PASSWORD_CHANGE_REQUIRED',
-        })
+      res.status(403).json({
+        error: 'Change the Internal Admin bootstrap password before making other changes.',
+        code: 'PASSWORD_CHANGE_REQUIRED',
+      })
       return
     }
   }

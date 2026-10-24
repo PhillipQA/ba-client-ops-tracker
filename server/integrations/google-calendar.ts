@@ -265,11 +265,9 @@ export function registerGoogleCalendarRoutes(
         await fn(req, res)
       } catch (e) {
         if (!res.headersSent)
-          res
-            .status(e instanceof IntegrationError ? e.status : 503)
-            .json({
-              error: e instanceof IntegrationError ? e.message : 'Calendar is temporarily unavailable. Please retry.',
-            })
+          res.status(e instanceof IntegrationError ? e.status : 503).json({
+            error: e instanceof IntegrationError ? e.message : 'Calendar is temporarily unavailable. Please retry.',
+          })
       }
     }
   const limiter = rateLimit({

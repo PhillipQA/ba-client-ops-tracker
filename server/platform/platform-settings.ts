@@ -10,14 +10,12 @@ export function registerPlatformSettings(app: Express, d: any) {
     try {
       await fn(req, res)
     } catch (e) {
-      res
-        .status(e instanceof IntegrationError ? e.status : 503)
-        .json({
-          error:
-            e instanceof IntegrationError
-              ? e.message
-              : 'Platform settings unavailable. Check the database and migrations.',
-        })
+      res.status(e instanceof IntegrationError ? e.status : 503).json({
+        error:
+          e instanceof IntegrationError
+            ? e.message
+            : 'Platform settings unavailable. Check the database and migrations.',
+      })
     }
   }
   const organization = async (req: any) => {

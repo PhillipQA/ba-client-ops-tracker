@@ -115,19 +115,15 @@ function validatePreview(
   if (new Set(functionalRequirements.map(r => r.id.toLowerCase())).size !== functionalRequirements.length)
     throw new IntegrationError('BRD requirement IDs must be unique.', 422)
   const customerMapping: BrdMappingRow[] = Array.isArray(value?.customerMapping)
-    ? value.customerMapping
-        .slice(0, 100)
-        .map((row: any) => ({
-          source: text(row?.source || '', 'mapping source', 500),
-          sourceField: text(row?.sourceField || '', 'source field', 500),
-          target: text(row?.target || '', 'mapping target', 500),
-          targetField: text(row?.targetField || '', 'target field', 500),
-          rule: text(row?.rule || '', 'mapping rule', 3000),
-          sourceIds: Array.isArray(row?.sourceIds)
-            ? row.sourceIds.map((id: any) => text(id, 'source ID', 80, true))
-            : [],
-          inferred: Boolean(row?.inferred),
-        }))
+    ? value.customerMapping.slice(0, 100).map((row: any) => ({
+        source: text(row?.source || '', 'mapping source', 500),
+        sourceField: text(row?.sourceField || '', 'source field', 500),
+        target: text(row?.target || '', 'mapping target', 500),
+        targetField: text(row?.targetField || '', 'target field', 500),
+        rule: text(row?.rule || '', 'mapping rule', 3000),
+        sourceIds: Array.isArray(row?.sourceIds) ? row.sourceIds.map((id: any) => text(id, 'source ID', 80, true)) : [],
+        inferred: Boolean(row?.inferred),
+      }))
     : []
   const openQuestions = list(value?.openQuestions || [], 'open questions', 100, 2000, false)
   if (knownSources) {
@@ -281,14 +277,12 @@ export function registerBrdRoutes(
         generatedAt: new Date().toISOString(),
       })
     } catch (e) {
-      res
-        .status(e instanceof IntegrationError ? e.status : 502)
-        .json({
-          error:
-            e instanceof IntegrationError
-              ? e.message
-              : 'BRD generation failed. Check the Document Agent key, model access, quota and connection. Your draft is retained.',
-        })
+      res.status(e instanceof IntegrationError ? e.status : 502).json({
+        error:
+          e instanceof IntegrationError
+            ? e.message
+            : 'BRD generation failed. Check the Document Agent key, model access, quota and connection. Your draft is retained.',
+      })
     }
   })
   app.post('/api/documents/brd/generate', ...scope, limiter, async (req, res) => {
@@ -317,14 +311,12 @@ export function registerBrdRoutes(
         mimeType: DOCX_MIME,
       })
     } catch (e) {
-      res
-        .status(e instanceof IntegrationError ? e.status : 500)
-        .json({
-          error:
-            e instanceof IntegrationError
-              ? e.message
-              : 'Could not export the BRD. Confirm the BRD template assets are installed.',
-        })
+      res.status(e instanceof IntegrationError ? e.status : 500).json({
+        error:
+          e instanceof IntegrationError
+            ? e.message
+            : 'Could not export the BRD. Confirm the BRD template assets are installed.',
+      })
     }
   })
 }

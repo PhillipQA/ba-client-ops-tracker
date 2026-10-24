@@ -184,19 +184,17 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     detail: Record<string, unknown>,
     required = false,
   ) {
-    const r = await db
-      .from('tenant_tracker_changes')
-      .insert({
-        id: randomUUID(),
-        tenant_id: tenant,
-        tracker_id: trackerId,
-        row_id: rowId,
-        actor_id: user.id,
-        actor_name: user.name,
-        kind,
-        detail,
-        created_at: now(),
-      })
+    const r = await db.from('tenant_tracker_changes').insert({
+      id: randomUUID(),
+      tenant_id: tenant,
+      tracker_id: trackerId,
+      row_id: rowId,
+      actor_id: user.id,
+      actor_name: user.name,
+      kind,
+      detail,
+      created_at: now(),
+    })
     // History is best effort, except for a reveal: a secret is never shown without a record that it was.
     if (r.error && required)
       throw new TrackerError('The reveal could not be recorded, so nothing was shown. Try again.', 503)

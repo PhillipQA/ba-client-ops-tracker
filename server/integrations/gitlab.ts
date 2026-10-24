@@ -56,15 +56,13 @@ export function registerGitlab(
         await fn(req, res)
       } catch (e) {
         if (e instanceof GitlabError && e.retryAfterSeconds) res.setHeader('Retry-After', String(e.retryAfterSeconds))
-        res
-          .status(e instanceof IntegrationError ? e.status : 503)
-          .json({
-            error:
-              e instanceof IntegrationError
-                ? e.message
-                : 'GitLab storage is unavailable. Apply schema-v20-work-hub-gitlab.sql and retry.',
-            ...(e instanceof GitlabError && e.retryAfterSeconds ? { retryAfterSeconds: e.retryAfterSeconds } : {}),
-          })
+        res.status(e instanceof IntegrationError ? e.status : 503).json({
+          error:
+            e instanceof IntegrationError
+              ? e.message
+              : 'GitLab storage is unavailable. Apply schema-v20-work-hub-gitlab.sql and retry.',
+          ...(e instanceof GitlabError && e.retryAfterSeconds ? { retryAfterSeconds: e.retryAfterSeconds } : {}),
+        })
       }
     }
   const locked = async <T>(u: any, fn: () => Promise<T>) => {
@@ -187,25 +185,23 @@ export function registerGitlab(
         const identity = gitlabIdentity(await api(token, '/user', baseUrl)),
           previous = await connection(u)
         const same = previous?.gitlab_user_id === identity.id && previous?.instance_url === baseUrl
-        const result = await db
-          .from('user_gitlab_connections')
-          .upsert(
-            {
-              tenant_id: u.organizationId,
-              user_id: u.id,
-              instance_url: baseUrl,
-              gitlab_user_id: identity.id,
-              gitlab_login: identity.login,
-              encrypted_token: encryptSecret(token, `${key(u)}:${baseUrl}`, 'gitlab-token'),
-              repositories: same ? previous.repositories || [] : [],
-              sync_cursor: null,
-              last_synced_at: same ? previous.last_synced_at : null,
-              retry_after: null,
-              revision: randomUUID(),
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'tenant_id,user_id' },
-          )
+        const result = await db.from('user_gitlab_connections').upsert(
+          {
+            tenant_id: u.organizationId,
+            user_id: u.id,
+            instance_url: baseUrl,
+            gitlab_user_id: identity.id,
+            gitlab_login: identity.login,
+            encrypted_token: encryptSecret(token, `${key(u)}:${baseUrl}`, 'gitlab-token'),
+            repositories: same ? previous.repositories || [] : [],
+            sync_cursor: null,
+            last_synced_at: same ? previous.last_synced_at : null,
+            retry_after: null,
+            revision: randomUUID(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'tenant_id,user_id' },
+        )
         if (result.error) throw result.error
         res.json(summary(await connection(u)))
       }),

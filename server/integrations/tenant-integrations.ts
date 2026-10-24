@@ -481,13 +481,11 @@ export function registerIntegrationRoutes(
           ? user.role !== 'Administrator' || (!user.modules.includes('documents') && !user.modules.includes('settings'))
           : user.role !== 'Administrator' || !user.modules.includes('settings')
       if (denied) {
-        return void res
-          .status(403)
-          .json({
-            error: templateRequest
-              ? 'Account Administrator access is required to manage document templates.'
-              : 'Account administrator with Settings access is required.',
-          })
+        return void res.status(403).json({
+          error: templateRequest
+            ? 'Account Administrator access is required to manage document templates.'
+            : 'Account administrator with Settings access is required.',
+        })
       }
       res.setHeader('Cache-Control', 'no-store')
       next()
@@ -501,14 +499,12 @@ export function registerIntegrationRoutes(
       try {
         await fn(req, res)
       } catch (e) {
-        res
-          .status(e instanceof IntegrationError ? e.status : 503)
-          .json({
-            error:
-              e instanceof IntegrationError
-                ? e.message
-                : 'Could not complete integration settings. Retry when the service is available.',
-          })
+        res.status(e instanceof IntegrationError ? e.status : 503).json({
+          error:
+            e instanceof IntegrationError
+              ? e.message
+              : 'Could not complete integration settings. Retry when the service is available.',
+        })
       }
     }
   const limiter = rateLimit({
@@ -579,35 +575,31 @@ export function registerIntegrationRoutes(
     )
   const saveTemplate = async (tenantId: string, type: DocumentTemplateKind, body: any) => {
     const validated = decodeTemplateUpload(type, body?.name, body?.content_base64)
-    const { error } = await db
-      .from('tenant_templates')
-      .upsert(
-        {
-          tenant_id: tenantId,
-          template_type: type,
-          name: validated.name,
-          content_base64: validated.content,
-          is_enabled: true,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'tenant_id,template_type' },
-      )
+    const { error } = await db.from('tenant_templates').upsert(
+      {
+        tenant_id: tenantId,
+        template_type: type,
+        name: validated.name,
+        content_base64: validated.content,
+        is_enabled: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'tenant_id,template_type' },
+    )
     if (error) throw new IntegrationError('Could not save the account document template.', 503)
   }
   const disableTemplate = async (tenantId: string, type: DocumentTemplateKind) => {
-    const { error } = await db
-      .from('tenant_templates')
-      .upsert(
-        {
-          tenant_id: tenantId,
-          template_type: type,
-          name: '',
-          content_base64: '',
-          is_enabled: false,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'tenant_id,template_type' },
-      )
+    const { error } = await db.from('tenant_templates').upsert(
+      {
+        tenant_id: tenantId,
+        template_type: type,
+        name: '',
+        content_base64: '',
+        is_enabled: false,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'tenant_id,template_type' },
+    )
     if (error) throw new IntegrationError('Could not remove the account document template.', 503)
   }
   app.get(

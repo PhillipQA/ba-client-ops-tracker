@@ -778,13 +778,11 @@ export function registerDrive(app: Express, deps: Deps) {
             source: 'gmail',
           })
           if (result.duplicate) {
-            res
-              .status(409)
-              .json({
-                code: 'ALREADY_SAVED',
-                error: `“${download.name}” is already saved to this ${result.task?.parentTaskId ? 'subtask' : 'task'}.`,
-                file: result.file,
-              })
+            res.status(409).json({
+              code: 'ALREADY_SAVED',
+              error: `“${download.name}” is already saved to this ${result.task?.parentTaskId ? 'subtask' : 'task'}.`,
+              file: result.file,
+            })
             return
           }
           res.status(201).json({ file: result.file, task: result.task })
@@ -879,14 +877,12 @@ export function registerDrive(app: Express, deps: Deps) {
             source: 'generated',
           })
           if (result.duplicate) {
-            res
-              .status(409)
-              .json({
-                code: 'ALREADY_SAVED',
-                error: `“${name}” is already saved to this ${task.parentTaskId ? 'subtask' : 'task'}.`,
-                file: result.file,
-                path: result.path,
-              })
+            res.status(409).json({
+              code: 'ALREADY_SAVED',
+              error: `“${name}” is already saved to this ${task.parentTaskId ? 'subtask' : 'task'}.`,
+              file: result.file,
+              path: result.path,
+            })
             return
           }
           res.status(201).json({ file: result.file, path: result.path })

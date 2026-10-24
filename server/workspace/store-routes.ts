@@ -99,12 +99,10 @@ export function registerStoreRoutes(app: Express) {
         organizationName: organization.name,
       })
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          ready: false,
-          error: error instanceof Error ? error.message : 'Could not check normalized data architecture.',
-        })
+      res.status(500).json({
+        ready: false,
+        error: error instanceof Error ? error.message : 'Could not check normalized data architecture.',
+      })
     }
   })
 
@@ -176,13 +174,11 @@ export function registerStoreRoutes(app: Express) {
         updatedAt: current.updatedAt,
       })
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          configured: true,
-          notifications: [],
-          error: error instanceof Error ? error.message : 'Notifications could not be loaded.',
-        })
+      res.status(500).json({
+        configured: true,
+        notifications: [],
+        error: error instanceof Error ? error.message : 'Notifications could not be loaded.',
+      })
     }
   })
 
@@ -255,13 +251,11 @@ export function registerStoreRoutes(app: Express) {
     try {
       const currentState = await ensureTenantFollowUpsCurrent(String(organizationId))
       if (currentState.changes.length) {
-        res
-          .status(409)
-          .json({
-            configured: true,
-            refreshRequired: true,
-            error: `${currentState.changes.length} open Subtask follow-up${currentState.changes.length === 1 ? '' : 's'} rolled forward automatically. Reload to preserve the System trail before saving your change.`,
-          })
+        res.status(409).json({
+          configured: true,
+          refreshRequired: true,
+          error: `${currentState.changes.length} open Subtask follow-up${currentState.changes.length === 1 ? '' : 's'} rolled forward automatically. Reload to preserve the System trail before saving your change.`,
+        })
         return
       }
       const current =
@@ -281,14 +275,12 @@ export function registerStoreRoutes(app: Express) {
             }
 
       if (typeof req.body?.baseVersion !== 'string' || req.body.baseVersion !== workspaceVersion(current)) {
-        return void res
-          .status(409)
-          .json({
-            configured: true,
-            refreshRequired: true,
-            error:
-              'This workspace has newer changes. Your edits are retained locally. Download them and reload the latest workspace before reapplying your change.',
-          })
+        return void res.status(409).json({
+          configured: true,
+          refreshRequired: true,
+          error:
+            'This workspace has newer changes. Your edits are retained locally. Download them and reload the latest workspace before reapplying your change.',
+        })
       }
 
       // The browser may add default display columns while loading old tenant
@@ -384,12 +376,10 @@ export function registerStoreRoutes(app: Express) {
       const accountsChanged = stable(currentAccounts) !== stable(nextAccounts)
       const selfOnlyAccounts = accountsChanged && accountChangesAreSelfOnly(currentAccounts, nextAccounts, user.id)
       if (accountsChanged && !selfOnlyAccounts)
-        return void res
-          .status(403)
-          .json({
-            error:
-              'Manage users and access in Users & Permissions. Reload if another administrator changed account users.',
-          })
+        return void res.status(403).json({
+          error:
+            'Manage users and access in Users & Permissions. Reload if another administrator changed account users.',
+        })
       if (stable(current.taskSettings ?? defaultTaskSettings) !== stable(next.taskSettings ?? defaultTaskSettings))
         return void res
           .status(409)

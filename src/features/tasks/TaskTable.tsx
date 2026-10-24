@@ -5,14 +5,7 @@ import { archivedWorkReason } from './lifecycle'
 import { niceDate } from '../../shared/dates'
 import { Empty, PriorityChip, StatusChip, TypeChip, WaitingChip } from '../../shared/ui/Chips'
 import { taskEvidenceUrl } from './taskEvidence'
-import type {
-  Client,
-  Project,
-  TaskColumnKey,
-  TaskSettings,
-  WaitingOn,
-  WorkItem,
-} from '../../shared/types'
+import type { Client, Project, TaskColumnKey, TaskSettings, WaitingOn, WorkItem } from '../../shared/types'
 import { isWaitingOnDone } from './waitingOn'
 import {
   CheckCircle2,

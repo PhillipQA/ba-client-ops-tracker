@@ -109,12 +109,10 @@ export function registerAssistantRoutes(app: Express) {
       })
     } catch (error) {
       console.error('Account AI request failed.')
-      res
-        .status(502)
-        .json({
-          error:
-            'BA Assistant request failed. Check this account’s BA Assistant provider, key, selected model, quota, and connection.',
-        })
+      res.status(502).json({
+        error:
+          'BA Assistant request failed. Check this account’s BA Assistant provider, key, selected model, quota, and connection.',
+      })
     }
   })
 }

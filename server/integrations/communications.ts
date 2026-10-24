@@ -147,14 +147,12 @@ export function registerCommunications(
         if (!db) throw new IntegrationError('Cloud storage is required for private communications.', 503)
         await fn(req, res)
       } catch (error) {
-        res
-          .status(error instanceof IntegrationError ? error.status : 503)
-          .json({
-            error:
-              error instanceof IntegrationError
-                ? error.message
-                : 'Communications are unavailable. Apply schema-v12-communications.sql and retry.',
-          })
+        res.status(error instanceof IntegrationError ? error.status : 503).json({
+          error:
+            error instanceof IntegrationError
+              ? error.message
+              : 'Communications are unavailable. Apply schema-v12-communications.sql and retry.',
+        })
       }
     }
   const account = async (tenantId: string) => {
@@ -526,27 +524,25 @@ export function registerCommunications(
       )
         throw new IntegrationError('Choose up to 30 Gmail labels.')
       const previous = await settings(user.organizationId, user.id)
-      const { error } = await db
-        .from('user_communication_settings')
-        .upsert(
-          {
-            tenant_id: user.organizationId,
-            user_id: user.id,
-            discord_user_id: id || null,
-            discord_capture_mentions: req.body?.captureMentions !== false,
-            gmail_labels: [...new Set(labels)],
-            gmail_email: previous?.gmail_email || null,
-            gmail_refresh_token: previous?.gmail_refresh_token || null,
-            gmail_label_catalog: previous?.gmail_label_catalog || [],
-            gmail_sync_state:
-              JSON.stringify([...(previous?.gmail_labels || [])].sort()) === JSON.stringify([...labels].sort())
-                ? previous?.gmail_sync_state || {}
-                : {},
-            gmail_config_revision: previous?.gmail_config_revision || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'tenant_id,user_id' },
-        )
+      const { error } = await db.from('user_communication_settings').upsert(
+        {
+          tenant_id: user.organizationId,
+          user_id: user.id,
+          discord_user_id: id || null,
+          discord_capture_mentions: req.body?.captureMentions !== false,
+          gmail_labels: [...new Set(labels)],
+          gmail_email: previous?.gmail_email || null,
+          gmail_refresh_token: previous?.gmail_refresh_token || null,
+          gmail_label_catalog: previous?.gmail_label_catalog || [],
+          gmail_sync_state:
+            JSON.stringify([...(previous?.gmail_labels || [])].sort()) === JSON.stringify([...labels].sort())
+              ? previous?.gmail_sync_state || {}
+              : {},
+          gmail_config_revision: previous?.gmail_config_revision || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'tenant_id,user_id' },
+      )
       if (error)
         throw new IntegrationError(
           error.code === '23505'
@@ -637,13 +633,11 @@ export function registerCommunications(
         if (!title) throw new IntegrationError('Enter a task title.')
         const duplicate = findCommunicationTaskDuplicate(state.items || [], { title, clientId, projectId })
         if (duplicate) {
-          res
-            .status(409)
-            .json({
-              code: 'DUPLICATE_TASK',
-              error: `A task named “${duplicate.title}” already exists for this client and project. Enter a different task title.`,
-              taskId: duplicate.id,
-            })
+          res.status(409).json({
+            code: 'DUPLICATE_TASK',
+            error: `A task named “${duplicate.title}” already exists for this client and project. Enter a different task title.`,
+            taskId: duplicate.id,
+          })
           return
         }
         const item = {
@@ -838,24 +832,22 @@ export function registerCommunications(
         throw new Error('Account OAuth settings changed')
       const previous = await settings(saved.tenantId, saved.userId)
       const sameMailbox = previous?.gmail_email?.toLowerCase() === String(identity.email).toLowerCase()
-      const { error } = await db
-        .from('user_communication_settings')
-        .upsert(
-          {
-            tenant_id: saved.tenantId,
-            user_id: saved.userId,
-            discord_user_id: previous?.discord_user_id || null,
-            discord_capture_mentions: previous?.discord_capture_mentions ?? true,
-            gmail_email: String(identity.email),
-            gmail_refresh_token: encryptSecret(grant.refresh_token, `${saved.tenantId}:${saved.userId}`, gmailKind),
-            gmail_sync_state: {},
-            gmail_config_revision: saved.revision,
-            gmail_labels: sameMailbox ? previous?.gmail_labels || [] : [],
-            gmail_label_catalog: sameMailbox ? previous?.gmail_label_catalog || [] : [],
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'tenant_id,user_id' },
-        )
+      const { error } = await db.from('user_communication_settings').upsert(
+        {
+          tenant_id: saved.tenantId,
+          user_id: saved.userId,
+          discord_user_id: previous?.discord_user_id || null,
+          discord_capture_mentions: previous?.discord_capture_mentions ?? true,
+          gmail_email: String(identity.email),
+          gmail_refresh_token: encryptSecret(grant.refresh_token, `${saved.tenantId}:${saved.userId}`, gmailKind),
+          gmail_sync_state: {},
+          gmail_config_revision: saved.revision,
+          gmail_labels: sameMailbox ? previous?.gmail_labels || [] : [],
+          gmail_label_catalog: sameMailbox ? previous?.gmail_label_catalog || [] : [],
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'tenant_id,user_id' },
+      )
       if (error) throw error
       // Google lets people untick individual permissions, so report what was actually granted.
       result =
@@ -1051,15 +1043,13 @@ export function registerCommunications(
                     .eq('id', found.id)
                     .eq('tenant_id', user.organizationId)
                     .eq('owner_user_id', user.id)
-                : db
-                    .from('user_communications')
-                    .insert({
-                      tenant_id: user.organizationId,
-                      owner_user_id: user.id,
-                      source: 'Gmail',
-                      external_id: externalId,
-                      ...fields,
-                    })
+                : db.from('user_communications').insert({
+                    tenant_id: user.organizationId,
+                    owner_user_id: user.id,
+                    source: 'Gmail',
+                    external_id: externalId,
+                    ...fields,
+                  })
               const { error } = await query
               if (error && error.code !== '23505') throw error
               if (!error) {
@@ -1187,25 +1177,23 @@ export function registerCommunications(
       }
       let count = 0
       for (const recipient of new Map<string, any>(recipients.map((x: any) => [String(x.user_id), x])).values()) {
-        const { error: writeError } = await db
-          .from('user_communications')
-          .insert({
-            tenant_id: tenantId,
-            owner_user_id: recipient.user_id,
-            source: 'Discord',
-            external_id: String(message.id),
-            thread_id: String(
-              message.guildId
-                ? message.channel?.isThread?.()
-                  ? message.channelId
-                  : message.reference?.messageId || message.id
-                : message.channelId || '',
-            ),
-            subject: message.guildId ? `Mention in #${message.channel?.name || 'channel'}` : 'Bot direct message',
-            body: String(message.content || '').slice(0, 30000),
-            sender: String(message.author?.globalName || message.author?.username || 'Discord user'),
-            received_at: new Date(message.createdTimestamp || Date.now()).toISOString(),
-          })
+        const { error: writeError } = await db.from('user_communications').insert({
+          tenant_id: tenantId,
+          owner_user_id: recipient.user_id,
+          source: 'Discord',
+          external_id: String(message.id),
+          thread_id: String(
+            message.guildId
+              ? message.channel?.isThread?.()
+                ? message.channelId
+                : message.reference?.messageId || message.id
+              : message.channelId || '',
+          ),
+          subject: message.guildId ? `Mention in #${message.channel?.name || 'channel'}` : 'Bot direct message',
+          body: String(message.content || '').slice(0, 30000),
+          sender: String(message.author?.globalName || message.author?.username || 'Discord user'),
+          received_at: new Date(message.createdTimestamp || Date.now()).toISOString(),
+        })
         if (writeError && writeError.code !== '23505') throw writeError
         if (!writeError) count++
       }
