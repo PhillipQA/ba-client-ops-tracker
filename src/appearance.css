@@ -108,10 +108,10 @@ body:has(.app-shell[data-interface-mode="gray"]), .app-shell[data-interface-mode
 .app-shell.ui-refresh[data-interface-mode] :is(.role-badge, .count-pill, .top-role-pill, .source-local, .neutral, .priority-low, .waiting-done, .waiting-custom) { color: var(--ui-muted); background: var(--ui-soft); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(.back-link, a:not(.primary):not(.secondary), .document-section-title > svg, .document-flow-icon, .document-dropzone > svg) { color: var(--ui-accent); }
 .app-shell.ui-refresh[data-interface-mode] .back-link { background: var(--ui-surface); border-radius: 8px; padding: 8px 12px; }
-.app-shell.ui-refresh[data-interface-mode] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea):not(:where(.fsd-paper *, .brd-paper *)), .client-combo-input { color: var(--ui-text); background-color: var(--ui-input); border-color: var(--ui-border); }
+.app-shell.ui-refresh[data-interface-mode] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea, .client-combo-input):not(:where(.fsd-paper *, .brd-paper *)) { color: var(--ui-text); background-color: var(--ui-input); border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] :is(input, textarea)::placeholder { color: var(--ui-muted); opacity: .85; }
 .app-shell.ui-refresh[data-interface-mode] .search-box { color: var(--ui-muted); background: var(--ui-input); border-color: var(--ui-border); }
-.app-shell.ui-refresh[data-interface-mode] :is(button, input, select, textarea, summary, a, [tabindex]):focus-visible, .client-combo-input { outline: 2px solid var(--ui-accent); outline-offset: 3px; }
+.app-shell.ui-refresh[data-interface-mode] :is(button, input, select, textarea, summary, a, [tabindex], .client-combo-input):focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; }
 .app-shell.ui-refresh[data-interface-mode] :is(table, th, td):not(:where(.fsd-paper, .fsd-paper *, .brd-paper, .brd-paper *)) { border-color: var(--ui-border); }
 .app-shell.ui-refresh[data-interface-mode] th:not(:where(.fsd-paper *, .brd-paper *)) { color: var(--ui-muted); background: var(--ui-soft); }
 .app-shell.ui-refresh[data-interface-mode] td:not(:where(.fsd-paper *, .brd-paper *)) { color: var(--ui-text); }
@@ -211,7 +211,7 @@ body:has(.app-shell[data-interface-mode]) .activity-comment-popover-head button 
 .ui-refresh .settings-page .panel-heading p { margin: 6px 0 0; }
 .ui-refresh :is(.settings-page, .themes-page) label:not(.interface-mode-choice):not(.checkbox-label) { display: grid; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; }
 .ui-refresh :is(.settings-page, .themes-page) label small { font-weight: 400; line-height: 1.6; }
-.ui-refresh :is(.settings-page, .themes-page) :is(input:not([type=checkbox]):not([type=radio]), select, textarea), .client-combo-input { width: 100%; min-width: 0; min-height: 42px; border: 1px solid var(--ui-border, var(--theme-border, #535966)); border-radius: 9px; padding: 10px 12px; background: var(--ui-input, #191e26); color: var(--ui-text, #edf1f7); font-weight: 400; }
+.ui-refresh :is(.settings-page, .themes-page) :is(input:not([type=checkbox]):not([type=radio]), select, textarea, .client-combo-input) { width: 100%; min-width: 0; min-height: 42px; border: 1px solid var(--ui-border, var(--theme-border, #535966)); border-radius: 9px; padding: 10px 12px; background: var(--ui-input, #191e26); color: var(--ui-text, #edf1f7); font-weight: 400; }
 .ui-refresh .settings-page input[type=file] { padding: 8px; }
 .ui-refresh .settings-page input[type=file]::file-selector-button { margin-right: 12px; padding: 7px 10px; border: 1px solid var(--ui-border, #535966); border-radius: 6px; color: inherit; background: var(--ui-soft, #303846); cursor: pointer; }
 .ui-refresh .settings-page .checkbox-label { display: flex; flex-direction: row; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; }
