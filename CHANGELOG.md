@@ -1,8 +1,22 @@
 # Changelog
 
-**Current application release: v0.6.97**
+**Current application release: v0.6.98**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.6.98 — Trackers: clients, task and subtask cells, calculations
+Released October 24, 2026.
+
+No new database migration and no new Google permission. Subtask cells use the task links table from [schema v25](database/migrations/schema-v25-tracker-task-links.sql) (v0.6.96); apply it if you have not.
+
+- **Several clients per tracker.** Choose one or more clients when you create or import a tracker, or later under **Tracker details**. The Trackers list shows them all and its client filter matches any of them.
+- **The first column holds the row's task.** Point at a row's first cell and click **+ Task** to pick an open task or create one. The title starts as the row's name; the client comes from the tracker (you choose when it has several) and the project defaults to the tracker's.
+- **Every other cell can hold a subtask of that task.** Click **+** in a cell to pick one of the task's open subtasks or create a new one, titled with the column name (for example DRF or Go-Live). New subtasks go under the task, with its client and project. Each cell shows its subtask's status; a closed one stays, marked **Done ✓**.
+- **Only open work is offered.** Closed or resolved tasks and subtasks never appear in the lists.
+- **Create tasks for many rows.** Select rows and click **Create tasks**: a preview lists one task per row without a task, titled from its first column, and nothing is created until you confirm.
+- **Calculated columns.** Add a **Calculated** column and write a formula with other Number or Calculated columns: `[Qty] * [Price]`, `([Budget] - [Spent]) / [Budget]`. Click a column name or an operator to insert it. Empty inputs count as 0, dividing by 0 shows #DIV/0, and renaming a column keeps the formula working.
+- **Totals row.** Tick **Show the SUM in the totals row** on a Number or Calculated column. The row at the bottom adds up the rows shown, so it follows your search and filters.
+- New tasks and subtasks appear in the Action Center with their tracker, row and cell once they have a follow-up date.
 
 ## v0.6.97 — Readable text over wallpapers
 Released October 24, 2026.

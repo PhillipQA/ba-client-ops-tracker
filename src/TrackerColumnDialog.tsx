@@ -2,11 +2,11 @@ import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { Plus, Search, Trash2 } from 'lucide-react'
 import type { ConvertReport } from './trackerApi'
 import {
-  CONVERTIBLE_TYPES, canConvertType, COLUMN_TYPES, OPTION_COLORS, TRACKER_LIMITS, randomId, type ColumnGroup, type ColumnType, type OptionColor, type RevealBy, type SelectOption, type TrackerColumn,
+  CONVERTIBLE_TYPES, FORMULA_SOURCES, canConvertType, COLUMN_TYPES, formulaFromText, formulaToText, OPTION_COLORS, TRACKER_LIMITS, randomId, type ColumnGroup, type ColumnType, type OptionColor, type RevealBy, type SelectOption, type TrackerColumn,
 } from './trackerModel'
 import { ColumnIcon, Dialog, Pill } from './trackerUi'
 
-export type ColumnDraft = { name: string; type: ColumnType; options?: SelectOption[]; revealBy?: RevealBy }
+export type ColumnDraft = { name: string; type: ColumnType; options?: SelectOption[]; revealBy?: RevealBy; formula?: string; total?: 'sum' | null }
 
 type Props = {
   mode: 'add' | 'edit'
@@ -21,6 +21,7 @@ type Props = {
 
 const GROUPS: { id: ColumnGroup; label: string; about: string }[] = [
   { id: 'basic', label: 'Basic', about: 'You type or pick the value.' },
+  { id: 'computed', label: 'Calculated', about: 'Worked out from other columns in the same row.' },
   { id: 'connected', label: 'Fills itself', about: 'Read from the task a row is linked to. Nothing is typed in.' },
   { id: 'protected', label: 'Protected', about: 'Encrypted, hidden, and logged whenever it is revealed.' },
 ]
@@ -34,6 +35,17 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
   const [options, setOptions] = useState<SelectOption[]>(() => (column?.options || []).map(option => ({ ...option })))
   const [revealBy, setRevealBy] = useState<RevealBy>(column?.revealBy || 'editors')
   const [query, setQuery] = useState('')
+  const [formula, setFormula] = useState(() => column?.formula ? formulaToText(column.formula, columns) : '')
+  const [total, setTotal] = useState(column?.total === 'sum')
+  const formulaInput = useRef<HTMLInputElement>(null)
+  const sources = columns.filter(item => item.id !== column?.id && FORMULA_SOURCES.includes(item.type))
+  const formulaCheck = type === 'formula' && formula.trim() ? formulaFromText(formula, columns, column?.id || '') : null
+  const insertRef = (name: string) => {
+    const input = formulaInput.current, at = input?.selectionStart ?? formula.length, end = input?.selectionEnd ?? at
+    const piece = `[${name}]`
+    setFormula(formula.slice(0, at) + piece + formula.slice(end)); setError('')
+    window.setTimeout(() => { input?.focus(); input?.setSelectionRange(at + piece.length, at + piece.length) }, 0)
+  }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const lastOption = useRef<HTMLInputElement>(null)
@@ -83,6 +95,10 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
     if (adding && columns.length >= TRACKER_LIMITS.columns) return setError(`A tracker can have at most ${TRACKER_LIMITS.columns} columns.`)
     const cleaned = options.map(option => ({ ...option, label: option.label.trim() })).filter(option => option.label)
     if (new Set(cleaned.map(option => option.label.toLowerCase())).size !== cleaned.length) return setError('Two options have the same name.')
+    if (type === 'formula' && !converting) {
+      const checked = formulaFromText(formula, columns, column?.id || '')
+      if (!checked.ok) return setError(checked.error)
+    }
     if (converting && onConvert && !report) {
       // First ask what the change would do, and show it before anything is touched.
       setBusy(true); setError('')
@@ -95,12 +111,16 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
     if (converting && report && report.failed > 0 && !clearUnfit) return setError('Tick the box to confirm those values will be cleared, or cancel and fix them first.')
     setBusy(true); setError('')
     try {
-      const sameType = { name: trimmed, type: column?.type || type, ...((column?.type === 'select' || column?.type === 'multiselect') ? { options: cleaned } : {}), ...(column?.type === 'secret' ? { revealBy } : {}) }
-      const renamed = column && (trimmed !== column.name || (sameType.options && JSON.stringify(sameType.options) !== JSON.stringify(column.options || [])) || (column.type === 'secret' && revealBy !== (column.revealBy || 'editors')))
+      const summable = (column?.type || type) === 'number' || (column?.type || type) === 'formula'
+      const sameType = { name: trimmed, type: column?.type || type, ...((column?.type === 'select' || column?.type === 'multiselect') ? { options: cleaned } : {}), ...(column?.type === 'secret' ? { revealBy } : {}),
+        ...(column?.type === 'formula' ? { formula } : {}), ...(summable ? { total: total ? 'sum' as const : null } : {}) }
+      const renamed = column && (trimmed !== column.name || (sameType.options && JSON.stringify(sameType.options) !== JSON.stringify(column.options || [])) || (column.type === 'secret' && revealBy !== (column.revealBy || 'editors'))
+        || (column.type === 'formula' && formula !== formulaToText(column.formula || '', columns)) || (summable && total !== (column.total === 'sum')))
       if (converting && onConvert) {
         if (renamed) await onSave(sameType as ColumnDraft)
         await onConvert(type, true, clearUnfit)
-      } else await onSave({ name: trimmed, type, ...(hasOptions ? { options: cleaned } : {}), ...(type === 'secret' ? { revealBy } : {}) })
+      } else await onSave({ name: trimmed, type, ...(hasOptions ? { options: cleaned } : {}), ...(type === 'secret' ? { revealBy } : {}), ...(type === 'formula' ? { formula } : {}),
+        ...(type === 'number' || type === 'formula' ? { total: total ? 'sum' as const : null } : {}) })
       onClose()
     }
     catch (e) { setError(e instanceof Error ? e.message : 'The column could not be saved.'); setBusy(false) }
@@ -152,6 +172,14 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
           </div>
           {!adding && <p className="trk-muted-text">Removing an option empties that value wherever it is used.</p>}
         </fieldset>}
+        {type === 'formula' && !converting && <fieldset className="trk-options trk-formula"><legend>Formula</legend>
+          <input ref={formulaInput} value={formula} onChange={event => { setFormula(event.target.value); setError('') }} placeholder="[Qty] * [Price]" aria-label="Formula" spellCheck={false} autoComplete="off" />
+          {sources.length > 0 ? <div className="trk-formula-refs" aria-label="Insert a column">{sources.map(item => <button type="button" key={item.id} className="trk-formula-ref" onClick={() => insertRef(item.name)}>{item.name}</button>)}
+            {['+', '-', '*', '/', '(', ')'].map(op => <button type="button" key={op} className="trk-formula-ref op" aria-label={{ '+': 'add', '-': 'subtract', '*': 'multiply', '/': 'divide', '(': 'open bracket', ')': 'close bracket' }[op]} onClick={() => { setFormula(value => `${value}${value && !value.endsWith(' ') ? ' ' : ''}${op} `); formulaInput.current?.focus() }}>{op}</button>)}</div>
+            : <p className="trk-muted-text">Add a Number column first; a formula works out a value from Number and other Calculated columns.</p>}
+          <p className={formulaCheck && !formulaCheck.ok ? 'trk-field-error' : 'trk-muted-text'}>{formulaCheck ? (formulaCheck.ok ? 'The formula looks right.' : formulaCheck.error) : 'Click a column to add it. Use + to add, - to subtract, * to multiply and / to divide. Brackets work as in Excel.'}</p>
+        </fieldset>}
+        {(type === 'number' || type === 'formula') && !converting && <label className="trk-checkline"><input type="checkbox" checked={total} onChange={event => setTotal(event.target.checked)} /> Show the SUM in the totals row</label>}
         {type === 'secret' && <fieldset className="trk-options"><legend>Who can reveal it</legend>
           <label className="trk-radio"><input type="radio" name="reveal" checked={revealBy === 'editors'} onChange={() => setRevealBy('editors')} /> Anyone who can open this tracker</label>
           <label className="trk-radio"><input type="radio" name="reveal" checked={revealBy === 'admins'} onChange={() => setRevealBy('admins')} /> Administrators only</label>

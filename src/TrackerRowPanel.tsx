@@ -113,11 +113,11 @@ function TaskPicker({ anchor, items, tracker, clientName, onPick, onClose, subta
   const [query, setQuery] = useState('')
   const matches = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
-    const rank = (item: WorkItem) => (tracker.projectId && item.projectId === tracker.projectId ? 0 : 2) + (tracker.clientId && item.clientId === tracker.clientId ? 0 : 1)
+    const rank = (item: WorkItem) => (tracker.projectId && item.projectId === tracker.projectId ? 0 : 2) + (!(tracker.clientIds || []).length || (tracker.clientIds || []).includes(item.clientId || '') ? 0 : 1)
     return items
       .filter(item => (subtasks || !item.parentTaskId) && !taken?.has(item.id) && words.every(word => `${item.title} ${item.status} ${clientName(item.clientId || '')}`.toLowerCase().includes(word)))
       .sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title)).slice(0, 40)
-  }, [items, query, tracker.clientId, tracker.projectId, clientName])
+  }, [items, query, tracker.clientIds, tracker.projectId, clientName])
   return <Popover anchor={anchor} onClose={onClose} className="trk-picker wide" label="Choose a task" minWidth={360}>
     <label className="trk-picker-find"><Search size={14} aria-hidden="true" /><input autoFocus placeholder="Search tasks" value={query} onChange={event => setQuery(event.target.value)} aria-label="Search tasks" /></label>
     <div className="trk-picker-list">
@@ -269,6 +269,13 @@ export default function TrackerRowPanel(props: Props) {
       <section className="trk-fields" aria-label="Fields">
         {basic.map(column => <Field key={column.id} column={column} row={row} people={people} canEdit={canEdit} onEdit={value => props.onEdit(row, column, value)} />)}
       </section>
+
+      {tracker.columns.some(column => column.type === 'formula') && <section className="trk-card" aria-label="Calculated">
+        <h3>Calculated</h3>
+        <dl className="trk-dl">
+          {tracker.columns.filter(column => column.type === 'formula').map(column => <div key={column.id}><dt><ColumnIcon type={column.type} size={13} /> {column.name}</dt><dd><CellView column={column} row={row} lookup={lookup} canEdit={false} onToggle={() => undefined} /></dd></div>)}
+        </dl>
+      </section>}
 
       {connected.length > 0 && <section className="trk-card" aria-label="Fills itself">
         <h3>Fills itself</h3>

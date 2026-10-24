@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, ChevronDown, Download, Lock, Maximize2, Minimize2, Plus, RotateCcw, Search, Upload, X } from 'lucide-react'
 import {
-  TRACKER_LIMITS, emptyCell, filterOpsFor, isEmptyCell, randomId,
+  columnTotal, TRACKER_LIMITS, emptyCell, filterOpsFor, isEmptyCell, randomId,
   COLUMN_TYPES, type Cell, type ColumnAlign, type ColumnType, type Tracker, type TrackerColumn, type TrackerRow, type TrackerView, isFrozenColumn,
 } from './trackerModel'
 import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
@@ -10,6 +10,7 @@ import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type Task
 import TrackerGrid, { NUMBER_COLUMN_WIDTH, widthOf, type Entry, type GridFocus } from './TrackerGrid'
 import TrackerToolbar, { emptyWork, type Work } from './TrackerToolbar'
 import TrackerRowPanel from './TrackerRowPanel'
+import { TrackerBulkTasks, TrackerWorkPicker, trackerClients, type TaskDraft, type WorkTools } from './TrackerWork'
 import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
 import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
@@ -28,6 +29,10 @@ type Props = {
   today: string
   onBack: () => void
   onOpenTask?: (taskId: string) => void
+  /** True when a task status counts as closed or resolved. */
+  isTaskClosed: (status: string) => boolean
+  /** Present when this person may create tasks; resolves after the workspace is saved. */
+  onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
   /** The list of trackers on the home screen needs a refresh. */
   onListChanged: () => void
 }
@@ -64,6 +69,9 @@ export default function TrackerScreen(props: Props) {
   const [viewName, setViewName] = useState('')
   const headerAnchor = useRef<HTMLElement | null>(null)
   const moreButton = useRef<HTMLButtonElement>(null)
+  const workAnchor = useRef<HTMLElement | null>(null)
+  const [workCell, setWorkCell] = useState<{ rowId: string; columnId: string } | null>(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
   // Full-width view: the page header (Add client, Add task…) is hidden so the grid gets the whole height. The left menu stays.
   const [expanded, setExpanded] = useState(() => { try { return localStorage.getItem('ba.tracker.expanded') === '1' } catch { return false } })
   const toggleExpanded = () => setExpanded(current => { const next = !current; try { localStorage.setItem('ba.tracker.expanded', next ? '1' : '0') } catch { /* not remembered */ } return next })
@@ -137,7 +145,7 @@ export default function TrackerScreen(props: Props) {
   useEffect(() => { setSelected(current => { const ids = new Set(rows.map(row => row.id)); const next = [...current].filter(id => ids.has(id)); return next.length === current.size ? current : new Set(next) }) }, [rows])
 
   // ---- derived ----
-  const lookup = useMemo(() => makeLookup(props.items, props.accounts, props.today), [props.items, props.accounts, props.today])
+  const lookup = useMemo(() => ({ ...makeLookup(props.items, props.accounts, props.today), columns: tracker?.columns ?? [] }), [props.items, props.accounts, props.today, tracker?.columns])
   const people = useMemo(() => props.accounts.filter(account => account.status === 'Active').map(account => ({ id: account.id, name: account.name || account.username })), [props.accounts])
   const search = useDeferredValue(work.search)
   // Rows can be moved only while the grid shows them in their saved order.
@@ -278,11 +286,44 @@ export default function TrackerScreen(props: Props) {
     const result = await trackerApi.addLink(trackerId, { rowId: row.id, taskId, columnId })
     setLinks(current => [...current.filter(link => link.rowId !== row.id), ...result.links])
   }
+  // A subtask in a cell is a task link with that column. One per cell: picking another replaces it.
+  const cellLinks = useMemo(() => {
+    const map = new Map<string, Map<string, TaskLink>>()
+    for (const link of links) if (link.columnId) {
+      const row = map.get(link.rowId) || new Map<string, TaskLink>()
+      if (!row.has(link.columnId)) row.set(link.columnId, link)
+      map.set(link.rowId, row)
+    }
+    return map
+  }, [links])
+  const setCellSubtask = async (row: TrackerRow, columnId: string, taskId: string | null) => {
+    const old = links.filter(link => link.rowId === row.id && link.columnId === columnId)
+    if (taskId && old.some(link => link.taskId === taskId)) return
+    for (const link of old) await removeLink(link)
+    if (taskId) await addLink(row, taskId, columnId)
+  }
+  const workTools: WorkTools = useMemo(() => ({ items: props.items, clients: props.clients, projects: props.projects, isClosed: props.isTaskClosed, onCreate: canEdit ? props.onCreateTasks : undefined, onOpenTask: props.onOpenTask }),
+    [props.items, props.clients, props.projects, props.isTaskClosed, props.onCreateTasks, props.onOpenTask, canEdit])
+  const linkRowTasks = async (pairs: { rowId: string; taskId: string }[]) => {
+    for (let at = 0; at < pairs.length; at += TRACKER_LIMITS.importBatch) {
+      const result = await trackerApi.linkRowTasks(trackerId, pairs.slice(at, at + TRACKER_LIMITS.importBatch))
+      const byId = new Map(result.rows.map(row => [row.id, row]))
+      setRows(rowsRef.current.map(row => byId.get(row.id) || row))
+    }
+    say('info', `${plural(pairs.length, 'task')} created and linked.`)
+  }
   const removeLink = async (link: TaskLink) => {
     if (!canEdit) return
     await trackerApi.removeLink(trackerId, link.id)
     setLinks(current => current.filter(item => item.id !== link.id))
   }
+  // The totals row adds up the rows shown (after search and filters), like a SUM over a filtered range.
+  const totals = useMemo(() => {
+    const summed = shownColumns.filter(column => column.total === 'sum' && (column.type === 'number' || column.type === 'formula'))
+    if (!summed.length) return undefined
+    const shownRows = entries.flatMap(entry => entry.kind === 'row' ? [entry.row] : [])
+    return new Map(summed.map(column => [column.id, columnTotal(column, shownRows, columns)]))
+  }, [shownColumns, entries, columns])
   const linkMap = useMemo(() => {
     const map = new Map<string, { count: number; cells: Set<string> }>()
     for (const link of links) {
@@ -344,9 +385,15 @@ export default function TrackerScreen(props: Props) {
     }
   }
   const saveColumn = async (draft: ColumnDraft, existing?: TrackerColumn) => {
+    const extra = (column: TrackerColumn): TrackerColumn => {
+      const copy: TrackerColumn = { ...column }
+      if (draft.formula !== undefined) copy.formula = draft.formula
+      if (draft.total === null) delete copy.total; else if (draft.total) copy.total = draft.total
+      return copy
+    }
     const next: TrackerColumn[] = existing
-      ? columns.map(column => column.id === existing.id ? { ...column, name: draft.name, ...(draft.options ? { options: draft.options } : {}), ...(draft.revealBy ? { revealBy: draft.revealBy } : {}) } : column)
-      : [...columns, { id: randomId('c_'), name: draft.name, type: draft.type, ...(draft.options ? { options: draft.options } : {}), ...(draft.revealBy ? { revealBy: draft.revealBy } : {}) }]
+      ? columns.map(column => column.id === existing.id ? extra({ ...column, name: draft.name, ...(draft.options ? { options: draft.options } : {}), ...(draft.revealBy ? { revealBy: draft.revealBy } : {}) }) : column)
+      : [...columns, extra({ id: randomId('c_'), name: draft.name, type: draft.type, ...(draft.options ? { options: draft.options } : {}), ...(draft.revealBy ? { revealBy: draft.revealBy } : {}) })]
     await applyColumns(next)
   }
   const deleteColumn = async (column: TrackerColumn) => {
@@ -454,7 +501,7 @@ export default function TrackerScreen(props: Props) {
     <header className="trk-header">
       <div className="trk-title">
         <h2>{tracker.name}</h2>
-        {(tracker.clientId || tracker.projectId) && <span className="trk-chip">{[clientName(tracker.clientId), projectName(tracker.projectId)].filter(Boolean).join(' · ')}</span>}
+        {(trackerClients(tracker).length > 0 || tracker.projectId) && <span className="trk-chip" title={trackerClients(tracker).map(clientName).join(', ')}>{[trackerClients(tracker).length > 2 ? `${clientName(trackerClients(tracker)[0])} +${trackerClients(tracker).length - 1} clients` : trackerClients(tracker).map(clientName).join(', '), projectName(tracker.projectId)].filter(Boolean).join(' · ')}</span>}
         {tracker.private && <span className="trk-chip"><Lock size={12} aria-hidden="true" /> Only you</span>}
         {tracker.archived && <span className="trk-chip warn">Archived</span>}
       </div>
@@ -513,6 +560,7 @@ export default function TrackerScreen(props: Props) {
         <button type="button" className="trk-button" disabled={!orderable} onClick={() => void moveRows([...selected], stepTarget(1))} title={orderable ? 'Move down one row' : 'Clear the sort, grouping, search and filters to move rows'} aria-label="Move down"><ArrowDown size={14} aria-hidden="true" /></button>
         <button type="button" className="trk-button" disabled={!orderable} onClick={() => void moveRows([...selected], null)} title={orderable ? 'Move to the bottom' : 'Clear the sort, grouping, search and filters to move rows'}>Bottom</button>
       </span>}
+      {canEdit && props.onCreateTasks && <button type="button" className="trk-button" onClick={() => setBulkOpen(true)} title="Create a task for each selected row that has none">Create tasks</button>}
       {canEdit && <button type="button" className="trk-button danger" onClick={() => void removeRows([...selected])}>Delete</button>}
       <button type="button" className="trk-text-button" onClick={() => setSelected(new Set())}>Clear selection</button>
     </div>}
@@ -520,7 +568,13 @@ export default function TrackerScreen(props: Props) {
     <section className="trk-grid-panel" aria-label={`${tracker.name} rows`}>
       <TrackerGrid
         columns={shownColumns} frozen={frozenIds} primaryId={columns[0]?.id || ''} entries={entries} lookup={lookup} people={people} canEdit={canEdit} sort={work.sort} selected={selected} focus={focus}
-        taskTitle={row => lookup.task(row.taskId)?.title || 'a deleted task'} links={linkMap} rowName={row => rowTitle(columns, row)}
+        taskTitle={row => lookup.task(row.taskId)?.title || 'a deleted task'} links={linkMap} totals={totals} onWork={(row, column, element) => { workAnchor.current = element; setWorkCell({ rowId: row.id, columnId: column.id }) }}
+        cellWork={(row, column) => {
+          if (column.id === columns[0]?.id) { const task = row.taskId ? lookup.task(row.taskId) : undefined; return row.taskId ? { title: task ? `Task: ${task.title} (${task.status})` : 'The linked task was deleted', label: task ? task.status : 'Removed', done: Boolean(task && props.isTaskClosed(task.status)), task: true } : null }
+          const link = cellLinks.get(row.id)?.get(column.id); if (!link) return null
+          const sub = lookup.task(link.taskId)
+          return { title: sub ? `Subtask: ${sub.title} (${sub.status})` : 'The linked subtask was deleted', label: sub ? (props.isTaskClosed(sub.status) ? 'Done' : sub.status) : 'Removed', done: Boolean(sub && props.isTaskClosed(sub.status)), task: false }
+        }} allColumns={columns} rowName={row => rowTitle(columns, row)}
         onEdit={editCell} onOpenRow={row => setDrawerId(row.id)} onInvalid={message => say('error', message)}
         onHeader={(column, button) => { headerAnchor.current = button; setHeaderMenu(column) }}
         onAddColumn={canEdit ? () => setColumnDialog({ mode: 'add' }) : undefined}
@@ -538,6 +592,8 @@ export default function TrackerScreen(props: Props) {
       <span>{filtered ? `Showing ${visible.length.toLocaleString('en')} of ${plural(rows.length, 'row')}` : plural(rows.length, 'row')} · {plural(columns.length, 'column')}</span>
       <span><i className="trk-key connected" aria-hidden="true" /> Blue headers fill themselves from the linked task</span>
       <span><i className="trk-key secret" aria-hidden="true" /> Amber headers are protected</span>
+      {columns.some(column => column.type === 'formula') && <span><i className="trk-key computed" aria-hidden="true" /> Purple headers are calculated</span>}
+      {props.onCreateTasks && canEdit && <span>Point at a cell: + Task in the first column, + for a subtask in the others</span>}
     </footer>
 
     {menuColumn && <Popover anchor={headerAnchor} onClose={() => setHeaderMenu(null)} className="trk-menu" label={`${menuColumn.name} options`} minWidth={230}>
@@ -569,6 +625,17 @@ export default function TrackerScreen(props: Props) {
       </div>
     </Popover>}
 
+    {workCell && (() => {
+      const row = rows.find(item => item.id === workCell.rowId), column = columns.find(item => item.id === workCell.columnId)
+      if (!row || !column) return null
+      const first = column.id === columns[0]?.id
+      return <TrackerWorkPicker key={`${row.id}:${column.id}`} anchor={workAnchor} tracker={tracker} row={row} column={column} mode={first ? 'task' : 'subtask'} rowTitle={rowTitle(columns, row)}
+        current={cellLinks.get(row.id)?.get(column.id)?.taskId} tools={workTools} onClose={() => setWorkCell(null)}
+        onPickTask={async taskId => { linkTask(row, taskId) }}
+        onPickSubtask={taskId => setCellSubtask(row, column.id, taskId)}
+        onSwitchToTask={() => setWorkCell({ rowId: row.id, columnId: columns[0].id })} />
+    })()}
+    {bulkOpen && <TrackerBulkTasks tracker={tracker} rows={rows.filter(row => selected.has(row.id))} titleOf={row => rowTitle(columns, row)} tools={workTools} onClose={() => setBulkOpen(false)} onDone={linkRowTasks} />}
     {drawerRow && <TrackerRowPanel tracker={tracker} row={drawerRow} lookup={lookup} people={people} items={props.items} clientName={clientName} canEdit={canEdit} isAdmin={props.isAdmin}
       onClose={() => setDrawerId('')} onEdit={editCell} onSecret={setSecret} onLink={linkTask} links={links} onAddLink={addLink} onRemoveLink={removeLink} onDelete={row => void removeRows([row.id])} onOpenTask={props.onOpenTask} onReveal={reveal} />}
 

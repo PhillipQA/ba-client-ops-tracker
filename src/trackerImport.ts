@@ -117,7 +117,7 @@ const clean = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ')
 export function defaultMappings(source: Source, existing: TrackerColumn[], today: string): Mapping[] {
   const taken = new Set<string>()
   return source.headers.map((header, index) => {
-    const match = existing.find(column => !taken.has(column.id) && column.type !== 'task_status' && column.type !== 'task_due' && column.type !== 'task_owner' && column.type !== 'signoff' && column.type !== 'drive_files' && clean(column.name) === clean(header))
+    const match = existing.find(column => !taken.has(column.id) && column.type !== 'task_status' && column.type !== 'task_due' && column.type !== 'task_owner' && column.type !== 'signoff' && column.type !== 'drive_files' && column.type !== 'formula' && clean(column.name) === clean(header))
     if (match) {
       taken.add(match.id)
       return { index, include: true, target: match.id, name: match.name, type: match.type, options: [] }

@@ -6,7 +6,7 @@ import { Avatar, Pill, Popover, niceDate } from './trackerUi'
 
 export type Person = { id: string; name: string }
 
-const numberFormat = new Intl.NumberFormat('en', { maximumFractionDigits: 10 })
+export const numberFormat = new Intl.NumberFormat('en', { maximumFractionDigits: 10 })
 
 function linkLabel(href: string) {
   try { const url = new URL(href); return `${url.hostname.replace(/^www\./, '')}${url.pathname === '/' ? '' : url.pathname}`.slice(0, 80) } catch { return href }
@@ -36,6 +36,11 @@ export function CellView({ column, row, lookup, canEdit, onToggle }: { column: T
     case 'person': {
       const name = shown(column, row, lookup).text
       return name ? <span className="trk-person"><Avatar name={name} /><span className="trk-text">{name}</span></span> : null
+    }
+    case 'formula': {
+      const cell = shown(column, row, lookup)
+      if (cell.note === 'formula-error') return <span className="trk-formula-error" title={cell.text === '#DIV/0' ? 'This row divides by 0.' : 'The formula could not be worked out. Edit the column to check it.'}>{cell.text}</span>
+      return <span className="trk-number">{typeof cell.key === 'number' ? numberFormat.format(cell.key) : ''}</span>
     }
     case 'secret': return row.secretSet[column.id] ? <span className="trk-secret" aria-label="A value is set. Open the row to reveal it.">••••••••</span> : null
     default: {

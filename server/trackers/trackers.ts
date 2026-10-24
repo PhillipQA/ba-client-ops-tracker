@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit'
 import type { Express, Request, RequestHandler, Response } from 'express'
 import { decryptSecret, encryptSecret, encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
 import {
-  TRACKER_LIMITS, TrackerError, canConvertType, cleanCell, cleanName, cleanSecret, isBasicType, isColumnType, isEmptyCell, normalizeColumns, normalizeViews, planConversion,
+  TRACKER_LIMITS, TrackerError, TRACKER_CLIENTS, canConvertType, cleanCell, splitClientIds, cleanName, cleanSecret, isBasicType, isColumnType, isEmptyCell, normalizeColumns, normalizeViews, planConversion,
   type Cell, type Tracker, type TrackerColumn, type TrackerRow,
 } from '../../src/trackerModel'
 
@@ -77,7 +77,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     return Number(r.count || 0)
   }
   const trackerOut = (row: any, user: User, count: number): Tracker => ({
-    id: row.id, name: row.name, clientId: row.client_id || '', projectId: row.project_id || '', private: Boolean(row.private), template: row.template || '',
+    id: row.id, name: row.name, clientId: splitClientIds(row.client_id)[0] || '', clientIds: splitClientIds(row.client_id), projectId: row.project_id || '', private: Boolean(row.private), template: row.template || '',
     columns: Array.isArray(row.columns) ? row.columns : [], views: Array.isArray(row.views) ? row.views : [], revision: Number(row.revision || 1), rowCount: count,
     createdBy: row.created_by || '', createdByName: row.created_by_name || '', createdAt: row.created_at, updatedAt: row.updated_at, archived: Boolean(row.archived_at),
     canEdit: user.role !== 'Viewer', canManage: manageable(user, row),
@@ -110,13 +110,21 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     await db.from('tenant_trackers').update({ updated_at: now() }).eq('tenant_id', tenant).eq('id', trackerId)
   }
 
-  function validateLinks(state: any, body: { clientId?: unknown; projectId?: unknown }) {
+  function validateLinks(state: any, body: { clientId?: unknown; clientIds?: unknown; projectId?: unknown }) {
     const pick = (value: unknown, list: any[], label: string) => {
       const id = String(value ?? '').trim()
       if (id && !(list || []).some((item: any) => item.id === id)) throw new TrackerError(`That ${label} was not found in your account.`)
       return id
     }
-    return { clientId: body.clientId === undefined ? undefined : pick(body.clientId, state.clients, 'client'), projectId: body.projectId === undefined ? undefined : pick(body.projectId, state.projects, 'project') }
+    // A tracker can follow several clients. `clientIds` wins; a single `clientId` still works for older callers.
+    let clientId: string | undefined
+    if (body.clientIds !== undefined) {
+      if (!Array.isArray(body.clientIds)) throw new TrackerError('clientIds must be a list.')
+      const ids = [...new Set(body.clientIds.map((value: unknown) => pick(value, state.clients, 'client')).filter(Boolean))]
+      if (ids.length > TRACKER_CLIENTS) throw new TrackerError(`A tracker can follow at most ${TRACKER_CLIENTS} clients.`)
+      clientId = ids.join(',')
+    } else if (body.clientId !== undefined) clientId = pick(body.clientId, state.clients, 'client')
+    return { clientId, projectId: body.projectId === undefined ? undefined : pick(body.projectId, state.projects, 'project') }
   }
   function taskIdOf(state: any, value: unknown) {
     const id = String(value ?? '').trim()
@@ -297,7 +305,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     const row = await trackerRow(tenant, id, user)
     const body = req.body || {}, patch: Record<string, unknown> = {}
     if (body.name !== undefined) patch.name = cleanName(body.name, 'tracker name', TRACKER_LIMITS.nameLength)
-    if (body.clientId !== undefined || body.projectId !== undefined) {
+    if (body.clientId !== undefined || body.clientIds !== undefined || body.projectId !== undefined) {
       const links = validateLinks(await workspace(tenant), body)
       if (links.clientId !== undefined) patch.client_id = links.clientId
       if (links.projectId !== undefined) patch.project_id = links.projectId
@@ -540,6 +548,37 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
     await touch(tenant, id)
     res.json({ row: rowOut(next, columns) })
+  }))
+
+  // Links many rows to their tasks at once, for example right after the tasks were created for an import.
+  app.post('/api/trackers/:id/rows/tasks', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to change rows.', 409)
+    const input = Array.isArray(req.body?.links) ? req.body.links : []
+    if (!input.length || input.length > TRACKER_LIMITS.importBatch) throw new TrackerError(`Link between 1 and ${TRACKER_LIMITS.importBatch} rows at a time.`)
+    const state = await workspace(tenant)
+    const wanted = new Map<string, string>()
+    for (const entry of input) {
+      const rowId = String(entry?.rowId ?? '')
+      if (!UUID.test(rowId)) throw new TrackerError('Every link needs a row.')
+      wanted.set(rowId, taskIdOf(state, entry?.taskId))
+    }
+    const found = await db.from('tenant_tracker_rows').select('*').eq('tenant_id', tenant).eq('tracker_id', id).in('id', [...wanted.keys()])
+    check(found.error)
+    const titles = new Map<string, string>((state.items || []).map((item: any) => [item.id, item.title || '']))
+    const columns = columnsOf(tracker), stamp = now(), rows: TrackerRow[] = []
+    for (const current of found.data || []) {
+      const taskId = wanted.get(current.id) || ''
+      if (taskId === (current.task_id || '')) { rows.push(rowOut(current, columns)); continue }
+      const version = Number(current.version || 1) + 1
+      const saved = await db.from('tenant_tracker_rows').update({ task_id: taskId, version, updated_by: user.id, updated_at: stamp }).eq('tenant_id', tenant).eq('tracker_id', id).eq('id', current.id)
+      check(saved.error)
+      await record(tenant, id, current.id, user, taskId ? 'task_linked' : 'task_unlinked', { taskId, title: titles.get(taskId) || '' })
+      rows.push(rowOut({ ...current, task_id: taskId, version, updated_at: stamp }, columns))
+    }
+    if (rows.length) await touch(tenant, id)
+    res.json({ rows })
   }))
 
   app.post('/api/trackers/:id/rows/delete', ...scope, route(async (req, res) => {

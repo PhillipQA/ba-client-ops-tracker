@@ -28,9 +28,9 @@ export const OPTION_COLORS: OptionColor[] = ['gray', 'blue', 'green', 'amber', '
 export type BasicType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'multiselect' | 'person' | 'link'
 /** These fill themselves from the task a row is linked to. Nothing is stored in the row for them. */
 export type ConnectedType = 'task_status' | 'task_due' | 'task_owner' | 'signoff' | 'drive_files'
-export type ColumnType = BasicType | ConnectedType | 'secret'
+export type ColumnType = BasicType | ConnectedType | 'secret' | 'formula'
 
-export type ColumnGroup = 'basic' | 'connected' | 'protected'
+export type ColumnGroup = 'basic' | 'computed' | 'connected' | 'protected'
 export const COLUMN_TYPES: { type: ColumnType; label: string; group: ColumnGroup; about: string }[] = [
   { type: 'text', label: 'Text', group: 'basic', about: 'A short line of text.' },
   { type: 'longtext', label: 'Long text', group: 'basic', about: 'Notes and longer descriptions.' },
@@ -41,6 +41,7 @@ export const COLUMN_TYPES: { type: ColumnType; label: string; group: ColumnGroup
   { type: 'multiselect', label: 'Multi-select', group: 'basic', about: 'Several choices from a list you define.' },
   { type: 'person', label: 'Person', group: 'basic', about: 'A teammate on this account.' },
   { type: 'link', label: 'Link', group: 'basic', about: 'A web address, such as a Git issue or a Drive folder. Type a short label first to show it instead of the address, like #1234 https://…' },
+  { type: 'formula', label: 'Calculated', group: 'computed', about: 'Works out a number from other columns in the same row: add +, subtract -, multiply * and divide /, like [Qty] * [Price].' },
   { type: 'task_status', label: 'Task status', group: 'connected', about: 'The status of the task this row is linked to.' },
   { type: 'task_due', label: 'Task due date', group: 'connected', about: 'The due date of the linked task.' },
   { type: 'task_owner', label: 'Task owner', group: 'connected', about: 'Who the linked task is assigned to.' },
@@ -51,7 +52,7 @@ export const COLUMN_TYPES: { type: ColumnType; label: string; group: ColumnGroup
 
 export const isConnectedType = (type: string): type is ConnectedType => ['task_status', 'task_due', 'task_owner', 'signoff', 'drive_files'].includes(type)
 export const isBasicType = (type: string): type is BasicType => ['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'multiselect', 'person', 'link'].includes(type)
-export const isColumnType = (type: unknown): type is ColumnType => typeof type === 'string' && (isBasicType(type) || isConnectedType(type) || type === 'secret')
+export const isColumnType = (type: unknown): type is ColumnType => typeof type === 'string' && (isBasicType(type) || isConnectedType(type) || type === 'secret' || type === 'formula')
 export const columnTypeLabel = (type: string) => COLUMN_TYPES.find(item => item.type === type)?.label || type
 
 export type SelectOption = { id: string; label: string; color: OptionColor }
@@ -89,6 +90,10 @@ export type TrackerColumn = {
   align?: ColumnAlign
   options?: SelectOption[]
   revealBy?: RevealBy
+  /** Calculated columns: the formula, with other columns referenced as {columnId}. */
+  formula?: string
+  /** Number and Calculated columns: show a SUM in the totals row. */
+  total?: 'sum'
 }
 
 export type Cell = string | number | boolean | string[] | null
@@ -119,7 +124,10 @@ export type TrackerRow = {
 export type Tracker = {
   id: string
   name: string
+  /** The first of clientIds, kept for older callers. */
   clientId: string
+  /** Every client this tracker follows. */
+  clientIds: string[]
   projectId: string
   private: boolean
   template: string
@@ -184,7 +192,7 @@ export function normalizeColumns(input: unknown, previous: TrackerColumn[] = [])
   if (input.length > TRACKER_LIMITS.columns) throw new TrackerError(`A tracker can have at most ${TRACKER_LIMITS.columns} columns.`)
   const before = new Map(previous.map(column => [column.id, column]))
   const seenId = new Set<string>(), seenName = new Set<string>()
-  return input.map((raw: any) => {
+  const columns = input.map((raw: any) => {
     const name = cleanName(raw?.name, 'column name', TRACKER_LIMITS.columnName)
     if (seenName.has(name.toLowerCase())) throw new TrackerError(`Two columns are named "${name}".`)
     seenName.add(name.toLowerCase())
@@ -204,8 +212,19 @@ export function normalizeColumns(input: unknown, previous: TrackerColumn[] = [])
     if (raw.align === 'left' || raw.align === 'center' || raw.align === 'right') column.align = raw.align
     if (raw.type === 'select' || raw.type === 'multiselect') column.options = normalizeOptions(raw.options, known?.options)
     if (raw.type === 'secret') column.revealBy = raw.revealBy === 'admins' ? 'admins' : 'editors'
+    if (raw.type === 'formula') column.formula = typeof raw.formula === 'string' ? raw.formula.slice(0, 1000) : ''
+    if ((raw.type === 'number' || raw.type === 'formula') && raw.total === 'sum') column.total = 'sum'
     return column
   })
+  // Formulas may name columns as [Name] or {id}; store ids so a rename does not break them, then check them all together.
+  for (const column of columns) if (column.type === 'formula') {
+    const result = formulaFromText(formulaToText(column.formula || '', columns), columns, column.id)
+    if (!result.ok) throw new TrackerError(`${column.name}: ${result.error}`)
+    column.formula = result.formula
+  }
+  const cycle = formulaCycle(columns)
+  if (cycle) throw new TrackerError(`${cycle} refers back to itself through other Calculated columns.`)
+  return columns
 }
 
 export const emptyCell = (type: ColumnType): Cell => type === 'number' ? null : type === 'checkbox' ? false : type === 'multiselect' ? [] : ''
@@ -283,6 +302,7 @@ export function cleanCell(column: TrackerColumn, raw: unknown): { ok: true; valu
       } catch { return bad(`${column.name} needs a web address, optionally after a short label such as "#1234 https://…".`) }
     }
     case 'secret': return bad(`${column.name} is a Secret column. Its value is set separately.`)
+    case 'formula': return bad(`${column.name} is Calculated from other columns.`)
     default: return bad(`${column.name} fills itself from the linked task.`)
   }
 }
@@ -324,7 +344,7 @@ export function normalizeViews(input: unknown, columns: TrackerColumn[]): Tracke
 
 export function filterOpsFor(type: ColumnType): FilterOp[] {
   switch (type) {
-    case 'number': return ['is', 'gt', 'lt', 'is_empty', 'not_empty']
+    case 'number': case 'formula': return ['is', 'gt', 'lt', 'is_empty', 'not_empty']
     case 'date': case 'task_due': return ['is', 'before', 'after', 'is_empty', 'not_empty']
     case 'checkbox': return ['checked', 'unchecked']
     case 'select': case 'person': return ['is', 'is_not', 'is_empty', 'not_empty']
@@ -405,3 +425,154 @@ export function planConversion(column: TrackerColumn, toType: ColumnType, values
   })
   return { options, cells, failed }
 }
+
+
+// ---------------------------------------------------------------------------------------------
+// Calculated columns. A formula is plain arithmetic over other Number or Calculated columns of the same row:
+// numbers, + - * /, parentheses, and column references. People type references as [Column name]; they are
+// stored as {columnId}. Nothing is executed: the formula is parsed by the small reader below.
+export const FORMULA_SOURCES: ColumnType[] = ['number', 'formula']
+const REF_ID = /\{([A-Za-z0-9_-]{1,60})\}/g
+
+/** A stored formula as people read it: {id} becomes [Name]. */
+export function formulaToText(formula: string, columns: TrackerColumn[]) {
+  return formula.replace(REF_ID, (_, id: string) => { const column = columns.find(item => item.id === id); return column ? `[${column.name}]` : '[?]' })
+}
+
+type Token = { kind: 'num'; value: number } | { kind: 'ref'; id: string } | { kind: 'op'; value: string }
+function tokenize(formula: string): Token[] | string {
+  const tokens: Token[] = []
+  let at = 0
+  const text = formula.trim().replace(/^=/, '')
+  while (at < text.length) {
+    const ch = text[at]
+    if (/\s/.test(ch)) { at += 1; continue }
+    if ('+-*/()'.includes(ch)) { tokens.push({ kind: 'op', value: ch }); at += 1; continue }
+    if (ch === '{') { const end = text.indexOf('}', at); if (end < 0) return 'A column reference is not closed.'; tokens.push({ kind: 'ref', id: text.slice(at + 1, end) }); at = end + 1; continue }
+    const number = /^(\d+(\.\d+)?|\.\d+)/.exec(text.slice(at))
+    if (number) { tokens.push({ kind: 'num', value: Number(number[0]) }); at += number[0].length; continue }
+    return `“${ch}” is not allowed. Use numbers, [Column names], + - * / and brackets.`
+  }
+  return tokens
+}
+
+type Node = { kind: 'num'; value: number } | { kind: 'ref'; id: string } | { kind: 'neg'; of: Node } | { kind: 'bin'; op: string; left: Node; right: Node }
+function parse(tokens: Token[]): Node | string {
+  let at = 0
+  const peek = () => tokens[at]
+  const isOp = (value: string) => { const token = peek(); return token?.kind === 'op' && token.value === value }
+  function primary(): Node | string {
+    const token = peek()
+    if (!token) return 'The formula ends too early.'
+    if (token.kind === 'num') { at += 1; return { kind: 'num', value: token.value } }
+    if (token.kind === 'ref') { at += 1; return { kind: 'ref', id: token.id } }
+    if (token.value === '-') { at += 1; const inner = primary(); return typeof inner === 'string' ? inner : { kind: 'neg', of: inner } }
+    if (token.value === '(') { at += 1; const inner = sum(); if (typeof inner === 'string') return inner; if (!isOp(')')) return 'A bracket is not closed.'; at += 1; return inner }
+    return `“${token.value}” is in the wrong place.`
+  }
+  function product(): Node | string {
+    let left = primary(); if (typeof left === 'string') return left
+    while (isOp('*') || isOp('/')) { const op = (peek() as any).value; at += 1; const right = primary(); if (typeof right === 'string') return right; left = { kind: 'bin', op, left, right } }
+    return left
+  }
+  function sum(): Node | string {
+    let left = product(); if (typeof left === 'string') return left
+    while (isOp('+') || isOp('-')) { const op = (peek() as any).value; at += 1; const right = product(); if (typeof right === 'string') return right; left = { kind: 'bin', op, left, right } }
+    return left
+  }
+  if (!tokens.length) return 'Enter a formula, like [Qty] * [Price].'
+  const tree = sum()
+  if (typeof tree === 'string') return tree
+  if (at < tokens.length) return 'Something after the formula was not understood. Check for a missing + - * or /.'
+  return tree
+}
+
+const refsOf = (formula: string) => [...formula.matchAll(REF_ID)].map(match => match[1])
+
+/** Turns what someone typed into a stored formula, checking every reference. */
+export function formulaFromText(text: string, columns: TrackerColumn[], selfId: string): { ok: true; formula: string } | { ok: false; error: string } {
+  if (text.length > 1000) return { ok: false, error: 'The formula is too long.' }
+  let error = ''
+  const stored = text.trim().replace(/^=/, '').replace(/\[([^\]]*)\]/g, (_, name: string) => {
+    const column = columns.find(item => item.name.toLowerCase() === name.trim().toLowerCase())
+    if (!column) { error ||= name.trim() === '?' ? 'A column used in the formula was deleted.' : `There is no column named “${name.trim()}”.`; return '{x}' }
+    if (column.id === selfId) { error ||= 'A Calculated column cannot use itself.'; return '{x}' }
+    if (!FORMULA_SOURCES.includes(column.type)) { error ||= `“${column.name}” is not a Number or Calculated column.`; return '{x}' }
+    return `{${column.id}}`
+  })
+  if (error) return { ok: false, error }
+  const tokens = tokenize(stored)
+  if (typeof tokens === 'string') return { ok: false, error: tokens }
+  const tree = parse(tokens)
+  if (typeof tree === 'string') return { ok: false, error: tree }
+  return { ok: true, formula: stored.replace(/\s+/g, ' ').trim() }
+}
+
+/** The name of a Calculated column that refers back to itself, if any. */
+export function formulaCycle(columns: TrackerColumn[]): string {
+  const byId = new Map(columns.map(column => [column.id, column]))
+  const state = new Map<string, 1 | 2>()
+  const visit = (id: string): boolean => {
+    if (state.get(id) === 2) return false
+    if (state.get(id) === 1) return true
+    state.set(id, 1)
+    const column = byId.get(id)
+    const found = column?.type === 'formula' && refsOf(column.formula || '').some(ref => byId.get(ref)?.type === 'formula' && visit(ref))
+    state.set(id, 2)
+    return Boolean(found)
+  }
+  return columns.find(column => column.type === 'formula' && visit(column.id))?.name || ''
+}
+
+export type FormulaResult = { value: number | null; error?: string }
+/** Works out a Calculated cell. Empty inputs count as 0 only when at least one input has a value; all empty gives an empty cell. */
+export function evaluateFormula(column: TrackerColumn, cells: Record<string, Cell>, columns: TrackerColumn[], depth = 0): FormulaResult {
+  if (depth > 20) return { value: null, error: 'Too deep' }
+  const tokens = tokenize(column.formula || '')
+  if (typeof tokens === 'string') return { value: null, error: 'Formula error' }
+  const tree = parse(tokens)
+  if (typeof tree === 'string') return { value: null, error: 'Formula error' }
+  let seen = false, failed = ''
+  const byId = new Map(columns.map(item => [item.id, item]))
+  const read = (id: string): number => {
+    const source = byId.get(id)
+    if (!source) { failed = 'Missing column'; return 0 }
+    if (source.type === 'formula') { const inner = evaluateFormula(source, cells, columns, depth + 1); if (inner.error) failed = inner.error; if (inner.value !== null) seen = true; return inner.value ?? 0 }
+    const value = cells[id]
+    if (typeof value === 'number' && Number.isFinite(value)) { seen = true; return value }
+    return 0
+  }
+  const run = (node: Node): number => {
+    switch (node.kind) {
+      case 'num': return node.value
+      case 'ref': return read(node.id)
+      case 'neg': return -run(node.of)
+      case 'bin': {
+        const left = run(node.left), right = run(node.right)
+        if (node.op === '+') return left + right
+        if (node.op === '-') return left - right
+        if (node.op === '*') return left * right
+        if (right === 0) { failed ||= 'Divide by 0'; return 0 }
+        return left / right
+      }
+    }
+  }
+  const value = run(tree)
+  if (failed) return { value: null, error: failed }
+  if (!seen && refsOf(column.formula || '').length) return { value: null }
+  return { value: Number.isFinite(value) ? Math.round(value * 1e10) / 1e10 : null, error: Number.isFinite(value) ? undefined : 'Too large' }
+}
+
+/** SUM for the totals row: Number cells as stored, Calculated cells as worked out. */
+export function columnTotal(column: TrackerColumn, rows: { cells: Record<string, Cell> }[], columns: TrackerColumn[]): number | null {
+  let total = 0, any = false
+  for (const row of rows) {
+    const value = column.type === 'formula' ? evaluateFormula(column, row.cells, columns).value : row.cells[column.id]
+    if (typeof value === 'number' && Number.isFinite(value)) { total += value; any = true }
+  }
+  return any ? Math.round(total * 1e10) / 1e10 : null
+}
+
+/** Trackers keep their clients in one text field as comma-separated ids. */
+export const TRACKER_CLIENTS = 20
+export const splitClientIds = (value: unknown) => [...new Set(String(value ?? '').split(',').map(id => id.trim()).filter(Boolean))]
