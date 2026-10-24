@@ -6,7 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
-| [v0.6.99](v0.6.99.md) | Task pickers in email, Document Creation, DocHub, Git tickets and Save to Drive offer only open tasks and subtasks |
+| [v0.7.0](v0.7.0.md) | Type-to-search client fields, A to Z, everywhere a client is chosen; task pickers offer only open tasks and subtasks |
 | [v0.6.98](v0.6.98.md) | Trackers: several clients per tracker, task in the first column and subtasks in other cells (pick or create), Calculated columns and a SUM totals row |
 | [v0.6.97](v0.6.97.md) | Readable text over wallpapers: page introductions, filter labels and status lines get a soft rounded background |
 | [v0.6.96](v0.6.96.md) | Trackers: move rows, change a column's type, link several tasks and subtasks to a row or cell (shown in the Action Center), readable footer and a compact full view |

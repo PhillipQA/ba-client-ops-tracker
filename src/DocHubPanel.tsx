@@ -8,6 +8,7 @@ import { useDocumentDrive } from './documentDrive'
 import { composeEmail, useEmailEnabled } from './EmailComposer'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 import { useIsClosed } from './openWork'
+import ClientSelect from './ClientSelect'
 
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
 const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
@@ -67,7 +68,7 @@ export function DocHubOptions({draft,clients,projects,items,disabled=false}:{dra
   return <section className="document-extraction-panel dochub-options"><h3><FileSignature size={18}/> DocHub signature preparation</h3><p>Signer emails are used for signing only and stay off the generated form.</p>
     <label className="dochub-check"><input type="checkbox" checked={draft.enabled} disabled={disabled||!draft.available||draft.busy} onChange={e=>draft.setEnabled(e.target.checked)}/> Prepare an unsent DocHub draft after generation</label>
     {!draft.available&&<p>Ask your account Administrator to add and enable the DocHub API key in Settings.</p>}
-    {draft.enabled&&<div className="document-field-grid"><label>Link to client<select disabled={disabled||draft.busy} value={draft.options.clientId} onChange={e=>draft.setOptions(o=>({...o,clientId:e.target.value,taskId:''}))}><option value="">No client selected</option>{clients.filter(c=>!c.archived).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+    {draft.enabled&&<div className="document-field-grid"><label>Link to client<ClientSelect clients={clients.filter(c=>!c.archived)} value={draft.options.clientId} onChange={(value) => draft.setOptions(o=>({...o,clientId:value,taskId:''}))} extra={[{ value: '', label: 'No client selected' }]} disabled={disabled||draft.busy} /></label>
     <label>Filter by project<select disabled={disabled||draft.busy} value={projectId} onChange={e=>{setProjectId(e.target.value);draft.setOptions(o=>({...o,taskId:''}))}}><option value="">All projects</option>{projects.filter(p=>!p.archived).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
     <label className="document-field-wide">Existing task or subtask<select disabled={disabled||draft.busy} value={draft.options.taskId} onChange={e=>{const task=items.find(i=>i.id===e.target.value);draft.setOptions(o=>({...o,taskId:e.target.value,clientId:task?.clientId||o.clientId}))}}><option value="">No task association</option>{allowed.map(i=><option key={i.id} value={i.id}>{i.parentTaskId?`${items.find(t=>t.id===i.parentTaskId)?.title || 'Task'} → `:''}{i.title}{!draft.options.clientId?` · ${clients.find(c=>c.id===i.clientId)?.name || 'No client'}`:''}</option>)}</select><small>{selected?'Updates will appear in this work item’s comments.':'Choose the existing work item to keep signing updates in one place.'}</small></label>
     <label>Signing order<select disabled={disabled||draft.busy} value={draft.options.sequential?'yes':'no'} onChange={e=>draft.setOptions(o=>({...o,sequential:e.target.value==='yes'}))}><option value="no">All at once</option><option value="yes">Sequential · form order</option></select></label>

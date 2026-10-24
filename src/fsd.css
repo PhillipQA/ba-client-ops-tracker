@@ -58,9 +58,9 @@
 .fsd-card {border:1px solid var(--fsd-border-soft);border-radius:12px;padding:22px;background:var(--fsd-surface);box-shadow:0 3px 10px rgb(0 0 0 / .08);}
 .fsd-card h3 {font-size:16px;margin-bottom:18px;}
 .fsd-creator label {display:flex;flex-direction:column;gap:7px;color:var(--fsd-label);font-size:12px;font-weight:600;margin-bottom:14px;}
-.fsd-creator input:not([type=checkbox]):not([type=file]),.fsd-creator select,.fsd-creator textarea {width:100%;min-width:0;box-sizing:border-box;padding:10px 11px;border:1px solid var(--fsd-border);border-radius:6px;background:var(--fsd-input-bg);color:var(--fsd-input-text);line-height:1.5;font:inherit;font-weight:400;}
+.fsd-creator input:not([type=checkbox]):not([type=file]),.fsd-creator select,.fsd-creator textarea, .fsd-creator .client-combo-input {width:100%;min-width:0;box-sizing:border-box;padding:10px 11px;border:1px solid var(--fsd-border);border-radius:6px;background:var(--fsd-input-bg);color:var(--fsd-input-text);line-height:1.5;font:inherit;font-weight:400;}
 .fsd-creator textarea {resize:vertical;line-height:1.6;}
-.fsd-creator input:focus,.fsd-creator textarea:focus,.fsd-creator select:focus {outline:2px solid var(--fsd-focus);outline-offset:1px;}
+.fsd-creator input:focus,.fsd-creator textarea:focus,.fsd-creator select:focus, .fsd-creator .client-combo-input:focus {outline:2px solid var(--fsd-focus);outline-offset:1px;}
 .fsd-fields {display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
 .fsd-full {grid-column:1/-1;}
 .fsd-creator details {border-top:1px solid var(--fsd-border-soft);padding-top:12px;margin-top:12px;}

@@ -4,6 +4,7 @@ import { Activity, AlertTriangle, CalendarRange, CheckCircle2, Clock3, Download,
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
 import EffortReport from './EffortReport'
 import { defaultWaitingOn, isWaitingOnDone, openWaitingOnOptions } from './waitingOn'
+import ClientSelect from './ClientSelect'
 
 function localDateKey(date: Date) {
   const yyyy = date.getFullYear()
@@ -183,7 +184,7 @@ export default function Reports({ clients, projects, items, planner, taskSetting
       <div className="report-filters">
         <label>From<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label>To<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
-        <label>Client<select value={clientId} onChange={(event) => { setClientId(event.target.value); setProjectId('') }}><option value="">All clients</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+        <label>Client<ClientSelect clients={clients} value={clientId} onChange={(value) => { setClientId(value); setProjectId('') }} extra={[{ value: '', label: 'All clients' }]} /></label>
         <label>Project<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">All projects</option>{contextProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <label>User<select value={effectiveUserId} disabled={currentUser.role !== 'Administrator'} onChange={(event) => setUserId(event.target.value)}>{currentUser.role === 'Administrator' && <option value="">All tracked users</option>}{trackedUsers.map((user) => <option key={user.id} value={user.id}>{user.name}{user.id === currentUser.id ? ' · You' : ''}</option>)}</select></label>
       </div>

@@ -250,7 +250,7 @@ export default function FsdCreation({ clients, projects, canGenerate, templateRe
       <div className="fsd-columns">
         <div className="fsd-input-column">
           <section className="fsd-card"><h3>1. Document details</h3><div className="fsd-fields">
-            <label>Client *<input list={`fsd-clients-${draftKey}`} value={draft.details.client} maxLength={180} onChange={e=>detail('client',e.target.value)}/><datalist id={`fsd-clients-${draftKey}`}>{clients.map(c=><option key={c.id} value={c.name}/>)}</datalist></label>
+            <label>Client *<input list={`fsd-clients-${draftKey}`} value={draft.details.client} maxLength={180} onChange={e=>detail('client',e.target.value)}/><datalist id={`fsd-clients-${draftKey}`}>{[...clients].sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base',numeric:true})).map(c=><option key={c.id} value={c.name}/>)}</datalist></label>
             <label>Project name (filename)<input list={`fsd-projects-${draftKey}`} value={draft.projectName || ''} maxLength={180} onChange={e=>patch({projectName:e.target.value},false)} placeholder="Choose a project or enter its name"/><datalist id={`fsd-projects-${draftKey}`}>{projects.map(p=><option key={p.id} value={p.name}/>)}</datalist></label>
             {detailsField('feature','Document title','text',true)}{detailsField('product','Product','text',true)}{detailsField('author','Prepared by','text',true)}{detailsField('date','Document date','date',true)}{detailsField('version','Revision','text',true)}
             <label className="fsd-full">Document reference<input value={draft.details.reference} maxLength={180} placeholder={fsdReference(draft.details)} onChange={e=>detail('reference',e.target.value)}/></label>

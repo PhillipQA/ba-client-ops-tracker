@@ -3,6 +3,7 @@ import { ExternalLink, Plus, Search, Unlink } from 'lucide-react'
 import type { Tracker, TrackerColumn, TrackerRow } from './trackerModel'
 import { Dialog, Pill, Popover, plural } from './trackerUi'
 import type { WorkItem } from './types'
+import ClientSelect from './ClientSelect'
 
 /** What a tracker needs to create tasks and subtasks. They are saved with the rest of the workspace. */
 export type TaskDraft = { title: string; clientId: string; projectId: string; parentTaskId?: string }
@@ -28,8 +29,7 @@ function useTaskContext(tracker: Tracker, tools: WorkTools) {
   const [projectId, setProjectId] = useState(tracker.projectId && tools.projects.some(project => project.id === tracker.projectId) ? tracker.projectId : '')
   const fields = <>
     <label className="trk-field-block">Client
-      {own.length === 1 ? <input value={choices[0]?.name || ''} readOnly disabled /> : <select value={clientId} onChange={event => setClientId(event.target.value)} required>
-        <option value="">Choose the client</option>{choices.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}</select>}
+      {own.length === 1 ? <input value={choices[0]?.name || ''} readOnly disabled /> : <ClientSelect clients={choices} value={clientId} onChange={setClientId} extra={[{ value: '', label: 'Choose the client' }]} required aria-label="Client" />}
     </label>
     <label className="trk-field-block">Project
       <select value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">No project</option>{tools.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select>

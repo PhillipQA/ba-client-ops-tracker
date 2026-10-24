@@ -65,7 +65,7 @@
 .github-task-form { border-top: 1px solid var(--comm-border); padding-top: 1rem; margin-top: 1rem; display: grid; gap: .8rem; }
 .github-task-form textarea { min-height: 100px; resize: vertical; }
 .github-hub .communication-pagination label { display: flex; align-items: center; gap: .5rem; }
-.github-hub .communication-pagination select { width: 65px; }
+.github-hub .communication-pagination select, .github-hub .communication-pagination .client-combo-input { width: 65px; }
 @media(max-width:1100px) { .github-workspace.has-detail { grid-template-columns: minmax(0,1fr); } }
 @media(max-width:600px) { .github-hub { padding: .7rem; } .github-repository-mappings > div { grid-template-columns: 1fr 1fr; } .github-repository-mappings strong { grid-column: 1 / -1; } .github-filters { grid-template-columns: 1fr; } .github-filters label:first-child { grid-column: auto; } .github-add-repository { align-items: stretch; flex-direction: column; } }
 

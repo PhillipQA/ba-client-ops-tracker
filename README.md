@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current application version: v0.6.99**
+**Current application version: v0.7.0**
 
 A workspace for clients, projects, tasks, follow-ups, Work Hub communications, document creation, requirements traceability, customizable trackers and reports. This guide covers installation, first login, deployment and updates.
 

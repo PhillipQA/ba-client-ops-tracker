@@ -10,6 +10,7 @@ import { knownPeople } from './knownPeople'
 import { searchContacts } from './contactSearch'
 import './emailComposer.css'
 import { useIsClosed } from './openWork'
+import ClientSelect from './ClientSelect'
 
 /**
  * Send an email from the tracker, from the person's own Gmail account.
@@ -250,7 +251,7 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
         <p>The email is kept in Work Hub with the work, and a short note (recipient, subject and file names, never the message) is added to the task’s activity.</p>
         {taskIds.length > 0 && <ul className="email-chips">{taskIds.map(id => <li key={id}><span>{taskLabel(id)}</span><button type="button" aria-label={`Unlink ${taskLabel(id)}`} onClick={() => setTaskIds(previous => previous.filter(x => x !== id))}><X size={13} /></button></li>)}</ul>}
         {taskIds.length < EMAIL_LIMITS.taskLinks && <div className="email-fields email-pick">
-          <label>Client<select value={clientFilter} onChange={e => { setClientFilter(e.target.value); setPickTask('') }}><option value="">All clients</option>{clients.filter(client => !client.archived).map(client => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+          <label>Client<ClientSelect clients={clients.filter(client => !client.archived)} value={clientFilter} onChange={(value) => { setClientFilter(value); setPickTask('') }} extra={[{ value: '', label: 'All clients' }]} /></label>
           <label>{taskIds.length ? 'Link another' : 'Task or subtask'}<select value={pickTask} onChange={e => { const id = e.target.value; setPickTask(''); if (id) setTaskIds(previous => [...previous, id]) }}><option value="">Choose a task or subtask</option>{options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
         </div>}
       </section>
