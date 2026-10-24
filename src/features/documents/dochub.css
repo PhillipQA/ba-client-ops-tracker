@@ -314,6 +314,7 @@
   width: min(760px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 32px);
+  /* biome-ignore lint/suspicious/noDuplicateProperties: 100vh above is the fallback for browsers without dvh */
   max-height: calc(100dvh - 32px);
   padding: 0;
   overflow: hidden;

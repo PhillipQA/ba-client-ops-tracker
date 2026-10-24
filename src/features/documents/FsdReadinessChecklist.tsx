@@ -1,3 +1,4 @@
+import React from 'react'
 import { suggestedFsdInput, type FsdReadinessIssue } from './fsd-readiness'
 import type { FsdPreview } from './fsd-model'
 

@@ -156,7 +156,6 @@
   border-radius: 6px;
   background: var(--fsd-input-bg);
   color: var(--fsd-input-text);
-  line-height: 1.5;
   font: inherit;
   font-weight: 400;
 }

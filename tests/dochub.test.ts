@@ -177,7 +177,7 @@ function fixture(options: { rejectDraft?: boolean; lostImport?: boolean } = {}) 
       assert(!init.headers?.['X-API-Token'])
       assert(init.body instanceof FormData)
       assert(init.body.get('file') instanceof Blob)
-      return new Response('', { status: 204 === 200 ? 200 : 201 })
+      return new Response('', { status: 201 })
     }
     if (href.startsWith('https://bucket.s3.amazonaws.com/')) {
       assert(!init.headers?.['X-API-Token'])

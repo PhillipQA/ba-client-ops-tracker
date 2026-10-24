@@ -1,3 +1,4 @@
+import React from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { fsdFeatureCode, nextFsdFeatureId } from './fsd-features'
 import type { FsdFeature } from './fsd-model'
