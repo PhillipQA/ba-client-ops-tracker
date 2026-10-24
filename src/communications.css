@@ -19,9 +19,9 @@
 .app-shell.ui-refresh .communications-hub .secondary { background: var(--comm-surface); color: var(--comm-text); border-color: var(--comm-border); }
 .app-shell.ui-refresh .communications-hub .secondary:hover:not(:disabled) { background: var(--comm-card); }
 .app-shell.ui-refresh .communications-hub .danger-button { color: var(--ui-danger, #ffb7b9); }
-.app-shell.ui-refresh .communications-hub :is(button, input, select, textarea):focus-visible, .client-combo-input { outline: 2px solid var(--comm-accent); outline-offset: 3px; }
+.app-shell.ui-refresh .communications-hub :is(button, input, select, textarea, .client-combo-input):focus-visible { outline: 2px solid var(--comm-accent); outline-offset: 3px; }
 .app-shell.ui-refresh .communications-hub button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-.app-shell.ui-refresh .communications-hub :is(input:not([type=checkbox]), select, textarea), .client-combo-input { min-width: 0; width: 100%; padding: .65rem .75rem; border: 1px solid var(--comm-border); border-radius: 8px; color: var(--comm-text); background: var(--comm-input); }
+.app-shell.ui-refresh .communications-hub :is(input:not([type=checkbox]), select, textarea, .client-combo-input) { min-width: 0; width: 100%; padding: .65rem .75rem; border: 1px solid var(--comm-border); border-radius: 8px; color: var(--comm-text); background: var(--comm-input); }
 .app-shell.ui-refresh .communications-hub select option { color: var(--comm-text); background: var(--comm-input); }
 .app-shell.ui-refresh .communications-hub input[type=checkbox] { accent-color: var(--comm-accent); }
 .communications-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1.4rem; }

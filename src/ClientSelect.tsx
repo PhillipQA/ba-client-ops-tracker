@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 
 export type ClientChoice = { id: string; name: string }
 type Extra = { value: string; label: string }
@@ -40,6 +41,7 @@ export default function ClientSelect({ clients, value, defaultValue = '', onChan
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLUListElement>(null)
   const [place, setPlace] = useState<CSSProperties>({})
+  const [host, setHost] = useState<HTMLElement | null>(null)
   const listId = useId()
 
   useEffect(() => { if (!open) setText(chosenLabel) }, [chosenLabel, open])
@@ -57,17 +59,45 @@ export default function ClientSelect({ clients, value, defaultValue = '', onChan
   useLayoutEffect(() => {
     if (!open) return
     const follow = () => {
-      const box = input.current?.getBoundingClientRect()
-      if (!box) return
-      const below = window.innerHeight - box.bottom, height = Math.min(280, Math.max(120, shown.length * 34 + 8))
-      const up = below < height && box.top > below
-      setPlace({ position: 'fixed', left: box.left, width: Math.max(box.width, 220), ...(up ? { bottom: window.innerHeight - box.top + 4 } : { top: box.bottom + 4 }), maxHeight: Math.min(280, up ? box.top - 12 : below - 12) })
+      const field = input.current, el = list.current
+      const box = field?.getBoundingClientRect()
+      if (!field || !box) return
+      // Inside a dialog that is moved by a transform, `fixed` is measured from the dialog, not the screen. Find where
+      // 0,0 really is by placing the list there for a moment, then place it relative to that.
+      let originX = 0, originY = 0, natural = Math.max(120, shown.length * 34 + 8)
+      if (el) {
+        const keep = el.getAttribute('style') || ''
+        el.style.cssText = 'position:fixed;left:0;top:0;bottom:auto;max-height:none;visibility:hidden'
+        const probe = el.getBoundingClientRect()
+        originX = probe.left; originY = probe.top; natural = probe.height
+        el.setAttribute('style', keep)
+      }
+      const below = window.innerHeight - box.bottom - 12, above = box.top - 12
+      const up = below < Math.min(natural, 280) && above > below
+      const maxHeight = Math.max(80, Math.min(280, up ? above : below))
+      const height = Math.min(natural, maxHeight)
+      const width = Math.min(Math.max(box.width, 220), window.innerWidth - 16)
+      const left = Math.max(8, Math.min(box.left, window.innerWidth - width - 8))
+      const top = up ? box.top - 4 - height : box.bottom + 4
+      // The list is drawn outside the field's own containers, so it carries the field's colours: the theme
+      // variables are read where the field is.
+      const look = getComputedStyle(field)
+      const token = (name: string, fallback: string) => look.getPropertyValue(name).trim() || fallback
+      const themed = Boolean(look.getPropertyValue('--ui-surface').trim())
+      setPlace({
+        position: 'fixed', left: left - originX, top: top - originY, width, maxHeight,
+        background: themed ? token('--ui-surface', '#ffffff') : '#20252c', color: themed ? token('--ui-text', '#1f2937') : '#eef2f7',
+        borderColor: themed ? token('--ui-border', '#d0d5dd') : '#3a4350', fontFamily: look.fontFamily,
+        ['--combo-accent' as string]: token('--ui-accent', '#4f6bed'),
+      })
     }
+    // A modal dialog sits in the browser's top layer, so the list must be inside it to show and take clicks.
+    setHost(input.current?.closest<HTMLElement>('dialog[open]') || document.body)
     follow()
     window.addEventListener('resize', follow)
     window.addEventListener('scroll', follow, true)
     return () => { window.removeEventListener('resize', follow); window.removeEventListener('scroll', follow, true) }
-  }, [open, shown.length])
+  }, [open, shown.length, host])
   useEffect(() => { list.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'nearest' }) }, [active, open])
 
   const pick = (choice: Extra) => {
@@ -108,11 +138,11 @@ export default function ClientSelect({ clients, value, defaultValue = '', onChan
       onChange={event => { setText(event.target.value); setTyped(true); setOpen(true); setActive(0) }}
       onBlur={settle} onKeyDown={keys} />
     {name && <input type="hidden" name={name} value={current} disabled={disabled} />}
-    {open && !disabled && <ul ref={list} id={listId} role="listbox" className="client-combo-list" style={place}>
+    {open && !disabled && host && createPortal(<ul ref={list} id={listId} role="listbox" className="client-combo-list" style={place}>
       {shown.map((choice, at) => <li key={choice.value || '__blank'} id={`${listId}-${at}`} role="option" aria-selected={choice.value === current} data-active={at === active}
         className={`${choice.value === current ? 'chosen' : ''}${extra.includes(choice) ? ' extra' : ''}`}
         onMouseDown={event => { event.preventDefault(); pick(choice) }} onMouseEnter={() => setActive(at)}>{choice.label}</li>)}
       {!shown.length && <li className="client-combo-empty" role="presentation">No client matches “{text.trim()}”</li>}
-    </ul>}
+    </ul>, host)}
   </span>
 }

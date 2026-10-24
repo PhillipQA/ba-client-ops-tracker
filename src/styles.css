@@ -2081,12 +2081,11 @@ select option { background: #181818; color: #fff; }
 .client-combo { position: relative; display: block; min-width: 0; }
 label > .client-combo, .client-combo { width: 100%; }
 .client-combo-input { width: 100%; min-width: 0; box-sizing: border-box; text-overflow: ellipsis; }
-.client-combo-list { z-index: 1000; margin: 0; padding: 4px; list-style: none; overflow: auto; border-radius: 10px; border: 1px solid var(--ui-border, #d0d5dd);
-  background: var(--ui-surface, #ffffff); color: var(--ui-text, #1f2937); box-shadow: 0 12px 32px rgba(15, 23, 42, .28); font-size: 13px; text-align: left; }
-.app-shell:not([data-interface-mode]) .client-combo-list { background: #20252c; color: #eef2f7; border-color: #3a4350; }
+.client-combo-list { z-index: 2147483000; margin: 0; padding: 4px; list-style: none; overflow: auto; box-sizing: border-box; border-radius: 10px; border: 1px solid;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, .28); font-size: 13px; text-align: left; }
 .client-combo-list li { padding: 7px 10px; border-radius: 7px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .client-combo-list li.extra { color: color-mix(in srgb, currentColor 72%, transparent); font-style: italic; }
-.client-combo-list li[data-active="true"] { background: color-mix(in srgb, var(--ui-accent, #4f6bed) 24%, transparent); }
+.client-combo-list li[data-active="true"] { background: color-mix(in srgb, var(--combo-accent, #4f6bed) 24%, transparent); }
 .client-combo-list li.chosen { font-weight: 700; }
 .client-combo-list li.chosen::after { content: ' ✓'; }
 .client-combo-list .client-combo-empty { cursor: default; color: color-mix(in srgb, currentColor 60%, transparent); }

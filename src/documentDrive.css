@@ -13,7 +13,7 @@
 .document-drive-head small, .document-drive-groups small, .document-drive-file small { opacity: .75; overflow-wrap: anywhere; }
 .document-drive-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .6rem; }
 .document-drive-filters label { display: grid; gap: .25rem; min-width: 0; font-size: .85rem; }
-.document-drive-filters :is(select, input) { width: 100%; min-width: 0; }
+.document-drive-filters :is(select, input, .client-combo-input) { width: 100%; min-width: 0; }
 .document-drive-groups, .document-drive-groups ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
 .document-drive-groups { max-height: 18rem; overflow: auto; }
 .document-drive-groups > li { display: grid; gap: .25rem; padding-bottom: .5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent); }

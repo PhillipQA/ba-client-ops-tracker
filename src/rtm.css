@@ -21,7 +21,7 @@
 .rtm-page .rtm-notice { color:#afe0c0; }
 .rtm-page .rtm-matrix-table td:first-child,.rtm-page .rtm-matrix-table th { background:var(--theme-surface-strong,#20252b); }
 .rtm-page .rtm-layout button.active { background:#31515a; color:#c4eff0; }
-.rtm-page .rtm-dialog :is(input,select,textarea):disabled, .client-combo-input { opacity:.75; }
+.rtm-page .rtm-dialog :is(input,select,textarea, .client-combo-input):disabled { opacity:.75; }
 .rtm-page .rtm-page-heading { padding:20px 22px; border:1px solid var(--rtm-border); border-radius:14px; background:var(--panel); }
 .rtm-page .rtm-tabs { display:flex; gap:8px; padding:0 14px; border:1px solid var(--rtm-border); border-radius:10px; background:var(--panel); }
 .rtm-page .rtm-tabs button { padding:14px 12px; }
