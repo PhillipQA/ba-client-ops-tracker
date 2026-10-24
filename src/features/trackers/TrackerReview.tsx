@@ -4,14 +4,20 @@ import { shown, type Lookup } from './trackerQuery'
 import { Dialog, plural } from './trackerUi'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { trackerClients, type TaskDraft, type WorkTools } from './TrackerWork'
-import { parentKeyOf } from './trackerSync'
+import {
+  choicesFromOrder,
+  choicesFromSheet,
+  reviewCounts,
+  reviewGroups,
+  sameChoice,
+  setChoice,
+  taskAbove,
+  willCreate,
+  type Choice,
+  type Choices,
+} from './trackerReviewPlan'
 
-/** What a reviewed row becomes. */
-export type Choice =
-  | { kind: 'task' }
-  | { kind: 'subtask'; parentTaskId: string }
-  | { kind: 'subtask_new'; parentRowId: string }
-  | { kind: 'plain' }
+export type { Choice } from './trackerReviewPlan'
 export type ReviewOutcome = {
   rowTasks: { rowId: string; taskId: string }[]
   cellLinks: { rowId: string; columnId: string; taskId: string }[]
@@ -32,86 +38,140 @@ type Props = {
   onApply: (outcome: ReviewOutcome) => Promise<void>
 }
 
-const describe = (choice: Choice | undefined, rows: Map<string, string>, items: Map<string, string>) => {
-  if (!choice) return 'Not decided'
-  if (choice.kind === 'task') return 'New task'
-  if (choice.kind === 'plain') return 'Plain row'
-  if (choice.kind === 'subtask') return `Subtask of ${items.get(choice.parentTaskId) || 'a task'}`
-  return `Subtask of “${rows.get(choice.parentRowId) || 'a new task'}”`
-}
+type RuleTarget = 'task' | 'above' | 'skip' | 'later'
+const NEW_PROJECT = '__new__'
+const short = (text: string, max = 32) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
 /**
- * Reviews new rows (from a connected Sheet or an import): each ticked row becomes a new task, a subtask of an existing
- * task, a subtask of a new task from the same list, or stays a plain row. Nothing is created until Create is pressed.
+ * Reviews new rows (from a connected Sheet or an import) as a list of tasks with their subtasks under them. Rows start
+ * grouped the way the Sheet or file groups them; untick what should stay a plain row, or change a row with its menu.
+ * Nothing is created until Create is pressed.
  */
 export default function TrackerReview({ tracker, rows, allRows, lookup, tools, origin, onClose, onApply }: Props) {
   const columns = tracker.columns
   const textColumns = columns.filter(column =>
     ['text', 'longtext', 'number', 'date', 'select', 'link', 'person'].includes(column.type),
   )
-  const [titleColumn, setTitleColumn] = useState(textColumns[0]?.id || '')
   const open = rows.filter(row => !row.taskId)
-  const [ticked, setTicked] = useState<Set<string>>(new Set())
-  const [initialChoices] = useState<Record<string, Choice>>(() =>
-    origin === 'sheet' && tools.onCreate ? choicesFromSheet(open, allRows ?? rows) : {},
-  )
+  const firstText = (row: TrackerRow) => (columns[0] ? shown(columns[0], row, lookup).text.trim() : '')
+
+  const [initialChoices] = useState<Choices>(() => {
+    if (!tools.onCreate) return {}
+    return origin === 'sheet'
+      ? choicesFromSheet(open, allRows ?? rows)
+      : choicesFromOrder(open.map(row => ({ id: row.id, name: firstText(row) })))
+  })
   const [choices, setChoices] = useState(initialChoices)
-  const prefilled = Object.keys(initialChoices).length > 0
-  const isSubtask = (row: TrackerRow) => Boolean(choices[row.id]?.kind.startsWith('subtask'))
+  const [skipped, setSkipped] = useState<Set<string>>(new Set())
+  const [titleColumn, setTitleColumn] = useState(textColumns[0]?.id || '')
   // Rows under a task usually leave the name column blank, so their subtask title comes from another column.
   const [subTitleColumn, setSubTitleColumn] = useState(() =>
     bestTitleColumn(
       textColumns.filter(column => column.id !== titleColumn),
-      open.filter(row => initialChoices[row.id]?.kind.startsWith('subtask')),
+      open.filter(row => initialChoices[row.id] && initialChoices[row.id].kind !== 'task'),
       lookup,
     ),
   )
+  const [titles, setTitles] = useState<Record<string, string>>({})
+  const own = trackerClients(tracker).filter(id => tools.clients.some(client => client.id === id))
+  const [clientId, setClientId] = useState(own.length === 1 ? own[0] : '')
+  const [projectId, setProjectId] = useState(tracker.projectId || '')
+  const [projectName, setProjectName] = useState('')
+  const [subColumns, setSubColumns] = useState<Set<string>>(new Set())
+  const [ruleColumn, setRuleColumn] = useState(textColumns[0]?.id || '')
+  const [ruleOp, setRuleOp] = useState<'is' | 'contains' | 'empty' | 'filled'>('is')
+  const [ruleValue, setRuleValue] = useState('')
+  const [ruleTarget, setRuleTarget] = useState<RuleTarget>('task')
+  const [ruleNote, setRuleNote] = useState('')
+  const [picking, setPicking] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const isSubtask = (row: TrackerRow) => Boolean(choices[row.id] && choices[row.id].kind !== 'task')
   // The chosen title column, or when that cell is blank, the row's first filled text cell.
   const titleFrom = (row: TrackerRow) => {
     const column = columns.find(item => item.id === (isSubtask(row) && subTitleColumn ? subTitleColumn : titleColumn))
-    const own = column ? shown(column, row, lookup).text.trim() : ''
-    if (own) return own
+    const value = column ? shown(column, row, lookup).text.trim() : ''
+    if (value) return value
     for (const other of textColumns) {
       const text = shown(other, row, lookup).text.trim()
       if (text) return text
     }
     return ''
   }
-  const [titles, setTitles] = useState<Record<string, string>>({})
-  const [ruleColumn, setRuleColumn] = useState(textColumns[0]?.id || '')
-  const [ruleOp, setRuleOp] = useState<'is' | 'contains' | 'empty' | 'filled'>('is')
-  const [ruleValue, setRuleValue] = useState('')
-  const own = trackerClients(tracker).filter(id => tools.clients.some(client => client.id === id))
-  const [clientId, setClientId] = useState(own.length === 1 ? own[0] : '')
-  const [projectMode, setProjectMode] = useState<'existing' | 'new'>('existing')
-  const [projectId, setProjectId] = useState(tracker.projectId || '')
-  const [projectName, setProjectName] = useState('')
-  const [subColumns, setSubColumns] = useState<Set<string>>(new Set())
-  const [parentPick, setParentPick] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
   const titleOf = (row: TrackerRow) => (titles[row.id] ?? titleFrom(row)) || 'Untitled row'
-  const rowNames = useMemo(
-    () => new Map(rows.map(row => [row.id, titleOf(row)])),
-    [rows, titles, titleColumn, subTitleColumn, choices],
-  )
+  const rowById = useMemo(() => new Map(rows.map(row => [row.id, row])), [rows])
   const itemNames = useMemo(() => new Map(tools.items.map(item => [item.id, item.title])), [tools.items])
-  const taskRows = open.filter(row => choices[row.id]?.kind === 'task')
-  const subtaskRows = open.filter(isSubtask)
-  const openTasks = useMemo(
+  const parentName = (choice: Choice) =>
+    choice.kind === 'subtask'
+      ? itemNames.get(choice.parentTaskId) || 'a task'
+      : choice.kind === 'subtask_new'
+        ? titleOf(rowById.get(choice.parentRowId)!)
+        : ''
+
+  const groups = useMemo(() => reviewGroups(rows, choices), [rows, choices])
+  const counts = reviewCounts(open, choices, skipped, subColumns.size)
+  const anySubtask = open.some(isSubtask)
+  const newProject = counts.tasks > 0 && projectId === NEW_PROJECT && projectName.trim() ? 1 : 0
+
+  const otherTasks = useMemo(
     () => [
-      { value: '', label: 'Choose the task they belong to' },
+      { value: '', label: 'Choose the task it belongs to' },
+      ...open
+        .filter(row => choices[row.id]?.kind === 'task')
+        .map(row => ({ value: `row:${row.id}`, label: titleOf(row), hint: 'New, from this list' })),
       ...tools.items
         .filter(item => !item.parentTaskId && !tools.isClosed(item.status))
         .map(item => ({
-          value: item.id,
+          value: `task:${item.id}`,
           label: item.title,
           hint: tools.clients.find(client => client.id === item.clientId)?.name,
         })),
     ],
-    [tools.items, tools.clients, tools.isClosed],
+    [open, choices, titles, titleColumn, tools.items, tools.clients, tools.isClosed],
   )
+
+  const unskip = (ids: string[]) =>
+    setSkipped(current => {
+      const next = new Set(current)
+      for (const id of ids) next.delete(id)
+      return next
+    })
+  const skip = (ids: string[]) => setSkipped(current => new Set([...current, ...ids]))
+
+  /** The row menu. */
+  const choose = (row: TrackerRow, value: string) => {
+    setError('')
+    setPicking('')
+    if (value === 'other') return setPicking(row.id)
+    if (value === 'skip') return skip([row.id])
+    unskip([row.id])
+    if (value === 'current') return
+    if (value === 'later') return setChoices(current => setChoice(rows, current, row.id, null))
+    if (value === 'task') return setChoices(current => setChoice(rows, current, row.id, { kind: 'task' }))
+    if (value === 'above') {
+      const above = taskAbove(rows, row.id, choices, skipped)
+      if (above) setChoices(current => setChoice(rows, current, row.id, above))
+    }
+  }
+  const pickOther = (row: TrackerRow, value: string) => {
+    if (!value) return
+    const [kind, id] = [value.slice(0, value.indexOf(':')), value.slice(value.indexOf(':') + 1)]
+    const choice: Choice =
+      kind === 'row' ? { kind: 'subtask_new', parentRowId: id } : { kind: 'subtask', parentTaskId: id }
+    setChoices(current => setChoice(rows, current, row.id, choice))
+    unskip([row.id])
+    setPicking('')
+  }
+
+  /** Ticking a task ticks its subtasks too; ticking a subtask ticks its task. */
+  const toggleGroup = (head: string, children: string[], on: boolean) =>
+    on ? unskip([head, ...children]) : skip([head, ...children])
+  const toggleChild = (id: string, on: boolean) => {
+    if (!on) return skip([id])
+    const choice = choices[id]
+    unskip(choice?.kind === 'subtask_new' ? [id, choice.parentRowId] : [id])
+  }
 
   const matches = (row: TrackerRow) => {
     const column = columns.find(item => item.id === ruleColumn)
@@ -126,47 +186,35 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
           ? text === wanted
           : Boolean(wanted) && text.includes(wanted)
   }
-  const tickRule = () => setTicked(new Set(open.filter(matches).map(row => row.id)))
-  const toggle = (id: string) =>
-    setTicked(current => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  const apply = (choice: Choice) => {
-    if (!ticked.size) return setError('Tick the rows first.')
-    setError('')
+  const applyRule = () => {
+    const hits = open.filter(matches)
+    setRuleNote(hits.length ? `${plural(hits.length, 'row')} changed.` : 'No row matches.')
+    if (!hits.length) return
+    const ids = hits.map(row => row.id)
+    if (ruleTarget === 'skip') return skip(ids)
+    unskip(ids)
     setChoices(current => {
-      const next = { ...current }
-      for (const id of ticked) {
-        if (choice.kind === 'subtask_new' && choice.parentRowId === id) continue
-        next[id] = choice
+      let next = current
+      for (const row of hits) {
+        const choice: Choice | null =
+          ruleTarget === 'task'
+            ? { kind: 'task' }
+            : ruleTarget === 'above'
+              ? taskAbove(rows, row.id, next, skipped)
+              : null
+        if (ruleTarget === 'above' && !choice) continue
+        next = setChoice(rows, next, row.id, choice)
       }
-      // A row that stops being a task takes its subtasks back to "not decided".
-      for (const [id, value] of Object.entries(next))
-        if (value.kind === 'subtask_new' && next[value.parentRowId]?.kind !== 'task') delete next[id]
       return next
     })
-    setTicked(new Set())
   }
-
-  const counts = useMemo(() => {
-    const decided = Object.entries(choices).filter(([id]) => open.some(row => row.id === id))
-    const tasks = decided.filter(([, c]) => c.kind === 'task').length
-    const subtasks =
-      decided.filter(([, c]) => c.kind === 'subtask' || c.kind === 'subtask_new').length + tasks * subColumns.size
-    const plain = decided.filter(([, c]) => c.kind === 'plain').length
-    const newProject = tasks > 0 && projectMode === 'new' && projectName.trim() ? 1 : 0
-    return { tasks, subtasks, plain, newProject, undecided: open.length - decided.length }
-  }, [choices, subColumns, projectMode, projectName, open])
 
   const create = async () => {
     if (busy) return
     if (counts.tasks && !clientId) return setError('Choose the client for the new tasks.')
-    if (counts.tasks && projectMode === 'new' && !projectName.trim())
+    if (counts.tasks && projectId === NEW_PROJECT && !projectName.trim())
       return setError('Name the new project, or choose an existing one.')
-    if (counts.tasks + counts.subtasks + counts.plain === 0) return setError('Decide what at least one row becomes.')
+    if (counts.tasks + counts.subtasks + counts.plain === 0) return setError('Nothing to create or save yet.')
     setBusy(true)
     setError('')
     try {
@@ -178,6 +226,8 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
         rowOfDraft.push(link)
         return drafts.length - 1
       }
+      const making = open.filter(row => willCreate(row.id, choices, skipped))
+      const taskRows = making.filter(row => choices[row.id].kind === 'task')
       for (const row of taskRows)
         draftOfRow.set(
           row.id,
@@ -185,8 +235,8 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
             {
               title: titleOf(row),
               clientId,
-              projectId: projectMode === 'existing' ? projectId : '',
-              newProjectName: projectMode === 'new' ? projectName.trim() : undefined,
+              projectId: projectId === NEW_PROJECT ? '' : projectId,
+              newProjectName: projectId === NEW_PROJECT ? projectName.trim() : undefined,
             },
             { rowId: row.id },
           ),
@@ -202,14 +252,14 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
             },
             { rowId: row.id, columnId },
           )
-      for (const row of open) {
+      for (const row of making) {
         const choice = choices[row.id]
-        if (choice?.kind === 'subtask_new' && draftOfRow.has(choice.parentRowId))
+        if (choice.kind === 'subtask_new')
           push(
             { title: titleOf(row), clientId: '', projectId: '', parentIndex: draftOfRow.get(choice.parentRowId) },
             { rowId: row.id },
           )
-        if (choice?.kind === 'subtask')
+        if (choice.kind === 'subtask')
           push(
             { title: titleOf(row), clientId: '', projectId: '', parentTaskId: choice.parentTaskId },
             { rowId: row.id },
@@ -219,7 +269,7 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
       const outcome: ReviewOutcome = {
         rowTasks: [],
         cellLinks: [],
-        reviewed: open.filter(row => choices[row.id]).map(row => row.id),
+        reviewed: open.filter(row => choices[row.id] || skipped.has(row.id)).map(row => row.id),
       }
       made.forEach((item, at) => {
         const link = rowOfDraft[at]
@@ -250,10 +300,108 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
   const summary = [
     counts.tasks && plural(counts.tasks, 'task'),
     counts.subtasks && plural(counts.subtasks, 'subtask'),
-    counts.newProject && '1 new project',
+    newProject && '1 new project',
   ]
     .filter(Boolean)
     .join(', ')
+
+  /** One line of the list: tick, title, where it came from, and what it becomes. */
+  const line = (row: TrackerRow, role: 'head' | 'child' | 'loose', children: string[] = []) => {
+    if (row.taskId)
+      return (
+        <div className="trk-rv-line done" key={row.id}>
+          <span />
+          <span className="trk-rv-title">{titleOf(row)}</span>
+          <span className="trk-muted">Already linked to {lookup.task(row.taskId)?.title || 'a task'}</span>
+        </div>
+      )
+    const choice = choices[row.id]
+    const off = skipped.has(row.id)
+    const above = taskAbove(rows, row.id, choices, skipped)
+    const value = off
+      ? 'skip'
+      : !choice
+        ? 'later'
+        : choice.kind === 'task'
+          ? 'task'
+          : sameChoice(choice, above)
+            ? 'above'
+            : 'current'
+    const source = firstText(row)
+    return (
+      <div
+        className={`trk-rv-line ${role}${off ? ' off' : ''}${!choice && !off ? ' later' : ''}`}
+        key={row.id}
+        data-row={row.id}
+      >
+        <span>
+          {choice && tools.onCreate ? (
+            <input
+              type="checkbox"
+              className="trk-review-tick"
+              checked={!off}
+              aria-label={`Create ${titleOf(row)}`}
+              onChange={event =>
+                role === 'head'
+                  ? toggleGroup(row.id, children, event.target.checked)
+                  : toggleChild(row.id, event.target.checked)
+              }
+            />
+          ) : null}
+        </span>
+        <span className="trk-rv-title">
+          {role === 'child' && (
+            <span className="trk-rv-branch" aria-hidden="true">
+              ↳
+            </span>
+          )}
+          {choice && !off ? (
+            <input
+              aria-label={`Title for ${titleOf(row)}`}
+              value={titleOf(row)}
+              onChange={event => setTitles(current => ({ ...current, [row.id]: event.target.value }))}
+            />
+          ) : (
+            <span className="trk-rv-plain">{titleOf(row)}</span>
+          )}
+          {source && source !== titleOf(row) && role !== 'head' && (
+            <small className="trk-muted">{short(source, 24)}</small>
+          )}
+        </span>
+        <span className="trk-rv-becomes">
+          <select
+            aria-label={`What ${titleOf(row)} becomes`}
+            value={value}
+            disabled={!tools.onCreate && value !== 'skip' && value !== 'later'}
+            onChange={event => choose(row, event.target.value)}
+          >
+            {tools.onCreate && <option value="task">Task</option>}
+            {tools.onCreate && above && <option value="above">Subtask of “{short(parentName(above))}”</option>}
+            {choice && value === 'current' && <option value="current">Subtask of “{short(parentName(choice))}”</option>}
+            {tools.onCreate && <option value="other">Subtask of another task…</option>}
+            <option value="skip">Keep as a row</option>
+            <option value="later">Decide later</option>
+          </select>
+          {picking === row.id && (
+            <span className="trk-rv-pick">
+              <SearchSelect
+                choices={otherTasks}
+                value=""
+                onChange={next => pickOther(row, next)}
+                placeholder="Type a task name"
+                empty="No open task matches"
+                aria-label={`Task for ${titleOf(row)}`}
+              />
+              <button type="button" className="trk-button" onClick={() => setPicking('')}>
+                Cancel
+              </button>
+            </span>
+          )}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <Dialog
       title={origin === 'sheet' ? 'New rows from the Sheet' : 'Create tasks from the imported rows'}
@@ -263,181 +411,17 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
       busy={busy}
     >
       <div className="trk-review">
-        {prefilled && (
-          <p className="trk-strip">
-            Filled in from the Sheet: rows with a name become tasks, and the rows under them become their subtasks.
-            Change anything before you create.
-          </p>
-        )}
-        <p className="trk-muted-text">
-          Tick rows, then choose what they become. Rows you do not decide on stay in this list for later
-          {origin === 'sheet' ? ', and every row stays in the tracker either way' : ''}.
+        <p className="trk-strip">
+          Rows with a name become <strong>tasks</strong>, and the rows under them become their <strong>subtasks</strong>
+          . Untick anything that should stay a plain row, or change a row with its menu.
+          {origin === 'sheet' ? ' Every row stays in the tracker either way.' : ''}
         </p>
         {!tools.onCreate && (
-          <p className="trk-field-error">Your role cannot create tasks. You can still mark rows as plain rows.</p>
+          <p className="trk-field-error">Your role cannot create tasks. You can still keep rows as plain rows.</p>
         )}
 
-        <div className="trk-review-bar" role="group" aria-label="Tick rows">
-          <button type="button" className="trk-button" onClick={() => setTicked(new Set(open.map(row => row.id)))}>
-            Tick all
-          </button>
-          <button type="button" className="trk-button" onClick={() => setTicked(new Set())}>
-            Untick all
-          </button>
-          <span className="trk-review-rule">
-            <span>or tick rows where</span>
-            <select aria-label="Rule column" value={ruleColumn} onChange={event => setRuleColumn(event.target.value)}>
-              {columns
-                .filter(column => !['secret', 'formula'].includes(column.type))
-                .map(column => (
-                  <option key={column.id} value={column.id}>
-                    {column.name}
-                  </option>
-                ))}
-            </select>
-            <select aria-label="Rule" value={ruleOp} onChange={event => setRuleOp(event.target.value as typeof ruleOp)}>
-              <option value="is">is</option>
-              <option value="contains">contains</option>
-              <option value="filled">is not empty</option>
-              <option value="empty">is empty</option>
-            </select>
-            {(ruleOp === 'is' || ruleOp === 'contains') && (
-              <input
-                aria-label="Rule value"
-                value={ruleValue}
-                onChange={event => setRuleValue(event.target.value)}
-                placeholder="Value"
-              />
-            )}
-            <button type="button" className="trk-button" onClick={tickRule}>
-              Tick matching
-            </button>
-          </span>
-        </div>
-
-        <div className="trk-review-actions" role="group" aria-label="Make the ticked rows">
-          <strong>{ticked.size ? `Make the ${plural(ticked.size, 'ticked row')}:` : 'Make the ticked rows:'}</strong>
-          <button
-            type="button"
-            className="trk-button primary"
-            disabled={!ticked.size || !tools.onCreate}
-            onClick={() => apply({ kind: 'task' })}
-          >
-            New tasks
-          </button>
-          <span className="trk-review-parent">
-            <SearchSelect
-              choices={openTasks}
-              value={parentPick}
-              onChange={setParentPick}
-              placeholder="Type an existing task"
-              empty="No open task matches"
-              aria-label="Existing task for subtasks"
-            />
-            <button
-              type="button"
-              className="trk-button"
-              disabled={!ticked.size || !parentPick || !tools.onCreate}
-              onClick={() => apply({ kind: 'subtask', parentTaskId: parentPick })}
-            >
-              Subtasks of this task
-            </button>
-          </span>
-          {taskRows.length > 0 && (
-            <select
-              aria-label="Subtasks of a new task in this list"
-              value=""
-              disabled={!ticked.size}
-              onChange={event => {
-                if (event.target.value) apply({ kind: 'subtask_new', parentRowId: event.target.value })
-              }}
-            >
-              <option value="">Subtasks of a new task here…</option>
-              {taskRows.map(row => (
-                <option key={row.id} value={row.id}>
-                  {titleOf(row)}
-                </option>
-              ))}
-            </select>
-          )}
-          <button type="button" className="trk-button" disabled={!ticked.size} onClick={() => apply({ kind: 'plain' })}>
-            Plain rows
-          </button>
-        </div>
-
-        <div className="trk-review-table" role="table" aria-label="Rows to review">
-          <div role="row" className="trk-review-head">
-            <span role="columnheader" />
-            <span role="columnheader">Row</span>
-            <span role="columnheader">Title for its task or subtask</span>
-            <span role="columnheader">Becomes</span>
-          </div>
-          {rows.map(row => {
-            const done = Boolean(row.taskId),
-              choice = choices[row.id]
-            return (
-              <div
-                role="row"
-                key={row.id}
-                className={`trk-review-row${ticked.has(row.id) ? ' ticked' : ''}${done ? ' done' : ''}`}
-              >
-                <span role="cell">
-                  {done ? null : (
-                    <input
-                      type="checkbox"
-                      className="trk-review-tick"
-                      checked={ticked.has(row.id)}
-                      aria-label={`Tick ${rowNames.get(row.id)}`}
-                      onChange={() => toggle(row.id)}
-                    />
-                  )}
-                </span>
-                <span role="cell" className="trk-review-name">
-                  {shown(columns[0], row, lookup).text || (choice?.kind.startsWith('subtask') ? '↳' : '—')}
-                </span>
-                <span role="cell">
-                  {done ? (
-                    <span className="trk-muted">Already linked to {lookup.task(row.taskId)?.title || 'a task'}</span>
-                  ) : (
-                    <input
-                      aria-label={`Title for ${rowNames.get(row.id)}`}
-                      value={titleOf(row)}
-                      disabled={!choice || choice.kind === 'plain'}
-                      onChange={event => setTitles(current => ({ ...current, [row.id]: event.target.value }))}
-                    />
-                  )}
-                </span>
-                <span role="cell" className={`trk-review-becomes ${choice?.kind || 'none'}`}>
-                  {done ? 'Linked' : describe(choice, rowNames, itemNames)}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-
-        {subtaskRows.length > 0 && (
-          <label className="trk-field-block trk-review-subtitle">
-            Subtask title comes from
-            <select
-              value={subTitleColumn}
-              onChange={event => {
-                setSubTitleColumn(event.target.value)
-                setTitles(current =>
-                  Object.fromEntries(Object.entries(current).filter(([id]) => !subtaskRows.some(row => row.id === id))),
-                )
-              }}
-            >
-              {textColumns.map(column => (
-                <option key={column.id} value={column.id}>
-                  {column.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {counts.tasks > 0 && (
-          <fieldset className="trk-review-settings">
-            <legend>For the new tasks</legend>
+        {tools.onCreate && (
+          <div className="trk-rv-setup" role="group" aria-label="For the new tasks">
             <label className="trk-field-block">
               Client
               <ClientSelect
@@ -448,40 +432,20 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
                 required
               />
             </label>
-            <div className="trk-field-block">
-              <span>Project</span>
-              <span className="trk-review-project">
-                <label className="trk-radio">
-                  <input
-                    type="radio"
-                    name="review-project"
-                    checked={projectMode === 'existing'}
-                    onChange={() => setProjectMode('existing')}
-                  />{' '}
-                  Existing
-                </label>
-                <label className="trk-radio">
-                  <input
-                    type="radio"
-                    name="review-project"
-                    checked={projectMode === 'new'}
-                    onChange={() => setProjectMode('new')}
-                  />{' '}
-                  New project
-                </label>
-              </span>
-              {projectMode === 'existing' ? (
-                <select aria-label="Project" value={projectId} onChange={event => setProjectId(event.target.value)}>
-                  <option value="">No project</option>
-                  {[...tools.projects]
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map(project => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                </select>
-              ) : (
+            <label className="trk-field-block">
+              Project
+              <select value={projectId} onChange={event => setProjectId(event.target.value)}>
+                <option value="">No project</option>
+                {[...tools.projects]
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map(project => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                <option value={NEW_PROJECT}>+ New project…</option>
+              </select>
+              {projectId === NEW_PROJECT && (
                 <input
                   aria-label="New project name"
                   value={projectName}
@@ -490,9 +454,9 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
                   onChange={event => setProjectName(event.target.value)}
                 />
               )}
-            </div>
+            </label>
             <label className="trk-field-block">
-              Task title comes from
+              Task name from
               <select
                 value={titleColumn}
                 onChange={event => {
@@ -507,6 +471,127 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
                 ))}
               </select>
             </label>
+            {anySubtask && (
+              <label className="trk-field-block">
+                Subtask name from
+                <select
+                  value={subTitleColumn}
+                  onChange={event => {
+                    setSubTitleColumn(event.target.value)
+                    setTitles(current =>
+                      Object.fromEntries(Object.entries(current).filter(([id]) => !isSubtask(rowById.get(id)!))),
+                    )
+                  }}
+                >
+                  {textColumns.map(column => (
+                    <option key={column.id} value={column.id}>
+                      {column.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        )}
+
+        <div className="trk-rv-listbar">
+          <strong>{plural(open.length, 'new row')}</strong>
+          {tools.onCreate && (
+            <>
+              <button type="button" className="trk-link-button" onClick={() => unskip(open.map(row => row.id))}>
+                Tick all
+              </button>
+              <button
+                type="button"
+                className="trk-link-button"
+                onClick={() => skip(open.filter(row => choices[row.id]).map(row => row.id))}
+              >
+                Untick all
+              </button>
+            </>
+          )}
+        </div>
+        <ul className="trk-rv-list" aria-label="Rows to review">
+          {groups.map(group =>
+            group.kind === 'loose' ? (
+              <li className="trk-rv-group" key={group.rowId}>
+                {line(rowById.get(group.rowId)!, 'loose')}
+              </li>
+            ) : group.kind === 'new' ? (
+              <li className="trk-rv-group" key={group.rowId}>
+                {line(rowById.get(group.rowId)!, 'head', group.children)}
+                {group.children.map(id => line(rowById.get(id)!, 'child'))}
+              </li>
+            ) : (
+              <li className="trk-rv-group" key={`task:${group.taskId}`}>
+                <div className="trk-rv-existing">
+                  Under the existing task <strong>{itemNames.get(group.taskId) || 'a task'}</strong>
+                </div>
+                {group.children.map(id => line(rowById.get(id)!, 'child'))}
+              </li>
+            ),
+          )}
+        </ul>
+
+        {tools.onCreate && (
+          <details className="trk-rv-more">
+            <summary>More options</summary>
+            <div className="trk-field-block">
+              <span>Change several rows at once</span>
+              <span className="trk-review-rule">
+                <span>Rows where</span>
+                <select
+                  aria-label="Rule column"
+                  value={ruleColumn}
+                  onChange={event => setRuleColumn(event.target.value)}
+                >
+                  {columns
+                    .filter(column => !['secret', 'formula'].includes(column.type))
+                    .map(column => (
+                      <option key={column.id} value={column.id}>
+                        {column.name}
+                      </option>
+                    ))}
+                </select>
+                <select
+                  aria-label="Rule"
+                  value={ruleOp}
+                  onChange={event => setRuleOp(event.target.value as typeof ruleOp)}
+                >
+                  <option value="is">is</option>
+                  <option value="contains">contains</option>
+                  <option value="filled">is not empty</option>
+                  <option value="empty">is empty</option>
+                </select>
+                {(ruleOp === 'is' || ruleOp === 'contains') && (
+                  <input
+                    aria-label="Rule value"
+                    value={ruleValue}
+                    onChange={event => setRuleValue(event.target.value)}
+                    placeholder="Value"
+                  />
+                )}
+                <span>become</span>
+                <select
+                  aria-label="Rows become"
+                  value={ruleTarget}
+                  onChange={event => setRuleTarget(event.target.value as RuleTarget)}
+                >
+                  <option value="task">Tasks</option>
+                  <option value="above">Subtasks of the task above</option>
+                  <option value="skip">Plain rows</option>
+                  <option value="later">Decide later</option>
+                </select>
+                <button type="button" className="trk-button" onClick={applyRule}>
+                  Apply
+                </button>
+                {ruleNote && (
+                  <span className="trk-muted" role="status">
+                    {ruleNote}
+                  </span>
+                )}
+              </span>
+            </div>
             <div className="trk-field-block">
               <span>Also give every new task a subtask for each of these columns</span>
               <span className="trk-review-cols">
@@ -537,7 +622,7 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
                 Each subtask is named after its column, and its status shows in that cell.
               </small>
             </div>
-          </fieldset>
+          </details>
         )}
 
         {error && (
@@ -561,7 +646,7 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
           <span className="trk-muted-text" role="status">
             {summary ? `Creates ${summary}.` : 'Nothing to create yet.'}
             {counts.plain ? ` ${plural(counts.plain, 'row')} stay plain.` : ''}
-            {counts.undecided ? ` ${plural(counts.undecided, 'row')} left for later.` : ''}
+            {counts.later ? ` ${plural(counts.later, 'row')} left for later.` : ''}
           </span>
           <button type="button" className="trk-button" disabled={busy} onClick={onClose}>
             Later
@@ -578,30 +663,6 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
       </div>
     </Dialog>
   )
-}
-
-/**
- * The review's starting choices for rows from a Sheet: a row with a name becomes a task, and a row under it becomes a
- * subtask of that task (a new one from this list, or the task its row already has). Rows above the first name, and
- * rows whose task row is not loaded, are left undecided.
- */
-function choicesFromSheet(open: TrackerRow[], rows: TrackerRow[]): Record<string, Choice> {
-  const byKey = new Map(rows.filter(row => row.sourceKey).map(row => [String(row.sourceKey).toLowerCase(), row]))
-  const reviewing = new Set(open.map(row => row.id))
-  const choices: Record<string, Choice> = {}
-  for (const row of open) {
-    if (!row.sourceKey) continue
-    const parentKey = parentKeyOf(row.sourceKey)
-    if (parentKey === null) {
-      choices[row.id] = { kind: 'task' }
-      continue
-    }
-    const parent = parentKey ? byKey.get(parentKey.toLowerCase()) : undefined
-    if (!parent) continue
-    if (parent.taskId) choices[row.id] = { kind: 'subtask', parentTaskId: parent.taskId }
-    else if (reviewing.has(parent.id)) choices[row.id] = { kind: 'subtask_new', parentRowId: parent.id }
-  }
-  return choices
 }
 
 /** The column most often filled on these rows, with the longest text as the tie-break: usually a ticket title. */

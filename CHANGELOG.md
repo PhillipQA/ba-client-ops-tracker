@@ -1,8 +1,20 @@
 # Changelog
 
-**Current application release: v1.0.2**
+**Current application release: v1.0.3**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.0.3 — A simpler review of new rows
+Released October 24, 2026.
+
+**No database migration and no new setting.**
+
+- **Tasks with their subtasks under them.** The review of new rows (from a connected Sheet or an upload) now lists each task with its subtasks indented beneath it, instead of a flat list with a "Becomes" column. Rows a sync adds under a task that already exists appear under that task's name.
+- **No more tick-then-choose.** Every row has its own menu: **Task**, **Subtask of “the task above”**, **Subtask of another task…** (new tasks in the list or any open task), **Keep as a row**, or **Decide later**. Untick a task to keep it and its subtasks as plain rows; tick a subtask to bring its task back.
+- **Settings first.** Client, Project (with **+ New project…** in the same list), **Task name from** and **Subtask name from** sit at the top, before the rows.
+- **Uploads group like a Sheet.** Imported files open in the review already decided: a row with a name in the first column becomes a task, and the rows below it with that cell blank become its subtasks.
+- **Less used options under More options:** changing several rows at once by a rule (now also "subtasks of the task above"), and giving every new task a subtask per column.
+- When a row stops being a task, the rows under it move to the task above, instead of losing their choice.
 
 ## v1.0.2 — Every Sheet row comes in, grouped into tasks and subtasks
 Released October 24, 2026.
