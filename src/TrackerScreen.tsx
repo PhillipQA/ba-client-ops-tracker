@@ -280,7 +280,7 @@ export default function TrackerScreen(props: Props) {
     if (!drawerId) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('dialog[open], .trk-popover')) return
+      if (document.querySelector('dialog[open], .k-popover')) return
       setDrawerId('')
     }
     document.addEventListener('keydown', onKey)

@@ -15,15 +15,12 @@ import {
 } from './brd-model'
 import './fsd.css'
 import './brd.css'
+import { requestJson } from './shared/http'
 
 type Provider = { enabled: boolean; provider?: string; name?: string; model?: string }
 function sourceId(sources: BrdSource[]) { return `SRC-${String(Math.max(0,...sources.map(s=>Number(s.id.replace(/^SRC-/,''))||0))+1).padStart(3,'0')}` }
-async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api/documents/brd/${path}`, { signal, method: body ? 'POST':'GET', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, ...(body ? {body:JSON.stringify(body)}:{}) })
-  const result = await response.json().catch(()=>({}))
-  if (!response.ok) throw new Error(result.error || 'The BRD request failed. Your draft is retained.')
-  return result as T
-}
+const request = <T,>(path: string, body?: unknown, signal?: AbortSignal) =>
+  requestJson<T>(`/api/documents/brd/${path}`, { body: body || undefined, signal, fallback: 'The BRD request failed. Your draft is retained.' })
 function downloadBase64(base64: string, mimeType: string, filename: string) {
   const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:mimeType}))
   const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)

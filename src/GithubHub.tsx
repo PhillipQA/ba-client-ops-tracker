@@ -6,7 +6,7 @@ import { defaultWaitingOn, waitingOnOptions } from './waitingOn'
 import { workHubSync } from './workHubSync'
 import { useWorkHubSync } from './useWorkHubSync'
 import { useIsClosed } from './openWork'
-import ClientSelect from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
 
 class ApiError extends Error { constructor(message: string, public retryAfterSeconds?: number) { super(message) } }
 async function apiRequest(root: string, path: string, method='GET', body?: unknown, signal?: AbortSignal) {

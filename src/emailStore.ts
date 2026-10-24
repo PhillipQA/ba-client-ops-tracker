@@ -1,4 +1,5 @@
 /** Email signatures (one per person) and email templates, stored on the server. */
+import { requestJson, type HttpMethod } from './shared/http'
 export type EmailTemplate = {
   id: string; name: string; subject: string; body: string; shared: boolean
   createdBy: string; createdByName: string; updatedByName: string; createdAt: string; updatedAt: string; canEdit: boolean
@@ -8,15 +9,12 @@ export const TEMPLATE_LIMITS = { name: 120, subject: 200, body: 30000, signature
 
 export class EmailStoreError extends Error { constructor(message: string, public status: number) { super(message) } }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`/api/email${path}`, { method, credentials: 'same-origin', cache: 'no-store', headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
-  } catch { throw new EmailStoreError('The connection was interrupted. Check your connection and try again.', 0) }
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new EmailStoreError(typeof data?.error === 'string' ? data.error : 'Email templates are unavailable right now.', response.status)
-  return data as T
-}
+const call = <T,>(method: string, path: string, body?: unknown) => requestJson<T>(`/api/email${path}`, {
+  method: method as HttpMethod, body, noStore: true, bare: true,
+  offline: 'The connection was interrupted. Check your connection and try again.',
+  fallback: 'Email templates are unavailable right now.',
+  error: (message, status) => new EmailStoreError(message, status),
+})
 
 export const emailStore = {
   signature: () => call<{ signature: string; saved: boolean }>('GET', '/signature'),

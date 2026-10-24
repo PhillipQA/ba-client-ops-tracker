@@ -13,7 +13,7 @@ import TrackerImportDialog from './TrackerImportDialog'
 import { Dialog, Notice, niceTime, plural } from './trackerUi'
 import type { Client, Project, UserAccount, WorkItem } from './types'
 import './trackers.css'
-import ClientSelect from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
 
 type Props = {
   isAdmin: boolean
@@ -69,7 +69,7 @@ function NewTrackerDialog({ initialTemplate, clients, projects, onClose, onCreat
         <p className="trk-muted-text">Everyone in the account who has Trackers can open a tracker unless you make it private. You can change the columns afterwards.</p>
       </div>
       {error && <p className="trk-field-error" role="alert">{error}</p>}
-      <div className="trk-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" disabled={busy} onClick={onClose}>Cancel</button><button type="submit" className="trk-button primary" disabled={busy}>{busy ? 'Creating…' : 'Create tracker'}</button></div>
+      <div className="k-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" disabled={busy} onClick={onClose}>Cancel</button><button type="submit" className="trk-button primary" disabled={busy}>{busy ? 'Creating…' : 'Create tracker'}</button></div>
     </form>
   </Dialog>
 }

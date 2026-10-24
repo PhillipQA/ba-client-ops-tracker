@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { FileText, Plus, Search, Trash2, Users, UserRound, X } from 'lucide-react'
 import { emailStore, TEMPLATE_LIMITS, type EmailTemplate, type TemplateDraft } from './emailStore'
+import { useModalDialog } from './shared/ui/useModalDialog'
 
 const byName = (a: EmailTemplate, b: EmailTemplate) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
 const blank: TemplateDraft = { name: '', subject: '', body: '', shared: true }
@@ -21,13 +22,7 @@ export function EmailTemplatesManager({ userId, canWrite, onClose, onUse, startW
   const [error, setError] = useState(''), [note, setNote] = useState('')
   const changed = JSON.stringify(draft) !== JSON.stringify(saved) || (selected === 'new' && Boolean(draft.name || draft.subject || draft.body))
 
-  useEffect(() => {
-    const element = dialog.current
-    if (!element) return
-    const back = document.activeElement
-    element.showModal()
-    return () => { element.close(); if (back instanceof HTMLElement && back.isConnected) back.focus({ preventScroll: true }) }
-  }, [])
+  useModalDialog(dialog)
   const load = async () => {
     try { const result = await emailStore.templates(); setTemplates(result.templates.sort(byName)); setLoadError('') }
     catch (e) { setLoadError(e instanceof Error ? e.message : 'Templates could not be loaded.'); setTemplates([]) }

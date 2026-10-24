@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react'
+import { requestJson, type HttpMethod } from './shared/http'
 
 type Status = { gmailReady: boolean; connected: boolean; email: string; rootFolderUrl: string; reconnectRequired: boolean }
-async function request(url: string, method = 'GET') {
-  const response = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } })
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.error || 'Google Drive settings request failed.')
-  return body
-}
+const request = (url: string, method = 'GET') =>
+  requestJson(url, { method: method as HttpMethod, fallback: 'Google Drive settings request failed.' })
 const RESULTS: Record<string, string> = {
   connected: 'Google Drive is connected. Team members can now save Gmail attachments to task folders from Work Hub.',
   denied: 'Google Drive was not connected. Allow access to files created by this app on the Google consent screen, then try again.',

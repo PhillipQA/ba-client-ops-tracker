@@ -187,14 +187,14 @@ export default function TrackerImportDialog({ tracker, clients, projects, people
         <label className="trk-checkline"><input type="checkbox" checked={header} onChange={event => setHeader(event.target.checked)} /> First row has column names</label>
       </div>
       {error && <p className="trk-field-error" role="alert">{error}</p>}
-      <div className="trk-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" onClick={onClose}>Cancel</button><button type="button" className="trk-button primary" disabled={!text.trim()} onClick={read}>Continue</button></div>
+      <div className="k-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" onClick={onClose}>Cancel</button><button type="button" className="trk-button primary" disabled={!text.trim()} onClick={read}>Continue</button></div>
     </div>}
 
     {step === 'sheet' && <div className="trk-import trk-sheet-pick">
       <p className="trk-muted-text">The tracker follows one tab of the Sheet: new and changed rows come in on every sync (Sheet → tracker). The Sheet itself is never changed.</p>
       {google === null && <p role="status" className="trk-muted-text">Checking your Google account…</p>}
       {google && !google.available && <p className="trk-field-error">Google is not set up for this account yet. An Administrator connects it in Settings → Integrations (the same setup as Gmail in Work Hub).</p>}
-      {google?.available && !google.connected && <div className="trk-notice trk-notice-info"><div>
+      {google?.available && !google.connected && <div className="k-notice k-notice-info"><div>
         <strong>Allow the tracker to read your Google Sheets</strong>
         <p>Google asks you once. The tracker can then list the Sheets you can open, including ones shared with you and shared drives, and read the one you choose. It cannot change them.</p>
         <button type="button" className="trk-button primary" onClick={() => void allowSheets()}>Allow Google Sheets</button>
@@ -217,7 +217,7 @@ export default function TrackerImportDialog({ tracker, clients, projects, people
         </div>}
       </>}
       {error && <p className="trk-field-error" role="alert">{error}</p>}
-      <div className="trk-dialog-actions"><span className="trk-spacer" />{looking && <span className="trk-muted-text" role="status">Opening…</span>}<button type="button" className="trk-button" onClick={onClose}>Cancel</button><button type="button" className="trk-button primary" disabled={!sheet || !tab || looking} onClick={() => void readSheet()}>Continue</button></div>
+      <div className="k-dialog-actions"><span className="trk-spacer" />{looking && <span className="trk-muted-text" role="status">Opening…</span>}<button type="button" className="trk-button" onClick={onClose}>Cancel</button><button type="button" className="trk-button primary" disabled={!sheet || !tab || looking} onClick={() => void readSheet()}>Continue</button></div>
     </div>}
 
     {step === 'map' && source && plan && <div className="trk-import">
@@ -266,7 +266,7 @@ export default function TrackerImportDialog({ tracker, clients, projects, people
       {plan.problems.length > 0 && <details className="trk-issues"><summary>{plural(plan.problems.length, 'cell')} could not be read and will be left empty</summary>
         <ul>{plan.problems.slice(0, 20).map((problem, at) => <li key={at}>Row {problem.row}, {problem.column}: “{problem.value}” — {problem.message}</li>)}{plan.problems.length > 20 && <li>…and {plan.problems.length - 20} more.</li>}</ul></details>}
       {error && <p className="trk-field-error" role="alert">{error}</p>}
-      <div className="trk-dialog-actions">
+      <div className="k-dialog-actions">
         <button type="button" className="trk-button" disabled={busy} onClick={() => { setStep(fromSheet ? 'sheet' : 'source'); setError('') }}>Back</button>
         <span className="trk-spacer" />
         {progress && <span className="trk-muted-text" role="status">{progress}</span>}

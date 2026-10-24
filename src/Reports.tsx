@@ -4,7 +4,7 @@ import { Activity, AlertTriangle, CalendarRange, CheckCircle2, Clock3, Download,
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
 import EffortReport from './EffortReport'
 import { defaultWaitingOn, isWaitingOnDone, openWaitingOnOptions } from './waitingOn'
-import ClientSelect from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
 
 function localDateKey(date: Date) {
   const yyyy = date.getFullYear()

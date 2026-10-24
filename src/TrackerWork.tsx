@@ -3,7 +3,7 @@ import { ExternalLink, Plus, Search, Unlink } from 'lucide-react'
 import type { Tracker, TrackerColumn, TrackerRow } from './trackerModel'
 import { Dialog, Pill, Popover, plural } from './trackerUi'
 import type { WorkItem } from './types'
-import ClientSelect from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
 
 /** What a tracker needs to create tasks and subtasks. They are saved with the rest of the workspace. */
 export type TaskDraft = {
@@ -141,7 +141,7 @@ export function TrackerWorkPicker(props: PickerProps) {
       {creating && <form className="trk-work-form" onSubmit={event => { event.preventDefault(); void create() }}>
         <label className="trk-field-block">{label} title<input autoFocus value={title} maxLength={200} onChange={event => setTitle(event.target.value)} required /></label>
         {mode === 'task' ? context.fields : <p className="trk-muted-text">It goes under {task?.title}, with the same client and project.</p>}
-        <div className="trk-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" disabled={busy} onClick={() => setCreating(false)}>Back</button><button type="submit" className="trk-button primary" disabled={busy}>{busy ? 'Creating…' : `Create ${label.toLowerCase()}`}</button></div>
+        <div className="k-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" disabled={busy} onClick={() => setCreating(false)}>Back</button><button type="submit" className="trk-button primary" disabled={busy}>{busy ? 'Creating…' : `Create ${label.toLowerCase()}`}</button></div>
       </form>}
     </>}
     {error && <p className="trk-field-error" role="alert">{error}</p>}
@@ -176,7 +176,7 @@ export function TrackerBulkTasks({ tracker, rows, titleOf, tools, onClose, onDon
       </ul>}
       {named.length > 0 && context.fields}
       {error && <p className="trk-field-error" role="alert">{error}</p>}
-      <div className="trk-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" disabled={busy} onClick={onClose}>Cancel</button>
+      <div className="k-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" disabled={busy} onClick={onClose}>Cancel</button>
         <button type="button" className="trk-button primary" disabled={busy || !named.length || !tools.onCreate} onClick={() => void submit()}>{busy ? 'Creating…' : `Create ${plural(named.length, 'task')}`}</button></div>
     </div>
   </Dialog>

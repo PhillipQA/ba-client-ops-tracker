@@ -1,0 +1,59 @@
+/*
+ * Shared UI kit: colour tokens, dialogs, popovers and notices used across the app.
+ * Colours follow the person's theme: the interface-mode variables (--ui-*) when set, then the wallpaper theme,
+ * then the default dark look.
+ */
+.app-shell, .trk-page {
+  --k-solid: var(--ui-surface, #1d1e21);
+  --k-soft: var(--ui-soft, #272a2f);
+  --k-input: var(--ui-input, #16171a);
+  --k-text: var(--ui-text, #f1f3f7);
+  --k-muted: var(--ui-muted, #a6aebb);
+  --k-border: var(--ui-border, #3b3f46);
+  --k-line: color-mix(in srgb, var(--k-border) 70%, transparent);
+  --k-accent: var(--ui-accent, var(--theme-accent, #8aa1ff));
+  --k-accent-soft: var(--ui-accent-soft, var(--theme-accent-soft, rgba(138, 161, 255, .2)));
+  --k-primary: var(--ui-primary, #5465e8);
+  --k-on-primary: var(--ui-on-primary, #fff);
+  --k-danger: var(--ui-danger, #ff9ea3);
+  --k-danger-soft: var(--ui-danger-soft, rgba(220, 38, 38, .16));
+  --k-warning: var(--ui-warning, #f5d69a);
+  --k-warning-soft: var(--ui-warning-soft, rgba(217, 119, 6, .18));
+}
+
+/* Dialog: a native modal on the browser's top layer, so themed panels and clipping never hide it. */
+dialog.k-dialog { width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; border: 1px solid var(--k-border); border-radius: 16px; background: var(--k-solid); color: var(--k-text); box-shadow: 0 24px 60px rgba(0, 0, 0, .45); overflow: auto; }
+dialog.k-dialog.wide { width: min(980px, calc(100vw - 24px)); }
+dialog.k-dialog.medium { width: min(680px, calc(100vw - 24px)); }
+dialog.k-dialog::backdrop { background: rgba(8, 10, 14, .62); }
+.k-dialog-head { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 20px; background: var(--k-solid); border-bottom: 1px solid var(--k-border); }
+.k-dialog-head p { margin: 0; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--k-muted); }
+.k-dialog-head h2 { margin: 0; font-size: 18px; line-height: 26px; }
+.k-dialog-close { display: inline-grid; place-items: center; width: 32px; height: 32px; flex: none; border: 0; border-radius: 8px; background: transparent; color: var(--k-muted); cursor: pointer; }
+.k-dialog-close:hover:not(:disabled) { background: var(--k-soft); color: var(--k-text); }
+.k-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+
+/* Notice: a short message above content. */
+.k-notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.45; border: 1px solid transparent; }
+.k-notice-error { background: var(--k-danger-soft); color: var(--k-danger); border-color: color-mix(in srgb, var(--k-danger) 40%, transparent); }
+.k-notice-info { background: var(--k-accent-soft); color: var(--k-text); border-color: color-mix(in srgb, var(--k-accent) 40%, transparent); }
+
+/* Popover: a floating panel next to an element. */
+.k-popover { z-index: 70; overflow: auto; background: var(--k-solid); color: var(--k-text); border: 1px solid var(--k-border); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, .38); font-size: 13px; }
+
+/* SearchSelect / ClientSelect: a field you type into that looks like the dropdown it replaces. */
+.client-combo { position: relative; display: block; min-width: 0; }
+label > .client-combo, .client-combo { width: 100%; }
+.client-combo-input { width: 100%; min-width: 0; box-sizing: border-box; text-overflow: ellipsis; }
+.client-combo-list { z-index: 2147483000; margin: 0; padding: 4px; list-style: none; overflow: auto; box-sizing: border-box; border-radius: 10px; border: 1px solid;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, .28); font-size: 13px; text-align: left; }
+.client-combo-list li { padding: 7px 10px; border-radius: 7px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.client-combo-list li.extra { color: color-mix(in srgb, currentColor 72%, transparent); font-style: italic; }
+.client-combo-list li[data-active="true"] { background: color-mix(in srgb, var(--combo-accent, #4f6bed) 24%, transparent); }
+.client-combo-list li.chosen { font-weight: 700; }
+.client-combo-list li.sub { padding-left: 22px; }
+.client-combo-list li .client-combo-branch { color: color-mix(in srgb, currentColor 55%, transparent); }
+.client-combo-list li small { margin-left: 8px; font-size: 11px; font-weight: 400; color: color-mix(in srgb, currentColor 60%, transparent); }
+.client-combo-list li.chosen::after { content: ' ✓'; }
+.client-combo-list .client-combo-empty { cursor: default; color: color-mix(in srgb, currentColor 60%, transparent); }
+.k-dialog-close.small { width: 24px; height: 24px; }

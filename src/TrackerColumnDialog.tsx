@@ -192,7 +192,7 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
         </label>}
         {!adding && column && (!canConvertType(column.type) || !onConvert) && <p className="trk-muted-text">This type of column cannot be changed after it is created. Add a new column and delete this one instead.</p>}
         {converting && !report && <p className="trk-muted-text">{type === 'select' ? 'The choices are made from the values already in the column. ' : ''}Next you will see how many values convert before anything changes.</p>}
-        {report && <div className="trk-notice trk-notice-info" role="status"><div>
+        {report && <div className="k-notice k-notice-info" role="status"><div>
           <strong>{report.filled - report.failed} of {report.filled} filled value{report.filled === 1 ? '' : 's'} will convert to {COLUMN_TYPES.find(item => item.type === type)?.label}.</strong>
           {report.failed > 0 && <>
             <p>{report.failed} cannot be converted and will be cleared, for example {report.samples.slice(0, 4).map(sample => `row ${sample.row} “${sample.value}”`).join(', ')}.</p>
@@ -201,7 +201,7 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
           {report.failed === 0 && <p>Nothing will be lost. Saved views that filter or sort by this column are reset.</p>}
         </div></div>}
         {error && <p className="trk-field-error" role="alert">{error}</p>}
-        <div className="trk-dialog-actions">
+        <div className="k-dialog-actions">
           {!adding && onDelete && <button type="button" className="trk-button danger" disabled={busy} onClick={() => void remove()}><Trash2 size={14} aria-hidden="true" /> Delete column</button>}
           <span className="trk-spacer" />
           <button type="button" className="trk-button" disabled={busy} onClick={onClose}>Cancel</button>

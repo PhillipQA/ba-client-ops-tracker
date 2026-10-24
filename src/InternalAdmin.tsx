@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { MODULE_DEFINITIONS } from './access'
 import type { AppModule, UserRole } from './types'
+import { requestJson, type HttpMethod } from './shared/http'
 
 type OrganizationSummary = {
   id: string
@@ -56,16 +57,9 @@ type DashboardPayload = {
   }
 }
 
-async function request(path: string, options?: RequestInit) {
-  const response = await fetch(path, {
-    ...options,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
-  })
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(body.error || 'The request could not be completed.')
-  return body
-}
+// Callers pass RequestInit (method and a JSON string body); the shared helper takes the body as a value.
+const request = (path: string, options?: RequestInit) =>
+  requestJson(path, { method: (options?.method as HttpMethod) || 'GET', body: typeof options?.body === 'string' ? JSON.parse(options.body) : undefined, credentials: 'include', fallback: 'The request could not be completed.' })
 
 const ALL_MODULE_IDS = MODULE_DEFINITIONS.map((module) => module.id)
 

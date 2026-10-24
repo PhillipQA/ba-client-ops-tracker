@@ -4,7 +4,7 @@ import { useDocumentOperation } from './useDocumentOperation'
 import { askBAAssistant, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
 import { isWaitingOnDone } from './waitingOn'
-import ClientSelect from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
 
 const THREAD_STORAGE_KEY = 'ba-client-ops-ai-threads-v1'
 

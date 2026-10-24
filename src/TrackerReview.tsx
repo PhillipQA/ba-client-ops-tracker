@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { Tracker, TrackerColumn, TrackerRow } from './trackerModel'
 import { shown, type Lookup } from './trackerQuery'
 import { Dialog, plural } from './trackerUi'
-import ClientSelect, { SearchSelect } from './ClientSelect'
+import ClientSelect, { SearchSelect } from './shared/ui/SearchSelect'
 import { trackerClients, type TaskDraft, type WorkTools } from './TrackerWork'
 
 /** What a reviewed row becomes. */
@@ -193,7 +193,7 @@ export default function TrackerReview({ tracker, rows, lookup, tools, origin, on
       </fieldset>}
 
       {error && <p className="trk-field-error" role="alert">{error}</p>}
-      <div className="trk-dialog-actions">
+      <div className="k-dialog-actions">
         {origin === 'sheet' && <button type="button" className="trk-button" disabled={busy || !open.length} onClick={() => void leaveAllPlain()} title="Keep every row as a plain row and clear this list">Leave all as plain rows</button>}
         <span className="trk-spacer" />
         <span className="trk-muted-text" role="status">{summary ? `Creates ${summary}.` : 'Nothing to create yet.'}{counts.plain ? ` ${plural(counts.plain, 'row')} stay plain.` : ''}{counts.undecided ? ` ${plural(counts.undecided, 'row')} left for later.` : ''}</span>

@@ -2076,19 +2076,3 @@ select option { background: #181818; color: #fff; }
 .signoff-table-editor input::placeholder { color: #737985; }
 .app-shell:not(.theme-default) .signoff-table-editor input,
 .app-shell:not(.theme-default) .signoff-table-editor select, .app-shell:not(.theme-default) .signoff-table-editor .client-combo-input { background: rgba(9, 11, 15, .72); border-color: var(--theme-border); }
-
-/* Type-to-search client field (ClientSelect): looks like the dropdown it replaces, lists clients A to Z. */
-.client-combo { position: relative; display: block; min-width: 0; }
-label > .client-combo, .client-combo { width: 100%; }
-.client-combo-input { width: 100%; min-width: 0; box-sizing: border-box; text-overflow: ellipsis; }
-.client-combo-list { z-index: 2147483000; margin: 0; padding: 4px; list-style: none; overflow: auto; box-sizing: border-box; border-radius: 10px; border: 1px solid;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, .28); font-size: 13px; text-align: left; }
-.client-combo-list li { padding: 7px 10px; border-radius: 7px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.client-combo-list li.extra { color: color-mix(in srgb, currentColor 72%, transparent); font-style: italic; }
-.client-combo-list li[data-active="true"] { background: color-mix(in srgb, var(--combo-accent, #4f6bed) 24%, transparent); }
-.client-combo-list li.chosen { font-weight: 700; }
-.client-combo-list li.sub { padding-left: 22px; }
-.client-combo-list li .client-combo-branch { color: color-mix(in srgb, currentColor 55%, transparent); }
-.client-combo-list li small { margin-left: 8px; font-size: 11px; font-weight: 400; color: color-mix(in srgb, currentColor 60%, transparent); }
-.client-combo-list li.chosen::after { content: ' ✓'; }
-.client-combo-list .client-combo-empty { cursor: default; color: color-mix(in srgb, currentColor 60%, transparent); }

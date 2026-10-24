@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react'
+import { requestJson, type HttpMethod } from './shared/http'
 
 type Config={platformEnabled:boolean;configured:boolean;enabled:boolean;encryptionReady:boolean;clientId:string;redirectUri:string;expectedRedirectUri:string}
-async function request(url:string,method='GET',data?:unknown){
-  const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)})
-  const body=await response.json().catch(()=>({}))
-  if(!response.ok)throw new Error(body.error || 'Gmail settings request failed.')
-  return body
-}
+const request = (url: string, method = 'GET', data?: unknown) =>
+  requestJson(url, { method: method as HttpMethod, body: data, fallback: 'Gmail settings request failed.' })
 export function GmailAccountSettings(){
   const [config,setConfig]=useState<Config|null>(null),[clientId,setClientId]=useState(''),[secret,setSecret]=useState(''),[oauthJson,setOauthJson]=useState(''),[filename,setFilename]=useState('')
   const [enabled,setEnabled]=useState(true),[busy,setBusy]=useState(false),[message,setMessage]=useState('')

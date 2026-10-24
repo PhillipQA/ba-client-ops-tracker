@@ -8,8 +8,9 @@ import type { Client, Project, TaskSettings, UserAccount, WorkItem } from './typ
 import { findCommunicationTaskDuplicate } from './communicationTasks'
 import { composeEmail, useEmailEnabled } from './EmailComposer'
 import { extractAddress, quoteReply, replySubject } from './emailCompose'
-import ClientSelect from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
 import { EmailTemplatesManager } from './EmailTemplates'
+import { requestJson, type HttpMethod } from './shared/http'
 
 type Message = { id:string;source:'Gmail'|'Discord'|'Manual';subject:string;body:string;sender:string;source_label?:string;source_labels?:string[];thread_id?:string;attachments?:Attachment[];status:string;received_at:string;linked_task_id?:string;linked_task_ids?:string[] }
 // Older Gmail rows stored only file names; newer rows also carry part id, type and size.
@@ -90,12 +91,8 @@ function AttachmentList({message,drive}:{message:Message;drive?:DriveOptions}) {
 class CommunicationRequestError extends Error {
   constructor(message: string, public code?: string) { super(message) }
 }
-async function request(url:string,method='GET',body?:unknown,signal?:AbortSignal) {
-  const response=await fetch(url,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:body===undefined ? undefined : JSON.stringify(body),signal})
-  const result=await response.json()
-  if(!response.ok) throw new CommunicationRequestError(result.error || 'Communication request failed.',result.code)
-  return result
-}
+const request = (url: string, method = 'GET', body?: unknown, signal?: AbortSignal) =>
+  requestJson(url, { method: method as HttpMethod, body, signal, fallback: 'Communication request failed.', error: (message, _status, data) => new CommunicationRequestError(message, data.code) })
 export default function WorkHub({clients,projects,accounts,tasks,taskSettings,currentUser,onTaskCreated}:{clients:Client[];projects:Project[];accounts:UserAccount[];tasks:WorkItem[];taskSettings?:TaskSettings;currentUser:UserAccount;onTaskCreated:()=>Promise<void>}) {
   const [items,setItems]=useState<Message[]>([]),[settings,setSettings]=useState<Settings|null>(null),[labels,setLabels]=useState<Label[]>([])
   const [tab,setTab]=useState('Gmail'),[archived,setArchived]=useState(false),[labelFilter,setLabelFilter]=useState(''),[selected,setSelected]=useState<Message|null>(null),[compose,setCompose]=useState(false),[config,setConfig]=useState(false)

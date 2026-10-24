@@ -100,7 +100,8 @@ import { normalizeInterfaceMode, type InterfaceMode } from './appearance'
 import { readSidebarCollapsed, writeSidebarCollapsed } from './sidebarState'
 import { useRailTip } from './RailTip'
 import { APP_VERSION } from './version'
-import ClientSelect from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
+import { Dialog } from './shared/ui'
 
 type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'trackers' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
 type ClientLayout = 'tiles' | 'list' | 'table'
@@ -2168,8 +2169,9 @@ function ProjectDetail({ onOpenRtms, controls, project, clientContextId, store, 
   </section>
 }
 
+/** The app's add and edit windows (task, client, project, activity), on the shared dialog. */
 function Modal({ title, onClose, closeDisabled = false, children }: { title: string; onClose: () => void; closeDisabled?: boolean; children: React.ReactNode }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (!closeDisabled && event.currentTarget === event.target) onClose() }}><div className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><h2>{title}</h2><button className="icon-button" disabled={closeDisabled} onClick={onClose}><X size={20} /></button></div>{children}</div></div>
+  return <Dialog title={title} onClose={onClose} busy={closeDisabled} size="medium" className="modal app-modal">{children}</Dialog>
 }
 
 function WorkScheduleFields({ itemKind, startDate = '', dueDate = '', followUpDate = '' }: { itemKind: 'Task' | 'Subtask'; startDate?: string; dueDate?: string; followUpDate?: string }) {

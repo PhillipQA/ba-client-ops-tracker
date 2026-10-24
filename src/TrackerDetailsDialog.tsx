@@ -33,7 +33,7 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, onClo
       <label className="trk-field-block">Project<select value={projectId} onChange={event => setProjectId(event.target.value)}>
         <option value="">None</option>{projectId && !projects.some(project => project.id === projectId) && <option value={projectId}>Unknown project</option>}{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
       {error && <p className="trk-field-error" role="alert">{error}</p>}
-      <div className="trk-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" disabled={busy} onClick={onClose}>Cancel</button><button type="submit" className="trk-button primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button></div>
+      <div className="k-dialog-actions"><span className="trk-spacer" /><button type="button" className="trk-button" disabled={busy} onClick={onClose}>Cancel</button><button type="submit" className="trk-button primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button></div>
     </form>
   </Dialog>
 }

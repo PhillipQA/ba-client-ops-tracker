@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Plus, Table2, LayoutGrid, List, Search, ArrowLeft, Download, Upload, X, ChevronRight, ChevronDown, Pencil, Link2, AlertTriangle, CheckCircle2, Archive, ExternalLink } from 'lucide-react'
 import { archivedWorkReason, stableRecord, workContext } from './lifecycle'
 import type { WorkItem } from './types'
@@ -6,14 +6,15 @@ import { RTM_STAGES, STAGE_LABELS, RTM_STATUSES, stageResult, matrixCoverage, re
 import { downloadRtmTemplate, exportRtm, readRtmImport, importRequirements } from './rtm-export'
 import './rtm.css'
 import RtmAiImport from './RtmAiImport'
-import ClientSelect from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
+import { useModalDialog } from './shared/ui/useModalDialog'
 
 type Props = { store: RtmStore; canEdit: boolean; canLink: boolean; canOverride: boolean; context: { clientId?: string; projectId?: string }; onSave: (matrices: RtmMatrix[], items?: WorkItem[]) => Promise<void>; onOpenTask?: (id: string) => void }
 const statusClass = (value: string) => value.toLowerCase().replace(/[^a-z]+/g, '-')
 function Status({ value }: { value: string }) { return <span className={`rtm-status rtm-status-${statusClass(value)}`}>{value}</span> }
 function Dialog({ title, children, onClose, busy = false }: { title: string; children: ReactNode; onClose: () => void; busy?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => { const dialog = ref.current!, focus = document.activeElement as HTMLElement | null, overflow = document.body.style.overflow; dialog.showModal(); document.body.style.overflow = 'hidden'; return () => { dialog.close(); document.body.style.overflow = overflow; focus?.isConnected && focus.focus() } }, [])
+  useModalDialog(ref)
   return <dialog ref={ref} className="rtm-dialog" aria-label={title} onCancel={e => { e.preventDefault(); if (!busy) onClose() }}><header><h2>{title}</h2><button className="icon-button" type="button" disabled={busy} onClick={onClose} aria-label="Close"><X size={21} /></button></header>{children}</dialog>
 }
 function Actions({ busy, onClose, label = 'Save changes' }: { busy: boolean; onClose: () => void; label?: string }) { return <footer className="rtm-dialog-actions"><button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancel</button><button className="primary" disabled={busy}>{busy ? 'Saving…' : label}</button></footer> }

@@ -10,9 +10,10 @@ import { knownPeople } from './knownPeople'
 import { searchContacts } from './contactSearch'
 import './emailComposer.css'
 import { useIsClosed } from './openWork'
-import ClientSelect, { SearchSelect } from './ClientSelect'
+import ClientSelect, { SearchSelect } from './shared/ui/SearchSelect'
 import { applyTemplateBody, emailStore, signatureBlock, type EmailTemplate } from './emailStore'
 import { EmailTemplatesManager } from './EmailTemplates'
+import { useModalDialog } from './shared/ui/useModalDialog'
 
 /**
  * Send an email from the tracker, from the person's own Gmail account.
@@ -151,19 +152,7 @@ export function EmailComposer({ prefill, items, clients, projects, accounts, cur
   const initial = useRef(JSON.stringify([to, cc, bcc, subject, message, taskIds, driveFiles, uploads.map(file => file.name)]))
   const dirty = () => Boolean(prefill.restored) || JSON.stringify([to, cc, bcc, subject, message, taskIds, driveFiles, uploads.map(file => file.name)]) !== initial.current
 
-  useEffect(() => {
-    const element = dialog.current
-    if (!element) return
-    const returnFocus = document.activeElement
-    const previousOverflow = document.body.style.overflow
-    element.showModal()
-    document.body.style.overflow = 'hidden'
-    return () => {
-      element.close()
-      document.body.style.overflow = previousOverflow
-      if (returnFocus instanceof HTMLElement && returnFocus.isConnected) returnFocus.focus({ preventScroll: true })
-    }
-  }, [])
+  useModalDialog(dialog)
   useEffect(() => {
     const controller = new AbortController()
     void fetch('/api/communications/send/status', { credentials: 'same-origin', signal: controller.signal })

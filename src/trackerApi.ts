@@ -1,3 +1,4 @@
+import { requestJson, type HttpMethod } from './shared/http'
 import type { Cell, SyncReport, Tracker, TrackerColumn, TrackerRow, TrackerSource, TrackerView } from './trackerModel'
 
 /** An error from the trackers API. A 409 carries the current copy of whatever was edited, so the screen can reload it. */
@@ -5,27 +6,13 @@ export class TrackerApiError extends Error {
   constructor(message: string, public status: number, public body: { tracker?: Tracker; row?: TrackerRow; needsGoogle?: boolean; noAccess?: boolean } = {}) { super(message) }
 }
 
-async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(`/api/trackers${path}`, {
-      method, signal, credentials: 'same-origin', cache: 'no-store',
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-  } catch (error) {
-    if ((error as Error)?.name === 'AbortError') throw error
-    throw new TrackerApiError('The connection was interrupted. Check your connection and try again.', 0)
-  }
-  const text = await response.text()
-  let data: any = {}
-  try { data = text ? JSON.parse(text) : {} } catch { /* A proxy can answer with HTML. */ }
-  if (!response.ok) {
-    const fallback = response.status === 403 ? 'You do not have access to Trackers.' : response.status === 404 ? 'That was not found. It may have been deleted.' : 'Trackers are unavailable right now. Try again in a moment.'
-    throw new TrackerApiError(typeof data?.error === 'string' && data.error ? data.error : fallback, response.status, { tracker: data?.tracker, row: data?.row, needsGoogle: Boolean(data?.needsGoogle), noAccess: Boolean(data?.noAccess) })
-  }
-  return data as T
-}
+const call = <T,>(method: string, path: string, body?: unknown, signal?: AbortSignal) => requestJson<T>(`/api/trackers${path}`, {
+  method: method as HttpMethod, body, signal, noStore: true, bare: true,
+  offline: 'The connection was interrupted. Check your connection and try again.',
+  statusFallback: { 403: 'You do not have access to Trackers.', 404: 'That was not found. It may have been deleted.' },
+  fallback: 'Trackers are unavailable right now. Try again in a moment.',
+  error: (message, status, data) => new TrackerApiError(message, status, { tracker: data?.tracker, row: data?.row, needsGoogle: Boolean(data?.needsGoogle), noAccess: Boolean(data?.noAccess) }),
+})
 
 /** What changing a column's type would do (applied: false), or what it did (applied: true). */
 export type ConvertReport = { applied: false; rows: number; filled: number; failed: number; samples: { row: number; value: string }[] } | { applied: true; tracker: Tracker; failed: number }

@@ -1,23 +1,18 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
 import type { Client, Project } from './types'
 import { isArchived } from './lifecycle'
+import { useModalDialog } from './shared/ui/useModalDialog'
 
 type Props = { kind: 'clients' | 'projects'; record: Client | Project; canRenameClient: boolean; onClose: () => void; onSave: (record: Client | Project) => Promise<void> }
 export default function RecordEditDialog({ kind, record, canRenameClient, onClose, onSave }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const client = kind === 'clients', label = client ? 'client' : 'project', archived = isArchived(record)
-  useEffect(() => {
-    const element = dialog.current!
-    const previousOverflow = document.body.style.overflow
-    const previousFocus = document.activeElement as HTMLElement | null
-    element.showModal() // Native top layer escapes themed panels, clipping, and stacking contexts.
-    document.body.style.overflow = 'hidden'
+  useModalDialog(dialog, element => {
     const firstInput = element.querySelector<HTMLInputElement>(client && !canRenameClient ? '[name=contact]' : '[name=name]')
     firstInput?.focus(); firstInput?.select()
-    return () => { element.close(); document.body.style.overflow = previousOverflow; if (previousFocus?.isConnected) previousFocus.focus() }
-  }, [])
+  })
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (busy) return

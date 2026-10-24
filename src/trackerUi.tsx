@@ -1,6 +1,6 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
+import { type ReactNode } from 'react'
 import {
-  AlignLeft, CalendarDays, CheckCircle2, CircleDot, Clock3, FileSignature, FolderOpen, Hash, Link2, ListTodo, Sigma, LockKeyhole, Type, UserRound, Users, X,
+  AlignLeft, CalendarDays, CheckCircle2, CircleDot, Clock3, FileSignature, FolderOpen, Hash, Link2, ListTodo, Sigma, LockKeyhole, Type, UserRound, Users,
 } from 'lucide-react'
 import type { ColumnType, OptionColor } from './trackerModel'
 import type { Tone } from './trackerQuery'
@@ -41,69 +41,6 @@ export function plural(count: number, one: string, many = `${one}s`) {
   return `${count.toLocaleString('en')} ${count === 1 ? one : many}`
 }
 
-/**
- * A floating panel next to an element. It is placed with fixed coordinates, so a scrolling grid cannot clip it, and it
- * closes on outside click, Escape, or when anything behind it scrolls.
- */
-export function Popover({ anchor, onClose, children, className = '', minWidth, label }: { anchor: RefObject<HTMLElement | null>; onClose: () => void; children: ReactNode; className?: string; minWidth?: number; label?: string }) {
-  const box = useRef<HTMLDivElement>(null)
-  const close = useRef(onClose)
-  close.current = onClose
-  const [style, setStyle] = useState<CSSProperties>({ position: 'fixed', top: 0, left: 0, visibility: 'hidden' })
-  useLayoutEffect(() => {
-    const place = () => {
-      const rect = anchor.current?.getBoundingClientRect(), element = box.current
-      if (!rect || !element) return
-      const height = element.offsetHeight, width = element.offsetWidth
-      const room = window.innerHeight - rect.bottom
-      const top = room < height + 8 && rect.top > room ? Math.max(8, rect.top - height - 4) : rect.bottom + 4
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
-      setStyle({ position: 'fixed', top, left, minWidth: minWidth ?? Math.max(rect.width, 200), maxHeight: Math.max(160, window.innerHeight - top - 12), visibility: 'visible' })
-    }
-    place()
-    window.addEventListener('resize', place)
-    return () => window.removeEventListener('resize', place)
-  }, [anchor, minWidth])
-  useEffect(() => {
-    const down = (event: MouseEvent) => {
-      const target = event.target as Node
-      if (box.current?.contains(target) || anchor.current?.contains(target)) return
-      close.current()
-    }
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); close.current() } }
-    const scroll = (event: Event) => { if (!box.current?.contains(event.target as Node)) close.current() }
-    document.addEventListener('mousedown', down, true)
-    document.addEventListener('keydown', key, true)
-    window.addEventListener('scroll', scroll, true)
-    return () => { document.removeEventListener('mousedown', down, true); document.removeEventListener('keydown', key, true); window.removeEventListener('scroll', scroll, true) }
-  }, [anchor])
-  return <div ref={box} className={`trk-popover ${className}`} style={style} role="dialog" aria-label={label}>{children}</div>
-}
 
-/** A modal on the browser's top layer, so themed panels and clipping never hide it. */
-export function Dialog({ title, eyebrow, onClose, children, wide, busy }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; wide?: boolean; busy?: boolean }) {
-  const ref = useRef<HTMLDialogElement>(null)
-  const titleId = useId()
-  useEffect(() => {
-    const element = ref.current!
-    const previousOverflow = document.body.style.overflow
-    const previousFocus = document.activeElement as HTMLElement | null
-    if (!element.open) element.showModal()
-    document.body.style.overflow = 'hidden'
-    return () => { element.close(); document.body.style.overflow = previousOverflow; if (previousFocus?.isConnected) previousFocus.focus() }
-  }, [])
-  return <dialog ref={ref} className={`trk-dialog${wide ? ' wide' : ''}`} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
-    <header className="trk-dialog-head">
-      <div>{eyebrow && <p>{eyebrow}</p>}<h2 id={titleId}>{title}</h2></div>
-      <button type="button" className="trk-icon-button" aria-label="Close" disabled={busy} onClick={onClose}><X size={18} /></button>
-    </header>
-    {children}
-  </dialog>
-}
-
-export function Notice({ kind, children, onClose }: { kind: 'error' | 'info'; children: ReactNode; onClose?: () => void }) {
-  return <div className={`trk-notice trk-notice-${kind}`} role={kind === 'error' ? 'alert' : 'status'}>
-    <span>{children}</span>
-    {onClose && <button type="button" className="trk-icon-button small" aria-label="Dismiss" onClick={onClose}><X size={14} /></button>}
-  </div>
-}
+// The dialog, popover and notice now live in the shared UI kit; trackers keep importing them from here.
+export { Dialog, Notice, Popover } from './shared/ui'

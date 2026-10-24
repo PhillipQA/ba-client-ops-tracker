@@ -7,6 +7,7 @@ import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
 import { reviewCoverage, TEST_CASE_COLUMNS, TEST_CASE_SKILLS, type CoverageMap, type TestCasePreview, type TestCaseRow, type TestCaseSkill, type TestCaseSource, type TestCaseSourceKind } from './testcase-model'
 import './testcase.css'
+import { requestJson } from './shared/http'
 
 type Provider = { enabled: boolean; provider?: string; name?: string; model?: string }
 type Draft = {
@@ -31,12 +32,8 @@ const ACCEPT = '.pdf,.docx,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,.bmp,.tif,.
 function freshDraft(): Draft { return { suiteName:'Test Case Suite',sources:[],sourceKind:'BRD',pasteName:'',pasteText:'',pasteKind:'Chat',selectedSkillIds:['functional','negative-edge'],customSkills:[],customSkillName:'',customSkillInstructions:'',coverage:null,preview:null,inputRevision:0,coverageRevision:-1,previewRevision:-1 } }
 function sourceId(sources: TestCaseSource[]) { return `SRC-${String(Math.max(0,...sources.map(s=>Number(s.id.replace(/^SRC-/,''))||0))+1).padStart(3,'0')}` }
 function tcId(rows: TestCaseRow[]) { return `TC-${String(Math.max(0,...rows.map(r=>Number(r.id.replace(/^TC-/,''))||0))+1).padStart(3,'0')}` }
-async function request<T>(path:string,body?:unknown,signal?:AbortSignal):Promise<T>{
-  const response=await fetch(`/api/documents/test-cases/${path}`,{signal,method:body?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})})
-  const payload=await response.json().catch(()=>({})) as {error?:string}&T
-  if(!response.ok) throw new Error(payload.error||'Test Case Creator request failed.')
-  return payload
-}
+const request = <T,>(path: string, body?: unknown, signal?: AbortSignal) =>
+  requestJson<T>(`/api/documents/test-cases/${path}`, { body: body || undefined, signal, fallback: 'Test Case Creator request failed.' })
 const readSource = readFsdSource
 function downloadBase64(base64:string,mimeType:string,fileName:string){const binary=atob(base64),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);const url=URL.createObjectURL(new Blob([bytes],{type:mimeType})),a=document.createElement('a');a.href=url;a.download=fileName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 

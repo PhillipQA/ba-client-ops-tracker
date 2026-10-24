@@ -17,14 +17,11 @@ import { fsdReadiness } from './fsd-readiness'
 import type { FsdGenerationMode } from './fsd-model'
 import { migrateFsdFeatures } from './fsd-features'
 import FsdFeatureFields from './FsdFeatureFields'
+import { requestJson } from './shared/http'
 function sourceId(sources: FsdSource[]) { return `SRC-${String(Math.max(0,...sources.map(s=>Number(s.id.replace(/^SRC-/,''))||0))+1).padStart(3,'0')}` }
 type Provider = { enabled: boolean; provider?: string; name?: string; model?: string }
-async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api/documents/fsd/${path}`, { signal, method: body ? 'POST':'GET', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, ...(body ? {body:JSON.stringify(body)}:{}) })
-  const result = await response.json().catch(()=>({}))
-  if (!response.ok) throw new Error(result.error || 'The FSD request failed. Your draft is retained.')
-  return result as T
-}
+const request = <T,>(path: string, body?: unknown, signal?: AbortSignal) =>
+  requestJson<T>(`/api/documents/fsd/${path}`, { body: body || undefined, signal, fallback: 'The FSD request failed. Your draft is retained.' })
 export default function FsdCreation({ clients, projects, canGenerate, templateReady, draftKey, active }: { clients: Client[]; projects: Project[]; canGenerate: boolean; templateReady: boolean; draftKey: string; active: boolean }) {
   const storageKey = `ba-fsd-v1:${draftKey}`
   const presetsKey = `ba-fsd-presets-v1:${draftKey}`

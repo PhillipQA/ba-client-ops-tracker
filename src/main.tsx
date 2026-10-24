@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './fonts.css'
 import './styles.css'
+import './shared/ui/ui.css'
 import './appearance.css'
 import './sidebar.css'
 

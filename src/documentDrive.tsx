@@ -5,16 +5,16 @@ import type { GeneratedDocument } from './dochub'
 import { driveFileGroups, fileSize, placeOf, taskChoices, type DriveScope } from './documentDriveTargets'
 import './documentDrive.css'
 import { useIsClosed } from './openWork'
-import ClientSelect from './ClientSelect'
-import { SearchSelect } from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
+import { SearchSelect } from './shared/ui/SearchSelect'
+import { requestJson, type HttpMethod } from './shared/http'
 
 /** Google Drive in Document Creation: pick a saved COR for a DRF, and file generated documents under a task. */
 
-async function request(url: string, method = 'GET', body?: unknown) {
-  const response = await fetch(url, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok && data.code !== 'ALREADY_SAVED') throw new Error(data.error || 'Google Drive request failed.')
-  return { ...data, ok: response.ok } as any
+// A file that was already saved answers with an error status and code ALREADY_SAVED; that is not a failure here.
+const request = async (url: string, method = 'GET', body?: unknown) => {
+  const data = await requestJson(url, { method: method as HttpMethod, body, fallback: 'Google Drive request failed.', acceptCodes: ['ALREADY_SAVED'] })
+  return { ...data, ok: data.code !== 'ALREADY_SAVED' } as any
 }
 
 /** Whether Google Drive is connected for this account. Quietly false when it is not or the request fails. */

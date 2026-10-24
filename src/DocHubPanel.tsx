@@ -8,9 +8,10 @@ import { useDocumentDrive } from './documentDrive'
 import { composeEmail, useEmailEnabled } from './EmailComposer'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 import { useIsClosed } from './openWork'
-import ClientSelect from './ClientSelect'
-import { SearchSelect } from './ClientSelect'
+import ClientSelect from './shared/ui/SearchSelect'
+import { SearchSelect } from './shared/ui/SearchSelect'
 import { taskChoices } from './documentDriveTargets'
+import { useModalDialog } from './shared/ui/useModalDialog'
 
 const updated=()=>window.dispatchEvent(new Event('dochub-updated'))
 const dateTime=(value?:string)=>value?new Date(value).toLocaleString():'Pending'
@@ -153,20 +154,7 @@ function DocHubRow({doc,busy,onRefresh,onOpen,archived}:{doc:DocHubDocument;busy
 function DocHubDetails({doc,busy,refresh,onClose}:{doc:DocHubDocument;busy:boolean;refresh:()=>Promise<void>;onClose:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null)
   const titleId=useId()
-  useEffect(()=>{
-    const element=dialog.current
-    if(!element)return
-    const returnFocus=document.activeElement
-    const previousOverflow=document.body.style.overflow
-    // The native top layer escapes themed panels' backdrop-filter and clipping.
-    element.showModal()
-    document.body.style.overflow='hidden'
-    return()=>{
-      element.close()
-      document.body.style.overflow=previousOverflow
-      if(returnFocus instanceof HTMLElement&&returnFocus.isConnected)returnFocus.focus({preventScroll:true})
-    }
-  },[])
+  useModalDialog(dialog)
   return <dialog ref={dialog} className="modal dochub-detail-modal" aria-labelledby={titleId} aria-modal="true"
     onCancel={event=>{event.preventDefault();onClose()}}
     onMouseDown={event=>{

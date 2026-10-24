@@ -4,14 +4,12 @@ import DocumentProcessingPanel from './DocumentProcessingPanel'
 import { applyRtmAiSelection, matchingRequirements, RTM_SOURCE_KINDS, validateRtmSources, type RtmAiCandidate, type RtmAiPreview, type RtmAiSource, type RtmSourceKind } from './rtm-ai'
 import { readRtmAiSource } from './rtm-ai-sources'
 import type { RtmMatrix } from './rtm'
+import { requestJson } from './shared/http'
+import { useModalDialog } from './shared/ui/useModalDialog'
 
 type Provider = { enabled: boolean; name?: string; provider?: string; model?: string }
-async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api/requirements/ai/${path}`, { method: body ? 'POST' : 'GET', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal })
-  const value = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(value.error || 'The Document Agent request failed. Nothing was saved.')
-  return value as T
-}
+const request = <T,>(path: string, body?: unknown, signal?: AbortSignal) =>
+  requestJson<T>(`/api/requirements/ai/${path}`, { body: body || undefined, signal, fallback: 'The Document Agent request failed. Nothing was saved.' })
 export default function RtmAiImport({ matrix, onSave, onClose }: { matrix: RtmMatrix; onSave: (matrix: RtmMatrix) => Promise<void>; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null), controller = useRef<AbortController | null>(null), mounted = useRef(true)
   const [sources, setSources] = useState<RtmAiSource[]>([]), [kind, setKind] = useState<RtmSourceKind>('BRD')
@@ -19,10 +17,10 @@ export default function RtmAiImport({ matrix, onSave, onClose }: { matrix: RtmMa
   const [preview, setPreview] = useState<RtmAiPreview | null>(null), [selected, setSelected] = useState<string[]>([])
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [consent, setConsent] = useState(false), [reviewed, setReviewed] = useState(false)
   const [pasteName, setPasteName] = useState(''), [pasteText, setPasteText] = useState('')
+  useModalDialog(dialog)
   useEffect(() => {
-    mounted.current = true; const d = dialog.current!, focus = document.activeElement as HTMLElement | null, overflow = document.body.style.overflow
-    d.showModal(); document.body.style.overflow = 'hidden'; void refreshProvider()
-    return () => { mounted.current = false; controller.current?.abort(); d.close(); document.body.style.overflow = overflow; if (focus?.isConnected) focus.focus() }
+    mounted.current = true; void refreshProvider()
+    return () => { mounted.current = false; controller.current?.abort() }
   }, [])
   useEffect(() => {
     const prevent = (e: BeforeUnloadEvent) => { if (sources.length || busy) { e.preventDefault(); e.returnValue = '' } }
