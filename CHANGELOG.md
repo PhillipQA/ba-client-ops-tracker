@@ -1,8 +1,17 @@
 # Changelog
 
-**Current application release: v1.0.0**
+**Current application release: v1.0.1**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.0.1 — Clearer Google Sheet errors
+Released October 24, 2026.
+
+**No database migration and no new setting.**
+
+- **Excel files get their own message.** Connecting a tracker to a link that is an Excel file kept in Google Drive (not a Google Sheet) used to say the Sheet cannot be opened. It now names the file and says to open it in Google Drive and choose **File → Save as Google Sheets**, then use the new Sheet's link.
+- **A switched-off API says so.** If the Google Sheets API or Google Drive API is turned off in the Google Cloud project used for Gmail, the message says an admin needs to enable it.
+- A Google Sheet that is not shared with you still says it cannot be opened.
 
 ## v1.0.0 — The code, reorganised
 Released October 24, 2026.
@@ -13,7 +22,6 @@ Released October 24, 2026.
 - **Smaller main files.** `App.tsx` went from about 2,000 lines to about 300: its state lives in one hook and each screen is its own component. `server/index.ts` went from about 2,500 lines to about 140: shared server code is in `server/core` and each group of routes has its own module.
 - **One UI kit and one way to call the server.** Dialogs, popovers, notices and type-to-search fields come from `src/shared/ui`; API calls go through `src/shared/http.ts`.
 - **Formatting and lint.** The code is formatted with Biome (`npm run format`); CI fails on formatting or lint errors and lists warnings on each run. CI also shows the full test suite's totals.
-- **Clearer Google Sheet errors.** A link to an Excel file kept in Google Drive now says it is an Excel file and how to turn it into a Google Sheet (File → Save as Google Sheets), instead of saying the Sheet cannot be opened. If the Google Sheets API is switched off in the Google Cloud project, the message says so.
 - **Cleanup.** Dead code the linter found was removed, including an old Discord capture path that was no longer used.
 
 ## v0.9.0 — Trackers that follow a Google Sheet, and reviewing new rows

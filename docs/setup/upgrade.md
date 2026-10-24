@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v1.0.0.**
+**Current application version: v1.0.1.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v1.0.0**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v1.0.1**.
 
 ## Database requirements
 
@@ -47,6 +47,7 @@ Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations m
 - **v0.6.87:** apply v23 before connecting Google Drive. It works on Supabase and on plain PostgreSQL such as Northflank: Supabase-only roles and row-level security are applied only where those roles exist. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_drive_accounts` table afterwards. Until v23 is applied, Settings and Work Hub say so and nothing else changes. Tasks created from an email before v23 are still offered when saving that email's attachments, but only the most recent one.
 - **v0.6.92:** apply v24 before using Trackers. It works on Supabase and on plain PostgreSQL such as Northflank (row-level security is applied only where the Supabase roles exist). On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_trackers`, `tenant_tracker_rows` and `tenant_tracker_changes` tables afterwards. Until v24 is applied, the Trackers page says the migration is missing and nothing else changes. After applying it, Administrators see **Trackers** when they next sign in; give other people the **Trackers** module under Users & Permissions → Module access. Secret cells are encrypted with `TENANT_INTEGRATION_MASTER_KEY`, so keep that key: if it changes, stored Secret values can no longer be revealed. The recipient suggestions in the same release need no database change.
 - **v0.6.96:** apply v25 to link tasks and subtasks to tracker rows and cells. It is optional: without it Trackers, move rows and change column type all work, and the link card says the migration is missing. It adds one table, `tenant_tracker_task_links`, and works on Supabase and plain PostgreSQL such as Northflank. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new table afterwards.
+- **v1.0.1 adds no database migration.**
 - **v1.0.0 adds no database migration.** It reorganises the code; run `npm ci` as usual (it now also installs the Biome formatter as a development tool).
 - **v0.9.0:** apply v27 for trackers that follow a Google Sheet. It adds the `tenant_tracker_sources` table and four columns to `tenant_tracker_rows` (`source_key`, `source_values`, `source_missing`, `review`), on Supabase or plain PostgreSQL such as Northflank. Then, in the **Google Cloud project used for Gmail in Work Hub**: (1) APIs & Services → Library → enable **Google Sheets API** and **Google Drive API**; (2) OAuth consent screen → Data access (Scopes) → add `https://www.googleapis.com/auth/spreadsheets.readonly` and `https://www.googleapis.com/auth/drive.metadata.readonly`. If the consent screen is **Internal** (Google Workspace), no Google review is needed; if it is **External**, these are sensitive and restricted scopes and an unverified app is limited to its test users. Each person is asked once, the first time they connect a Sheet. Until v27 is applied, Import and the review of new rows still work, and connecting a Sheet says the migration is missing.
 - **v0.8.0:** apply v26 for email signatures and templates. It adds two tables, `user_email_signatures` and `tenant_email_templates`, and works on Supabase and plain PostgreSQL such as Northflank. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to them afterwards. Until it is applied, email works as before: the signature stays in each browser and the Templates field is hidden.

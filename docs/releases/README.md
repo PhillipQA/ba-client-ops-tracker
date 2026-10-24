@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v1.0.1](v1.0.1.md) | Clearer Google Sheet errors: Excel files kept in Drive and a switched-off Sheets API get their own messages |
 | [v1.0.0](v1.0.0.md) | Code reorganised by feature, server split into modules, one shared UI kit and HTTP helper, Biome formatting and lint; no change for users |
 | [v0.9.0](v0.9.0.md) | Trackers that follow a Google Sheet (one-way, ready for two-way), and a review step that turns new or imported rows into tasks, subtasks, a new project or plain rows |
 | [v0.8.0](v0.8.0.md) | Email signature per person, shared and private email templates (create, view, edit, delete), type-to-search task pickers |
