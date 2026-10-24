@@ -112,6 +112,9 @@ function memoryDb() {
 
 // Google, simulated: one Sheet with a tab whose values the test changes between syncs.
 const SHEET = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+const EXCEL = '1l9l1Q5vTHvyElzeUsmyXcXFWbejlSqFG'
+const PRIVATE_XLSX = '1PrivateExcelFileIdAbCdEfGhIjKlMn'
+const API_OFF = '1ApiOffSheetIdAbCdEfGhIjKlMnOpQrStUvWxYz012'
 let grid: string[][] = []
 let canOpen = new Set(['u1', 'u2'])
 let lastToken = ''
@@ -125,6 +128,28 @@ globalThis.fetch = (async (input: any, init?: any) => {
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
   if (!canOpen.has(token.replace('token-', '')))
     return reply(403, { error: { message: 'The caller does not have permission' } })
+  // An Excel file kept in Drive: the Sheets API refuses it, Drive says what it is.
+  if (url.includes(`/spreadsheets/${EXCEL}`))
+    return reply(400, {
+      error: { message: 'This operation is not supported for this document', status: 'FAILED_PRECONDITION' },
+    })
+  if (url.includes(`/drive/v3/files/${EXCEL}`))
+    return reply(200, {
+      name: 'Branches.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+  if (url.includes(`/spreadsheets/${PRIVATE_XLSX}`))
+    return reply(403, { error: { message: 'The caller does not have permission', status: 'PERMISSION_DENIED' } })
+  if (url.includes(`/drive/v3/files/${PRIVATE_XLSX}`))
+    return reply(200, { name: 'Rollout.xlsx', mimeType: 'application/vnd.ms-excel' })
+  if (url.includes(`/spreadsheets/${API_OFF}`))
+    return reply(403, {
+      error: {
+        message: 'Google Sheets API has not been used in project 123 before or it is disabled.',
+        status: 'PERMISSION_DENIED',
+        details: [{ reason: 'SERVICE_DISABLED' }],
+      },
+    })
   if (url.includes('/drive/v3/files'))
     return reply(200, {
       files: [
@@ -422,5 +447,27 @@ test('subtasks made from a review are linked to their cells in one call', async 
       ).status,
       400,
     )
+  })
+})
+
+test('Excel files and a switched-off Sheets API get their own messages', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const excel = await ask('GET', `/api/trackers/sheets/${EXCEL}/tabs`)
+    assert.equal(excel.status, 422)
+    assert.equal(excel.body.notASheet, true)
+    assert.match(excel.body.error, /Branches\.xlsx" is an Excel file .* Save as Google Sheets/)
+    const privateExcel = await ask('GET', `/api/trackers/sheets/${PRIVATE_XLSX}/tabs`)
+    assert.equal(privateExcel.status, 422, 'Drive still names the file when the Sheets API says no access')
+    assert.match(privateExcel.body.error, /Rollout\.xlsx/)
+    const off = await ask('GET', `/api/trackers/sheets/${API_OFF}/tabs`)
+    assert.equal(off.status, 503)
+    assert.equal(off.body.apiDisabled, true)
+    assert.match(off.body.error, /Google Sheets API is turned off/)
+    canOpen = new Set(['u2'])
+    const shared = await ask('GET', `/api/trackers/sheets/${SHEET}/tabs`)
+    assert.equal(shared.status, 403, 'a real Google Sheet that is not shared keeps the access message')
+    assert.match(shared.body.error, /cannot open/)
+    canOpen = new Set(['u1', 'u2'])
   })
 })

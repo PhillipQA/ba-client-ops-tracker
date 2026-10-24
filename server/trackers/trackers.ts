@@ -343,6 +343,15 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
     const data: any = await response.json().catch(() => ({}))
     if (response.ok) return data
+    const reason = JSON.stringify(data?.error ?? '')
+    // The API itself is switched off in the Google Cloud project: an admin fixes this, not the person connecting.
+    if (/SERVICE_DISABLED|accessNotConfigured|has not been used in project|API is disabled/i.test(reason))
+      throw new TrackerError(
+        `The ${url.includes('/drive/') ? 'Google Drive API' : 'Google Sheets API'} is turned off in the Google Cloud project used for Gmail. An admin needs to enable it (APIs & Services → Library), then try again.`,
+        503,
+        { apiDisabled: true },
+      )
+    if (response.status === 400 && /not supported for this document/i.test(reason)) throw notASheet()
     if (response.status === 401 || response.status === 403) {
       if (/insufficient|scope/i.test(String(data?.error?.message || data?.error?.status || '')))
         throw new TrackerError('Allow Google Sheets first, so the tracker can read your Sheets.', 403, {
@@ -359,6 +368,21 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     if (response.status === 429)
       throw new TrackerError('Google Sheets is busy for this account. Wait a minute and try again.', 429)
     throw new TrackerError('Google Sheets returned an error. Try again in a moment.', 502)
+  }
+  const notASheet = (name = '') =>
+    new TrackerError(
+      `${name ? `"${name}"` : 'That link'} is an Excel file kept in Google Drive, not a Google Sheet. Open it in Google Drive, choose File → Save as Google Sheets, and use the new Sheet's link.`,
+      422,
+      { notASheet: true },
+    )
+  // When a Sheet cannot be read, Drive can still say what the file is: an Excel file gets its own message.
+  async function explainSheetError(token: string, id: string, error: unknown): Promise<never> {
+    if (error instanceof TrackerError && [403, 404, 422].includes(error.status)) {
+      const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=name,mimeType&supportsAllDrives=true`
+      const file = await sheetsGet(token, url).catch(() => null)
+      if (file?.mimeType && file.mimeType !== 'application/vnd.google-apps.spreadsheet') throw notASheet(file.name)
+    }
+    throw error
   }
   const sheetId = (value: unknown) => {
     const id = sheetIdFrom(String(value ?? ''))
@@ -632,10 +656,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const user = who(req),
         access = await googleFor(user.organizationId, user.id),
         id = sheetId(req.params.sheetId)
-      const data = await sheetsGet(
-        access.token,
-        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}?fields=properties.title,sheets.properties(title,index,gridProperties(rowCount,columnCount))`,
-      )
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}?fields=properties.title,sheets.properties(title,index,gridProperties(rowCount,columnCount))`
+      const data = await sheetsGet(access.token, url).catch(error => explainSheetError(access.token, id, error))
       res.json({
         id,
         name: data.properties?.title || 'Untitled',

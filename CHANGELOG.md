@@ -13,6 +13,7 @@ Released October 24, 2026.
 - **Smaller main files.** `App.tsx` went from about 2,000 lines to about 300: its state lives in one hook and each screen is its own component. `server/index.ts` went from about 2,500 lines to about 140: shared server code is in `server/core` and each group of routes has its own module.
 - **One UI kit and one way to call the server.** Dialogs, popovers, notices and type-to-search fields come from `src/shared/ui`; API calls go through `src/shared/http.ts`.
 - **Formatting and lint.** The code is formatted with Biome (`npm run format`); CI fails on formatting or lint errors and lists warnings on each run. CI also shows the full test suite's totals.
+- **Clearer Google Sheet errors.** A link to an Excel file kept in Google Drive now says it is an Excel file and how to turn it into a Google Sheet (File → Save as Google Sheets), instead of saying the Sheet cannot be opened. If the Google Sheets API is switched off in the Google Cloud project, the message says so.
 - **Cleanup.** Dead code the linter found was removed, including an old Discord capture path that was no longer used.
 
 ## v0.9.0 — Trackers that follow a Google Sheet, and reviewing new rows
