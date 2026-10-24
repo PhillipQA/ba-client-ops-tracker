@@ -149,6 +149,9 @@
   text-align: left;
   cursor: pointer;
 }
+a.trk-link-button {
+  text-decoration: none;
+}
 .trk-link-button:hover {
   text-decoration: underline;
 }

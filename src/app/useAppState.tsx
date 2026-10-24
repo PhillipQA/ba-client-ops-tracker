@@ -1,4 +1,5 @@
-import { type ClientLayout, type View, navItems, priorityRank } from './navigation'
+import { type ClientLayout, type View, labels, navItems, priorityRank } from './navigation'
+import { atRoute, pathForRoute, routeFromLocation } from './routes'
 import { businessDateKey, useBusinessDate } from '../shared/businessDate'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
 import { workspaceAutoRefreshAllowed } from './activePolling'
@@ -90,10 +91,18 @@ export function useAppState() {
     new URLSearchParams(window.location.hash.slice(1)).get('reset-password'),
   )
   const [store, setStore] = useState<Store>(initialStore)
-  // Returning from the Google Drive consent screen opens Settings so the result is shown; others fall back below.
+  // The page in the address (/tasks, /clients/<id>…), read once at start; see routes.ts.
+  const [startRoute] = useState(() => routeFromLocation(window.location.pathname, window.location.search))
+  // Returning from the Google Drive consent screen opens Settings so the result is shown; others follow the address.
   const [view, setView] = useState<View>(() => {
     const hash = new URLSearchParams(window.location.hash.slice(1))
-    return hash.has('drive') ? 'settings' : hash.has('gmail') ? 'inbox' : hash.has('sheets') ? 'trackers' : 'action'
+    return hash.has('drive')
+      ? 'settings'
+      : hash.has('gmail')
+        ? 'inbox'
+        : hash.has('sheets')
+          ? 'trackers'
+          : startRoute?.view || 'action'
   })
   const [query, setQuery] = useState('')
   const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
@@ -113,9 +122,11 @@ export function useAppState() {
   const [taskDateFilter, setTaskDateFilter] = useState<
     'All' | 'due-3' | 'due-7' | 'followup-3' | 'followup-7' | 'overdue'
   >('All')
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
-  const [selectedProjectClientId, setSelectedProjectClientId] = useState<string | null>(null)
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(() => startRoute?.clientId ?? null)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() => startRoute?.projectId ?? null)
+  const [selectedProjectClientId, setSelectedProjectClientId] = useState<string | null>(
+    () => startRoute?.projectClientId ?? null,
+  )
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [taskEditSaving, setTaskEditSaving] = useState(false)
   const [taskPreset, setTaskPreset] = useState<{
@@ -748,10 +759,48 @@ export function useAppState() {
     }
   }
 
+  // Real addresses: the page on screen is written to the address bar, and Back/Forward bring pages back.
+  // The first write after signing in, and redirects away from a page the person cannot open, replace the address
+  // instead of adding to the history, so Back never lands on a page that would only redirect again.
+  const firstRouteWrite = useRef(true)
+  const redirectingRoute = useRef(false)
+  useEffect(() => {
+    if (!currentUser) return
+    const target = pathForRoute({
+      view,
+      clientId: selectedClientId,
+      projectId: selectedProjectId,
+      projectClientId: selectedProjectClientId,
+    })
+    const { pathname, search } = window.location
+    if (!atRoute(pathname, search, target)) {
+      try {
+        if (firstRouteWrite.current || redirectingRoute.current) window.history.replaceState(null, '', target)
+        else window.history.pushState(null, '', target)
+      } catch {
+        /* The page still shows; only the address is not updated. */
+      }
+      redirectingRoute.current = false
+    }
+    firstRouteWrite.current = false
+  }, [currentUser?.id, view, selectedClientId, selectedProjectId, selectedProjectClientId])
+  useEffect(() => {
+    const onPop = () => {
+      const route = routeFromLocation(window.location.pathname, window.location.search)
+      setView(route?.view || 'action')
+      setSelectedClientId(route?.clientId ?? null)
+      setSelectedProjectId(route?.projectId ?? null)
+      setSelectedProjectClientId(route?.projectClientId ?? null)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   useEffect(() => {
     if (!currentUser) return
     if (currentUser.accountType === 'platform' && currentUser.isPlatformAdmin) {
       if (view !== 'internal-admin') {
+        redirectingRoute.current = true
         setSelectedClientId(null)
         setSelectedProjectId(null)
         setView('internal-admin')
@@ -760,10 +809,12 @@ export function useAppState() {
     }
     if (view === 'themes' || (view === 'users' && canManageAccounts)) return
     if (!visibleNavItems.length) {
+      redirectingRoute.current = true
       setView('themes')
       return
     }
     if (!visibleNavItems.some(item => item.id === view)) {
+      redirectingRoute.current = true
       setSelectedClientId(null)
       setSelectedProjectId(null)
       setView(visibleNavItems[0].id)
@@ -1110,6 +1161,11 @@ export function useAppState() {
   }, [searchedItems, taskClientFilter, taskProjectFilter, taskStatusFilter, taskDateFilter, store.taskSettings, today])
   const selectedClient = store.clients.find(client => client.id === selectedClientId) ?? null
   const selectedProject = store.projects.find(project => project.id === selectedProjectId) ?? null
+  // The tab title names the page, so the browser's history list (long-press Back) tells pages apart.
+  useEffect(() => {
+    const page = selectedProject?.name || selectedClient?.name || (currentUser ? labels[view] : '')
+    document.title = page ? `${page} · BA Client Ops Tracker` : 'BA Client Ops Tracker'
+  }, [view, selectedProject?.name, selectedClient?.name, Boolean(currentUser)])
   const editingTask = editingTaskId ? (store.items.find(item => item.id === editingTaskId) ?? null) : null
 
   const resolveItem = (id: string) => {

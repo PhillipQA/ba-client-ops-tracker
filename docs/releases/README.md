@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v1.0.4](v1.0.4.md) | Real page addresses: Back and Forward move between pages, refresh keeps your place, and pages and trackers can be bookmarked or opened in a new tab |
 | [v1.0.3](v1.0.3.md) | Simpler row review: new rows shown as tasks with their subtasks under them, one menu per row, settings on top; uploads group the same way as a Sheet |
 | [v1.0.2](v1.0.2.md) | Every Sheet row comes in: a task name column groups rows into tasks and subtasks (names may repeat; blank names belong to the task above), with the review filled in |
 | [v1.0.1](v1.0.1.md) | Clearer Google Sheet errors: Excel files kept in Drive and a switched-off Sheets API get their own messages |
