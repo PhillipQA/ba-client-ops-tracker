@@ -1,8 +1,8 @@
-import type { Cell, Tracker, TrackerColumn, TrackerRow, TrackerView } from './trackerModel'
+import type { Cell, SyncReport, Tracker, TrackerColumn, TrackerRow, TrackerSource, TrackerView } from './trackerModel'
 
 /** An error from the trackers API. A 409 carries the current copy of whatever was edited, so the screen can reload it. */
 export class TrackerApiError extends Error {
-  constructor(message: string, public status: number, public body: { tracker?: Tracker; row?: TrackerRow } = {}) { super(message) }
+  constructor(message: string, public status: number, public body: { tracker?: Tracker; row?: TrackerRow; needsGoogle?: boolean; noAccess?: boolean } = {}) { super(message) }
 }
 
 async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -22,13 +22,15 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
   try { data = text ? JSON.parse(text) : {} } catch { /* A proxy can answer with HTML. */ }
   if (!response.ok) {
     const fallback = response.status === 403 ? 'You do not have access to Trackers.' : response.status === 404 ? 'That was not found. It may have been deleted.' : 'Trackers are unavailable right now. Try again in a moment.'
-    throw new TrackerApiError(typeof data?.error === 'string' && data.error ? data.error : fallback, response.status, { tracker: data?.tracker, row: data?.row })
+    throw new TrackerApiError(typeof data?.error === 'string' && data.error ? data.error : fallback, response.status, { tracker: data?.tracker, row: data?.row, needsGoogle: Boolean(data?.needsGoogle), noAccess: Boolean(data?.noAccess) })
   }
   return data as T
 }
 
 /** What changing a column's type would do (applied: false), or what it did (applied: true). */
 export type ConvertReport = { applied: false; rows: number; filled: number; failed: number; samples: { row: number; value: string }[] } | { applied: true; tracker: Tracker; failed: number }
+export type SheetFile = { id: string; name: string; modifiedTime: string; owner: string; shared: boolean; sharedDrive: boolean }
+export type SyncResult = { source: TrackerSource; report: SyncReport | null; skipped?: boolean }
 /** A task or subtask linked to a tracker row, or to one cell of it (columnId is empty for the whole row). */
 export type TaskLink = { id: string; trackerId: string; trackerName: string; rowId: string; rowTitle: string; columnId: string; columnName: string; taskId: string; createdByName: string; createdAt: string }
 export type TrackerChange = { id: string; actorName: string; kind: string; detail: any; at: string }
@@ -56,6 +58,17 @@ export const trackerApi = {
   removeLink: (id: string, linkId: string) => call<{ removed: number }>('DELETE', `/${id}/links/${linkId}`),
   /** Every link in every tracker this person can see, for the Action Center. */
   allLinks: (signal?: AbortSignal) => call<{ links: TaskLink[] }>('GET', '/task-links', undefined, signal),
+  // Connected Google Sheets
+  sheetsStatus: () => call<{ available: boolean; connected: boolean; email: string }>('GET', '/sheets/status'),
+  sheetFiles: (q: string) => call<{ files: SheetFile[] }>('GET', `/sheets/files?q=${encodeURIComponent(q)}`),
+  sheetTabs: (sheet: string) => call<{ id: string; name: string; tabs: { title: string; rows: number; columns: number }[] }>('GET', `/sheets/${encodeURIComponent(sheet)}/tabs`),
+  sheetValues: (sheet: string, tab: string) => call<{ grid: string[][]; truncated: boolean }>('GET', `/sheets/${encodeURIComponent(sheet)}/values?tab=${encodeURIComponent(tab)}`),
+  connectSource: (id: string, body: { spreadsheetId: string; spreadsheetName: string; tab: string; keyHeader: string; headerMap: Record<string, string> }) => call<SyncResult & { tracker: Tracker }>('POST', `/${id}/source`, body),
+  syncSource: (id: string, force: boolean) => call<SyncResult>('POST', `/${id}/source/sync`, { force }),
+  reconnectSource: (id: string) => call<SyncResult>('POST', `/${id}/source/reconnect`, {}),
+  disconnectSource: (id: string) => call<{ tracker: Tracker }>('DELETE', `/${id}/source`),
+  reviewed: (id: string, ids: string[]) => call<{ reviewed: number }>('POST', `/${id}/rows/review`, { ids }),
+  bulkLinks: (id: string, links: { rowId: string; columnId: string; taskId: string }[]) => call<{ links: TaskLink[] }>('POST', `/${id}/links/bulk`, { links }),
   history: (id: string, rowId: string, signal?: AbortSignal) => call<{ changes: TrackerChange[] }>('GET', `/${id}/rows/${rowId}/history`, undefined, signal),
 }
 

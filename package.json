@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -51,7 +51,7 @@
     "test:tracker-columns": "node --import tsx --test tests/tracker-columns.test.ts",
     "test:sidebar": "node --import tsx --test tests/sidebar-state.test.ts",
     "test:email-templates": "node --import tsx --test tests/email-templates.test.ts",
-    "test:trackers": "node --import tsx --test tests/trackers.test.ts tests/tracker-logic.test.ts tests/tracker-formula.test.ts"
+    "test:trackers": "node --import tsx --test tests/trackers.test.ts tests/tracker-logic.test.ts tests/tracker-formula.test.ts tests/tracker-sync.test.ts tests/tracker-sheets.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",

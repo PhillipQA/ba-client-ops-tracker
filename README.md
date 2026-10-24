@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Current application version: v0.8.0**
+**Current application version: v0.9.0**
 
 A workspace for clients, projects, tasks, follow-ups, Work Hub communications, document creation, requirements traceability, customizable trackers and reports. This guide covers installation, first login, deployment and updates.
 
@@ -159,7 +159,7 @@ npm run typecheck:server
 
 If your checkout contains local source edits, reconcile them before pulling. For an official patch ZIP, use the [patch instructions](docs/setup/upgrade.md#official-patch-zips); a source update does not require a patch ZIP.
 
-**v0.8.0 needs database migration schema v26** for email signatures saved to your account and for email templates; without it email works as before and the signature stays in the browser. **v0.6.96 has an optional database migration, schema v25,** that is needed only to link tasks and subtasks to tracker rows and cells; everything else works without it. **v0.6.93, v0.6.94 and v0.6.95 have no database change.** **v0.6.92 needs database migration schema v24** before Trackers can be used; everything else works without it, and Administrators see Trackers after signing in again. See the [upgrade guide](docs/setup/upgrade.md#database-requirements). **v0.6.87 needs database migration schema v23** before Google Drive can be used for Gmail attachments; everything else works without it. See the [upgrade guide](docs/setup/upgrade.md#database-requirements). The optional schema v22 migration (from v0.6.83) enables custom templates for the UAT Sign Off, UAT Deployment Approval and Training Sign Off forms; the built-in forms and templates work without it. The optional v21 migration enables custom Go Live templates.
+**v0.9.0 needs database migration schema v27** and the Google Sheets API for trackers that follow a Google Sheet; importing and reviewing rows works without it. **v0.8.0 needs database migration schema v26** for email signatures saved to your account and for email templates; without it email works as before and the signature stays in the browser. **v0.6.96 has an optional database migration, schema v25,** that is needed only to link tasks and subtasks to tracker rows and cells; everything else works without it. **v0.6.93, v0.6.94 and v0.6.95 have no database change.** **v0.6.92 needs database migration schema v24** before Trackers can be used; everything else works without it, and Administrators see Trackers after signing in again. See the [upgrade guide](docs/setup/upgrade.md#database-requirements). **v0.6.87 needs database migration schema v23** before Google Drive can be used for Gmail attachments; everything else works without it. See the [upgrade guide](docs/setup/upgrade.md#database-requirements). The optional schema v22 migration (from v0.6.83) enables custom templates for the UAT Sign Off, UAT Deployment Approval and Training Sign Off forms; the built-in forms and templates work without it. The optional v21 migration enables custom Go Live templates.
 
 ## Troubleshooting
 

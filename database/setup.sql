@@ -19,7 +19,7 @@ begin
       raise exception 'Supabase role % is missing. Use a new Supabase project for this setup.', object_name;
     end if;
   end loop;
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     if to_regclass(format('public.%I', object_name)) is not null then
       raise exception 'Fresh setup stopped: public.% already exists. No changes were applied. Use newer migrations for an existing installation; do not replay old migrations.', object_name;
     end if;
@@ -1514,6 +1514,37 @@ create table if not exists public.tenant_email_templates (
 );
 create index if not exists tenant_email_templates_name on public.tenant_email_templates(tenant_id, name);
 
+-- Connected Google Sheets (v27).
+alter table public.tenant_tracker_rows add column if not exists source_key text not null default '';
+alter table public.tenant_tracker_rows add column if not exists source_values jsonb not null default '{}'::jsonb;
+alter table public.tenant_tracker_rows add column if not exists source_missing boolean not null default false;
+alter table public.tenant_tracker_rows add column if not exists review boolean not null default false;
+create index if not exists tenant_tracker_rows_source on public.tenant_tracker_rows(tenant_id, tracker_id, source_key) where source_key <> '';
+create index if not exists tenant_tracker_rows_review on public.tenant_tracker_rows(tenant_id, tracker_id) where review;
+
+create table if not exists public.tenant_tracker_sources (
+  tenant_id uuid not null,
+  tracker_id uuid not null,
+  spreadsheet_id text not null,
+  spreadsheet_name text not null default '',
+  tab text not null,
+  key_header text not null,
+  header_map jsonb not null default '{}'::jsonb,
+  mode text not null default 'one_way' check (mode in ('one_way', 'two_way')),
+  connected_by text not null default '',
+  connected_by_name text not null default '',
+  connected_email text not null default '',
+  last_synced_at timestamptz,
+  last_status text not null default 'never',
+  last_error text not null default '',
+  last_report jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, tracker_id),
+  foreign key (tenant_id, tracker_id) references public.tenant_trackers(tenant_id, id) on delete cascade
+);
+
+
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
@@ -1536,12 +1567,15 @@ begin
     execute 'alter table public.tenant_tracker_rows enable row level security';
     execute 'alter table public.tenant_tracker_changes enable row level security';
     execute 'alter table public.tenant_tracker_task_links enable row level security';
+    execute 'alter table public.tenant_tracker_sources enable row level security';
+    execute 'revoke all on public.tenant_tracker_sources from public, anon, authenticated';
     execute 'revoke all on public.tenant_tracker_task_links from public, anon, authenticated';
     execute 'revoke all on public.tenant_trackers, public.tenant_tracker_rows, public.tenant_tracker_changes from public, anon, authenticated';
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     execute 'grant all on public.tenant_trackers, public.tenant_tracker_rows, public.tenant_tracker_changes to service_role';
     execute 'grant all on public.tenant_tracker_task_links to service_role';
+    execute 'grant all on public.tenant_tracker_sources to service_role';
   end if;
 end $$;
 
@@ -1563,7 +1597,7 @@ do $setup_grants$
 declare
   object_name text;
 begin
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     execute format('alter table public.%I enable row level security', object_name);
     execute format('revoke all on table public.%I from public, anon, authenticated', object_name);
     execute format('grant all on table public.%I to service_role', object_name);

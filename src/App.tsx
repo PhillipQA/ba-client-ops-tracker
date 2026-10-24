@@ -411,7 +411,7 @@ function App() {
   const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.hash.slice(1)).get('reset-password'))
   const [store, setStore] = useState<Store>(initialStore)
   // Returning from the Google Drive consent screen opens Settings so the result is shown; others fall back below.
-  const [view, setView] = useState<View>(() => { const hash = new URLSearchParams(window.location.hash.slice(1)); return hash.has('drive') ? 'settings' : hash.has('gmail') ? 'inbox' : 'action' })
+  const [view, setView] = useState<View>(() => { const hash = new URLSearchParams(window.location.hash.slice(1)); return hash.has('drive') ? 'settings' : hash.has('gmail') ? 'inbox' : hash.has('sheets') ? 'trackers' : 'action' })
   const [query, setQuery] = useState('')
   const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
   const [clientLayout, setClientLayout] = useState<ClientLayout>('tiles')
@@ -1264,11 +1264,25 @@ function App() {
     if (!canWriteTasks || !hasModule('items')) throw new Error('Your role cannot create tasks.')
     const current = storeRef.current
     const today = businessDateKey()
+    // New projects first: one per name, reusing an existing project with the same name.
+    const projects = [...current.projects], addedProjects: Project[] = []
+    const projectFor = (draft: TaskDraft) => {
+      const name = (draft.newProjectName || '').trim().slice(0, 120)
+      if (!name) return draft.projectId || undefined
+      const found = projects.find((project) => project.name.trim().toLowerCase() === name.toLowerCase() && !isArchived(project))
+      if (found) return found.id
+      const project: Project = { id: crypto.randomUUID(), name, status: 'Active', targetDate: '', summary: 'Created from a tracker.' }
+      projects.push(project); addedProjects.push(project)
+      return project.id
+    }
     const nextOrder = new Map<string, number>()
-    const made: WorkItem[] = drafts.map((draft) => {
-      const parent = draft.parentTaskId ? current.items.find((item) => item.id === draft.parentTaskId) : undefined
-      if (draft.parentTaskId && (!parent || parent.parentTaskId)) throw new Error('The parent task was not found.')
-      if (parent && archivedWorkReason(current, parent)) throw new Error(archivedWorkReason(current, parent) || 'The parent task is archived.')
+    const made: WorkItem[] = []
+    drafts.forEach((draft, index) => {
+      const batchParent = draft.parentIndex !== undefined ? made[draft.parentIndex] : undefined
+      if (draft.parentIndex !== undefined && (!batchParent || draft.parentIndex >= index || batchParent.parentTaskId)) throw new Error('A subtask must come after its task in the list.')
+      const parent = batchParent || (draft.parentTaskId ? current.items.find((item) => item.id === draft.parentTaskId) : undefined)
+      if (draft.parentTaskId && !batchParent && (!parent || parent.parentTaskId)) throw new Error('The parent task was not found.')
+      if (parent && !batchParent && archivedWorkReason(current, parent)) throw new Error(archivedWorkReason(current, parent) || 'The parent task is archived.')
       const clientId = parent ? parent.clientId : draft.clientId || undefined
       if (!clientId) throw new Error('Choose the client for the task.')
       if (!current.clients.some((client) => client.id === clientId)) throw new Error('That client was not found.')
@@ -1277,17 +1291,19 @@ function App() {
         const base = nextOrder.get(parent.id) ?? Math.max(-1, ...current.items.filter((item) => item.parentTaskId === parent.id).map((item) => item.subtaskOrder ?? -1)) + 1
         order = base; nextOrder.set(parent.id, base + 1)
       }
-      return {
-        id: crypto.randomUUID(), clientId, projectId: parent ? parent.projectId : draft.projectId || undefined, parentTaskId: parent?.id, subtaskOrder: order,
-        title: draft.title.trim().slice(0, 200), type: 'Task', priority: 'Medium', status: defaultOpenTaskStatus(current.taskSettings), waitingOn: defaultWaitingOn(current.taskSettings),
+      made.push({
+        id: crypto.randomUUID(), clientId, projectId: parent ? parent.projectId : projectFor(draft), parentTaskId: parent?.id, subtaskOrder: order,
+        title: draft.title.trim().slice(0, 200) || 'Untitled', type: 'Task', priority: 'Medium', status: defaultOpenTaskStatus(current.taskSettings), waitingOn: defaultWaitingOn(current.taskSettings),
         assignedToUserId: parent?.assignedToUserId, assignmentInherited: parent ? true : undefined, owner: parent?.owner || '',
         dateRaised: today, followUpDate: '', description: '', resolution: '', source: 'Internal', qaResult: 'Not Run',
-      }
+      })
     })
     const created = new Map(made.map((item) => [item.id, item]))
-    const activity = made.map((item) => ({ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: today, text: item.parentTaskId ? `Created subtask under ${current.items.find((parent) => parent.id === item.parentTaskId)?.title || 'a task'} from a tracker: ${item.title}` : `Created task from a tracker: ${item.title}` }))
-    if (persist({ ...current, items: [...made, ...current.items], activity: [...activity, ...current.activity] }) === false) throw new Error('The tasks could not be created.')
+    const titleOf = (id?: string) => made.find((item) => item.id === id)?.title || current.items.find((item) => item.id === id)?.title || 'a task'
+    const activity = made.map((item) => ({ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: today, text: item.parentTaskId ? `Created subtask under ${titleOf(item.parentTaskId)} from a tracker: ${item.title}` : `Created task from a tracker: ${item.title}` }))
+    if (persist({ ...current, projects, items: [...made, ...current.items], activity: [...activity, ...current.activity] }) === false) throw new Error('The tasks could not be created.')
     if (cloudStatus !== 'local') await waitForCloudSaves()
+    void addedProjects
     return made.map((item) => storeRef.current.items.find((saved) => saved.id === item.id) || created.get(item.id)!)
   }
   const openTaskEditor = (id: string) => {

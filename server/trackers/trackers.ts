@@ -4,8 +4,9 @@ import type { Express, Request, RequestHandler, Response } from 'express'
 import { decryptSecret, encryptSecret, encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
 import {
   TRACKER_LIMITS, TrackerError, TRACKER_CLIENTS, canConvertType, cleanCell, splitClientIds, cleanName, cleanSecret, isBasicType, isColumnType, isEmptyCell, normalizeColumns, normalizeViews, planConversion,
-  type Cell, type Tracker, type TrackerColumn, type TrackerRow,
+  type Cell, type SyncReport, type Tracker, type TrackerColumn, type TrackerRow, type TrackerSource,
 } from '../../src/trackerModel'
+import { SYNC_LIMITS, describeSync, planSync, sheetIdFrom, tabRange } from '../../src/trackerSync'
 
 /**
  * Trackers: user-defined sheets. A tracker owns its columns and views; its rows live in their own table so one
@@ -21,6 +22,8 @@ type Deps = {
   /** Encryption key override for tests. */
   key?: Buffer
   now?: () => Date
+  /** A Google access token for a person, used to read connected Sheets as the person who connected them. */
+  googleAccess?: (tenantId: string, userId: string) => Promise<{ token: string; scope: string; email?: string }>
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -90,7 +93,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       if (isBasicType(column.type)) { const value = row.data?.[column.id]; if (!isEmptyCell(value)) cells[column.id] = value }
       else if (column.type === 'secret' && row.secrets?.[column.id]) secretSet[column.id] = true
     }
-    return { id: row.id, position: Number(row.position), cells, secretSet, taskId: row.task_id || '', version: Number(row.version || 1), updatedAt: row.updated_at }
+    return { id: row.id, position: Number(row.position), cells, secretSet, taskId: row.task_id || '', version: Number(row.version || 1), updatedAt: row.updated_at,
+      ...(row.source_key ? { sourceKey: String(row.source_key) } : {}), ...(row.source_missing ? { sourceMissing: true } : {}), ...(row.review ? { review: true } : {}) }
   }
 
   /** What is written to the history for a value. Secrets are never included. */
@@ -176,6 +180,240 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   }
 
   // ---- trackers ----
+  // ---------------------------------------------------------------------------------------------------------------
+  // Connected Google Sheets. A tracker can follow one tab of a Sheet: one-way (Sheet → tracker) today, with what two-way
+  // needs (row keys, the values at the last sync, a mode) already stored. The sync runs as the person who connected it.
+  const SHEETS_READ = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+  const sourceCheck = (error: any) => { if (error) throw new TrackerError('Connected Sheets need database/migrations/schema-v27-tracker-sheets.sql. Apply it and try again.', 503) }
+  async function googleFor(tenant: string, userId: string) {
+    if (!deps.googleAccess) throw new TrackerError('Google is not set up for this account. An Administrator connects it in Settings → Integrations.', 503)
+    try { return await deps.googleAccess(tenant, userId) }
+    catch (error: any) { throw new TrackerError(error?.status === 409 || /connect/i.test(String(error?.message)) ? 'Allow Google Sheets first: the Google account needs to be connected again.' : 'Google could not be reached. Try again in a moment.', error?.status === 409 ? 409 : 502, { needsGoogle: true }) }
+  }
+  async function sheetsGet(token: string, url: string) {
+    let response: globalThis.Response
+    try { response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(25000) }) }
+    catch { throw new TrackerError('Google Sheets did not answer in time. Try again in a moment.', 504) }
+    const data: any = await response.json().catch(() => ({}))
+    if (response.ok) return data
+    if (response.status === 401 || response.status === 403) {
+      if (/insufficient|scope/i.test(String(data?.error?.message || data?.error?.status || ''))) throw new TrackerError('Allow Google Sheets first, so the tracker can read your Sheets.', 403, { needsGoogle: true })
+      throw new TrackerError('The Google account used here cannot open that Sheet. Ask its owner to share it, or reconnect with an account that can open it.', 403, { noAccess: true })
+    }
+    if (response.status === 404) throw new TrackerError('That Sheet or tab was not found. It may have been deleted or renamed.', 404)
+    if (response.status === 429) throw new TrackerError('Google Sheets is busy for this account. Wait a minute and try again.', 429)
+    throw new TrackerError('Google Sheets returned an error. Try again in a moment.', 502)
+  }
+  const sheetId = (value: unknown) => { const id = sheetIdFrom(String(value ?? '')); if (!id) throw new TrackerError('That is not a Google Sheets link.'); return id }
+  const sourceOut = (row: any): TrackerSource => ({
+    spreadsheetId: row.spreadsheet_id, spreadsheetName: row.spreadsheet_name || '', tab: row.tab, keyHeader: row.key_header, headerMap: row.header_map || {},
+    mode: row.mode === 'two_way' ? 'two_way' : 'one_way', connectedBy: row.connected_by || '', connectedByName: row.connected_by_name || '', connectedEmail: row.connected_email || '',
+    lastSyncedAt: row.last_synced_at || '', lastStatus: row.last_status === 'ok' || row.last_status === 'error' ? row.last_status : 'never', lastError: row.last_error || '', lastReport: row.last_report || null,
+  })
+  /** The tracker's Sheet connection, or null. Before schema v27 there is no table, and no tracker is connected. */
+  async function sourceRow(tenant: string, trackerId: string) {
+    try {
+      const r = await db.from('tenant_tracker_sources').select('*').eq('tenant_id', tenant).eq('tracker_id', trackerId).maybeSingle()
+      return r.error ? null : r.data || null
+    } catch { return null }
+  }
+  async function allRows(tenant: string, trackerId: string) {
+    const rows: any[] = []
+    for (;;) {
+      const r = await db.from('tenant_tracker_rows').select('*').eq('tenant_id', tenant).eq('tracker_id', trackerId).order('position', { ascending: true }).range(rows.length, rows.length + PAGE - 1)
+      check(r.error)
+      rows.push(...(r.data || []))
+      if ((r.data || []).length < PAGE) return rows
+    }
+  }
+  const lastSync = new Map<string, number>()
+
+  /** Reads the Sheet and applies the changes. `force` skips the one-minute pause between syncs. */
+  async function runSync(tenant: string, tracker: any, user: User, force: boolean): Promise<{ source: TrackerSource; report: SyncReport | null; skipped?: boolean }> {
+    const source = await sourceRow(tenant, tracker.id)
+    if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
+    const key = `${tenant}:${tracker.id}`
+    if (!force && Date.now() - (lastSync.get(key) || 0) < SYNC_LIMITS.minSeconds * 1000) return { source: sourceOut(source), report: source.last_report || null, skipped: true }
+    lastSync.set(key, Date.now())
+    const fail = async (message: string) => {
+      await db.from('tenant_tracker_sources').update({ last_status: 'error', last_error: message.slice(0, 500), updated_at: now() }).eq('tenant_id', tenant).eq('tracker_id', tracker.id)
+    }
+    let grid: string[][]
+    try {
+      const access = await googleFor(tenant, source.connected_by)
+      if (!String(access.scope).split(/\s+/).includes(SHEETS_READ)) throw new TrackerError(`${source.connected_by_name || 'The person who connected this Sheet'} needs to allow Google Sheets again. Anyone who can open the Sheet can reconnect it.`, 409, { noAccess: true })
+      const values = await sheetsGet(access.token, `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}/values/${encodeURIComponent(tabRange(source.tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`)
+      grid = (Array.isArray(values.values) ? values.values : []).slice(0, SYNC_LIMITS.rows + 1).map((line: unknown[]) => (Array.isArray(line) ? line : []).slice(0, SYNC_LIMITS.columns).map(value => String(value ?? '')))
+    } catch (error) {
+      await fail(error instanceof Error ? error.message : 'The Sheet could not be read.')
+      throw error
+    }
+    const existing = await allRows(tenant, tracker.id)
+    const state = await workspace(tenant)
+    const people = (Array.isArray(state.accounts) ? state.accounts : []).map((account: any) => ({ id: String(account.id), name: String(account.name || ''), email: account.email, username: account.username }))
+    const planned = planSync({
+      grid, keyHeader: source.key_header, headerMap: source.header_map || {}, columns: columnsOf(tracker),
+      rows: existing.map(row => ({ id: row.id, sourceKey: row.source_key || '', data: row.data || {}, values: row.source_values || {}, missing: Boolean(row.source_missing) })),
+      people, today: now().slice(0, 10), capacity: TRACKER_LIMITS.rows - existing.length,
+    })
+    if ('error' in planned) { await fail(planned.error); throw new TrackerError(planned.error, 409) }
+    const stamp = now()
+    let columns = columnsOf(tracker)
+    if (planned.columnsChanged) {
+      columns = normalizeColumns(planned.columns, columnsOf(tracker))
+      const saved = await db.from('tenant_trackers').update({ columns, revision: Number(tracker.revision || 1) + 1, updated_at: stamp }).eq('tenant_id', tenant).eq('id', tracker.id)
+      check(saved.error)
+    }
+    let position = existing.reduce((max, row) => Math.max(max, Number(row.position) || 0), 0)
+    for (let at = 0; at < planned.inserts.length; at += TRACKER_LIMITS.importBatch) {
+      const records = planned.inserts.slice(at, at + TRACKER_LIMITS.importBatch).map(entry => ({
+        tenant_id: tenant, tracker_id: tracker.id, id: randomUUID(), position: ++position, data: mergeCells({}, columns, entry.cells), secrets: {}, task_id: '',
+        version: 1, created_by: source.connected_by, updated_by: source.connected_by, created_at: stamp, updated_at: stamp,
+        source_key: entry.key, source_values: entry.values, source_missing: false, review: true,
+      }))
+      const saved = await db.from('tenant_tracker_rows').insert(records)
+      sourceCheck(saved.error)
+    }
+    const byId = new Map(existing.map(row => [row.id, row]))
+    const returned = new Set(planned.returned)
+    for (const update of planned.updates) {
+      const current = byId.get(update.id)
+      if (!current) continue
+      const changed = Object.keys(update.cells).length > 0
+      const patch: Record<string, unknown> = { source_values: update.values, ...(returned.has(update.id) ? { source_missing: false } : {}) }
+      if (changed) Object.assign(patch, { data: mergeCells(current.data || {}, columns, update.cells), version: Number(current.version || 1) + 1, updated_at: stamp })
+      const saved = await db.from('tenant_tracker_rows').update(patch).eq('tenant_id', tenant).eq('tracker_id', tracker.id).eq('id', update.id)
+      sourceCheck(saved.error)
+    }
+    for (const id of planned.returned) if (!planned.updates.some(update => update.id === id)) await db.from('tenant_tracker_rows').update({ source_missing: false }).eq('tenant_id', tenant).eq('tracker_id', tracker.id).eq('id', id)
+    if (planned.missing.length) {
+      const saved = await db.from('tenant_tracker_rows').update({ source_missing: true }).eq('tenant_id', tenant).eq('tracker_id', tracker.id).in('id', planned.missing)
+      sourceCheck(saved.error)
+    }
+    const report = planned.report
+    const done = await db.from('tenant_tracker_sources').update({ last_synced_at: stamp, last_status: 'ok', last_error: '', last_report: report, updated_at: stamp }).eq('tenant_id', tenant).eq('tracker_id', tracker.id)
+    sourceCheck(done.error)
+    if (report.added || report.updated || report.missing || report.returned) {
+      await record(tenant, tracker.id, '', user, 'sheet_synced', { summary: describeSync(report), ...report })
+      await touch(tenant, tracker.id)
+    }
+    return { source: sourceOut({ ...source, last_synced_at: stamp, last_status: 'ok', last_error: '', last_report: report }), report }
+  }
+
+  app.get('/api/trackers/sheets/status', ...scope, route(async (req, res) => {
+    const user = who(req)
+    if (!deps.googleAccess) return void res.json({ available: false, connected: false, email: '' })
+    try {
+      const access = await deps.googleAccess(user.organizationId, user.id)
+      res.json({ available: true, connected: String(access.scope).split(/\s+/).includes(SHEETS_READ), email: access.email || '' })
+    } catch { res.json({ available: true, connected: false, email: '' }) }
+  }))
+  app.get('/api/trackers/sheets/files', ...scope, route(async (req, res) => {
+    const user = who(req), access = await googleFor(user.organizationId, user.id)
+    const words = String(req.query.q || '').trim().slice(0, 100).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    const q = `mimeType='application/vnd.google-apps.spreadsheet' and trashed=false${words ? ` and name contains '${words}'` : ''}`
+    const params = new URLSearchParams({ q, corpora: 'allDrives', includeItemsFromAllDrives: 'true', supportsAllDrives: 'true', orderBy: 'modifiedTime desc', pageSize: '40', fields: 'files(id,name,modifiedTime,owners(displayName),shared,driveId)' })
+    const data = await sheetsGet(access.token, `https://www.googleapis.com/drive/v3/files?${params}`)
+    res.json({ files: (data.files || []).map((file: any) => ({ id: String(file.id), name: String(file.name || 'Untitled'), modifiedTime: file.modifiedTime || '', owner: file.owners?.[0]?.displayName || '', shared: Boolean(file.shared), sharedDrive: Boolean(file.driveId) })) })
+  }))
+  app.get('/api/trackers/sheets/:sheetId/tabs', ...scope, route(async (req, res) => {
+    const user = who(req), access = await googleFor(user.organizationId, user.id), id = sheetId(req.params.sheetId)
+    const data = await sheetsGet(access.token, `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}?fields=properties.title,sheets.properties(title,index,gridProperties(rowCount,columnCount))`)
+    res.json({ id, name: data.properties?.title || 'Untitled', tabs: (data.sheets || []).map((sheet: any) => ({ title: String(sheet.properties?.title || ''), rows: Number(sheet.properties?.gridProperties?.rowCount || 0), columns: Number(sheet.properties?.gridProperties?.columnCount || 0) })) })
+  }))
+  app.get('/api/trackers/sheets/:sheetId/values', ...scope, route(async (req, res) => {
+    const user = who(req), access = await googleFor(user.organizationId, user.id), id = sheetId(req.params.sheetId)
+    const tab = String(req.query.tab || '').slice(0, 100)
+    if (!tab) throw new TrackerError('Choose a tab.')
+    const data = await sheetsGet(access.token, `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(tabRange(tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`)
+    const grid = (Array.isArray(data.values) ? data.values : []).slice(0, SYNC_LIMITS.rows + 1).map((line: unknown[]) => (Array.isArray(line) ? line : []).slice(0, SYNC_LIMITS.columns).map(value => String(value ?? '')))
+    res.json({ grid, truncated: Array.isArray(data.values) && data.values.length > SYNC_LIMITS.rows + 1 })
+  }))
+
+  app.post('/api/trackers/:id/source', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it first.', 409)
+    const body = req.body || {}
+    const spreadsheetId = sheetId(body.spreadsheetId), tab = String(body.tab || '').trim().slice(0, 100), keyHeader = String(body.keyHeader || '').trim().slice(0, 200)
+    if (!tab) throw new TrackerError('Choose the Sheet tab to follow.')
+    if (!keyHeader) throw new TrackerError('Choose the key column: the column that names each row, such as a branch number.')
+    if (body.mode === 'two_way') throw new TrackerError('Two-way sync is not available yet. Connect one-way (Sheet → tracker).', 400)
+    const columns = columnsOf(tracker), byId = new Map(columns.map(column => [column.id, column]))
+    const headerMap: Record<string, string> = {}
+    for (const [header, columnId] of Object.entries<unknown>(body.headerMap || {})) {
+      const column = byId.get(String(columnId))
+      if (!column || !isBasicType(column.type)) throw new TrackerError(`“${header}” must go to a basic column (text, number, date, choice, person or link).`)
+      headerMap[String(header).trim().slice(0, 200)] = column.id
+    }
+    if (!Object.keys(headerMap).length) throw new TrackerError('Choose at least one Sheet column to follow.')
+    // The person connecting must be able to open it now; their access is what the sync uses.
+    const access = await googleFor(tenant, user.id)
+    if (!String(access.scope).split(/\s+/).includes(SHEETS_READ)) throw new TrackerError('Allow Google Sheets first, so the tracker can read your Sheets.', 403, { needsGoogle: true })
+    const meta = await sheetsGet(access.token, `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title`)
+    const synced = new Set(Object.values(headerMap))
+    const nextColumns = normalizeColumns(columns.map(column => ({ ...column, ...(synced.has(column.id) ? { synced: true } : { synced: undefined }) })), columns)
+    const stamp = now()
+    const savedColumns = await db.from('tenant_trackers').update({ columns: nextColumns, revision: Number(tracker.revision || 1) + 1, updated_at: stamp }).eq('tenant_id', tenant).eq('id', id)
+    check(savedColumns.error)
+    const record_ = { tenant_id: tenant, tracker_id: id, spreadsheet_id: spreadsheetId, spreadsheet_name: String(meta.properties?.title || body.spreadsheetName || 'Google Sheet').slice(0, 200), tab, key_header: keyHeader,
+      header_map: headerMap, mode: 'one_way', connected_by: user.id, connected_by_name: user.name, connected_email: access.email || '', last_status: 'never', last_error: '', last_report: null, created_at: stamp, updated_at: stamp }
+    await db.from('tenant_tracker_sources').delete().eq('tenant_id', tenant).eq('tracker_id', id)
+    const saved = await db.from('tenant_tracker_sources').insert(record_)
+    sourceCheck(saved.error)
+    await record(tenant, id, '', user, 'sheet_connected', { name: record_.spreadsheet_name, tab })
+    const result = await runSync(tenant, { ...tracker, columns: nextColumns, revision: Number(tracker.revision || 1) + 1 }, user, true)
+    const fresh = await trackerRow(tenant, id, user)
+    res.json({ ...result, tracker: { ...trackerOut(fresh, user, await rowCount(tenant, id)), source: result.source } })
+  }))
+  app.post('/api/trackers/:id/source/sync', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to sync it.', 409)
+    const result = await runSync(tenant, tracker, user, req.body?.force === true)
+    res.json(result)
+  }))
+  app.post('/api/trackers/:id/source/reconnect', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    const source = await sourceRow(tenant, id)
+    if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
+    const access = await googleFor(tenant, user.id)
+    if (!String(access.scope).split(/\s+/).includes(SHEETS_READ)) throw new TrackerError('Allow Google Sheets first, so the tracker can read your Sheets.', 403, { needsGoogle: true })
+    await sheetsGet(access.token, `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}?fields=properties.title`)
+    const saved = await db.from('tenant_tracker_sources').update({ connected_by: user.id, connected_by_name: user.name, connected_email: access.email || '', updated_at: now() }).eq('tenant_id', tenant).eq('tracker_id', id)
+    sourceCheck(saved.error)
+    await record(tenant, id, '', user, 'sheet_reconnected', { name: source.spreadsheet_name })
+    res.json(await runSync(tenant, tracker, user, true))
+  }))
+  app.delete('/api/trackers/:id/source', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    const source = await sourceRow(tenant, id)
+    if (!source) return void res.json({ tracker: trackerOut(tracker, user, await rowCount(tenant, id)) })
+    const removed = await db.from('tenant_tracker_sources').delete().eq('tenant_id', tenant).eq('tracker_id', id)
+    sourceCheck(removed.error)
+    const columns = normalizeColumns(columnsOf(tracker).map(column => ({ ...column, synced: undefined })), columnsOf(tracker))
+    const saved = await db.from('tenant_trackers').update({ columns, revision: Number(tracker.revision || 1) + 1, updated_at: now() }).eq('tenant_id', tenant).eq('id', id)
+    check(saved.error)
+    await record(tenant, id, '', user, 'sheet_disconnected', { name: source.spreadsheet_name })
+    const fresh = await trackerRow(tenant, id, user)
+    res.json({ tracker: { ...trackerOut(fresh, user, await rowCount(tenant, id)), source: null } })
+  }))
+
+  /** Marks rows as reviewed (made into tasks, or left as plain rows). */
+  app.post('/api/trackers/:id/rows/review', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    await trackerRow(tenant, id, user)
+    const ids = Array.isArray(req.body?.ids) ? [...new Set<string>(req.body.ids.map(String))] : []
+    if (!ids.length || ids.length > TRACKER_LIMITS.rows || ids.some(value => !UUID.test(value))) throw new TrackerError('Choose the rows that were reviewed.')
+    for (let at = 0; at < ids.length; at += TRACKER_LIMITS.importBatch) {
+      const saved = await db.from('tenant_tracker_rows').update({ review: false }).eq('tenant_id', tenant).eq('tracker_id', id).in('id', ids.slice(at, at + TRACKER_LIMITS.importBatch))
+      sourceCheck(saved.error)
+    }
+    res.json({ reviewed: ids.length })
+  }))
+
   app.get('/api/trackers', ...scope, route(async (req, res) => {
     const user = who(req), tenant = user.organizationId
     const r = await db.from('tenant_trackers').select('*').eq('tenant_id', tenant).order('updated_at', { ascending: false }).limit(TRACKER_LIMITS.trackers + 100)
@@ -281,6 +519,33 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     res.status(201).json({ link: links.find((link: any) => link.id === made.id), links })
   }))
 
+  /** Many cell links at once, for subtasks made from a review (one subtask per chosen column). */
+  app.post('/api/trackers/:id/links/bulk', ...scope, route(async (req, res) => {
+    const user = who(req), tenant = user.organizationId, id = idParam(req)
+    const tracker = await trackerRow(tenant, id, user)
+    if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to change links.', 409)
+    const input = Array.isArray(req.body?.links) ? req.body.links : []
+    if (!input.length || input.length > TRACKER_LIMITS.importBatch * 4) throw new TrackerError('Send between 1 and 2,000 links at a time.')
+    const columns = new Set(columnsOf(tracker).map(column => column.id)), state = await workspace(tenant)
+    const wanted = input.map((entry: any) => {
+      const rowId = String(entry?.rowId ?? ''), columnId = String(entry?.columnId ?? '').trim()
+      if (!UUID.test(rowId)) throw new TrackerError('Every link needs a row.')
+      if (columnId && !columns.has(columnId)) throw new TrackerError('A column in these links was not found in this tracker.')
+      return { rowId, columnId, taskId: taskIdOf(state, entry?.taskId) }
+    })
+    const rowIds = [...new Set<string>(wanted.map((entry: any) => entry.rowId))]
+    const found = await db.from('tenant_tracker_rows').select('id').eq('tenant_id', tenant).eq('tracker_id', id).in('id', rowIds)
+    check(found.error)
+    const known = new Set((found.data || []).map((row: any) => row.id))
+    const have = await db.from('tenant_tracker_task_links').select('*').eq('tenant_id', tenant).eq('tracker_id', id)
+    linkCheck(have.error)
+    const taken = new Set((have.data || []).map((link: any) => `${link.row_id}|${link.column_id}|${link.task_id}`))
+    const records = wanted.filter((entry: any) => { const key = `${entry.rowId}|${entry.columnId}|${entry.taskId}`; if (!known.has(entry.rowId) || !entry.taskId || taken.has(key)) return false; taken.add(key); return true })
+      .map((entry: any) => ({ id: randomUUID(), tenant_id: tenant, tracker_id: id, row_id: entry.rowId, column_id: entry.columnId, task_id: entry.taskId, created_by: user.id, created_by_name: user.name, created_at: now() }))
+    if (records.length) { const saved = await db.from('tenant_tracker_task_links').insert(records); linkCheck(saved.error); await touch(tenant, id) }
+    res.json({ links: await linksOut(tenant, [tracker]) })
+  }))
+
   app.delete('/api/trackers/:id/links/:linkId', ...scope, route(async (req, res) => {
     const user = who(req), tenant = user.organizationId, id = idParam(req)
     const linkId = String(req.params.linkId || '')
@@ -297,7 +562,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   app.get('/api/trackers/:id', ...scope, route(async (req, res) => {
     const user = who(req), id = idParam(req)
     const row = await trackerRow(user.organizationId, id, user)
-    res.json({ tracker: trackerOut(row, user, await rowCount(user.organizationId, id)) })
+    const source = await sourceRow(user.organizationId, id)
+    res.json({ tracker: { ...trackerOut(row, user, await rowCount(user.organizationId, id)), source: source ? sourceOut(source) : null } })
   }))
 
   app.patch('/api/trackers/:id', ...scope, route(async (req, res) => {
@@ -524,6 +790,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     if (!Number.isInteger(body.version)) throw new TrackerError('The row version is required.')
     if (body.version !== Number(current.version || 1)) throw new TrackerError('Someone else changed this row. It was reloaded; review it and try again.', 409, { row: rowOut(current, columns) })
     const cleaned = cleanRowInput(columns, body, '')
+    if (current.source_key) {
+      const locked = Object.keys(cleaned.cells).map(columnId => byId.get(columnId)).find(column => column?.synced)
+      if (locked) throw new TrackerError(`${locked.name} comes from the connected Google Sheet. Change it in the Sheet; the tracker picks it up on the next sync.`, 409)
+    }
     let taskId = current.task_id || ''
     if (body.taskId !== undefined) taskId = body.taskId === null || body.taskId === '' ? '' : taskIdOf(await workspace(tenant), body.taskId)
     const data = mergeCells(current.data || {}, columns, cleaned.cells)

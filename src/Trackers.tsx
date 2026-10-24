@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Lock, Plus, Search, Table2, Upload } from 'lucide-react'
+import { Link2, Lock, Plus, Search, Table2, Upload } from 'lucide-react'
 import { TRACKER_LIMITS, columnTypeLabel, type Tracker } from './trackerModel'
 import { TRACKER_TEMPLATES, templateById } from './trackerTemplates'
 import { trackerApi } from './trackerApi'
@@ -84,6 +84,10 @@ export default function Trackers(props: Props) {
   const [showArchived, setShowArchived] = useState(false)
   const [creating, setCreating] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  // Back from Google's permission page (#sheets=enabled|denied|error): say what happened and reopen the Sheet picker.
+  const [sheetReturn] = useState(() => { try { return new URLSearchParams(window.location.hash.slice(1)).get('sheets') || '' } catch { return '' } })
+  const [connecting, setConnecting] = useState(sheetReturn === 'enabled')
+  useEffect(() => { if (sheetReturn) { try { window.history.replaceState(null, '', window.location.pathname + window.location.search) } catch { /* The address keeps the note. */ } } }, [sheetReturn])
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try { const result = await trackerApi.list(signal); setTrackers(result.trackers); setError('') }
@@ -113,6 +117,7 @@ export default function Trackers(props: Props) {
       <div className="trk-title"><div><h2>Trackers</h2><p className="trk-muted-text">Sheets you shape yourself. Add the columns you need, link rows to tasks, and keep access details protected.</p></div></div>
       {props.canCreate && <div className="trk-header-actions">
         <button type="button" className="trk-button" onClick={() => setImporting(true)}><Upload size={14} aria-hidden="true" /> Import a sheet</button>
+        {props.canCreate && <button type="button" className="trk-button" onClick={() => setConnecting(true)} title="Make a tracker that follows a Google Sheet and keeps up with it"><Link2 size={14} aria-hidden="true" /> From Google Sheet</button>}
         <button type="button" className="trk-button primary" onClick={() => setCreating('blank')}><Plus size={14} aria-hidden="true" /> New tracker</button>
       </div>}
     </header>
@@ -155,5 +160,9 @@ export default function Trackers(props: Props) {
       onCreated={tracker => { setCreating(null); setOpenId(tracker.id); void load() }} />}
     {importing && <TrackerImportDialog clients={props.clients} projects={props.projects} people={people} today={props.today}
       onClose={() => setImporting(false)} onDone={trackerId => { setImporting(false); setOpenId(trackerId); void load() }} />}
+    {connecting && <TrackerImportDialog fromSheet clients={props.clients} projects={props.projects} people={people} today={props.today}
+      onClose={() => setConnecting(false)} onDone={trackerId => { setConnecting(false); setOpenId(trackerId); void load() }} />}
+    {sheetReturn === 'denied' && !connecting && <p className="trk-field-error" role="alert">Google Sheets was not allowed, so no Sheet can be connected. Click From Google Sheet to try again.</p>}
+    {sheetReturn === 'error' && !connecting && <p className="trk-field-error" role="alert">Google sign-in did not finish. Click From Google Sheet to try again.</p>}
   </div>
 }

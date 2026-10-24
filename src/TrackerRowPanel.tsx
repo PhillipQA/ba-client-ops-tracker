@@ -267,7 +267,7 @@ export default function TrackerRowPanel(props: Props) {
       <TaskLinksCard props={props} />
 
       <section className="trk-fields" aria-label="Fields">
-        {basic.map(column => <Field key={column.id} column={column} row={row} people={people} canEdit={canEdit} onEdit={value => props.onEdit(row, column, value)} />)}
+        {basic.map(column => <Field key={column.id} column={column} row={row} people={people} canEdit={canEdit && !(column.synced && row.sourceKey)} onEdit={value => props.onEdit(row, column, value)} />)}
       </section>
 
       {tracker.columns.some(column => column.type === 'formula') && <section className="trk-card" aria-label="Calculated">

@@ -20,3 +20,17 @@ export const takeTrackerRow = (trackerId: string) => {
     return value.slice(trackerId.length + 1)
   } catch { return '' }
 }
+
+const REVIEW_KEY = 'ba.trackers.review'
+/** Asks the tracker to open the review of these rows ('flagged' = every row waiting for review) when it next opens. */
+export const rememberReview = (trackerId: string, rows: string[] | 'flagged') => {
+  try { window.sessionStorage.setItem(REVIEW_KEY, JSON.stringify({ trackerId, rows })) } catch { /* The review can still be opened from the banner. */ }
+}
+export const takeReview = (trackerId: string): string[] | 'flagged' | null => {
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(REVIEW_KEY) || 'null')
+    if (!value || value.trackerId !== trackerId) return null
+    window.sessionStorage.removeItem(REVIEW_KEY)
+    return value.rows === 'flagged' ? 'flagged' : Array.isArray(value.rows) ? value.rows.map(String) : null
+  } catch { return null }
+}

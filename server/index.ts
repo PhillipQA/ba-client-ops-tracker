@@ -1729,7 +1729,8 @@ registerFsdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireT
 
 registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
 registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
-registerTrackerRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, load: loadTenantState })
+// Connected Google Sheets read as the person who connected them, through the same Google sign-in as Gmail (registered below).
+registerTrackerRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, load: loadTenantState, googleAccess: (tenantId, userId) => communications.googleAccess(tenantId, userId) })
 registerEmailTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
 
 registerSignoffRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx'), goLiveTemplatePath: path.join(projectRoot, 'templates', 'golive-template.docx'), templatePaths: { uat: path.join(projectRoot, 'templates', 'uat-template.docx'), uatdeploy: path.join(projectRoot, 'templates', 'uatdeploy-template.docx'), training: path.join(projectRoot, 'templates', 'training-template.docx') } })

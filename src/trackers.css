@@ -407,3 +407,43 @@ dialog.trk-dialog::backdrop { background: rgba(8, 10, 14, .62); }
 .trk-client-quick button { padding: 2px 8px; border: 1px dashed var(--trk-border); border-radius: 999px; font-size: 12px; color: var(--trk-muted); }
 .trk-bulk-preview { max-height: 200px; overflow: auto; margin: 8px 0; padding: 8px 8px 8px 26px; border: 1px solid var(--trk-border); border-radius: 8px; font-size: 13px; }
 .trk-key.computed { background: color-mix(in srgb, #8b5cf6 55%, var(--trk-solid)); }
+
+/* Review new rows */
+.trk-review { display: grid; gap: 12px; }
+.trk-review-bar, .trk-review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.trk-review-rule { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--trk-muted); font-size: 12.5px; }
+.trk-review-rule input, .trk-review-rule select, .trk-review-actions select { min-width: 0; max-width: 200px; }
+.trk-review-parent { display: inline-flex; align-items: center; gap: 6px; min-width: 260px; flex: 1 1 260px; }
+.trk-review-parent .client-combo { flex: 1; }
+.trk-review-table { display: grid; max-height: 320px; overflow: auto; border: 1px solid var(--trk-border); border-radius: 10px; }
+.trk-review-head, .trk-review-row { display: grid; grid-template-columns: 36px minmax(120px, 1fr) minmax(160px, 1.4fr) minmax(140px, 1fr); align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--trk-line); }
+.trk-review-head { position: sticky; top: 0; z-index: 1; background: var(--trk-solid); font-size: 12px; font-weight: 700; color: var(--trk-muted); }
+.trk-review-row.ticked { background: var(--trk-accent-soft); }
+.trk-review-row.done { opacity: .65; }
+.trk-review-row input { width: 100%; min-width: 0; }
+.trk-review-tick { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--trk-text); cursor: pointer; }
+.trk-review-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trk-review-becomes { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trk-review-becomes.none { color: var(--trk-muted); }
+.trk-review-becomes.task { color: var(--trk-accent); font-weight: 700; }
+.trk-review-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 0; padding: 12px; border: 1px solid var(--trk-border); border-radius: 10px; }
+.trk-review-project { display: flex; gap: 12px; margin: 4px 0; }
+.trk-review-cols { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+
+/* Connected Google Sheet */
+.trk-source-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; border: 1px solid var(--trk-border); border-radius: 10px; background: var(--trk-solid); font-size: 12.5px; }
+.trk-source-bar.error { border-color: color-mix(in srgb, var(--trk-danger) 60%, transparent); }
+.trk-source-name a { color: var(--trk-accent); font-weight: 600; }
+.trk-source-error { color: var(--trk-danger); }
+.trk-review-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.trk-hcell.synced { background: color-mix(in srgb, #16a34a 14%, var(--trk-solid)); }
+.trk-row.trk-missing .trk-cell { opacity: .55; text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+.trk-row.trk-to-review .trk-num { box-shadow: inset 3px 0 0 var(--trk-accent); }
+.trk-sheet-pick { display: grid; gap: 10px; }
+.trk-sheet-list { display: grid; gap: 4px; max-height: 300px; overflow: auto; }
+.trk-sheet-list button { display: grid; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--trk-text); cursor: pointer; }
+.trk-sheet-list button:hover, .trk-sheet-list button.selected { border-color: var(--trk-accent); background: var(--trk-accent-soft); }
+.trk-sheet-list small { color: var(--trk-muted); font-size: 11.5px; }
+.trk-sheet-chosen { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--trk-border); border-radius: 10px; }
+.trk-key-column { padding: 10px 12px; border: 1px dashed var(--trk-accent); border-radius: 10px; }
+.trk-key.synced { background: color-mix(in srgb, #16a34a 55%, var(--trk-solid)); }

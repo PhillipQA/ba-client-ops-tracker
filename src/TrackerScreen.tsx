@@ -15,7 +15,10 @@ import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
 import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
 import { Notice, Popover, plural } from './trackerUi'
-import { takeTrackerRow } from './trackerNav'
+import { takeReview, takeTrackerRow } from './trackerNav'
+import TrackerReview, { type ReviewOutcome } from './TrackerReview'
+import { SYNC_LIMITS, describeSync } from './trackerSync'
+import { niceTime } from './trackerUi'
 import { useVisiblePolling } from './useVisiblePolling'
 import type { Client, Project, UserAccount, WorkItem } from './types'
 
@@ -72,6 +75,8 @@ export default function TrackerScreen(props: Props) {
   const workAnchor = useRef<HTMLElement | null>(null)
   const [workCell, setWorkCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [review, setReview] = useState<{ origin: 'sheet' | 'import'; ids: string[] | 'flagged' } | null>(null)
+  const [syncing, setSyncing] = useState(false)
   // Full-width view: the page header (Add client, Add task…) is hidden so the grid gets the whole height. The left menu stays.
   const [expanded, setExpanded] = useState(() => { try { return localStorage.getItem('ba.tracker.expanded') === '1' } catch { return false } })
   const toggleExpanded = () => setExpanded(current => { const next = !current; try { localStorage.setItem('ba.tracker.expanded', next ? '1' : '0') } catch { /* not remembered */ } return next })
@@ -117,7 +122,52 @@ export default function TrackerScreen(props: Props) {
     if (status !== 'ready') return
     const wanted = takeTrackerRow(trackerId)
     if (wanted && rowsRef.current.some(row => row.id === wanted)) setDrawerId(wanted)
+    // Arriving straight from an import or a new Sheet connection opens the review of the new rows.
+    const pending = takeReview(trackerId)
+    if (pending) setReview({ origin: pending === 'flagged' ? 'sheet' : 'import', ids: pending })
   }, [status, trackerId])
+
+  // Connected Google Sheet: Sync now, and an automatic sync every few minutes while the tracker is open.
+  const syncNow = async (force: boolean) => {
+    const current = trackerRef.current
+    if (!current?.source || syncing) return
+    setSyncing(true)
+    try {
+      const result = await trackerApi.syncSource(trackerId, force)
+      if (!alive.current) return
+      if (!result.skipped) await refresh()
+      else if (trackerRef.current) setTracker({ ...trackerRef.current, source: result.source })
+      if (force) say('info', result.report ? `Synced. ${describeSync(result.report)}.` : 'Synced.')
+    } catch (error) {
+      if (force) say('error', error instanceof Error ? error.message : 'The Sheet could not be synced.')
+      await refresh().catch(() => undefined)
+    } finally { if (alive.current) setSyncing(false) }
+  }
+  const allowSheets = async () => {
+    try {
+      const response = await fetch('/api/communications/gmail/connect?sheets=1', { credentials: 'same-origin' })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.url) throw new Error(result.error || 'Could not start the Google permission step.')
+      window.location.assign(result.url)
+    } catch (error) { say('error', error instanceof Error ? error.message : 'Could not start the Google permission step.') }
+  }
+  const reconnect = async () => {
+    setSyncing(true)
+    try { const result = await trackerApi.reconnectSource(trackerId); await refresh(); say('info', `Reconnected with your Google account. ${result.report ? describeSync(result.report) : ''}`) }
+    catch (error) { if (error instanceof TrackerApiError && error.body.needsGoogle) { if (window.confirm('Allow the tracker to read your Google Sheets first? You will come back here after Google asks.')) void allowSheets() } else say('error', error instanceof Error ? error.message : 'Could not reconnect.') }
+    finally { if (alive.current) setSyncing(false) }
+  }
+  const stopSyncing = async () => {
+    if (!window.confirm('Stop syncing with the Google Sheet? Every row stays in the tracker and its columns become editable here. You can connect a Sheet again later by making a new tracker from it.')) return
+    try { const result = await trackerApi.disconnectSource(trackerId); setTracker(result.tracker); await refresh(); say('info', 'This tracker no longer follows the Sheet.') }
+    catch (error) { say('error', error instanceof Error ? error.message : 'Could not stop syncing.') }
+  }
+  const applyReview = async (outcome: ReviewOutcome) => {
+    if (outcome.rowTasks.length) await linkRowTasks(outcome.rowTasks)
+    if (outcome.cellLinks.length) { const result = await trackerApi.bulkLinks(trackerId, outcome.cellLinks); setLinks(result.links) }
+    if (outcome.reviewed.length) await trackerApi.reviewed(trackerId, outcome.reviewed).catch(() => undefined)
+    await refresh()
+  }
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const result = await load(signal)
@@ -126,6 +176,17 @@ export default function TrackerScreen(props: Props) {
     setTracker(result.tracker); setRows(result.rows)
     trackerApi.links(trackerId, signal).then(found => { if (alive.current) setLinks(found.links) }).catch(() => undefined)
   }, [load, trackerId])
+  // While a connected tracker is open and visible, it syncs when the last sync is older than a few minutes.
+  useEffect(() => {
+    if (status !== 'ready' || !tracker?.source || !canEditSource) return
+    const due = () => {
+      const last = Date.parse(trackerRef.current?.source?.lastSyncedAt || '') || 0
+      if (document.visibilityState === 'visible' && Date.now() - last > SYNC_LIMITS.autoMinutes * 60_000) void syncNow(false)
+    }
+    due()
+    const timer = window.setInterval(due, 60_000)
+    return () => window.clearInterval(timer)
+  }, [status, tracker?.source?.spreadsheetId, trackerId])
   useVisiblePolling(refresh, { enabled: status === 'ready' && saving === 0 && !columnDialog && !importing && !details, interval: 60_000, scope: trackerId, immediate: false })
 
   // Keep the working view pointing at columns that exist.
@@ -207,6 +268,7 @@ export default function TrackerScreen(props: Props) {
     return out
   }, [visible, columns, work.groupBy, lookup])
   const canEdit = Boolean(tracker?.canEdit && !tracker.archived)
+  const canEditSource = canEdit
   const orderable = canEdit && !work.sort && !work.groupBy && work.filters.length === 0 && !work.search.trim()
   const activeView = tracker?.views.find(view => view.id === activeViewId)
   const baseline = activeView ? stripWork({ ...emptyWork, ...activeView }) : stripWork(emptyWork)
@@ -519,12 +581,26 @@ export default function TrackerScreen(props: Props) {
         {tracker.canManage && !tracker.archived && <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); void archive() }}>Archive tracker</button>}
         {tracker.canManage && tracker.archived && <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); void patchTracker({ archived: false }, 'Tracker restored.') }}>Restore tracker</button>}
         {tracker.canManage && tracker.archived && <button type="button" role="menuitem" className="danger" onClick={() => { setMoreOpen(false); void destroy() }}>Delete permanently…</button>}
+        {tracker.source && canEdit && <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); void stopSyncing() }}>Stop syncing with the Sheet…</button>}
         <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); void refresh().then(() => say('info', 'Up to date.')).catch(error => say('error', error instanceof Error ? error.message : 'Could not refresh.')) }}>Refresh now</button>
       </div>
     </Popover>}
 
     {tracker.archived && <div className="trk-banner"><AlertTriangle size={15} aria-hidden="true" /> This tracker is archived and read-only.{tracker.canManage && <button type="button" className="trk-text-button strong" onClick={() => void patchTracker({ archived: false }, 'Tracker restored.')}><RotateCcw size={13} aria-hidden="true" /> Restore</button>}</div>}
     {!tracker.canEdit && !tracker.archived && <div className="trk-banner">Your role can view this tracker but not change it.</div>}
+    {tracker.source && <div className={`trk-source-bar${tracker.source.lastStatus === 'error' ? ' error' : ''}`} role="status">
+      <span className="trk-source-name">Synced from <a href={`https://docs.google.com/spreadsheets/d/${tracker.source.spreadsheetId}/edit`} target="_blank" rel="noopener noreferrer">{tracker.source.spreadsheetName || 'Google Sheet'} › {tracker.source.tab}</a></span>
+      <span className="trk-muted">Sheet → tracker · connected by {tracker.source.connectedByName || 'someone'}{tracker.source.lastSyncedAt ? ` · synced ${niceTime(tracker.source.lastSyncedAt)}` : ' · not synced yet'}{tracker.source.lastReport && tracker.source.lastStatus === 'ok' ? ` · ${describeSync(tracker.source.lastReport)}` : ''}</span>
+      {tracker.source.lastStatus === 'error' && <span className="trk-source-error">{tracker.source.lastError}</span>}
+      {tracker.source.lastReport?.newHeaders?.length ? <span className="trk-muted" title={tracker.source.lastReport.newHeaders.join(', ')}>{plural(tracker.source.lastReport.newHeaders.length, 'Sheet column')} not followed</span> : null}
+      <span className="trk-spacer" />
+      {canEdit && tracker.source.lastStatus === 'error' && <button type="button" className="trk-button" disabled={syncing} onClick={() => void reconnect()} title="Use your own Google account to read the Sheet">Reconnect with my Google</button>}
+      {canEdit && <button type="button" className="trk-button" disabled={syncing} onClick={() => void syncNow(true)}>{syncing ? 'Syncing…' : 'Sync now'}</button>}
+    </div>}
+    {rows.some(row => row.review && !row.taskId) && !review && <div className="trk-banner trk-review-banner">
+      <strong>{plural(rows.filter(row => row.review && !row.taskId).length, 'new row')}{tracker.source ? ' from the Sheet' : ''}</strong> waiting for review: make them tasks, subtasks, or leave them as plain rows.
+      {canEdit && <button type="button" className="trk-text-button strong" onClick={() => setReview({ origin: tracker.source ? 'sheet' : 'import', ids: 'flagged' })}>Review</button>}
+    </div>}
     {notice && <Notice kind={notice.kind} onClose={() => setNotice(null)}>{notice.text}</Notice>}
 
     <div className="trk-views" role="group" aria-label="Saved views">
@@ -593,6 +669,7 @@ export default function TrackerScreen(props: Props) {
       <span><i className="trk-key connected" aria-hidden="true" /> Blue headers fill themselves from the linked task</span>
       <span><i className="trk-key secret" aria-hidden="true" /> Amber headers are protected</span>
       {columns.some(column => column.type === 'formula') && <span><i className="trk-key computed" aria-hidden="true" /> Purple headers are calculated</span>}
+      {tracker.source && <span><i className="trk-key synced" aria-hidden="true" /> Green headers come from the Google Sheet; change those cells there</span>}
       {props.onCreateTasks && canEdit && <span>Point at a cell: + Task in the first column, + for a subtask in the others</span>}
     </footer>
 
@@ -635,6 +712,9 @@ export default function TrackerScreen(props: Props) {
         onPickSubtask={taskId => setCellSubtask(row, column.id, taskId)}
         onSwitchToTask={() => setWorkCell({ rowId: row.id, columnId: columns[0].id })} />
     })()}
+    {review && <TrackerReview tracker={tracker} lookup={lookup} tools={workTools} origin={review.origin}
+      rows={review.ids === 'flagged' ? rows.filter(row => row.review) : rows.filter(row => (review.ids as string[]).includes(row.id))}
+      onClose={() => setReview(null)} onApply={applyReview} />}
     {bulkOpen && <TrackerBulkTasks tracker={tracker} rows={rows.filter(row => selected.has(row.id))} titleOf={row => rowTitle(columns, row)} tools={workTools} onClose={() => setBulkOpen(false)} onDone={linkRowTasks} />}
     {drawerRow && <TrackerRowPanel tracker={tracker} row={drawerRow} lookup={lookup} people={people} items={props.items} clientName={clientName} canEdit={canEdit} isAdmin={props.isAdmin}
       onClose={() => setDrawerId('')} onEdit={editCell} onSecret={setSecret} onLink={linkTask} links={links} onAddLink={addLink} onRemoveLink={removeLink} onDelete={row => void removeRows([row.id])} onOpenTask={props.onOpenTask} onReveal={reveal} />}
@@ -643,7 +723,7 @@ export default function TrackerScreen(props: Props) {
       onSave={draft => saveColumn(draft, editingColumn)} onDelete={editingColumn ? () => deleteColumn(editingColumn) : undefined}
       onConvert={editingColumn ? (type, confirm, clearUnfit) => convertColumn(editingColumn, type, confirm, clearUnfit) : undefined} />}
     {importing && <TrackerImportDialog tracker={tracker} clients={props.clients} projects={props.projects} people={people} today={props.today} onClose={() => setImporting(false)}
-      onDone={(_, imported) => { setImporting(false); props.onListChanged(); void refresh().then(() => say('info', `${plural(imported, 'row')} imported.`)).catch(error => say('error', error instanceof Error ? error.message : 'Imported, but the tracker could not be refreshed.')) }} />}
+      onDone={(_, imported, ids) => { setImporting(false); props.onListChanged(); void refresh().then(() => { say('info', `${plural(imported, 'row')} imported.`); if (ids?.length && props.onCreateTasks && canEdit) setReview({ origin: 'import', ids }) }).catch(error => say('error', error instanceof Error ? error.message : 'Imported, but the tracker could not be refreshed.')) }} />}
     {details && <TrackerDetailsDialog tracker={tracker} clients={props.clients} projects={props.projects} onClose={() => setDetails(false)}
       onSave={async body => { const result = await trackerApi.update(trackerId, body); setTracker(result.tracker); props.onListChanged() }} />}
   </div>
