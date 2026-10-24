@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.9.0](v0.9.0.md) | Trackers that follow a Google Sheet (one-way, ready for two-way), and a review step that turns new or imported rows into tasks, subtasks, a new project or plain rows |
 | [v0.8.0](v0.8.0.md) | Email signature per person, shared and private email templates (create, view, edit, delete), type-to-search task pickers |
 | [v0.7.1](v0.7.1.md) | Fix: the client list in dialogs such as New email opens under the field and no longer shifts the dialog; client fields match the boxes next to them |
 | [v0.7.0](v0.7.0.md) | Type-to-search client fields, A to Z, everywhere a client is chosen; task pickers offer only open tasks and subtasks |

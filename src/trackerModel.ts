@@ -94,6 +94,8 @@ export type TrackerColumn = {
   formula?: string
   /** Number and Calculated columns: show a SUM in the totals row. */
   total?: 'sum'
+  /** Filled from the connected Google Sheet. In one-way sync it is read-only for rows that came from the Sheet. */
+  synced?: boolean
 }
 
 export type Cell = string | number | boolean | string[] | null
@@ -119,6 +121,36 @@ export type TrackerRow = {
   taskId: string
   version: number
   updatedAt: string
+  /** Rows from a connected Google Sheet: the value in its key column. Empty for rows added in the tracker. */
+  sourceKey?: string
+  /** The row is no longer in the Sheet. It is kept, and flagged, rather than deleted. */
+  sourceMissing?: boolean
+  /** A new row waiting to be reviewed: made into a task, a subtask, or left as it is. */
+  review?: boolean
+}
+
+/** A tracker that follows a Google Sheet. One-way today; two-way is prepared for but not switched on. */
+export type SyncMode = 'one_way' | 'two_way'
+export type TrackerSource = {
+  spreadsheetId: string
+  spreadsheetName: string
+  tab: string
+  keyHeader: string
+  /** Sheet header → tracker column id. */
+  headerMap: Record<string, string>
+  mode: SyncMode
+  connectedBy: string
+  connectedByName: string
+  connectedEmail: string
+  lastSyncedAt: string
+  lastStatus: 'ok' | 'error' | 'never'
+  lastError: string
+  lastReport: SyncReport | null
+}
+export type SyncReport = {
+  added: number; updated: number; missing: number; returned: number; unchanged: number
+  skippedNoKey: number; duplicateKeys: string[]; capped: number
+  missingHeaders: string[]; newHeaders: string[]; problems: number
 }
 
 export type Tracker = {
@@ -142,6 +174,10 @@ export type Tracker = {
   archived: boolean
   canEdit: boolean
   canManage: boolean
+  /** Set when the tracker follows a Google Sheet (loaded with the tracker, not in the list). */
+  source?: TrackerSource | null
+  /** In the list: whether the tracker follows a Google Sheet. */
+  synced?: boolean
 }
 
 export class TrackerError extends Error {
@@ -214,6 +250,7 @@ export function normalizeColumns(input: unknown, previous: TrackerColumn[] = [])
     if (raw.type === 'secret') column.revealBy = raw.revealBy === 'admins' ? 'admins' : 'editors'
     if (raw.type === 'formula') column.formula = typeof raw.formula === 'string' ? raw.formula.slice(0, 1000) : ''
     if ((raw.type === 'number' || raw.type === 'formula') && raw.total === 'sum') column.total = 'sum'
+    if (raw.synced === true && isBasicType(raw.type)) column.synced = true
     return column
   })
   // Formulas may name columns as [Name] or {id}; store ids so a rename does not break them, then check them all together.

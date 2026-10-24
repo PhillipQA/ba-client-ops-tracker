@@ -169,7 +169,8 @@ export default function TrackerGrid(props: Props) {
     else if (direction === 'right') move(r, c + 1)
   }
   const beginEdit = (row: TrackerRow, column: TrackerColumn, initial?: string) => {
-    if (editable(column) && canEdit) setEditing({ initial })
+    // Cells that come from a connected Google Sheet are changed in the Sheet, not here.
+    if (editable(column) && canEdit && !(column.synced && row.sourceKey)) setEditing({ initial })
     else props.onOpenRow(row)
   }
 
@@ -206,14 +207,14 @@ export default function TrackerGrid(props: Props) {
     }
     const { row, n } = entry
     const isSelected = selected.has(row.id), rowActive = active?.rowId === row.id
-    rendered.push(<div key={row.id} role="row" aria-rowindex={index + 2} aria-selected={isSelected} className={`trk-row${isSelected ? ' selected' : ''}${rowActive ? ' current' : ''}${dragIds?.has(row.id) ? ' dragging' : ''}${dropAt?.rowId === row.id && dragIds && !dragIds.has(row.id) ? (dropAt.after ? ' drop-after' : ' drop-before') : ''}`} style={{ gridTemplateColumns: template, height: ROW_HEIGHT }}
+    rendered.push(<div key={row.id} role="row" aria-rowindex={index + 2} aria-selected={isSelected} className={`trk-row${isSelected ? ' selected' : ''}${rowActive ? ' current' : ''}${dragIds?.has(row.id) ? ' dragging' : ''}${row.sourceMissing ? ' trk-missing' : ''}${row.review ? ' trk-to-review' : ''}${dropAt?.rowId === row.id && dragIds && !dragIds.has(row.id) ? (dropAt.after ? ' drop-after' : ' drop-before') : ''}`} style={{ gridTemplateColumns: template, height: ROW_HEIGHT }}
       onDragOver={dragIds ? event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; const box = event.currentTarget.getBoundingClientRect(); const after = event.clientY > box.top + box.height / 2; if (dropAt?.rowId !== row.id || dropAt.after !== after) setDropAt({ rowId: row.id, after }) } : undefined}
       onDrop={dragIds ? event => { event.preventDefault(); const target = dropTarget(); if (target) props.onMove?.([...dragIds], target.before); endDrag() } : undefined}>
       <div role="gridcell" className={`trk-cell trk-num trk-s1${props.onMove ? ' movable' : ''}`}
         draggable={Boolean(props.onMove)} title={props.onMove ? 'Drag to move this row' : undefined}
         onDragStart={props.onMove ? event => { const ids = selected.has(row.id) ? new Set(selected) : new Set([row.id]); setDragIds(ids); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', `${ids.size} row${ids.size === 1 ? '' : 's'}`) } : undefined}
         onDragEnd={props.onMove ? endDrag : undefined}>
-        <span className="trk-n">{n}</span>
+        <span className="trk-n" title={row.sourceMissing ? 'No longer in the Google Sheet. Kept here; delete it if it is not needed.' : row.review ? 'New: waiting for review' : undefined}>{n}</span>
         {props.links?.get(row.id) && <span className="trk-linkcount" title={`${props.links.get(row.id)!.count} linked task${props.links.get(row.id)!.count === 1 ? '' : 's'} or subtask${props.links.get(row.id)!.count === 1 ? '' : 's'}`} aria-label={`${props.links.get(row.id)!.count} linked tasks`}>{props.links.get(row.id)!.count}</span>}
         <input type="checkbox" className="trk-pick" checked={isSelected} aria-label={`Select row ${n}`} onChange={event => props.onToggleRow(row.id, event.target.checked)} />
       </div>
@@ -228,7 +229,7 @@ export default function TrackerGrid(props: Props) {
         if (on) classes.push('active')
         if (isEditing) classes.push('editing')
         return <div key={column.id} role="gridcell" aria-colindex={at + 2} className={classes.join(' ')} data-column={column.id} style={place ? { left: place.left } : undefined}
-          onClick={() => { if (on && !isEditing && canEdit && editable(column)) beginEdit(row, column); else if (!on) { setActive({ rowId: row.id, columnId: column.id }); setEditing(null); scroller.current?.focus({ preventScroll: true }) } }}
+          onClick={() => { if (on && !isEditing && canEdit && editable(column) && !(column.synced && row.sourceKey)) beginEdit(row, column); else if (!on) { setActive({ rowId: row.id, columnId: column.id }); setEditing(null); scroller.current?.focus({ preventScroll: true }) } }}
           onDoubleClick={() => { if (!isEditing) beginEdit(row, column) }}>
           {isEditing
             ? <CellEditor column={column} row={row} people={people} initial={editing?.initial} onDone={stopEditing} onCommit={value => props.onEdit(row, column, value)} onInvalid={props.onInvalid} />
@@ -263,8 +264,8 @@ export default function TrackerGrid(props: Props) {
           const connected = !computed && !['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'multiselect', 'person', 'link', 'secret'].includes(column.type)
           const sorted = sort?.columnId === column.id ? sort.dir : null
           return <div key={column.id} role="columnheader" aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
-            className={`trk-hcell${placeClasses(column)}${connected ? ' connected' : ''}${computed ? ' computed' : ''}${column.type === 'secret' ? ' secret' : ''}`} style={stick.has(column.id) ? { left: stick.get(column.id)!.left } : undefined}>
-            <button type="button" className="trk-hbutton" aria-haspopup="dialog" title={computed ? `${column.name} = ${formulaToText(column.formula || '', props.allColumns || columns)}` : connected ? `${column.name}. Fills itself from the linked task.` : column.type === 'secret' ? `${column.name}. Protected.` : column.name} onClick={event => props.onHeader(column, event.currentTarget)}>
+            className={`trk-hcell${placeClasses(column)}${connected ? ' connected' : ''}${computed ? ' computed' : ''}${column.synced ? ' synced' : ''}${column.type === 'secret' ? ' secret' : ''}`} style={stick.has(column.id) ? { left: stick.get(column.id)!.left } : undefined}>
+            <button type="button" className="trk-hbutton" aria-haspopup="dialog" title={column.synced ? `${column.name}. Comes from the Google Sheet; change it there.` : computed ? `${column.name} = ${formulaToText(column.formula || '', props.allColumns || columns)}` : connected ? `${column.name}. Fills itself from the linked task.` : column.type === 'secret' ? `${column.name}. Protected.` : column.name} onClick={event => props.onHeader(column, event.currentTarget)}>
               <ColumnIcon type={column.type} />
               <span className="trk-hname">{column.name}</span>
               {sorted && <span className="trk-sorted" aria-hidden="true">{sorted === 'asc' ? '↑' : '↓'}</span>}

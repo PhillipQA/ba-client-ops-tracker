@@ -1,8 +1,19 @@
 # Changelog
 
-**Current application release: v0.8.0**
+**Current application release: v0.9.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.9.0 — Trackers that follow a Google Sheet, and reviewing new rows
+Released October 24, 2026.
+
+**Database migration:** apply [schema v27](database/migrations/schema-v27-tracker-sheets.sql). **Google:** enable the Google Sheets API and Google Drive API, and add the Sheets and Drive metadata read-only permissions, in the Google Cloud project used for Gmail (steps in the [upgrade guide](docs/setup/upgrade.md#database-requirements)).
+
+- **New tracker from a Google Sheet.** In Trackers, click **From Google Sheet**. Search the Sheets you can open (your own, those shared with you, and shared drives) or paste a link, choose the tab, check what each column becomes, and choose the **key column** that names each row, such as a branch number. Each person allows Google Sheets once; the tracker can read Sheets but never changes them.
+- **It keeps up with the Sheet (Sheet → tracker).** Click **Sync now**, or leave the tracker open: it syncs every few minutes. New rows come in, changed cells update, and a row removed from the Sheet is kept in the tracker, crossed out, rather than deleted. Rows are matched by the key column, so sorting or inserting rows in the Sheet is safe. Columns from the Sheet have green headers and are changed in the Sheet; your own columns, tasks, subtasks and Calculated columns stay editable and are never overwritten.
+- **Ready for two-way.** Each row keeps its Sheet key and the values from the last sync, and each connection has a sync mode. Two-way editing is not switched on yet.
+- **Who it syncs as.** The tracker reads the Sheet with the access of the person who connected it. If they lose access, the bar says so and anyone who can open the Sheet can click **Reconnect with my Google**. **More → Stop syncing with the Sheet** keeps every row and makes the columns editable.
+- **Review new rows.** New rows from the Sheet, and the rows of every import, open in a review. Tick rows by hand or by a rule (for example *Type is Rollout*), then make them **new tasks** (for one of the tracker's clients, in an existing or a **new project**), **subtasks of an existing task**, **subtasks of a new task in the same list**, or **plain rows**. You can also give every new task a subtask for each chosen column (DRF, Go-Live…), which then shows its status in that cell. A summary such as "Creates 2 tasks, 5 subtasks, 1 new project" shows before anything is created. Rows you skip stay in the list for later.
 
 ## v0.8.0 — Email signatures and templates
 Released October 24, 2026.

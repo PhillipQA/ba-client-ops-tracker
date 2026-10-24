@@ -6,7 +6,13 @@ import type { WorkItem } from './types'
 import ClientSelect from './ClientSelect'
 
 /** What a tracker needs to create tasks and subtasks. They are saved with the rest of the workspace. */
-export type TaskDraft = { title: string; clientId: string; projectId: string; parentTaskId?: string }
+export type TaskDraft = {
+  title: string; clientId: string; projectId: string; parentTaskId?: string
+  /** A project to create (by name) for this task; an existing project with the same name is used instead. */
+  newProjectName?: string
+  /** A subtask of a task created earlier in the same batch: the index of that draft. */
+  parentIndex?: number
+}
 export type WorkTools = {
   items: WorkItem[]
   clients: { id: string; name: string }[]

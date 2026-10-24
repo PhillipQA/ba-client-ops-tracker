@@ -13,7 +13,10 @@ import { defaultWaitingOn } from '../../src/waitingOn'
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 const CALLBACK = '/api/communications/gmail/callback'
 const COOKIE = 'ba_gmail_oauth'
-const oauthStates = new Map<string, { token: string; userId: string; tenantId: string; verifier: string; cookie: string; revision: string; expires: number; send?: boolean }>()
+const oauthStates = new Map<string, { token: string; userId: string; tenantId: string; verifier: string; cookie: string; revision: string; expires: number; send?: boolean; sheets?: boolean }>()
+/** Reading Google Sheets for connected trackers: the sheets' values, and the list of sheets a person can open (theirs, shared with them, shared drives). */
+export const SHEETS_READ_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+export const DRIVE_LIST_SCOPE = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 const gmailKind = 'gmail-refresh' as const
 type GmailCredentials = { clientId: string; clientSecret: string; redirectUri: string }
 const google = async (url: string, init: RequestInit, timeout = 20000) => {
@@ -312,11 +315,12 @@ export function registerCommunications(app: Express, deps: {
     for(const [key,value] of oauthStates) if(value.userId===user.id && value.tenantId===user.organizationId) oauthStates.delete(key)
     if(oauthStates.size>1000) throw new IntegrationError('Too many pending Gmail connections. Try again shortly.',429)
     // Sending is opt-in (?send=1). A plain reconnect keeps it if the person had already allowed it, so reconnecting never drops it.
-    let send=req.query.send==='1'
-    if(!send) { try { send=hasScope((await accessGrant(req)).scope,SEND_SCOPE) } catch { /* Not connected yet, or the old token no longer works. */ } }
-    oauthStates.set(state,{token:session.token,userId:user.id,tenantId:user.organizationId,verifier,cookie,revision:config.row.revision,expires:Date.now()+600000,send})
+    // Google Sheets (for connected trackers) works the same way: asked for with ?sheets=1 and kept on a plain reconnect.
+    let send=req.query.send==='1',sheets=req.query.sheets==='1'
+    if(!send || !sheets) { try { const scope=(await accessGrant(req)).scope; send ||= hasScope(scope,SEND_SCOPE); sheets ||= hasScope(scope,SHEETS_READ_SCOPE) } catch { /* Not connected yet, or the old token no longer works. */ } }
+    oauthStates.set(state,{token:session.token,userId:user.id,tenantId:user.organizationId,verifier,cookie,revision:config.row.revision,expires:Date.now()+600000,send,sheets:req.query.sheets==='1' ? true : sheets ? undefined : false})
     res.cookie(COOKIE,cookie,{httpOnly:true,secure:origin(req).startsWith('https:'),sameSite:'lax',path:CALLBACK,maxAge:600000})
-    const query=new URLSearchParams({client_id:config.credentials.clientId,redirect_uri:config.credentials.redirectUri,response_type:'code',scope:`${READ_SCOPE}${send?` ${SEND_SCOPE}`:''} https://www.googleapis.com/auth/userinfo.email`,access_type:'offline',prompt:'consent select_account',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
+    const query=new URLSearchParams({client_id:config.credentials.clientId,redirect_uri:config.credentials.redirectUri,response_type:'code',scope:`${READ_SCOPE}${send?` ${SEND_SCOPE}`:''}${sheets?` ${SHEETS_READ_SCOPE} ${DRIVE_LIST_SCOPE}`:''} https://www.googleapis.com/auth/userinfo.email`,access_type:'offline',prompt:'consent select_account',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
     res.json({url:`https://accounts.google.com/o/oauth2/v2/auth?${query}`})
   }))
   app.get(CALLBACK, async (req,res) => {
@@ -352,9 +356,11 @@ export function registerCommunications(app: Express, deps: {
         gmail_label_catalog:sameMailbox?previous?.gmail_label_catalog || []:[],updated_at:new Date().toISOString()},{onConflict:'tenant_id,user_id'})
       if(error) throw error
       // Google lets people untick individual permissions, so report what was actually granted.
-      result=saved.send ? (hasScope(grant.scope,SEND_SCOPE)?'send-enabled':'send-denied') : 'connected'
+      result=saved.sheets===true ? (hasScope(grant.scope,SHEETS_READ_SCOPE)?'sheets-enabled':'sheets-denied') : saved.send ? (hasScope(grant.scope,SEND_SCOPE)?'send-enabled':'send-denied') : 'connected'
     } catch { /* Never log authorization codes, tokens, or provider details. */ }
     res.clearCookie(COOKIE,{path:CALLBACK,httpOnly:true,sameSite:'lax'})
+    // Allowing Google Sheets starts from Trackers, so it returns there.
+    if(result.startsWith('sheets-')) return void res.redirect(303,`/#sheets=${result.slice('sheets-'.length)}`)
     res.redirect(303,`/#gmail=${result}`)
   })
   app.get('/api/communications/gmail/labels', ...auth, guard, gmailGate, wrap(async (req,res) => {
@@ -434,12 +440,17 @@ export function registerCommunications(app: Express, deps: {
   }))
   /** A fresh Gmail access token and the permissions it carries. */
   async function accessGrant(req: Request) {
-    const user=current(req),row=await settings(user.organizationId,user.id)
-    const config=await activeAccount(user.organizationId)
-    if(!row?.gmail_refresh_token || row.gmail_config_revision!==config.row.revision) throw new IntegrationError('Connect your Gmail account again. The account OAuth configuration changed.',409)
-    const refresh=decryptSecret(row.gmail_refresh_token,`${user.organizationId}:${user.id}`,gmailKind)
+    const user=current(req)
+    return grantFor(user.organizationId,user.id)
+  }
+  /** A fresh Google access token for one person, by account and user id (used by connected trackers, which sync as the person who connected them). */
+  async function grantFor(tenantId: string, userId: string) {
+    const row=await settings(tenantId,userId)
+    const config=await activeAccount(tenantId)
+    if(!row?.gmail_refresh_token || row.gmail_config_revision!==config.row.revision) throw new IntegrationError('Connect your Google account again in Work Hub. The account OAuth configuration changed.',409)
+    const refresh=decryptSecret(row.gmail_refresh_token,`${tenantId}:${userId}`,gmailKind)
     const grant=await google('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:config.credentials.clientId,client_secret:config.credentials.clientSecret,refresh_token:refresh,grant_type:'refresh_token'})})
-    return {token:String(grant.access_token),scope:String(grant.scope || '')}
+    return {token:String(grant.access_token),scope:String(grant.scope || ''),email:String(row.gmail_email || '')}
   }
   async function accessToken(req: Request) { return (await accessGrant(req)).token }
   // Sending email from the tracker: composer status and the send call. Needs Drive's file lookup for attachments.
@@ -448,6 +459,8 @@ export function registerCommunications(app: Express, deps: {
   registerGitlab(app,{db,requireAuth:deps.requireAuth,requireTenant:deps.requireTenant,guard,load:deps.load,commit:deps.commit,openStatus:deps.openStatus})
   const timer=setInterval(()=>{const now=Date.now();for(const [key,value] of oauthStates) if(value.expires<now) oauthStates.delete(key)},60000);timer.unref()
   return {
+    /** A Google access token for one person, and the permissions it carries. Connected trackers read Sheets with it. */
+    googleAccess: grantFor,
     /** Files a document into the shared Google Drive; used by DocHub when a signature completes. */
     driveFiler: drive.filer,
     async captureDiscord(message:any,tenantId:string) {
