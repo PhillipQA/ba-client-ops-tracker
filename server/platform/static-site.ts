@@ -14,12 +14,15 @@ import path from 'node:path'
 export function registerStaticSite(app: Express, dist: string) {
   const noCache = 'no-cache'
 
-  app.use('/assets', express.static(path.join(dist, 'assets'), {
-    immutable: true,
-    maxAge: '1y',
-    index: false,
-    fallthrough: false,
-  }))
+  app.use(
+    '/assets',
+    express.static(path.join(dist, 'assets'), {
+      immutable: true,
+      maxAge: '1y',
+      index: false,
+      fallthrough: false,
+    }),
+  )
   // fallthrough:false hands missing files to the error handler; answer with a plain 404 instead.
   app.use('/assets', ((err, _req, res, next) => {
     if (err?.status === 404 || err?.statusCode === 404) {
@@ -29,12 +32,14 @@ export function registerStaticSite(app: Express, dist: string) {
     next(err)
   }) as express.ErrorRequestHandler)
 
-  app.use(express.static(dist, {
-    index: false,
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', noCache)
-    },
-  }))
+  app.use(
+    express.static(dist, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) res.setHeader('Cache-Control', noCache)
+      },
+    }),
+  )
 
   app.get('*', (_req, res) => {
     res.setHeader('Cache-Control', noCache)

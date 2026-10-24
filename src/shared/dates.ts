@@ -1,5 +1,5 @@
 import { businessDateKey } from './businessDate'
-import { type PlannerActivity } from './types'
+import type { PlannerActivity } from './types'
 
 export function localDateKey(date: Date) {
   const yyyy = date.getFullYear()
@@ -15,9 +15,11 @@ export function todayOrLater(date: string) {
 export function niceDate(date: string) {
   if (!date) return '—'
   const [year, month, day] = date.split('-').map(Number)
-  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: year === new Date().getFullYear() ? undefined : 'numeric' }).format(
-    new Date(Date.UTC(year, month - 1, day)),
-  )
+  return new Intl.DateTimeFormat('en', {
+    month: 'short',
+    day: 'numeric',
+    year: year === new Date().getFullYear() ? undefined : 'numeric',
+  }).format(new Date(Date.UTC(year, month - 1, day)))
 }
 
 export function dateFromKey(date: string) {

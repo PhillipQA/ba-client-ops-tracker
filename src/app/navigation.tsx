@@ -1,7 +1,33 @@
-import { type AppModule, type Priority } from '../shared/types'
-import { Archive, BarChart3, BriefcaseBusiness, Columns3, FileText, Inbox, LayoutDashboard, Settings2, Sparkles, Table2, Users } from 'lucide-react'
+import type { AppModule, Priority } from '../shared/types'
+import {
+  Archive,
+  BarChart3,
+  BriefcaseBusiness,
+  Columns3,
+  FileText,
+  Inbox,
+  LayoutDashboard,
+  Settings2,
+  Sparkles,
+  Table2,
+  Users,
+} from 'lucide-react'
 
-export type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'trackers' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
+export type View =
+  | 'action'
+  | 'clients'
+  | 'projects'
+  | 'inbox'
+  | 'items'
+  | 'documents'
+  | 'requirements'
+  | 'trackers'
+  | 'reports'
+  | 'ai'
+  | 'settings'
+  | 'internal-admin'
+  | 'users'
+  | 'themes'
 
 export type ClientLayout = 'tiles' | 'list' | 'table'
 

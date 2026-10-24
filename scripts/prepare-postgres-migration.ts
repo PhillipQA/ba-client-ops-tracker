@@ -9,7 +9,8 @@ const adminUrl = new URL(adminUri)
 if (appUrl.host !== adminUrl.host || appUrl.pathname !== adminUrl.pathname) {
   throw new Error('The app and admin connection strings must point to the same Northflank database.')
 }
-if (appUrl.username === adminUrl.username) throw new Error('Use the separate POSTGRES_URI_ADMIN connection for PG_ADMIN_URL.')
+if (appUrl.username === adminUrl.username)
+  throw new Error('Use the separate POSTGRES_URI_ADMIN connection for PG_ADMIN_URL.')
 
 const quote = (name: string) => `"${name.replace(/"/g, '""')}"`
 const app = new pg.Client({ connectionString: appUri })
@@ -50,7 +51,8 @@ try {
     for (const signature of [
       'public.save_tenant_state_v6(uuid,jsonb,jsonb,jsonb,text,text)',
       'public.save_tenant_state_v16(uuid,jsonb,timestamptz,jsonb,jsonb,text,text)',
-    ]) await admin.query(`grant execute on function ${signature} to ${quote(appRole)}`)
+    ])
+      await admin.query(`grant execute on function ${signature} to ${quote(appRole)}`)
     const optional = [
       'public.issue_password_reset_v7(text,text,text,text)',
       'public.redeem_password_reset_v7(text,text)',

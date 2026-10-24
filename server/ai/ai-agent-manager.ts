@@ -13,15 +13,18 @@ import {
 
 export type AiAgentId = 'ba_assistant' | 'document'
 
-export const AI_AGENT_DEFINITIONS: Record<AiAgentId, {
-  id: AiAgentId
-  name: string
-  shortName: string
-  description: string
-  defaultConfig: { provider: AiProvider; model: string }
-  responsibilities: string[]
-  context: string[]
-}> = {
+export const AI_AGENT_DEFINITIONS: Record<
+  AiAgentId,
+  {
+    id: AiAgentId
+    name: string
+    shortName: string
+    description: string
+    defaultConfig: { provider: AiProvider; model: string }
+    responsibilities: string[]
+    context: string[]
+  }
+> = {
   ba_assistant: {
     id: 'ba_assistant',
     name: 'BA Assistant',
@@ -35,9 +38,17 @@ export const AI_AGENT_DEFINITIONS: Record<AiAgentId, {
     id: 'document',
     name: 'Document Agent',
     shortName: 'Document Agent',
-    description: 'Dedicated document-generation agent for requirements extraction, BRD/FSD creation and document validation.',
+    description:
+      'Dedicated document-generation agent for requirements extraction, BRD/FSD creation and document validation.',
     defaultConfig: { provider: 'openai', model: 'gpt-5.6-terra' },
-    responsibilities: ['Extract requirements', 'Draft BRD', 'Build FSD', 'Validate FSD', 'Generate test coverage', 'Map RTM sources'],
+    responsibilities: [
+      'Extract requirements',
+      'Draft BRD',
+      'Build FSD',
+      'Validate FSD',
+      'Generate test coverage',
+      'Map RTM sources',
+    ],
     context: ['Uploaded requirement sources', 'Document details', 'Selected presets', 'Template structure'],
   },
 }
@@ -68,12 +79,19 @@ function decryptAgentSecret(value: string, tenantId: string, agentId: AiAgentId,
     decipher.setAuthTag(Buffer.from(tag, 'base64'))
     return Buffer.concat([decipher.update(Buffer.from(body, 'base64')), decipher.final()]).toString('utf8')
   } catch {
-    throw new IntegrationError('Stored AI agent credential could not be decrypted. Restore the original master key or replace this credential.', 503)
+    throw new IntegrationError(
+      'Stored AI agent credential could not be decrypted. Restore the original master key or replace this credential.',
+      503,
+    )
   }
 }
 
 function missingAgentTable(error: any) {
-  return error?.code === '42P01' || /tenant_ai_agents/i.test(String(error?.message || '')) && /does not exist|schema cache|not found/i.test(String(error?.message || ''))
+  return (
+    error?.code === '42P01' ||
+    (/tenant_ai_agents/i.test(String(error?.message || '')) &&
+      /does not exist|schema cache|not found/i.test(String(error?.message || '')))
+  )
 }
 
 export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIntegrationStore>) {
@@ -83,9 +101,18 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
   }
 
   async function dedicatedRow(tenantId: string, agentId: AiAgentId) {
-    const { data, error } = await database().from('tenant_ai_agents').select('*').eq('tenant_id', tenantId).eq('agent_id', agentId).maybeSingle()
+    const { data, error } = await database()
+      .from('tenant_ai_agents')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('agent_id', agentId)
+      .maybeSingle()
     if (error && missingAgentTable(error)) return { row: null, schemaReady: false }
-    if (error) throw new IntegrationError('AI Agent storage is unavailable. Check Supabase and apply schema-v11-ai-agent-manager.sql.', 503)
+    if (error)
+      throw new IntegrationError(
+        'AI Agent storage is unavailable. Check Supabase and apply schema-v11-ai-agent-manager.sql.',
+        503,
+      )
     return { row: data, schemaReady: true }
   }
 
@@ -115,7 +142,11 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
     }
 
     let legacyRow: any = null
-    try { legacyRow = await legacy.row(tenantId, 'openai') } catch { /* surfaced by integrations status elsewhere */ }
+    try {
+      legacyRow = await legacy.row(tenantId, 'openai')
+    } catch {
+      /* surfaced by integrations status elsewhere */
+    }
     if (legacyRow) {
       return {
         ...definition,
@@ -160,17 +191,25 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
   }
 
   async function save(tenantId: string, agentId: AiAgentId, input: any) {
-    if (!await schemaReady()) throw new IntegrationError('Apply supabase/schema-v11-ai-agent-manager.sql before saving separate AI agents.', 503)
+    if (!(await schemaReady()))
+      throw new IntegrationError(
+        'Apply supabase/schema-v11-ai-agent-manager.sql before saving separate AI agents.',
+        503,
+      )
     const definition = AI_AGENT_DEFINITIONS[agentId]
     const current = await dedicatedRow(tenantId, agentId)
     const previous = current.row
-    const config = normalizeAiConfig(input?.config || (previous ? { provider: previous.provider, model: previous.model } : definition.defaultConfig))
+    const config = normalizeAiConfig(
+      input?.config || (previous ? { provider: previous.provider, model: previous.model } : definition.defaultConfig),
+    )
     let secret = typeof input?.secret === 'string' ? input.secret.trim() : ''
-    if (secret && (secret.length < 20 || secret.length > 4096 || /\s/.test(secret))) throw new IntegrationError('The AI provider credential format is invalid.')
+    if (secret && (secret.length < 20 || secret.length > 4096 || /\s/.test(secret)))
+      throw new IntegrationError('The AI provider credential format is invalid.')
 
     if (!secret && previous) {
       const previousConfig = normalizeAiConfig({ provider: previous.provider, model: previous.model })
-      if (previousConfig.provider !== config.provider) throw new IntegrationError('Changing AI provider requires that provider’s API key.')
+      if (previousConfig.provider !== config.provider)
+        throw new IntegrationError('Changing AI provider requires that provider’s API key.')
       secret = decryptAgentSecret(previous.encrypted_secret, tenantId, agentId)
     }
 
@@ -178,7 +217,8 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
       const inherited = await legacy.active(tenantId, 'openai')
       if (!inherited) throw new IntegrationError('Enter an API key for this AI agent.')
       const inheritedConfig = normalizeAiConfig(inherited.config)
-      if (inheritedConfig.provider !== config.provider) throw new IntegrationError('Changing from the inherited AI provider requires the new provider’s API key.')
+      if (inheritedConfig.provider !== config.provider)
+        throw new IntegrationError('Changing from the inherited AI provider requires the new provider’s API key.')
       secret = inherited.secret
     }
 
@@ -190,19 +230,24 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
       model: config.model,
       encrypted_secret: encryptAgentSecret(secret, tenantId, agentId),
       secret_suffix: secret.slice(-4),
-      is_enabled: typeof input?.enabled === 'boolean' ? input.enabled : previous?.is_enabled ?? true,
+      is_enabled: typeof input?.enabled === 'boolean' ? input.enabled : (previous?.is_enabled ?? true),
       connection_status: 'untested',
       last_tested_at: null,
       updated_at: now,
     }
     const { error } = await database().from('tenant_ai_agents').upsert(record, { onConflict: 'tenant_id,agent_id' })
-    if (error) throw new IntegrationError('Could not save this AI agent. Apply schema-v11-ai-agent-manager.sql and retry.', 503)
+    if (error)
+      throw new IntegrationError('Could not save this AI agent. Apply schema-v11-ai-agent-manager.sql and retry.', 503)
     return summary(tenantId, agentId)
   }
 
   async function remove(tenantId: string, agentId: AiAgentId) {
-    if (!await schemaReady()) throw new IntegrationError('AI Agent storage is not installed.', 503)
-    const { error } = await database().from('tenant_ai_agents').delete().eq('tenant_id', tenantId).eq('agent_id', agentId)
+    if (!(await schemaReady())) throw new IntegrationError('AI Agent storage is not installed.', 503)
+    const { error } = await database()
+      .from('tenant_ai_agents')
+      .delete()
+      .eq('tenant_id', tenantId)
+      .eq('agent_id', agentId)
     if (error) throw new IntegrationError('Could not remove the AI agent configuration.', 503)
   }
 
@@ -224,23 +269,35 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
       if (ai.provider === 'anthropic') {
         const response = await fetch(`https://api.anthropic.com/v1/models/${encodeURIComponent(ai.model)}`, {
           headers: { 'x-api-key': secret, 'anthropic-version': '2023-06-01' },
-          signal: AbortSignal.timeout(15000), redirect: 'error',
+          signal: AbortSignal.timeout(15000),
+          redirect: 'error',
         })
         ok = response.ok
       } else if (ai.provider === 'deepseek') {
-        const models = await ai.client.models.list(); ok = models.data.some(model => model.id === ai.model)
+        const models = await ai.client.models.list()
+        ok = models.data.some(model => model.id === ai.model)
       } else {
-        await ai.client.models.retrieve(ai.model); ok = true
+        await ai.client.models.retrieve(ai.model)
+        ok = true
       }
-    } catch { ok = false }
+    } catch {
+      ok = false
+    }
 
     const testedAt = new Date().toISOString()
-    const { error } = await database().from('tenant_ai_agents').update({ connection_status: ok ? 'verified' : 'failed', last_tested_at: testedAt })
-      .eq('tenant_id', tenantId).eq('agent_id', agentId).eq('updated_at', record.updated_at).eq('encrypted_secret', record.encrypted_secret)
+    const { error } = await database()
+      .from('tenant_ai_agents')
+      .update({ connection_status: ok ? 'verified' : 'failed', last_tested_at: testedAt })
+      .eq('tenant_id', tenantId)
+      .eq('agent_id', agentId)
+      .eq('updated_at', record.updated_at)
+      .eq('encrypted_secret', record.encrypted_secret)
     if (error) throw new IntegrationError('Could not update the AI agent connection status.', 503)
     return {
       ok,
-      message: ok ? `${AI_AGENT_DEFINITIONS[agentId].name}: ${aiProviderName(config)} credential and ${config.model} access verified.` : `${AI_AGENT_DEFINITIONS[agentId].name} connection test failed. Check the API key, provider, model access, quota, and network connection.`,
+      message: ok
+        ? `${AI_AGENT_DEFINITIONS[agentId].name}: ${aiProviderName(config)} credential and ${config.model} access verified.`
+        : `${AI_AGENT_DEFINITIONS[agentId].name} connection test failed. Check the API key, provider, model access, quota, and network connection.`,
     }
   }
 
@@ -249,37 +306,87 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 
-export function registerAiAgentRoutes(app: Express, deps: {
-  requireAuth: Middleware
-  requireTenant: Middleware
-  organizationById: (id: string) => Promise<any>
-  manager: ReturnType<typeof createAiAgentManager>
-}) {
+export function registerAiAgentRoutes(
+  app: Express,
+  deps: {
+    requireAuth: Middleware
+    requireTenant: Middleware
+    organizationById: (id: string) => Promise<any>
+    manager: ReturnType<typeof createAiAgentManager>
+  },
+) {
   const guard: Middleware = async (req, res, next) => {
     try {
       const user = (req as any).authUser
       const org = await deps.organizationById(user.organizationId)
       if (!org || org.status !== 'Active') return void res.status(403).json({ error: 'This account is unavailable.' })
-      if (user.role !== 'Administrator' || !user.modules.includes('settings')) return void res.status(403).json({ error: 'Account administrator with Settings access is required.' })
+      if (user.role !== 'Administrator' || !user.modules.includes('settings'))
+        return void res.status(403).json({ error: 'Account administrator with Settings access is required.' })
       res.setHeader('Cache-Control', 'no-store')
       next()
-    } catch { res.status(503).json({ error: 'AI Agent settings are unavailable.' }) }
+    } catch {
+      res.status(503).json({ error: 'AI Agent settings are unavailable.' })
+    }
   }
-  const wrap = (fn: (req: Request, res: Response) => Promise<any>): Middleware => async (req, res) => {
-    try { await fn(req, res) } catch (e) { res.status(e instanceof IntegrationError ? e.status : 503).json({ error: e instanceof IntegrationError ? e.message : 'Could not complete AI Agent settings.' }) }
-  }
-  const limiter = rateLimit({ windowMs: 60000, limit: 60, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many settings requests. Wait a minute and retry.' } })
+  const wrap =
+    (fn: (req: Request, res: Response) => Promise<any>): Middleware =>
+    async (req, res) => {
+      try {
+        await fn(req, res)
+      } catch (e) {
+        res
+          .status(e instanceof IntegrationError ? e.status : 503)
+          .json({ error: e instanceof IntegrationError ? e.message : 'Could not complete AI Agent settings.' })
+      }
+    }
+  const limiter = rateLimit({
+    windowMs: 60000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many settings requests. Wait a minute and retry.' },
+  })
   const scope = [deps.requireAuth, deps.requireTenant, guard, limiter]
   const tenant = (req: Request) => (req as any).authUser.organizationId as string
   const agent = (req: Request) => validAgentId(req.params.agentId)
 
-  app.get('/api/account/ai-agents', ...scope, wrap(async (req, res) => {
-    const id = tenant(req)
-    const agents = await Promise.all((Object.keys(AI_AGENT_DEFINITIONS) as AiAgentId[]).map(agentId => deps.manager.summary(id, agentId)))
-    let encryptionReady = true; try { encryptionKey() } catch { encryptionReady = false }
-    res.json({ agents, schemaReady: agents.every(item => item.schemaReady), encryptionReady })
-  }))
-  app.put('/api/account/ai-agents/:agentId', ...scope, wrap(async (req, res) => { res.json(await deps.manager.save(tenant(req), agent(req), req.body || {})) }))
-  app.delete('/api/account/ai-agents/:agentId', ...scope, wrap(async (req, res) => { await deps.manager.remove(tenant(req), agent(req)); res.json({ ok: true }) }))
-  app.post('/api/account/ai-agents/:agentId/test', ...scope, wrap(async (req, res) => { res.json(await deps.manager.test(tenant(req), agent(req))) }))
+  app.get(
+    '/api/account/ai-agents',
+    ...scope,
+    wrap(async (req, res) => {
+      const id = tenant(req)
+      const agents = await Promise.all(
+        (Object.keys(AI_AGENT_DEFINITIONS) as AiAgentId[]).map(agentId => deps.manager.summary(id, agentId)),
+      )
+      let encryptionReady = true
+      try {
+        encryptionKey()
+      } catch {
+        encryptionReady = false
+      }
+      res.json({ agents, schemaReady: agents.every(item => item.schemaReady), encryptionReady })
+    }),
+  )
+  app.put(
+    '/api/account/ai-agents/:agentId',
+    ...scope,
+    wrap(async (req, res) => {
+      res.json(await deps.manager.save(tenant(req), agent(req), req.body || {}))
+    }),
+  )
+  app.delete(
+    '/api/account/ai-agents/:agentId',
+    ...scope,
+    wrap(async (req, res) => {
+      await deps.manager.remove(tenant(req), agent(req))
+      res.json({ ok: true })
+    }),
+  )
+  app.post(
+    '/api/account/ai-agents/:agentId/test',
+    ...scope,
+    wrap(async (req, res) => {
+      res.json(await deps.manager.test(tenant(req), agent(req)))
+    }),
+  )
 }

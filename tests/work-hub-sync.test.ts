@@ -3,16 +3,45 @@ import { test } from 'node:test'
 import { createWorkHubSync, WORK_HUB_INTEGRATIONS } from '../src/features/work-hub/workHubSync'
 import type { AuthUser } from '../src/features/accounts/auth'
 
-const user: AuthUser = { id: 'alice', organizationId: 'tenant-a', username: 'alice', name: 'Alice', email: '', phone: '', role: 'Contributor', status: 'Active', modules: ['inbox', 'items'], accountType: 'tenant', lastLoginAt: '2026-10-08T02:00:00Z' }
-const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
+const user: AuthUser = {
+  id: 'alice',
+  organizationId: 'tenant-a',
+  username: 'alice',
+  name: 'Alice',
+  email: '',
+  phone: '',
+  role: 'Contributor',
+  status: 'Active',
+  modules: ['inbox', 'items'],
+  accountType: 'tenant',
+  lastLoginAt: '2026-10-08T02:00:00Z',
+}
+const settle = async () => {
+  for (let i = 0; i < 20; i++) await Promise.resolve()
+}
+const json = (value: unknown, status = 200) =>
+  new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
 function fixture() {
   const saved = new Map<string, string>()
-  const storage = { getItem: (key: string) => saved.get(key) || null, setItem: (key: string, value: string) => { saved.set(key, value) } }
+  const storage = {
+    getItem: (key: string) => saved.get(key) || null,
+    setItem: (key: string, value: string) => {
+      saved.set(key, value)
+    },
+  }
   const calls: { url: string; method: string; signal?: AbortSignal | null }[] = []
-  const connections = { github: { connected: true, repositories: [{ fullName: 'acme/app' }] }, gitlab: { connected: true, repositories: [{ fullName: 'acme/app' }] } }
-  const settings = { gmailConnected: true, gmailAvailable: true, gmailLabels: ['INBOX'], discordUserId: '123456789012345678' }
-  const failures = new Map<string, number>(), gates = new Map<string, Promise<void>>()
+  const connections = {
+    github: { connected: true, repositories: [{ fullName: 'acme/app' }] },
+    gitlab: { connected: true, repositories: [{ fullName: 'acme/app' }] },
+  }
+  const settings = {
+    gmailConnected: true,
+    gmailAvailable: true,
+    gmailLabels: ['INBOX'],
+    discordUserId: '123456789012345678',
+  }
+  const failures = new Map<string, number>(),
+    gates = new Map<string, Promise<void>>()
   let hasMore = false
   const request = async (url: string, init: RequestInit) => {
     calls.push({ url, method: init.method || 'GET', signal: init.signal })
@@ -20,18 +49,38 @@ function fixture() {
     if (failures.has(url)) return json({ error: 'Provider unavailable.' }, failures.get(url))
     if (url === '/api/communications/settings') return json(settings)
     if (url.endsWith('/connection')) return json(url.includes('/github/') ? connections.github : connections.gitlab)
-    if (url.endsWith('/sync')) { assert.deepEqual(JSON.parse(String(init.body)), { auto: false }); return json({ imported: 2, updated: 1, hasMore }) }
+    if (url.endsWith('/sync')) {
+      assert.deepEqual(JSON.parse(String(init.body)), { auto: false })
+      return json({ imported: 2, updated: 1, hasMore })
+    }
     return json({ items: [{ id: String(calls.length) }], total: 1 })
   }
   const hub = createWorkHubSync({ request, storage })
   const syncs = () => calls.filter(call => call.method === 'POST').map(call => call.url)
-  return { hub, request, storage, calls, syncs, connections, settings, failures, gates, setHasMore: (value: boolean) => { hasMore = value } }
+  return {
+    hub,
+    request,
+    storage,
+    calls,
+    syncs,
+    connections,
+    settings,
+    failures,
+    gates,
+    setHasMore: (value: boolean) => {
+      hasMore = value
+    },
+  }
 }
 
 test('login syncs every connected integration once; session checks do not repeat it', async () => {
   const f = fixture()
   await f.hub.setSession(user, true)
-  assert.deepEqual(f.syncs().sort(), ['/api/communications/gmail/sync', '/api/work-hub/github/sync', '/api/work-hub/gitlab/sync'])
+  assert.deepEqual(f.syncs().sort(), [
+    '/api/communications/gmail/sync',
+    '/api/work-hub/github/sync',
+    '/api/work-hub/gitlab/sync',
+  ])
   assert.equal(f.calls.filter(c => c.url === '/api/communications/settings').length, 1)
   assert.equal(f.calls.filter(c => c.url.includes('tab=Discord')).length, 1)
   for (const id of WORK_HUB_INTEGRATIONS) assert.equal(f.hub.getSnapshot().integrations[id].phase, 'success')
@@ -66,19 +115,28 @@ test('Refresh now syncs all connected integrations again', async () => {
   for (const id of WORK_HUB_INTEGRATIONS) assert.equal(f.hub.getSnapshot().integrations[id].revision, 2)
 })
 
-for (const source of WORK_HUB_INTEGRATIONS) test(`Sync ${source} leaves other integrations and their cached data alone`, async () => {
-  const f = fixture()
-  await f.hub.setSession(user, true)
-  const unrelated = source === 'gitlab' ? 'github' : 'gitlab'
-  const url = `/api/work-hub/${unrelated}/tickets?page=2`
-  const cached = await f.hub.read(unrelated, url)
-  f.calls.length = 0
-  await f.hub.syncOne(source)
-  assert.deepEqual(await f.hub.read(unrelated, url), cached)
-  assert.ok(f.calls.every(c => source === 'gmail' ? c.url.startsWith('/api/communications') && !c.url.includes('tab=Discord') : source === 'discord' ? c.url === '/api/communications/settings' || c.url.includes('tab=Discord') : c.url.startsWith(`/api/work-hub/${source}/`)))
-  assert.equal(f.syncs().length, source === 'discord' ? 0 : 1)
-  assert.equal(f.hub.getSnapshot().integrations[unrelated].revision, 1)
-})
+for (const source of WORK_HUB_INTEGRATIONS)
+  test(`Sync ${source} leaves other integrations and their cached data alone`, async () => {
+    const f = fixture()
+    await f.hub.setSession(user, true)
+    const unrelated = source === 'gitlab' ? 'github' : 'gitlab'
+    const url = `/api/work-hub/${unrelated}/tickets?page=2`
+    const cached = await f.hub.read(unrelated, url)
+    f.calls.length = 0
+    await f.hub.syncOne(source)
+    assert.deepEqual(await f.hub.read(unrelated, url), cached)
+    assert.ok(
+      f.calls.every(c =>
+        source === 'gmail'
+          ? c.url.startsWith('/api/communications') && !c.url.includes('tab=Discord')
+          : source === 'discord'
+            ? c.url === '/api/communications/settings' || c.url.includes('tab=Discord')
+            : c.url.startsWith(`/api/work-hub/${source}/`),
+      ),
+    )
+    assert.equal(f.syncs().length, source === 'discord' ? 0 : 1)
+    assert.equal(f.hub.getSnapshot().integrations[unrelated].revision, 1)
+  })
 
 test('disconnected integrations and integrations with no selected scope are skipped', async () => {
   const f = fixture()
@@ -115,7 +173,12 @@ test('overlapping all-source and individual requests share one job per integrati
   await f.hub.setSession(user, true)
   f.calls.length = 0
   let release!: () => void
-  f.gates.set('/api/work-hub/gitlab/sync', new Promise(resolve => { release = resolve }))
+  f.gates.set(
+    '/api/work-hub/gitlab/sync',
+    new Promise(resolve => {
+      release = resolve
+    }),
+  )
   const one = f.hub.syncOne('gitlab')
   assert.equal(f.hub.syncOne('gitlab'), one)
   const all = f.hub.syncAll()
@@ -133,14 +196,20 @@ test('sign-out aborts work and prevents late responses or cached content crossin
   const url = '/api/work-hub/gitlab/tickets?page=2'
   await f.hub.read('gitlab', url)
   let release!: () => void
-  f.gates.set('/api/work-hub/gitlab/sync', new Promise(resolve => { release = resolve }))
+  f.gates.set(
+    '/api/work-hub/gitlab/sync',
+    new Promise(resolve => {
+      release = resolve
+    }),
+  )
   const pending = f.hub.syncOne('gitlab')
   await settle()
   const signal = f.calls.findLast(c => c.url === '/api/work-hub/gitlab/sync')!.signal!
   await f.hub.setSession(null)
   assert.equal(signal.aborted, true)
   assert.equal(f.hub.peek('gitlab', url), undefined)
-  release(); await pending
+  release()
+  await pending
   assert.equal(f.hub.getSnapshot().integrations.gitlab.phase, 'idle')
   f.gates.clear()
   await f.hub.setSession({ ...user, id: 'bob', organizationId: 'tenant-b' }, true)
@@ -167,9 +236,18 @@ test('tabs and filters reuse saved pages; cancelling one view does not cancel an
 })
 
 test('a stale read cannot overwrite a refreshed source cache', async () => {
-  let release!: () => void, requests = 0
-  const gate = new Promise<void>(resolve => { release = resolve })
-  const hub = createWorkHubSync({ request: async () => { const value = ++requests; if (value === 1) await gate; return json({ value }) } })
+  let release!: () => void,
+    requests = 0
+  const gate = new Promise<void>(resolve => {
+    release = resolve
+  })
+  const hub = createWorkHubSync({
+    request: async () => {
+      const value = ++requests
+      if (value === 1) await gate
+      return json({ value })
+    },
+  })
   const old = hub.read('gmail', '/page')
   hub.invalidate('gmail')
   assert.deepEqual(await hub.read('gmail', '/page'), { value: 2 })
@@ -181,7 +259,11 @@ test('a stale read cannot overwrite a refreshed source cache', async () => {
 
 test('users without Work Hub and Internal Admin never fetch integration data', async () => {
   const f = fixture()
-  for (const account of [{ ...user, modules: [] }, { ...user, accountType: 'platform' as const }, { ...user, status: 'Disabled' as const }]) {
+  for (const account of [
+    { ...user, modules: [] },
+    { ...user, accountType: 'platform' as const },
+    { ...user, status: 'Disabled' as const },
+  ]) {
     await f.hub.setSession(account, true)
     await f.hub.syncAll()
     await f.hub.syncOne('gmail')

@@ -5,9 +5,30 @@ export type ItemType = 'Task' | 'Requirement' | 'Issue' | 'Inquiry' | 'Decision'
 export type WaitingOn = string
 export type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
 export type UserRole = 'Administrator' | 'Contributor' | 'Viewer'
-export type AppModule = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'trackers' | 'reports' | 'ai' | 'settings'
+export type AppModule =
+  | 'action'
+  | 'clients'
+  | 'projects'
+  | 'inbox'
+  | 'items'
+  | 'documents'
+  | 'requirements'
+  | 'trackers'
+  | 'reports'
+  | 'ai'
+  | 'settings'
 
-export type TaskColumnKey = 'status' | 'client' | 'project' | 'type' | 'waitingOn' | 'priority' | 'owner' | 'startDate' | 'dueDate' | 'followUpDate'
+export type TaskColumnKey =
+  | 'status'
+  | 'client'
+  | 'project'
+  | 'type'
+  | 'waitingOn'
+  | 'priority'
+  | 'owner'
+  | 'startDate'
+  | 'dueDate'
+  | 'followUpDate'
 
 export interface TaskStatusDefinition {
   id: string
@@ -126,7 +147,20 @@ export interface WorkItem {
   comments?: TaskComment[]
 }
 
-export type WorkActivityAction = 'created' | 'assigned' | 'reassigned' | 'started' | 'status_changed' | 'updated' | 'completed' | 'reopened' | 'deleted' | 'evidence_uploaded' | 'evidence_deleted' | 'follow_up_auto_moved' | 'comment_added'
+export type WorkActivityAction =
+  | 'created'
+  | 'assigned'
+  | 'reassigned'
+  | 'started'
+  | 'status_changed'
+  | 'updated'
+  | 'completed'
+  | 'reopened'
+  | 'deleted'
+  | 'evidence_uploaded'
+  | 'evidence_deleted'
+  | 'follow_up_auto_moved'
+  | 'comment_added'
 
 export interface WorkActivityEvent {
   id: string
@@ -150,7 +184,18 @@ export interface WorkActivityEvent {
   newValue?: string
 }
 
-export type NotificationType = 'signature_completed' | 'assigned' | 'reassigned' | 'due_today' | 'overdue' | 'follow_up_today' | 'follow_up_moved' | 'completed' | 'reopened' | 'evidence_uploaded' | 'comment_added'
+export type NotificationType =
+  | 'signature_completed'
+  | 'assigned'
+  | 'reassigned'
+  | 'due_today'
+  | 'overdue'
+  | 'follow_up_today'
+  | 'follow_up_moved'
+  | 'completed'
+  | 'reopened'
+  | 'evidence_uploaded'
+  | 'comment_added'
 export type NotificationSeverity = 'info' | 'warning' | 'urgent' | 'success'
 
 export interface AppNotification {

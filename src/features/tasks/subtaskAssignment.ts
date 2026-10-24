@@ -8,17 +8,15 @@ export interface AssignmentItem {
 const assignmentId = (item?: AssignmentItem) => String(item?.assignedToUserId || '')
 
 const followsParent = (item: AssignmentItem, parent?: AssignmentItem) =>
-  typeof item.assignmentInherited === 'boolean'
-    ? item.assignmentInherited
-    : assignmentId(item) === assignmentId(parent)
+  typeof item.assignmentInherited === 'boolean' ? item.assignmentInherited : assignmentId(item) === assignmentId(parent)
 
 /**
  * Adds an explicit inheritance marker to legacy subtasks. Legacy subtasks that
  * already differ from their parent are treated as manual overrides.
  */
 export function normalizeSubtaskAssignmentInheritance<T extends AssignmentItem>(items: readonly T[]): T[] {
-  const byId = new Map(items.map((item) => [String(item.id), item]))
-  return items.map((item) => {
+  const byId = new Map(items.map(item => [String(item.id), item]))
+  return items.map(item => {
     if (!item.parentTaskId) return { ...item, assignmentInherited: undefined }
     const parent = byId.get(String(item.parentTaskId))
     if (!parent) return { ...item, assignmentInherited: false }
@@ -37,10 +35,10 @@ export function applySubtaskAssignmentInheritance<T extends AssignmentItem>(
   currentItems: readonly T[],
   incomingItems: readonly T[],
 ): T[] {
-  const currentById = new Map(currentItems.map((item) => [String(item.id), item]))
-  const incomingById = new Map(incomingItems.map((item) => [String(item.id), item]))
+  const currentById = new Map(currentItems.map(item => [String(item.id), item]))
+  const incomingById = new Map(incomingItems.map(item => [String(item.id), item]))
 
-  return incomingItems.map((item) => {
+  return incomingItems.map(item => {
     if (!item.parentTaskId) return { ...item, assignmentInherited: undefined }
 
     const nextParent = incomingById.get(String(item.parentTaskId))

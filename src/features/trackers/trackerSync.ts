@@ -21,7 +21,13 @@ export const tabRange = (tab: string) => `'${tab.replace(/'/g, "''")}'`
 /** Headers as people see them, cleaned for matching. */
 const headerKey = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase()
 
-export type SyncRow = { id: string; sourceKey: string; data: Record<string, Cell>; values: Record<string, string>; missing: boolean }
+export type SyncRow = {
+  id: string
+  sourceKey: string
+  data: Record<string, Cell>
+  values: Record<string, string>
+  missing: boolean
+}
 export type SyncPlan = {
   /** Columns with any Select options the Sheet added. */
   columns: TrackerColumn[]
@@ -39,23 +45,39 @@ export type SyncPlan = {
  * Only columns in `headerMap` are written; every other column, and tasks and links, are left alone.
  */
 export function planSync(input: {
-  grid: string[][]; keyHeader: string; headerMap: Record<string, string>; columns: TrackerColumn[]; rows: SyncRow[]
-  people: Person[]; today: string; capacity: number
+  grid: string[][]
+  keyHeader: string
+  headerMap: Record<string, string>
+  columns: TrackerColumn[]
+  rows: SyncRow[]
+  people: Person[]
+  today: string
+  capacity: number
 }): SyncPlan | { error: string } {
   const [rawHeaders = [], ...body] = input.grid
   const headers = rawHeaders.map(value => String(value ?? '').trim())
   if (!headers.some(Boolean)) return { error: 'The Sheet tab is empty, or its first row has no column names.' }
   const indexOf = new Map<string, number>()
-  headers.forEach((header, index) => { if (header && !indexOf.has(headerKey(header))) indexOf.set(headerKey(header), index) })
+  headers.forEach((header, index) => {
+    if (header && !indexOf.has(headerKey(header))) indexOf.set(headerKey(header), index)
+  })
   const keyIndex = indexOf.get(headerKey(input.keyHeader))
-  if (keyIndex === undefined) return { error: `The key column “${input.keyHeader}” is no longer in the Sheet. Reconnect and choose the key column again.` }
+  if (keyIndex === undefined)
+    return {
+      error: `The key column “${input.keyHeader}” is no longer in the Sheet. Reconnect and choose the key column again.`,
+    }
 
   const byId = new Map(input.columns.map(column => [column.id, column]))
-  const mappings: Mapping[] = [], used: { header: string; index: number; column: TrackerColumn }[] = []
+  const mappings: Mapping[] = [],
+    used: { header: string; index: number; column: TrackerColumn }[] = []
   const missingHeaders: string[] = []
   for (const [header, columnId] of Object.entries(input.headerMap)) {
-    const index = indexOf.get(headerKey(header)), column = byId.get(columnId)
-    if (index === undefined) { missingHeaders.push(header); continue }
+    const index = indexOf.get(headerKey(header)),
+      column = byId.get(columnId)
+    if (index === undefined) {
+      missingHeaders.push(header)
+      continue
+    }
     if (!column) continue
     mappings.push({ index, include: true, target: column.id, name: column.name, type: column.type, options: [] })
     used.push({ header, index, column })
@@ -64,50 +86,108 @@ export function planSync(input: {
   const newHeaders = headers.filter(header => header && !mappedKeys.has(headerKey(header)))
 
   // Rows: the first row with a key wins; blank keys and repeats are skipped and reported.
-  const seen = new Set<string>(), duplicates: string[] = [], kept: { key: string; values: string[] }[] = []
+  const seen = new Set<string>(),
+    duplicates: string[] = [],
+    kept: { key: string; values: string[] }[] = []
   let skippedNoKey = 0
   for (const line of body) {
     const values = headers.map((_, index) => String(line[index] ?? ''))
     if (!values.some(value => value.trim())) continue
     const key = values[keyIndex].trim()
-    if (!key) { skippedNoKey += 1; continue }
-    if (seen.has(key.toLowerCase())) { if (duplicates.length < 20) duplicates.push(key); continue }
-    seen.add(key.toLowerCase()); kept.push({ key, values })
+    if (!key) {
+      skippedNoKey += 1
+      continue
+    }
+    if (seen.has(key.toLowerCase())) {
+      if (duplicates.length < 20) duplicates.push(key)
+      continue
+    }
+    seen.add(key.toLowerCase())
+    kept.push({ key, values })
   }
 
   // Values are converted exactly as a manual import would convert them (dates, numbers, Select options, people).
-  const plan = mappings.length ? planImport({ headers, rows: kept.map(row => row.values) }, mappings, input.columns, { today: input.today, people: input.people, capacity: Number.MAX_SAFE_INTEGER, firstRowIsHeader: true }) : null
+  const plan = mappings.length
+    ? planImport({ headers, rows: kept.map(row => row.values) }, mappings, input.columns, {
+        today: input.today,
+        people: input.people,
+        capacity: Number.MAX_SAFE_INTEGER,
+        firstRowIsHeader: true,
+      })
+    : null
   if (plan?.fatal) return { error: plan.fatal }
   const columns = plan ? plan.columns : input.columns
   const snapshot = (values: string[]) => Object.fromEntries(used.map(item => [item.header, values[item.index] ?? '']))
 
   const existing = new Map(input.rows.filter(row => row.sourceKey).map(row => [row.sourceKey.toLowerCase(), row]))
-  const report: SyncReport = { added: 0, updated: 0, missing: 0, returned: 0, unchanged: 0, skippedNoKey, duplicateKeys: duplicates, capped: 0, missingHeaders, newHeaders, problems: plan?.problems.length || 0 }
-  const result: SyncPlan = { columns, columnsChanged: JSON.stringify(columns) !== JSON.stringify(input.columns), inserts: [], updates: [], missing: [], returned: [], report }
+  const report: SyncReport = {
+    added: 0,
+    updated: 0,
+    missing: 0,
+    returned: 0,
+    unchanged: 0,
+    skippedNoKey,
+    duplicateKeys: duplicates,
+    capped: 0,
+    missingHeaders,
+    newHeaders,
+    problems: plan?.problems.length || 0,
+  }
+  const result: SyncPlan = {
+    columns,
+    columnsChanged: JSON.stringify(columns) !== JSON.stringify(input.columns),
+    inserts: [],
+    updates: [],
+    missing: [],
+    returned: [],
+    report,
+  }
   let room = input.capacity
   kept.forEach((row, at) => {
     const converted = plan?.rows[at]?.cells || {}
     const cells: Record<string, Cell> = {}
-    for (const item of used) { const value = converted[item.column.id]; cells[item.column.id] = value === undefined ? emptyCell(item.column.type) : value }
+    for (const item of used) {
+      const value = converted[item.column.id]
+      cells[item.column.id] = value === undefined ? emptyCell(item.column.type) : value
+    }
     const values = snapshot(row.values)
     const current = existing.get(row.key.toLowerCase())
     if (!current) {
-      if (room <= 0) { report.capped += 1; return }
+      if (room <= 0) {
+        report.capped += 1
+        return
+      }
       room -= 1
-      result.inserts.push({ key: row.key, cells: Object.fromEntries(Object.entries(cells).filter(([, value]) => !isEmptyCell(value))), values }); report.added += 1
+      result.inserts.push({
+        key: row.key,
+        cells: Object.fromEntries(Object.entries(cells).filter(([, value]) => !isEmptyCell(value))),
+        values,
+      })
+      report.added += 1
       return
     }
     existing.delete(row.key.toLowerCase())
-    if (current.missing) { result.returned.push(current.id); report.returned += 1 }
+    if (current.missing) {
+      result.returned.push(current.id)
+      report.returned += 1
+    }
     const changed: Record<string, Cell> = {}
     for (const [id, value] of Object.entries(cells)) {
       const before = current.data[id]
-      if (JSON.stringify(isEmptyCell(before) ? null : before) !== JSON.stringify(isEmptyCell(value) ? null : value)) changed[id] = value
+      if (JSON.stringify(isEmptyCell(before) ? null : before) !== JSON.stringify(isEmptyCell(value) ? null : value))
+        changed[id] = value
     }
-    if (Object.keys(changed).length || JSON.stringify(values) !== JSON.stringify(current.values)) { result.updates.push({ id: current.id, cells: changed, values }); if (Object.keys(changed).length) report.updated += 1; else report.unchanged += 1 }
-    else report.unchanged += 1
+    if (Object.keys(changed).length || JSON.stringify(values) !== JSON.stringify(current.values)) {
+      result.updates.push({ id: current.id, cells: changed, values })
+      if (Object.keys(changed).length) report.updated += 1
+      else report.unchanged += 1
+    } else report.unchanged += 1
   })
-  for (const row of existing.values()) if (!row.missing) { result.missing.push(row.id); report.missing += 1 }
+  for (const row of existing.values())
+    if (!row.missing) {
+      result.missing.push(row.id)
+      report.missing += 1
+    }
   return result
 }
 

@@ -14,18 +14,71 @@ export const EMAIL_LIMITS = {
 
 /** File types Gmail refuses to send. Checking first gives a clear message instead of a Gmail error. */
 export const BLOCKED_ATTACHMENT_EXTENSIONS = new Set([
-  'ade', 'adp', 'apk', 'appx', 'appxbundle', 'bat', 'cab', 'chm', 'cmd', 'com', 'cpl', 'dll', 'dmg', 'ex', 'ex_', 'exe', 'hta', 'ins', 'isp', 'iso', 'jar', 'js', 'jse', 'lib', 'lnk', 'mde', 'msc', 'msi', 'msix', 'msixbundle', 'msp', 'mst', 'nsh', 'pif', 'ps1', 'scr', 'sct', 'shb', 'sys', 'vb', 'vbe', 'vbs', 'vxd', 'wsc', 'wsf', 'wsh',
+  'ade',
+  'adp',
+  'apk',
+  'appx',
+  'appxbundle',
+  'bat',
+  'cab',
+  'chm',
+  'cmd',
+  'com',
+  'cpl',
+  'dll',
+  'dmg',
+  'ex',
+  'ex_',
+  'exe',
+  'hta',
+  'ins',
+  'isp',
+  'iso',
+  'jar',
+  'js',
+  'jse',
+  'lib',
+  'lnk',
+  'mde',
+  'msc',
+  'msi',
+  'msix',
+  'msixbundle',
+  'msp',
+  'mst',
+  'nsh',
+  'pif',
+  'ps1',
+  'scr',
+  'sct',
+  'shb',
+  'sys',
+  'vb',
+  'vbe',
+  'vbs',
+  'vxd',
+  'wsc',
+  'wsf',
+  'wsh',
 ])
 
 export function blockedAttachmentReason(name: string): string {
-  const extension = String(name || '').split('.').pop()?.toLowerCase() || ''
+  const extension =
+    String(name || '')
+      .split('.')
+      .pop()
+      ?.toLowerCase() || ''
   return String(name || '').includes('.') && BLOCKED_ATTACHMENT_EXTENSIONS.has(extension)
-    ? `Gmail does not allow “.${extension}” files, so “${name}” cannot be attached.` : ''
+    ? `Gmail does not allow “.${extension}” files, so “${name}” cannot be attached.`
+    : ''
 }
 
-const EMAIL = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/
+const EMAIL =
+  /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/
 export function isValidEmail(value: string): boolean {
-  return value.length <= 254 && EMAIL.test(value) && !value.includes('..') && !value.startsWith('.') && !value.includes('.@')
+  return (
+    value.length <= 254 && EMAIL.test(value) && !value.includes('..') && !value.startsWith('.') && !value.includes('.@')
+  )
 }
 
 /** "Ana Cruz <ana@acme.com>" or "ana@acme.com" gives "ana@acme.com". Returns the text unchanged when it has no angle brackets. */
@@ -35,7 +88,8 @@ export function extractAddress(value: unknown): string {
   return (angle ? angle[1] : text).trim().replace(/^mailto:/i, '')
 }
 
-const splitParts = (input: unknown): string[] => Array.isArray(input) ? input.map(String) : String(input ?? '').split(/[;\n]|,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+const splitParts = (input: unknown): string[] =>
+  Array.isArray(input) ? input.map(String) : String(input ?? '').split(/[;\n]|,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
 
 /** Split a pasted list at commas, semicolons or new lines. Commas inside quotes belong to a display name. */
 export function splitAddresses(input: unknown): string[] {
@@ -44,22 +98,38 @@ export function splitAddresses(input: unknown): string[] {
 
 /** Like splitAddresses, but keeps each display name: "Ana Cruz <ana@acme.com>" gives { name: "Ana Cruz", email: "ana@acme.com" }. */
 export function splitMailboxes(input: unknown): { name: string; email: string }[] {
-  return splitParts(input).map(part => {
-    const text = part.trim()
-    const angle = text.match(/^(.*?)<([^<>]+)>\s*$/)
-    const name = angle ? angle[1].trim().replace(/^"(.*)"$/, '$1').replace(/\\(.)/g, '$1').trim() : ''
-    return { name, email: extractAddress(text) }
-  }).filter(entry => entry.email)
+  return splitParts(input)
+    .map(part => {
+      const text = part.trim()
+      const angle = text.match(/^(.*?)<([^<>]+)>\s*$/)
+      const name = angle
+        ? angle[1]
+            .trim()
+            .replace(/^"(.*)"$/, '$1')
+            .replace(/\\(.)/g, '$1')
+            .trim()
+        : ''
+      return { name, email: extractAddress(text) }
+    })
+    .filter(entry => entry.email)
 }
 
 export type ParsedRecipients = { addresses: string[]; invalid: string[] }
 /** Valid addresses with duplicates removed (case-insensitive), plus the entries that are not addresses. */
 export function parseRecipients(input: unknown): ParsedRecipients {
-  const seen = new Set<string>(), addresses: string[] = [], invalid: string[] = []
+  const seen = new Set<string>(),
+    addresses: string[] = [],
+    invalid: string[] = []
   for (const candidate of splitAddresses(input)) {
-    if (!isValidEmail(candidate)) { invalid.push(candidate.slice(0, 80)); continue }
+    if (!isValidEmail(candidate)) {
+      invalid.push(candidate.slice(0, 80))
+      continue
+    }
     const key = candidate.toLowerCase()
-    if (!seen.has(key)) { seen.add(key); addresses.push(candidate) }
+    if (!seen.has(key)) {
+      seen.add(key)
+      addresses.push(candidate)
+    }
   }
   return { addresses, invalid }
 }
@@ -76,15 +146,28 @@ export function replyRecipients(headers: ReplyHeaders, mine: string[]): ReplyRec
   const me = new Set(mine.flatMap(value => parseRecipients(value).addresses).map(address => address.toLowerCase()))
   const list = (value?: string) => parseRecipients(value || '').addresses
   const others = (addresses: string[]) => addresses.filter(address => !me.has(address.toLowerCase()))
-  const from = list(headers.from), replyTo = list(headers.replyTo), to = list(headers.to), cc = list(headers.cc)
+  const from = list(headers.from),
+    replyTo = list(headers.replyTo),
+    to = list(headers.to),
+    cc = list(headers.cc)
   const wroteIt = from.length > 0 && from.every(address => me.has(address.toLowerCase()))
   let primary = wroteIt ? others(to) : others(replyTo.length ? replyTo : from)
   if (!primary.length && !wroteIt) primary = others(from)
   const rest = wroteIt ? others(cc) : others([...to, ...cc])
   const seen = new Set<string>()
-  const unique = (addresses: string[]) => addresses.filter(address => { const key = address.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true })
-  let main = unique(primary), copied = unique(rest)
-  if (!main.length && copied.length) { main = copied; copied = [] }
+  const unique = (addresses: string[]) =>
+    addresses.filter(address => {
+      const key = address.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  let main = unique(primary),
+    copied = unique(rest)
+  if (!main.length && copied.length) {
+    main = copied
+    copied = []
+  }
   return { to: main, cc: copied }
 }
 
@@ -99,16 +182,25 @@ export function quoteReply(sender: string, receivedAt: string, body: string, max
   const stamp = Number.isNaN(when.getTime()) ? '' : `On ${when.toLocaleString()}, `
   const text = String(body || '').trim()
   const clipped = text.length > max ? `${text.slice(0, max).trimEnd()}\n[…]` : text
-  return `\n\n${stamp}${String(sender || 'the sender').trim()} wrote:\n${clipped.split(/\r?\n/).map(line => `> ${line}`).join('\n')}`
+  return `\n\n${stamp}${String(sender || 'the sender').trim()} wrote:\n${clipped
+    .split(/\r?\n/)
+    .map(line => `> ${line}`)
+    .join('\n')}`
 }
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return ''
-  return bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`
+  return bytes < 1024
+    ? `${bytes} B`
+    : bytes < 1048576
+      ? `${Math.round(bytes / 1024)} KB`
+      : `${(bytes / 1048576).toFixed(1)} MB`
 }
 
 /** Short description of the recipients for activity entries: the first address and a count of the rest. */
 export function recipientSummary(addresses: string[]): string {
   if (!addresses.length) return 'no one'
-  return addresses.length === 1 ? addresses[0] : `${addresses[0]} and ${addresses.length - 1} other${addresses.length === 2 ? '' : 's'}`
+  return addresses.length === 1
+    ? addresses[0]
+    : `${addresses[0]} and ${addresses.length - 1} other${addresses.length === 2 ? '' : 's'}`
 }

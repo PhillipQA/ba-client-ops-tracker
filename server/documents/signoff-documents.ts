@@ -4,15 +4,49 @@ import Docxtemplater from 'docxtemplater'
 import { PDFDocument } from 'pdf-lib'
 import type { Express, RequestHandler } from 'express'
 import { documentTemplateRow, IntegrationError } from '../integrations/tenant-integrations'
-import { DEPLOYMENT_TYPES, DEPLOYED_PRODUCTS, SIGNOFF_FORM_TYPES, SIGNOFF_MAX_ATTACHMENTS, SIGNOFF_MAX_FILE_BYTES, SIGNOFF_MAX_TOTAL_BYTES, SIGNOFF_TABLE_MAX_ROWS, SIGNOFF_TEMPLATE_KIND, extraSignoffForm, formatDeploymentDate, signoffReference, GO_LIVE_TYPES, signoffSectionFields, SIGNOFF_MAX_SIGNATORIES, signoffSectionDefaults, type SignoffFormType, type SignoffInput } from '../../src/features/documents/signoff'
+import {
+  DEPLOYMENT_TYPES,
+  DEPLOYED_PRODUCTS,
+  SIGNOFF_FORM_TYPES,
+  SIGNOFF_MAX_ATTACHMENTS,
+  SIGNOFF_MAX_FILE_BYTES,
+  SIGNOFF_MAX_TOTAL_BYTES,
+  SIGNOFF_TABLE_MAX_ROWS,
+  SIGNOFF_TEMPLATE_KIND,
+  extraSignoffForm,
+  formatDeploymentDate,
+  signoffReference,
+  GO_LIVE_TYPES,
+  signoffSectionFields,
+  SIGNOFF_MAX_SIGNATORIES,
+  signoffSectionDefaults,
+  type SignoffFormType,
+  type SignoffInput,
+} from '../../src/features/documents/signoff'
 import { prepareSignoffTemplate } from './signoff-template'
 import { safeDocumentStem } from '../../src/features/documents/documentFilename'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-const supported = new Set(['png', 'jpg', 'jpeg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'zip'])
-const xml = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]!))
+const supported = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'csv',
+  'txt',
+  'zip',
+])
+const xml = (s: string) =>
+  s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!)
 function text(value: unknown, label: string, max: number, required = true): string {
-  if (typeof value !== 'string' || value.length > max || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value)) throw new Error(`Invalid ${label}.`)
+  if (typeof value !== 'string' || value.length > max || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value))
+    throw new Error(`Invalid ${label}.`)
   const result = value.trim()
   if (required && !result) throw new Error(`${label} is required.`)
   return result
@@ -30,28 +64,34 @@ function validateExtraFields(form: NonNullable<ReturnType<typeof extraSignoffFor
     if (field.control === 'daterange') {
       const start = plainDate(source[`${field.key}_start`], `${field.label} (start)`, Boolean(field.required))
       const end = plainDate(source[`${field.key}_end`], `${field.label} (end)`, false)
-      if (end && start && source[`${field.key}_end`] < source[`${field.key}_start`]) throw new Error(`${field.label}: the end date cannot be before the start date.`)
+      if (end && start && source[`${field.key}_end`] < source[`${field.key}_start`])
+        throw new Error(`${field.label}: the end date cannot be before the start date.`)
       out[field.key] = start && end && end !== start ? `${start} to ${end}` : start || end
       continue
     }
     const value = text(source[field.key] ?? '', field.label, field.max ?? 300, Boolean(field.required))
-    if (field.control === 'select' && value && !(field.options as readonly string[]).includes(value)) throw new Error(`Choose a valid ${field.label.toLowerCase()}.`)
+    if (field.control === 'select' && value && !(field.options as readonly string[]).includes(value))
+      throw new Error(`Choose a valid ${field.label.toLowerCase()}.`)
     out[field.key] = value
   }
   const tables = input.tables === undefined ? {} : input.tables
   if (!tables || typeof tables !== 'object' || Array.isArray(tables)) throw new Error('Invalid table rows.')
   for (const table of form.tables) {
     const rows = tables[table.key] ?? []
-    if (!Array.isArray(rows) || rows.length > SIGNOFF_TABLE_MAX_ROWS) throw new Error(`Use up to ${SIGNOFF_TABLE_MAX_ROWS} rows in ${table.label}.`)
+    if (!Array.isArray(rows) || rows.length > SIGNOFF_TABLE_MAX_ROWS)
+      throw new Error(`Use up to ${SIGNOFF_TABLE_MAX_ROWS} rows in ${table.label}.`)
     const cleaned = rows.map((row: any) => {
       if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error(`Invalid row in ${table.label}.`)
-      return Object.fromEntries(table.columns.map(column => {
-        const label = `${table.label}: ${column.label}`
-        if (column.control === 'date') return [column.key, plainDate(row[column.key], label, false)]
-        const value = text(row[column.key] ?? '', label, 400, false)
-        if (column.control === 'select' && value && !(column.options as readonly string[]).includes(value)) throw new Error(`Choose a valid value for ${label}.`)
-        return [column.key, value]
-      }))
+      return Object.fromEntries(
+        table.columns.map(column => {
+          const label = `${table.label}: ${column.label}`
+          if (column.control === 'date') return [column.key, plainDate(row[column.key], label, false)]
+          const value = text(row[column.key] ?? '', label, 400, false)
+          if (column.control === 'select' && value && !(column.options as readonly string[]).includes(value))
+            throw new Error(`Choose a valid value for ${label}.`)
+          return [column.key, value]
+        }),
+      )
     })
     // Blank rows add nothing to a signed form; keep a single blank row so the table is never headings only.
     const filled = cleaned.filter((row: Record<string, string>) => Object.values(row).some(Boolean))
@@ -62,20 +102,34 @@ function validateExtraFields(form: NonNullable<ReturnType<typeof extraSignoffFor
 export function validateSignoff(input: any) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Sign Off details are required.')
   const formType: SignoffFormType = input.formType ?? 'production'
-  if (!(SIGNOFF_FORM_TYPES as readonly unknown[]).includes(formType)) throw new Error('Choose a supported document form type.')
+  if (!(SIGNOFF_FORM_TYPES as readonly unknown[]).includes(formType))
+    throw new Error('Choose a supported document form type.')
   const extra = extraSignoffForm(formType)
   const clientName = text(input.clientName, 'Client name', 150)
   const site = text(input.site ?? '', 'Site code / name', 160, formType === 'production')
   // UAT and Training forms have no deployment date.
-  const deploymentDate = extra && !extra.dateLabel ? '' : formatDeploymentDate(text(input.deploymentDate, extra?.dateLabel || 'Deployment date', 10))
-  if (formType === 'production' && !(DEPLOYMENT_TYPES as readonly unknown[]).includes(input.deploymentType)) throw new Error('Choose a supported deployment type.')
+  const deploymentDate =
+    extra && !extra.dateLabel
+      ? ''
+      : formatDeploymentDate(text(input.deploymentDate, extra?.dateLabel || 'Deployment date', 10))
+  if (formType === 'production' && !(DEPLOYMENT_TYPES as readonly unknown[]).includes(input.deploymentType))
+    throw new Error('Choose a supported deployment type.')
   if (!(DEPLOYED_PRODUCTS as readonly unknown[]).includes(input.product)) throw new Error('Choose a supported product.')
   const year = text(input.documentYear, 'Document year', 4)
   const number = text(input.documentNumber, 'Document number', 4)
-  if (!/^(19|[2-9]\d)\d{2}$/.test(year) || !/^\d{1,4}$/.test(number) || Number(number) < 1) throw new Error('Enter a valid document year and a number from 1 to 9999.')
-  const values: Record<string, any> = { client_name: clientName, document_reference: signoffReference(clientName, year, String(Number(number)), formType), deployment_date: deploymentDate, deployment_type: input.deploymentType || '', product: input.product, site }
+  if (!/^(19|[2-9]\d)\d{2}$/.test(year) || !/^\d{1,4}$/.test(number) || Number(number) < 1)
+    throw new Error('Enter a valid document year and a number from 1 to 9999.')
+  const values: Record<string, any> = {
+    client_name: clientName,
+    document_reference: signoffReference(clientName, year, String(Number(number)), formType),
+    deployment_date: deploymentDate,
+    deployment_type: input.deploymentType || '',
+    product: input.product,
+    site,
+  }
   if (formType === 'golive') {
-    if (!(GO_LIVE_TYPES as readonly unknown[]).includes(input.goLiveType)) throw new Error('Choose Pilot Branch or Store Roll Out.')
+    if (!(GO_LIVE_TYPES as readonly unknown[]).includes(input.goLiveType))
+      throw new Error('Choose Pilot Branch or Store Roll Out.')
     values.go_live_date = deploymentDate
     values.go_live_type = input.goLiveType
   }
@@ -85,12 +139,21 @@ export function validateSignoff(input: any) {
     values.document_date = formatDeploymentDate(text(input.documentDate, 'Document date', 10))
   }
   if (extra) Object.assign(values, validateExtraFields(extra, input))
-  if (input.sections !== undefined && (!input.sections || typeof input.sections !== 'object' || Array.isArray(input.sections))) throw new Error('Invalid document sections.')
+  if (
+    input.sections !== undefined &&
+    (!input.sections || typeof input.sections !== 'object' || Array.isArray(input.sections))
+  )
+    throw new Error('Invalid document sections.')
   const defaults = signoffSectionDefaults(formType)
-  for (const [field, label] of signoffSectionFields(formType)) values[field] = text(input.sections?.[field] ?? defaults[field], label, 12000, false)
-  for (const [side, key] of [['iripple', 'irippleSignatories'], ['client', 'clientSignatories']]) {
+  for (const [field, label] of signoffSectionFields(formType))
+    values[field] = text(input.sections?.[field] ?? defaults[field], label, 12000, false)
+  for (const [side, key] of [
+    ['iripple', 'irippleSignatories'],
+    ['client', 'clientSignatories'],
+  ]) {
     const people = input[key]
-    if (!Array.isArray(people) || people.length < 2 || people.length > SIGNOFF_MAX_SIGNATORIES) throw new Error(`Provide 2 to ${SIGNOFF_MAX_SIGNATORIES} signatory slots per side.`)
+    if (!Array.isArray(people) || people.length < 2 || people.length > SIGNOFF_MAX_SIGNATORIES)
+      throw new Error(`Provide 2 to ${SIGNOFF_MAX_SIGNATORIES} signatory slots per side.`)
     people.forEach((person, index) => {
       values[`${side}_name_${index + 1}`] = text(person?.name, `${side} signatory ${index + 1} name`, 100, false)
       values[`${side}_title_${index + 1}`] = text(person?.title, `${side} signatory ${index + 1} position`, 100, false)
@@ -100,7 +163,12 @@ export function validateSignoff(input: any) {
 }
 function imageSize(bytes: Buffer, ext: string) {
   if (ext === 'png') {
-    if (bytes.length < 33 || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || bytes.toString('ascii', 12, 16) !== 'IHDR') throw new Error('Invalid PNG attachment.')
+    if (
+      bytes.length < 33 ||
+      bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' ||
+      bytes.toString('ascii', 12, 16) !== 'IHDR'
+    )
+      throw new Error('Invalid PNG attachment.')
     return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
   }
   if (bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216) throw new Error('Invalid JPEG attachment.')
@@ -114,7 +182,8 @@ function imageSize(bytes: Buffer, ext: string) {
     if (position + 2 > bytes.length) break
     const length = bytes.readUInt16BE(position)
     if (length < 2 || position + length > bytes.length) break
-    if ([0xc0, 0xc1, 0xc2].includes(marker) && length >= 8) return { height: bytes.readUInt16BE(position + 3), width: bytes.readUInt16BE(position + 5) }
+    if ([0xc0, 0xc1, 0xc2].includes(marker) && length >= 8)
+      return { height: bytes.readUInt16BE(position + 3), width: bytes.readUInt16BE(position + 5) }
     position += length
   }
   throw new Error('Unsupported or damaged JPEG. Export it as PNG and retry.')
@@ -124,31 +193,56 @@ function para(value: string, pageBreak = false) {
 }
 function imageParagraph(id: string, name: string, width: number, height: number, index: number) {
   const scale = Math.min(5.9 / width, 6.5 / height)
-  const cx = Math.round(width * scale * 914400), cy = Math.round(height * scale * 914400)
+  const cx = Math.round(width * scale * 914400),
+    cy = Math.round(height * scale * 914400)
   return `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${1000 + index}" name="Attachment ${index}" descr="${xml(name)}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${1000 + index}" name="${xml(name)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
 }
 export async function renderSignoff(template: Buffer, input: unknown, attachments: unknown = [], fileName?: string) {
   const values = validateSignoff(input)
-  if (!Array.isArray(attachments) || attachments.length > SIGNOFF_MAX_ATTACHMENTS) throw new Error(`Use up to ${SIGNOFF_MAX_ATTACHMENTS} attachments.`)
+  if (!Array.isArray(attachments) || attachments.length > SIGNOFF_MAX_ATTACHMENTS)
+    throw new Error(`Use up to ${SIGNOFF_MAX_ATTACHMENTS} attachments.`)
   const zip = new PizZip(prepareSignoffTemplate(template, input as SignoffInput))
   // Keep long client-derived references readable inside the original header cell.
   if (values.document_reference.length > 55) {
     for (const part of zip.file(/^word\/header\d+\.xml$/)) {
-      zip.file(part.name, part.asText().replace(/<w:r[ >][\s\S]*?<\/w:r>/g, run => run.includes('{document_reference}') ? run.replace(/<w:sz w:val="\d+"\/>/g, '<w:sz w:val="16"/>') : run))
+      zip.file(
+        part.name,
+        part
+          .asText()
+          .replace(/<w:r[ >][\s\S]*?<\/w:r>/g, run =>
+            run.includes('{document_reference}') ? run.replace(/<w:sz w:val="\d+"\/>/g, '<w:sz w:val="16"/>') : run,
+          ),
+      )
     }
   }
-  const files: { name: string; bytes: Buffer; image: boolean; caption: string; width?: number; height?: number; ext: string }[] = []
-  let totalBytes = 0, totalPixels = 0
+  const files: {
+    name: string
+    bytes: Buffer
+    image: boolean
+    caption: string
+    width?: number
+    height?: number
+    ext: string
+  }[] = []
+  let totalBytes = 0,
+    totalPixels = 0
   for (const item of attachments) {
     const originalName = text(item?.name, 'Attachment filename', 200)
     const ext = originalName.split('.').pop()!.toLowerCase()
     if (!supported.has(ext)) throw new Error(`Unsupported attachment format: ${ext}.`)
     const data = item?.data
-    if (typeof data !== 'string' || data.length > Math.ceil(SIGNOFF_MAX_FILE_BYTES / 3) * 4 || data.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(data)) throw new Error('Invalid attachment data or file exceeds 5 MB.')
+    if (
+      typeof data !== 'string' ||
+      data.length > Math.ceil(SIGNOFF_MAX_FILE_BYTES / 3) * 4 ||
+      data.length % 4 !== 0 ||
+      /[^A-Za-z0-9+/=]/.test(data)
+    )
+      throw new Error('Invalid attachment data or file exceeds 5 MB.')
     const bytes = Buffer.from(data, 'base64')
     if (bytes.toString('base64') !== data) throw new Error('Invalid base64 attachment data.')
     totalBytes += bytes.length
-    if (!bytes.length || bytes.length > SIGNOFF_MAX_FILE_BYTES || totalBytes > SIGNOFF_MAX_TOTAL_BYTES) throw new Error('Use files up to 5 MB each and 12 MB in total.')
+    if (!bytes.length || bytes.length > SIGNOFF_MAX_FILE_BYTES || totalBytes > SIGNOFF_MAX_TOTAL_BYTES)
+      throw new Error('Use files up to 5 MB each and 12 MB in total.')
     const name = originalName.replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/^\.+/, '') || `attachment.${ext}`
     const caption = text(item.caption ?? '', 'Attachment caption', 200, false)
     const image = ['png', 'jpg', 'jpeg'].includes(ext)
@@ -157,7 +251,8 @@ export async function renderSignoff(template: Buffer, input: unknown, attachment
       dimensions = imageSize(bytes, ext)
       const pixels = dimensions.width * dimensions.height
       totalPixels += pixels
-      if (!pixels || pixels > 16000000 || totalPixels > 40000000) throw new Error('Images are too large. Resize images to at most 16 megapixels each and 40 megapixels total.')
+      if (!pixels || pixels > 16000000 || totalPixels > 40000000)
+        throw new Error('Images are too large. Resize images to at most 16 megapixels each and 40 megapixels total.')
       // Decode accepted formats once to reject corrupt image bytes before exporting Word.
       try {
         const check = await PDFDocument.create()
@@ -165,8 +260,9 @@ export async function renderSignoff(template: Buffer, input: unknown, attachment
         const imageBytes = Uint8Array.from(bytes)
         const img = ext === 'png' ? await check.embedPng(imageBytes) : await check.embedJpg(imageBytes)
         if (!img.width || !img.height) throw new Error()
+      } catch {
+        throw new Error('An image attachment is damaged. Export it as JPEG or PNG and retry.')
       }
-      catch { throw new Error('An image attachment is damaged. Export it as JPEG or PNG and retry.') }
     }
     files.push({ name, bytes, image, caption, ext, ...dimensions })
   }
@@ -176,49 +272,118 @@ export async function renderSignoff(template: Buffer, input: unknown, attachment
   if (files.some(file => !file.image)) {
     attachmentXml += para('Supporting files')
     attachmentXml += para('The following files are included in the accompanying ZIP:')
-    files.forEach((file, index) => { if (!file.image) attachmentXml += para(`${index + 1}. ${file.name}${file.caption ? ` — ${file.caption}` : ''}`) })
+    files.forEach((file, index) => {
+      if (!file.image) attachmentXml += para(`${index + 1}. ${file.name}${file.caption ? ` — ${file.caption}` : ''}`)
+    })
   }
   files.forEach((file, index) => {
     if (!file.image) return
-    const id = `rIdSignoffImage${index + 1}`, target = `media/signoff-${index + 1}.${file.ext}`
+    const id = `rIdSignoffImage${index + 1}`,
+      target = `media/signoff-${index + 1}.${file.ext}`
     zip.file(`word/${target}`, file.bytes)
-    relationships = relationships.replace('</Relationships>', `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${target}"/></Relationships>`)
-    contentTypes = contentTypes.replace('</Types>', `<Override PartName="/word/${target}" ContentType="image/${file.ext === 'png' ? 'png' : 'jpeg'}"/></Types>`)
+    relationships = relationships.replace(
+      '</Relationships>',
+      `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${target}"/></Relationships>`,
+    )
+    contentTypes = contentTypes.replace(
+      '</Types>',
+      `<Override PartName="/word/${target}" ContentType="image/${file.ext === 'png' ? 'png' : 'jpeg'}"/></Types>`,
+    )
     attachmentXml += para(`Attachment ${index + 1} — ${file.caption || file.name}`, true)
     attachmentXml += imageParagraph(id, file.name, file.width!, file.height!, index + 1)
   })
-  zip.file('word/_rels/document.xml.rels', relationships); zip.file('[Content_Types].xml', contentTypes)
+  zip.file('word/_rels/document.xml.rels', relationships)
+  zip.file('[Content_Types].xml', contentTypes)
   const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' })
   doc.render({ ...values, attachments: attachmentXml })
   const output = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' })
-  const stem = fileName ? safeDocumentStem(fileName) || values.document_reference.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 180) : values.document_reference.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 180)
+  const stem = fileName
+    ? safeDocumentStem(fileName) || values.document_reference.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 180)
+    : values.document_reference.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 180)
   if (files.some(file => !file.image)) {
-    const bundle = new PizZip(); bundle.file(`${stem}.docx`, output)
-    files.forEach((file, index) => bundle.file(`attachments/${String(index + 1).padStart(2, '0')}-${file.name}`, file.bytes))
-    return { signingFile: { fileData: output.toString('base64'), fileName: `${stem}.docx`, mimeType: DOCX_MIME }, output: bundle.generate({ type: 'nodebuffer', compression: 'DEFLATE' }), fileName: `${stem}.zip`, mimeType: 'application/zip', imageCount: files.filter(f => f.image).length, attachmentCount: files.length }
+    const bundle = new PizZip()
+    bundle.file(`${stem}.docx`, output)
+    files.forEach((file, index) =>
+      bundle.file(`attachments/${String(index + 1).padStart(2, '0')}-${file.name}`, file.bytes),
+    )
+    return {
+      signingFile: { fileData: output.toString('base64'), fileName: `${stem}.docx`, mimeType: DOCX_MIME },
+      output: bundle.generate({ type: 'nodebuffer', compression: 'DEFLATE' }),
+      fileName: `${stem}.zip`,
+      mimeType: 'application/zip',
+      imageCount: files.filter(f => f.image).length,
+      attachmentCount: files.length,
+    }
   }
-  return { output, fileName: `${stem}.docx`, mimeType: DOCX_MIME, imageCount: files.length, attachmentCount: files.length }
+  return {
+    output,
+    fileName: `${stem}.docx`,
+    mimeType: DOCX_MIME,
+    imageCount: files.length,
+    attachmentCount: files.length,
+  }
 }
-const BUILT_IN_FILES: Record<SignoffFormType, string> = { production: 'signoff-template.docx', golive: 'golive-template.docx', uat: 'uat-template.docx', uatdeploy: 'uatdeploy-template.docx', training: 'training-template.docx' }
-export function registerSignoffRoutes(app: Express, deps: { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; templatePath: string; goLiveTemplatePath?: string; templatePaths?: Partial<Record<SignoffFormType, string>> }) {
+const BUILT_IN_FILES: Record<SignoffFormType, string> = {
+  production: 'signoff-template.docx',
+  golive: 'golive-template.docx',
+  uat: 'uat-template.docx',
+  uatdeploy: 'uatdeploy-template.docx',
+  training: 'training-template.docx',
+}
+export function registerSignoffRoutes(
+  app: Express,
+  deps: {
+    db: any
+    requireAuth: RequestHandler
+    requireTenant: RequestHandler
+    templatePath: string
+    goLiveTemplatePath?: string
+    templatePaths?: Partial<Record<SignoffFormType, string>>
+  },
+) {
   app.post('/api/documents/signoff/generate', deps.requireAuth, deps.requireTenant, async (req, res) => {
     const user = (req as any).authUser
-    if (user.role === 'Viewer' || !user.modules?.includes('documents')) return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
+    if (user.role === 'Viewer' || !user.modules?.includes('documents'))
+      return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
     res.setHeader('Cache-Control', 'no-store')
     let template: Buffer
     try {
       const formType: SignoffFormType = req.body?.details?.formType ?? 'production'
-      if (!(SIGNOFF_FORM_TYPES as readonly unknown[]).includes(formType)) throw new IntegrationError('Choose a supported document form type.', 400)
+      if (!(SIGNOFF_FORM_TYPES as readonly unknown[]).includes(formType))
+        throw new IntegrationError('Choose a supported document form type.', 400)
       const row = await documentTemplateRow(deps.db, user.organizationId, SIGNOFF_TEMPLATE_KIND[formType])
-      if (row && !row.is_enabled) throw new IntegrationError('The Sign Off template is not configured. Add or restore it in Settings → Templates.', 503)
-      const builtIn = formType === 'production' ? deps.templatePath : formType === 'golive' ? deps.goLiveTemplatePath : deps.templatePaths?.[formType]
-      template = row?.is_enabled && row.content_base64 ? Buffer.from(row.content_base64, 'base64') : await readFile(builtIn || new URL(`../../templates/${BUILT_IN_FILES[formType]}`, import.meta.url).pathname)
+      if (row && !row.is_enabled)
+        throw new IntegrationError(
+          'The Sign Off template is not configured. Add or restore it in Settings → Templates.',
+          503,
+        )
+      const builtIn =
+        formType === 'production'
+          ? deps.templatePath
+          : formType === 'golive'
+            ? deps.goLiveTemplatePath
+            : deps.templatePaths?.[formType]
+      template =
+        row?.is_enabled && row.content_base64
+          ? Buffer.from(row.content_base64, 'base64')
+          : await readFile(builtIn || new URL(`../../templates/${BUILT_IN_FILES[formType]}`, import.meta.url).pathname)
     } catch (error) {
-      return void res.status(error instanceof IntegrationError ? error.status : 503).json({ error: error instanceof Error ? error.message : 'Sign Off template is unavailable.' })
+      return void res
+        .status(error instanceof IntegrationError ? error.status : 503)
+        .json({ error: error instanceof Error ? error.message : 'Sign Off template is unavailable.' })
     }
     try {
       const result = await renderSignoff(template, req.body?.details, req.body?.attachments, req.body?.fileName)
-      res.json({ signingFile: result.signingFile, fileData: result.output.toString('base64'), fileName: result.fileName, mimeType: result.mimeType, imageCount: result.imageCount, attachmentCount: result.attachmentCount })
-    } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Could not generate the Sign Off form.' }) }
+      res.json({
+        signingFile: result.signingFile,
+        fileData: result.output.toString('base64'),
+        fileName: result.fileName,
+        mimeType: result.mimeType,
+        imageCount: result.imageCount,
+        attachmentCount: result.attachmentCount,
+      })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Could not generate the Sign Off form.' })
+    }
   })
 }

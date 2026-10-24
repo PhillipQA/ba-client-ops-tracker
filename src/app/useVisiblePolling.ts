@@ -7,16 +7,26 @@ export function usePageActive() {
   return active
 }
 
-export function useVisiblePolling(work: (signal: AbortSignal) => Promise<unknown>, options: {
-  enabled: boolean; interval: number; scope?: string; immediate?: boolean; minGap?: number; events?: string[]
-}) {
+export function useVisiblePolling(
+  work: (signal: AbortSignal) => Promise<unknown>,
+  options: {
+    enabled: boolean
+    interval: number
+    scope?: string
+    immediate?: boolean
+    minGap?: number
+    events?: string[]
+  },
+) {
   const callback = useRef(work)
   callback.current = work
   const eventKey = (options.events || []).join('|')
   useEffect(() => {
     if (!options.enabled) return
     return startActivePolling(signal => callback.current(signal), {
-      interval: options.interval, immediate: options.immediate, minGap: options.minGap,
+      interval: options.interval,
+      immediate: options.immediate,
+      minGap: options.minGap,
       environment: browserPollEnvironment(eventKey ? eventKey.split('|') : []),
       onError: error => console.error('Active tab refresh failed:', error),
     })

@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { columnTotal, evaluateFormula, formulaCycle, formulaFromText, formulaToText, normalizeColumns, splitClientIds, type TrackerColumn } from '../src/features/trackers/trackerModel'
+import {
+  columnTotal,
+  evaluateFormula,
+  formulaCycle,
+  formulaFromText,
+  formulaToText,
+  normalizeColumns,
+  splitClientIds,
+  type TrackerColumn,
+} from '../src/features/trackers/trackerModel'
 
 const cols = (): TrackerColumn[] => [
   { id: 'c_name', name: 'Site', type: 'text' },
@@ -29,7 +38,8 @@ test('a formula only uses known Number or Calculated columns and plain arithmeti
 
 test('Calculated cells add, subtract, multiply and divide, with brackets and precedence', () => {
   const columns = cols()
-  const calc = (formula: string, cells: Record<string, any>) => evaluateFormula({ id: 'x', name: 'X', type: 'formula', formula }, cells, columns)
+  const calc = (formula: string, cells: Record<string, any>) =>
+    evaluateFormula({ id: 'x', name: 'X', type: 'formula', formula }, cells, columns)
   assert.equal(calc('{c_qty} * {c_price}', { c_qty: 3, c_price: 2.5 }).value, 7.5)
   assert.equal(calc('{c_qty} + {c_price} * 2', { c_qty: 1, c_price: 2 }).value, 5)
   assert.equal(calc('({c_qty} + {c_price}) * 2', { c_qty: 1, c_price: 2 }).value, 6)
@@ -38,18 +48,50 @@ test('Calculated cells add, subtract, multiply and divide, with brackets and pre
   assert.equal(calc('0.1 + 0.2', {}).value, 0.3)
   assert.equal(calc('{c_qty} * {c_price}', {}).value, null, 'all inputs empty gives an empty cell')
   assert.equal(calc('{c_qty} + {c_price}', { c_qty: 4 }).value, 4, 'an empty input counts as 0')
-  assert.equal(evaluateFormula({ id: 'y', name: 'Y', type: 'formula', formula: '{c_total} + 1' }, { c_qty: 2, c_price: 3 }, columns).value, 7, 'a formula can use another one')
+  assert.equal(
+    evaluateFormula(
+      { id: 'y', name: 'Y', type: 'formula', formula: '{c_total} + 1' },
+      { c_qty: 2, c_price: 3 },
+      columns,
+    ).value,
+    7,
+    'a formula can use another one',
+  )
 })
 
 test('columns keep formulas by id, survive renames and refuse cycles', () => {
-  const saved = normalizeColumns([{ name: 'Qty', type: 'number' }, { name: 'Price', type: 'number', total: 'sum' }, { name: 'Total', type: 'formula', formula: '[Qty]*[Price]', total: 'sum' }, { name: 'Note', type: 'text', total: 'sum' }])
+  const saved = normalizeColumns([
+    { name: 'Qty', type: 'number' },
+    { name: 'Price', type: 'number', total: 'sum' },
+    { name: 'Total', type: 'formula', formula: '[Qty]*[Price]', total: 'sum' },
+    { name: 'Note', type: 'text', total: 'sum' },
+  ])
   const [qty, price, total, note] = saved
   assert.equal(total.formula, `{${qty.id}}*{${price.id}}`)
-  assert.equal(total.total, 'sum'); assert.equal(price.total, 'sum'); assert.equal(note.total, undefined)
-  const renamed = normalizeColumns(saved.map(column => column.id === qty.id ? { ...column, name: 'Quantity' } : column), saved)
+  assert.equal(total.total, 'sum')
+  assert.equal(price.total, 'sum')
+  assert.equal(note.total, undefined)
+  const renamed = normalizeColumns(
+    saved.map(column => (column.id === qty.id ? { ...column, name: 'Quantity' } : column)),
+    saved,
+  )
   assert.equal(formulaToText(renamed[2].formula!, renamed), '[Quantity]*[Price]')
-  assert.throws(() => normalizeColumns([{ name: 'A', type: 'formula', formula: '[B]+1' }, { name: 'B', type: 'formula', formula: '[A]+1' }]), /refers back|cannot use itself/)
-  assert.throws(() => normalizeColumns([{ name: 'A', type: 'number' }, { name: 'B', type: 'formula', formula: '[A] +* 1' }]), /B:/)
+  assert.throws(
+    () =>
+      normalizeColumns([
+        { name: 'A', type: 'formula', formula: '[B]+1' },
+        { name: 'B', type: 'formula', formula: '[A]+1' },
+      ]),
+    /refers back|cannot use itself/,
+  )
+  assert.throws(
+    () =>
+      normalizeColumns([
+        { name: 'A', type: 'number' },
+        { name: 'B', type: 'formula', formula: '[A] +* 1' },
+      ]),
+    /B:/,
+  )
   assert.equal(formulaCycle(saved), '')
 })
 

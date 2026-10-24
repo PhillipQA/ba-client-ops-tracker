@@ -16,7 +16,12 @@ export type LocalCorExtraction = {
 }
 
 function normalizeWhitespace(value: string) {
-  return value.replace(/\r/g, '\n').replace(/[\t\f\v]+/g, ' ').replace(/[ ]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+  return value
+    .replace(/\r/g, '\n')
+    .replace(/[\t\f\v]+/g, ' ')
+    .replace(/[ ]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function lineKey(value: string) {
@@ -28,15 +33,9 @@ function lineKey(value: string) {
     .trim()
 }
 
-const nameOfTaxpayerPatterns = [
-  /NAME\s*(?:OF\s*(?:THE\s*)?)?TAX\s*PAYER/,
-  /TAX\s*PAYER\s*NAME/,
-]
+const nameOfTaxpayerPatterns = [/NAME\s*(?:OF\s*(?:THE\s*)?)?TAX\s*PAYER/, /TAX\s*PAYER\s*NAME/]
 
-const registeredNamePatterns = [
-  /REGISTERED\s*(?:BUSINESS\s*)?NAME/,
-  /BUSINESS\s*REGISTERED\s*NAME/,
-]
+const registeredNamePatterns = [/REGISTERED\s*(?:BUSINESS\s*)?NAME/, /BUSINESS\s*REGISTERED\s*NAME/]
 
 const tradeNamePatterns = [
   /TRADE\s*(?:\/|OR|AND|&)\s*BUSINESS\s*NAME/,
@@ -52,11 +51,7 @@ const addressLabelPatterns = [
   /TAX\s*PAYER\s*ADDRESS/,
 ]
 
-const tinLabelPatterns = [
-  /TAX\s*PAYER\s*IDENTIFICATION\s*NUMBER/,
-  /IDENTIFICATION\s*NUMBER\s*\(\s*TIN\s*\)/,
-  /\bTIN\b/,
-]
+const tinLabelPatterns = [/TAX\s*PAYER\s*IDENTIFICATION\s*NUMBER/, /IDENTIFICATION\s*NUMBER\s*\(\s*TIN\s*\)/, /\bTIN\b/]
 
 const knownLabelPatterns = [
   ...nameOfTaxpayerPatterns,
@@ -87,7 +82,7 @@ function regexForRawLine(pattern: RegExp) {
 
 function isKnownLabel(line: string) {
   const normalized = lineKey(line)
-  return knownLabelPatterns.some((pattern) => pattern.test(normalized))
+  return knownLabelPatterns.some(pattern => pattern.test(normalized))
 }
 
 function stripTrailingKnownLabel(value: string) {
@@ -102,7 +97,8 @@ function stripTrailingKnownLabel(value: string) {
 function valueAfterMatchedLabel(line: string, pattern: RegExp) {
   const match = regexForRawLine(pattern).exec(line)
   if (!match) return ''
-  const remainder = line.slice(match.index + match[0].length)
+  const remainder = line
+    .slice(match.index + match[0].length)
     .replace(/^\s*(?:[:;|=]|[-–—]{1,3})\s*/, '')
     .replace(/^\s*\([^)]*\)\s*/, '')
     .trim()
@@ -134,7 +130,7 @@ function collectAfterLabelByPriority(lines: string[], labelPatterns: RegExp[], m
 }
 
 function findTin(text: string, lines: string[]) {
-  const tinLabelLine = lines.find((line) => tinLabelPatterns.some((pattern) => pattern.test(lineKey(line))))
+  const tinLabelLine = lines.find(line => tinLabelPatterns.some(pattern => pattern.test(lineKey(line))))
   const candidates = [tinLabelLine || '', text]
   for (const candidate of candidates) {
     const match = candidate.match(/\b\d{3}\s*[-–— ]\s*\d{3}\s*[-–— ]\s*\d{3}(?:\s*[-–— ]\s*\d{3,5})?\b/)
@@ -183,7 +179,7 @@ function collectRegisteredAddress(lines: string[]) {
 
         const cleaned = cleanExtractedValue(candidate)
         if (!cleaned) continue
-        if (!parts.some((part) => lineKey(part) === lineKey(cleaned))) parts.push(cleaned)
+        if (!parts.some(part => lineKey(part) === lineKey(cleaned))) parts.push(cleaned)
       }
 
       if (parts.length) {
@@ -209,7 +205,10 @@ function cleanExtractedValue(value: string) {
 
 export function parseCorTextLocally(rawText: string, method: string): LocalCorExtraction {
   const text = normalizeWhitespace(rawText)
-  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean)
+  const lines = text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
 
   // BIR CORs identify the legal/registered entity as "Name of Taxpayer". Always
   // prefer that label over generic "Registered Name" text elsewhere on the form.
@@ -239,8 +238,15 @@ export function parseCorTextLocally(rawText: string, method: string): LocalCorEx
 
 export async function extractCorTextLocally(file: File, onProgress?: ProgressCallback): Promise<CorTextExtraction> {
   const text = await readFsdSource(file, onProgress || (() => undefined))
-  if (text.replace(/\[[^\]]*\]/g, '').replace(/\s/g, '').length < 20) throw new Error('The local extractor could not read enough text. Try a clearer scan or text-based PDF.')
-  return { text, method: text.includes('[OCR text]') || /\.(png|jpe?g|webp|tiff?)$/i.test(file.name) ? 'local OCR with source review' : 'local document text extraction' }
+  if (text.replace(/\[[^\]]*\]/g, '').replace(/\s/g, '').length < 20)
+    throw new Error('The local extractor could not read enough text. Try a clearer scan or text-based PDF.')
+  return {
+    text,
+    method:
+      text.includes('[OCR text]') || /\.(png|jpe?g|webp|tiff?)$/i.test(file.name)
+        ? 'local OCR with source review'
+        : 'local document text extraction',
+  }
 }
 
 export async function extractCorLocally(file: File, onProgress?: ProgressCallback): Promise<LocalCorExtraction> {

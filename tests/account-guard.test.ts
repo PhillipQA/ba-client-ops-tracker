@@ -4,10 +4,26 @@ import { accountChangesAreSelfOnly, SELF_EDITABLE_ACCOUNT_FIELDS } from '../serv
 
 // Mirrors the account shape the save path compares: id + profile fields + access fields.
 const account = (over: Record<string, unknown> = {}) => ({
-  id: 'me', username: 'me', name: 'Me', email: 'me@example.com', phone: '555-0100',
-  role: 'Contributor', modules: ['items'], status: 'Active', passwordHash: 'hash-me', theme: 'default', ...over,
+  id: 'me',
+  username: 'me',
+  name: 'Me',
+  email: 'me@example.com',
+  phone: '555-0100',
+  role: 'Contributor',
+  modules: ['items'],
+  status: 'Active',
+  passwordHash: 'hash-me',
+  theme: 'default',
+  ...over,
 })
-const other = account({ id: 'boss', username: 'boss', name: 'Boss', email: 'boss@example.com', role: 'Administrator', modules: ['items', 'settings'] })
+const other = account({
+  id: 'boss',
+  username: 'boss',
+  name: 'Boss',
+  email: 'boss@example.com',
+  role: 'Administrator',
+  modules: ['items', 'settings'],
+})
 const base = () => [account(), { ...other }]
 
 test('an unchanged account set is self-only', () => {
@@ -15,7 +31,16 @@ test('an unchanged account set is self-only', () => {
 })
 
 test('the signed-in user may change their own allow-listed profile fields', () => {
-  const next = [account({ name: 'My New Name', email: 'new@example.com', phone: '555-9999', passwordHash: 'hash-new', theme: 'ocean' }), { ...other }]
+  const next = [
+    account({
+      name: 'My New Name',
+      email: 'new@example.com',
+      phone: '555-9999',
+      passwordHash: 'hash-new',
+      theme: 'ocean',
+    }),
+    { ...other },
+  ]
   assert.equal(accountChangesAreSelfOnly(base(), next, 'me'), true)
 })
 
@@ -59,7 +84,21 @@ test('an incoming account whose id is unknown to the server is rejected', () => 
 })
 
 test('field reordering alone is not treated as a change', () => {
-  const reordered = [{ status: 'Active', role: 'Administrator', id: 'boss', modules: ['items', 'settings'], phone: other.phone, email: other.email, name: other.name, username: 'boss', passwordHash: other.passwordHash, theme: other.theme }, account()]
+  const reordered = [
+    {
+      status: 'Active',
+      role: 'Administrator',
+      id: 'boss',
+      modules: ['items', 'settings'],
+      phone: other.phone,
+      email: other.email,
+      name: other.name,
+      username: 'boss',
+      passwordHash: other.passwordHash,
+      theme: other.theme,
+    },
+    account(),
+  ]
   assert.equal(accountChangesAreSelfOnly(base(), reordered, 'me'), true)
 })
 

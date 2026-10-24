@@ -4,10 +4,6 @@
   "fromVersion": "0.2.0",
   "toVersion": "0.2.1",
   "requiresNpmInstall": false,
-  "files": [
-    "package.json",
-    "src/version.ts",
-    "src/auth.ts"
-  ],
+  "files": ["package.json", "src/version.ts", "src/auth.ts"],
   "delete": []
 }

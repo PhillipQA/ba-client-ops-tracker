@@ -1,4 +1,13 @@
-import type { Client, PlannerActivity, Priority, Project, UserAccount, WaitingOn, WorkActivityEvent, WorkItem } from '../../shared/types'
+import type {
+  Client,
+  PlannerActivity,
+  Priority,
+  Project,
+  UserAccount,
+  WaitingOn,
+  WorkActivityEvent,
+  WorkItem,
+} from '../../shared/types'
 
 export type AISuggestionKind = 'issue' | 'requirement' | 'follow_up' | 'activity' | 'draft_reply'
 
@@ -35,11 +44,14 @@ export interface AssistantContext {
   myRecentActivity: WorkActivityEvent[]
 }
 
-export async function askBAAssistant(args: {
-  message: string
-  context: AssistantContext
-  history: AIMessage[]
-}, signal?: AbortSignal): Promise<{ message: string; suggestions: AISuggestion[] }> {
+export async function askBAAssistant(
+  args: {
+    message: string
+    context: AssistantContext
+    history: AIMessage[]
+  },
+  signal?: AbortSignal,
+): Promise<{ message: string; suggestions: AISuggestion[] }> {
   const response = await fetch('/api/assistant', {
     signal,
     method: 'POST',
@@ -47,7 +59,11 @@ export async function askBAAssistant(args: {
     body: JSON.stringify(args),
   })
 
-  const body = await response.json().catch(() => null) as { error?: string; message?: string; suggestions?: AISuggestion[] } | null
+  const body = (await response.json().catch(() => null)) as {
+    error?: string
+    message?: string
+    suggestions?: AISuggestion[]
+  } | null
   if (!response.ok) throw new Error(body?.error || 'AI assistant request failed.')
   if (!body?.message) throw new Error('AI assistant returned an empty response.')
 

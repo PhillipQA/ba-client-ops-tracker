@@ -1,12 +1,20 @@
 // Sessions, passwords and the sign-in checks every route uses.
 import bcrypt from 'bcryptjs'
-import express from 'express'
+import type express from 'express'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { type InterfaceMode, normalizeInterfaceMode } from '../../src/features/settings/appearance'
 import { normalizeAppTheme, normalizeClientThemes } from '../../src/features/settings/theme'
 import { idleTimeoutFromEnv, SessionStore } from '../auth/session-store'
 import { isProduction } from './config'
-import { ALL_MODULES, BCRYPT_ROUNDS, BXI_CORE_ORG_SLUG, defaultAdmin, INTERNAL_ADMIN_ACCOUNT_KEY, INTERNAL_ADMIN_USER_ID, PASSWORD_BOOTSTRAP_MARKER } from './constants'
+import {
+  ALL_MODULES,
+  BCRYPT_ROUNDS,
+  BXI_CORE_ORG_SLUG,
+  type defaultAdmin,
+  INTERNAL_ADMIN_ACCOUNT_KEY,
+  INTERNAL_ADMIN_USER_ID,
+  PASSWORD_BOOTSTRAP_MARKER,
+} from './constants'
 
 export type SessionUser = Omit<typeof defaultAdmin, 'passwordHash' | 'createdAt'> & {
   createdAt?: string
@@ -33,7 +41,9 @@ export type OrganizationInfo = {
 }
 
 // Sessions expire on the server (8 hours absolute, 2 hours idle by default), not only in the browser cookie.
-export const sessions = new SessionStore<SessionUser>({ idleTimeoutMs: idleTimeoutFromEnv(process.env.SESSION_IDLE_TIMEOUT_MINUTES) })
+export const sessions = new SessionStore<SessionUser>({
+  idleTimeoutMs: idleTimeoutFromEnv(process.env.SESSION_IDLE_TIMEOUT_MINUTES),
+})
 
 // Legacy SHA-256 digest retained only for backward-compatible verification and
 // as the browser-to-server pre-hash used by the existing Settings UI. Passwords
@@ -82,9 +92,16 @@ export function sessionCookie(token: string, maxAge: number) {
 
 export function safeUser(account: any, organization?: OrganizationInfo | null): SessionUser {
   const role = account.role === 'Administrator' || account.role === 'Viewer' ? account.role : 'Contributor'
-  const organizationModules = organization?.enabledModules?.filter((value) => ALL_MODULES.includes(String(value))) || [...ALL_MODULES]
-  const accountModules = Array.isArray(account.modules) ? account.modules.filter((value: unknown) => ALL_MODULES.includes(String(value))) : []
-  const modules = role === 'Administrator' ? [...organizationModules] : accountModules.filter((value: string) => organizationModules.includes(value))
+  const organizationModules = organization?.enabledModules?.filter(value => ALL_MODULES.includes(String(value))) || [
+    ...ALL_MODULES,
+  ]
+  const accountModules = Array.isArray(account.modules)
+    ? account.modules.filter((value: unknown) => ALL_MODULES.includes(String(value)))
+    : []
+  const modules =
+    role === 'Administrator'
+      ? [...organizationModules]
+      : accountModules.filter((value: string) => organizationModules.includes(value))
   return {
     id: String(account.id),
     username: String(account.username || ''),
@@ -94,7 +111,9 @@ export function safeUser(account: any, organization?: OrganizationInfo | null): 
     role,
     modules,
     theme: normalizeAppTheme(account.theme ?? account.raw_data?.theme),
-    interfaceMode: normalizeInterfaceMode(account.interfaceMode === undefined ? account.raw_data?.interfaceMode : account.interfaceMode),
+    interfaceMode: normalizeInterfaceMode(
+      account.interfaceMode === undefined ? account.raw_data?.interfaceMode : account.interfaceMode,
+    ),
     clientThemes: normalizeClientThemes(account.clientThemes ?? account.raw_data?.clientThemes),
     status: account.status === 'Disabled' ? 'Disabled' : 'Active',
     createdAt: account.createdAt || account.created_on ? String(account.createdAt || account.created_on) : undefined,
@@ -105,7 +124,11 @@ export function safeUser(account: any, organization?: OrganizationInfo | null): 
     isPlatformAdmin: false,
     accountType: 'tenant',
     accountKey: organization?.slug || BXI_CORE_ORG_SLUG,
-    lastLoginAt: account.last_login_at ? String(account.last_login_at) : account.lastLoginAt ? String(account.lastLoginAt) : undefined,
+    lastLoginAt: account.last_login_at
+      ? String(account.last_login_at)
+      : account.lastLoginAt
+        ? String(account.lastLoginAt)
+        : undefined,
   }
 }
 
@@ -128,10 +151,16 @@ export function safePlatformUser(account: any): SessionUser {
 }
 
 function parseCookies(header = '') {
-  return Object.fromEntries(header.split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
-    const index = part.indexOf('=')
-    return index < 0 ? [part, ''] : [part.slice(0, index), decodeURIComponent(part.slice(index + 1))]
-  }))
+  return Object.fromEntries(
+    header
+      .split(';')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .map(part => {
+        const index = part.indexOf('=')
+        return index < 0 ? [part, ''] : [part.slice(0, index), decodeURIComponent(part.slice(index + 1))]
+      }),
+  )
 }
 
 export function sessionFromRequest(req: express.Request) {

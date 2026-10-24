@@ -24,11 +24,39 @@ import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transpo
 import { securityHeaders } from './auth/security-headers'
 import { followUpTimeZone, isProduction, port, projectRoot } from './core/config'
 import { supabaseAdmin } from './core/database'
-import { bootstrapPasswordUsable, requireAuth, requireTenantWorkspace, safeUser, secureHashPassword, sessionFromRequest, sessions } from './core/auth'
-import { authoritativeWorkEvents, commitTenantState, loadTenantState, normalizedSchemaStatus, organizationById, verifyTenantUserPassword } from './core/tenant-state'
+import {
+  bootstrapPasswordUsable,
+  requireAuth,
+  requireTenantWorkspace,
+  safeUser,
+  secureHashPassword,
+  sessionFromRequest,
+  sessions,
+} from './core/auth'
+import {
+  authoritativeWorkEvents,
+  commitTenantState,
+  loadTenantState,
+  normalizedSchemaStatus,
+  organizationById,
+  verifyTenantUserPassword,
+} from './core/tenant-state'
 import { aiAgents, integrations } from './core/services'
-import { bxiCoreBootstrapPassword, defaultTaskSettings, internalAdminBootstrapPassword, openTaskStatus } from './core/constants'
-import { discordRuntimes, discordStatusPayload, discordUserWindows, reconcileDiscord, reconnectDiscord, registerDiscordRoutes, setDiscordCapture } from './integrations/discord'
+import {
+  bxiCoreBootstrapPassword,
+  defaultTaskSettings,
+  internalAdminBootstrapPassword,
+  openTaskStatus,
+} from './core/constants'
+import {
+  discordRuntimes,
+  discordStatusPayload,
+  discordUserWindows,
+  reconcileDiscord,
+  reconnectDiscord,
+  registerDiscordRoutes,
+  setDiscordCapture,
+} from './integrations/discord'
 import { loginLimiter } from './auth/rate-limits'
 import { registerAuthRoutes } from './auth/auth-routes'
 import { registerStoreRoutes } from './workspace/store-routes'
@@ -46,7 +74,14 @@ app.use(securityHeaders({ production: isProduction }))
 
 app.use('/api/auth', authRequestDiagnostics)
 
-const docHubDeps: Parameters<typeof createDocHubService>[0] = { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, organizationById, load: loadTenantState, commit: commitTenantState }
+const docHubDeps: Parameters<typeof createDocHubService>[0] = {
+  db: supabaseAdmin,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  organizationById,
+  load: loadTenantState,
+  commit: commitTenantState,
+}
 const docHubService = createDocHubService(docHubDeps)
 registerDocHubWebhook(app, docHubDeps, docHubService)
 app.use(express.json({ limit: '24mb' }))
@@ -59,24 +94,59 @@ registerInternalAdminRoutes(app)
 
 registerAssistantRoutes(app)
 
-registerBrdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, aiAgents, templatePath: path.join(projectRoot, 'templates', 'brd-template.docx') })
+registerBrdRoutes(app, {
+  db: supabaseAdmin,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  aiAgents,
+  templatePath: path.join(projectRoot, 'templates', 'brd-template.docx'),
+})
 
-registerFsdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, aiAgents, logoPath: path.join(projectRoot, 'templates', 'fsd-logo.png') })
+registerFsdRoutes(app, {
+  db: supabaseAdmin,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  aiAgents,
+  logoPath: path.join(projectRoot, 'templates', 'fsd-logo.png'),
+})
 
 registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
 registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
 // Connected Google Sheets read as the person who connected them, through the same Google sign-in as Gmail (registered below).
-registerTrackerRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, load: loadTenantState, googleAccess: (tenantId, userId) => communications.googleAccess(tenantId, userId) })
+registerTrackerRoutes(app, {
+  db: supabaseAdmin,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  load: loadTenantState,
+  googleAccess: (tenantId, userId) => communications.googleAccess(tenantId, userId),
+})
 registerEmailTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
 
-registerSignoffRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx'), goLiveTemplatePath: path.join(projectRoot, 'templates', 'golive-template.docx'), templatePaths: { uat: path.join(projectRoot, 'templates', 'uat-template.docx'), uatdeploy: path.join(projectRoot, 'templates', 'uatdeploy-template.docx'), training: path.join(projectRoot, 'templates', 'training-template.docx') } })
+registerSignoffRoutes(app, {
+  db: supabaseAdmin,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx'),
+  goLiveTemplatePath: path.join(projectRoot, 'templates', 'golive-template.docx'),
+  templatePaths: {
+    uat: path.join(projectRoot, 'templates', 'uat-template.docx'),
+    uatdeploy: path.join(projectRoot, 'templates', 'uatdeploy-template.docx'),
+    training: path.join(projectRoot, 'templates', 'training-template.docx'),
+  },
+})
 
 registerDrfRoutes(app)
 
 registerDiscordRoutes(app)
 
-registerAccountUsers(app, { requireAuth, requireTenant: requireTenantWorkspace, organizationById,
-  load: loadTenantState, commit: commitTenantState, hashPassword: secureHashPassword, verifyCurrentPassword: verifyTenantUserPassword,
+registerAccountUsers(app, {
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  organizationById,
+  load: loadTenantState,
+  commit: commitTenantState,
+  hashPassword: secureHashPassword,
+  verifyCurrentPassword: verifyTenantUserPassword,
   refreshSessions(organizationId, account, organization, passwordChanged) {
     for (const [token, session] of sessions) {
       if (session.organizationId !== organizationId || session.id !== account.id) continue
@@ -85,22 +155,63 @@ registerAccountUsers(app, { requireAuth, requireTenant: requireTenantWorkspace, 
     }
   },
 })
-registerPlatformSettings(app, { db: supabaseAdmin, requireAuth, requirePlatformAdmin, organizationById, loadTenantState, normalizedSchemaStatus, defaultTaskSettings, commitTenantState, integrations })
+registerPlatformSettings(app, {
+  db: supabaseAdmin,
+  requireAuth,
+  requirePlatformAdmin,
+  organizationById,
+  loadTenantState,
+  normalizedSchemaStatus,
+  defaultTaskSettings,
+  commitTenantState,
+  integrations,
+})
 registerDocHubRoutes(app, docHubDeps, docHubService)
-registerIntegrationRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace,
-  organizationById, store: integrations, reconnect: reconnectDiscord, status: discordStatusPayload })
+registerIntegrationRoutes(app, {
+  db: supabaseAdmin,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  organizationById,
+  store: integrations,
+  reconnect: reconnectDiscord,
+  status: discordStatusPayload,
+})
 registerAiAgentRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, organizationById, manager: aiAgents })
-registerGoogleCalendarRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, requirePlatformAdmin,
-  organizationById, sessionFromRequest, sessionByToken: token => sessions.get(token) || null })
+registerGoogleCalendarRoutes(app, {
+  db: supabaseAdmin,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  requirePlatformAdmin,
+  organizationById,
+  sessionFromRequest,
+  sessionByToken: token => sessions.get(token) || null,
+})
 
-const communications = registerCommunications(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, sessionFromRequest, sessionByToken: token => sessions.get(token) || null, requirePlatformAdmin, organizationById, load: loadTenantState,
+const communications = registerCommunications(app, {
+  db: supabaseAdmin,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  sessionFromRequest,
+  sessionByToken: token => sessions.get(token) || null,
+  requirePlatformAdmin,
+  organizationById,
+  load: loadTenantState,
   commit: (id, next, user, reason, current) => {
     const workEvents = authoritativeWorkEvents(current, next, user)
-    const priorIds = new Set((Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event.id)))
-    const newEventIds = workEvents.filter((event: any) => !priorIds.has(String(event.id))).map((event: any) => String(event.id))
-    const notified = reconcileNotifications({ ...next, workEvents }, { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds }).state
+    const priorIds = new Set(
+      (Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event.id)),
+    )
+    const newEventIds = workEvents
+      .filter((event: any) => !priorIds.has(String(event.id)))
+      .map((event: any) => String(event.id))
+    const notified = reconcileNotifications(
+      { ...next, workEvents },
+      { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds },
+    ).state
     return commitTenantState(id, notified, user, reason, current)
-  }, openStatus: openTaskStatus })
+  },
+  openStatus: openTaskStatus,
+})
 
 // Fully signed DocHub documents are filed into the shared Google Drive by the same filer.
 docHubDeps.driveFiler = communications.driveFiler
@@ -121,19 +232,33 @@ const server = app.listen(port, () => {
   console.log(`BA Client Ops Tracker running on http://localhost:${port}`)
   console.log(`HTTP timeouts: keepAlive=${server.keepAliveTimeout}ms, headers=${server.headersTimeout}ms`)
   if (isProduction && !bootstrapPasswordUsable(internalAdminBootstrapPassword)) {
-    console.warn('SECURITY: INTERNAL_ADMIN_BOOTSTRAP_PASSWORD is not configured with 12+ characters. It is required only while the Internal Admin account is in bootstrap state.')
+    console.warn(
+      'SECURITY: INTERNAL_ADMIN_BOOTSTRAP_PASSWORD is not configured with 12+ characters. It is required only while the Internal Admin account is in bootstrap state.',
+    )
   }
   if (isProduction && !bootstrapPasswordUsable(bxiCoreBootstrapPassword)) {
-    console.warn('SECURITY: BXI_CORE_BOOTSTRAP_PASSWORD is not configured with 12+ characters. It is required only while the initial BXI-Core Admin account is in bootstrap state.')
+    console.warn(
+      'SECURITY: BXI_CORE_BOOTSTRAP_PASSWORD is not configured with 12+ characters. It is required only while the initial BXI-Core Admin account is in bootstrap state.',
+    )
   }
   void reconcileDiscord()
 })
 configureHttpServer(server)
 
 // Expired sessions and old login-failure counters are dropped even if nobody presents them again.
-const housekeepingTimer = setInterval(() => { sessions.prune(); loginLimiter.prune() }, 5 * 60_000)
+const housekeepingTimer = setInterval(() => {
+  sessions.prune()
+  loginLimiter.prune()
+}, 5 * 60_000)
 housekeepingTimer.unref()
 
-const discordTimer = setInterval(() => { const now = Date.now(); for (const [id, value] of discordUserWindows) if (now - value.startedAt > 60000) discordUserWindows.delete(id) }, 30000)
+const discordTimer = setInterval(() => {
+  const now = Date.now()
+  for (const [id, value] of discordUserWindows) if (now - value.startedAt > 60000) discordUserWindows.delete(id)
+}, 30000)
 discordTimer.unref()
-process.on('SIGTERM', () => { clearInterval(discordTimer); for (const runtime of discordRuntimes.values()) void runtime.client.destroy(); process.exit(0) })
+process.on('SIGTERM', () => {
+  clearInterval(discordTimer)
+  for (const runtime of discordRuntimes.values()) void runtime.client.destroy()
+  process.exit(0)
+})

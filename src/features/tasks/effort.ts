@@ -1,8 +1,15 @@
 // Effort tracking: optional per-task estimates and time entries.
 // Shared by the browser and the server, so this module stays free of React and Node APIs.
 
-export const EFFORT_CATEGORIES = ['Analysis', 'Meeting', 'Documentation', 'Testing / UAT', 'Client comms', 'Other'] as const
-export type EffortCategory = typeof EFFORT_CATEGORIES[number]
+export const EFFORT_CATEGORIES = [
+  'Analysis',
+  'Meeting',
+  'Documentation',
+  'Testing / UAT',
+  'Client comms',
+  'Other',
+] as const
+export type EffortCategory = (typeof EFFORT_CATEGORIES)[number]
 
 export const MAX_ENTRY_HOURS = 24
 export const MAX_ESTIMATE_HOURS = 1000
@@ -54,17 +61,21 @@ export function isEffortCategory(value: unknown): value is EffortCategory {
   return typeof value === 'string' && (EFFORT_CATEGORIES as readonly string[]).includes(value)
 }
 
-export function validateTimeEntryInput(input: unknown): { ok: true; value: TimeEntryInput } | { ok: false; error: string } {
-  const body = input && typeof input === 'object' ? input as Record<string, unknown> : {}
+export function validateTimeEntryInput(
+  input: unknown,
+): { ok: true; value: TimeEntryInput } | { ok: false; error: string } {
+  const body = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
   if (!isDateKey(body.date)) return { ok: false, error: 'Choose a valid date for the time entry.' }
   const rawHours = typeof body.hours === 'string' ? Number(body.hours) : body.hours
-  if (typeof rawHours !== 'number' || !Number.isFinite(rawHours)) return { ok: false, error: 'Enter the hours spent as a number.' }
+  if (typeof rawHours !== 'number' || !Number.isFinite(rawHours))
+    return { ok: false, error: 'Enter the hours spent as a number.' }
   const hours = roundToQuarter(rawHours)
   if (hours < 0.25) return { ok: false, error: 'Log at least 15 minutes (0.25 hours).' }
   if (hours > MAX_ENTRY_HOURS) return { ok: false, error: `A single entry cannot exceed ${MAX_ENTRY_HOURS} hours.` }
   if (!isEffortCategory(body.category)) return { ok: false, error: 'Choose a work category.' }
   const note = typeof body.note === 'string' ? body.note.trim() : ''
-  if (note.length > MAX_ENTRY_NOTE_LENGTH) return { ok: false, error: `Notes must be ${MAX_ENTRY_NOTE_LENGTH} characters or fewer.` }
+  if (note.length > MAX_ENTRY_NOTE_LENGTH)
+    return { ok: false, error: `Notes must be ${MAX_ENTRY_NOTE_LENGTH} characters or fewer.` }
   return { ok: true, value: { date: body.date, hours, category: body.category, note } }
 }
 
@@ -72,17 +83,22 @@ export function validateTimeEntryInput(input: unknown): { ok: true; value: TimeE
  * Normalizes an estimate supplied by a workspace save. Blank means "no estimate".
  * Returns an error string for values that cannot be stored.
  */
-export function normalizeEstimate(value: unknown): { ok: true; value: number | undefined } | { ok: false; error: string } {
+export function normalizeEstimate(
+  value: unknown,
+): { ok: true; value: number | undefined } | { ok: false; error: string } {
   if (value === undefined || value === null || value === '') return { ok: true, value: undefined }
   const raw = typeof value === 'string' ? Number(value) : value
-  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return { ok: false, error: 'Estimates must be a number of hours of 0 or more.' }
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0)
+    return { ok: false, error: 'Estimates must be a number of hours of 0 or more.' }
   const hours = roundToQuarter(raw)
   if (hours > MAX_ESTIMATE_HOURS) return { ok: false, error: `Estimates cannot exceed ${MAX_ESTIMATE_HOURS} hours.` }
   return { ok: true, value: hours === 0 ? undefined : hours }
 }
 
 export function sumEntryHours(entries: readonly TimeEntry[] | undefined) {
-  return roundToQuarter((entries || []).reduce((total, entry) => total + (Number.isFinite(entry?.hours) ? entry.hours : 0), 0))
+  return roundToQuarter(
+    (entries || []).reduce((total, entry) => total + (Number.isFinite(entry?.hours) ? entry.hours : 0), 0),
+  )
 }
 
 export interface EffortSummary {
@@ -101,15 +117,18 @@ export interface EffortSummary {
 
 /** Effort for one task. A parent task rolls up its subtasks' time and, when it has no estimate, their estimates. */
 export function effortSummary(item: EffortItem, allItems: readonly EffortItem[] = []): EffortSummary {
-  const children = item.parentTaskId ? [] : allItems.filter((candidate) => candidate.parentTaskId === item.id)
+  const children = item.parentTaskId ? [] : allItems.filter(candidate => candidate.parentTaskId === item.id)
   const ownLogged = sumEntryHours(item.timeEntries)
-  const subtaskLogged = sumEntryHours(children.flatMap((child) => child.timeEntries || []))
+  const subtaskLogged = sumEntryHours(children.flatMap(child => child.timeEntries || []))
   const logged = roundToQuarter(ownLogged + subtaskLogged)
-  const childEstimates = children.map((child) => child.estimateHours).filter((value): value is number => typeof value === 'number' && value > 0)
+  const childEstimates = children
+    .map(child => child.estimateHours)
+    .filter((value): value is number => typeof value === 'number' && value > 0)
   const ownEstimate = typeof item.estimateHours === 'number' && item.estimateHours > 0 ? item.estimateHours : undefined
-  const estimate = ownEstimate ?? (childEstimates.length ? roundToQuarter(childEstimates.reduce((a, b) => a + b, 0)) : undefined)
+  const estimate =
+    ownEstimate ?? (childEstimates.length ? roundToQuarter(childEstimates.reduce((a, b) => a + b, 0)) : undefined)
   const totals = new Map<EffortCategory, number>()
-  for (const entry of [...(item.timeEntries || []), ...children.flatMap((child) => child.timeEntries || [])]) {
+  for (const entry of [...(item.timeEntries || []), ...children.flatMap(child => child.timeEntries || [])]) {
     if (!isEffortCategory(entry?.category) || !Number.isFinite(entry?.hours)) continue
     totals.set(entry.category, (totals.get(entry.category) || 0) + entry.hours)
   }
@@ -121,7 +140,10 @@ export function effortSummary(item: EffortItem, allItems: readonly EffortItem[] 
     logged,
     overBy: estimate === undefined ? 0 : Math.max(0, roundToQuarter(logged - estimate)),
     percent: estimate ? Math.round((logged / estimate) * 100) : undefined,
-    byCategory: EFFORT_CATEGORIES.filter((category) => totals.has(category)).map((category) => ({ category, hours: roundToQuarter(totals.get(category) || 0) })),
+    byCategory: EFFORT_CATEGORIES.filter(category => totals.has(category)).map(category => ({
+      category,
+      hours: roundToQuarter(totals.get(category) || 0),
+    })),
   }
 }
 
@@ -156,7 +178,10 @@ export interface EffortRow<T> {
 }
 
 /** Flattens time entries for reporting. The user filter matches who logged the time, not the assignee. */
-export function effortRows<T extends EffortItem & { clientId?: string; projectId?: string }>(items: readonly T[], filter: { from: string; to: string; clientId?: string; projectId?: string; userId?: string }): EffortRow<T>[] {
+export function effortRows<T extends EffortItem & { clientId?: string; projectId?: string }>(
+  items: readonly T[],
+  filter: { from: string; to: string; clientId?: string; projectId?: string; userId?: string },
+): EffortRow<T>[] {
   const rows: EffortRow<T>[] = []
   for (const item of items) {
     if (filter.clientId && item.clientId !== filter.clientId) continue
@@ -167,7 +192,9 @@ export function effortRows<T extends EffortItem & { clientId?: string; projectId
       rows.push({ item, entry })
     }
   }
-  return rows.sort((a, b) => b.entry.date.localeCompare(a.entry.date) || b.entry.createdAt.localeCompare(a.entry.createdAt))
+  return rows.sort(
+    (a, b) => b.entry.date.localeCompare(a.entry.date) || b.entry.createdAt.localeCompare(a.entry.createdAt),
+  )
 }
 
 /** Whether the person may remove an entry: its author, or an Administrator. */

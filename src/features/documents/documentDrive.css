@@ -1,26 +1,114 @@
 /* Google Drive in Document Creation. Colors inherit from the surrounding theme. */
-.document-drive-picker { display: grid; gap: .6rem; min-width: 0; }
-.document-drive-panel, .document-drive-save {
-  display: grid; gap: .65rem; min-width: 0; padding: .85rem;
-  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 10px;
+.document-drive-picker {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+}
+.document-drive-panel,
+.document-drive-save {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 10px;
   background: color-mix(in srgb, currentColor 5%, transparent);
 }
-.document-drive-save { margin-top: 1rem; }
-.document-drive-save h3 { display: flex; align-items: center; gap: .45rem; margin: 0; font-size: 1rem; }
-.document-drive-save p, .document-drive-panel p { margin: 0; }
-.document-drive-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
-.document-drive-head > div { display: grid; gap: .15rem; min-width: 0; }
-.document-drive-head small, .document-drive-groups small, .document-drive-file small { opacity: .75; overflow-wrap: anywhere; }
-.document-drive-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .6rem; }
-.document-drive-filters label { display: grid; gap: .25rem; min-width: 0; font-size: .85rem; }
-.document-drive-filters :is(select, input, .client-combo-input) { width: 100%; min-width: 0; }
-.document-drive-groups, .document-drive-groups ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
-.document-drive-groups { max-height: 18rem; overflow: auto; }
-.document-drive-groups > li { display: grid; gap: .25rem; padding-bottom: .5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
-.document-drive-groups ul li { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding-left: .5rem; }
-.document-drive-file { display: grid; min-width: 0; overflow-wrap: anywhere; }
-.document-drive-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.document-drive-empty { opacity: .8; font-size: .9rem; }
-.document-drive-error { color: var(--ui-danger, #ffb7b9); font-size: .9rem; }
-.document-drive-saved a { margin-left: .35rem; }
-@media (max-width: 640px) { .document-drive-groups ul li { flex-direction: column; align-items: stretch; } }
+.document-drive-save {
+  margin-top: 1rem;
+}
+.document-drive-save h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 1rem;
+}
+.document-drive-save p,
+.document-drive-panel p {
+  margin: 0;
+}
+.document-drive-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.document-drive-head > div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.document-drive-head small,
+.document-drive-groups small,
+.document-drive-file small {
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}
+.document-drive-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.6rem;
+}
+.document-drive-filters label {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+.document-drive-filters :is(select, input, .client-combo-input) {
+  width: 100%;
+  min-width: 0;
+}
+.document-drive-groups,
+.document-drive-groups ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.document-drive-groups {
+  max-height: 18rem;
+  overflow: auto;
+}
+.document-drive-groups > li {
+  display: grid;
+  gap: 0.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+.document-drive-groups ul li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-left: 0.5rem;
+}
+.document-drive-file {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.document-drive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.document-drive-empty {
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+.document-drive-error {
+  color: var(--ui-danger, #ffb7b9);
+  font-size: 0.9rem;
+}
+.document-drive-saved a {
+  margin-left: 0.35rem;
+}
+@media (max-width: 640px) {
+  .document-drive-groups ul li {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

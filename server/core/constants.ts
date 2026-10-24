@@ -1,7 +1,19 @@
 // Fixed ids, defaults and bootstrap settings shared by the routes.
 import './env'
 
-export const ALL_MODULES = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'requirements', 'trackers', 'reports', 'ai', 'settings']
+export const ALL_MODULES = [
+  'action',
+  'clients',
+  'projects',
+  'inbox',
+  'items',
+  'documents',
+  'requirements',
+  'trackers',
+  'reports',
+  'ai',
+  'settings',
+]
 
 export const BXI_CORE_ORG_ID = '00000000-0000-0000-0000-000000000001'
 
@@ -22,8 +34,16 @@ export const internalAdminBootstrapPassword = process.env.INTERNAL_ADMIN_BOOTSTR
 export const bxiCoreBootstrapPassword = process.env.BXI_CORE_BOOTSTRAP_PASSWORD || ''
 
 export const defaultAdmin = {
-  id: 'admin', username: 'Admin', passwordHash: '', name: 'Administrator', email: '', phone: '', role: 'Administrator',
-  modules: ALL_MODULES, status: 'Active', createdAt: '2026-09-17',
+  id: 'admin',
+  username: 'Admin',
+  passwordHash: '',
+  name: 'Administrator',
+  email: '',
+  phone: '',
+  role: 'Administrator',
+  modules: ALL_MODULES,
+  status: 'Active',
+  createdAt: '2026-09-17',
 }
 
 export const defaultTaskSettings = {
@@ -38,6 +58,8 @@ export const defaultTaskSettings = {
 }
 
 export function openTaskStatus(state: any) {
-  const statuses = Array.isArray(state?.taskSettings?.statuses) ? state.taskSettings.statuses : defaultTaskSettings.statuses
+  const statuses = Array.isArray(state?.taskSettings?.statuses)
+    ? state.taskSettings.statuses
+    : defaultTaskSettings.statuses
   return String(statuses.find((status: any) => !status?.closed)?.label || 'Open')
 }

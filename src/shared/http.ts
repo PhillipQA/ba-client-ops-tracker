@@ -4,7 +4,13 @@
  * gave none. Features keep their own wording by passing `fallback`, and their own error classes by passing `error`.
  */
 export class HttpError extends Error {
-  constructor(message: string, public status: number, public body: Record<string, any> = {}) { super(message) }
+  constructor(
+    message: string,
+    public status: number,
+    public body: Record<string, any> = {},
+  ) {
+    super(message)
+  }
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -50,9 +56,16 @@ export async function requestJson<T = any>(url: string, options: HttpOptions = {
   const text = await response.text()
   let data: Record<string, any> = {}
   // A proxy or a crash can answer with HTML; that is treated as an empty answer.
-  try { data = text ? JSON.parse(text) : {} } catch { data = {} }
+  try {
+    data = text ? JSON.parse(text) : {}
+  } catch {
+    data = {}
+  }
   if (!response.ok && !(typeof data.code === 'string' && options.acceptCodes?.includes(data.code))) {
-    const message = typeof data.error === 'string' && data.error ? data.error : options.statusFallback?.[response.status] || options.fallback || 'The request could not be completed.'
+    const message =
+      typeof data.error === 'string' && data.error
+        ? data.error
+        : options.statusFallback?.[response.status] || options.fallback || 'The request could not be completed.'
     throw options.error ? options.error(message, response.status, data) : new HttpError(message, response.status, data)
   }
   return data as T
@@ -60,9 +73,14 @@ export async function requestJson<T = any>(url: string, options: HttpOptions = {
 
 /** Shorthands for the common cases. */
 export const http = {
-  get: <T = any>(url: string, options: Omit<HttpOptions, 'method' | 'body'> = {}) => requestJson<T>(url, { ...options, method: 'GET' }),
-  post: <T = any>(url: string, body?: unknown, options: Omit<HttpOptions, 'method' | 'body'> = {}) => requestJson<T>(url, { ...options, method: 'POST', body }),
-  put: <T = any>(url: string, body?: unknown, options: Omit<HttpOptions, 'method' | 'body'> = {}) => requestJson<T>(url, { ...options, method: 'PUT', body }),
-  patch: <T = any>(url: string, body?: unknown, options: Omit<HttpOptions, 'method' | 'body'> = {}) => requestJson<T>(url, { ...options, method: 'PATCH', body }),
-  delete: <T = any>(url: string, options: Omit<HttpOptions, 'method' | 'body'> = {}) => requestJson<T>(url, { ...options, method: 'DELETE' }),
+  get: <T = any>(url: string, options: Omit<HttpOptions, 'method' | 'body'> = {}) =>
+    requestJson<T>(url, { ...options, method: 'GET' }),
+  post: <T = any>(url: string, body?: unknown, options: Omit<HttpOptions, 'method' | 'body'> = {}) =>
+    requestJson<T>(url, { ...options, method: 'POST', body }),
+  put: <T = any>(url: string, body?: unknown, options: Omit<HttpOptions, 'method' | 'body'> = {}) =>
+    requestJson<T>(url, { ...options, method: 'PUT', body }),
+  patch: <T = any>(url: string, body?: unknown, options: Omit<HttpOptions, 'method' | 'body'> = {}) =>
+    requestJson<T>(url, { ...options, method: 'PATCH', body }),
+  delete: <T = any>(url: string, options: Omit<HttpOptions, 'method' | 'body'> = {}) =>
+    requestJson<T>(url, { ...options, method: 'DELETE' }),
 }

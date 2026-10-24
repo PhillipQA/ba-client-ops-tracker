@@ -30,31 +30,58 @@ const SHOWN = 8
 const sameAddress = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 
 export function PersonNameInput({ label, value, email, onName, onEmail, local, maxLength, placeholder }: Props) {
-  const id = useId(), listId = `${id}-list`
+  const id = useId(),
+    listId = `${id}-list`
   const [remote, setRemote] = useState<Suggestion[]>([])
-  const [active, setActive] = useState(0), [navigated, setNavigated] = useState(false), [focused, setFocused] = useState(false), [closed, setClosed] = useState(false)
+  const [active, setActive] = useState(0),
+    [navigated, setNavigated] = useState(false),
+    [focused, setFocused] = useState(false),
+    [closed, setClosed] = useState(false)
   const [filled, setFilled] = useState('')
   // The email this field put in, so a change of name can take it out again and a hand-typed email is never touched.
   const auto = useRef('')
   const latest = useRef({ value, email, local, onEmail })
   latest.current = { value, email, local, onEmail }
-  const run = useRef(0), mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false }, [])
+  const run = useRef(0),
+    mounted = useRef(true)
+  useEffect(
+    () => () => {
+      mounted.current = false
+    },
+    [],
+  )
 
   const query = value.trim().length >= 2 ? value.trim() : ''
   useEffect(() => {
-    if (!query) { setRemote([]); return }
-    const mine = ++run.current, controller = new AbortController()
+    if (!query) {
+      setRemote([])
+      return
+    }
+    const mine = ++run.current,
+      controller = new AbortController()
     const timer = setTimeout(() => {
-      searchContacts(query, controller.signal).then(result => { if (mine === run.current) setRemote(result.people) }, () => { /* Suggestions are optional. */ })
+      searchContacts(query, controller.signal).then(
+        result => {
+          if (mine === run.current) setRemote(result.people)
+        },
+        () => {
+          /* Suggestions are optional. */
+        },
+      )
     }, DELAY_MS)
-    return () => { clearTimeout(timer); controller.abort() }
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
   }, [query])
 
   const suggestions = useMemo(() => {
     if (!query) return []
     const emailed = matchPeople(remote, query, { limit: SHOWN, keepOrder: true })
-    return matchPeople([...emailed, ...matchPeople(local, query, { limit: SHOWN })], query, { limit: SHOWN, keepOrder: true })
+    return matchPeople([...emailed, ...matchPeople(local, query, { limit: SHOWN })], query, {
+      limit: SHOWN,
+      keepOrder: true,
+    })
   }, [query, remote, local])
 
   const open = focused && !closed && suggestions.length > 0
@@ -62,18 +89,33 @@ export function PersonNameInput({ label, value, email, onName, onEmail, local, m
   const optionId = (index: number) => `${id}-option-${index}`
   const stillFilled = Boolean(filled) && sameAddress(email, filled)
 
-  const fill = (address: string) => { auto.current = address; setFilled(address); latest.current.onEmail(address) }
-  const forget = () => { auto.current = ''; setFilled('') }
+  const fill = (address: string) => {
+    auto.current = address
+    setFilled(address)
+    latest.current.onEmail(address)
+  }
+  const forget = () => {
+    auto.current = ''
+    setFilled('')
+  }
 
   const change = (next: string) => {
-    onName(next); setActive(0); setNavigated(false); setClosed(false)
+    onName(next)
+    setActive(0)
+    setNavigated(false)
+    setClosed(false)
     // The old name's email no longer applies. Anything the person typed themselves is left alone.
-    if (auto.current && sameAddress(latest.current.email, auto.current)) { latest.current.onEmail(''); forget() }
+    if (auto.current && sameAddress(latest.current.email, auto.current)) {
+      latest.current.onEmail('')
+      forget()
+    }
   }
   const choose = (person: Suggestion) => {
     if (person.name) onName(person.name)
     fill(person.email)
-    setClosed(true); setActive(0); setNavigated(false)
+    setClosed(true)
+    setActive(0)
+    setNavigated(false)
   }
   // Leaving the field with a full name and no email: look the name up once, and only fill in a clear single match.
   const lookUp = () => {
@@ -86,31 +128,84 @@ export function PersonNameInput({ label, value, email, onName, onEmail, local, m
       if (found) fill(found.email)
     }
     const known = emailForName(latest.current.local, typed)
-    if (known) { settle([]); return }
-    searchContacts(typed).then(result => settle(result.people), () => {})
+    if (known) {
+      settle([])
+      return
+    }
+    searchContacts(typed).then(
+      result => settle(result.people),
+      () => {},
+    )
   }
   const keys = (event: KeyboardEvent<HTMLInputElement>) => {
     if (!open) return
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setClosed(true); return }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      setClosed(true)
+      return
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault(); setNavigated(true)
+      event.preventDefault()
+      setNavigated(true)
       setActive((highlighted + (event.key === 'ArrowDown' ? 1 : suggestions.length - 1)) % suggestions.length)
       return
     }
     // Enter takes a suggestion only when one was picked with the arrow keys, so typing a name and pressing Enter never swaps in somebody else.
-    if (event.key === 'Enter' && navigated) { event.preventDefault(); choose(suggestions[highlighted]) }
+    if (event.key === 'Enter' && navigated) {
+      event.preventDefault()
+      choose(suggestions[highlighted])
+    }
   }
 
-  return <div className="person-field">
-    <div className="person-anchor">
-      <label>{label}<input id={id} value={value} maxLength={maxLength} placeholder={placeholder} autoComplete="off"
-        role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={open ? listId : undefined} aria-activedescendant={open ? optionId(highlighted) : undefined}
-        onChange={event => change(event.target.value)} onKeyDown={keys}
-        onFocus={() => { setFocused(true); setClosed(false) }}
-        onBlur={() => { setFocused(false); lookUp() }} /></label>
-      {open && <SuggestionList id={listId} label={label} people={suggestions} highlighted={highlighted} optionId={optionId} onChoose={choose} onHover={setActive} />}
+  return (
+    <div className="person-field">
+      <div className="person-anchor">
+        <label>
+          {label}
+          <input
+            id={id}
+            value={value}
+            maxLength={maxLength}
+            placeholder={placeholder}
+            autoComplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={open}
+            aria-controls={open ? listId : undefined}
+            aria-activedescendant={open ? optionId(highlighted) : undefined}
+            onChange={event => change(event.target.value)}
+            onKeyDown={keys}
+            onFocus={() => {
+              setFocused(true)
+              setClosed(false)
+            }}
+            onBlur={() => {
+              setFocused(false)
+              lookUp()
+            }}
+          />
+        </label>
+        {open && (
+          <SuggestionList
+            id={listId}
+            label={label}
+            people={suggestions}
+            highlighted={highlighted}
+            optionId={optionId}
+            onChoose={choose}
+            onHover={setActive}
+          />
+        )}
+      </div>
+      {stillFilled && (
+        <small className="person-note" role="status">
+          Email filled in from your contacts. Check that it is right.
+        </small>
+      )}
+      <span className="email-sr" role="status" aria-live="polite">
+        {open ? suggestionStatus(suggestions.length) : ''}
+      </span>
     </div>
-    {stillFilled && <small className="person-note" role="status">Email filled in from your contacts. Check that it is right.</small>}
-    <span className="email-sr" role="status" aria-live="polite">{open ? suggestionStatus(suggestions.length) : ''}</span>
-  </div>
+  )
 }

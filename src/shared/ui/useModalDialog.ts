@@ -6,7 +6,10 @@ import { useEffect, type RefObject } from 'react'
  * backdrop-filter, clipping and stacking, which is why every dialog in the app uses it.
  * `onOpen` runs right after opening, for example to focus the first field.
  */
-export function useModalDialog(ref: RefObject<HTMLDialogElement | null>, onOpen?: (element: HTMLDialogElement) => void) {
+export function useModalDialog(
+  ref: RefObject<HTMLDialogElement | null>,
+  onOpen?: (element: HTMLDialogElement) => void,
+) {
   useEffect(() => {
     const element = ref.current
     if (!element) return

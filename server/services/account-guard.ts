@@ -15,8 +15,15 @@
 
 /** Order-independent serialization: object keys are sorted so field reordering is not seen as a change. */
 export function stableAccount(value: unknown): string | undefined {
-  return JSON.stringify(value, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
-    ? Object.fromEntries(Object.keys(entry).sort().map((key) => [key, entry[key]])) : entry)
+  return JSON.stringify(value, (_key, entry) =>
+    entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? Object.fromEntries(
+          Object.keys(entry)
+            .sort()
+            .map(key => [key, entry[key]]),
+        )
+      : entry,
+  )
 }
 
 /** Profile fields the signed-in user may change on their own account through a workspace save. */
@@ -24,7 +31,7 @@ export const SELF_EDITABLE_ACCOUNT_FIELDS = ['name', 'email', 'phone', 'password
 
 export function accountChangesAreSelfOnly(currentAccounts: any[], nextAccounts: any[], userId: string) {
   if (currentAccounts.length !== nextAccounts.length) return false
-  const currentMap = new Map(currentAccounts.map((account) => [String(account.id), account]))
+  const currentMap = new Map(currentAccounts.map(account => [String(account.id), account]))
   for (const next of nextAccounts) {
     const current = currentMap.get(String(next.id))
     if (!current) return false

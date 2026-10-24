@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applySubtaskAssignmentInheritance, normalizeSubtaskAssignmentInheritance, type AssignmentItem } from '../src/features/tasks/subtaskAssignment'
+import {
+  applySubtaskAssignmentInheritance,
+  normalizeSubtaskAssignmentInheritance,
+  type AssignmentItem,
+} from '../src/features/tasks/subtaskAssignment'
 
 const parent = (assignedToUserId?: string): AssignmentItem => ({ id: 'task-1', assignedToUserId })
 const subtask = (assignedToUserId?: string, assignmentInherited?: boolean): AssignmentItem => ({
@@ -11,10 +15,7 @@ const subtask = (assignedToUserId?: string, assignmentInherited?: boolean): Assi
 })
 
 test('new subtasks always inherit the main task assignee', () => {
-  const next = applySubtaskAssignmentInheritance(
-    [parent('user-a')],
-    [parent('user-a'), subtask('user-b', false)],
-  )
+  const next = applySubtaskAssignmentInheritance([parent('user-a')], [parent('user-a'), subtask('user-b', false)])
   assert.deepEqual(next[1], subtask('user-a', true))
 })
 

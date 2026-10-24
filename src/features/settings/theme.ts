@@ -52,15 +52,17 @@ export const THEME_OPTIONS: AppThemeOption[] = [
   },
 ]
 
-export const THEME_IDS = new Set<AppTheme>(THEME_OPTIONS.map((theme) => theme.id))
+export const THEME_IDS = new Set<AppTheme>(THEME_OPTIONS.map(theme => theme.id))
 
 export function normalizeAppTheme(value: unknown): AppTheme {
-  return typeof value === 'string' && THEME_IDS.has(value as AppTheme) ? value as AppTheme : 'default'
+  return typeof value === 'string' && THEME_IDS.has(value as AppTheme) ? (value as AppTheme) : 'default'
 }
 
 export function normalizeClientThemes(value: unknown): Record<string, AppTheme> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return Object.fromEntries(Object.entries(value).filter(([, theme]) => typeof theme === 'string' && THEME_IDS.has(theme as AppTheme)))
+  return Object.fromEntries(
+    Object.entries(value).filter(([, theme]) => typeof theme === 'string' && THEME_IDS.has(theme as AppTheme)),
+  )
 }
 export function themeForContext(user: { theme?: AppTheme }): AppTheme {
   return normalizeAppTheme(user.theme)

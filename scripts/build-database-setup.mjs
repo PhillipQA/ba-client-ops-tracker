@@ -8,26 +8,47 @@ const directory = resolve(root, 'database/migrations')
 const version = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version
 const output = resolve(root, 'database/setup.sql')
 // Northflank adapter DDL is applied separately from the numbered migration history.
-const current = readdirSync(directory).filter(name => name.endsWith('.sql') && name !== 'northflank-postgres.sql').map(name => {
-  const number = name === 'schema.sql' ? 1 : Number(name.match(/^schema-v(\d+)(?:-[a-z0-9-]+)?\.sql$/)?.[1])
-  if (!Number.isInteger(number) || number < 1) throw new Error(`Unrecognized migration: ${name}`)
-  return { name, number, source: readFileSync(resolve(directory, name), 'utf8') }
-})
+const current = readdirSync(directory)
+  .filter(name => name.endsWith('.sql') && name !== 'northflank-postgres.sql')
+  .map(name => {
+    const number = name === 'schema.sql' ? 1 : Number(name.match(/^schema-v(\d+)(?:-[a-z0-9-]+)?\.sql$/)?.[1])
+    if (!Number.isInteger(number) || number < 1) throw new Error(`Unrecognized migration: ${name}`)
+    return { name, number, source: readFileSync(resolve(directory, name), 'utf8') }
+  })
 // Older source migrations were pruned from this repository. Preserve their compiled
 // SQL and original checksums from the committed setup instead of dropping history.
-const archived = [...readFileSync(output, 'utf8').matchAll(/^-- Included source: migrations\/(schema(?:-v\d+[^\n/]*)?\.sql)\n-- SHA-256: ([a-f\d]{64})\n([\s\S]*?)(?=\n\n-- Included source: |\n\n-- Fresh BXI-Core)/gm)]
+const archived = [
+  ...readFileSync(output, 'utf8').matchAll(
+    /^-- Included source: migrations\/(schema(?:-v\d+[^\n/]*)?\.sql)\n-- SHA-256: ([a-f\d]{64})\n([\s\S]*?)(?=\n\n-- Included source: |\n\n-- Fresh BXI-Core)/gm,
+  ),
+]
   .filter(match => !current.some(file => file.name === match[1]))
-  .map(match => ({ name: match[1], number: match[1] === 'schema.sql' ? 1 : Number(match[1].match(/^schema-v(\d+)/)[1]), source: match[3], hash: match[2] }))
+  .map(match => ({
+    name: match[1],
+    number: match[1] === 'schema.sql' ? 1 : Number(match[1].match(/^schema-v(\d+)/)[1]),
+    source: match[3],
+    hash: match[2],
+  }))
 const files = [...archived, ...current].sort((a, b) => a.number - b.number)
-files.forEach((file, index) => { if (file.number !== index + 1) throw new Error('Migration versions must be consecutive and unique, beginning with schema.sql.') })
+files.forEach((file, index) => {
+  if (file.number !== index + 1)
+    throw new Error('Migration versions must be consecutive and unique, beginning with schema.sql.')
+})
 if (!files.length) throw new Error('No migrations found.')
-const tables = [...new Set(files.flatMap(file => [...file.source.matchAll(/create table if not exists public\.([a-z_]+)/gi)].map(match => match[1])))].sort()
+const tables = [
+  ...new Set(
+    files.flatMap(file =>
+      [...file.source.matchAll(/create table if not exists public\.([a-z_]+)/gi)].map(match => match[1]),
+    ),
+  ),
+].sort()
 const tableArray = `array[${tables.map(name => `'${name}'`).join(',')}]`
-const modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'
+const modules =
+  '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'
 const sections = files.map(file => {
   const { name, source } = file
   // Only remove standalone SQL transaction statements, never PL/pgSQL BEGIN blocks.
-  const body = source.replace(/^(?:begin;|commit;|notify pgrst, 'reload schema';)\s*$/gmi, '').trim()
+  const body = source.replace(/^(?:begin;|commit;|notify pgrst, 'reload schema';)\s*$/gim, '').trim()
   const hash = 'hash' in file ? file.hash : createHash('sha256').update(source).digest('hex')
   return `-- Included source: migrations/${name}\n-- SHA-256: ${hash}\n${body}`
 })

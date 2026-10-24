@@ -17,16 +17,26 @@ export function exportCsv(columns: TrackerColumn[], rows: TrackerRow[], lookup: 
   const included = columns.filter(column => column.type !== 'secret')
   const lines = [included.map(column => csvField(column.name, true)).join(',')]
   for (const row of rows) {
-    lines.push(included.map(column => {
-      const cell = shown(column, row, lookup)
-      // Numbers stay numbers, so a negative amount is not mistaken for text that needs the apostrophe.
-      return csvField(cell.text, column.type !== 'number')
-    }).join(','))
+    lines.push(
+      included
+        .map(column => {
+          const cell = shown(column, row, lookup)
+          // Numbers stay numbers, so a negative amount is not mistaken for text that needs the apostrophe.
+          return csvField(cell.text, column.type !== 'number')
+        })
+        .join(','),
+    )
   }
   return `﻿${lines.join('\r\n')}\r\n`
 }
 
 export function exportFileName(name: string, today: string) {
-  const base = name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '').slice(0, 80) || 'Tracker'
+  const base =
+    name
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/[. ]+$/, '')
+      .slice(0, 80) || 'Tracker'
   return `${base} ${today}.csv`
 }

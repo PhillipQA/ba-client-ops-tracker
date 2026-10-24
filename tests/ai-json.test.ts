@@ -11,7 +11,10 @@ test('valid JSON is returned exactly as JSON.parse would', () => {
 
 test('code fences and surrounding prose are removed', () => {
   assert.deepEqual(parseAiJson('```json\n' + JSON.stringify(doc) + '\n```'), doc)
-  assert.deepEqual(parseAiJson('Here is the document:\n```\n' + JSON.stringify(doc) + '\n```\nLet me know if you need changes.'), doc)
+  assert.deepEqual(
+    parseAiJson('Here is the document:\n```\n' + JSON.stringify(doc) + '\n```\nLet me know if you need changes.'),
+    doc,
+  )
   assert.deepEqual(parseAiJson('﻿  ' + JSON.stringify(doc) + '  '), doc)
 })
 
@@ -25,8 +28,15 @@ test('trailing commas are removed', () => {
 })
 
 test('unescaped double quotes inside strings are escaped', () => {
-  const reply = '{"rows":[["Below minimum","Show "Minimum redemption is 200 points." on the cashier screen"],["Other","ok"]],"gaps":[]}'
-  assert.deepEqual(parseAiJson(reply), { rows: [['Below minimum', 'Show "Minimum redemption is 200 points." on the cashier screen'], ['Other', 'ok']], gaps: [] })
+  const reply =
+    '{"rows":[["Below minimum","Show "Minimum redemption is 200 points." on the cashier screen"],["Other","ok"]],"gaps":[]}'
+  assert.deepEqual(parseAiJson(reply), {
+    rows: [
+      ['Below minimum', 'Show "Minimum redemption is 200 points." on the cashier screen'],
+      ['Other', 'ok'],
+    ],
+    gaps: [],
+  })
 })
 
 test('escaped characters that are already valid are left alone', () => {
@@ -36,31 +46,67 @@ test('escaped characters that are already valid are left alone', () => {
 
 test('unrecoverable replies raise an error that carries no document text', () => {
   const secret = 'CONFIDENTIAL-SOURCE-TEXT'
-  assert.throws(() => parseAiJson(`I cannot do that. ${secret}`), (e: unknown) => e instanceof AiJsonError && !JSON.stringify(e).includes(secret) && !e.message.includes(secret))
+  assert.throws(
+    () => parseAiJson(`I cannot do that. ${secret}`),
+    (e: unknown) => e instanceof AiJsonError && !JSON.stringify(e).includes(secret) && !e.message.includes(secret),
+  )
   assert.throws(() => parseAiJson('{"sections":[{"id":"summary","blocks":['), AiJsonError)
 })
 
 test('an unreadable reply is asked for once more, with a reminder', async () => {
   const calls: string[] = []
-  const result = await runAiJson(async note => { calls.push(note); return calls.length === 1 ? 'not json {' : JSON.stringify(doc) }, () => new Error('failed'))
+  const result = await runAiJson(
+    async note => {
+      calls.push(note)
+      return calls.length === 1 ? 'not json {' : JSON.stringify(doc)
+    },
+    () => new Error('failed'),
+  )
   assert.deepEqual(result, doc)
   assert.deepEqual(calls, ['', AI_JSON_RETRY_NOTE])
 })
 
 test('a readable first reply is not retried', async () => {
   let calls = 0
-  assert.deepEqual(await runAiJson(async () => { calls++; return JSON.stringify(doc) }, () => new Error('failed')), doc)
+  assert.deepEqual(
+    await runAiJson(
+      async () => {
+        calls++
+        return JSON.stringify(doc)
+      },
+      () => new Error('failed'),
+    ),
+    doc,
+  )
   assert.equal(calls, 1)
 })
 
 test('two unreadable replies raise the supplied error and stop', async () => {
   let calls = 0
-  await assert.rejects(runAiJson(async () => { calls++; return 'still not json' }, () => new Error('both unreadable')), /both unreadable/)
+  await assert.rejects(
+    runAiJson(
+      async () => {
+        calls++
+        return 'still not json'
+      },
+      () => new Error('both unreadable'),
+    ),
+    /both unreadable/,
+  )
   assert.equal(calls, 2)
 })
 
 test('provider errors are not retried', async () => {
   let calls = 0
-  await assert.rejects(runAiJson(async () => { calls++; throw new Error('quota exceeded') }, () => new Error('unreadable')), /quota exceeded/)
+  await assert.rejects(
+    runAiJson(
+      async () => {
+        calls++
+        throw new Error('quota exceeded')
+      },
+      () => new Error('unreadable'),
+    ),
+    /quota exceeded/,
+  )
   assert.equal(calls, 1)
 })

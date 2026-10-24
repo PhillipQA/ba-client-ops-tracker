@@ -7,7 +7,11 @@ export type PollEnvironment = {
 }
 
 export function pageIsActive() {
-  return typeof document !== 'undefined' && document.visibilityState === 'visible' && (typeof navigator === 'undefined' || navigator.onLine !== false)
+  return (
+    typeof document !== 'undefined' &&
+    document.visibilityState === 'visible' &&
+    (typeof navigator === 'undefined' || navigator.onLine !== false)
+  )
 }
 
 export function browserPollEnvironment(events: string[] = []): PollEnvironment {
@@ -29,46 +33,75 @@ export function browserPollEnvironment(events: string[] = []): PollEnvironment {
 }
 
 // One request at a time. Hidden/offline pages cancel work and have no timer.
-export function startActivePolling(work: (signal: AbortSignal) => Promise<unknown>, options: {
-  interval: number
-  immediate?: boolean
-  minGap?: number
-  environment?: PollEnvironment
-  onError?: (error: unknown) => void
-}) {
+export function startActivePolling(
+  work: (signal: AbortSignal) => Promise<unknown>,
+  options: {
+    interval: number
+    immediate?: boolean
+    minGap?: number
+    environment?: PollEnvironment
+    onError?: (error: unknown) => void
+  },
+) {
   const environment = options.environment || browserPollEnvironment()
   const minGap = options.minGap ?? 10_000
-  let stopped = false, busy = false, lastStarted = -Infinity
+  let stopped = false,
+    busy = false,
+    lastStarted = -Infinity
   let timer: unknown, controller: AbortController | undefined
-  const clear = () => { if (timer !== undefined) environment.clearTimer(timer); timer = undefined }
+  const clear = () => {
+    if (timer !== undefined) environment.clearTimer(timer)
+    timer = undefined
+  }
   const schedule = (delay: number) => {
     clear()
-    if (!stopped && environment.active()) timer = environment.setTimer(() => { timer = undefined; void run() }, delay)
+    if (!stopped && environment.active())
+      timer = environment.setTimer(() => {
+        timer = undefined
+        void run()
+      }, delay)
   }
   const run = async () => {
     if (stopped || busy || !environment.active()) return
     const remaining = minGap - (environment.now() - lastStarted)
-    if (remaining > 0) { schedule(remaining); return }
-    clear(); busy = true; lastStarted = environment.now()
+    if (remaining > 0) {
+      schedule(remaining)
+      return
+    }
+    clear()
+    busy = true
+    lastStarted = environment.now()
     controller = new AbortController()
-    try { await work(controller.signal) }
-    catch (error) { if (!controller.signal.aborted && !stopped) options.onError?.(error) }
-    finally {
+    try {
+      await work(controller.signal)
+    } catch (error) {
+      if (!controller.signal.aborted && !stopped) options.onError?.(error)
+    } finally {
       const cancelled = controller.signal.aborted
-      busy = false; controller = undefined
+      busy = false
+      controller = undefined
       // If the page returned before the cancelled request settled, resume as
       // soon as the throttle allows instead of waiting an entire interval.
       schedule(cancelled ? Math.max(0, minGap - (environment.now() - lastStarted)) : options.interval)
     }
   }
   const onActivity = () => {
-    if (!environment.active()) { clear(); controller?.abort(); return }
+    if (!environment.active()) {
+      clear()
+      controller?.abort()
+      return
+    }
     if (!busy) void run()
   }
   const unsubscribe = environment.subscribe(onActivity)
   if (options.immediate !== false) void run()
   else schedule(options.interval)
-  return () => { stopped = true; clear(); controller?.abort(); unsubscribe() }
+  return () => {
+    stopped = true
+    clear()
+    controller?.abort()
+    unsubscribe()
+  }
 }
 
 export function workspaceAutoRefreshAllowed(view: string, clientId?: string | null, projectId?: string | null) {

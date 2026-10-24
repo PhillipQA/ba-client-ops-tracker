@@ -1,6 +1,14 @@
 import { ALL_MODULES } from '../features/accounts/access'
 import { DEFAULT_WAITING_ON } from '../features/tasks/waitingOn'
-import type { ActivityLog, Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkItem } from '../shared/types'
+import type {
+  ActivityLog,
+  Client,
+  PlannerActivity,
+  Project,
+  TaskSettings,
+  UserAccount,
+  WorkItem,
+} from '../shared/types'
 
 // The tracker intentionally starts without preset clients, projects, tasks, or activities.
 export const seedClients: Client[] = []
@@ -17,8 +25,19 @@ export const defaultTaskSettings: TaskSettings = {
     { id: 'resolved', label: 'Resolved', closed: true },
     { id: 'closed', label: 'Closed', closed: true },
   ],
-  visibleColumns: ['status', 'client', 'project', 'type', 'waitingOn', 'priority', 'owner', 'startDate', 'dueDate', 'followUpDate'],
-  waitingOn: DEFAULT_WAITING_ON.map((option) => ({ ...option })),
+  visibleColumns: [
+    'status',
+    'client',
+    'project',
+    'type',
+    'waitingOn',
+    'priority',
+    'owner',
+    'startDate',
+    'dueDate',
+    'followUpDate',
+  ],
+  waitingOn: DEFAULT_WAITING_ON.map(option => ({ ...option })),
 }
 
 // Initial account metadata only. Password material is never seeded in client code;

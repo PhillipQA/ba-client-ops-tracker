@@ -37,29 +37,45 @@ function statusTone(label: string, closed: boolean) {
 export function boardColumns(items: readonly WorkItem[], group: BoardGroup, settings: TaskSettings): BoardColumn[] {
   if (group === 'waiting') {
     const options = waitingOnOptions(settings)
-    const columns: BoardColumn[] = options.map((option) => ({
+    const columns: BoardColumn[] = options.map(option => ({
       key: option.label,
       label: option.label,
       tone: option.done ? 'closed' : waitingOnTone(option.label, settings),
       collapsed: option.done,
       acceptsDrops: !option.done,
-      items: items.filter((item) => item.waitingOn === option.label).sort(boardCardOrder),
+      items: items.filter(item => item.waitingOn === option.label).sort(boardCardOrder),
     }))
-    const known = new Set(options.map((option) => option.label))
-    const unknown = items.filter((item) => !known.has(item.waitingOn))
-    if (unknown.length) columns.push({ key: '__other__', label: 'Other', tone: 'custom', collapsed: false, acceptsDrops: false, items: [...unknown].sort(boardCardOrder) })
+    const known = new Set(options.map(option => option.label))
+    const unknown = items.filter(item => !known.has(item.waitingOn))
+    if (unknown.length)
+      columns.push({
+        key: '__other__',
+        label: 'Other',
+        tone: 'custom',
+        collapsed: false,
+        acceptsDrops: false,
+        items: [...unknown].sort(boardCardOrder),
+      })
     return columns
   }
-  const known = new Set(settings.statuses.map((status) => status.label))
-  const columns: BoardColumn[] = settings.statuses.map((status) => ({
+  const known = new Set(settings.statuses.map(status => status.label))
+  const columns: BoardColumn[] = settings.statuses.map(status => ({
     key: status.label,
     label: status.label,
     tone: statusTone(status.label, status.closed),
     collapsed: status.closed,
     acceptsDrops: true,
-    items: items.filter((item) => item.status === status.label).sort(boardCardOrder),
+    items: items.filter(item => item.status === status.label).sort(boardCardOrder),
   }))
-  const unknown = items.filter((item) => !known.has(item.status))
-  if (unknown.length) columns.push({ key: '__other__', label: 'Other status', tone: 'open', collapsed: false, acceptsDrops: false, items: [...unknown].sort(boardCardOrder) })
+  const unknown = items.filter(item => !known.has(item.status))
+  if (unknown.length)
+    columns.push({
+      key: '__other__',
+      label: 'Other status',
+      tone: 'open',
+      collapsed: false,
+      acceptsDrops: false,
+      items: [...unknown].sort(boardCardOrder),
+    })
   return columns
 }

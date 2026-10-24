@@ -28,7 +28,9 @@ export interface AuthUser {
 export async function hashPassword(value: string) {
   const bytes = new TextEncoder().encode(value)
   const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  return Array.from(new Uint8Array(digest))
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 async function authRequest(path: string, options?: RequestInit) {
@@ -49,7 +51,9 @@ async function authRequest(path: string, options?: RequestInit) {
     try {
       const parsed: unknown = JSON.parse(text)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed
-    } catch { /* A proxy can return HTML. Use the HTTP fallback below. */ }
+    } catch {
+      /* A proxy can return HTML. Use the HTTP fallback below. */
+    }
     return { response, body, requestId }
   } catch {
     console.warn('Authentication connection interrupted', { requestId, path })
@@ -70,7 +74,10 @@ export async function login(account: string, username: string, password: string)
     body: JSON.stringify({ account, username, password }),
   })
   if (!response.ok) throw new Error(body.error || `Login failed (HTTP ${response.status}). Reference: ${requestId}`)
-  if (!body.user || typeof body.user.id !== 'string') throw new Error(`The server returned an incomplete login response. Please refresh and try again. Reference: ${requestId}`)
+  if (!body.user || typeof body.user.id !== 'string')
+    throw new Error(
+      `The server returned an incomplete login response. Please refresh and try again. Reference: ${requestId}`,
+    )
   return body.user as AuthUser
 }
 
@@ -78,5 +85,6 @@ export async function logout() {
   const { response, body, requestId } = await authRequest('/api/auth/logout', { method: 'POST', body: '{}' })
   // An expired/revoked session is already signed out. Show other failures.
   if (response.status === 401) return
-  if (!response.ok || body.ok !== true) throw new Error(body.error || `Sign out could not be confirmed (HTTP ${response.status}). Reference: ${requestId}`)
+  if (!response.ok || body.ok !== true)
+    throw new Error(body.error || `Sign out could not be confirmed (HTTP ${response.status}). Reference: ${requestId}`)
 }

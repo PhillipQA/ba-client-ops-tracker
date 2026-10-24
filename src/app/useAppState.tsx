@@ -5,30 +5,76 @@ import { workspaceAutoRefreshAllowed } from './activePolling'
 import { workHubSync, WORK_HUB_INTEGRATIONS } from '../features/work-hub/workHubSync'
 import { useWorkHubSync } from '../features/work-hub/useWorkHubSync'
 import { trackerApi, type TaskLink } from '../features/trackers/trackerApi'
-import { type TaskDraft } from '../features/trackers/TrackerWork'
+import type { TaskDraft } from '../features/trackers/TrackerWork'
 import { rememberTrackerRow } from '../features/trackers/trackerNav'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix } from '../features/requirements/rtm'
 import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from '../features/tasks/lifecycle'
-import { itemMatchesActionCenterScope, resolveActionCenterScope, trackedActionCenterUsers, type ActionCenterScopeSelection } from '../features/action-center/actionCenterScope'
+import {
+  itemMatchesActionCenterScope,
+  resolveActionCenterScope,
+  trackedActionCenterUsers,
+  type ActionCenterScopeSelection,
+} from '../features/action-center/actionCenterScope'
 import { applySubtaskAssignmentInheritance } from '../features/tasks/subtaskAssignment'
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getAuthSession, login, logout, type AuthUser } from '../features/accounts/auth'
-import { loadCloudStore, resetCloudSession, pendingCloudEdits, queueCloudStoreSave, waitForCloudSaves, type CloudStorageStatus } from './cloudStore'
+import {
+  loadCloudStore,
+  resetCloudSession,
+  pendingCloudEdits,
+  queueCloudStoreSave,
+  waitForCloudSaves,
+  type CloudStorageStatus,
+} from './cloudStore'
 import { settingsRequest } from '../features/settings/Settings'
 import { askBAAssistant, type AIMessage, type AISuggestion } from '../features/ai/ai'
-import { defaultWaitingOn, doneWaitingOn, findWaitingOn, isWaitingOnDone, openWaitingOnOptions, waitingOnOptions } from '../features/tasks/waitingOn'
+import {
+  defaultWaitingOn,
+  doneWaitingOn,
+  findWaitingOn,
+  isWaitingOnDone,
+  openWaitingOnOptions,
+  waitingOnOptions,
+} from '../features/tasks/waitingOn'
 import { seedAccounts } from './data'
-import { type TaskEvidenceMutationResult } from '../features/tasks/taskEvidence'
-import { loadNotifications, markAllNotificationsRead, updateNotification } from '../features/notifications/notifications'
-import { type TaskCommentMutationResult } from '../features/tasks/taskComments'
-import { type BoardGroup, type TaskLayout } from '../features/tasks/taskBoardModel'
-import { type TimeEntryMutationResult } from '../features/tasks/timeEntries'
-import { type AppModule, type AppNotification, type Client, type ItemType, type PlannerActivity, type Project, type UserAccount, type WaitingOn, type WorkActivityEvent, type WorkItem } from '../shared/types'
-import { type AppTheme } from '../features/settings/theme'
+import type { TaskEvidenceMutationResult } from '../features/tasks/taskEvidence'
+import {
+  loadNotifications,
+  markAllNotificationsRead,
+  updateNotification,
+} from '../features/notifications/notifications'
+import type { TaskCommentMutationResult } from '../features/tasks/taskComments'
+import type { BoardGroup, TaskLayout } from '../features/tasks/taskBoardModel'
+import type { TimeEntryMutationResult } from '../features/tasks/timeEntries'
+import type {
+  AppModule,
+  AppNotification,
+  Client,
+  ItemType,
+  PlannerActivity,
+  Project,
+  UserAccount,
+  WaitingOn,
+  WorkActivityEvent,
+  WorkItem,
+} from '../shared/types'
+import type { AppTheme } from '../features/settings/theme'
 import { normalizeInterfaceMode, type InterfaceMode } from '../features/settings/appearance'
 import { readSidebarCollapsed, writeSidebarCollapsed } from './sidebarState'
 import { useRailTip } from '../shared/ui/RailTip'
-import { STORE_SCHEMA_VERSION, type Store, defaultClosedTaskStatus, defaultOpenTaskStatus, initialStore, isTaskClosed, normalizeAccount, normalizeStore, organizationStorageKey, seedStore, workEventsForItemChanges } from './store'
+import {
+  STORE_SCHEMA_VERSION,
+  type Store,
+  defaultClosedTaskStatus,
+  defaultOpenTaskStatus,
+  initialStore,
+  isTaskClosed,
+  normalizeAccount,
+  normalizeStore,
+  organizationStorageKey,
+  seedStore,
+  workEventsForItemChanges,
+} from './store'
 import { activityTime, addDays, weekEndKey, weekStartKey } from '../shared/dates'
 
 /**
@@ -38,12 +84,17 @@ import { activityTime, addDays, weekEndKey, weekStartKey } from '../shared/dates
  */
 export function useAppState() {
   const today = useBusinessDate()
-  const [documentLaunch,setDocumentLaunch]=useState<{taskId:string;flow:'drf'|'signoff';nonce:number}>()
+  const [documentLaunch, setDocumentLaunch] = useState<{ taskId: string; flow: 'drf' | 'signoff'; nonce: number }>()
 
-  const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.hash.slice(1)).get('reset-password'))
+  const [resetToken, setResetToken] = useState<string | null>(() =>
+    new URLSearchParams(window.location.hash.slice(1)).get('reset-password'),
+  )
   const [store, setStore] = useState<Store>(initialStore)
   // Returning from the Google Drive consent screen opens Settings so the result is shown; others fall back below.
-  const [view, setView] = useState<View>(() => { const hash = new URLSearchParams(window.location.hash.slice(1)); return hash.has('drive') ? 'settings' : hash.has('gmail') ? 'inbox' : hash.has('sheets') ? 'trackers' : 'action' })
+  const [view, setView] = useState<View>(() => {
+    const hash = new URLSearchParams(window.location.hash.slice(1))
+    return hash.has('drive') ? 'settings' : hash.has('gmail') ? 'inbox' : hash.has('sheets') ? 'trackers' : 'action'
+  })
   const [query, setQuery] = useState('')
   const [clientArchiveFilter, setClientArchiveFilter] = useState('active')
   const [clientLayout, setClientLayout] = useState<ClientLayout>('tiles')
@@ -59,13 +110,20 @@ export function useAppState() {
   const [taskClientFilter, setTaskClientFilter] = useState('')
   const [taskProjectFilter, setTaskProjectFilter] = useState('')
   const [taskStatusFilter, setTaskStatusFilter] = useState('')
-  const [taskDateFilter, setTaskDateFilter] = useState<'All' | 'due-3' | 'due-7' | 'followup-3' | 'followup-7' | 'overdue'>('All')
+  const [taskDateFilter, setTaskDateFilter] = useState<
+    'All' | 'due-3' | 'due-7' | 'followup-3' | 'followup-7' | 'overdue'
+  >('All')
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedProjectClientId, setSelectedProjectClientId] = useState<string | null>(null)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [taskEditSaving, setTaskEditSaving] = useState(false)
-  const [taskPreset, setTaskPreset] = useState<{ clientId?: string; projectId?: string; type?: ItemType; parentTaskId?: string } | null>(null)
+  const [taskPreset, setTaskPreset] = useState<{
+    clientId?: string
+    projectId?: string
+    type?: ItemType
+    parentTaskId?: string
+  } | null>(null)
   const [modal, setModal] = useState<'item' | 'taskEdit' | 'client' | 'project' | 'activity' | null>(null)
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null)
   const [aiClientId, setAiClientId] = useState('')
@@ -91,25 +149,51 @@ export function useAppState() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(readSidebarCollapsed)
   const railTip = useRailTip(navCollapsed)
-  const toggleNav = () => { const next = !navCollapsed; railTip.hide(); setNavCollapsed(next); writeSidebarCollapsed(next) }
+  const toggleNav = () => {
+    const next = !navCollapsed
+    railTip.hide()
+    setNavCollapsed(next)
+    writeSidebarCollapsed(next)
+  }
   const [newExternalInquiryIds, setNewExternalInquiryIds] = useState<string[]>([])
   const [notificationBusy, setNotificationBusy] = useState(false)
   const [rtmContext, setRtmContext] = useState<{ clientId?: string; projectId?: string }>({})
   const pageActive = usePageActive()
   const hubSync = useWorkHubSync()
-  const hubSyncing = hubSync.allRunning || WORK_HUB_INTEGRATIONS.some(id => hubSync.integrations[id].phase === 'syncing')
-  useEffect(() => { void workHubSync.setSession(authUser) }, [authUser?.id, authUser?.organizationId, authUser?.accountType, authUser?.status, authUser?.lastLoginAt, authUser?.modules.includes('inbox')])
+  const hubSyncing =
+    hubSync.allRunning || WORK_HUB_INTEGRATIONS.some(id => hubSync.integrations[id].phase === 'syncing')
+  useEffect(() => {
+    void workHubSync.setSession(authUser)
+  }, [
+    authUser?.id,
+    authUser?.organizationId,
+    authUser?.accountType,
+    authUser?.status,
+    authUser?.lastLoginAt,
+    authUser?.modules.includes('inbox'),
+  ])
   const storeRef = useRef(store)
   const workspaceRefreshBusy = useRef(false)
   const [refreshingCloud, setRefreshingCloud] = useState(false)
 
-  useEffect(() => { storeRef.current = store }, [store])
+  useEffect(() => {
+    storeRef.current = store
+  }, [store])
 
   useEffect(() => {
     const onConflict = (event: Event) => {
       const message = (event as CustomEvent<string>).detail
-      try { localStorage.setItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`, JSON.stringify(pendingCloudEdits<Store>() || storeRef.current)) } catch { /* The on-screen draft remains available. */ }
-      setSaveConflict(message); setCloudStatus('error'); setCloudMessage(message)
+      try {
+        localStorage.setItem(
+          `${organizationStorageKey(authUser?.organizationId)}:pending-edits`,
+          JSON.stringify(pendingCloudEdits<Store>() || storeRef.current),
+        )
+      } catch {
+        /* The on-screen draft remains available. */
+      }
+      setSaveConflict(message)
+      setCloudStatus('error')
+      setCloudMessage(message)
     }
     window.addEventListener('workspace-save-conflict', onConflict)
     return () => window.removeEventListener('workspace-save-conflict', onConflict)
@@ -119,21 +203,34 @@ export function useAppState() {
     setRecoveringCloud(true)
     try {
       const activePending = pendingCloudEdits<Store>()
-      const pending = activePending ? JSON.stringify(activePending, null, 2) : localStorage.getItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`) || JSON.stringify(storeRef.current, null, 2)
+      const pending = activePending
+        ? JSON.stringify(activePending, null, 2)
+        : localStorage.getItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`) ||
+          JSON.stringify(storeRef.current, null, 2)
       localStorage.setItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`, pending)
       const url = URL.createObjectURL(new Blob([pending], { type: 'application/json' }))
-      const link = document.createElement('a'); link.href = url; link.download = `pending-workspace-edits-${Date.now()}.json`; link.click()
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `pending-workspace-edits-${Date.now()}.json`
+      link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
       const result = await loadCloudStore<Store>({ recover: true })
-      if (!result.configured || !result.data) throw new Error('The latest workspace could not be loaded. Your pending edits are retained.')
+      if (!result.configured || !result.data)
+        throw new Error('The latest workspace could not be loaded. Your pending edits are retained.')
       const next = normalizeStore(result.data, seedStore())
-      storeRef.current = next; setStore(next)
+      storeRef.current = next
+      setStore(next)
       localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
       localStorage.removeItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`)
-      setLastCloudSync(result.updatedAt || ''); setSaveConflict(''); setCloudStatus('synced')
+      setLastCloudSync(result.updatedAt || '')
+      setSaveConflict('')
+      setCloudStatus('synced')
       setCloudMessage('Latest workspace loaded. Reapply your edits from the downloaded copy.')
-    } catch (error) { setCloudMessage(error instanceof Error ? error.message : 'Reload failed.') }
-    finally { setRecoveringCloud(false) }
+    } catch (error) {
+      setCloudMessage(error instanceof Error ? error.message : 'Reload failed.')
+    } finally {
+      setRecoveringCloud(false)
+    }
   }
 
   useEffect(() => {
@@ -143,35 +240,53 @@ export function useAppState() {
       setAuthChecking(false)
       return
     }
-    void getAuthSession().then((user) => {
-      if (!cancelled) setAuthUser(user)
-    }).catch((error) => {
-      console.error(error)
-    }).finally(() => {
-      if (!cancelled) setAuthChecking(false)
-    })
-    return () => { cancelled = true }
+    void getAuthSession()
+      .then(user => {
+        if (!cancelled) setAuthUser(user)
+      })
+      .catch(error => {
+        console.error(error)
+      })
+      .finally(() => {
+        if (!cancelled) setAuthChecking(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  useEffect(() => { setActionCenterScope('mine') }, [authUser?.id, authUser?.organizationId])
-
   useEffect(() => {
-    if (!authUser) { setClientLayout('tiles'); return }
-    try {
-      const saved = localStorage.getItem(`ba-client-layout:${authUser.organizationId}:${authUser.id}`)
-      setClientLayout(saved === 'list' || saved === 'table' ? saved : 'tiles')
-    } catch { setClientLayout('tiles') }
+    setActionCenterScope('mine')
   }, [authUser?.id, authUser?.organizationId])
 
   useEffect(() => {
-    setTaskLayout('table'); setBoardGroup('status'); setBoardShowSubtasks(false)
+    if (!authUser) {
+      setClientLayout('tiles')
+      return
+    }
+    try {
+      const saved = localStorage.getItem(`ba-client-layout:${authUser.organizationId}:${authUser.id}`)
+      setClientLayout(saved === 'list' || saved === 'table' ? saved : 'tiles')
+    } catch {
+      setClientLayout('tiles')
+    }
+  }, [authUser?.id, authUser?.organizationId])
+
+  useEffect(() => {
+    setTaskLayout('table')
+    setBoardGroup('status')
+    setBoardShowSubtasks(false)
     if (!authUser) return
     try {
-      const saved = JSON.parse(localStorage.getItem(`ba-task-view:${authUser.organizationId}:${authUser.id}`) || '{}') as { layout?: string; group?: string; subtasks?: boolean }
+      const saved = JSON.parse(
+        localStorage.getItem(`ba-task-view:${authUser.organizationId}:${authUser.id}`) || '{}',
+      ) as { layout?: string; group?: string; subtasks?: boolean }
       setTaskLayout(saved.layout === 'board' ? 'board' : 'table')
       setBoardGroup(saved.group === 'waiting' ? 'waiting' : 'status')
       setBoardShowSubtasks(saved.subtasks === true)
-    } catch { /* Defaults already applied. */ }
+    } catch {
+      /* Defaults already applied. */
+    }
   }, [authUser?.id, authUser?.organizationId])
 
   useEffect(() => {
@@ -191,9 +306,16 @@ export function useAppState() {
       setCloudMessage('Checking cloud storage…')
       const tenantStorageKey = organizationStorageKey(authUser.organizationId)
       const cached = localStorage.getItem(tenantStorageKey)
-      if (localStorage.getItem(`${tenantStorageKey}:pending-edits`)) setSaveConflict('A pending copy from a previous save conflict is available. Download it and reapply the needed edits to the latest workspace.')
+      if (localStorage.getItem(`${tenantStorageKey}:pending-edits`))
+        setSaveConflict(
+          'A pending copy from a previous save conflict is available. Download it and reapply the needed edits to the latest workspace.',
+        )
       if (cached) {
-        try { setStore(normalizeStore(JSON.parse(cached), seedStore())) } catch { /* cloud load will replace invalid cache */ }
+        try {
+          setStore(normalizeStore(JSON.parse(cached), seedStore()))
+        } catch {
+          /* cloud load will replace invalid cache */
+        }
       } else {
         setStore(seedStore())
       }
@@ -214,7 +336,9 @@ export function useAppState() {
           setCloudMessage('Database synced')
           setCloudStatus('synced')
           if (sourceVersion < STORE_SCHEMA_VERSION) {
-            void queueCloudStoreSave(cloud).catch((error) => console.error('Could not save migrated tracker data:', error))
+            void queueCloudStoreSave(cloud).catch(error =>
+              console.error('Could not save migrated tracker data:', error),
+            )
           }
           return
         }
@@ -232,7 +356,9 @@ export function useAppState() {
       }
     }
     void connectCloud()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [authUser?.id])
 
   const refreshWorkspace = async (manual = false, signal?: AbortSignal) => {
@@ -262,7 +388,12 @@ export function useAppState() {
     }
   }
   useVisiblePolling(signal => refreshWorkspace(false, signal), {
-    enabled: Boolean(authUser && authUser.accountType !== 'platform' && (cloudStatus === 'synced' || cloudStatus === 'saving') && workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)),
+    enabled: Boolean(
+      authUser &&
+        authUser.accountType !== 'platform' &&
+        (cloudStatus === 'synced' || cloudStatus === 'saving') &&
+        workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId),
+    ),
     interval: 5 * 60_000,
     scope: `${authUser?.id}:${view}:${selectedClientId || ''}:${selectedProjectId || ''}`,
     events: ['dochub-updated'],
@@ -275,38 +406,57 @@ export function useAppState() {
     try {
       const result = await loadNotifications()
       const next = { ...storeRef.current, notifications: result.notifications }
-      storeRef.current = next; setStore(next)
+      storeRef.current = next
+      setStore(next)
       localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(next))
-    } catch (error) { console.error('Notification refresh failed:', error) }
-    finally { setNotificationBusy(false) }
+    } catch (error) {
+      console.error('Notification refresh failed:', error)
+    } finally {
+      setNotificationBusy(false)
+    }
   }
 
   const persist = (next: Store) => {
-    try { assertLifecycleMutation(storeRef.current, next, authUser); assertRtmMutation(storeRef.current, next, authUser) }
-    catch (error) { window.alert(error instanceof Error ? error.message : 'This change is not allowed.'); return false }
+    try {
+      assertLifecycleMutation(storeRef.current, next, authUser)
+      assertRtmMutation(storeRef.current, next, authUser)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'This change is not allowed.')
+      return false
+    }
 
     const generatedEvents = workEventsForItemChanges(storeRef.current, next, authUser)
-    const normalized = reconcileRtm(storeRef.current, { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...(storeRef.current.workEvents || [])].slice(0, 10000) }, authUser)
+    const normalized = reconcileRtm(
+      storeRef.current,
+      {
+        ...next,
+        schemaVersion: STORE_SCHEMA_VERSION,
+        workEvents: [...generatedEvents, ...(storeRef.current.workEvents || [])].slice(0, 10000),
+      },
+      authUser,
+    )
     storeRef.current = normalized
     setStore(normalized)
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(normalized))
     if (cloudStatus === 'local') return
     setCloudStatus('saving')
     setCloudMessage('Saving to database…')
-    void queueCloudStoreSave(normalized).then((result) => {
-      if (!result.configured) {
-        setCloudStatus('local')
-        setCloudMessage('Local browser storage')
-        return
-      }
-      setLastCloudSync(result.updatedAt || new Date().toISOString())
-      setCloudStatus('synced')
-      setCloudMessage('Database synced')
-    }).catch((error) => {
-      console.error(error)
-      setCloudStatus('error')
-      setCloudMessage(error instanceof Error ? error.message : 'Cloud save failed · local cache retained')
-    })
+    void queueCloudStoreSave(normalized)
+      .then(result => {
+        if (!result.configured) {
+          setCloudStatus('local')
+          setCloudMessage('Local browser storage')
+          return
+        }
+        setLastCloudSync(result.updatedAt || new Date().toISOString())
+        setCloudStatus('synced')
+        setCloudMessage('Database synced')
+      })
+      .catch(error => {
+        console.error(error)
+        setCloudStatus('error')
+        setCloudMessage(error instanceof Error ? error.message : 'Cloud save failed · local cache retained')
+      })
   }
 
   const saveRtms = async (rtms: RtmMatrix[], items = storeRef.current.items) => {
@@ -320,38 +470,50 @@ export function useAppState() {
       const saved = await queueCloudStoreSave(savedState)
       if (!saved.configured) throw new Error('Cloud storage is unavailable. Your RTM was not saved.')
       setLastCloudSync(saved.updatedAt || new Date().toISOString())
-      setCloudStatus('synced'); setCloudMessage('Database synced')
+      setCloudStatus('synced')
+      setCloudMessage('Database synced')
       const refreshed = await loadCloudStore<Store>().catch(() => null)
       if (refreshed?.data) savedState = normalizeStore(refreshed.data)
     }
-    storeRef.current = savedState; setStore(savedState)
+    storeRef.current = savedState
+    setStore(savedState)
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(savedState))
   }
   const openRtms = (clientId?: string, projectId?: string) => {
-    setRtmContext({ clientId, projectId }); setSelectedClientId(null); setSelectedProjectId(null); setView('requirements')
+    setRtmContext({ clientId, projectId })
+    setSelectedClientId(null)
+    setSelectedProjectId(null)
+    setView('requirements')
   }
 
   const saveLifecycleRecord = async (kind: 'clients' | 'projects', record: Client | Project) => {
-    if (!authUser || authUser.role === 'Viewer' || !authUser.modules.includes(kind)) throw new Error('Edit access is required.')
+    if (!authUser || authUser.role === 'Viewer' || !authUser.modules.includes(kind))
+      throw new Error('Edit access is required.')
     setLifecycleSaving(true)
     try {
       await waitForCloudSaves()
       const current = storeRef.current
       const old = current[kind].find(r => r.id === record.id)
-      if (!old || (old.lifecycleVersion || 0) !== (record.lifecycleVersion || 0)) throw new Error('This record changed. Close the editor and reopen it.')
+      if (!old || (old.lifecycleVersion || 0) !== (record.lifecycleVersion || 0))
+        throw new Error('This record changed. Close the editor and reopen it.')
       if (stableRecord(old) === stableRecord(record)) return
       const updated = { ...record, lifecycleVersion: (old.lifecycleVersion || 0) + 1 }
-      const next = { ...current, [kind]: current[kind].map(r => r.id === record.id ? updated : r) } as Store
+      const next = { ...current, [kind]: current[kind].map(r => (r.id === record.id ? updated : r)) } as Store
       assertLifecycleMutation(current, next, authUser)
       if (cloudStatus !== 'local') {
         const saved = await queueCloudStoreSave(next)
-        if (!saved.configured) throw new Error('The server could not save this change. Retry when storage is available.')
+        if (!saved.configured)
+          throw new Error('The server could not save this change. Retry when storage is available.')
         setLastCloudSync(saved.updatedAt || new Date().toISOString())
-        setCloudStatus('synced'); setCloudMessage('Database synced')
+        setCloudStatus('synced')
+        setCloudMessage('Database synced')
       }
-      storeRef.current = next; setStore(next)
+      storeRef.current = next
+      setStore(next)
       localStorage.setItem(organizationStorageKey(authUser.organizationId), JSON.stringify(next))
-    } finally { setLifecycleSaving(false) }
+    } finally {
+      setLifecycleSaving(false)
+    }
   }
 
   const acceptNotificationPayload = (notifications: AppNotification[], updatedAt?: string) => {
@@ -365,24 +527,47 @@ export function useAppState() {
 
   const applyEvidenceMutation = (result: TaskEvidenceMutationResult) => {
     const current = storeRef.current
-    const previous = current.items.find((item) => item.id === result.item.id)
+    const previous = current.items.find(item => item.id === result.item.id)
     const previousEvidence = previous?.evidence?.length || 0
     const nextEvidence = result.item.evidence?.length || 0
-    const evidenceEvent = authUser && previousEvidence !== nextEvidence ? workEventsForItemChanges(current, { ...current, items: current.items.map((item) => item.id === result.item.id ? result.item : item) }, authUser)[0] : undefined
-    const explicitEvidenceEvent: WorkActivityEvent | undefined = authUser && previousEvidence !== nextEvidence ? {
-      id: crypto.randomUUID(), occurredAt: new Date().toISOString(), date: today, actorUserId: authUser.id, actorName: authUser.name,
-      actorRole: authUser.role, assignedToUserId: result.item.assignedToUserId,
-      assignedToName: current.accounts.find((account) => account.id === result.item.assignedToUserId)?.name,
-      clientId: result.item.clientId, projectId: result.item.projectId, taskId: result.item.id, parentTaskId: result.item.parentTaskId,
-      itemTitle: result.item.title, itemKind: result.item.parentTaskId ? 'Subtask' : 'Task',
-      action: nextEvidence > previousEvidence ? 'evidence_uploaded' : 'evidence_deleted',
-      summary: `${authUser.name} ${nextEvidence > previousEvidence ? 'uploaded evidence to' : 'removed evidence from'} “${result.item.title}”.`,
-    } : evidenceEvent
+    const evidenceEvent =
+      authUser && previousEvidence !== nextEvidence
+        ? workEventsForItemChanges(
+            current,
+            { ...current, items: current.items.map(item => (item.id === result.item.id ? result.item : item)) },
+            authUser,
+          )[0]
+        : undefined
+    const explicitEvidenceEvent: WorkActivityEvent | undefined =
+      authUser && previousEvidence !== nextEvidence
+        ? {
+            id: crypto.randomUUID(),
+            occurredAt: new Date().toISOString(),
+            date: today,
+            actorUserId: authUser.id,
+            actorName: authUser.name,
+            actorRole: authUser.role,
+            assignedToUserId: result.item.assignedToUserId,
+            assignedToName: current.accounts.find(account => account.id === result.item.assignedToUserId)?.name,
+            clientId: result.item.clientId,
+            projectId: result.item.projectId,
+            taskId: result.item.id,
+            parentTaskId: result.item.parentTaskId,
+            itemTitle: result.item.title,
+            itemKind: result.item.parentTaskId ? 'Subtask' : 'Task',
+            action: nextEvidence > previousEvidence ? 'evidence_uploaded' : 'evidence_deleted',
+            summary: `${authUser.name} ${nextEvidence > previousEvidence ? 'uploaded evidence to' : 'removed evidence from'} “${result.item.title}”.`,
+          }
+        : evidenceEvent
     const next: Store = {
       ...current,
-      items: current.items.map((item) => item.id === result.item.id ? result.item : item),
-      activity: result.activity ? [result.activity, ...current.activity.filter((entry) => entry.id !== result.activity?.id)] : current.activity,
-      workEvents: explicitEvidenceEvent ? [explicitEvidenceEvent, ...current.workEvents].slice(0, 10000) : current.workEvents,
+      items: current.items.map(item => (item.id === result.item.id ? result.item : item)),
+      activity: result.activity
+        ? [result.activity, ...current.activity.filter(entry => entry.id !== result.activity?.id)]
+        : current.activity,
+      workEvents: explicitEvidenceEvent
+        ? [explicitEvidenceEvent, ...current.workEvents].slice(0, 10000)
+        : current.workEvents,
       notifications: result.notifications || current.notifications,
     }
     storeRef.current = next
@@ -397,7 +582,7 @@ export function useAppState() {
     const current = storeRef.current
     const next: Store = {
       ...current,
-      items: current.items.map((item) => item.id === result.item.id ? result.item : item),
+      items: current.items.map(item => (item.id === result.item.id ? result.item : item)),
       notifications: result.notifications || current.notifications,
     }
     storeRef.current = next
@@ -410,7 +595,12 @@ export function useAppState() {
 
   const applyTimeEntryMutation = (result: TimeEntryMutationResult) => {
     const current = storeRef.current
-    const next: Store = { ...current, items: current.items.map((item) => item.id === result.item.id ? { ...item, timeEntries: result.item.timeEntries || [] } : item) }
+    const next: Store = {
+      ...current,
+      items: current.items.map(item =>
+        item.id === result.item.id ? { ...item, timeEntries: result.item.timeEntries || [] } : item,
+      ),
+    }
     storeRef.current = next
     setStore(next)
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
@@ -453,7 +643,11 @@ export function useAppState() {
       } else {
         setCloudStatus('checking')
         setCloudMessage('Checking cloud storage…')
-        setView(user.role === 'Administrator' || user.modules.includes('action') ? 'action' : (user.modules[0] as View || 'reports'))
+        setView(
+          user.role === 'Administrator' || user.modules.includes('action')
+            ? 'action'
+            : (user.modules[0] as View) || 'reports',
+        )
       }
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Login failed.')
@@ -485,28 +679,34 @@ export function useAppState() {
     }
   }
 
-  const accountCurrentUser = authUser ? store.accounts.find((account) => account.id === authUser.id && account.status === 'Active') : null
-  const currentUser: UserAccount | null = authUser ? {
-    ...(accountCurrentUser ?? { ...authUser, passwordHash: '', createdAt: today }),
-    role: authUser.role,
-    modules: authUser.modules,
-    organizationId: authUser.organizationId,
-    organizationName: authUser.organizationName,
-    organizationSlug: authUser.organizationSlug,
-    organizationModules: authUser.organizationModules || authUser.modules,
-    isPlatformAdmin: authUser.isPlatformAdmin,
-    accountType: authUser.accountType,
-    accountKey: authUser.accountKey,
-    interfaceMode: normalizeInterfaceMode(authUser.interfaceMode),
-    lastLoginAt: authUser.lastLoginAt,
-  } : null
+  const accountCurrentUser = authUser
+    ? store.accounts.find(account => account.id === authUser.id && account.status === 'Active')
+    : null
+  const currentUser: UserAccount | null = authUser
+    ? {
+        ...(accountCurrentUser ?? { ...authUser, passwordHash: '', createdAt: today }),
+        role: authUser.role,
+        modules: authUser.modules,
+        organizationId: authUser.organizationId,
+        organizationName: authUser.organizationName,
+        organizationSlug: authUser.organizationSlug,
+        organizationModules: authUser.organizationModules || authUser.modules,
+        isPlatformAdmin: authUser.isPlatformAdmin,
+        accountType: authUser.accountType,
+        accountKey: authUser.accountKey,
+        interfaceMode: normalizeInterfaceMode(authUser.interfaceMode),
+        lastLoginAt: authUser.lastLoginAt,
+      }
+    : null
   const workspaceModules = currentUser?.organizationModules || currentUser?.modules || []
   const canWrite = Boolean(currentUser && currentUser.role !== 'Viewer' && !lifecycleSaving)
   const canManageAccounts = currentUser?.role === 'Administrator' && currentUser.accountType !== 'platform'
   const hasModule = (module: AppModule) => Boolean(currentUser && currentUser.modules.includes(module))
   const canWriteTasks = canWrite && (hasModule('items') || hasModule('inbox'))
   const canUseAI = Boolean(currentUser && currentUser.role !== 'Viewer' && hasModule('ai'))
-  const visibleNavItems = currentUser ? navItems.filter((item) => hasModule(item.id) && (item.id !== 'ai' || canUseAI)) : []
+  const visibleNavItems = currentUser
+    ? navItems.filter(item => hasModule(item.id) && (item.id !== 'ai' || canUseAI))
+    : []
 
   const handleNotificationAction = async (notification: AppNotification, action: 'read' | 'unread' | 'dismiss') => {
     if (notificationBusy) return
@@ -534,14 +734,32 @@ export function useAppState() {
     }
   }
 
-  useEffect(()=>{
-    const open=(event:Event)=>{const detail=(event as CustomEvent).detail;if(!authUser?.modules?.includes('documents')||!detail?.taskId)return;setModal(null);setSelectedClientId(null);setSelectedProjectId(null);setDocumentLaunch({...detail,nonce:Date.now()});setView('documents')}
-    window.addEventListener('dochub-create',open);return()=>window.removeEventListener('dochub-create',open)
-  },[authUser?.id])
+  useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent).detail
+      if (!authUser?.modules?.includes('documents') || !detail?.taskId) return
+      setModal(null)
+      setSelectedClientId(null)
+      setSelectedProjectId(null)
+      setDocumentLaunch({ ...detail, nonce: Date.now() })
+      setView('documents')
+    }
+    window.addEventListener('dochub-create', open)
+    return () => window.removeEventListener('dochub-create', open)
+  }, [authUser?.id])
   const openNotification = (notification: AppNotification) => {
     if (!notification.readAt) void handleNotificationAction(notification, 'read')
-    const item = notification.taskId ? storeRef.current.items.find((candidate) => candidate.id === notification.taskId) : undefined
-    if (!item) { if(notification.documentId && hasModule('documents')){setSelectedClientId(null);setSelectedProjectId(null);setView('documents')} return }
+    const item = notification.taskId
+      ? storeRef.current.items.find(candidate => candidate.id === notification.taskId)
+      : undefined
+    if (!item) {
+      if (notification.documentId && hasModule('documents')) {
+        setSelectedClientId(null)
+        setSelectedProjectId(null)
+        setView('documents')
+      }
+      return
+    }
     setSelectedClientId(null)
     setSelectedProjectId(null)
     setView(hasModule('items') ? 'items' : 'inbox')
@@ -562,8 +780,11 @@ export function useAppState() {
       return
     }
     if (view === 'themes' || (view === 'users' && canManageAccounts)) return
-    if (!visibleNavItems.length) { setView('themes'); return }
-    if (!visibleNavItems.some((item) => item.id === view)) {
+    if (!visibleNavItems.length) {
+      setView('themes')
+      return
+    }
+    if (!visibleNavItems.some(item => item.id === view)) {
       setSelectedClientId(null)
       setSelectedProjectId(null)
       setView(visibleNavItems[0].id)
@@ -572,142 +793,326 @@ export function useAppState() {
 
   const acceptAccountUsers = (users: UserAccount[]) => {
     const current = storeRef.current
-    const accounts = users.map((account, index) => normalizeAccount(account, index)).filter((account): account is UserAccount => Boolean(account))
+    const accounts = users
+      .map((account, index) => normalizeAccount(account, index))
+      .filter((account): account is UserAccount => Boolean(account))
     const next = { ...current, accounts }
     storeRef.current = next
     setStore(next)
     localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
   }
 
-  const saveOwnPreferences = async (patch: { name?: string; email?: string; phone?: string; theme?: AppTheme; interfaceMode?: InterfaceMode | null; clientId?: string; clientTheme?: AppTheme | null; newPassword?: string; currentPassword?: string }) => {
+  const saveOwnPreferences = async (patch: {
+    name?: string
+    email?: string
+    phone?: string
+    theme?: AppTheme
+    interfaceMode?: InterfaceMode | null
+    clientId?: string
+    clientTheme?: AppTheme | null
+    newPassword?: string
+    currentPassword?: string
+  }) => {
     await waitForCloudSaves()
     const result = await settingsRequest('/api/account/profile', 'PATCH', patch)
     const accounts = storeRef.current.accounts
-    acceptAccountUsers(accounts.map(account => account.id === result.user.id ? { ...account, ...result.user } : account))
+    acceptAccountUsers(
+      accounts.map(account => (account.id === result.user.id ? { ...account, ...result.user } : account)),
+    )
     if (patch.newPassword) setAuthUser(await getAuthSession())
-    else setAuthUser(current => current && current.id === result.user.id ? { ...current, ...result.user } : current)
+    else setAuthUser(current => (current && current.id === result.user.id ? { ...current, ...result.user } : current))
   }
 
-  const updateOwnProfile = async (profile: { name: string; email: string; phone: string; theme: AppTheme; newPassword?: string; currentPassword?: string }) => {
+  const updateOwnProfile = async (profile: {
+    name: string
+    email: string
+    phone: string
+    theme: AppTheme
+    newPassword?: string
+    currentPassword?: string
+  }) => {
     try {
       await saveOwnPreferences(profile)
       return profile.newPassword ? 'Password changed. Sign in with your new password.' : 'Profile updated.'
-    } catch (error) { return error instanceof Error ? error.message : 'Profile save failed.' }
+    } catch (error) {
+      return error instanceof Error ? error.message : 'Profile save failed.'
+    }
   }
 
   // Active pages recheck the session; every server action still verifies permissions.
-  useVisiblePolling(async signal => {
-    const session = await getAuthSession()
-    if (signal.aborted) return
-    setAuthUser(session)
-    if (!session) { setStore(seedStore()); setProfileOpen(false); setSelectedClientId(null); setSelectedProjectId(null) }
-  }, { enabled: Boolean(authUser && workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)), interval: 60_000, immediate: false, scope: `${authUser?.id}:${view}` })
+  useVisiblePolling(
+    async signal => {
+      const session = await getAuthSession()
+      if (signal.aborted) return
+      setAuthUser(session)
+      if (!session) {
+        setStore(seedStore())
+        setProfileOpen(false)
+        setSelectedClientId(null)
+        setSelectedProjectId(null)
+      }
+    },
+    {
+      enabled: Boolean(authUser && workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)),
+      interval: 60_000,
+      immediate: false,
+      scope: `${authUser?.id}:${view}`,
+    },
+  )
 
-  const clientName = (id?: string) => id ? store.clients.find((c) => c.id === id)?.name ?? 'Unknown client' : 'General / no client'
-  const projectName = (id?: string) => id ? store.projects.find((p) => p.id === id)?.name ?? 'Unknown project' : 'No project'
+  const clientName = (id?: string) =>
+    id ? (store.clients.find(c => c.id === id)?.name ?? 'Unknown client') : 'General / no client'
+  const projectName = (id?: string) =>
+    id ? (store.projects.find(p => p.id === id)?.name ?? 'Unknown project') : 'No project'
 
   const openItems = useMemo(
-    () => store.items.filter((item) => (currentUser?.role !== 'Contributor' || item.assignedToUserId === currentUser.id) && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings)),
+    () =>
+      store.items.filter(
+        item =>
+          (currentUser?.role !== 'Contributor' || item.assignedToUserId === currentUser.id) &&
+          !isTaskClosed(item.status, store.taskSettings) &&
+          !isWaitingOnDone(item.waitingOn, store.taskSettings),
+      ),
     [store.items, store.taskSettings, currentUser],
   )
 
   const chooseTaskView = (next: { layout?: TaskLayout; group?: BoardGroup; subtasks?: boolean }) => {
-    const view = { layout: next.layout ?? taskLayout, group: next.group ?? boardGroup, subtasks: next.subtasks ?? boardShowSubtasks }
-    setTaskLayout(view.layout); setBoardGroup(view.group); setBoardShowSubtasks(view.subtasks)
+    const view = {
+      layout: next.layout ?? taskLayout,
+      group: next.group ?? boardGroup,
+      subtasks: next.subtasks ?? boardShowSubtasks,
+    }
+    setTaskLayout(view.layout)
+    setBoardGroup(view.group)
+    setBoardShowSubtasks(view.subtasks)
     if (!authUser) return
-    try { localStorage.setItem(`ba-task-view:${authUser.organizationId}:${authUser.id}`, JSON.stringify(view)) } catch { /* Keep the view usable when storage is unavailable. */ }
+    try {
+      localStorage.setItem(`ba-task-view:${authUser.organizationId}:${authUser.id}`, JSON.stringify(view))
+    } catch {
+      /* Keep the view usable when storage is unavailable. */
+    }
   }
 
   const chooseClientLayout = (layout: ClientLayout) => {
     setClientLayout(layout)
     if (!authUser) return
-    try { localStorage.setItem(`ba-client-layout:${authUser.organizationId}:${authUser.id}`, layout) } catch { /* Keep the view usable when storage is unavailable. */ }
+    try {
+      localStorage.setItem(`ba-client-layout:${authUser.organizationId}:${authUser.id}`, layout)
+    } catch {
+      /* Keep the view usable when storage is unavailable. */
+    }
   }
 
   const visibleClients = useMemo(() => {
     const search = clientSearch.trim().toLocaleLowerCase()
     return store.clients
-      .filter((client) => clientArchiveFilter === 'all' || isArchived(client) === (clientArchiveFilter === 'archived'))
-      .filter((client) => !search || [client.name, client.contact, client.email, client.notes || ''].some((part) => part.toLocaleLowerCase().includes(search)))
-      .map((client) => {
-        const projects = new Set(store.items.filter((item) => item.clientId === client.id && item.projectId).map((item) => item.projectId))
-        const tasks = openItems.filter((item) => item.clientId === client.id)
-        const next = tasks.filter((item) => item.followUpDate).sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))[0]
+      .filter(client => clientArchiveFilter === 'all' || isArchived(client) === (clientArchiveFilter === 'archived'))
+      .filter(
+        client =>
+          !search ||
+          [client.name, client.contact, client.email, client.notes || ''].some(part =>
+            part.toLocaleLowerCase().includes(search),
+          ),
+      )
+      .map(client => {
+        const projects = new Set(
+          store.items.filter(item => item.clientId === client.id && item.projectId).map(item => item.projectId),
+        )
+        const tasks = openItems.filter(item => item.clientId === client.id)
+        const next = tasks
+          .filter(item => item.followUpDate)
+          .sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))[0]
         return { client, projectCount: projects.size, openTaskCount: tasks.length, next }
       })
       .sort((a, b) => {
         if (clientSort === 'name-desc') return b.client.name.localeCompare(a.client.name)
-        if (clientSort === 'open-tasks') return b.openTaskCount - a.openTaskCount || a.client.name.localeCompare(b.client.name)
-        if (clientSort === 'follow-up') return (a.next?.followUpDate || '9999-12-31').localeCompare(b.next?.followUpDate || '9999-12-31') || a.client.name.localeCompare(b.client.name)
+        if (clientSort === 'open-tasks')
+          return b.openTaskCount - a.openTaskCount || a.client.name.localeCompare(b.client.name)
+        if (clientSort === 'follow-up')
+          return (
+            (a.next?.followUpDate || '9999-12-31').localeCompare(b.next?.followUpDate || '9999-12-31') ||
+            a.client.name.localeCompare(b.client.name)
+          )
         return a.client.name.localeCompare(b.client.name)
       })
   }, [store.clients, store.items, openItems, clientArchiveFilter, clientSearch, clientSort])
 
-  const overdue = openItems.filter((item) => item.followUpDate && item.followUpDate < today)
-  const dueToday = openItems.filter((item) => item.followUpDate === today)
-  const attentionClientCount = new Set(openItems.map((item) => item.clientId).filter(Boolean)).size
-  const openInquiryCount = openItems.filter((item) => item.type === 'Inquiry').length
+  const overdue = openItems.filter(item => item.followUpDate && item.followUpDate < today)
+  const dueToday = openItems.filter(item => item.followUpDate === today)
+  const attentionClientCount = new Set(openItems.map(item => item.clientId).filter(Boolean)).size
+  const openInquiryCount = openItems.filter(item => item.type === 'Inquiry').length
 
   const searchedItems = useMemo(() => {
     const q = query.trim().toLowerCase()
     return store.items
-      .filter((item) => {
-        const text = [item.title, item.description, clientName(item.clientId), projectName(item.projectId), item.type, item.status].join(' ').toLowerCase()
+      .filter(item => {
+        const text = [
+          item.title,
+          item.description,
+          clientName(item.clientId),
+          projectName(item.projectId),
+          item.type,
+          item.status,
+        ]
+          .join(' ')
+          .toLowerCase()
         return !q || text.includes(q)
       })
-      .filter((item) => waitingFilter === 'All' || item.waitingOn === waitingFilter)
+      .filter(item => waitingFilter === 'All' || item.waitingOn === waitingFilter)
       .sort((a, b) => {
         const aOverdue = a.followUpDate && a.followUpDate < today ? 1 : 0
         const bOverdue = b.followUpDate && b.followUpDate < today ? 1 : 0
-        return bOverdue - aOverdue || priorityRank[b.priority] - priorityRank[a.priority] || (a.followUpDate || '9999').localeCompare(b.followUpDate || '9999')
+        return (
+          bOverdue - aOverdue ||
+          priorityRank[b.priority] - priorityRank[a.priority] ||
+          (a.followUpDate || '9999').localeCompare(b.followUpDate || '9999')
+        )
       })
   }, [store.items, query, waitingFilter, store.clients, store.projects, today])
 
   const actionCenterUsers = trackedActionCenterUsers(store.accounts)
-  const resolvedActionCenterScope = resolveActionCenterScope(actionCenterScope, currentUser?.id || '', currentUser?.role || 'Viewer', store.accounts)
-  const actionCenterScopeLabel = resolvedActionCenterScope.kind === 'all' ? 'All Users’ Action Center' : resolvedActionCenterScope.kind === 'user' ? `${actionCenterUsers.find((account) => account.id === resolvedActionCenterScope.userId)?.name || 'User'}’s Action Center` : 'My Action Center'
+  const resolvedActionCenterScope = resolveActionCenterScope(
+    actionCenterScope,
+    currentUser?.id || '',
+    currentUser?.role || 'Viewer',
+    store.accounts,
+  )
+  const actionCenterScopeLabel =
+    resolvedActionCenterScope.kind === 'all'
+      ? 'All Users’ Action Center'
+      : resolvedActionCenterScope.kind === 'user'
+        ? `${actionCenterUsers.find(account => account.id === resolvedActionCenterScope.userId)?.name || 'User'}’s Action Center`
+        : 'My Action Center'
   const matchesActionCenterScope = (item: WorkItem) => itemMatchesActionCenterScope(item, resolvedActionCenterScope)
-  const actionCenterWorkItems = store.items.filter((item) => matchesActionCenterScope(item) && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))
-  const actionItems = searchedItems.filter((item) => matchesActionCenterScope(item) && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))
-  const canEditActionItem = (item: WorkItem) => canWriteTasks && (currentUser?.role === 'Administrator' || item.assignedToUserId === currentUser?.id)
+  const actionCenterWorkItems = store.items.filter(
+    item =>
+      matchesActionCenterScope(item) &&
+      !isTaskClosed(item.status, store.taskSettings) &&
+      !isWaitingOnDone(item.waitingOn, store.taskSettings),
+  )
+  const actionItems = searchedItems.filter(
+    item =>
+      matchesActionCenterScope(item) &&
+      !isTaskClosed(item.status, store.taskSettings) &&
+      !isWaitingOnDone(item.waitingOn, store.taskSettings),
+  )
+  const canEditActionItem = (item: WorkItem) =>
+    canWriteTasks && (currentUser?.role === 'Administrator' || item.assignedToUserId === currentUser?.id)
   // The metric follows the built-in Developer option (by id, so a rename keeps it).
   // If an account removed it, count everything waiting on someone other than the default assignee.
-  const developerWaitingOn = waitingOnOptions(store.taskSettings).find((option) => option.id === 'developer' && !option.done)
+  const developerWaitingOn = waitingOnOptions(store.taskSettings).find(
+    option => option.id === 'developer' && !option.done,
+  )
   const actionCenterWaitingTitle = developerWaitingOn ? `Waiting on ${developerWaitingOn.label}` : 'Waiting on others'
-  const actionCenterWaitingDev = actionCenterWorkItems.filter((item) => developerWaitingOn ? item.waitingOn === developerWaitingOn.label : item.waitingOn !== defaultWaitingOn(store.taskSettings))
-  const actionCenterClientCount = new Set(actionCenterWorkItems.map((item) => item.clientId).filter(Boolean)).size
-  const actionCenterWaitingDevOverdue = actionCenterWaitingDev.filter((item) => item.followUpDate && item.followUpDate < today).length
-  const actionCenterInquiryCount = actionCenterWorkItems.filter((item) => item.type === 'Inquiry').length
+  const actionCenterWaitingDev = actionCenterWorkItems.filter(item =>
+    developerWaitingOn
+      ? item.waitingOn === developerWaitingOn.label
+      : item.waitingOn !== defaultWaitingOn(store.taskSettings),
+  )
+  const actionCenterClientCount = new Set(actionCenterWorkItems.map(item => item.clientId).filter(Boolean)).size
+  const actionCenterWaitingDevOverdue = actionCenterWaitingDev.filter(
+    item => item.followUpDate && item.followUpDate < today,
+  ).length
+  const actionCenterInquiryCount = actionCenterWorkItems.filter(item => item.type === 'Inquiry').length
   useEffect(() => {
-    if (actionCenterScope.startsWith('user:') && !actionCenterUsers.some((account) => account.id === actionCenterScope.slice('user:'.length))) setActionCenterScope('mine')
+    if (
+      actionCenterScope.startsWith('user:') &&
+      !actionCenterUsers.some(account => account.id === actionCenterScope.slice('user:'.length))
+    )
+      setActionCenterScope('mine')
   }, [actionCenterScope, store.accounts])
   const dashboardAiContext = useMemo(() => {
-    const client = store.clients.find((value) => value.id === aiClientId)
-    const project = store.projects.find((value) => value.id === aiProjectId)
-    const scopedItems = store.items.filter((item) => (!aiClientId || item.clientId === aiClientId) && (!aiProjectId || item.projectId === aiProjectId))
-    const closedStatuses = new Set(store.taskSettings.statuses.filter((status) => status.closed).map((status) => status.label))
-    const openItems = scopedItems.filter((item) => !closedStatuses.has(item.status) && !isWaitingOnDone(item.waitingOn, store.taskSettings)).slice(0, 20)
-    const upcomingActivities = store.planner.filter((activity) => (!aiClientId || activity.clientId === aiClientId) && (!aiProjectId || activity.projectId === aiProjectId) && activity.status === 'Planned').slice(0, 15)
+    const client = store.clients.find(value => value.id === aiClientId)
+    const project = store.projects.find(value => value.id === aiProjectId)
+    const scopedItems = store.items.filter(
+      item => (!aiClientId || item.clientId === aiClientId) && (!aiProjectId || item.projectId === aiProjectId),
+    )
+    const closedStatuses = new Set(
+      store.taskSettings.statuses.filter(status => status.closed).map(status => status.label),
+    )
+    const openItems = scopedItems
+      .filter(item => !closedStatuses.has(item.status) && !isWaitingOnDone(item.waitingOn, store.taskSettings))
+      .slice(0, 20)
+    const upcomingActivities = store.planner
+      .filter(
+        activity =>
+          (!aiClientId || activity.clientId === aiClientId) &&
+          (!aiProjectId || activity.projectId === aiProjectId) &&
+          activity.status === 'Planned',
+      )
+      .slice(0, 15)
     const contextUser = currentUser || seedAccounts[0]
-    return { currentUser: { id: contextUser.id, name: contextUser.name, role: contextUser.role, modules: contextUser.modules }, client, project, openItems, recentItems: scopedItems.slice(0, 20), upcomingActivities, myAssignments: scopedItems.filter((item) => item.assignedToUserId === contextUser.id).slice(0, 40), myRecentActivity: store.workEvents.filter((event) => event.actorUserId === contextUser.id || event.assignedToUserId === contextUser.id || (event.field === 'assignedToUserId' && event.oldValue === contextUser.id)).slice(0, 40) }
-  }, [aiClientId, aiProjectId, store.clients, store.projects, store.items, store.planner, store.taskSettings, store.workEvents, currentUser])
-  const inquiryItems = searchedItems.filter((item) => item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings))
+    return {
+      currentUser: { id: contextUser.id, name: contextUser.name, role: contextUser.role, modules: contextUser.modules },
+      client,
+      project,
+      openItems,
+      recentItems: scopedItems.slice(0, 20),
+      upcomingActivities,
+      myAssignments: scopedItems.filter(item => item.assignedToUserId === contextUser.id).slice(0, 40),
+      myRecentActivity: store.workEvents
+        .filter(
+          event =>
+            event.actorUserId === contextUser.id ||
+            event.assignedToUserId === contextUser.id ||
+            (event.field === 'assignedToUserId' && event.oldValue === contextUser.id),
+        )
+        .slice(0, 40),
+    }
+  }, [
+    aiClientId,
+    aiProjectId,
+    store.clients,
+    store.projects,
+    store.items,
+    store.planner,
+    store.taskSettings,
+    store.workEvents,
+    currentUser,
+  ])
+  const inquiryItems = searchedItems.filter(
+    item => item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings),
+  )
   const archivedInquiryItems = useMemo(() => {
     const q = query.trim().toLowerCase()
     return store.items
-      .filter((item) => item.source === 'Discord' && (item.type !== 'Inquiry' || isTaskClosed(item.status, store.taskSettings) || isWaitingOnDone(item.waitingOn, store.taskSettings)))
-      .filter((item) => {
-        const text = [item.title, item.description, clientName(item.clientId), projectName(item.projectId), item.type, item.status, item.sourceSender || ''].join(' ').toLowerCase()
+      .filter(
+        item =>
+          item.source === 'Discord' &&
+          (item.type !== 'Inquiry' ||
+            isTaskClosed(item.status, store.taskSettings) ||
+            isWaitingOnDone(item.waitingOn, store.taskSettings)),
+      )
+      .filter(item => {
+        const text = [
+          item.title,
+          item.description,
+          clientName(item.clientId),
+          projectName(item.projectId),
+          item.type,
+          item.status,
+          item.sourceSender || '',
+        ]
+          .join(' ')
+          .toLowerCase()
         return !q || text.includes(q)
       })
       .sort((a, b) => (b.resolvedDate || b.dateRaised).localeCompare(a.resolvedDate || a.dateRaised))
   }, [store.items, store.taskSettings, store.clients, store.projects, query])
-  const newExternalInquiryCount = newExternalInquiryIds.filter((id) => store.items.some((item) => item.id === id && item.type === 'Inquiry' && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))).length
+  const newExternalInquiryCount = newExternalInquiryIds.filter(id =>
+    store.items.some(
+      item =>
+        item.id === id &&
+        item.type === 'Inquiry' &&
+        !isTaskClosed(item.status, store.taskSettings) &&
+        !isWaitingOnDone(item.waitingOn, store.taskSettings),
+    ),
+  ).length
 
   const filteredTasks = useMemo(() => {
     const due3 = addDays(today, 3)
     const due7 = addDays(today, 7)
-    return searchedItems.filter((item) => {
+    return searchedItems.filter(item => {
       if (taskClientFilter === '__none__' && item.clientId) return false
       if (taskClientFilter && taskClientFilter !== '__none__' && item.clientId !== taskClientFilter) return false
       if (taskProjectFilter === '__none__' && item.projectId) return false
@@ -715,32 +1120,61 @@ export function useAppState() {
       if (taskStatusFilter && item.status !== taskStatusFilter) return false
       if (taskDateFilter === 'due-3') return Boolean(item.dueDate && item.dueDate >= today && item.dueDate <= due3)
       if (taskDateFilter === 'due-7') return Boolean(item.dueDate && item.dueDate >= today && item.dueDate <= due7)
-      if (taskDateFilter === 'followup-3') return Boolean(item.followUpDate && item.followUpDate >= today && item.followUpDate <= due3)
-      if (taskDateFilter === 'followup-7') return Boolean(item.followUpDate && item.followUpDate >= today && item.followUpDate <= due7)
-      if (taskDateFilter === 'overdue') return Boolean((item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)) && !isTaskClosed(item.status, store.taskSettings)
+      if (taskDateFilter === 'followup-3')
+        return Boolean(item.followUpDate && item.followUpDate >= today && item.followUpDate <= due3)
+      if (taskDateFilter === 'followup-7')
+        return Boolean(item.followUpDate && item.followUpDate >= today && item.followUpDate <= due7)
+      if (taskDateFilter === 'overdue')
+        return (
+          Boolean((item.dueDate && item.dueDate < today) || (item.followUpDate && item.followUpDate < today)) &&
+          !isTaskClosed(item.status, store.taskSettings)
+        )
       return true
     })
   }, [searchedItems, taskClientFilter, taskProjectFilter, taskStatusFilter, taskDateFilter, store.taskSettings, today])
-  const selectedClient = store.clients.find((client) => client.id === selectedClientId) ?? null
-  const selectedProject = store.projects.find((project) => project.id === selectedProjectId) ?? null
-  const editingTask = editingTaskId ? store.items.find((item) => item.id === editingTaskId) ?? null : null
+  const selectedClient = store.clients.find(client => client.id === selectedClientId) ?? null
+  const selectedProject = store.projects.find(project => project.id === selectedProjectId) ?? null
+  const editingTask = editingTaskId ? (store.items.find(item => item.id === editingTaskId) ?? null) : null
 
   const resolveItem = (id: string) => {
     if (!canWriteTasks) return
     const now = new Date().toISOString().slice(0, 10)
-    const target = store.items.find((item) => item.id === id)
+    const target = store.items.find(item => item.id === id)
     if (!target) return
-    const openSubtasks = store.items.filter((item) => item.parentTaskId === id && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings))
+    const openSubtasks = store.items.filter(
+      item =>
+        item.parentTaskId === id &&
+        !isTaskClosed(item.status, store.taskSettings) &&
+        !isWaitingOnDone(item.waitingOn, store.taskSettings),
+    )
     if (openSubtasks.length) {
-      window.alert(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before completing this task.`)
+      window.alert(
+        `Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before completing this task.`,
+      )
       return
     }
     const closedStatus = defaultClosedTaskStatus(store.taskSettings)
     persist({
       ...store,
-      items: store.items.map((item) => (item.id === id ? { ...item, status: closedStatus, waitingOn: doneWaitingOn(store.taskSettings), followUpDate: '', resolvedDate: now } : item)),
+      items: store.items.map(item =>
+        item.id === id
+          ? {
+              ...item,
+              status: closedStatus,
+              waitingOn: doneWaitingOn(store.taskSettings),
+              followUpDate: '',
+              resolvedDate: now,
+            }
+          : item,
+      ),
       activity: [
-        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: now, text: `Completed task: ${target.title}` },
+        {
+          id: crypto.randomUUID(),
+          clientId: target.clientId,
+          projectId: target.projectId,
+          date: now,
+          text: `Completed task: ${target.title}`,
+        },
         ...store.activity,
       ],
     })
@@ -748,26 +1182,49 @@ export function useAppState() {
 
   const updateTaskStatus = (id: string, status: string) => {
     if (!canWriteTasks) return
-    const target = store.items.find((item) => item.id === id)
+    const target = store.items.find(item => item.id === id)
     if (!target || target.status === status) return
     const closed = isTaskClosed(status, store.taskSettings)
-    const openSubtasks = closed ? store.items.filter((item) => item.parentTaskId === id && !isTaskClosed(item.status, store.taskSettings) && !isWaitingOnDone(item.waitingOn, store.taskSettings)) : []
+    const openSubtasks = closed
+      ? store.items.filter(
+          item =>
+            item.parentTaskId === id &&
+            !isTaskClosed(item.status, store.taskSettings) &&
+            !isWaitingOnDone(item.waitingOn, store.taskSettings),
+        )
+      : []
     if (openSubtasks.length) {
-      window.alert(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`)
+      window.alert(
+        `Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`,
+      )
       return
     }
     const reopened = isTaskClosed(target.status, store.taskSettings) && !closed
     persist({
       ...store,
-      items: store.items.map((item) => item.id === id ? {
-        ...item,
-        status,
-        startDate: status === 'In Progress' && !item.startDate ? today : item.startDate,
-        resolvedDate: closed ? (item.resolvedDate || today) : undefined,
-        waitingOn: closed ? doneWaitingOn(store.taskSettings) : reopened && isWaitingOnDone(item.waitingOn, store.taskSettings) ? defaultWaitingOn(store.taskSettings) : item.waitingOn,
-      } : item),
+      items: store.items.map(item =>
+        item.id === id
+          ? {
+              ...item,
+              status,
+              startDate: status === 'In Progress' && !item.startDate ? today : item.startDate,
+              resolvedDate: closed ? item.resolvedDate || today : undefined,
+              waitingOn: closed
+                ? doneWaitingOn(store.taskSettings)
+                : reopened && isWaitingOnDone(item.waitingOn, store.taskSettings)
+                  ? defaultWaitingOn(store.taskSettings)
+                  : item.waitingOn,
+            }
+          : item,
+      ),
       activity: [
-        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Task status changed: ${target.title} → ${status}` },
+        {
+          id: crypto.randomUUID(),
+          clientId: target.clientId,
+          projectId: target.projectId,
+          date: today,
+          text: `Task status changed: ${target.title} → ${status}`,
+        },
         ...store.activity,
       ],
     })
@@ -775,13 +1232,26 @@ export function useAppState() {
 
   const updateTaskWaitingOn = (id: string, waitingOn: WaitingOn) => {
     if (!canWriteTasks) return
-    const target = store.items.find((item) => item.id === id)
-    if (!target || target.waitingOn === waitingOn || isWaitingOnDone(waitingOn, store.taskSettings) || !findWaitingOn(waitingOn, store.taskSettings) || isTaskClosed(target.status, store.taskSettings)) return
+    const target = store.items.find(item => item.id === id)
+    if (
+      !target ||
+      target.waitingOn === waitingOn ||
+      isWaitingOnDone(waitingOn, store.taskSettings) ||
+      !findWaitingOn(waitingOn, store.taskSettings) ||
+      isTaskClosed(target.status, store.taskSettings)
+    )
+      return
     persist({
       ...store,
-      items: store.items.map((item) => item.id === id ? { ...item, waitingOn } : item),
+      items: store.items.map(item => (item.id === id ? { ...item, waitingOn } : item)),
       activity: [
-        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Task now waiting on ${waitingOn}: ${target.title}` },
+        {
+          id: crypto.randomUUID(),
+          clientId: target.clientId,
+          projectId: target.projectId,
+          date: today,
+          text: `Task now waiting on ${waitingOn}: ${target.title}`,
+        },
         ...store.activity,
       ],
     })
@@ -791,62 +1261,100 @@ export function useAppState() {
     if (!canWriteTasks) throw new Error('You do not have permission to edit this task.')
     setTaskEditSaving(true)
     try {
-    // A prior optimistic save may have failed. Allow this confirmed edit to retry.
-    await waitForCloudSaves().catch(() => undefined)
-    const current = storeRef.current
-    const previous = current.items.find((item) => item.id === updated.id)
-    if (!previous) throw new Error('This task is no longer available. Reload the workspace and try again.')
-    const closed = isTaskClosed(updated.status, current.taskSettings)
-    const openSubtasks = closed ? current.items.filter((item) => item.parentTaskId === updated.id && !isTaskClosed(item.status, current.taskSettings) && !isWaitingOnDone(item.waitingOn, current.taskSettings)) : []
-    if (openSubtasks.length) {
-      throw new Error(`Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`)
-    }
-    const normalized: WorkItem = {
-      ...updated,
-      title: previous.title,
-      clientId: previous.clientId,
-      projectId: previous.parentTaskId ? previous.projectId : updated.projectId,
-      waitingOn: closed ? doneWaitingOn(current.taskSettings) : isWaitingOnDone(updated.waitingOn, current.taskSettings) ? defaultWaitingOn(current.taskSettings) : updated.waitingOn,
-      startDate: updated.status === 'In Progress' && !updated.startDate ? today : updated.startDate,
-      resolvedDate: closed ? (previous.resolvedDate || today) : undefined,
-    }
-    const editedItems = current.items.map((item) => item.id === updated.id ? normalized : item.parentTaskId === updated.id ? { ...item, projectId: normalized.projectId } : item)
-    const inheritedItems = applySubtaskAssignmentInheritance(current.items, editedItems)
-    const next: Store = {
-      ...current,
-      items: inheritedItems.map((item) => ({
-        ...item,
-        owner: item.assignedToUserId ? current.accounts.find((account) => account.id === item.assignedToUserId)?.name || item.owner : '',
-      })),
-      activity: [
-        { id: crypto.randomUUID(), clientId: previous.clientId, projectId: normalized.projectId, date: today, text: `Updated task: ${previous.title}` },
-        ...current.activity,
-      ],
-    }
-    assertLifecycleMutation(current, next, authUser)
-    const generatedEvents = workEventsForItemChanges(current, next, authUser)
-    assertRtmMutation(current, next, authUser)
-    const candidate = reconcileRtm(current, { ...next, schemaVersion: STORE_SCHEMA_VERSION, workEvents: [...generatedEvents, ...current.workEvents].slice(0, 10000) }, authUser)
-    if (cloudStatus !== 'local') {
-      setCloudStatus('saving')
-      setCloudMessage('Saving to database…')
-      try {
-        const result = await queueCloudStoreSave(candidate)
-        if (!result.configured) throw new Error('Cloud storage is unavailable. Your edit was not saved; please retry when the database is connected.')
-        setLastCloudSync(result.updatedAt || new Date().toISOString())
-        setCloudStatus('synced')
-        setCloudMessage('Database synced')
-      } catch (error) {
-        setCloudStatus('error')
-        setCloudMessage(error instanceof Error ? error.message : 'Cloud save failed')
-        throw error
+      // A prior optimistic save may have failed. Allow this confirmed edit to retry.
+      await waitForCloudSaves().catch(() => undefined)
+      const current = storeRef.current
+      const previous = current.items.find(item => item.id === updated.id)
+      if (!previous) throw new Error('This task is no longer available. Reload the workspace and try again.')
+      const closed = isTaskClosed(updated.status, current.taskSettings)
+      const openSubtasks = closed
+        ? current.items.filter(
+            item =>
+              item.parentTaskId === updated.id &&
+              !isTaskClosed(item.status, current.taskSettings) &&
+              !isWaitingOnDone(item.waitingOn, current.taskSettings),
+          )
+        : []
+      if (openSubtasks.length) {
+        throw new Error(
+          `Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`,
+        )
       }
-    }
-    storeRef.current = candidate
-    setStore(candidate)
-    localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(candidate))
-    setEditingTaskId(null)
-    setModal(null)
+      const normalized: WorkItem = {
+        ...updated,
+        title: previous.title,
+        clientId: previous.clientId,
+        projectId: previous.parentTaskId ? previous.projectId : updated.projectId,
+        waitingOn: closed
+          ? doneWaitingOn(current.taskSettings)
+          : isWaitingOnDone(updated.waitingOn, current.taskSettings)
+            ? defaultWaitingOn(current.taskSettings)
+            : updated.waitingOn,
+        startDate: updated.status === 'In Progress' && !updated.startDate ? today : updated.startDate,
+        resolvedDate: closed ? previous.resolvedDate || today : undefined,
+      }
+      const editedItems = current.items.map(item =>
+        item.id === updated.id
+          ? normalized
+          : item.parentTaskId === updated.id
+            ? { ...item, projectId: normalized.projectId }
+            : item,
+      )
+      const inheritedItems = applySubtaskAssignmentInheritance(current.items, editedItems)
+      const next: Store = {
+        ...current,
+        items: inheritedItems.map(item => ({
+          ...item,
+          owner: item.assignedToUserId
+            ? current.accounts.find(account => account.id === item.assignedToUserId)?.name || item.owner
+            : '',
+        })),
+        activity: [
+          {
+            id: crypto.randomUUID(),
+            clientId: previous.clientId,
+            projectId: normalized.projectId,
+            date: today,
+            text: `Updated task: ${previous.title}`,
+          },
+          ...current.activity,
+        ],
+      }
+      assertLifecycleMutation(current, next, authUser)
+      const generatedEvents = workEventsForItemChanges(current, next, authUser)
+      assertRtmMutation(current, next, authUser)
+      const candidate = reconcileRtm(
+        current,
+        {
+          ...next,
+          schemaVersion: STORE_SCHEMA_VERSION,
+          workEvents: [...generatedEvents, ...current.workEvents].slice(0, 10000),
+        },
+        authUser,
+      )
+      if (cloudStatus !== 'local') {
+        setCloudStatus('saving')
+        setCloudMessage('Saving to database…')
+        try {
+          const result = await queueCloudStoreSave(candidate)
+          if (!result.configured)
+            throw new Error(
+              'Cloud storage is unavailable. Your edit was not saved; please retry when the database is connected.',
+            )
+          setLastCloudSync(result.updatedAt || new Date().toISOString())
+          setCloudStatus('synced')
+          setCloudMessage('Database synced')
+        } catch (error) {
+          setCloudStatus('error')
+          setCloudMessage(error instanceof Error ? error.message : 'Cloud save failed')
+          throw error
+        }
+      }
+      storeRef.current = candidate
+      setStore(candidate)
+      localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(candidate))
+      setEditingTaskId(null)
+      setModal(null)
     } finally {
       setTaskEditSaving(false)
     }
@@ -854,18 +1362,24 @@ export function useAppState() {
 
   const deleteTask = (id: string) => {
     if (!canWriteTasks) return
-    const target = store.items.find((item) => item.id === id)
+    const target = store.items.find(item => item.id === id)
     if (!target) return
-    const childCount = store.items.filter((item) => item.parentTaskId === id).length
+    const childCount = store.items.filter(item => item.parentTaskId === id).length
     const deleteMessage = childCount
       ? `Delete task "${target.title}" and its ${childCount} subtask${childCount === 1 ? '' : 's'}? This cannot be undone.`
       : `Delete task "${target.title}"? This cannot be undone.`
     if (!window.confirm(deleteMessage)) return
     persist({
       ...store,
-      items: store.items.filter((item) => item.id !== id && item.parentTaskId !== id),
+      items: store.items.filter(item => item.id !== id && item.parentTaskId !== id),
       activity: [
-        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Deleted task: ${target.title}` },
+        {
+          id: crypto.randomUUID(),
+          clientId: target.clientId,
+          projectId: target.projectId,
+          date: today,
+          text: `Deleted task: ${target.title}`,
+        },
         ...store.activity,
       ],
     })
@@ -882,12 +1396,19 @@ export function useAppState() {
   useEffect(() => {
     if (view !== 'action' || !hasTrackers) return
     const controller = new AbortController()
-    trackerApi.allLinks(controller.signal).then(result => setTrackerLinks(result.links)).catch(() => { if (!controller.signal.aborted) setTrackerLinks([]) })
+    trackerApi
+      .allLinks(controller.signal)
+      .then(result => setTrackerLinks(result.links))
+      .catch(() => {
+        if (!controller.signal.aborted) setTrackerLinks([])
+      })
     return () => controller.abort()
   }, [view, hasTrackers, currentUser?.id])
   const openTrackerLink = (link: TaskLink) => {
     rememberTrackerRow(link.trackerId, link.rowId)
-    setSelectedClientId(null); setSelectedProjectId(null); setView('trackers')
+    setSelectedClientId(null)
+    setSelectedProjectId(null)
+    setView('trackers')
   }
   // Trackers create tasks and subtasks from their cells. They are added to the workspace like any other task, and the
   // tracker links them only after the save reaches the server, which checks that a linked task exists.
@@ -896,85 +1417,153 @@ export function useAppState() {
     const current = storeRef.current
     const today = businessDateKey()
     // New projects first: one per name, reusing an existing project with the same name.
-    const projects = [...current.projects], addedProjects: Project[] = []
+    const projects = [...current.projects],
+      addedProjects: Project[] = []
     const projectFor = (draft: TaskDraft) => {
       const name = (draft.newProjectName || '').trim().slice(0, 120)
       if (!name) return draft.projectId || undefined
-      const found = projects.find((project) => project.name.trim().toLowerCase() === name.toLowerCase() && !isArchived(project))
+      const found = projects.find(
+        project => project.name.trim().toLowerCase() === name.toLowerCase() && !isArchived(project),
+      )
       if (found) return found.id
-      const project: Project = { id: crypto.randomUUID(), name, status: 'Active', targetDate: '', summary: 'Created from a tracker.' }
-      projects.push(project); addedProjects.push(project)
+      const project: Project = {
+        id: crypto.randomUUID(),
+        name,
+        status: 'Active',
+        targetDate: '',
+        summary: 'Created from a tracker.',
+      }
+      projects.push(project)
+      addedProjects.push(project)
       return project.id
     }
     const nextOrder = new Map<string, number>()
     const made: WorkItem[] = []
     drafts.forEach((draft, index) => {
       const batchParent = draft.parentIndex !== undefined ? made[draft.parentIndex] : undefined
-      if (draft.parentIndex !== undefined && (!batchParent || draft.parentIndex >= index || batchParent.parentTaskId)) throw new Error('A subtask must come after its task in the list.')
-      const parent = batchParent || (draft.parentTaskId ? current.items.find((item) => item.id === draft.parentTaskId) : undefined)
-      if (draft.parentTaskId && !batchParent && (!parent || parent.parentTaskId)) throw new Error('The parent task was not found.')
-      if (parent && !batchParent && archivedWorkReason(current, parent)) throw new Error(archivedWorkReason(current, parent) || 'The parent task is archived.')
+      if (draft.parentIndex !== undefined && (!batchParent || draft.parentIndex >= index || batchParent.parentTaskId))
+        throw new Error('A subtask must come after its task in the list.')
+      const parent =
+        batchParent || (draft.parentTaskId ? current.items.find(item => item.id === draft.parentTaskId) : undefined)
+      if (draft.parentTaskId && !batchParent && (!parent || parent.parentTaskId))
+        throw new Error('The parent task was not found.')
+      if (parent && !batchParent && archivedWorkReason(current, parent))
+        throw new Error(archivedWorkReason(current, parent) || 'The parent task is archived.')
       const clientId = parent ? parent.clientId : draft.clientId || undefined
       if (!clientId) throw new Error('Choose the client for the task.')
-      if (!current.clients.some((client) => client.id === clientId)) throw new Error('That client was not found.')
+      if (!current.clients.some(client => client.id === clientId)) throw new Error('That client was not found.')
       let order: number | undefined
       if (parent) {
-        const base = nextOrder.get(parent.id) ?? Math.max(-1, ...current.items.filter((item) => item.parentTaskId === parent.id).map((item) => item.subtaskOrder ?? -1)) + 1
-        order = base; nextOrder.set(parent.id, base + 1)
+        const base =
+          nextOrder.get(parent.id) ??
+          Math.max(
+            -1,
+            ...current.items.filter(item => item.parentTaskId === parent.id).map(item => item.subtaskOrder ?? -1),
+          ) + 1
+        order = base
+        nextOrder.set(parent.id, base + 1)
       }
       made.push({
-        id: crypto.randomUUID(), clientId, projectId: parent ? parent.projectId : projectFor(draft), parentTaskId: parent?.id, subtaskOrder: order,
-        title: draft.title.trim().slice(0, 200) || 'Untitled', type: 'Task', priority: 'Medium', status: defaultOpenTaskStatus(current.taskSettings), waitingOn: defaultWaitingOn(current.taskSettings),
-        assignedToUserId: parent?.assignedToUserId, assignmentInherited: parent ? true : undefined, owner: parent?.owner || '',
-        dateRaised: today, followUpDate: '', description: '', resolution: '', source: 'Internal', qaResult: 'Not Run',
+        id: crypto.randomUUID(),
+        clientId,
+        projectId: parent ? parent.projectId : projectFor(draft),
+        parentTaskId: parent?.id,
+        subtaskOrder: order,
+        title: draft.title.trim().slice(0, 200) || 'Untitled',
+        type: 'Task',
+        priority: 'Medium',
+        status: defaultOpenTaskStatus(current.taskSettings),
+        waitingOn: defaultWaitingOn(current.taskSettings),
+        assignedToUserId: parent?.assignedToUserId,
+        assignmentInherited: parent ? true : undefined,
+        owner: parent?.owner || '',
+        dateRaised: today,
+        followUpDate: '',
+        description: '',
+        resolution: '',
+        source: 'Internal',
+        qaResult: 'Not Run',
       })
     })
-    const created = new Map(made.map((item) => [item.id, item]))
-    const titleOf = (id?: string) => made.find((item) => item.id === id)?.title || current.items.find((item) => item.id === id)?.title || 'a task'
-    const activity = made.map((item) => ({ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: today, text: item.parentTaskId ? `Created subtask under ${titleOf(item.parentTaskId)} from a tracker: ${item.title}` : `Created task from a tracker: ${item.title}` }))
-    if (persist({ ...current, projects, items: [...made, ...current.items], activity: [...activity, ...current.activity] }) === false) throw new Error('The tasks could not be created.')
+    const created = new Map(made.map(item => [item.id, item]))
+    const titleOf = (id?: string) =>
+      made.find(item => item.id === id)?.title || current.items.find(item => item.id === id)?.title || 'a task'
+    const activity = made.map(item => ({
+      id: crypto.randomUUID(),
+      clientId: item.clientId,
+      projectId: item.projectId,
+      date: today,
+      text: item.parentTaskId
+        ? `Created subtask under ${titleOf(item.parentTaskId)} from a tracker: ${item.title}`
+        : `Created task from a tracker: ${item.title}`,
+    }))
+    if (
+      persist({
+        ...current,
+        projects,
+        items: [...made, ...current.items],
+        activity: [...activity, ...current.activity],
+      }) === false
+    )
+      throw new Error('The tasks could not be created.')
     if (cloudStatus !== 'local') await waitForCloudSaves()
     void addedProjects
-    return made.map((item) => storeRef.current.items.find((saved) => saved.id === item.id) || created.get(item.id)!)
+    return made.map(item => storeRef.current.items.find(saved => saved.id === item.id) || created.get(item.id)!)
   }
   const openTaskEditor = (id: string) => {
     if (!canWriteTasks) return
     const target = store.items.find(item => item.id === id)
-    if (target && archivedWorkReason(store, target)) { window.alert(archivedWorkReason(store, target)); return }
+    if (target && archivedWorkReason(store, target)) {
+      window.alert(archivedWorkReason(store, target))
+      return
+    }
     setEditingTaskId(id)
     setModal('taskEdit')
   }
 
   const openSubtaskCreator = (parentTaskId: string) => {
     if (!canWriteTasks) return
-    const parent = store.items.find((item) => item.id === parentTaskId)
+    const parent = store.items.find(item => item.id === parentTaskId)
     if (!parent || parent.parentTaskId) return
-    if (archivedWorkReason(store, parent)) { window.alert(archivedWorkReason(store, parent)); return }
+    if (archivedWorkReason(store, parent)) {
+      window.alert(archivedWorkReason(store, parent))
+      return
+    }
     setTaskPreset({ clientId: parent.clientId, projectId: parent.projectId, type: 'Task', parentTaskId: parent.id })
     setModal('item')
   }
 
   const reorderSubtasks = (parentTaskId: string, orderedIds: string[]) => {
     if (!canWriteTasks || !orderedIds.length) return
-    const valid = new Set(store.items.filter((item) => item.parentTaskId === parentTaskId).map((item) => item.id))
-    const normalizedIds = orderedIds.filter((id) => valid.has(id))
+    const valid = new Set(store.items.filter(item => item.parentTaskId === parentTaskId).map(item => item.id))
+    const normalizedIds = orderedIds.filter(id => valid.has(id))
     if (normalizedIds.length !== valid.size) return
     const orderMap = new Map(normalizedIds.map((id, index) => [id, index]))
     persist({
       ...store,
-      items: store.items.map((item) => item.parentTaskId === parentTaskId ? { ...item, subtaskOrder: orderMap.get(item.id) ?? item.subtaskOrder } : item),
+      items: store.items.map(item =>
+        item.parentTaskId === parentTaskId
+          ? { ...item, subtaskOrder: orderMap.get(item.id) ?? item.subtaskOrder }
+          : item,
+      ),
     })
   }
 
   const convertInquiry = (id: string, type: 'Requirement' | 'Issue') => {
     if (!canWriteTasks) return
-    const target = store.items.find((item) => item.id === id)
+    const target = store.items.find(item => item.id === id)
     if (!target) return
     persist({
       ...store,
-      items: store.items.map((item) => (item.id === id ? { ...item, type } : item)),
+      items: store.items.map(item => (item.id === id ? { ...item, type } : item)),
       activity: [
-        { id: crypto.randomUUID(), clientId: target.clientId, projectId: target.projectId, date: today, text: `Inquiry converted to ${type.toLowerCase()}: ${target.title}` },
+        {
+          id: crypto.randomUUID(),
+          clientId: target.clientId,
+          projectId: target.projectId,
+          date: today,
+          text: `Inquiry converted to ${type.toLowerCase()}: ${target.title}`,
+        },
         ...store.activity,
       ],
     })
@@ -982,16 +1571,25 @@ export function useAppState() {
 
   const weekStart = weekStartKey(today)
   const weekEnd = weekEndKey(today)
-  const sortedPlanner = [...store.planner].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
-  const todayActivities = sortedPlanner.filter((item) => item.date === today && item.status !== 'Cancelled')
-  const weekActivities = sortedPlanner.filter((item) => item.date >= weekStart && item.date <= weekEnd && item.status !== 'Cancelled')
+  const sortedPlanner = [...store.planner].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime),
+  )
+  const todayActivities = sortedPlanner.filter(item => item.date === today && item.status !== 'Cancelled')
+  const weekActivities = sortedPlanner.filter(
+    item => item.date >= weekStart && item.date <= weekEnd && item.status !== 'Cancelled',
+  )
   const todayFollowUps = actionCenterWorkItems
-    .filter((item) => item.followUpDate === today)
+    .filter(item => item.followUpDate === today)
     .sort((a, b) => priorityRank[b.priority] - priorityRank[a.priority] || a.title.localeCompare(b.title))
   const weekFollowUps = actionCenterWorkItems
-    .filter((item) => item.followUpDate && item.followUpDate >= weekStart && item.followUpDate <= weekEnd)
-    .sort((a, b) => a.followUpDate.localeCompare(b.followUpDate) || priorityRank[b.priority] - priorityRank[a.priority] || a.title.localeCompare(b.title))
-  const editingActivity = editingActivityId ? store.planner.find((item) => item.id === editingActivityId) ?? null : null
+    .filter(item => item.followUpDate && item.followUpDate >= weekStart && item.followUpDate <= weekEnd)
+    .sort(
+      (a, b) =>
+        a.followUpDate.localeCompare(b.followUpDate) ||
+        priorityRank[b.priority] - priorityRank[a.priority] ||
+        a.title.localeCompare(b.title),
+    )
+  const editingActivity = editingActivityId ? (store.planner.find(item => item.id === editingActivityId) ?? null) : null
 
   const openActivityModal = (activity?: PlannerActivity) => {
     if (!canWrite) return
@@ -1001,15 +1599,25 @@ export function useAppState() {
 
   const saveActivity = (activity: PlannerActivity) => {
     if (!canWrite) return
-    const exists = store.planner.some((item) => item.id === activity.id)
-    persist({ ...store, planner: exists ? store.planner.map((item) => item.id === activity.id ? activity : item) : [activity, ...store.planner] })
+    const exists = store.planner.some(item => item.id === activity.id)
+    persist({
+      ...store,
+      planner: exists
+        ? store.planner.map(item => (item.id === activity.id ? activity : item))
+        : [activity, ...store.planner],
+    })
     setModal(null)
     setEditingActivityId(null)
   }
 
   const toggleActivityDone = (id: string) => {
     if (!canWrite) return
-    persist({ ...store, planner: store.planner.map((item) => item.id === id ? { ...item, status: item.status === 'Done' ? 'Planned' : 'Done' } : item) })
+    persist({
+      ...store,
+      planner: store.planner.map(item =>
+        item.id === id ? { ...item, status: item.status === 'Done' ? 'Planned' : 'Done' } : item,
+      ),
+    })
   }
 
   const assessDashboardAI = async (event: FormEvent<HTMLFormElement>) => {
@@ -1023,7 +1631,11 @@ export function useAppState() {
 
     const threadKey = `${currentUser?.id || 'unknown'}:${aiClientId || 'global'}:${aiProjectId || 'all'}`
     let threads: Record<string, AIMessage[]> = {}
-    try { threads = JSON.parse(localStorage.getItem('ba-client-ops-ai-threads-v1') || '{}') as Record<string, AIMessage[]> } catch { threads = {} }
+    try {
+      threads = JSON.parse(localStorage.getItem('ba-client-ops-ai-threads-v1') || '{}') as Record<string, AIMessage[]>
+    } catch {
+      threads = {}
+    }
     const history = Array.isArray(threads[threadKey]) ? threads[threadKey] : []
 
     try {
@@ -1034,7 +1646,10 @@ export function useAppState() {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: result.message,
-        suggestions: result.suggestions.map((suggestion) => ({ ...suggestion, id: suggestion.id || crypto.randomUUID() })),
+        suggestions: result.suggestions.map(suggestion => ({
+          ...suggestion,
+          id: suggestion.id || crypto.randomUUID(),
+        })),
         createdAt: new Date().toISOString(),
       }
       const nextThreads = { ...threads, [threadKey]: [...history, userMessage, assistantMessage] }
@@ -1078,7 +1693,8 @@ export function useAppState() {
       return `Added tracker activity: ${suggestion.title}`
     }
 
-    const type: ItemType = suggestion.kind === 'issue' ? 'Issue' : suggestion.kind === 'requirement' ? 'Requirement' : 'Follow-up'
+    const type: ItemType =
+      suggestion.kind === 'issue' ? 'Issue' : suggestion.kind === 'requirement' ? 'Requirement' : 'Follow-up'
     const item: WorkItem = {
       id: crypto.randomUUID(),
       clientId,
@@ -1087,7 +1703,11 @@ export function useAppState() {
       type,
       priority: suggestion.priority || 'Medium',
       status: defaultOpenTaskStatus(store.taskSettings),
-      waitingOn: suggestion.waitingOn && openWaitingOnOptions(store.taskSettings).some((option) => option.label === suggestion.waitingOn) ? suggestion.waitingOn : defaultWaitingOn(store.taskSettings),
+      waitingOn:
+        suggestion.waitingOn &&
+        openWaitingOnOptions(store.taskSettings).some(option => option.label === suggestion.waitingOn)
+          ? suggestion.waitingOn
+          : defaultWaitingOn(store.taskSettings),
       assignedToUserId: currentUser?.id,
       owner: currentUser?.name || '',
       dateRaised: today,
@@ -1101,7 +1721,16 @@ export function useAppState() {
     persist({
       ...store,
       items: [item, ...store.items],
-      activity: [{ id: crypto.randomUUID(), clientId, projectId, date: today, text: `AI suggestion approved: created ${type.toLowerCase()} task — ${suggestion.title}` }, ...store.activity],
+      activity: [
+        {
+          id: crypto.randomUUID(),
+          clientId,
+          projectId,
+          date: today,
+          text: `AI suggestion approved: created ${type.toLowerCase()} task — ${suggestion.title}`,
+        },
+        ...store.activity,
+      ],
     })
     return `Created ${type.toLowerCase()} task: ${suggestion.title}`
   }

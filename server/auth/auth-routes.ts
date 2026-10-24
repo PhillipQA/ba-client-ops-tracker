@@ -1,10 +1,41 @@
-import express, { type Express } from 'express'
+import type express from 'express'
+import type { Express } from 'express'
 import { randomBytes } from 'node:crypto'
-import { bootstrapPasswordUsable, isBcryptHash, type OrganizationInfo, passwordHash, requireAuth, safeEqualText, safePlatformUser, safeUser, secureHashPassword, sessionCookie, sessionFromRequest, sessions, verifyPassword } from '../core/auth'
-import { ALL_MODULES, BXI_CORE_ORG_ID, BXI_CORE_ORG_NAME, BXI_CORE_ORG_SLUG, bxiCoreBootstrapPassword, INTERNAL_ADMIN_ACCOUNT_KEY, internalAdminBootstrapPassword, PASSWORD_BOOTSTRAP_MARKER } from '../core/constants'
+import {
+  bootstrapPasswordUsable,
+  isBcryptHash,
+  type OrganizationInfo,
+  passwordHash,
+  requireAuth,
+  safeEqualText,
+  safePlatformUser,
+  safeUser,
+  secureHashPassword,
+  sessionCookie,
+  sessionFromRequest,
+  sessions,
+  verifyPassword,
+} from '../core/auth'
+import {
+  ALL_MODULES,
+  BXI_CORE_ORG_ID,
+  BXI_CORE_ORG_NAME,
+  BXI_CORE_ORG_SLUG,
+  bxiCoreBootstrapPassword,
+  INTERNAL_ADMIN_ACCOUNT_KEY,
+  internalAdminBootstrapPassword,
+  PASSWORD_BOOTSTRAP_MARKER,
+} from '../core/constants'
 import { supabaseAdmin } from '../core/database'
-import { loadLegacyTrackerState, multiTenantSchemaReady, organizationByLoginKey, platformAuthSchemaReady, saveTenantState, updateTenantAccountSnapshot } from '../core/tenant-state'
-import { type LoginIdentity } from './login-limiter'
+import {
+  loadLegacyTrackerState,
+  multiTenantSchemaReady,
+  organizationByLoginKey,
+  platformAuthSchemaReady,
+  saveTenantState,
+  updateTenantAccountSnapshot,
+} from '../core/tenant-state'
+import type { LoginIdentity } from './login-limiter'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './password-recovery-email'
 import { loginLimiter, recoveryRequestLimiter, recoverySubmitLimiter } from './rate-limits'
 import { SESSION_MAX_AGE_SECONDS } from './session-store'
@@ -31,7 +62,11 @@ function enforceLoginFailureLimit(req: express.Request, res: express.Response, n
     return
   }
   res.setHeader('Retry-After', String(result.retryAfterSeconds))
-  res.status(429).json({ error: `Too many failed login attempts. Please try again in ${Math.ceil(result.retryAfterSeconds / 60)} minute${result.retryAfterSeconds > 60 ? 's' : ''}.` })
+  res
+    .status(429)
+    .json({
+      error: `Too many failed login attempts. Please try again in ${Math.ceil(result.retryAfterSeconds / 60)} minute${result.retryAfterSeconds > 60 ? 's' : ''}.`,
+    })
 }
 
 function rejectInvalidLogin(req: express.Request, res: express.Response) {
@@ -70,14 +105,20 @@ export function registerAuthRoutes(app: Express) {
 
       // The Internal Admin control plane is intentionally separate from tenant workspaces.
       if (accountKey === INTERNAL_ADMIN_ACCOUNT_KEY) {
-        if (!supabaseAdmin || !await platformAuthSchemaReady()) {
-          res.status(409).json({ error: 'Internal Admin authentication is not initialized. Run the latest account/security schema first.' })
+        if (!supabaseAdmin || !(await platformAuthSchemaReady())) {
+          res
+            .status(409)
+            .json({
+              error: 'Internal Admin authentication is not initialized. Run the latest account/security schema first.',
+            })
           return
         }
 
         const { data: platformAccount, error: platformError } = await supabaseAdmin
           .from('platform_users')
-          .select('id,account_key,username,password_hash,name,email,phone,status,must_change_password,last_login_at,deleted_at')
+          .select(
+            'id,account_key,username,password_hash,name,email,phone,status,must_change_password,last_login_at,deleted_at',
+          )
           .ilike('account_key', INTERNAL_ADMIN_ACCOUNT_KEY)
           .ilike('username', username)
           .is('deleted_at', null)
@@ -91,7 +132,12 @@ export function registerAuthRoutes(app: Express) {
         let storedHash = String(platformAccount.password_hash || '')
         if (storedHash === PASSWORD_BOOTSTRAP_MARKER) {
           if (!bootstrapPasswordUsable(internalAdminBootstrapPassword)) {
-            res.status(503).json({ error: 'Internal Admin requires a secure bootstrap password. Set INTERNAL_ADMIN_BOOTSTRAP_PASSWORD (12+ characters) in Render, then redeploy.' })
+            res
+              .status(503)
+              .json({
+                error:
+                  'Internal Admin requires a secure bootstrap password. Set INTERNAL_ADMIN_BOOTSTRAP_PASSWORD (12+ characters) in Render, then redeploy.',
+              })
             return
           }
           if (!safeEqualText(password, internalAdminBootstrapPassword)) {
@@ -99,19 +145,28 @@ export function registerAuthRoutes(app: Express) {
             return
           }
           storedHash = await secureHashPassword(password)
-          const { error: bootstrapError } = await supabaseAdmin.from('platform_users').update({ password_hash: storedHash, must_change_password: true, updated_at: new Date().toISOString() }).eq('id', platformAccount.id)
+          const { error: bootstrapError } = await supabaseAdmin
+            .from('platform_users')
+            .update({ password_hash: storedHash, must_change_password: true, updated_at: new Date().toISOString() })
+            .eq('id', platformAccount.id)
           if (bootstrapError) throw bootstrapError
-        } else if (!await verifyPassword(password, storedHash)) {
+        } else if (!(await verifyPassword(password, storedHash))) {
           rejectInvalidLogin(req, res)
           return
         } else if (!isBcryptHash(storedHash)) {
           storedHash = await secureHashPassword(password)
-          const { error: upgradeError } = await supabaseAdmin.from('platform_users').update({ password_hash: storedHash, updated_at: new Date().toISOString() }).eq('id', platformAccount.id)
+          const { error: upgradeError } = await supabaseAdmin
+            .from('platform_users')
+            .update({ password_hash: storedHash, updated_at: new Date().toISOString() })
+            .eq('id', platformAccount.id)
           if (upgradeError) throw upgradeError
         }
 
         const loggedInAt = new Date().toISOString()
-        await supabaseAdmin.from('platform_users').update({ last_login_at: loggedInAt, updated_at: loggedInAt }).eq('id', platformAccount.id)
+        await supabaseAdmin
+          .from('platform_users')
+          .update({ last_login_at: loggedInAt, updated_at: loggedInAt })
+          .eq('id', platformAccount.id)
         const user = safePlatformUser({ ...platformAccount, password_hash: storedHash, last_login_at: loggedInAt })
         const token = sessions.create(user)
         clearLoginFailures(req)
@@ -120,7 +175,7 @@ export function registerAuthRoutes(app: Express) {
         return
       }
 
-      if (supabaseAdmin && await multiTenantSchemaReady()) {
+      if (supabaseAdmin && (await multiTenantSchemaReady())) {
         const organization = await organizationByLoginKey(account)
         if (!organization || organization.status !== 'Active') {
           rejectInvalidLogin(req, res)
@@ -128,7 +183,9 @@ export function registerAuthRoutes(app: Express) {
         }
         const { data: normalizedAccount, error: accountError } = await supabaseAdmin
           .from('app_users')
-          .select('id,organization_id,username,password_hash,name,email,phone,role,modules,status,created_on,last_login_at,deleted_at')
+          .select(
+            'id,organization_id,username,password_hash,name,email,phone,role,modules,status,created_on,last_login_at,deleted_at',
+          )
           .eq('organization_id', organization.id)
           .ilike('username', username)
           .is('deleted_at', null)
@@ -143,7 +200,12 @@ export function registerAuthRoutes(app: Express) {
         if (storedHash === PASSWORD_BOOTSTRAP_MARKER) {
           const isBxiBootstrap = organization.id === BXI_CORE_ORG_ID && username.toLowerCase() === 'admin'
           if (!isBxiBootstrap || !bootstrapPasswordUsable(bxiCoreBootstrapPassword)) {
-            res.status(503).json({ error: 'This bootstrap account requires a secure server password. Configure BXI_CORE_BOOTSTRAP_PASSWORD (12+ characters) and redeploy.' })
+            res
+              .status(503)
+              .json({
+                error:
+                  'This bootstrap account requires a secure server password. Configure BXI_CORE_BOOTSTRAP_PASSWORD (12+ characters) and redeploy.',
+              })
             return
           }
           if (!safeEqualText(password, bxiCoreBootstrapPassword)) {
@@ -151,22 +213,38 @@ export function registerAuthRoutes(app: Express) {
             return
           }
           storedHash = await secureHashPassword(password)
-          const { error: bootstrapError } = await supabaseAdmin.from('app_users').update({ password_hash: storedHash, updated_at: new Date().toISOString() }).eq('id', normalizedAccount.id)
+          const { error: bootstrapError } = await supabaseAdmin
+            .from('app_users')
+            .update({ password_hash: storedHash, updated_at: new Date().toISOString() })
+            .eq('id', normalizedAccount.id)
           if (bootstrapError) throw bootstrapError
-          await updateTenantAccountSnapshot(organization.id, String(normalizedAccount.id), (entry) => entry ? { ...entry, passwordHash: storedHash } : entry)
-        } else if (!await verifyPassword(password, storedHash)) {
+          await updateTenantAccountSnapshot(organization.id, String(normalizedAccount.id), entry =>
+            entry ? { ...entry, passwordHash: storedHash } : entry,
+          )
+        } else if (!(await verifyPassword(password, storedHash))) {
           rejectInvalidLogin(req, res)
           return
         } else if (!isBcryptHash(storedHash)) {
           storedHash = await secureHashPassword(password)
-          const { error: upgradeError } = await supabaseAdmin.from('app_users').update({ password_hash: storedHash, updated_at: new Date().toISOString() }).eq('id', normalizedAccount.id)
+          const { error: upgradeError } = await supabaseAdmin
+            .from('app_users')
+            .update({ password_hash: storedHash, updated_at: new Date().toISOString() })
+            .eq('id', normalizedAccount.id)
           if (upgradeError) throw upgradeError
-          await updateTenantAccountSnapshot(organization.id, String(normalizedAccount.id), (entry) => entry ? { ...entry, passwordHash: storedHash } : entry)
+          await updateTenantAccountSnapshot(organization.id, String(normalizedAccount.id), entry =>
+            entry ? { ...entry, passwordHash: storedHash } : entry,
+          )
         }
 
         const loggedInAt = new Date().toISOString()
-        await supabaseAdmin.from('app_users').update({ last_login_at: loggedInAt, updated_at: loggedInAt }).eq('id', normalizedAccount.id)
-        const user = safeUser({ ...normalizedAccount, password_hash: storedHash, last_login_at: loggedInAt }, organization)
+        await supabaseAdmin
+          .from('app_users')
+          .update({ last_login_at: loggedInAt, updated_at: loggedInAt })
+          .eq('id', normalizedAccount.id)
+        const user = safeUser(
+          { ...normalizedAccount, password_hash: storedHash, last_login_at: loggedInAt },
+          organization,
+        )
         const token = sessions.create(user)
         clearLoginFailures(req)
         res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
@@ -181,18 +259,35 @@ export function registerAuthRoutes(app: Express) {
       }
       const state = await loadLegacyTrackerState()
       const accounts = Array.isArray(state.data?.accounts) ? state.data.accounts : []
-      const legacyAccount = accounts.find((candidate: any) => String(candidate.username || '').toLowerCase() === username.toLowerCase())
-      if (!legacyAccount || legacyAccount.status === 'Disabled' || !await verifyPassword(password, legacyAccount.passwordHash)) {
+      const legacyAccount = accounts.find(
+        (candidate: any) => String(candidate.username || '').toLowerCase() === username.toLowerCase(),
+      )
+      if (
+        !legacyAccount ||
+        legacyAccount.status === 'Disabled' ||
+        !(await verifyPassword(password, legacyAccount.passwordHash))
+      ) {
         rejectInvalidLogin(req, res)
         return
       }
       if (!isBcryptHash(legacyAccount.passwordHash)) {
         const upgradedHash = await secureHashPassword(password)
-        const nextState = { ...state.data, accounts: accounts.map((entry: any) => String(entry.id) === String(legacyAccount.id) ? { ...entry, passwordHash: upgradedHash } : entry) }
+        const nextState = {
+          ...state.data,
+          accounts: accounts.map((entry: any) =>
+            String(entry.id) === String(legacyAccount.id) ? { ...entry, passwordHash: upgradedHash } : entry,
+          ),
+        }
         await saveTenantState(BXI_CORE_ORG_ID, nextState, state.data)
         legacyAccount.passwordHash = upgradedHash
       }
-      const legacyOrganization: OrganizationInfo = { id: BXI_CORE_ORG_ID, name: BXI_CORE_ORG_NAME, slug: BXI_CORE_ORG_SLUG, status: 'Active', enabledModules: [...ALL_MODULES] }
+      const legacyOrganization: OrganizationInfo = {
+        id: BXI_CORE_ORG_ID,
+        name: BXI_CORE_ORG_NAME,
+        slug: BXI_CORE_ORG_SLUG,
+        status: 'Active',
+        enabledModules: [...ALL_MODULES],
+      }
       const user = safeUser(legacyAccount, legacyOrganization)
       const token = sessions.create(user)
       clearLoginFailures(req)
@@ -220,7 +315,10 @@ export function registerAuthRoutes(app: Express) {
       const token = randomBytes(32).toString('base64url')
       const tokenHash = passwordHash(token)
       const { data, error } = await database.rpc('issue_password_reset_v7', {
-        p_account: account, p_username: username, p_email: email, p_token_hash: tokenHash,
+        p_account: account,
+        p_username: username,
+        p_email: email,
+        p_token_hash: tokenHash,
       })
       if (error) throw error
       if (!data) return
@@ -234,7 +332,9 @@ export function registerAuthRoutes(app: Express) {
       }
     })().catch((error: unknown) => {
       // Never log reset URLs, tokens, recipient addresses, or SMTP credentials.
-      const code = String((error as { code?: string })?.code || 'DELIVERY_ERROR').replace(/[^A-Z0-9_]/gi, '').slice(0, 40)
+      const code = String((error as { code?: string })?.code || 'DELIVERY_ERROR')
+        .replace(/[^A-Z0-9_]/gi, '')
+        .slice(0, 40)
       console.error(`Password recovery failed (${code}). Check SMTP settings and schema-v7-password-recovery.sql.`)
     })
   })
@@ -242,25 +342,35 @@ export function registerAuthRoutes(app: Express) {
   app.post('/api/auth/reset-password', recoverySubmitLimiter, async (req, res) => {
     const token = typeof req.body?.token === 'string' ? req.body.token : ''
     const password = typeof req.body?.password === 'string' ? req.body.password : ''
-    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return void res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new link.' })
-    if (password.length < 8 || password.length > 128) return void res.status(400).json({ error: 'Use a password between 8 and 128 characters.' })
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token))
+      return void res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new link.' })
+    if (password.length < 8 || password.length > 128)
+      return void res.status(400).json({ error: 'Use a password between 8 and 128 characters.' })
     if (!supabaseAdmin) return void res.status(503).json({ error: recoveryUnavailable })
     try {
       const { data, error } = await supabaseAdmin.rpc('redeem_password_reset_v7', {
-        p_token_hash: passwordHash(token), p_password_hash: await secureHashPassword(password),
+        p_token_hash: passwordHash(token),
+        p_password_hash: await secureHashPassword(password),
       })
       if (error) throw error
-      if (!data) return void res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new link.' })
+      if (!data)
+        return void res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new link.' })
       for (const [sessionToken, user] of sessions) {
-        if (user.id === data.userId && user.accountType === data.accountType &&
-          (data.accountType === 'platform' || user.organizationId === data.organizationId)) sessions.delete(sessionToken)
+        if (
+          user.id === data.userId &&
+          user.accountType === data.accountType &&
+          (data.accountType === 'platform' || user.organizationId === data.organizationId)
+        )
+          sessions.delete(sessionToken)
       }
       const { token: browserSession } = sessionFromRequest(req)
       if (browserSession) sessions.delete(browserSession)
       res.setHeader('Set-Cookie', sessionCookie('', 0))
       res.json({ message: 'Your password has been reset. Sign in with your new password.' })
     } catch {
-      console.error('Password reset could not be completed. Check database availability and schema-v7-password-recovery.sql.')
+      console.error(
+        'Password reset could not be completed. Check database availability and schema-v7-password-recovery.sql.',
+      )
       res.status(503).json({ error: recoveryUnavailable })
     }
   })

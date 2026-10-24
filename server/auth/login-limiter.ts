@@ -29,7 +29,10 @@ export function createLoginLimiter(options: LoginLimiterOptions = {}) {
   const now = options.now ?? Date.now
   const failures = new Map<string, Entry>()
 
-  const clean = (value: string) => String(value || '').trim().toLowerCase()
+  const clean = (value: string) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
   function keys(identity: LoginIdentity) {
     const ip = String(identity.ip || 'unknown')
     const account = clean(identity.account)
@@ -49,9 +52,8 @@ export function createLoginLimiter(options: LoginLimiterOptions = {}) {
     }
     return entry
   }
-  const rateOf = (entry: Entry | null, max: number): RateState | null => entry
-    ? { limit: max, remaining: Math.max(0, max - entry.count), resetAt: entry.resetAt }
-    : null
+  const rateOf = (entry: Entry | null, max: number): RateState | null =>
+    entry ? { limit: max, remaining: Math.max(0, max - entry.count), resetAt: entry.resetAt } : null
 
   return {
     check(identity: LoginIdentity): LoginCheck {

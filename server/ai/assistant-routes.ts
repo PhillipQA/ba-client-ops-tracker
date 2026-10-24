@@ -1,8 +1,9 @@
-import express, { type Express } from 'express'
+import type express from 'express'
+import type { Express } from 'express'
 import { openWaitingOnOptions } from '../../src/features/tasks/waitingOn'
 import { moduleAllowed, requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
 import { followUpTimeZone } from '../core/config'
-import { aiAgents, integrations } from '../core/services'
+import { aiAgents, type integrations } from '../core/services'
 import { emptyTenantData, ensureTenantFollowUpsCurrent, tenantIdForUser } from '../core/tenant-state'
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { buildAssistantContext } from './assistant-context'
@@ -19,8 +20,15 @@ export function registerAssistantRoutes(app: Express) {
     }
 
     let ai: Awaited<ReturnType<typeof integrations.active>>
-    try { ai = await aiAgents.active(tenantIdForUser(user)!, 'ba_assistant') } catch { return void res.status(503).json({ error: 'BA Assistant settings are unavailable.' }) }
-    if (!ai) return void res.status(503).json({ error: 'Enable and configure the BA Assistant in Account Settings → AI Agent Manager.' })
+    try {
+      ai = await aiAgents.active(tenantIdForUser(user)!, 'ba_assistant')
+    } catch {
+      return void res.status(503).json({ error: 'BA Assistant settings are unavailable.' })
+    }
+    if (!ai)
+      return void res
+        .status(503)
+        .json({ error: 'Enable and configure the BA Assistant in Account Settings → AI Agent Manager.' })
 
     const message = typeof req.body?.message === 'string' ? req.body.message.trim() : ''
     if (!message) {
@@ -35,13 +43,15 @@ export function registerAssistantRoutes(app: Express) {
     // Resolve AI context from the authenticated tenant snapshot. The browser may request a
     // client/project focus, but it cannot supply records or impersonate another current user.
     let context: any
-    let waitingOnLabels = openWaitingOnOptions(undefined).map((option) => option.label)
+    let waitingOnLabels = openWaitingOnOptions(undefined).map(option => option.label)
     let taskSettings: unknown
     try {
       const state = (await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))).data || emptyTenantData()
       taskSettings = state.taskSettings
-      waitingOnLabels = openWaitingOnOptions(state.taskSettings).map((option) => option.label)
-      context = buildAssistantContext(state, user, requestedContext, message, today, followUpTimeZone, module => moduleAllowed(user, module as any))
+      waitingOnLabels = openWaitingOnOptions(state.taskSettings).map(option => option.label)
+      context = buildAssistantContext(state, user, requestedContext, message, today, followUpTimeZone, module =>
+        moduleAllowed(user, module as any),
+      )
     } catch (error) {
       console.error('AI context load failed:', error)
       return void res.status(503).json({ error: 'The assistant could not load your authorized workspace context.' })
@@ -92,10 +102,19 @@ export function registerAssistantRoutes(app: Express) {
       const parsed = parseModelJson(outputText)
       const responseMessage = String(parsed.message || '').trim()
       if (!responseMessage) throw new Error('The model returned no assessment.')
-      res.json({ message: responseMessage + (context.coverageNotice ? `\n\n${context.coverageNotice}` : ''), suggestions: sanitizeSuggestions(parsed.suggestions, taskSettings), contextCoverage: context.coverage })
+      res.json({
+        message: responseMessage + (context.coverageNotice ? `\n\n${context.coverageNotice}` : ''),
+        suggestions: sanitizeSuggestions(parsed.suggestions, taskSettings),
+        contextCoverage: context.coverage,
+      })
     } catch (error) {
       console.error('Account AI request failed.')
-      res.status(502).json({ error: 'BA Assistant request failed. Check this account’s BA Assistant provider, key, selected model, quota, and connection.' })
+      res
+        .status(502)
+        .json({
+          error:
+            'BA Assistant request failed. Check this account’s BA Assistant provider, key, selected model, quota, and connection.',
+        })
     }
   })
 }

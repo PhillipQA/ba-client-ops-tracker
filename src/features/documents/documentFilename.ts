@@ -18,7 +18,8 @@ export function suggestedDocumentStem(kind: DocumentKind, client = '', projectOr
   if (kind === 'FSD') return `FSD-${part(client, 'Client')}-${part(projectOrSite, 'Project')}`
   if (kind === 'SO') return `SO-${part(client, 'Client')}-${part(projectOrSite, 'Branch-Site')}`
   // UAT Sign Off, UAT Deployment Approval and Training Sign Off.
-  if (kind === 'UAT' || kind === 'UAD' || kind === 'TRN') return `${kind}-${part(client, 'Client')}-${part(projectOrSite, 'Project')}`
+  if (kind === 'UAT' || kind === 'UAD' || kind === 'TRN')
+    return `${kind}-${part(client, 'Client')}-${part(projectOrSite, 'Project')}`
   return `DRF-${part(client, 'Client')}-${part(projectOrSite, 'Branch-Site')}`
 }
 

@@ -11,7 +11,9 @@ const originalFetch = globalThis.fetch
 test('auth logs correlate responses without recording credentials, cookies, or identity', async () => {
   const records: any[] = []
   const originalInfo = console.info
-  console.info = (prefix, data) => { if (prefix === '[auth]') records.push(JSON.parse(data)) }
+  console.info = (prefix, data) => {
+    if (prefix === '[auth]') records.push(JSON.parse(data))
+  }
   const app = express()
   app.use('/api/auth', authRequestDiagnostics)
   app.use(express.json())
@@ -30,20 +32,30 @@ test('auth logs correlate responses without recording credentials, cookies, or i
     const requestId = randomUUID()
     const result = await originalFetch(`${base}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Auth-Request-Id': requestId, Cookie: 'ba_session=private-cookie' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth-Request-Id': requestId,
+        Cookie: 'ba_session=private-cookie',
+      },
       body: JSON.stringify({ account: 'private-account', username: 'private-user', password: 'private-password' }),
     })
     await result.text()
     assert.equal(result.headers.get('x-auth-request-id'), requestId)
     assert.equal(result.headers.get('cache-control'), 'no-store')
     assert.equal(result.headers.get('x-auth-app-version'), APP_VERSION)
-    assert.deepEqual(records.map(r => r.event), ['started', 'completed'])
+    assert.deepEqual(
+      records.map(r => r.event),
+      ['started', 'completed'],
+    )
     assert.equal(records[1].status, 401)
     assert(records.every(r => r.requestId === requestId && r.action === 'login'))
     assert(!JSON.stringify(records).includes('private-'))
 
     const invalidId = 'private-user-supplied-id'
-    const signedOut = await originalFetch(`${base}/api/auth/logout`, { method: 'POST', headers: { 'X-Auth-Request-Id': invalidId } })
+    const signedOut = await originalFetch(`${base}/api/auth/logout`, {
+      method: 'POST',
+      headers: { 'X-Auth-Request-Id': invalidId },
+    })
     await signedOut.text()
     assert.notEqual(signedOut.headers.get('x-auth-request-id'), invalidId)
     assert(!JSON.stringify(records).includes(invalidId))
@@ -62,15 +74,22 @@ test('auth logs correlate responses without recording credentials, cookies, or i
 test('auth logging distinguishes an interrupted response from a completed one', async () => {
   const records: any[] = []
   const originalInfo = console.info
-  console.info = (prefix, data) => { if (prefix === '[auth]') records.push(JSON.parse(data)) }
+  console.info = (prefix, data) => {
+    if (prefix === '[auth]') records.push(JSON.parse(data))
+  }
   const app = express()
   app.use('/api/auth', authRequestDiagnostics)
   app.post('/api/auth/login', (_req, res) => res.destroy())
   const server = app.listen(0, '127.0.0.1')
   await new Promise<void>(resolve => server.once('listening', resolve))
   try {
-    await assert.rejects(originalFetch(`http://127.0.0.1:${(server.address() as any).port}/api/auth/login`, { method: 'POST' }))
-    assert.deepEqual(records.map(r => r.event), ['started', 'closed_before_response'])
+    await assert.rejects(
+      originalFetch(`http://127.0.0.1:${(server.address() as any).port}/api/auth/login`, { method: 'POST' }),
+    )
+    assert.deepEqual(
+      records.map(r => r.event),
+      ['started', 'closed_before_response'],
+    )
     assert(records.every(r => r.status === undefined))
   } finally {
     console.info = originalInfo
@@ -99,15 +118,27 @@ test('failed login connection gets a trace reference without retrying credential
       return true
     })
     assert.equal(calls, 1)
-  } finally { globalThis.fetch = originalFetch; console.warn = originalWarn }
+  } finally {
+    globalThis.fetch = originalFetch
+    console.warn = originalWarn
+  }
 })
 
 test('connection interruption while reading a response is reported', async () => {
   const originalWarn = console.warn
   console.warn = () => {}
-  globalThis.fetch = async () => ({ text: async () => { throw new TypeError('Body interrupted') } }) as any
-  try { await assert.rejects(login('test', 'tester', 'fixture'), /connection was interrupted.*Reference:/) }
-  finally { globalThis.fetch = originalFetch; console.warn = originalWarn }
+  globalThis.fetch = async () =>
+    ({
+      text: async () => {
+        throw new TypeError('Body interrupted')
+      },
+    }) as any
+  try {
+    await assert.rejects(login('test', 'tester', 'fixture'), /connection was interrupted.*Reference:/)
+  } finally {
+    globalThis.fetch = originalFetch
+    console.warn = originalWarn
+  }
 })
 
 test('real lockout responses keep their message and are not automatically retried', async () => {
@@ -117,19 +148,26 @@ test('real lockout responses keep their message and are not automatically retrie
     return Response.json({ error: 'Too many failed login attempts. Please try again in 15 minutes.' }, { status: 429 })
   }
   try {
-    await assert.rejects(login('test', 'tester', 'fixture'), /^Error: Too many failed login attempts\. Please try again in 15 minutes\.$/)
+    await assert.rejects(
+      login('test', 'tester', 'fixture'),
+      /^Error: Too many failed login attempts\. Please try again in 15 minutes\.$/,
+    )
     assert.equal(calls, 1)
-  } finally { globalThis.fetch = originalFetch }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('normal anonymous session checks return null and successful login returns its user', async () => {
   const user = { id: 'fixture-user', username: 'tester' }
-  globalThis.fetch = async input => String(input).endsWith('/session')
-    ? Response.json({ user: null }, { status: 401 }) : Response.json({ user })
+  globalThis.fetch = async input =>
+    String(input).endsWith('/session') ? Response.json({ user: null }, { status: 401 }) : Response.json({ user })
   try {
     assert.equal(await getAuthSession(), null)
     assert.deepEqual(await login('test', 'tester', 'fixture'), user)
-  } finally { globalThis.fetch = originalFetch }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('logout failures reject while confirmed or already-expired sessions can sign out', async () => {
@@ -143,12 +181,19 @@ test('logout failures reject while confirmed or already-expired sessions can sig
     await logout()
     response = new Response('<html>Proxy page</html>')
     await assert.rejects(logout(), /Sign out could not be confirmed/)
-    globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
+    globalThis.fetch = async () => {
+      throw new TypeError('Failed to fetch')
+    }
     const originalWarn = console.warn
     console.warn = () => {}
-    try { await assert.rejects(logout(), /connection was interrupted/) }
-    finally { console.warn = originalWarn }
-  } finally { globalThis.fetch = originalFetch }
+    try {
+      await assert.rejects(logout(), /connection was interrupted/)
+    } finally {
+      console.warn = originalWarn
+    }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('HTML gateway failures and malformed success responses cannot look like a login', async () => {
@@ -158,5 +203,7 @@ test('HTML gateway failures and malformed success responses cannot look like a l
     await assert.rejects(login('test', 'tester', 'fixture'), /Login failed \(HTTP 502\).*Reference:/)
     response = Response.json({})
     await assert.rejects(login('test', 'tester', 'fixture'), /incomplete login response/)
-  } finally { globalThis.fetch = originalFetch }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
