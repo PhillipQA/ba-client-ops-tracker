@@ -37,15 +37,16 @@ export type RowPatch = { version: number; cells?: Record<string, Cell>; secrets?
 
 export const trackerApi = {
   list: (signal?: AbortSignal) => call<{ trackers: Tracker[] }>('GET', '', undefined, signal),
-  create: (body: { name: string; columns: unknown[]; template?: string; clientId?: string; projectId?: string; private?: boolean }) => call<{ tracker: Tracker }>('POST', '', body),
+  create: (body: { name: string; columns: unknown[]; template?: string; clientId?: string; clientIds?: string[]; projectId?: string; private?: boolean }) => call<{ tracker: Tracker }>('POST', '', body),
   get: (id: string, signal?: AbortSignal) => call<{ tracker: Tracker }>('GET', `/${id}`, undefined, signal),
-  update: (id: string, body: { name?: string; clientId?: string; projectId?: string; private?: boolean; archived?: boolean }) => call<{ tracker: Tracker }>('PATCH', `/${id}`, body),
+  update: (id: string, body: { name?: string; clientId?: string; clientIds?: string[]; projectId?: string; private?: boolean; archived?: boolean }) => call<{ tracker: Tracker }>('PATCH', `/${id}`, body),
   remove: (id: string) => call<{ ok: true }>('DELETE', `/${id}`),
   saveColumns: (id: string, columns: TrackerColumn[], revision: number) => call<{ tracker: Tracker }>('PUT', `/${id}/columns`, { columns, revision }),
   saveViews: (id: string, views: TrackerView[], revision: number) => call<{ tracker: Tracker }>('PUT', `/${id}/views`, { views, revision }),
   rows: (id: string, offset: number, limit: number, signal?: AbortSignal) => call<{ rows: TrackerRow[]; total: number; offset: number }>('GET', `/${id}/rows?offset=${offset}&limit=${limit}`, undefined, signal),
   addRows: (id: string, rows: NewRow[]) => call<{ rows: TrackerRow[] }>('POST', `/${id}/rows`, { rows }),
   updateRow: (id: string, rowId: string, patch: RowPatch) => call<{ row: TrackerRow }>('PATCH', `/${id}/rows/${rowId}`, patch),
+  linkRowTasks: (id: string, links: { rowId: string; taskId: string }[]) => call<{ rows: TrackerRow[] }>('POST', `/${id}/rows/tasks`, { links }),
   deleteRows: (id: string, ids: string[]) => call<{ deleted: number }>('POST', `/${id}/rows/delete`, { ids }),
   reveal: (id: string, rowId: string, columnId: string) => call<{ value: string; seconds: number }>('POST', `/${id}/rows/${rowId}/reveal`, { columnId }),
   convertColumn: (id: string, columnId: string, body: { type: string; revision: number; confirm: boolean; clearUnfit?: boolean }) => call<ConvertReport>('POST', `/${id}/columns/${columnId}/convert`, body),

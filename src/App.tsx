@@ -7,6 +7,8 @@ import RequirementsTraceability from './RequirementsTraceability'
 import Trackers from './Trackers'
 import TrackerLinkChips from './TrackerLinkChips'
 import { trackerApi, type TaskLink } from './trackerApi'
+import type { TaskDraft } from './TrackerWork'
+import { waitForCloudSaves } from './cloudStore'
 import { rememberTrackerRow } from './trackerNav'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
@@ -1253,6 +1255,38 @@ function App() {
     rememberTrackerRow(link.trackerId, link.rowId)
     setSelectedClientId(null); setSelectedProjectId(null); setView('trackers')
   }
+  // Trackers create tasks and subtasks from their cells. They are added to the workspace like any other task, and the
+  // tracker links them only after the save reaches the server, which checks that a linked task exists.
+  const createTrackerTasks = async (drafts: TaskDraft[]): Promise<WorkItem[]> => {
+    if (!canWriteTasks || !hasModule('items')) throw new Error('Your role cannot create tasks.')
+    const current = storeRef.current
+    const today = businessDateKey()
+    const nextOrder = new Map<string, number>()
+    const made: WorkItem[] = drafts.map((draft) => {
+      const parent = draft.parentTaskId ? current.items.find((item) => item.id === draft.parentTaskId) : undefined
+      if (draft.parentTaskId && (!parent || parent.parentTaskId)) throw new Error('The parent task was not found.')
+      if (parent && archivedWorkReason(current, parent)) throw new Error(archivedWorkReason(current, parent) || 'The parent task is archived.')
+      const clientId = parent ? parent.clientId : draft.clientId || undefined
+      if (!clientId) throw new Error('Choose the client for the task.')
+      if (!current.clients.some((client) => client.id === clientId)) throw new Error('That client was not found.')
+      let order: number | undefined
+      if (parent) {
+        const base = nextOrder.get(parent.id) ?? Math.max(-1, ...current.items.filter((item) => item.parentTaskId === parent.id).map((item) => item.subtaskOrder ?? -1)) + 1
+        order = base; nextOrder.set(parent.id, base + 1)
+      }
+      return {
+        id: crypto.randomUUID(), clientId, projectId: parent ? parent.projectId : draft.projectId || undefined, parentTaskId: parent?.id, subtaskOrder: order,
+        title: draft.title.trim().slice(0, 200), type: 'Task', priority: 'Medium', status: defaultOpenTaskStatus(current.taskSettings), waitingOn: defaultWaitingOn(current.taskSettings),
+        assignedToUserId: parent?.assignedToUserId, assignmentInherited: parent ? true : undefined, owner: parent?.owner || '',
+        dateRaised: today, followUpDate: '', description: '', resolution: '', source: 'Internal', qaResult: 'Not Run',
+      }
+    })
+    const created = new Map(made.map((item) => [item.id, item]))
+    const activity = made.map((item) => ({ id: crypto.randomUUID(), clientId: item.clientId, projectId: item.projectId, date: today, text: item.parentTaskId ? `Created subtask under ${current.items.find((parent) => parent.id === item.parentTaskId)?.title || 'a task'} from a tracker: ${item.title}` : `Created task from a tracker: ${item.title}` }))
+    if (persist({ ...current, items: [...made, ...current.items], activity: [...activity, ...current.activity] }) === false) throw new Error('The tasks could not be created.')
+    if (cloudStatus !== 'local') await waitForCloudSaves()
+    return made.map((item) => storeRef.current.items.find((saved) => saved.id === item.id) || created.get(item.id)!)
+  }
   const openTaskEditor = (id: string) => {
     if (!canWriteTasks) return
     const target = store.items.find(item => item.id === id)
@@ -1662,7 +1696,7 @@ function App() {
         )}
 
         {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && <RequirementsTraceability key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`} store={store} canEdit={canWrite} canLink={canWrite && hasModule('items')} canOverride={currentUser?.role === 'Administrator'} context={rtmContext} onSave={saveRtms} onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined} />}
-        {!selectedClient && !selectedProject && view === 'trackers' && hasModule('trackers') && <Trackers key={`${authUser?.organizationId}:${authUser?.id}`} isAdmin={currentUser?.role === 'Administrator'} canCreate={canWrite} items={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} today={today} onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined} />}
+        {!selectedClient && !selectedProject && view === 'trackers' && hasModule('trackers') && <Trackers key={`${authUser?.organizationId}:${authUser?.id}`} isAdmin={currentUser?.role === 'Administrator'} canCreate={canWrite} items={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} today={today} onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined} isTaskClosed={(status) => isTaskClosed(status, store.taskSettings)} onCreateTasks={canWriteTasks && hasModule('items') ? createTrackerTasks : undefined} />}
         {hasModule('documents') && <div className="document-retained" hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}><DocumentCreation key={`${authUser?.organizationId}:${authUser?.id}`} clients={store.clients} projects={store.projects} accounts={store.accounts} items={store.items} launch={documentLaunch} canGenerate={canWrite} draftKey={`${authUser?.organizationId}:${authUser?.id}`} active={pageActive && !selectedClient && !selectedProject && view === 'documents'} /></div>}
 
         {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && <Reports clients={store.clients} projects={store.projects} items={store.items} planner={store.planner} taskSettings={store.taskSettings} accounts={store.accounts} workEvents={store.workEvents} currentUser={currentUser} />}

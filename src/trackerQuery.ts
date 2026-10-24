@@ -1,4 +1,4 @@
-import { linkToInput, type Cell, type TrackerColumn, type TrackerRow, type ViewFilter, type TrackerView } from './trackerModel'
+import { evaluateFormula, linkToInput, type Cell, type TrackerColumn, type TrackerRow, type ViewFilter, type TrackerView } from './trackerModel'
 import type { DocHubLink } from './dochub'
 import type { UserAccount, WorkItem } from './types'
 
@@ -14,7 +14,7 @@ export type Shown = {
   /** For sorting: a number for numbers and checkboxes, otherwise text. */
   key: string | number
   /** A connected cell on a row with no task, or a task that is gone. */
-  note?: 'unlinked' | 'removed'
+  note?: 'unlinked' | 'removed' | 'formula-error'
 }
 
 export type Lookup = {
@@ -23,6 +23,8 @@ export type Lookup = {
   family: (id: string) => WorkItem[]
   person: (id: string) => string
   today: string
+  /** The tracker's columns, so Calculated cells can read the columns they use. */
+  columns?: TrackerColumn[]
 }
 
 export function makeLookup(items: WorkItem[], accounts: Pick<UserAccount, 'id' | 'name' | 'username'>[], today: string): Lookup {
@@ -100,6 +102,11 @@ export function shown(column: TrackerColumn, row: TrackerRow, lookup: Lookup): S
     }
     case 'person': { const id = typeof value === 'string' ? value : ''; const name = id ? lookup.person(id) || 'Unknown user' : ''; return { text: name, key: name.toLowerCase() } }
     case 'secret': return row.secretSet[column.id] ? { text: 'Set', key: 1 } : { text: '', key: '' }
+    case 'formula': {
+      const result = evaluateFormula(column, row.cells, lookup.columns || [column])
+      if (result.error) return { text: result.error === 'Divide by 0' ? '#DIV/0' : '#ERROR', key: '', tone: 'red', note: 'formula-error' }
+      return result.value === null ? { text: '', key: '' } : { text: String(result.value), key: result.value }
+    }
     default: return connected(column, row, lookup)
   }
 }

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
-import { COLUMN_WIDTH, emptyCell, type Cell, type TrackerColumn, type TrackerRow, type TrackerView } from './trackerModel'
+import { COLUMN_WIDTH, emptyCell, formulaToText, type Cell, type TrackerColumn, type TrackerRow, type TrackerView } from './trackerModel'
 import { type Lookup } from './trackerQuery'
-import { CellEditor, CellView, LinkedIcon, editable, type Person } from './TrackerCells'
+import { CellEditor, CellView, LinkedIcon, editable, numberFormat, type Person } from './TrackerCells'
 import { ColumnIcon } from './trackerUi'
 
 export const ROW_HEIGHT = 44
@@ -34,6 +34,14 @@ type Props = {
   selected: ReadonlySet<string>
   focus: GridFocus | null
   taskTitle: (row: TrackerRow) => string
+  /** The task (first column) or subtask (other cells) shown in a cell, if any. */
+  cellWork?: (row: TrackerRow, column: TrackerColumn) => { label: string; title: string; done: boolean; task: boolean } | null
+  /** Present when tasks and subtasks can be picked from cells. */
+  onWork?: (row: TrackerRow, column: TrackerColumn, element: HTMLElement) => void
+  /** SUMs for the totals row, by column id. Absent when no column asks for a total. */
+  totals?: ReadonlyMap<string, number | null>
+  /** Every column of the tracker, shown or not, for reading formulas. */
+  allColumns?: TrackerColumn[]
   /** Per row: how many tasks are linked, and which cells have their own. */
   links?: ReadonlyMap<string, { count: number; cells: ReadonlySet<string> }>
   rowName: (row: TrackerRow) => string
@@ -213,7 +221,6 @@ export default function TrackerGrid(props: Props) {
         const on = rowActive && active?.columnId === column.id
         const isEditing = on && editing !== null
         const classes = ['trk-cell', `trk-t-${column.type}`]
-        if (props.links?.get(row.id)?.cells.has(column.id)) classes.push('trk-has-link')
         if (column.id === first) classes.push('trk-first')
         const place = stick.get(column.id)
         if (place) classes.push('trk-frozen'); if (place?.edge) classes.push('trk-edge')
@@ -226,8 +233,16 @@ export default function TrackerGrid(props: Props) {
           {isEditing
             ? <CellEditor column={column} row={row} people={people} initial={editing?.initial} onDone={stopEditing} onCommit={value => props.onEdit(row, column, value)} onInvalid={props.onInvalid} />
             : <CellView column={column} row={row} lookup={lookup} canEdit={canEdit} onToggle={value => props.onEdit(row, column, value)} />}
+          {!isEditing && (() => {
+            const work = props.cellWork?.(row, column)
+            const allowed = column.id === first || ['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'multiselect', 'person', 'link'].includes(column.type)
+            if (work) return <button type="button" className={`trk-work-chip${work.done ? ' done' : ''}${work.task ? ' task' : ''}`} title={work.title} aria-label={work.title}
+              onClick={event => { event.stopPropagation(); if (props.onWork) props.onWork(row, column, event.currentTarget) }}>{work.label}</button>
+            if (props.onWork && canEdit && allowed) return <button type="button" className="trk-work-add" title={column.id === first ? 'Pick or create this row’s task' : `Pick or create a “${column.name}” subtask`} aria-label={column.id === first ? `Task for ${props.rowName(row)}` : `${column.name} subtask for ${props.rowName(row)}`}
+              onClick={event => { event.stopPropagation(); props.onWork!(row, column, event.currentTarget) }}>{column.id === first ? '+ Task' : '+'}</button>
+            return null
+          })()}
           {column.id === first && !isEditing && <>
-            {row.taskId && <LinkedIcon title={`Linked to ${props.taskTitle(row)}`} />}
             <button type="button" className="trk-open" aria-label={`Open ${props.rowName(row)}`} title="Open row" onClick={event => { event.stopPropagation(); props.onOpenRow(row) }}><ChevronRight size={14} aria-hidden="true" /></button>
           </>}
         </div>
@@ -244,11 +259,12 @@ export default function TrackerGrid(props: Props) {
           <span className="trk-n">#</span>
         </div>
         {columns.map((column, at) => {
-          const connected = !['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'multiselect', 'person', 'link', 'secret'].includes(column.type)
+          const computed = column.type === 'formula'
+          const connected = !computed && !['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'multiselect', 'person', 'link', 'secret'].includes(column.type)
           const sorted = sort?.columnId === column.id ? sort.dir : null
           return <div key={column.id} role="columnheader" aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
-            className={`trk-hcell${placeClasses(column)}${connected ? ' connected' : ''}${column.type === 'secret' ? ' secret' : ''}`} style={stick.has(column.id) ? { left: stick.get(column.id)!.left } : undefined}>
-            <button type="button" className="trk-hbutton" aria-haspopup="dialog" title={connected ? `${column.name}. Fills itself from the linked task.` : column.type === 'secret' ? `${column.name}. Protected.` : column.name} onClick={event => props.onHeader(column, event.currentTarget)}>
+            className={`trk-hcell${placeClasses(column)}${connected ? ' connected' : ''}${computed ? ' computed' : ''}${column.type === 'secret' ? ' secret' : ''}`} style={stick.has(column.id) ? { left: stick.get(column.id)!.left } : undefined}>
+            <button type="button" className="trk-hbutton" aria-haspopup="dialog" title={computed ? `${column.name} = ${formulaToText(column.formula || '', props.allColumns || columns)}` : connected ? `${column.name}. Fills itself from the linked task.` : column.type === 'secret' ? `${column.name}. Protected.` : column.name} onClick={event => props.onHeader(column, event.currentTarget)}>
               <ColumnIcon type={column.type} />
               <span className="trk-hname">{column.name}</span>
               {sorted && <span className="trk-sorted" aria-hidden="true">{sorted === 'asc' ? '↑' : '↓'}</span>}
@@ -265,6 +281,17 @@ export default function TrackerGrid(props: Props) {
       <div style={{ height: start * ROW_HEIGHT }} aria-hidden="true" />
       {rendered}
       <div style={{ height: Math.max(0, entries.length - end) * ROW_HEIGHT }} aria-hidden="true" />
+      {props.totals && <div role="row" aria-rowindex={entries.length + 2} className="trk-row trk-totals" style={{ gridTemplateColumns: template }}>
+        <div role="rowheader" className="trk-cell trk-num trk-s1" title="Totals for the rows shown">Σ</div>
+        {columns.map((column, at) => {
+          const place = stick.get(column.id), has = props.totals!.has(column.id), value = props.totals!.get(column.id)
+          return <div key={column.id} role="gridcell" aria-colindex={at + 2} className={`trk-cell${place ? ' trk-frozen' : ''}${place?.edge ? ' trk-edge' : ''}${has ? ' trk-sum' : ''}${column.align ? ` trk-al-${column.align}` : ''}`} style={place ? { left: place.left } : undefined}
+            title={has ? `SUM of ${column.name} for the ${entries.filter(entry => entry.kind === 'row').length} rows shown` : undefined}>
+            {has ? <><small>SUM</small><span className="trk-number">{value === null || value === undefined ? '—' : numberFormat.format(value)}</span></> : at === 0 ? <span className="trk-muted">Total</span> : null}
+          </div>
+        })}
+        <div className="trk-cell trk-end" aria-hidden="true" />
+      </div>}
     </div>
   </div>
 }

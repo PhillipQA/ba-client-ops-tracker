@@ -4,6 +4,10 @@ import { TRACKER_LIMITS, columnTypeLabel, type Tracker } from './trackerModel'
 import { TRACKER_TEMPLATES, templateById } from './trackerTemplates'
 import { trackerApi } from './trackerApi'
 import { rememberTracker, rememberedTracker } from './trackerNav'
+import TrackerClientPicker from './TrackerClientPicker'
+import type { TaskDraft } from './TrackerWork'
+
+const clientsOf = (tracker: Tracker) => tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : []
 import TrackerScreen from './TrackerScreen'
 import TrackerImportDialog from './TrackerImportDialog'
 import { Dialog, Notice, niceTime, plural } from './trackerUi'
@@ -19,6 +23,8 @@ type Props = {
   accounts: UserAccount[]
   today: string
   onOpenTask?: (taskId: string) => void
+  isTaskClosed: (status: string) => boolean
+  onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
 }
 
 const remembered = rememberedTracker
@@ -28,7 +34,7 @@ function NewTrackerDialog({ initialTemplate, clients, projects, onClose, onCreat
   const [templateId, setTemplateId] = useState(initialTemplate)
   const [name, setName] = useState(initialTemplate === 'blank' ? '' : templateById(initialTemplate)?.name || '')
   const [touched, setTouched] = useState(false)
-  const [clientId, setClientId] = useState('')
+  const [clientIds, setClientIds] = useState<string[]>([])
   const [projectId, setProjectId] = useState('')
   const [onlyMe, setOnlyMe] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -41,7 +47,7 @@ function NewTrackerDialog({ initialTemplate, clients, projects, onClose, onCreat
     if (!name.trim()) return setError('Enter a name for the tracker.')
     setBusy(true); setError('')
     try {
-      const result = await trackerApi.create({ name: name.trim(), columns: template.columns, template: template.id, clientId, projectId, private: onlyMe })
+      const result = await trackerApi.create({ name: name.trim(), columns: template.columns, template: template.id, clientIds, projectId, private: onlyMe })
       onCreated(result.tracker)
     } catch (e) { setError(e instanceof Error ? e.message : 'The tracker could not be created.'); setBusy(false) }
   }
@@ -56,7 +62,7 @@ function NewTrackerDialog({ initialTemplate, clients, projects, onClose, onCreat
       </fieldset>
       <div className="trk-new-fields">
         <label className="trk-field-block">Name<input value={name} maxLength={TRACKER_LIMITS.nameLength} onChange={event => { setName(event.target.value); setTouched(true) }} autoFocus required /></label>
-        <label className="trk-field-block">Client<select value={clientId} onChange={event => setClientId(event.target.value)}><option value="">None</option>{clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+        <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
         <label className="trk-field-block">Project<select value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">None</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <label className="trk-checkline"><input type="checkbox" checked={onlyMe} onChange={event => setOnlyMe(event.target.checked)} /> Only I can see this tracker</label>
         <p className="trk-muted-text">Everyone in the account who has Trackers can open a tracker unless you make it private. You can change the columns afterwards.</p>
@@ -92,14 +98,14 @@ export default function Trackers(props: Props) {
   const projectName = useCallback((id: string) => props.projects.find(project => project.id === id)?.name || '', [props.projects])
   const shown = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
-    return (trackers || []).filter(tracker => (showArchived || !tracker.archived) && (!clientFilter || tracker.clientId === clientFilter)
-      && words.every(word => `${tracker.name} ${clientName(tracker.clientId)} ${projectName(tracker.projectId)} ${tracker.createdByName}`.toLowerCase().includes(word)))
+    return (trackers || []).filter(tracker => (showArchived || !tracker.archived) && (!clientFilter || clientsOf(tracker).includes(clientFilter))
+      && words.every(word => `${tracker.name} ${clientsOf(tracker).map(clientName).join(' ')} ${projectName(tracker.projectId)} ${tracker.createdByName}`.toLowerCase().includes(word)))
   }, [trackers, query, clientFilter, showArchived, clientName, projectName])
   const archivedCount = (trackers || []).filter(tracker => tracker.archived).length
   const people = useMemo(() => props.accounts.filter(account => account.status === 'Active').map(account => ({ id: account.id, name: account.name || account.username })), [props.accounts])
 
   if (openId) return <TrackerScreen key={openId} trackerId={openId} isAdmin={props.isAdmin} items={props.items} clients={props.clients} projects={props.projects} accounts={props.accounts} today={props.today}
-    onBack={() => { setOpenId(''); void load() }} onOpenTask={props.onOpenTask} onListChanged={() => void load()} />
+    onBack={() => { setOpenId(''); void load() }} onOpenTask={props.onOpenTask} isTaskClosed={props.isTaskClosed} onCreateTasks={props.onCreateTasks} onListChanged={() => void load()} />
 
   return <div className="trk-page trk-home">
     <header className="trk-header">
@@ -133,7 +139,7 @@ export default function Trackers(props: Props) {
         {shown.map(tracker => <div className="trk-list-row" role="row" key={tracker.id}>
           <span role="cell" className="trk-list-name"><button type="button" className="trk-link-button" onClick={() => setOpenId(tracker.id)}>{tracker.name}</button>
             {tracker.private && <span className="trk-chip"><Lock size={11} aria-hidden="true" /> Only you</span>}{tracker.archived && <span className="trk-chip warn">Archived</span>}</span>
-          <span role="cell">{[clientName(tracker.clientId), projectName(tracker.projectId)].filter(Boolean).join(' · ') || <span className="trk-muted">—</span>}</span>
+          <span role="cell">{[clientsOf(tracker).map(clientName).join(', '), projectName(tracker.projectId)].filter(Boolean).join(' · ') || <span className="trk-muted">—</span>}</span>
           <span role="cell">{tracker.rowCount.toLocaleString('en')}</span>
           <span role="cell" title={tracker.columns.map(column => `${column.name} (${columnTypeLabel(column.type)})`).join(', ')}>{tracker.columns.length}</span>
           <span role="cell">{niceTime(tracker.updatedAt)}</span>

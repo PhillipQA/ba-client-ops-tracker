@@ -361,3 +361,49 @@ dialog.trk-dialog::backdrop { background: rgba(8, 10, 14, .62); }
 .trk-link-add select { min-width: 150px; max-width: 220px; }
 .trk-linkcount { margin-left: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; font-size: 10px; line-height: 16px; text-align: center; font-weight: 600; background: var(--trk-accent, #4f6bed); color: #fff; }
 .trk-cell.trk-has-link { background-image: linear-gradient(225deg, var(--trk-accent, #4f6bed) 0 7px, transparent 7px); }
+
+/* Task (first column) and subtask (other cells) chips */
+.trk-work-chip { margin-left: auto; flex: none; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--trk-accent) 45%, transparent); background: var(--trk-accent-soft); color: var(--trk-text); font: inherit; font-size: 11px; font-weight: 600; line-height: 18px; cursor: pointer; }
+.trk-work-chip.task::before { content: '◆ '; color: var(--trk-accent); }
+.trk-work-chip.done { border-color: color-mix(in srgb, #22a06b 55%, transparent); background: color-mix(in srgb, #22a06b 18%, transparent); }
+.trk-work-chip.done::after { content: ' ✓'; }
+.trk-first .trk-work-chip { margin-left: 6px; }
+.trk-work-add { margin-left: auto; flex: none; padding: 0 6px; height: 20px; border: 1px dashed var(--trk-border); border-radius: 999px; background: transparent; color: var(--trk-muted); font: inherit; font-size: 11px; line-height: 18px; cursor: pointer; opacity: 0; }
+.trk-row:hover .trk-work-add, .trk-cell.active .trk-work-add, .trk-work-add:focus-visible { opacity: 1; }
+.trk-work-add:hover { color: var(--trk-accent); border-color: var(--trk-accent); }
+.trk-first .trk-work-add { margin-left: 6px; }
+.trk-work-pop .trk-work-head { display: grid; gap: 2px; padding: 4px 4px 8px; border-bottom: 1px solid var(--trk-line); margin-bottom: 8px; }
+.trk-work-pop .trk-work-head small, .trk-work-empty p { color: var(--trk-muted); font-size: 12px; }
+.trk-work-current { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 8px; border: 1px solid var(--trk-border); border-radius: 8px; }
+.trk-work-current .trk-task-line { flex: 1 1 auto; min-width: 0; }
+.trk-work-create { margin-top: 8px; }
+.trk-work-form { display: grid; gap: 10px; }
+.trk-work-empty { display: grid; gap: 10px; padding: 4px; }
+
+/* Calculated columns and the totals row */
+.trk-hcell.computed { background: color-mix(in srgb, #8b5cf6 14%, var(--trk-solid)); }
+.trk-t-formula { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.trk-formula-error { color: var(--trk-danger); font-weight: 600; font-size: 12px; }
+.trk-totals { position: sticky; bottom: 0; z-index: 3; }
+.trk-totals .trk-cell { background: var(--trk-solid); border-top: 2px solid var(--trk-border); font-weight: 650; font-variant-numeric: tabular-nums; }
+.trk-totals .trk-sum { justify-content: flex-end; gap: 6px; }
+.trk-totals .trk-sum small { color: var(--trk-muted); font-size: 10px; font-weight: 600; letter-spacing: .04em; }
+.trk-formula input { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.trk-formula-refs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.trk-formula-ref { padding: 2px 10px; border: 1px solid var(--trk-border); border-radius: 999px; background: var(--trk-soft); color: var(--trk-text); font: inherit; font-size: 12px; cursor: pointer; }
+.trk-formula-ref.op { min-width: 30px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+.trk-formula-ref:hover { border-color: var(--trk-accent); }
+
+/* Several clients on a tracker */
+.trk-clients { display: grid; gap: 6px; position: relative; }
+.trk-client-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; align-items: center; }
+.trk-client-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--trk-accent-soft); color: var(--trk-text); font-size: 12px; font-weight: 600; }
+.trk-client-chip button { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.trk-client-chip button:hover { background: color-mix(in srgb, currentColor 18%, transparent); }
+.trk-client-options { display: grid; gap: 2px; padding: 4px; border: 1px solid var(--trk-border); border-radius: 8px; background: var(--trk-solid); max-height: 200px; overflow: auto; }
+.trk-client-options button, .trk-client-quick button { text-align: left; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--trk-text); font: inherit; font-size: 13px; cursor: pointer; }
+.trk-client-options button:hover, .trk-client-quick button:hover { background: var(--trk-soft); }
+.trk-client-quick { display: flex; flex-wrap: wrap; gap: 4px; }
+.trk-client-quick button { padding: 2px 8px; border: 1px dashed var(--trk-border); border-radius: 999px; font-size: 12px; color: var(--trk-muted); }
+.trk-bulk-preview { max-height: 200px; overflow: auto; margin: 8px 0; padding: 8px 8px 8px 26px; border: 1px solid var(--trk-border); border-radius: 8px; font-size: 13px; }
+.trk-key.computed { background: color-mix(in srgb, #8b5cf6 55%, var(--trk-solid)); }

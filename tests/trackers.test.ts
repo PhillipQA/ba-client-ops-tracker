@@ -403,3 +403,50 @@ test('links to a private tracker are visible only to its creator', async () => {
     assert.equal((await ask('POST', `/api/trackers/${tracker.id}/links`, { rowId: rows.body.rows[0].id, taskId: 't2' }, { 'x-user': 'u2' })).status, 404)
   })
 })
+
+test('a tracker can follow several clients, and older single-client calls still work', async () => {
+  const h = harness()
+  h.state.clients.push({ id: 'c2', name: 'Northwind' })
+  await serve(h, async ask => {
+    const tracker = await makeTracker(ask, { clientIds: ['c1', 'c2', 'c1'] })
+    assert.deepEqual(tracker.clientIds, ['c1', 'c2']); assert.equal(tracker.clientId, 'c1')
+    assert.equal((await ask('POST', '/api/trackers', { name: 'Bad', clientIds: ['c1', 'nope'] })).status, 400)
+    assert.equal((await ask('POST', '/api/trackers', { name: 'Bad', clientIds: 'c1' })).status, 400)
+    const one = await ask('PATCH', `/api/trackers/${tracker.id}`, { clientIds: ['c2'] })
+    assert.deepEqual(one.body.tracker.clientIds, ['c2'])
+    const legacy = await ask('PATCH', `/api/trackers/${tracker.id}`, { clientId: 'c1' })
+    assert.deepEqual(legacy.body.tracker.clientIds, ['c1'])
+    const none = await ask('PATCH', `/api/trackers/${tracker.id}`, { clientIds: [] })
+    assert.deepEqual(none.body.tracker.clientIds, []); assert.equal(none.body.tracker.clientId, '')
+  })
+})
+
+test('many rows can be linked to their tasks at once', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = await makeTracker(ask)
+    const made = await ask('POST', `/api/trackers/${tracker.id}/rows`, { rows: [{ cells: {} }, { cells: {} }] })
+    const [a, b] = made.body.rows
+    const linked = await ask('POST', `/api/trackers/${tracker.id}/rows/tasks`, { links: [{ rowId: a.id, taskId: 't1' }, { rowId: b.id, taskId: 't2' }] })
+    assert.equal(linked.status, 200, JSON.stringify(linked.body))
+    assert.deepEqual(linked.body.rows.map((row: any) => row.taskId).sort(), ['t1', 't2'])
+    assert.ok(linked.body.rows.every((row: any) => row.version === 2), 'each linked row gets a new version')
+    assert.equal((await ask('POST', `/api/trackers/${tracker.id}/rows/tasks`, { links: [{ rowId: a.id, taskId: 'nope' }] })).status, 400)
+    assert.equal((await ask('POST', `/api/trackers/${tracker.id}/rows/tasks`, { links: [] })).status, 400)
+    assert.equal((await ask('POST', `/api/trackers/${tracker.id}/rows/tasks`, { links: [{ rowId: a.id, taskId: 't1' }] }, { 'x-role': 'Viewer' })).status, 403)
+    const history = await ask('GET', `/api/trackers/${tracker.id}/rows/${a.id}/history`)
+    assert.ok(history.body.changes.some((c: any) => c.kind === 'task_linked'))
+  })
+})
+
+test('Calculated columns are saved by id and refuse values typed into them', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const created = await ask('POST', '/api/trackers', { name: 'Costs', columns: [{ name: 'Item', type: 'text' }, { name: 'Qty', type: 'number' }, { name: 'Price', type: 'number' }, { name: 'Amount', type: 'formula', formula: '[Qty] * [Price]', total: 'sum' }] })
+    assert.equal(created.status, 201, JSON.stringify(created.body))
+    const tracker = created.body.tracker
+    assert.equal(tracker.columns[3].formula, `{${tracker.columns[1].id}} * {${tracker.columns[2].id}}`)
+    assert.equal((await ask('POST', `/api/trackers/${tracker.id}/rows`, { rows: [{ cells: { [tracker.columns[3].id]: 5 } }] })).status, 400)
+    assert.equal((await ask('POST', '/api/trackers', { name: 'Bad', columns: [{ name: 'A', type: 'text' }, { name: 'B', type: 'formula', formula: '[A] * 2' }] })).status, 400)
+  })
+})

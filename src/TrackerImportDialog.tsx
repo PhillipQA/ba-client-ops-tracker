@@ -4,6 +4,7 @@ import { COLUMN_TYPES, TRACKER_LIMITS, type ColumnType, type Tracker } from './t
 import { defaultMappings, parseTable, planImport, toSource, type Mapping, type Person, type Source } from './trackerImport'
 import { trackerApi, TrackerApiError } from './trackerApi'
 import { Dialog, plural } from './trackerUi'
+import TrackerClientPicker from './TrackerClientPicker'
 
 type Props = {
   /** Importing into a tracker that exists, or into a new one made from the sheet. */
@@ -28,7 +29,7 @@ export default function TrackerImportDialog({ tracker, clients, projects, people
   const [source, setSource] = useState<Source | null>(null)
   const [mappings, setMappings] = useState<Mapping[]>([])
   const [name, setName] = useState('')
-  const [clientId, setClientId] = useState('')
+  const [clientIds, setClientIds] = useState<string[]>([])
   const [projectId, setProjectId] = useState('')
   const [onlyMe, setOnlyMe] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -67,7 +68,7 @@ export default function TrackerImportDialog({ tracker, clients, projects, people
         if (JSON.stringify(plan.columns) !== JSON.stringify(tracker.columns)) { setProgress('Adding columns…'); await trackerApi.saveColumns(tracker.id, plan.columns, tracker.revision) }
       } else {
         setProgress('Creating the tracker…')
-        const created = await trackerApi.create({ name: name.trim(), columns: plan.columns, template: 'sheet', clientId, projectId, private: onlyMe })
+        const created = await trackerApi.create({ name: name.trim(), columns: plan.columns, template: 'sheet', clientIds, projectId, private: onlyMe })
         trackerId = created.tracker.id
       }
       for (let at = 0; at < plan.rows.length; at += TRACKER_LIMITS.importBatch) {
@@ -106,7 +107,7 @@ export default function TrackerImportDialog({ tracker, clients, projects, people
     {step === 'map' && source && plan && <div className="trk-import">
       {!tracker && <div className="trk-import-new">
         <label className="trk-field-block">Tracker name<input value={name} maxLength={TRACKER_LIMITS.nameLength} onChange={event => setName(event.target.value)} autoFocus /></label>
-        <label className="trk-field-block">Client<select value={clientId} onChange={event => setClientId(event.target.value)}><option value="">None</option>{clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+        <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
         <label className="trk-field-block">Project<select value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">None</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <label className="trk-checkline"><input type="checkbox" checked={onlyMe} onChange={event => setOnlyMe(event.target.checked)} /> Only I can see this tracker</label>
       </div>}

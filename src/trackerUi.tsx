@@ -1,13 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import {
-  AlignLeft, CalendarDays, CheckCircle2, CircleDot, Clock3, FileSignature, FolderOpen, Hash, Link2, ListTodo, LockKeyhole, Type, UserRound, Users, X,
+  AlignLeft, CalendarDays, CheckCircle2, CircleDot, Clock3, FileSignature, FolderOpen, Hash, Link2, ListTodo, Sigma, LockKeyhole, Type, UserRound, Users, X,
 } from 'lucide-react'
 import type { ColumnType, OptionColor } from './trackerModel'
 import type { Tone } from './trackerQuery'
 
 export const TYPE_ICONS: Record<ColumnType, typeof Type> = {
   text: Type, longtext: AlignLeft, number: Hash, date: CalendarDays, checkbox: CheckCircle2, select: CircleDot, multiselect: ListTodo,
-  person: UserRound, link: Link2, task_status: CircleDot, task_due: Clock3, task_owner: Users, signoff: FileSignature, drive_files: FolderOpen, secret: LockKeyhole,
+  person: UserRound, link: Link2, task_status: CircleDot, task_due: Clock3, task_owner: Users, signoff: FileSignature, drive_files: FolderOpen, secret: LockKeyhole, formula: Sigma,
 }
 
 export function ColumnIcon({ type, size = 14 }: { type: ColumnType; size?: number }) {
