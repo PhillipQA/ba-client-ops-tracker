@@ -1,8 +1,16 @@
 # Changelog
 
-**Current application release: v0.7.0**
+**Current application release: v0.7.1**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.7.1 — Client field fixes
+Released October 24, 2026.
+
+No database migration and no new Google permission.
+
+- In dialogs such as **New email**, the client list opened away from the field and pushed the dialog sideways. It now opens directly under the field (or above it near the bottom of the screen) and stays inside the dialog.
+- Client fields now look like the boxes beside them. In v0.7.0 some screens' input styles, such as the email dialog's padding and outline, applied to every client field.
 
 ## v0.7.0 — Type-to-search clients and open-only task pickers
 Released October 24, 2026.
