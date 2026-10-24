@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { isWaitingOnDone } from '../../src/waitingOn'
+import { isWaitingOnDone } from '../../src/features/tasks/waitingOn'
 
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/
 const FALLBACK_CLOSED_STATUSES = new Set(['done', 'resolved', 'closed', 'complete', 'completed'])
@@ -39,7 +39,7 @@ export function dateKeyInTimeZone(now = new Date(), timeZone = 'Asia/Manila') {
     month: '2-digit',
     day: '2-digit',
   }).formatToParts(now)
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]))
   return `${value.year}-${value.month}-${value.day}`
 }
 
@@ -48,22 +48,33 @@ function isClosed(item: any, state: any) {
   const configured = new Set(
     (Array.isArray(state?.taskSettings?.statuses) ? state.taskSettings.statuses : [])
       .filter((status: any) => Boolean(status?.closed))
-      .map((status: any) => String(status?.label || '').trim().toLowerCase()),
+      .map((status: any) =>
+        String(status?.label || '')
+          .trim()
+          .toLowerCase(),
+      ),
   )
-  const status = String(item?.status || '').trim().toLowerCase()
+  const status = String(item?.status || '')
+    .trim()
+    .toLowerCase()
   return configured.has(status) || FALLBACK_CLOSED_STATUSES.has(status)
 }
 
 function safeComments(item: any) {
-  return Array.isArray(item?.comments) ? item.comments.filter((comment: any) => comment && comment.id && comment.text) : []
+  return Array.isArray(item?.comments)
+    ? item.comments.filter((comment: any) => comment && comment.id && comment.text)
+    : []
 }
 
-export function rollOverOpenSubtaskFollowUps(state: any, options: {
-  today?: string
-  occurredAt?: string
-  timeZone?: string
-  id?: () => string
-} = {}): FollowUpRolloverResult {
+export function rollOverOpenSubtaskFollowUps(
+  state: any,
+  options: {
+    today?: string
+    occurredAt?: string
+    timeZone?: string
+    id?: () => string
+  } = {},
+): FollowUpRolloverResult {
   const now = options.occurredAt ? new Date(options.occurredAt) : new Date()
   const occurredAt = Number.isNaN(now.getTime()) ? new Date().toISOString() : now.toISOString()
   const today = options.today || dateKeyInTimeZone(now, options.timeZone || 'Asia/Manila')
@@ -84,9 +95,10 @@ export function rollOverOpenSubtaskFollowUps(state: any, options: {
     if (!daysMoved) return item
     const kind = item.parentTaskId ? 'Subtask' : 'Task'
     const title = String(item.title || `Untitled ${kind.toLowerCase()}`)
-    const text = daysMoved === 1
-      ? `Follow-up automatically moved from ${previousDate} to ${today} because the ${kind.toLowerCase()} remains open.`
-      : `Follow-up automatically caught up from ${previousDate} to ${today} after ${daysMoved} calendar days because the ${kind.toLowerCase()} remained open.`
+    const text =
+      daysMoved === 1
+        ? `Follow-up automatically moved from ${previousDate} to ${today} because the ${kind.toLowerCase()} remains open.`
+        : `Follow-up automatically caught up from ${previousDate} to ${today} after ${daysMoved} calendar days because the ${kind.toLowerCase()} remained open.`
     const comment = {
       id: createId(),
       text,
@@ -100,7 +112,9 @@ export function rollOverOpenSubtaskFollowUps(state: any, options: {
       daysMoved,
     }
     const assignedToUserId = item.assignedToUserId ? String(item.assignedToUserId) : undefined
-    const assignedToName = assignedToUserId ? accounts.find((account: any) => String(account?.id || '') === assignedToUserId)?.name : undefined
+    const assignedToName = assignedToUserId
+      ? accounts.find((account: any) => String(account?.id || '') === assignedToUserId)?.name
+      : undefined
     createdEvents.push({
       id: createId(),
       occurredAt,

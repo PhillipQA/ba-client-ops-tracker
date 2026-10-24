@@ -1,29 +1,92 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  TRACKER_LIMITS, cleanCell, cleanSecret, normalizeColumns, normalizeViews, validDate,
-  type TrackerColumn, type TrackerRow,
-} from '../src/trackerModel'
-import { filterRows, groupRows, makeLookup, rowTitle, searchRows, shown, signoffSummary, sortRows, visibleRows } from '../src/trackerQuery'
-import { csvField, exportCsv, exportFileName } from '../src/trackerExport'
-import { TRACKER_TEMPLATES, templateById } from '../src/trackerTemplates'
-import { defaultMappings, guessColumn, looksDayFirst, parseLooseDate, parseTable, planImport, toSource } from '../src/trackerImport'
+  TRACKER_LIMITS,
+  cleanCell,
+  cleanSecret,
+  normalizeColumns,
+  normalizeViews,
+  validDate,
+  type TrackerColumn,
+  type TrackerRow,
+} from '../src/features/trackers/trackerModel'
+import {
+  filterRows,
+  groupRows,
+  makeLookup,
+  rowTitle,
+  searchRows,
+  shown,
+  signoffSummary,
+  sortRows,
+  visibleRows,
+} from '../src/features/trackers/trackerQuery'
+import { csvField, exportCsv, exportFileName } from '../src/features/trackers/trackerExport'
+import { TRACKER_TEMPLATES, templateById } from '../src/features/trackers/trackerTemplates'
+import {
+  defaultMappings,
+  guessColumn,
+  looksDayFirst,
+  parseLooseDate,
+  parseTable,
+  planImport,
+  toSource,
+} from '../src/features/trackers/trackerImport'
 
 const TODAY = '2026-10-23'
 
-const col = (id: string, name: string, type: TrackerColumn['type'], extra: Partial<TrackerColumn> = {}): TrackerColumn => ({ id, name, type, ...extra })
-const status = col('c_status', 'Status', 'select', { options: [{ id: 'o_new', label: 'New', color: 'blue' }, { id: 'o_live', label: 'Live', color: 'green' }, { id: 'o_late', label: 'Delayed', color: 'amber' }] })
+const col = (
+  id: string,
+  name: string,
+  type: TrackerColumn['type'],
+  extra: Partial<TrackerColumn> = {},
+): TrackerColumn => ({ id, name, type, ...extra })
+const status = col('c_status', 'Status', 'select', {
+  options: [
+    { id: 'o_new', label: 'New', color: 'blue' },
+    { id: 'o_live', label: 'Live', color: 'green' },
+    { id: 'o_late', label: 'Delayed', color: 'amber' },
+  ],
+})
 const columns: TrackerColumn[] = [
-  col('c_site', 'Site', 'text'), col('c_go', 'Go-live', 'date'), status, col('c_cost', 'Cost', 'number'), col('c_owner', 'Owner', 'person'),
-  col('c_task', 'Task status', 'task_status'), col('c_sign', 'Sign-off', 'signoff'), col('c_files', 'Drive files', 'drive_files'), col('c_pw', 'Admin login', 'secret', { revealBy: 'editors' }),
+  col('c_site', 'Site', 'text'),
+  col('c_go', 'Go-live', 'date'),
+  status,
+  col('c_cost', 'Cost', 'number'),
+  col('c_owner', 'Owner', 'person'),
+  col('c_task', 'Task status', 'task_status'),
+  col('c_sign', 'Sign-off', 'signoff'),
+  col('c_files', 'Drive files', 'drive_files'),
+  col('c_pw', 'Admin login', 'secret', { revealBy: 'editors' }),
   col('c_ok', 'COR', 'checkbox'),
 ]
-const row = (id: string, cells: TrackerRow['cells'], extra: Partial<TrackerRow> = {}): TrackerRow => ({ id, position: 1, cells, secretSet: {}, taskId: '', version: 1, updatedAt: '', ...extra })
+const row = (id: string, cells: TrackerRow['cells'], extra: Partial<TrackerRow> = {}): TrackerRow => ({
+  id,
+  position: 1,
+  cells,
+  secretSet: {},
+  taskId: '',
+  version: 1,
+  updatedAt: '',
+  ...extra,
+})
 
-const task = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, status: 'In Progress', ...extra }) as any
+const task = (id: string, extra: Record<string, unknown> = {}) =>
+  ({ id, title: id, status: 'In Progress', ...extra }) as any
 const items = [
-  task('t1', { status: 'Done', dueDate: '2026-10-01', owner: 'Free text owner', docHubDocuments: [{ id: 'd1', title: 'Contract', status: 'COMPLETED', signed: 2, total: 2, documentUrl: '' }], driveFiles: [{ id: 'f1' }] }),
-  task('t2', { status: 'In Progress', dueDate: '2026-10-01', assignedToUserId: 'u1', docHubDocuments: [{ id: 'd2', title: 'Form', status: 'PARTIALLY_SIGNED', signed: 1, total: 3, documentUrl: '' }] }),
+  task('t1', {
+    status: 'Done',
+    dueDate: '2026-10-01',
+    owner: 'Free text owner',
+    docHubDocuments: [{ id: 'd1', title: 'Contract', status: 'COMPLETED', signed: 2, total: 2, documentUrl: '' }],
+    driveFiles: [{ id: 'f1' }],
+  }),
+  task('t2', {
+    status: 'In Progress',
+    dueDate: '2026-10-01',
+    assignedToUserId: 'u1',
+    docHubDocuments: [{ id: 'd2', title: 'Form', status: 'PARTIALLY_SIGNED', signed: 1, total: 3, documentUrl: '' }],
+  }),
   task('t2a', { parentTaskId: 't2', driveFiles: [{ id: 'f2' }, { id: 'f3' }] }),
 ]
 const lookup = makeLookup(items, [{ id: 'u1', name: 'Ana Reyes', username: 'ana' }], TODAY)
@@ -39,22 +102,54 @@ test('cells are cleaned the way the server expects', () => {
   assert.deepEqual(cleanCell(col('c', 'L', 'link'), 'example.com/a'), { ok: true, value: 'https://example.com/a' })
   assert.equal(cleanCell(col('c', 'L', 'link'), 'javascript:alert(1)').ok, false)
   assert.equal(cleanCell(col('c', 'L', 'link'), 'localhost').ok, false)
-  assert.equal(cleanCell(col('c', 'Pw', 'secret'), 'x').ok, false, 'secrets are set through the secret route, never as a normal cell')
+  assert.equal(
+    cleanCell(col('c', 'Pw', 'secret'), 'x').ok,
+    false,
+    'secrets are set through the secret route, never as a normal cell',
+  )
   assert.equal(cleanCell(col('c', 'T', 'task_status'), 'x').ok, false, 'connected columns cannot be written')
   assert.equal(cleanSecret(col('c', 'Pw', 'secret'), 'x'.repeat(TRACKER_LIMITS.secret + 1)).ok, false)
   assert.equal(validDate('2026-13-01'), false)
 })
 
 test('a column cannot change type, and names must be unique', () => {
-  const before = normalizeColumns([{ name: 'Site', type: 'text' }, { name: 'Pw', type: 'secret' }])
+  const before = normalizeColumns([
+    { name: 'Site', type: 'text' },
+    { name: 'Pw', type: 'secret' },
+  ])
   assert.throws(() => normalizeColumns([{ ...before[0], type: 'number' }], before), /cannot change type/)
-  assert.throws(() => normalizeColumns([{ name: 'A', type: 'text' }, { name: 'a', type: 'text' }]), /Two columns/)
-  assert.throws(() => normalizeColumns(Array.from({ length: TRACKER_LIMITS.columns + 1 }, (_, i) => ({ name: `C${i}`, type: 'text' }))), /at most/)
+  assert.throws(
+    () =>
+      normalizeColumns([
+        { name: 'A', type: 'text' },
+        { name: 'a', type: 'text' },
+      ]),
+    /Two columns/,
+  )
+  assert.throws(
+    () =>
+      normalizeColumns(Array.from({ length: TRACKER_LIMITS.columns + 1 }, (_, i) => ({ name: `C${i}`, type: 'text' }))),
+    /at most/,
+  )
   assert.equal(before[1].revealBy, 'editors')
 })
 
 test('views drop references to columns that are gone', () => {
-  const views = normalizeViews([{ name: 'Mine', filters: [{ columnId: 'c_status', op: 'is', value: 'o_new' }, { columnId: 'gone', op: 'is', value: 'x' }], sort: { columnId: 'gone', dir: 'desc' }, groupBy: 'gone', hidden: ['c_go', 'gone'] }], columns)
+  const views = normalizeViews(
+    [
+      {
+        name: 'Mine',
+        filters: [
+          { columnId: 'c_status', op: 'is', value: 'o_new' },
+          { columnId: 'gone', op: 'is', value: 'x' },
+        ],
+        sort: { columnId: 'gone', dir: 'desc' },
+        groupBy: 'gone',
+        hidden: ['c_go', 'gone'],
+      },
+    ],
+    columns,
+  )
   assert.equal(views[0].filters.length, 1)
   assert.equal(views[0].sort, null)
   assert.equal(views[0].groupBy, '')
@@ -99,14 +194,34 @@ test('sign-off summary covers drafts, voided and attention states', () => {
   assert.equal(signoffSummary(wrap(doc('READY_TO_REVIEW'))).text, 'Draft, not sent')
   assert.equal(signoffSummary(wrap(doc('SENT'), doc('REJECTED'))).text, 'Needs attention')
   assert.equal(signoffSummary(wrap(doc('DONE', 2, 2, 'a'), doc('COMPLETE', 1, 1, 'b'))).text, 'All 2 signed')
-  assert.equal(signoffSummary([task('x', { docHubDocuments: [doc('SENT', 0, 2, 'same')] }), task('y', { docHubDocuments: [doc('SENT', 0, 2, 'same')] })]).text, '0 of 2 signed', 'the same document is not counted twice')
+  assert.equal(
+    signoffSummary([
+      task('x', { docHubDocuments: [doc('SENT', 0, 2, 'same')] }),
+      task('y', { docHubDocuments: [doc('SENT', 0, 2, 'same')] }),
+    ]).text,
+    '0 of 2 signed',
+    'the same document is not counted twice',
+  )
 })
 
 test('search needs every word, ignores secrets and hidden columns', () => {
-  const rows = [row('a', { c_site: 'Makati branch', c_go: '2026-11-01' }, { secretSet: { c_pw: true } }), row('b', { c_site: 'Cebu branch' })]
-  assert.deepEqual(searchRows(rows, columns, 'branch makati', lookup).map(r => r.id), ['a'])
-  assert.deepEqual(searchRows(rows, columns, 'set', lookup).map(r => r.id), [], 'the word "Set" shown for a secret is not searchable')
-  assert.deepEqual(searchRows(rows, columns, '2026-11', lookup, ['c_go']).map(r => r.id), [])
+  const rows = [
+    row('a', { c_site: 'Makati branch', c_go: '2026-11-01' }, { secretSet: { c_pw: true } }),
+    row('b', { c_site: 'Cebu branch' }),
+  ]
+  assert.deepEqual(
+    searchRows(rows, columns, 'branch makati', lookup).map(r => r.id),
+    ['a'],
+  )
+  assert.deepEqual(
+    searchRows(rows, columns, 'set', lookup).map(r => r.id),
+    [],
+    'the word "Set" shown for a secret is not searchable',
+  )
+  assert.deepEqual(
+    searchRows(rows, columns, '2026-11', lookup, ['c_go']).map(r => r.id),
+    [],
+  )
   assert.equal(searchRows(rows, columns, '   ', lookup).length, 2)
 })
 
@@ -126,36 +241,85 @@ test('filters work per column type', () => {
   assert.deepEqual(ids([{ columnId: 'c_status', op: 'is_not', value: 'o_new' }]), ['b', 'c'])
   assert.deepEqual(ids([{ columnId: 'c_ok', op: 'checked', value: '' }]), ['a'])
   assert.deepEqual(ids([{ columnId: 'c_ok', op: 'unchecked', value: '' }]), ['b', 'c'])
-  assert.deepEqual(ids([{ columnId: 'c_site', op: 'contains', value: 'b' }, { columnId: 'c_cost', op: 'gt', value: '1' }]), ['b'], 'filters combine with AND')
-  assert.deepEqual(ids([{ columnId: 'gone', op: 'is', value: 'x' }]), ['a', 'b', 'c'], 'a filter on a deleted column does nothing')
+  assert.deepEqual(
+    ids([
+      { columnId: 'c_site', op: 'contains', value: 'b' },
+      { columnId: 'c_cost', op: 'gt', value: '1' },
+    ]),
+    ['b'],
+    'filters combine with AND',
+  )
+  assert.deepEqual(
+    ids([{ columnId: 'gone', op: 'is', value: 'x' }]),
+    ['a', 'b', 'c'],
+    'a filter on a deleted column does nothing',
+  )
   assert.deepEqual(ids([{ columnId: 'c_pw', op: 'is_empty', value: '' }]), ['a', 'b', 'c'])
 })
 
 test('sorting puts empty values last in both directions and numbers sort as numbers', () => {
   const rows = [row('a', { c_cost: 10 }), row('b', {}), row('c', { c_cost: 9 }), row('d', { c_cost: 100 })]
-  assert.deepEqual(sortRows(rows, columns, { columnId: 'c_cost', dir: 'asc' }, lookup).map(r => r.id), ['c', 'a', 'd', 'b'])
-  assert.deepEqual(sortRows(rows, columns, { columnId: 'c_cost', dir: 'desc' }, lookup).map(r => r.id), ['d', 'a', 'c', 'b'])
+  assert.deepEqual(
+    sortRows(rows, columns, { columnId: 'c_cost', dir: 'asc' }, lookup).map(r => r.id),
+    ['c', 'a', 'd', 'b'],
+  )
+  assert.deepEqual(
+    sortRows(rows, columns, { columnId: 'c_cost', dir: 'desc' }, lookup).map(r => r.id),
+    ['d', 'a', 'c', 'b'],
+  )
   const sites = [row('a', { c_site: 'Site 10' }), row('b', { c_site: 'Site 9' })]
-  assert.deepEqual(sortRows(sites, columns, { columnId: 'c_site', dir: 'asc' }, lookup).map(r => r.id), ['b', 'a'], 'Site 9 comes before Site 10')
+  assert.deepEqual(
+    sortRows(sites, columns, { columnId: 'c_site', dir: 'asc' }, lookup).map(r => r.id),
+    ['b', 'a'],
+    'Site 9 comes before Site 10',
+  )
   assert.equal(sortRows(rows, columns, null, lookup), rows)
 })
 
 test('select columns sort in option order, not alphabetically', () => {
-  const rows = [row('late', { c_status: 'o_late' }), row('new', { c_status: 'o_new' }), row('live', { c_status: 'o_live' })]
-  assert.deepEqual(sortRows(rows, columns, { columnId: 'c_status', dir: 'asc' }, lookup).map(r => r.id), ['new', 'live', 'late'])
-  assert.deepEqual(groupRows(rows, status, lookup).map(g => g.label), ['New', 'Live', 'Delayed'])
+  const rows = [
+    row('late', { c_status: 'o_late' }),
+    row('new', { c_status: 'o_new' }),
+    row('live', { c_status: 'o_live' }),
+  ]
+  assert.deepEqual(
+    sortRows(rows, columns, { columnId: 'c_status', dir: 'asc' }, lookup).map(r => r.id),
+    ['new', 'live', 'late'],
+  )
+  assert.deepEqual(
+    groupRows(rows, status, lookup).map(g => g.label),
+    ['New', 'Live', 'Delayed'],
+  )
 })
 
 test('groups put empty last', () => {
   const rows = [row('a', {}), row('b', { c_status: 'o_live' }), row('c', { c_status: 'o_live' })]
   const groups = groupRows(rows, status, lookup)
-  assert.deepEqual(groups.map(g => [g.label, g.rows.length]), [['Live', 2], ['Empty', 1]])
+  assert.deepEqual(
+    groups.map(g => [g.label, g.rows.length]),
+    [
+      ['Live', 2],
+      ['Empty', 1],
+    ],
+  )
 })
 
 test('visibleRows applies search, then filters, then sort', () => {
-  const rows = [row('a', { c_site: 'Alpha', c_cost: 5 }), row('b', { c_site: 'Alpha two', c_cost: 1 }), row('c', { c_site: 'Beta', c_cost: 3 })]
-  const result = visibleRows(rows, columns, { search: 'alpha', filters: [], sort: { columnId: 'c_cost', dir: 'asc' } }, lookup)
-  assert.deepEqual(result.map(r => r.id), ['b', 'a'])
+  const rows = [
+    row('a', { c_site: 'Alpha', c_cost: 5 }),
+    row('b', { c_site: 'Alpha two', c_cost: 1 }),
+    row('c', { c_site: 'Beta', c_cost: 3 }),
+  ]
+  const result = visibleRows(
+    rows,
+    columns,
+    { search: 'alpha', filters: [], sort: { columnId: 'c_cost', dir: 'asc' } },
+    lookup,
+  )
+  assert.deepEqual(
+    result.map(r => r.id),
+    ['b', 'a'],
+  )
 })
 
 test('a row is named by its first text column', () => {
@@ -167,7 +331,11 @@ test('a row is named by its first text column', () => {
 
 test('CSV export leaves out secrets, guards formulas and quotes properly', () => {
   const rows = [
-    row('a', { c_site: '=HYPERLINK("x")', c_cost: -5, c_go: '2026-11-01', c_status: 'o_live' }, { taskId: 't1', secretSet: { c_pw: true } }),
+    row(
+      'a',
+      { c_site: '=HYPERLINK("x")', c_cost: -5, c_go: '2026-11-01', c_status: 'o_live' },
+      { taskId: 't1', secretSet: { c_pw: true } },
+    ),
     row('b', { c_site: 'Has, comma\nand newline' }),
   ]
   const csv = exportCsv(columns, rows, lookup)
@@ -175,13 +343,18 @@ test('CSV export leaves out secrets, guards formulas and quotes properly', () =>
   assert.ok(!csv.includes('Admin login'), 'secret columns are not exported')
   const lines = csv.slice(1).split('\r\n')
   assert.equal(lines[0], 'Site,Go-live,Status,Cost,Owner,Task status,Sign-off,Drive files,COR')
-  assert.equal(lines[1], `"'=HYPERLINK(""x"")",2026-11-01,Live,-5,,Done,Signed,1 file,No`, 'text is guarded, a negative number is not')
+  assert.equal(
+    lines[1],
+    `"'=HYPERLINK(""x"")",2026-11-01,Live,-5,,Done,Signed,1 file,No`,
+    'text is guarded, a negative number is not',
+  )
   assert.ok(csv.includes('"Has, comma\nand newline"'))
   assert.ok(csv.endsWith('\r\n'))
 })
 
 test('csvField guards every formula starter in text', () => {
-  for (const start of ['=', '+', '-', '@', '\t']) assert.ok(csvField(`${start}1`, true).startsWith(start === '\t' ? "'" : "'"), start)
+  for (const start of ['=', '+', '-', '@', '\t'])
+    assert.ok(csvField(`${start}1`, true).startsWith(start === '\t' ? "'" : "'"), start)
   assert.equal(csvField('-5', false), '-5')
 })
 
@@ -199,35 +372,83 @@ test('every template builds valid columns and the blank one has a single text co
     assert.equal(built.length, template.columns.length, template.id)
     assert.equal(built[0].type, 'text', `${template.id} starts with a text column`)
   }
-  assert.deepEqual(templateById('blank')?.columns.map(c => c.type), ['text'])
+  assert.deepEqual(
+    templateById('blank')?.columns.map(c => c.type),
+    ['text'],
+  )
   assert.equal(templateById('nope'), undefined)
 })
 
 test('no template stores a secret value or an invented credential', () => {
   const json = JSON.stringify(TRACKER_TEMPLATES)
   assert.ok(!/password\s*[:=]/i.test(json))
-  for (const template of TRACKER_TEMPLATES) for (const column of template.columns) if (column.type === 'secret') assert.equal(column.options, undefined)
+  for (const template of TRACKER_TEMPLATES)
+    for (const column of template.columns) if (column.type === 'secret') assert.equal(column.options, undefined)
 })
 
 // ---- import: reading ----
 
 test('pasted sheets and CSV files are both read', () => {
-  assert.deepEqual(parseTable('Site\tCost\nA\t1\nB\t2'), [['Site', 'Cost'], ['A', '1'], ['B', '2']])
-  assert.deepEqual(parseTable('Site,Cost\r\nA,1\r\nB,2\r\n'), [['Site', 'Cost'], ['A', '1'], ['B', '2']])
-  assert.deepEqual(parseTable('Site;Cost\nA;1'), [['Site', 'Cost'], ['A', '1']])
-  assert.deepEqual(parseTable('﻿Site,Note\n"A, Inc","He said ""hi"""\n"line\nbreak",x'), [['Site', 'Note'], ['A, Inc', 'He said "hi"'], ['line\nbreak', 'x']])
+  assert.deepEqual(parseTable('Site\tCost\nA\t1\nB\t2'), [
+    ['Site', 'Cost'],
+    ['A', '1'],
+    ['B', '2'],
+  ])
+  assert.deepEqual(parseTable('Site,Cost\r\nA,1\r\nB,2\r\n'), [
+    ['Site', 'Cost'],
+    ['A', '1'],
+    ['B', '2'],
+  ])
+  assert.deepEqual(parseTable('Site;Cost\nA;1'), [
+    ['Site', 'Cost'],
+    ['A', '1'],
+  ])
+  assert.deepEqual(parseTable('﻿Site,Note\n"A, Inc","He said ""hi"""\n"line\nbreak",x'), [
+    ['Site', 'Note'],
+    ['A, Inc', 'He said "hi"'],
+    ['line\nbreak', 'x'],
+  ])
   assert.deepEqual(parseTable(''), [])
 })
 
 test('toSource trims, drops empty rows and columns, and numbers missing headers', () => {
-  const ok = toSource([['Site', '', 'Cost', ''], ['A', '', '1'], ['', '', '', ''], ['B', '', '2', '']], true)
+  const ok = toSource(
+    [
+      ['Site', '', 'Cost', ''],
+      ['A', '', '1'],
+      ['', '', '', ''],
+      ['B', '', '2', ''],
+    ],
+    true,
+  )
   assert.ok(ok.ok)
-  if (ok.ok) { assert.deepEqual(ok.source.headers, ['Site', 'Cost']); assert.deepEqual(ok.source.rows, [['A', '1'], ['B', '2']]) }
-  const noHeader = toSource([['A', '1'], ['B', '2']], false)
+  if (ok.ok) {
+    assert.deepEqual(ok.source.headers, ['Site', 'Cost'])
+    assert.deepEqual(ok.source.rows, [
+      ['A', '1'],
+      ['B', '2'],
+    ])
+  }
+  const noHeader = toSource(
+    [
+      ['A', '1'],
+      ['B', '2'],
+    ],
+    false,
+  )
   assert.ok(noHeader.ok && noHeader.source.headers.join() === 'Column 1,Column 2' && noHeader.source.rows.length === 2)
   assert.equal(toSource([], true).ok, false)
   assert.equal(toSource([['Only a header']], true).ok, false)
-  assert.equal(toSource([Array.from({ length: TRACKER_LIMITS.columns + 1 }, (_, i) => `H${i}`), Array.from({ length: TRACKER_LIMITS.columns + 1 }, () => 'x')], true).ok, false)
+  assert.equal(
+    toSource(
+      [
+        Array.from({ length: TRACKER_LIMITS.columns + 1 }, (_, i) => `H${i}`),
+        Array.from({ length: TRACKER_LIMITS.columns + 1 }, () => 'x'),
+      ],
+      true,
+    ).ok,
+    false,
+  )
 })
 
 test('loose dates', () => {
@@ -270,13 +491,21 @@ test('type guessing', () => {
 // ---- import: planning ----
 
 const people = [{ id: 'u1', name: 'Ana Reyes', email: 'ana@example.com', username: 'ana' }]
-const planFor = (grid: string[][], existing: TrackerColumn[], tweak?: (m: ReturnType<typeof defaultMappings>) => void, capacity = 5000) => {
+const planFor = (
+  grid: string[][],
+  existing: TrackerColumn[],
+  tweak?: (m: ReturnType<typeof defaultMappings>) => void,
+  capacity = 5000,
+) => {
   const parsed = toSource(grid, true)
   assert.ok(parsed.ok)
   if (!parsed.ok) throw new Error()
   const mappings = defaultMappings(parsed.source, existing, TODAY)
   tweak?.(mappings)
-  return { plan: planImport(parsed.source, mappings, existing, { today: TODAY, people, capacity, firstRowIsHeader: true }), mappings }
+  return {
+    plan: planImport(parsed.source, mappings, existing, { today: TODAY, people, capacity, firstRowIsHeader: true }),
+    mappings,
+  }
 }
 
 test('importing into a new tracker creates typed columns and rows', () => {
@@ -289,8 +518,14 @@ test('importing into a new tracker creates typed columns and rows', () => {
   ]
   const { plan, mappings } = planFor(grid, [])
   assert.equal(plan.fatal, '')
-  assert.deepEqual(mappings.map(m => m.type), ['text', 'date', 'number', 'select', 'secret', 'text'], 'owner is plain text until the user picks Person')
-  const { plan: withPerson } = planFor(grid, [], m => { m[5].type = 'person' })
+  assert.deepEqual(
+    mappings.map(m => m.type),
+    ['text', 'date', 'number', 'select', 'secret', 'text'],
+    'owner is plain text until the user picks Person',
+  )
+  const { plan: withPerson } = planFor(grid, [], m => {
+    m[5].type = 'person'
+  })
   assert.equal(withPerson.fatal, '')
   assert.equal(withPerson.rows.length, 4)
   const byName = (name: string) => withPerson.columns.find(c => c.name === name)!
@@ -302,55 +537,147 @@ test('importing into a new tracker creates typed columns and rows', () => {
   assert.equal(withPerson.rows[0].secrets[byName('Admin password').id], 'Not-a-real-password-1')
   assert.equal(byName('Admin password').revealBy, 'editors')
   assert.equal(byName('Status').options?.length, 2)
-  assert.equal(withPerson.rows[0].cells[byName('Status').id], withPerson.rows[2].cells[byName('Status').id], 'same label, same option')
+  assert.equal(
+    withPerson.rows[0].cells[byName('Status').id],
+    withPerson.rows[2].cells[byName('Status').id],
+    'same label, same option',
+  )
   assert.ok(withPerson.warnings.some(w => w.includes('Nobody Known')))
   assert.equal(withPerson.added.length, 6)
-  assert.ok(!JSON.stringify(withPerson.columns).includes('Not-a-real-password'), 'no secret value is placed in the column list')
+  assert.ok(
+    !JSON.stringify(withPerson.columns).includes('Not-a-real-password'),
+    'no secret value is placed in the column list',
+  )
 })
 
 test('secret values never appear in cells', () => {
-  const { plan } = planFor([['Site', 'Password'], ['A', 'Not-a-real-password-1'], ['B', 'Not-a-real-password-2']], [])
+  const { plan } = planFor(
+    [
+      ['Site', 'Password'],
+      ['A', 'Not-a-real-password-1'],
+      ['B', 'Not-a-real-password-2'],
+    ],
+    [],
+  )
   for (const imported of plan.rows) assert.ok(!JSON.stringify(imported.cells).includes('Not-a-real-password'))
   assert.equal(Object.keys(plan.rows[0].secrets).length, 1)
 })
 
 test('bad cells are left empty and listed with the sheet row number', () => {
-  const { plan } = planFor([['Site', 'Go live'], ['A', '2026-11-01'], ['B', 'soon'], ['C', '']], [col('c_site', 'Site', 'text'), col('c_go', 'Go live', 'date')])
+  const { plan } = planFor(
+    [
+      ['Site', 'Go live'],
+      ['A', '2026-11-01'],
+      ['B', 'soon'],
+      ['C', ''],
+    ],
+    [col('c_site', 'Site', 'text'), col('c_go', 'Go live', 'date')],
+  )
   assert.equal(plan.fatal, '')
   assert.equal(plan.rows.length, 3)
-  assert.deepEqual(plan.problems.map(p => [p.row, p.column, p.value]), [[3, 'Go live', 'soon']])
+  assert.deepEqual(
+    plan.problems.map(p => [p.row, p.column, p.value]),
+    [[3, 'Go live', 'soon']],
+  )
   assert.equal(plan.rows[1].cells.c_go, undefined)
 })
 
 test('headers match existing columns regardless of case and punctuation', () => {
-  const existing = [col('c_site', 'Site', 'text'), col('c_go', 'Go-live', 'date'), col('c_task', 'Task status', 'task_status')]
-  const parsed = toSource([['site', 'GO LIVE', 'Task status'], ['A', '2026-11-01', 'Done']], true)
+  const existing = [
+    col('c_site', 'Site', 'text'),
+    col('c_go', 'Go-live', 'date'),
+    col('c_task', 'Task status', 'task_status'),
+  ]
+  const parsed = toSource(
+    [
+      ['site', 'GO LIVE', 'Task status'],
+      ['A', '2026-11-01', 'Done'],
+    ],
+    true,
+  )
   assert.ok(parsed.ok)
   if (!parsed.ok) return
   const mappings = defaultMappings(parsed.source, existing, TODAY)
-  assert.deepEqual(mappings.map(m => m.target), ['c_site', 'c_go', 'new'], 'a connected column is never a match target')
+  assert.deepEqual(
+    mappings.map(m => m.target),
+    ['c_site', 'c_go', 'new'],
+    'a connected column is never a match target',
+  )
 })
 
 test('a connected column cannot receive sheet data, and two sheet columns cannot share a target', () => {
   const existing = [col('c_site', 'Site', 'text'), col('c_task', 'Task status', 'task_status')]
-  const parsed = toSource([['A', 'B'], ['x', 'y']], true)
+  const parsed = toSource(
+    [
+      ['A', 'B'],
+      ['x', 'y'],
+    ],
+    true,
+  )
   assert.ok(parsed.ok)
   if (!parsed.ok) return
   const base = defaultMappings(parsed.source, existing, TODAY)
-  assert.match(planImport(parsed.source, base.map((m, i) => i === 1 ? { ...m, target: 'c_task' } : m), existing, { today: TODAY, people, capacity: 10, firstRowIsHeader: true }).fatal, /fills itself/)
-  assert.match(planImport(parsed.source, base.map(m => ({ ...m, target: 'c_site' })), existing, { today: TODAY, people, capacity: 10, firstRowIsHeader: true }).fatal, /Two sheet columns/)
-  assert.match(planImport(parsed.source, base.map(m => ({ ...m, type: 'task_due' as const })), existing, { today: TODAY, people, capacity: 10, firstRowIsHeader: true }).fatal, /fills itself/)
+  assert.match(
+    planImport(
+      parsed.source,
+      base.map((m, i) => (i === 1 ? { ...m, target: 'c_task' } : m)),
+      existing,
+      { today: TODAY, people, capacity: 10, firstRowIsHeader: true },
+    ).fatal,
+    /fills itself/,
+  )
+  assert.match(
+    planImport(
+      parsed.source,
+      base.map(m => ({ ...m, target: 'c_site' })),
+      existing,
+      { today: TODAY, people, capacity: 10, firstRowIsHeader: true },
+    ).fatal,
+    /Two sheet columns/,
+  )
+  assert.match(
+    planImport(
+      parsed.source,
+      base.map(m => ({ ...m, type: 'task_due' as const })),
+      existing,
+      { today: TODAY, people, capacity: 10, firstRowIsHeader: true },
+    ).fatal,
+    /fills itself/,
+  )
 })
 
 test('capacity, column limit and empty selections stop the import with a reason', () => {
   assert.match(planFor([['A'], ['1'], ['2'], ['3']], [], undefined, 2).plan.fatal, /room for 2 more rows/)
-  assert.match(planFor([['A', 'B'], ['1', '2']], [], m => m.forEach(x => { x.include = false })).plan.fatal, /at least one column/)
+  assert.match(
+    planFor(
+      [
+        ['A', 'B'],
+        ['1', '2'],
+      ],
+      [],
+      m =>
+        m.forEach(x => {
+          x.include = false
+        }),
+    ).plan.fatal,
+    /at least one column/,
+  )
   const wide = Array.from({ length: TRACKER_LIMITS.columns }, (_, i) => col(`c${i}_x`, `Existing ${i}`, 'text'))
   assert.match(planFor([['New one'], ['1']], wide).plan.fatal, /limit is 100/)
 })
 
 test('new column names never clash with existing ones', () => {
-  const { plan } = planFor([['Site', 'Site'], ['A', 'B']], [col('c_site', 'Site', 'text')], m => { m[0].target = 'new'; m[1].target = 'new' })
+  const { plan } = planFor(
+    [
+      ['Site', 'Site'],
+      ['A', 'B'],
+    ],
+    [col('c_site', 'Site', 'text')],
+    m => {
+      m[0].target = 'new'
+      m[1].target = 'new'
+    },
+  )
   const names = plan.columns.map(c => c.name.toLowerCase())
   assert.equal(new Set(names).size, names.length)
 })
@@ -370,7 +697,15 @@ test('importing does not change the columns it was given', () => {
 })
 
 test('rows with nothing readable are skipped, and an all-empty sheet is refused', () => {
-  const { plan } = planFor([['Site', 'Cost'], ['A', '1'], ['', ''], ['', 'x']], [col('c_site', 'Site', 'text'), col('c_cost', 'Cost', 'number')])
+  const { plan } = planFor(
+    [
+      ['Site', 'Cost'],
+      ['A', '1'],
+      ['', ''],
+      ['', 'x'],
+    ],
+    [col('c_site', 'Site', 'text'), col('c_cost', 'Cost', 'number')],
+  )
   assert.equal(plan.rows.length, 1)
   assert.equal(plan.problems.length, 1)
   const empty = planFor([['Cost'], ['x']], [col('c_cost', 'Cost', 'number')]).plan

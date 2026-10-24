@@ -1,36 +1,255 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { defaultTaskSettings } from '../src/data'
-import { assertRtmMutation, reconcileRtm, reviseMatrix, newPhases, stageResult, matrixCoverage, type RtmMatrix, type RtmStore, type RtmActor } from '../src/rtm'
-import { importRequirements, parseCsv } from '../src/rtm-export'
-import type { WorkItem } from '../src/types'
-const actor: RtmActor = { id: 'a', name: 'Test BA', role: 'Administrator', modules: ['requirements', 'items', 'clients', 'projects'] }
-export function fixture(): RtmStore {
-  const matrix: RtmMatrix = { id: 'm', name: 'POS Enhancement', clientId: 'c', projectId: 'p', enhancement: 'Authentication', contract: 'CRF-001', version: '1.0', ownerId: '', environment: 'UAT', status: 'Active', revision: 1, nextRequirementNumber: 2, createdAt: '2026-09-25T01:00:00Z', updatedAt: '2026-09-25T01:00:00Z', history: [], requirements: [{ id: 'r', code: 'REQ-001', title: 'Sign on', description: 'Valid credentials allow access', parentId: '', environment: 'UAT', priority: 'High', revision: 1, needsReview: false, phases: newPhases() }] }
-  return { rtms: [matrix], clients: [{ id: 'c', name: 'Client A', contact: '', email: '', status: 'Active', health: 'Good', notes: '' }, { id: 'other-client', name: 'Client B', contact: '', email: '', status: 'Active', health: 'Good', notes: '' }], projects: [{ id: 'p', name: 'POS Rollout', status: 'Active', targetDate: '', summary: '' }], items: [], accounts: [], taskSettings: defaultTaskSettings }
+import { defaultTaskSettings } from '../src/app/data'
+import {
+  assertRtmMutation,
+  reconcileRtm,
+  reviseMatrix,
+  newPhases,
+  stageResult,
+  matrixCoverage,
+  type RtmMatrix,
+  type RtmStore,
+  type RtmActor,
+} from '../src/features/requirements/rtm'
+import { importRequirements, parseCsv } from '../src/features/requirements/rtm-export'
+import type { WorkItem } from '../src/shared/types'
+const actor: RtmActor = {
+  id: 'a',
+  name: 'Test BA',
+  role: 'Administrator',
+  modules: ['requirements', 'items', 'clients', 'projects'],
 }
-function task(id: string, status: string, more: Partial<WorkItem> = {}): WorkItem { return { id, title: id, status, clientId: 'c', projectId: 'p', type: 'Task', waitingOn: 'Me', priority: 'Medium', owner: '', dateRaised: '2026-09-25', followUpDate: '', description: '', resolution: '', source: 'Internal', ...structuredClone(more) } }
+export function fixture(): RtmStore {
+  const matrix: RtmMatrix = {
+    id: 'm',
+    name: 'POS Enhancement',
+    clientId: 'c',
+    projectId: 'p',
+    enhancement: 'Authentication',
+    contract: 'CRF-001',
+    version: '1.0',
+    ownerId: '',
+    environment: 'UAT',
+    status: 'Active',
+    revision: 1,
+    nextRequirementNumber: 2,
+    createdAt: '2026-09-25T01:00:00Z',
+    updatedAt: '2026-09-25T01:00:00Z',
+    history: [],
+    requirements: [
+      {
+        id: 'r',
+        code: 'REQ-001',
+        title: 'Sign on',
+        description: 'Valid credentials allow access',
+        parentId: '',
+        environment: 'UAT',
+        priority: 'High',
+        revision: 1,
+        needsReview: false,
+        phases: newPhases(),
+      },
+    ],
+  }
+  return {
+    rtms: [matrix],
+    clients: [
+      { id: 'c', name: 'Client A', contact: '', email: '', status: 'Active', health: 'Good', notes: '' },
+      { id: 'other-client', name: 'Client B', contact: '', email: '', status: 'Active', health: 'Good', notes: '' },
+    ],
+    projects: [{ id: 'p', name: 'POS Rollout', status: 'Active', targetDate: '', summary: '' }],
+    items: [],
+    accounts: [],
+    taskSettings: defaultTaskSettings,
+  }
+}
+function task(id: string, status: string, more: Partial<WorkItem> = {}): WorkItem {
+  return {
+    id,
+    title: id,
+    status,
+    clientId: 'c',
+    projectId: 'p',
+    type: 'Task',
+    waitingOn: 'Me',
+    priority: 'Medium',
+    owner: '',
+    dateRaised: '2026-09-25',
+    followUpDate: '',
+    description: '',
+    resolution: '',
+    source: 'Internal',
+    ...structuredClone(more),
+  }
+}
 const link = { matrixId: 'm', requirementId: 'r', stage: 'development' as const, includeSubtasks: true }
-const result = (s: RtmStore, stage: 'development' | 'testing' = 'development') => stageResult(s, s.rtms![0], s.rtms![0].requirements[0], stage)
+const result = (s: RtmStore, stage: 'development' | 'testing' = 'development') =>
+  stageResult(s, s.rtms![0], s.rtms![0].requirements[0], stage)
 
 test('parent done cannot hide open subtasks; direct child links are deduplicated', () => {
-  const s = fixture(); s.items = [task('parent', 'Resolved', { rtmLinks: [link] }), task('child-1', 'Resolved', { parentTaskId: 'parent', rtmLinks: [link] }), task('child-2', 'Open', { parentTaskId: 'parent' })]
-  assert.equal(result(s).status, 'In Progress'); assert.equal(result(s).done, 1); assert.equal(result(s).total, 2)
-  s.items[2].status = 'Resolved'; assert.equal(result(s).status, 'Done')
-  s.items[0].status = 'Blocked'; assert.equal(result(s).status, 'Blocked')
+  const s = fixture()
+  s.items = [
+    task('parent', 'Resolved', { rtmLinks: [link] }),
+    task('child-1', 'Resolved', { parentTaskId: 'parent', rtmLinks: [link] }),
+    task('child-2', 'Open', { parentTaskId: 'parent' }),
+  ]
+  assert.equal(result(s).status, 'In Progress')
+  assert.equal(result(s).done, 1)
+  assert.equal(result(s).total, 2)
+  s.items[2].status = 'Resolved'
+  assert.equal(result(s).status, 'Done')
+  s.items[0].status = 'Blocked'
+  assert.equal(result(s).status, 'Blocked')
 })
 test('QA failure wins; completion is not a pass; reopening invalidates completed pass', () => {
-  const s = fixture(); s.items = [task('qa-1', 'Resolved', { qaResult: 'Passed', rtmLinks: [{ ...link, stage: 'testing' }] }), task('qa-2', 'Resolved', { qaResult: 'Failed', rtmLinks: [{ ...link, stage: 'testing' }] })]
-  assert.equal(result(s, 'testing').status, 'Failed'); s.items[1].qaResult = 'Not Run'; assert.equal(result(s, 'testing').status, 'Done'); s.items[1].qaResult = 'Passed'; assert.equal(result(s, 'testing').status, 'Passed'); s.items[1].status = 'Open'; assert.equal(result(s, 'testing').status, 'In Progress')
+  const s = fixture()
+  s.items = [
+    task('qa-1', 'Resolved', { qaResult: 'Passed', rtmLinks: [{ ...link, stage: 'testing' }] }),
+    task('qa-2', 'Resolved', { qaResult: 'Failed', rtmLinks: [{ ...link, stage: 'testing' }] }),
+  ]
+  assert.equal(result(s, 'testing').status, 'Failed')
+  s.items[1].qaResult = 'Not Run'
+  assert.equal(result(s, 'testing').status, 'Done')
+  s.items[1].qaResult = 'Passed'
+  assert.equal(result(s, 'testing').status, 'Passed')
+  s.items[1].status = 'Open'
+  assert.equal(result(s, 'testing').status, 'In Progress')
 })
-test('cancelled closed status never counts as completed; custom closed statuses work', () => { const s = fixture(); s.taskSettings = { ...s.taskSettings, statuses: [...s.taskSettings.statuses, { id: 'cancel', label: 'Cancelled', closed: true }, { id: 'shipped', label: 'Shipped', closed: true }] }; s.items = [task('dev', 'Cancelled', { rtmLinks: [link] })]; assert.equal(result(s).status, 'Blocked'); s.items[0].status = 'Shipped'; assert.equal(result(s).status, 'Done') })
-test('cross-client / missing requirement links rejected at server boundary', () => { const old = fixture(), next = structuredClone(old); next.items = [task('foreign', 'Open', { clientId: 'other-client', rtmLinks: [link] })]; assert.throws(() => assertRtmMutation(old, next, actor), /match the RTM/); next.items[0].clientId = 'c'; next.items[0].rtmLinks![0].requirementId = 'missing'; assert.throws(() => assertRtmMutation(old, next, actor), /Unlink work/) })
-test('viewer and disabled-module edits rejected; task-only worker may update linked progress', () => { const old = fixture(); old.items = [task('dev', 'Open', { rtmLinks: [link] })]; const next = structuredClone(old); next.rtms![0] = reviseMatrix(old.rtms![0], { ...next.rtms![0], name: 'Updated' }); assert.throws(() => assertRtmMutation(old, next, { ...actor, role: 'Viewer' }), /edit access/); assert.throws(() => assertRtmMutation(old, next, { ...actor, modules: ['items'] }), /edit access/); const work = structuredClone(old); work.items[0].status = 'Resolved'; assert.doesNotThrow(() => assertRtmMutation(old, work, { ...actor, role: 'Contributor', modules: ['items'] })); assert.equal(result(reconcileRtm(old, work, actor)).status, 'Done') })
-test('overrides require administrator and reason; history cannot be forged', () => { const old = fixture(), next = structuredClone(old); next.rtms![0].requirements[0].phases.development.override = { status: 'Done', reason: 'Accepted by BA' }; next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0]); assert.throws(() => assertRtmMutation(old, next, { ...actor, role: 'Contributor' }), /Only an Administrator/); assertRtmMutation(old, next, actor); next.rtms![0].history = [{ id: 'fake', at: '', actorId: 'admin', actorName: 'Spoof', summary: 'forged' }]; const saved = reconcileRtm(old, next, actor); assert(saved.rtms![0].history.every(e => e.actorName === 'Test BA')); assert(saved.rtms![0].history.some(e => e.summary.includes('Accepted by BA'))); assert.equal(result(saved).automatic, 'Not Started'); assert.equal(result(saved).status, 'Done') })
-test('content changes flag impact, retain permanent IDs, and record server revision', () => { const old = fixture(), next = structuredClone(old); next.rtms![0].requirements[0].title = 'Changed authentication'; next.rtms![0].requirements[0].revision = 987; next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0]); assertRtmMutation(old, next, actor); const saved = reconcileRtm(old, next, actor); assert.equal(saved.rtms![0].requirements[0].revision, 2); assert.equal(saved.rtms![0].requirements[0].needsReview, true); const clear = structuredClone(saved); clear.rtms![0].requirements[0].needsReview = false; clear.rtms![0] = reviseMatrix(saved.rtms![0], clear.rtms![0]); assertRtmMutation(saved, clear, actor); assert(reconcileRtm(saved, clear, actor).rtms![0].history[0].summary.includes('impact review completed')); next.rtms![0].requirements[0].code = 'NEW'; assert.throws(() => assertRtmMutation(old, next, actor), /permanent requirement code/) })
-test('stale RTM saves and hierarchy cycles are rejected', () => { const old = fixture(), next = structuredClone(old); next.rtms![0].name = 'Changed'; assert.throws(() => assertRtmMutation(old, next, actor), /another session/); next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0]); next.rtms![0].requirements[0].parentId = 'r'; assert.throws(() => assertRtmMutation(old, next, actor), /parent cycle/) })
-test('deleting linked work recalculates and records link removal; deleting linked requirement rejected', () => { const old = fixture(); old.items = [task('dev', 'Resolved', { rtmLinks: [link] })]; const next = structuredClone(old); next.items = []; assert.equal(result(next).status, 'Not Started'); const saved = reconcileRtm(old, next, actor); assert(saved.rtms![0].history.some(e => e.taskIds?.includes('dev'))); const deleted = structuredClone(old); deleted.rtms![0].requirements = []; deleted.rtms![0] = reviseMatrix(old.rtms![0], deleted.rtms![0]); assert.throws(() => assertRtmMutation(old, deleted, actor), /Unlink work/) })
-test('N/A is excluded from coverage; zero requirements are not 100%', () => { const s = fixture(); s.rtms![0].requirements[0].phases.testing.status = 'Not Applicable'; const c = matrixCoverage(s, s.rtms![0]).find(c => c.stage === 'testing')!; assert.equal(c.total, 0); assert.equal(c.excluded, 1); assert.equal(c.percent, 0) })
-test('archive is reversible but edits and new links to archived RTMs are blocked', () => { const old = fixture(), next = structuredClone(old); next.rtms![0].status = 'Archived'; next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0]); assertRtmMutation(old, next, actor); const edited = structuredClone(next); edited.rtms![0].name = 'Changed'; edited.rtms![0] = reviseMatrix(next.rtms![0], edited.rtms![0]); assert.throws(() => assertRtmMutation(next, edited, actor), /Activate this RTM/); const active = structuredClone(next); active.rtms![0].status = 'Active'; active.rtms![0] = reviseMatrix(next.rtms![0], active.rtms![0]); assert.doesNotThrow(() => assertRtmMutation(next, active, actor)) })
-test('CSV quoted multiline cells and hierarchical import; duplicate IDs fail atomically', () => { const s = fixture(), m = s.rtms![0]; const rows = parseCsv('Requirement ID,Parent ID,Requirement,Description,Priority\r\nREQ-002,,"Sign on, secure","Two lines\ninside",High\r\nREQ-003,REQ-002,Username and password,,Low'); const imported = importRequirements(rows, m); assert.equal(imported.requirements.length, 2); assert.equal(imported.requirements[0].description, 'Two lines\ninside'); assert.equal(imported.requirements[1].parentId, imported.requirements[0].id); assert.throws(() => importRequirements(parseCsv('Requirement ID,Requirement\nREQ-001,Duplicate'), m), /duplicate/); assert.throws(() => parseCsv('"unclosed'), /unclosed/); assert.equal(m.requirements.length, 1) })
-test('unsafe document links and moves across project boundaries are rejected', () => { const old = fixture(), next = structuredClone(old); next.rtms![0].requirements[0].phases.fsd.documentUrl = 'javascript:alert(1)'; next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0]); assert.throws(() => assertRtmMutation(old, next, actor), /HTTP or HTTPS/); next.rtms![0] = structuredClone(old.rtms![0]); next.items = [task('dev', 'Open', { projectId: '', rtmLinks: [link] })]; assert.throws(() => assertRtmMutation(old, next, actor), /match the RTM/) })
+test('cancelled closed status never counts as completed; custom closed statuses work', () => {
+  const s = fixture()
+  s.taskSettings = {
+    ...s.taskSettings,
+    statuses: [
+      ...s.taskSettings.statuses,
+      { id: 'cancel', label: 'Cancelled', closed: true },
+      { id: 'shipped', label: 'Shipped', closed: true },
+    ],
+  }
+  s.items = [task('dev', 'Cancelled', { rtmLinks: [link] })]
+  assert.equal(result(s).status, 'Blocked')
+  s.items[0].status = 'Shipped'
+  assert.equal(result(s).status, 'Done')
+})
+test('cross-client / missing requirement links rejected at server boundary', () => {
+  const old = fixture(),
+    next = structuredClone(old)
+  next.items = [task('foreign', 'Open', { clientId: 'other-client', rtmLinks: [link] })]
+  assert.throws(() => assertRtmMutation(old, next, actor), /match the RTM/)
+  next.items[0].clientId = 'c'
+  next.items[0].rtmLinks![0].requirementId = 'missing'
+  assert.throws(() => assertRtmMutation(old, next, actor), /Unlink work/)
+})
+test('viewer and disabled-module edits rejected; task-only worker may update linked progress', () => {
+  const old = fixture()
+  old.items = [task('dev', 'Open', { rtmLinks: [link] })]
+  const next = structuredClone(old)
+  next.rtms![0] = reviseMatrix(old.rtms![0], { ...next.rtms![0], name: 'Updated' })
+  assert.throws(() => assertRtmMutation(old, next, { ...actor, role: 'Viewer' }), /edit access/)
+  assert.throws(() => assertRtmMutation(old, next, { ...actor, modules: ['items'] }), /edit access/)
+  const work = structuredClone(old)
+  work.items[0].status = 'Resolved'
+  assert.doesNotThrow(() => assertRtmMutation(old, work, { ...actor, role: 'Contributor', modules: ['items'] }))
+  assert.equal(result(reconcileRtm(old, work, actor)).status, 'Done')
+})
+test('overrides require administrator and reason; history cannot be forged', () => {
+  const old = fixture(),
+    next = structuredClone(old)
+  next.rtms![0].requirements[0].phases.development.override = { status: 'Done', reason: 'Accepted by BA' }
+  next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0])
+  assert.throws(() => assertRtmMutation(old, next, { ...actor, role: 'Contributor' }), /Only an Administrator/)
+  assertRtmMutation(old, next, actor)
+  next.rtms![0].history = [{ id: 'fake', at: '', actorId: 'admin', actorName: 'Spoof', summary: 'forged' }]
+  const saved = reconcileRtm(old, next, actor)
+  assert(saved.rtms![0].history.every(e => e.actorName === 'Test BA'))
+  assert(saved.rtms![0].history.some(e => e.summary.includes('Accepted by BA')))
+  assert.equal(result(saved).automatic, 'Not Started')
+  assert.equal(result(saved).status, 'Done')
+})
+test('content changes flag impact, retain permanent IDs, and record server revision', () => {
+  const old = fixture(),
+    next = structuredClone(old)
+  next.rtms![0].requirements[0].title = 'Changed authentication'
+  next.rtms![0].requirements[0].revision = 987
+  next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0])
+  assertRtmMutation(old, next, actor)
+  const saved = reconcileRtm(old, next, actor)
+  assert.equal(saved.rtms![0].requirements[0].revision, 2)
+  assert.equal(saved.rtms![0].requirements[0].needsReview, true)
+  const clear = structuredClone(saved)
+  clear.rtms![0].requirements[0].needsReview = false
+  clear.rtms![0] = reviseMatrix(saved.rtms![0], clear.rtms![0])
+  assertRtmMutation(saved, clear, actor)
+  assert(reconcileRtm(saved, clear, actor).rtms![0].history[0].summary.includes('impact review completed'))
+  next.rtms![0].requirements[0].code = 'NEW'
+  assert.throws(() => assertRtmMutation(old, next, actor), /permanent requirement code/)
+})
+test('stale RTM saves and hierarchy cycles are rejected', () => {
+  const old = fixture(),
+    next = structuredClone(old)
+  next.rtms![0].name = 'Changed'
+  assert.throws(() => assertRtmMutation(old, next, actor), /another session/)
+  next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0])
+  next.rtms![0].requirements[0].parentId = 'r'
+  assert.throws(() => assertRtmMutation(old, next, actor), /parent cycle/)
+})
+test('deleting linked work recalculates and records link removal; deleting linked requirement rejected', () => {
+  const old = fixture()
+  old.items = [task('dev', 'Resolved', { rtmLinks: [link] })]
+  const next = structuredClone(old)
+  next.items = []
+  assert.equal(result(next).status, 'Not Started')
+  const saved = reconcileRtm(old, next, actor)
+  assert(saved.rtms![0].history.some(e => e.taskIds?.includes('dev')))
+  const deleted = structuredClone(old)
+  deleted.rtms![0].requirements = []
+  deleted.rtms![0] = reviseMatrix(old.rtms![0], deleted.rtms![0])
+  assert.throws(() => assertRtmMutation(old, deleted, actor), /Unlink work/)
+})
+test('N/A is excluded from coverage; zero requirements are not 100%', () => {
+  const s = fixture()
+  s.rtms![0].requirements[0].phases.testing.status = 'Not Applicable'
+  const c = matrixCoverage(s, s.rtms![0]).find(c => c.stage === 'testing')!
+  assert.equal(c.total, 0)
+  assert.equal(c.excluded, 1)
+  assert.equal(c.percent, 0)
+})
+test('archive is reversible but edits and new links to archived RTMs are blocked', () => {
+  const old = fixture(),
+    next = structuredClone(old)
+  next.rtms![0].status = 'Archived'
+  next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0])
+  assertRtmMutation(old, next, actor)
+  const edited = structuredClone(next)
+  edited.rtms![0].name = 'Changed'
+  edited.rtms![0] = reviseMatrix(next.rtms![0], edited.rtms![0])
+  assert.throws(() => assertRtmMutation(next, edited, actor), /Activate this RTM/)
+  const active = structuredClone(next)
+  active.rtms![0].status = 'Active'
+  active.rtms![0] = reviseMatrix(next.rtms![0], active.rtms![0])
+  assert.doesNotThrow(() => assertRtmMutation(next, active, actor))
+})
+test('CSV quoted multiline cells and hierarchical import; duplicate IDs fail atomically', () => {
+  const s = fixture(),
+    m = s.rtms![0]
+  const rows = parseCsv(
+    'Requirement ID,Parent ID,Requirement,Description,Priority\r\nREQ-002,,"Sign on, secure","Two lines\ninside",High\r\nREQ-003,REQ-002,Username and password,,Low',
+  )
+  const imported = importRequirements(rows, m)
+  assert.equal(imported.requirements.length, 2)
+  assert.equal(imported.requirements[0].description, 'Two lines\ninside')
+  assert.equal(imported.requirements[1].parentId, imported.requirements[0].id)
+  assert.throws(() => importRequirements(parseCsv('Requirement ID,Requirement\nREQ-001,Duplicate'), m), /duplicate/)
+  assert.throws(() => parseCsv('"unclosed'), /unclosed/)
+  assert.equal(m.requirements.length, 1)
+})
+test('unsafe document links and moves across project boundaries are rejected', () => {
+  const old = fixture(),
+    next = structuredClone(old)
+  next.rtms![0].requirements[0].phases.fsd.documentUrl = 'javascript:alert(1)'
+  next.rtms![0] = reviseMatrix(old.rtms![0], next.rtms![0])
+  assert.throws(() => assertRtmMutation(old, next, actor), /HTTP or HTTPS/)
+  next.rtms![0] = structuredClone(old.rtms![0])
+  next.items = [task('dev', 'Open', { projectId: '', rtmLinks: [link] })]
+  assert.throws(() => assertRtmMutation(old, next, actor), /match the RTM/)
+})

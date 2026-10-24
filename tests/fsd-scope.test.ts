@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { FSD_MODULES, FSD_SECTIONS, fsdExcludedModules, fsdSectionsForModules } from '../src/fsd-model'
+import {
+  FSD_MODULES,
+  FSD_SECTIONS,
+  fsdExcludedModules,
+  fsdSectionsForModules,
+} from '../src/features/documents/fsd-model'
 
 const ids = (modules: Parameters<typeof fsdSectionsForModules>[0]) => fsdSectionsForModules(modules).map(([id]) => id)
 
@@ -21,7 +26,10 @@ test('all software feature sections may be hard-excluded', () => {
 })
 
 test('selecting all modules preserves the complete FSD template section set', () => {
-  assert.deepEqual(ids(FSD_MODULES), FSD_SECTIONS.map(([id]) => id))
+  assert.deepEqual(
+    ids(FSD_MODULES),
+    FSD_SECTIONS.map(([id]) => id),
+  )
   assert.deepEqual(fsdExcludedModules(FSD_MODULES), [])
 })
 

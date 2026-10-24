@@ -1,0 +1,1487 @@
+/* Personal interface colors are opt-in. Wallpaper definitions, document paper,
+   exported templates, and the legacy appearance are intentionally independent. */
+body:has(.app-shell[data-interface-mode="dark"]),
+.app-shell[data-interface-mode="dark"] {
+  color-scheme: dark;
+  --ui-page: #13171d;
+  --ui-surface: #20262e;
+  --ui-soft: #282f39;
+  --ui-input: #181e26;
+  --ui-text: #edf1f7;
+  --ui-muted: #b3bdcc;
+  --ui-border: #485364;
+  --ui-accent: #a6c6ff;
+  --ui-accent-soft: #293f60;
+  --ui-primary: #accbff;
+  --ui-on-primary: #14263f;
+  --ui-danger: #ffb7b9;
+  --ui-danger-soft: #462c33;
+  --ui-success: #a5ddbb;
+  --ui-success-soft: #223b30;
+  --ui-warning: #f5d69a;
+  --ui-warning-soft: #403726;
+  --ui-shadow: 0 8px 26px rgb(0 0 0 / 0.16);
+}
+body:has(.app-shell[data-interface-mode="light"]),
+.app-shell[data-interface-mode="light"] {
+  color-scheme: light;
+  --ui-page: #f4f6fa;
+  --ui-surface: #ffffff;
+  --ui-soft: #f0f3f8;
+  --ui-input: #ffffff;
+  --ui-text: #202c3e;
+  --ui-muted: #536278;
+  --ui-border: #bdc8d8;
+  --ui-accent: #265ba9;
+  --ui-accent-soft: #e7effd;
+  --ui-primary: #285dad;
+  --ui-on-primary: #ffffff;
+  --ui-danger: #a32d3b;
+  --ui-danger-soft: #fff0f1;
+  --ui-success: #226343;
+  --ui-success-soft: #edf8f1;
+  --ui-warning: #795214;
+  --ui-warning-soft: #fff5dc;
+  --ui-shadow: 0 8px 26px rgb(31 48 74 / 0.06);
+}
+body:has(.app-shell[data-interface-mode="gray"]),
+.app-shell[data-interface-mode="gray"] {
+  color-scheme: light;
+  --ui-page: #d9dde2;
+  --ui-surface: #e9ecf0;
+  --ui-soft: #dfe3e8;
+  --ui-input: #f2f4f6;
+  --ui-text: #242d39;
+  --ui-muted: #4d5a6b;
+  --ui-border: #aab4c2;
+  --ui-accent: #28558f;
+  --ui-accent-soft: #d4e0f1;
+  --ui-primary: #354d6e;
+  --ui-on-primary: #ffffff;
+  --ui-danger: #952a37;
+  --ui-danger-soft: #f3dfe3;
+  --ui-success: #245a3d;
+  --ui-success-soft: #dcece1;
+  --ui-warning: #714d15;
+  --ui-warning-soft: #eee3c9;
+  --ui-shadow: 0 8px 26px rgb(30 40 54 / 0.07);
+}
+.app-shell.ui-refresh[data-interface-mode] {
+  --text: var(--ui-text);
+  --muted: var(--ui-muted);
+  --border: var(--ui-border);
+  --surface: var(--ui-surface);
+  --accent: var(--ui-accent);
+  --panel: var(--ui-surface);
+  --theme-surface: var(--ui-surface);
+  --theme-surface-strong: var(--ui-surface);
+  --theme-sidebar: var(--ui-surface);
+  --theme-topbar: var(--ui-surface);
+  --theme-border: var(--ui-border);
+  --theme-card: var(--ui-soft);
+  color: var(--ui-text);
+  background-color: var(--ui-page);
+  accent-color: var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode].theme-default main {
+  background: var(--ui-page);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.sidebar, .topbar) {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .panel,
+    .metric-card,
+    .client-card,
+    .client-hero,
+    .project-hero,
+    .project-stat,
+    .activity-tile,
+    .dashboard-activity-card,
+    .modal,
+    .task-settings-section,
+    .document-flow-card,
+    .document-workspace,
+    .document-upload-panel,
+    .document-extraction-panel,
+    .rtm-dialog,
+    .notification-panel
+  ) {
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+  box-shadow: var(--ui-shadow);
+}
+.app-shell.ui-refresh[data-interface-mode] .page-heading {
+  padding: 18px 20px;
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  background: var(--ui-surface);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .panel-heading,
+    .modal-head,
+    .modal-actions,
+    .filters,
+    .quick-note,
+    .activity-column-head,
+    .ai-chat-head,
+    .ai-composer,
+    .document-heading,
+    .document-workspace-grid,
+    .document-drf-stack
+  ) {
+  background: var(--ui-soft);
+  border-color: var(--ui-border);
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(h1, h2, h3, h4, label, legend, summary):not(:where(.fsd-paper, .fsd-paper *, .brd-paper, .brd-paper *)) {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .panel-heading,
+    .page-heading,
+    .modal-head,
+    .metric-card,
+    .client-card,
+    .client-hero,
+    .project-hero,
+    .project-stat,
+    .activity-tile,
+    .session-card,
+    .workspace-chip,
+    .document-heading,
+    .document-flow-card,
+    .document-extraction-panel,
+    .document-upload-panel,
+    .document-generate-bar
+  )
+  :is(strong, b) {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .panel-heading,
+    .page-heading,
+    .modal-head,
+    .metric-card,
+    .client-card,
+    .client-hero,
+    .project-hero,
+    .project-stat,
+    .activity-tile,
+    .session-card,
+    .workspace-chip,
+    .document-heading,
+    .document-flow-card,
+    .document-extraction-panel,
+    .document-upload-panel,
+    .document-generate-bar
+  )
+  :is(p, small) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .eyebrow,
+    .local-note,
+    .row-meta,
+    .card-stats,
+    .next-line,
+    .empty,
+    .activity-empty,
+    .activity-meta,
+    .activity-main > small,
+    .activity-main p,
+    .topbar-subtitle,
+    .settings-helper,
+    .ai-agent-meta,
+    .ai-agent-route span,
+    .document-section-title span,
+    .document-subsection-heading span,
+    .document-flow-card span,
+    .document-workspace > p,
+    .document-file-row span,
+    .document-generate-bar span,
+    .profile-summary span
+  ) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .session-card,
+    .workspace-chip,
+    .profile-summary,
+    .activity-card.done,
+    .ai-messages,
+    .ai-draft,
+    .ai-prompts button,
+    .document-empty-config,
+    .document-file-row,
+    .document-dropzone,
+    .document-custom-row,
+    .document-signatory-card,
+    .document-generate-bar,
+    .document-pos-panel,
+    .document-pos-table,
+    .document-template-guide,
+    .ai-agent-route,
+    .ai-agent-architecture
+  ) {
+  background: var(--ui-soft);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.nav-button, .icon-button) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.nav-button, .icon-button):hover {
+  color: var(--ui-text);
+  background: var(--ui-soft);
+}
+.app-shell.ui-refresh[data-interface-mode] .nav-button.active {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode] .nav-button b {
+  background: var(--ui-primary);
+  color: var(--ui-on-primary);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.primary, .document-flow-card .primary) {
+  background: var(--ui-primary);
+  border-color: var(--ui-primary);
+  color: var(--ui-on-primary);
+}
+.app-shell.ui-refresh[data-interface-mode] .primary:hover {
+  background: var(--ui-primary);
+  filter: brightness(0.95);
+}
+.app-shell.ui-refresh[data-interface-mode] .secondary {
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] .secondary:hover {
+  background: var(--ui-soft);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.success, .ai-action-notice, .document-status-message) {
+  color: var(--ui-success);
+  background: var(--ui-success-soft);
+  border-color: var(--ui-success);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.danger-button, .overdue-date) {
+  color: var(--ui-danger);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.document-status-message.error, .ai-error, .dochub-error, .rtm-error) {
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
+  border-color: var(--ui-danger);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.callout, .readonly-notice, .calendar-message, .document-processing-panel) {
+  color: var(--ui-text);
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.callout, .readonly-notice, .document-processing-panel)
+  :is(p, span, strong) {
+  color: inherit;
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .role-badge,
+    .count-pill,
+    .top-role-pill,
+    .source-local,
+    .neutral,
+    .priority-low,
+    .waiting-done,
+    .waiting-custom
+  ) {
+  color: var(--ui-muted);
+  background: var(--ui-soft);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .back-link,
+    a:not(.primary):not(.secondary),
+    .document-section-title > svg,
+    .document-flow-icon,
+    .document-dropzone > svg
+  ) {
+  color: var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode] .back-link {
+  background: var(--ui-surface);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+    select,
+    textarea,
+    .client-combo-input
+  ):not(:where(.fsd-paper *, .brd-paper *)) {
+  color: var(--ui-text);
+  background-color: var(--ui-input);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(input, textarea)::placeholder {
+  color: var(--ui-muted);
+  opacity: 0.85;
+}
+.app-shell.ui-refresh[data-interface-mode] .search-box {
+  color: var(--ui-muted);
+  background: var(--ui-input);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(button, input, select, textarea, summary, a, [tabindex], .client-combo-input):focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 3px;
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(table, th, td):not(:where(.fsd-paper, .fsd-paper *, .brd-paper, .brd-paper *)) {
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] th:not(:where(.fsd-paper *, .brd-paper *)) {
+  color: var(--ui-muted);
+  background: var(--ui-soft);
+}
+.app-shell.ui-refresh[data-interface-mode] td:not(:where(.fsd-paper *, .brd-paper *)) {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] td small:not(:where(.fsd-paper *, .brd-paper *)) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] tbody tr:hover:not(:where(.fsd-paper *, .brd-paper *)) {
+  background: var(--ui-soft);
+}
+.app-shell.ui-refresh[data-interface-mode] .overdue-row {
+  background: var(--ui-danger-soft);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .inquiry-card,
+    .mini-project,
+    .activity-card,
+    .activity-column,
+    .next-line,
+    .timeline > div,
+    .document-subsection,
+    .document-pos-table-wrap,
+    .profile-summary,
+    .sidebar-footer
+  ) {
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .inquiry-card p,
+    .mini-project p,
+    .mini-project small,
+    .timeline span,
+    .metric-card span,
+    .card-stats b,
+    .ai-context-summary strong,
+    .ai-empty h3,
+    .ai-suggestion > strong,
+    .ai-suggestion p,
+    .ai-suggestion small
+  ) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.ai-message.assistant .ai-message-body, .ai-suggestion, .ai-thinking) {
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .document-placeholder-preview,
+    .document-signatory-number,
+    .document-signatory-placeholders code,
+    .document-template-token-grid code
+  ) {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.document-template-guide strong, .document-subsection-heading strong, .ai-agent-route strong) {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] .document-template-guide span {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .document-extraction-mode,
+    .document-standard-template,
+    .document-info-note,
+    .document-stage-pill,
+    .document-flow-icon,
+    .notification-bell,
+    .notification-toolbar,
+    .notification-row,
+    .notification-popover
+  ) {
+  background: var(--ui-soft);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .document-extraction-mode-copy span,
+    .document-ai-toggle-label,
+    .document-standard-template span,
+    .document-info-note span,
+    .document-action-help,
+    .session-card span,
+    .dashboard-ai-foot small,
+    .notification-head span,
+    .notification-empty span,
+    .notification-message,
+    .notification-context,
+    .notification-copy time
+  ) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.notification-title-line strong, .notification-empty strong) {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.notification-tabs button, .notification-read-all, .notification-actions button) {
+  color: var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.notification-tabs button.active, .notification-row.unread, .document-flow-card.active) {
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode] .document-flow-card.active {
+  box-shadow: inset 0 0 0 1px var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.notification-head, .notification-toolbar, .notification-row, .task-filters) {
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] .requirement-pending {
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+  border-color: var(--ui-warning);
+}
+.app-shell.ui-refresh[data-interface-mode] .requirement-ok {
+  color: var(--ui-success);
+  background: var(--ui-success-soft);
+  border-color: var(--ui-success);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .ai-agent-architecture b,
+    .ai-agent-architecture .architecture-divider,
+    .dashboard-ai-footer small,
+    .dashboard-action-pagination span,
+    .dashboard-page-buttons span,
+    .report-empty,
+    .gantt-label small,
+    .report-bar-label strong,
+    .report-mini-stats span,
+    .subtask-report-summary span,
+    .ai-context-summary span,
+    .ai-prompts > span,
+    .ai-chat-head span,
+    .ai-empty p,
+    .ai-composer-foot > span,
+    .document-dropzone span
+  ) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    td strong,
+    .gantt-label strong,
+    .report-bar-label span,
+    .report-mini-stats strong,
+    .subtask-report-summary strong,
+    .subtask-progress-label strong
+  ):not(:where(.fsd-paper *, .brd-paper *)) {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .client-layout-switch,
+    .client-search,
+    .gantt-header,
+    .report-mini-stats > div,
+    .subtask-report-summary > div,
+    .subtask-row td,
+    .project-context-banner,
+    .subtask-comment-trail,
+    .subtask-comment-entry,
+    .subtask-evidence-panel,
+    .subtask-evidence-item,
+    .subtask-evidence-dropzone
+  ) {
+  background: var(--ui-soft);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] .client-layout-switch button {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] .client-layout-switch button[aria-pressed="true"] {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .gantt-axis span,
+    .gantt-label-head,
+    .subtask-progress-label,
+    .project-context-banner span,
+    .subtask-comment-entry time,
+    .subtask-comment-heading span,
+    .subtask-comment-empty,
+    .subtask-evidence-heading span,
+    .subtask-evidence-file span,
+    .subtask-evidence-dropzone span
+  ) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .project-context-banner strong,
+    .subtask-comment-heading strong,
+    .subtask-comment-entry p,
+    .subtask-evidence-heading strong,
+    .subtask-evidence-file strong,
+    .subtask-evidence-dropzone b
+  ) {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] .task-comment-composer textarea {
+  background: var(--ui-input) !important;
+  color: var(--ui-text) !important;
+  border-color: var(--ui-border) !important;
+}
+.app-shell.ui-refresh[data-interface-mode] .task-comment-pagination {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] .task-comment-pagination select,
+.app-shell.ui-refresh[data-interface-mode] .task-comment-pagination .client-combo-input {
+  background: var(--ui-input);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] .task-comment-page-buttons > span {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] .work-schedule-fields {
+  background: var(--ui-soft);
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.work-schedule-fields > p, .dashboard-ai-footer span) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.report-mini-stats, .subtask-report-summary) {
+  background: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .gantt-header,
+    .gantt-axis,
+    .gantt-row,
+    .gantt-track,
+    .dashboard-action-pagination,
+    .report-mini-stats,
+    .subtask-report-summary
+  ) {
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] .gantt-track {
+  background-image: linear-gradient(to right, var(--ui-border) 1px, transparent 1px);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.report-bar-track, .subtask-progress-track) {
+  background: var(--ui-soft);
+}
+.app-shell.ui-refresh[data-interface-mode] .subtask-drop-target td {
+  background: var(--ui-accent-soft) !important;
+}
+.app-shell.ui-refresh[data-interface-mode] .section-actions:has(.page-intro) {
+  padding: 16px 18px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+}
+.app-shell.ui-refresh[data-interface-mode] .page-intro {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] .client-result-count {
+  width: fit-content;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: var(--ui-surface);
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] select option {
+  background: var(--ui-input);
+  color: var(--ui-text);
+}
+/* Comment previews are portaled to body to avoid clipped panels. */
+body:has(.app-shell[data-interface-mode]) .activity-comment-popover {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  border-color: var(--ui-border);
+}
+body:has(.app-shell[data-interface-mode]) .activity-comment-popover-head {
+  border-color: var(--ui-border);
+}
+body:has(.app-shell[data-interface-mode]) .activity-comment-popover-head button {
+  background: var(--ui-soft);
+  color: var(--ui-text);
+}
+
+/* Editors honor the saved preference, even when the operating system differs.
+   The .fsd-paper styles and the export renderers remain unchanged. */
+.app-shell[data-interface-mode] .fsd-creator {
+  color-scheme: inherit;
+  --fsd-page-bg: var(--ui-soft);
+  --fsd-surface: var(--ui-surface);
+  --fsd-surface-soft: var(--ui-soft);
+  --fsd-surface-muted: var(--ui-soft);
+  --fsd-surface-panel: var(--ui-soft);
+  --fsd-text: var(--ui-text);
+  --fsd-heading: var(--ui-text);
+  --fsd-muted: var(--ui-muted);
+  --fsd-subtle: var(--ui-muted);
+  --fsd-label: var(--ui-text);
+  --fsd-border: var(--ui-border);
+  --fsd-border-soft: var(--ui-border);
+  --fsd-accent: var(--ui-primary);
+  --fsd-accent-text: var(--ui-on-primary);
+  --fsd-focus: var(--ui-accent);
+  --fsd-input-bg: var(--ui-input);
+  --fsd-input-text: var(--ui-text);
+}
+.app-shell[data-interface-mode] .tc-creator {
+  color-scheme: inherit;
+  --tc-bg: var(--ui-soft);
+  --tc-surface: var(--ui-surface);
+  --tc-soft: var(--ui-soft);
+  --tc-border: var(--ui-border);
+  --tc-text: var(--ui-text);
+  --tc-muted: var(--ui-muted);
+  --tc-accent: var(--ui-primary);
+  --tc-accent-text: var(--ui-on-primary);
+  --tc-input: var(--ui-input);
+  --tc-warn: var(--ui-warning);
+}
+/* The FSD and BRD preview papers keep their own light colors; see the end of fsd.css. */
+.app-shell[data-interface-mode] :is(.fsd-paper, .brd-paper) {
+  --fsd-heading: #17191d;
+  --fsd-text: #24262b;
+  --fsd-muted: #555b64;
+  --fsd-subtle: #636b76;
+  --fsd-label: #3e4550;
+  --fsd-border: #d9dde3;
+  --fsd-border-soft: #dfe2e7;
+  --fsd-focus: #7b8499;
+  --fsd-input-bg: #fff;
+  --fsd-input-text: #24262c;
+  --fsd-surface: #fff;
+  --fsd-surface-soft: #f6f7f9;
+  --fsd-surface-muted: #f8f9fb;
+  --fsd-surface-panel: #eef0f4;
+  --fsd-accent: #262c36;
+  --fsd-accent-text: #fff;
+}
+.app-shell[data-interface-mode] .fsd-paper th {
+  background: #fce5cd;
+  color: #222;
+}
+.app-shell.ui-refresh[data-interface-mode] .rtm-page {
+  --panel: var(--ui-surface);
+  --text: var(--ui-text);
+  --muted: var(--ui-muted);
+  --border: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  .rtm-page
+  :is(
+    .rtm-dialog,
+    .rtm-dialog > header,
+    .rtm-dialog-actions,
+    .rtm-ai-dialog > header,
+    .rtm-ai-dialog > .rtm-dialog-actions
+  ) {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] .rtm-page :is(.rtm-tabs button.active, .rtm-notice) {
+  color: var(--ui-accent);
+  border-color: var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode] .rtm-page :is(.rtm-layout button.active, .rtm-entry-mode button.active) {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+}
+.app-shell.ui-refresh[data-interface-mode] .rtm-page :is(.rtm-attention, .rtm-override) {
+  color: var(--ui-warning);
+}
+.app-shell.ui-refresh[data-interface-mode] .rtm-page .rtm-override {
+  background: var(--ui-warning-soft);
+}
+.app-shell.ui-refresh[data-interface-mode] .rtm-page .rtm-dialog label {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] .rtm-page :is(.rtm-matrix-table th, .rtm-matrix-table td:first-child) {
+  background: var(--ui-surface);
+}
+
+/* Settings rhythm: a single padded body, flush header, aligned form controls. */
+.ui-refresh :is(.settings-page, .themes-page) {
+  --settings-space: 24px;
+  max-width: 1440px;
+}
+.ui-refresh :is(.settings-page, .themes-page) .page-heading h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.3;
+}
+.ui-refresh :is(.settings-page, .themes-page) .page-heading p {
+  margin: 8px 0 0;
+}
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--ui-border, var(--theme-border, #454a53));
+  border-radius: 13px;
+  background: var(--ui-surface, var(--theme-surface, #202328));
+}
+.settings-tabs button {
+  flex: 1 1 130px;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ui-muted, #b6bfcd);
+  font-size: 13px;
+  font-weight: 650;
+}
+.settings-tabs button:hover {
+  background: var(--ui-soft, #2a303a);
+}
+.settings-tabs button[aria-selected="true"] {
+  background: var(--ui-accent-soft, #2c405d);
+  border-color: var(--ui-accent, #aac8ff);
+  color: var(--ui-accent, #c4d9ff);
+}
+.settings-tab-content,
+.appearance-content {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.settings-tab-content[hidden] {
+  display: none;
+}
+.ui-refresh :is(.settings-page, .themes-page) .panel {
+  padding: var(--settings-space);
+  min-width: 0;
+  border-radius: 14px;
+}
+.ui-refresh .settings-page .panel > .panel-heading {
+  margin: calc(-1 * var(--settings-space)) calc(-1 * var(--settings-space)) 20px;
+  padding: 20px var(--settings-space);
+  align-items: flex-start;
+}
+.ui-refresh :is(.settings-page, .themes-page) :is(h2, h3) {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.ui-refresh :is(.settings-page, .themes-page) p {
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.ui-refresh :is(.settings-page, .themes-page) .panel > p {
+  margin: 0 0 16px;
+}
+.ui-refresh .settings-page .panel-heading p {
+  margin: 6px 0 0;
+}
+.ui-refresh :is(.settings-page, .themes-page) label:not(.interface-mode-choice):not(.checkbox-label) {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ui-refresh :is(.settings-page, .themes-page) label small {
+  font-weight: 400;
+  line-height: 1.6;
+}
+.ui-refresh
+  :is(.settings-page, .themes-page)
+  :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .client-combo-input) {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--ui-border, var(--theme-border, #535966));
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: var(--ui-input, #191e26);
+  color: var(--ui-text, #edf1f7);
+  font-weight: 400;
+}
+.ui-refresh .settings-page input[type="file"] {
+  padding: 8px;
+}
+.ui-refresh .settings-page input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--ui-border, #535966);
+  border-radius: 6px;
+  color: inherit;
+  background: var(--ui-soft, #303846);
+  cursor: pointer;
+}
+.ui-refresh .settings-page .checkbox-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.ui-refresh .settings-page input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+.ui-refresh .settings-page .integration-form {
+  max-width: 760px;
+  margin: 20px 0;
+  gap: 18px;
+}
+.ui-refresh .settings-page .integration-actions {
+  margin: 20px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-border, var(--theme-border, #454a53));
+  gap: 10px;
+}
+.ui-refresh .settings-page .panel > small {
+  display: block;
+  margin-top: 14px;
+  line-height: 1.6;
+  font-size: 12px;
+  color: var(--ui-muted, #b6bfcd);
+}
+.ui-refresh .settings-page .panel > label + button {
+  margin-top: 18px;
+}
+.ui-refresh .settings-page .calendar-card {
+  gap: 16px;
+}
+.ui-refresh .settings-page .calendar-card > .panel-heading {
+  margin-bottom: 0;
+}
+.ui-refresh .settings-page .ai-agent-grid {
+  align-items: start;
+  gap: 20px;
+}
+.ui-refresh .settings-page .ai-agent-manager-head {
+  display: block;
+}
+.ui-refresh .settings-page .ai-agent-architecture {
+  margin: 0 0 16px;
+  gap: 9px;
+  line-height: 1.6;
+}
+.ui-refresh .settings-page .ai-agent-route {
+  padding: 14px;
+  gap: 12px;
+}
+.ui-refresh .settings-page .ai-agent-route span {
+  line-height: 1.6;
+}
+.ui-refresh .settings-page .ai-agent-meta {
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+.ui-refresh .settings-page .dochub-settings > details {
+  border-top: 1px solid var(--ui-border, var(--theme-border, #454a53));
+}
+.settings-section-heading,
+.appearance-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.settings-section-heading {
+  padding: 18px 20px;
+  border: 1px solid var(--ui-border, var(--theme-border, #454a53));
+  border-radius: 12px;
+  background: var(--ui-surface, var(--theme-surface, #202328));
+}
+.settings-section-heading > div,
+.appearance-heading > div {
+  min-width: 0;
+}
+.ui-refresh :is(.settings-section-heading, .appearance-heading) p {
+  margin: 7px 0 0;
+  color: var(--ui-muted, #b6bfcd);
+  max-width: 760px;
+}
+.ui-refresh :is(.settings-page, .themes-page) .settings-message {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  background: var(--ui-soft, #283142);
+  border: 1px solid var(--ui-border, #536074);
+  color: var(--ui-text, #e1eafa);
+  border-radius: 9px;
+}
+.ui-refresh :is(.settings-page, .themes-page) .settings-message[role="alert"] {
+  background: var(--ui-danger-soft, #462c33);
+  color: var(--ui-danger, #ffb7b9);
+  border-color: currentColor;
+}
+.ui-refresh :is(.settings-page, .themes-page) .panel > .settings-message {
+  margin: 16px 0;
+}
+.ui-refresh :is(.settings-page, .themes-page) button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+.interface-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  border: 0;
+  margin: 22px 0 0;
+  padding: 0;
+  min-width: 0;
+}
+.interface-mode-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  min-width: 0;
+  border: 2px solid var(--ui-border, #525965);
+  border-radius: 12px;
+  background: var(--ui-surface, #232932);
+  cursor: pointer;
+}
+.interface-mode-choice.selected {
+  border-color: var(--ui-accent, #aac8ff);
+  box-shadow: 0 0 0 2px var(--ui-accent-soft, #2c405d);
+}
+.interface-mode-choice:focus-within {
+  outline: 2px solid var(--ui-accent, #aac8ff);
+  outline-offset: 3px;
+}
+.interface-mode-grid:disabled .interface-mode-choice {
+  cursor: wait;
+  opacity: 0.7;
+}
+.mode-choice-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ui-text, #edf1f7);
+}
+.mode-choice-title input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--ui-accent, #aac8ff);
+}
+.mode-choice-description {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ui-muted, #b6bfcd);
+}
+.interface-mode-preview {
+  display: grid;
+  grid-template-columns: 25% 1fr;
+  height: 100px;
+  border: 1px solid var(--preview-border);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--preview-bg);
+}
+.preview-dark {
+  --preview-bg: #13171d;
+  --preview-panel: #20262e;
+  --preview-line: #aebdce;
+  --preview-border: #485364;
+}
+.preview-light {
+  --preview-bg: #f4f6fa;
+  --preview-panel: #fff;
+  --preview-line: #8495ac;
+  --preview-border: #bdc8d8;
+}
+.preview-gray {
+  --preview-bg: #d9dde2;
+  --preview-panel: #e9ecf0;
+  --preview-line: #8c98a9;
+  --preview-border: #aab4c2;
+}
+.mode-preview-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 9px;
+  background: var(--preview-panel);
+  border-right: 1px solid var(--preview-border);
+}
+.mode-preview-sidebar i {
+  height: 4px;
+  border-radius: 3px;
+  background: var(--preview-line);
+  opacity: 0.7;
+}
+.mode-preview-sidebar i:first-child {
+  margin-bottom: 6px;
+  background: #5d8ed1;
+  opacity: 1;
+}
+.mode-preview-workspace {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  grid-template-rows: 6px 1fr 15px;
+}
+.mode-preview-workspace > i:first-child {
+  width: 55%;
+  background: var(--preview-line);
+  border-radius: 3px;
+}
+.mode-preview-workspace > span {
+  display: flex;
+  gap: 7px;
+}
+.mode-preview-workspace > span > i,
+.mode-preview-workspace > i:last-child {
+  flex: 1;
+  background: var(--preview-panel);
+  border: 1px solid var(--preview-border);
+  border-radius: 4px;
+}
+.appearance-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-border, var(--theme-border, #454a53));
+}
+.ui-refresh .appearance-footer p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ui-muted, #b6bfcd);
+  max-width: 600px;
+}
+.appearance-footer button {
+  flex: 0 0 auto;
+}
+.background-scope {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 20px 0;
+}
+.background-scope label {
+  width: min(360px, 100%);
+}
+.ui-refresh :is(.settings-page, .themes-page) .personal-theme-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 16px;
+}
+.ui-refresh :is(.settings-page, .themes-page) .personal-theme-card {
+  gap: 8px;
+  padding: 12px;
+}
+.ui-refresh :is(.settings-page, .themes-page) .personal-theme-card strong {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ui-refresh :is(.settings-page, .themes-page) .personal-theme-card span {
+  font-size: 12px;
+  color: var(--ui-muted, #b6bfcd);
+}
+.ui-refresh :is(.settings-page, .themes-page) .personal-theme-card small {
+  margin-top: auto;
+  padding-top: 5px;
+  font-size: 11px;
+  color: var(--ui-accent, #aac8ff);
+}
+.ui-refresh :is(.settings-page, .themes-page) .personal-theme-card.selected {
+  border-color: var(--ui-accent, #aac8ff);
+  box-shadow: 0 0 0 2px var(--ui-accent-soft, #2c405d);
+}
+.ui-refresh .account-users-page .panel:not(:has(> .panel-heading)),
+.ui-refresh .platform-settings {
+  padding: 24px;
+}
+.ui-refresh .account-users-page .account-user-form {
+  display: grid;
+  gap: 18px;
+}
+.ui-refresh .account-user-form h2 {
+  margin: 0;
+}
+.ui-refresh .platform-settings > .panel-heading {
+  margin: -24px -24px 24px;
+}
+.ui-refresh .dashboard-panel.calendar-card {
+  padding: 0 20px 20px;
+}
+.ui-refresh .dashboard-panel.calendar-card > .panel-heading {
+  margin: 0 -20px;
+}
+@media (max-width: 1000px) {
+  .ui-refresh .settings-page .ai-agent-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .appearance-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+@media (max-width: 620px) {
+  .ui-refresh :is(.settings-page, .themes-page) {
+    --settings-space: 16px;
+    padding-inline: 14px;
+  }
+  .interface-mode-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .interface-mode-choice {
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    column-gap: 14px;
+    row-gap: 5px;
+    align-items: start;
+  }
+  .interface-mode-preview {
+    grid-row: span 2;
+    height: 78px;
+  }
+  .mode-preview-workspace {
+    padding: 8px;
+    gap: 6px;
+  }
+  .mode-preview-sidebar {
+    padding: 12px 5px;
+    gap: 6px;
+  }
+  .mode-choice-title {
+    padding-top: 3px;
+  }
+  .mode-choice-description {
+    font-size: 11px;
+  }
+  .settings-section-heading,
+  .settings-page .panel-heading {
+    flex-wrap: wrap;
+  }
+  .appearance-heading {
+    gap: 10px;
+  }
+  .appearance-heading .role-badge {
+    display: none;
+  }
+  .settings-tabs button {
+    flex-basis: calc(50% - 6px);
+  }
+  .appearance-footer button {
+    width: 100%;
+    white-space: normal;
+  }
+  .settings-page .integration-actions > button {
+    flex: 1 1 auto;
+  }
+  .ui-refresh .account-users-page .panel:not(:has(> .panel-heading)),
+  .ui-refresh .platform-settings {
+    padding: 16px;
+  }
+}
+
+/* ---- Pieces that were only drawn dark -------------------------------------------------------
+   In the personal Dark, Light and Gray appearances these use the same colours as the rest of
+   the page, so nothing stays black on a light page. The default look (no choice made) is
+   unchanged. */
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .session-avatar,
+    .template-current,
+    .template-manager-card,
+    .action-center-scope,
+    .inquiry-archive,
+    .activity-legend span,
+    .dashboard-activity-badges span
+  ) {
+  background: var(--ui-soft);
+  border-color: var(--ui-border);
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] .session-avatar {
+  color: var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.action-center-scope svg, .ai-title-line svg) {
+  color: var(--ui-accent);
+}
+.app-shell.ui-refresh[data-interface-mode] .action-center-scope > span {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode] .action-center-scope select,
+.app-shell.ui-refresh[data-interface-mode] .action-center-scope .client-combo-input {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] .action-center-scope select option {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(
+    .template-manager-card > p,
+    .template-manager-card-head > div > span,
+    .template-current span,
+    .inquiry-archive-help,
+    .inquiry-archive-row small,
+    .inquiry-archive-meta,
+    .activity-legend span,
+    .dashboard-activity-badges span
+  ) {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.template-current strong, .inquiry-archive > summary, .inquiry-archive-row strong) {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] .inquiry-archive > summary b {
+  background: var(--ui-surface);
+  color: var(--ui-muted);
+  border: 1px solid var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.inquiry-archive[open] > summary, .inquiry-archive-help, .inquiry-archive-row) {
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] .ai-safety-note {
+  background: var(--ui-success-soft);
+  border-color: color-mix(in srgb, var(--ui-success) 38%, transparent);
+  color: var(--ui-success);
+}
+.app-shell.ui-refresh[data-interface-mode] .ai-safety-note span {
+  color: var(--ui-muted);
+}
+.app-shell.ui-refresh[data-interface-mode]
+  :is(.activity-column + .activity-column, .task-filter-grid, .activity-empty) {
+  border-color: var(--ui-border);
+}
+.app-shell.ui-refresh[data-interface-mode] .settings-message {
+  background: var(--ui-accent-soft);
+  border-color: color-mix(in srgb, var(--ui-accent) 38%, transparent);
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] .settings-message.error {
+  background: var(--ui-danger-soft);
+  border-color: color-mix(in srgb, var(--ui-danger) 40%, transparent);
+  color: var(--ui-danger);
+}
+
+/* ---- Document workspaces follow the app, not the computer's light/dark setting ---------------
+   FSD, BRD and Test Case creation used to switch with the operating system, so a dark app could
+   open a bright white workspace (and the reverse). The document preview paper stays white on
+   purpose: it stands for the exported Word file. */
+.app-shell .fsd-creator {
+  color-scheme: dark;
+  --fsd-page-bg: #17191d;
+  --fsd-surface: #20242b;
+  --fsd-surface-soft: #252a32;
+  --fsd-surface-muted: #1d2128;
+  --fsd-surface-panel: #1b1f25;
+  --fsd-text: #e7e9ed;
+  --fsd-heading: #f5f6f8;
+  --fsd-muted: #b9c0ca;
+  --fsd-subtle: #9fa8b5;
+  --fsd-label: #d3d8df;
+  --fsd-border: #3b424d;
+  --fsd-border-soft: #343b45;
+  --fsd-accent: #e5e8ed;
+  --fsd-accent-text: #17191d;
+  --fsd-focus: #9ca8ba;
+  --fsd-input-bg: #171b21;
+  --fsd-input-text: #eef1f5;
+}
+.app-shell[data-interface-mode="light"] .fsd-creator,
+.app-shell[data-interface-mode="gray"] .fsd-creator {
+  color-scheme: light;
+  --fsd-page-bg: #f4f5f7;
+  --fsd-surface: #ffffff;
+  --fsd-surface-soft: #f6f7f9;
+  --fsd-surface-muted: #f8f9fb;
+  --fsd-surface-panel: #eef0f4;
+  --fsd-text: #24262b;
+  --fsd-heading: #17191d;
+  --fsd-muted: #555b64;
+  --fsd-subtle: #636b76;
+  --fsd-label: #3e4550;
+  --fsd-border: #d9dde3;
+  --fsd-border-soft: #dfe2e7;
+  --fsd-accent: #262c36;
+  --fsd-accent-text: #ffffff;
+  --fsd-focus: #7b8499;
+  --fsd-input-bg: #ffffff;
+  --fsd-input-text: #24262c;
+}
+.app-shell .tc-creator {
+  color-scheme: dark;
+  --tc-bg: #17191d;
+  --tc-surface: #20242b;
+  --tc-soft: #181d24;
+  --tc-border: #39414c;
+  --tc-text: #eef1f5;
+  --tc-muted: #aab3c0;
+  --tc-accent: #e4e8ee;
+  --tc-accent-text: #17191d;
+  --tc-input: #161a20;
+  --tc-warn: #f1cf82;
+}
+.app-shell .tc-creator .tc-table-scroll th {
+  background: #303845;
+}
+.app-shell .tc-creator .tc-gaps {
+  background: #2a2418;
+  border-color: #5c4b26;
+  color: #ead18f;
+}
+.app-shell[data-interface-mode="light"] .tc-creator,
+.app-shell[data-interface-mode="gray"] .tc-creator {
+  color-scheme: light;
+  --tc-bg: #f4f6f9;
+  --tc-surface: #fff;
+  --tc-soft: #f8fafc;
+  --tc-border: #dfe4eb;
+  --tc-text: #202938;
+  --tc-muted: #677386;
+  --tc-accent: #263247;
+  --tc-accent-text: #fff;
+  --tc-input: #fff;
+  --tc-warn: #805a12;
+}
+.app-shell[data-interface-mode="light"] .tc-creator .tc-table-scroll th,
+.app-shell[data-interface-mode="gray"] .tc-creator .tc-table-scroll th {
+  background: #263247;
+}
+.app-shell[data-interface-mode="light"] .tc-creator .tc-gaps,
+.app-shell[data-interface-mode="gray"] .tc-creator .tc-gaps {
+  background: #fff9eb;
+  border-color: #e7d099;
+  color: #72520f;
+}
+
+/* Final colour and size cleanups found by the contrast audit. */
+label > small {
+  font-size: 11px;
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.empty-start-card, .no-access-panel) h2,
+.app-shell.ui-refresh[data-interface-mode] :is(.empty-start-card, .no-access-panel) h3 {
+  color: var(--ui-text);
+}
+.app-shell.ui-refresh[data-interface-mode] :is(.empty-start-card, .no-access-panel) p {
+  color: var(--ui-muted);
+}
+/* Wallpaper themes are all dark, but Document Hub styles read --surface/--text/--border/--muted, which only exist in the personal
+   interface modes. Without them it fell back to light-theme values (white buttons on a dark panel). */
+.app-shell.ui-refresh:not([data-interface-mode]) [class*="dochub-"] {
+  --surface: #2a2f37;
+  --text: #eef2f7;
+  --border: #46505e;
+  --muted: #aab7c8;
+}
+
+/* Loose text that sits straight on a wallpaper (page introductions, filter labels, small status lines) gets a soft, dark,
+   rounded background so it stays readable over clouds and sea. Text inside cards and panels is unchanged. */
+.app-shell.ui-refresh
+  :is(
+    .page-stack > section > .section-actions > .page-intro,
+    .page-heading > div > p,
+    .trk-title .trk-muted-text,
+    .lifecycle-availability,
+    .lifecycle-requirements,
+    .lifecycle-toolbar-row > :is(span, p, small),
+    .client-hero > div > p
+  ) {
+  display: inline-block;
+  width: fit-content;
+  max-width: min(100%, 760px);
+  padding: 6px 14px;
+  border-radius: 14px;
+  background: rgba(14, 20, 30, 0.72);
+  color: #eef3fa;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(6px);
+}
+.app-shell.ui-refresh :is(.lifecycle-filter, .trk-inline-select) {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(14, 20, 30, 0.72);
+  color: #eef3fa;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.app-shell.ui-refresh .lifecycle-availability {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.app-shell.ui-refresh .lifecycle-requirements summary {
+  color: #eef3fa;
+}
+.app-shell.ui-refresh .trk-page .trk-checkline {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(14, 20, 30, 0.72);
+  color: #eef3fa;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.app-shell.ui-refresh .trk-page .trk-checkline small {
+  color: inherit;
+}
+.app-shell.ui-refresh .lifecycle-toolbar:not(:has(button)) {
+  background: transparent;
+}
+.app-shell.ui-refresh .row-meta {
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(14, 20, 30, 0.72);
+}

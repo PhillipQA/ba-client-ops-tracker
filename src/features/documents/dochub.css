@@ -1,0 +1,601 @@
+.dochub-options h3,
+.dochub-progress,
+.dochub-actions,
+.dochub-completion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dochub-options h3 {
+  margin: 0 0 10px;
+}
+.dochub-check {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+.dochub-check input {
+  width: 18px !important;
+  height: 18px;
+}
+.dochub-note {
+  padding: 12px;
+  background: rgba(59, 130, 246, 0.07);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.dochub-card {
+  padding: 16px;
+  margin: 12px 0;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  color: var(--text, #202b38);
+}
+.dochub-card.complete {
+  border-color: #58a87a;
+}
+.dochub-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.dochub-card-head > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dochub-card-head span {
+  font-size: 13px;
+}
+.dochub-actions {
+  margin: 12px 0;
+}
+.dochub-actions a {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.dochub-card > small {
+  display: block;
+  color: var(--muted, #687586);
+}
+.dochub-card details {
+  margin-top: 12px;
+}
+.dochub-card summary,
+.dochub-settings summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.dochub-error {
+  color: #a82e3d;
+  background: rgba(190, 30, 40, 0.06);
+  padding: 10px;
+  border-radius: 7px;
+}
+.dochub-signers {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.dochub-signers li {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.dochub-signers span {
+  font-size: 12px;
+}
+.dochub-timeline {
+  padding-left: 22px;
+}
+.dochub-timeline li {
+  padding: 6px 0;
+  font-size: 13px;
+}
+.dochub-timeline time {
+  display: block;
+  color: var(--muted, #687586);
+  font-size: 11px;
+}
+.dochub-completion {
+  padding: 14px;
+  border-radius: 9px;
+  background: rgba(34, 160, 90, 0.08);
+}
+.dochub-completion small {
+  width: 100%;
+}
+.dochub-settings details {
+  padding: 14px 0;
+}
+.dochub-settings details label {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.dochub-spin {
+  animation: dochub-spin 1s linear infinite;
+}
+.dochub-task-badge {
+  display: inline-flex;
+  padding: 3px 7px;
+  margin-top: 5px;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.dochub-result:empty {
+  display: none;
+}
+@keyframes dochub-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dochub-spin {
+    animation: none;
+  }
+}
+
+/* v0.6.38 compact document tracking */
+.dochub-created-by {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  color: var(--muted, #687586);
+  font-size: 12px;
+}
+.dochub-created-by strong {
+  color: var(--text, #202b38);
+}
+.dochub-history-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+.dochub-history-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 9px;
+  background: var(--surface, #fff);
+  color: var(--text, #202b38);
+  font-weight: 700;
+  cursor: pointer;
+}
+.dochub-history-tabs button:hover {
+  filter: brightness(0.98);
+}
+.dochub-history-tabs button.active {
+  border-color: #667eea;
+  box-shadow: inset 0 0 0 1px #667eea;
+}
+.dochub-history-tabs button span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.14);
+  font-size: 11px;
+}
+.dochub-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+  gap: 11px;
+  padding: 14px;
+}
+.dochub-tile {
+  min-width: 0;
+  display: grid;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 11px;
+  background: var(--surface, #fff);
+  color: var(--text, #202b38);
+}
+.dochub-tile.archived {
+  opacity: 0.9;
+}
+.dochub-tile-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.dochub-tile-head > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.dochub-tile-head strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.dochub-kind {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted, #687586);
+}
+.dochub-status {
+  flex: 0 0 auto;
+  max-width: 46%;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.1);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.25;
+}
+.dochub-status.archived {
+  background: rgba(107, 114, 128, 0.15);
+}
+.dochub-tile-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 10px;
+}
+.dochub-tile-facts > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted, #687586);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.dochub-tile-facts b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #202b38);
+  font-weight: 750;
+}
+.dochub-tile-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+.dochub-tile-actions .compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 31px;
+  padding: 6px 9px;
+  font-size: 11.5px;
+  text-decoration: none;
+}
+.dochub-history-message {
+  margin: 14px;
+}
+.dochub-history-empty {
+  margin: 14px;
+  padding: 24px;
+  border: 1px dashed var(--border, #d5d9df);
+  border-radius: 11px;
+  color: var(--muted, #687586);
+  text-align: center;
+  font-size: 12px;
+}
+.modal.dochub-detail-modal {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  /* biome-ignore lint/suspicious/noDuplicateProperties: 100vh above is the fallback for browsers without dvh */
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+}
+.dochub-detail-modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+.dochub-detail-modal::backdrop {
+  background: rgba(0, 0, 0, 0.64);
+}
+.dochub-detail-modal .modal-head {
+  flex: 0 0 auto;
+  gap: 16px;
+  padding: 18px 20px;
+}
+.dochub-detail-modal .modal-head > div {
+  min-width: 0;
+}
+.dochub-detail-modal .modal-head h2 {
+  margin: 0;
+}
+.dochub-detail-modal .modal-head p {
+  margin: 4px 0 0;
+  color: var(--muted, #687586);
+  font-size: 12px;
+}
+.dochub-detail-modal .modal-head .icon-button {
+  flex: 0 0 auto;
+}
+.dochub-detail-body {
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.dochub-detail-body .dochub-card {
+  margin: 0;
+}
+.dochub-guidance {
+  line-height: 1.5;
+}
+@media (max-width: 420px) {
+  .dochub-detail-body {
+    padding: 12px;
+  }
+  .dochub-detail-modal .modal-head {
+    padding: 14px 16px;
+  }
+  .dochub-detail-modal .dochub-card-head {
+    flex-wrap: wrap;
+  }
+  .dochub-detail-modal .dochub-signers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .dochub-history-grid {
+    grid-template-columns: 1fr;
+  }
+  .dochub-tile-facts {
+    grid-template-columns: 1fr;
+  }
+  .dochub-history-tabs {
+    overflow-x: auto;
+  }
+}
+
+/* v0.6.49 document history layouts and pagination */
+.dochub-history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border, #d5d9df);
+  border-bottom: 1px solid var(--border, #d5d9df);
+  background: rgba(127, 127, 127, 0.035);
+}
+.dochub-layout-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dochub-layout-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--text, #202b38);
+  font-weight: 700;
+  cursor: pointer;
+}
+.dochub-layout-switch button.active {
+  border-color: #667eea;
+  box-shadow: inset 0 0 0 1px #667eea;
+}
+.dochub-history-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted, #687586);
+  font-size: 12px;
+  font-weight: 700;
+}
+.dochub-history-toolbar select,
+.dochub-history-toolbar .client-combo-input {
+  min-width: 64px;
+  height: 34px;
+  padding: 4px 24px 4px 8px;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--text, #202b38);
+}
+.dochub-history-list {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+.dochub-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(115px, 0.8fr) minmax(70px, 0.45fr) minmax(95px, 0.65fr) minmax(
+      220px,
+      1.35fr
+    );
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  color: var(--text, #202b38);
+}
+.dochub-row.archived {
+  opacity: 0.9;
+}
+.dochub-row-document {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.dochub-row-title {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text, #202b38);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dochub-row-title:hover {
+  text-decoration: underline;
+}
+.dochub-row-document small,
+.dochub-row-signatures small,
+.dochub-row-followup small {
+  color: var(--muted, #687586);
+  font-size: 11.5px;
+}
+.dochub-row-status {
+  min-width: 0;
+}
+.dochub-row-status .dochub-status {
+  display: inline-block;
+  max-width: 100%;
+}
+.dochub-row-signatures,
+.dochub-row-followup {
+  display: grid;
+  gap: 2px;
+}
+.dochub-row-signatures strong,
+.dochub-row-followup strong {
+  font-size: 12px;
+}
+.dochub-row-actions {
+  justify-content: flex-end;
+  margin: 0;
+}
+.dochub-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px 14px;
+  color: var(--muted, #687586);
+  font-size: 12px;
+}
+.dochub-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.dochub-pagination .compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 31px;
+  padding: 5px 8px;
+}
+@media (max-width: 1050px) {
+  .dochub-row {
+    grid-template-columns: minmax(210px, 2fr) minmax(105px, 0.8fr) minmax(65px, 0.5fr) minmax(190px, 1.3fr);
+  }
+  .dochub-row-followup {
+    display: none;
+  }
+}
+@media (max-width: 780px) {
+  .dochub-history-toolbar,
+  .dochub-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .dochub-history-toolbar label {
+    justify-content: space-between;
+  }
+  .dochub-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+  .dochub-row-status {
+    justify-self: end;
+  }
+  .dochub-row-signatures,
+  .dochub-row-followup {
+    display: none;
+  }
+  .dochub-row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+  .dochub-pagination > div {
+    justify-content: space-between;
+  }
+  .dochub-history-tabs {
+    border-bottom: 0;
+  }
+}
+
+/* v0.6.70 per-signatory reminder notifications */
+.dochub-signers .dochub-notify {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  min-height: 32px;
+  padding: 6px 9px;
+  font-size: 11px;
+}
+.dochub-signers .dochub-notify:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  filter: none;
+}
+.dochub-notify-meta {
+  display: block;
+  color: var(--muted, #687586);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.dochub-notify-success {
+  margin: 10px 0 0;
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: rgba(34, 160, 90, 0.08);
+  font-size: 12px;
+}

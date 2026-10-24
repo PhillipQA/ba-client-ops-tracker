@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { documentOutputName, suggestedDocumentStem } from '../src/documentFilename'
+import { documentOutputName, suggestedDocumentStem } from '../src/features/documents/documentFilename'
 
 test('document filenames follow the requested client, project and site patterns', () => {
   assert.equal(suggestedDocumentStem('DRF', 'Acme Retail', 'Main / North'), 'DRF-Acme-Retail-Main-North')
@@ -8,7 +8,10 @@ test('document filenames follow the requested client, project and site patterns'
   assert.equal(suggestedDocumentStem('BRD', '', 'POS Rollout'), 'BRD-POS-Rollout')
   assert.equal(suggestedDocumentStem('SO', 'Acme Retail', 'Main / North'), 'SO-Acme-Retail-Main-North')
   assert.equal(suggestedDocumentStem('UAT', 'Acme Retail', 'POS Upgrade'), 'UAT-Acme-Retail-POS-Upgrade')
-  assert.equal(suggestedDocumentStem('UAD', 'Acme Retail', 'Loyalty / Redemption'), 'UAD-Acme-Retail-Loyalty-Redemption')
+  assert.equal(
+    suggestedDocumentStem('UAD', 'Acme Retail', 'Loyalty / Redemption'),
+    'UAD-Acme-Retail-Loyalty-Redemption',
+  )
   assert.equal(suggestedDocumentStem('TRN', '', ''), 'TRN-Client-Project')
 })
 

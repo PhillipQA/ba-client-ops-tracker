@@ -1,0 +1,719 @@
+/* FSD workspace follows the browser / operating-system color preference.
+   The document preview itself intentionally stays white because it represents the exported Word document. */
+.fsd-creator {
+  color-scheme: light dark;
+  --fsd-page-bg: #f4f5f7;
+  --fsd-surface: #ffffff;
+  --fsd-surface-soft: #f6f7f9;
+  --fsd-surface-muted: #f8f9fb;
+  --fsd-surface-panel: #eef0f4;
+  --fsd-text: #24262b;
+  --fsd-heading: #17191d;
+  --fsd-muted: #555b64;
+  --fsd-subtle: #636b76;
+  --fsd-label: #3e4550;
+  --fsd-border: #d9dde3;
+  --fsd-border-soft: #dfe2e7;
+  --fsd-accent: #262c36;
+  --fsd-accent-text: #ffffff;
+  --fsd-focus: #7b8499;
+  --fsd-input-bg: #ffffff;
+  --fsd-input-text: #24262c;
+}
+@media (prefers-color-scheme: dark) {
+  .fsd-creator {
+    --fsd-page-bg: #17191d;
+    --fsd-surface: #20242b;
+    --fsd-surface-soft: #252a32;
+    --fsd-surface-muted: #1d2128;
+    --fsd-surface-panel: #1b1f25;
+    --fsd-text: #e7e9ed;
+    --fsd-heading: #f5f6f8;
+    --fsd-muted: #b9c0ca;
+    --fsd-subtle: #9fa8b5;
+    --fsd-label: #d3d8df;
+    --fsd-border: #3b424d;
+    --fsd-border-soft: #343b45;
+    --fsd-accent: #e5e8ed;
+    --fsd-accent-text: #17191d;
+    --fsd-focus: #9ca8ba;
+    --fsd-input-bg: #171b21;
+    --fsd-input-text: #eef1f5;
+  }
+}
+.document-retained[hidden],
+.fsd-retained[hidden] {
+  display: none !important;
+}
+.fsd-creator {
+  background: var(--fsd-page-bg);
+  padding: 24px;
+  border-radius: 10px;
+  color: var(--fsd-text);
+  font-size: 14px;
+}
+.fsd-creator h2,
+.fsd-creator h3,
+.fsd-creator h4 {
+  color: var(--fsd-heading);
+  margin: 0 0 12px;
+}
+.fsd-creator p {
+  line-height: 1.6;
+  color: var(--fsd-muted);
+}
+.fsd-creator small {
+  color: var(--fsd-subtle);
+  line-height: 1.55;
+}
+.fsd-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 8px 0 22px;
+}
+.fsd-eyebrow {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--fsd-subtle);
+  margin-bottom: 10px;
+}
+.fsd-topline h2 {
+  font-size: 26px;
+  margin: 0;
+}
+.fsd-topline p {
+  margin: 8px 0 0;
+}
+.fsd-template-badge {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--fsd-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--fsd-surface-soft);
+  font-size: 12px;
+}
+.fsd-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0 22px;
+  font-size: 12px;
+  color: var(--fsd-subtle);
+}
+.fsd-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.fsd-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.fsd-input-column,
+.fsd-controls-column {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.fsd-card {
+  border: 1px solid var(--fsd-border-soft);
+  border-radius: 12px;
+  padding: 22px;
+  background: var(--fsd-surface);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.08);
+}
+.fsd-card h3 {
+  font-size: 16px;
+  margin-bottom: 18px;
+}
+.fsd-creator label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--fsd-label);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.fsd-creator input:not([type="checkbox"]):not([type="file"]),
+.fsd-creator select,
+.fsd-creator textarea,
+.fsd-creator .client-combo-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 11px;
+  border: 1px solid var(--fsd-border);
+  border-radius: 6px;
+  background: var(--fsd-input-bg);
+  color: var(--fsd-input-text);
+  font: inherit;
+  font-weight: 400;
+}
+.fsd-creator textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+.fsd-creator input:focus,
+.fsd-creator textarea:focus,
+.fsd-creator select:focus,
+.fsd-creator .client-combo-input:focus {
+  outline: 2px solid var(--fsd-focus);
+  outline-offset: 1px;
+}
+.fsd-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+.fsd-full {
+  grid-column: 1 / -1;
+}
+.fsd-creator details {
+  border-top: 1px solid var(--fsd-border-soft);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.fsd-creator summary {
+  cursor: pointer;
+  color: var(--fsd-label);
+  font-weight: 600;
+  padding: 4px 0 8px;
+  line-height: 1.5;
+}
+.fsd-creator details[open] > summary {
+  margin-bottom: 10px;
+}
+.fsd-dropzone {
+  position: relative;
+  min-height: 135px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px !important;
+  border: 1px dashed var(--fsd-border);
+  border-radius: 8px;
+  background: var(--fsd-surface-muted);
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  margin-top: 12px;
+}
+.fsd-dropzone input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.fsd-dropzone:focus-within {
+  outline: 2px solid var(--fsd-focus);
+}
+.fsd-dropzone span {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--fsd-subtle);
+}
+.fsd-source-list summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fsd-source-list summary span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.fsd-source-list summary small {
+  font-weight: 400;
+}
+.fsd-source-actions {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.fsd-source-actions label {
+  flex: 1;
+  min-width: 140px;
+}
+.fsd-source-actions button {
+  margin-bottom: 14px;
+}
+.fsd-paste > textarea {
+  margin-bottom: 10px;
+}
+.fsd-save-preset {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.fsd-analysis-status,
+.fsd-source-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fsd-analysis-status {
+  margin-top: 14px;
+  font-size: 13px;
+}
+.fsd-source-review {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--fsd-border);
+  border-radius: 12px;
+  background: var(--fsd-surface-panel);
+}
+.fsd-source-review p,
+.fsd-source-review li,
+.fsd-source-review blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.fsd-source-review article {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--fsd-border);
+}
+.fsd-source-review blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--fsd-border);
+  font-size: 13px;
+}
+.fsd-source-review-label {
+  font-weight: 600;
+}
+.fsd-source-questions {
+  margin: 16px 0;
+}
+.fsd-source-questions ul {
+  padding-left: 20px;
+}
+.fsd-save-preset label {
+  flex: 1;
+  min-width: 130px;
+}
+.fsd-save-preset button {
+  margin-bottom: 14px;
+}
+.fsd-module-checks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.fsd-module-checks label {
+  flex-direction: row;
+  align-items: center;
+  font-weight: 400;
+}
+.fsd-feature-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.fsd-feature-entry label {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.fsd-feature-entry small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.fsd-custom-features > small {
+  display: block;
+  margin: 10px 0 18px;
+}
+@media (max-width: 650px) {
+  .fsd-feature-entry {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .fsd-feature-entry label {
+    width: 100%;
+  }
+}
+.fsd-creator input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--fsd-accent);
+  flex-shrink: 0;
+}
+.fsd-generate-card {
+  background: var(--fsd-surface-soft);
+}
+.fsd-creator .document-processing-panel.success {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  margin: 14px 0;
+  background: var(--fsd-surface-panel);
+  color: var(--fsd-text);
+  border: 1px solid var(--fsd-border);
+}
+.fsd-creator .document-processing-panel.success .document-processing-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.fsd-creator .document-processing-panel.success .document-processing-head p {
+  color: inherit;
+  margin: 5px 0 0;
+}
+.fsd-preview-prerequisites {
+  margin: 12px 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--fsd-border);
+  border-radius: 8px;
+  background: var(--fsd-surface-panel);
+  color: var(--fsd-text);
+}
+.fsd-preview-prerequisites ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+.fsd-preview-prerequisites li {
+  margin: 3px 0;
+}
+.fsd-readiness {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--fsd-border);
+  border-radius: 8px;
+  background: var(--fsd-surface-panel);
+  color: var(--fsd-text);
+}
+.fsd-readiness h4 {
+  margin: 0 0 8px;
+  color: var(--fsd-label);
+}
+.fsd-readiness ul {
+  padding-left: 20px;
+}
+.fsd-readiness li {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.fsd-readiness li p {
+  margin: 5px 0;
+}
+.fsd-generate-card button {
+  margin-bottom: 12px;
+  margin-right: 8px;
+}
+.fsd-generate-card small {
+  display: block;
+}
+.fsd-creator button.primary {
+  background: var(--fsd-accent);
+  color: var(--fsd-accent-text);
+  border: 1px solid var(--fsd-accent);
+}
+.fsd-creator button.secondary {
+  background: var(--fsd-surface);
+  color: var(--fsd-label);
+  border: 1px solid var(--fsd-border);
+}
+.fsd-creator button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 7px;
+  padding: 10px 13px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fsd-creator button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.fsd-creator .fsd-primary {
+  width: 100%;
+}
+.fsd-warning,
+.fsd-error,
+.fsd-busy {
+  padding: 12px 16px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
+.fsd-warning {
+  background: #fff4dc;
+  color: #785415 !important;
+  border: 1px solid #eddaa9;
+}
+.fsd-error {
+  background: #fff0ef;
+  color: #963c37;
+  border: 1px solid #edc3c0;
+  margin-bottom: 16px;
+}
+.fsd-busy {
+  background: var(--fsd-surface-soft);
+  color: var(--fsd-text) !important;
+  border: 1px solid var(--fsd-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fsd-preview-panel {
+  margin-top: 28px;
+  border: 1px solid var(--fsd-border);
+  border-radius: 12px;
+  background: var(--fsd-surface-panel);
+  padding: 20px;
+}
+.fsd-preview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.fsd-preview-toolbar h3 {
+  margin: 0 0 5px;
+}
+.fsd-paper {
+  max-width: 960px;
+  margin: 0 auto;
+  background: #fff;
+  color: #222;
+  border: 1px solid #dbe0e7;
+  padding: 40px;
+  box-shadow: 0 4px 20px #252e4310;
+  font-family: Arial, sans-serif;
+  color-scheme: light;
+}
+.fsd-paper-header {
+  display: grid;
+  grid-template-columns: 0.6fr 1.4fr 1fr;
+  border: 1px solid #555;
+  align-items: center;
+}
+.fsd-paper-header > * {
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.fsd-paper-header strong {
+  color: #31358f;
+  font-style: italic;
+  font-size: 23px;
+}
+.fsd-paper-header b {
+  border-left: 1px solid #555;
+  border-right: 1px solid #555;
+  font-size: 15px;
+  text-align: center;
+}
+.fsd-paper-header small {
+  font-size: 10px;
+  color: #222;
+}
+.fsd-cover {
+  padding: 38px 0;
+  text-align: center;
+}
+.fsd-signatories {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  text-align: left;
+  gap: 24px;
+  margin: 28px 0;
+}
+.fsd-signatories p {
+  border-bottom: 1px solid #777;
+  padding-top: 25px;
+  font-size: 12px;
+}
+.fsd-preview-section {
+  padding-top: 24px;
+  margin-top: 24px;
+  border-top: 1px solid #e0e0e0;
+}
+.fsd-paper .fsd-preview-section > h3 {
+  font-size: 16px;
+  color: #17191d;
+}
+.fsd-paper .fsd-preview-section > h2 {
+  font-size: 19px;
+  margin-bottom: 20px;
+  color: #17191d;
+}
+.fsd-source-citation {
+  display: block;
+  font-size: 10px !important;
+  margin-bottom: 12px;
+}
+.fsd-preserve {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.fsd-paper p {
+  color: #222;
+}
+.fsd-table-scroll {
+  overflow-x: auto;
+  margin: 14px 0;
+}
+.fsd-paper table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+.fsd-paper th,
+.fsd-paper td {
+  border: 1px solid #969696;
+  padding: 9px;
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.fsd-paper th {
+  background: #fce5cd;
+  color: #222;
+  font-size: 11px;
+}
+.fsd-paper td {
+  color: #222;
+}
+.fsd-paper textarea {
+  font-size: 12px;
+}
+.fsd-review-items {
+  border-top: 2px solid #dfc183;
+  padding-top: 24px;
+  margin-top: 30px;
+}
+.fsd-review-items li {
+  line-height: 1.6;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+.fsd-export {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 960px;
+  margin: 20px auto 0;
+}
+.fsd-export label {
+  flex-direction: row;
+  align-items: center;
+  max-width: 570px;
+  margin: 0;
+  line-height: 1.6;
+}
+.fsd-export small {
+  width: 100%;
+}
+.fsd-draft-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 22px;
+}
+.fsd-draft-footer span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 1050px) {
+  .fsd-columns {
+    grid-template-columns: 1fr;
+  }
+  .fsd-topline {
+    align-items: start;
+    flex-direction: column;
+  }
+  .fsd-paper {
+    padding: 24px;
+  }
+  .fsd-paper table {
+    min-width: 500px;
+  }
+}
+@media (max-width: 650px) {
+  .fsd-fields,
+  .fsd-module-checks {
+    grid-template-columns: 1fr;
+  }
+  .fsd-card {
+    padding: 16px;
+  }
+  .fsd-status,
+  .fsd-draft-footer,
+  .fsd-preview-toolbar {
+    flex-direction: column;
+    align-items: start;
+  }
+  .fsd-paper {
+    padding: 14px;
+  }
+  .fsd-preview-panel {
+    padding: 10px;
+  }
+  .fsd-paper-header {
+    grid-template-columns: 1fr;
+  }
+  .fsd-paper-header b {
+    border: 0;
+  }
+  .fsd-signatories {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The preview papers stand for the exported Word documents, so they stay dark text on white whatever the interface
+   mode, wallpaper theme or operating-system color preference. Tokens are set on the paper itself so nothing inherited
+   from the dark workspace can reach it; the selectors below outrank the generic dark table and wallpaper rules. */
+.fsd-paper,
+.brd-paper {
+  color-scheme: light;
+  --fsd-heading: #17191d;
+  --fsd-text: #24262b;
+  --fsd-muted: #555b64;
+  --fsd-subtle: #636b76;
+  --fsd-label: #3e4550;
+  --fsd-border: #d9dde3;
+  --fsd-border-soft: #dfe2e7;
+  --fsd-focus: #7b8499;
+  --fsd-input-bg: #fff;
+  --fsd-input-text: #24262c;
+  --fsd-surface: #fff;
+  --fsd-surface-soft: #f6f7f9;
+  --fsd-surface-muted: #f8f9fb;
+  --fsd-surface-panel: #eef0f4;
+  --fsd-accent: #262c36;
+  --fsd-accent-text: #fff;
+}
+.app-shell .fsd-creator .fsd-paper th {
+  background: #fce5cd;
+  color: #222;
+}
+.app-shell .fsd-creator .fsd-paper td {
+  color: #222;
+}
+.fsd-warning :is(p, ul, li, strong, small, span) {
+  color: inherit !important;
+}

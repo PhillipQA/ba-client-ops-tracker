@@ -1,5 +1,5 @@
 import { IntegrationError } from './tenant-integrations'
-import { defaultWaitingOn, waitingOnOptions } from '../../src/waitingOn'
+import { defaultWaitingOn, waitingOnOptions } from '../../src/features/tasks/waitingOn'
 
 export type LinkedTaskSchedule = { waitingOn: string; startDate: string; dueDate: string; followUpDate: string }
 
@@ -9,7 +9,8 @@ function scheduleDate(value: unknown, label: string) {
   if (value === undefined || value === null || value === '') return ''
   if (typeof value !== 'string' || !DATE.test(value)) throw new IntegrationError(`Enter a valid ${label}.`)
   const parsed = new Date(`${value}T00:00:00Z`)
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) throw new IntegrationError(`Enter a valid ${label}.`)
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value)
+    throw new IntegrationError(`Enter a valid ${label}.`)
   return value
 }
 
@@ -21,12 +22,18 @@ function scheduleDate(value: unknown, label: string) {
  */
 export function linkedTaskSchedule(body: any, state?: any): LinkedTaskSchedule {
   const rawWaitingOn = body?.waitingOn
-  const allowed = new Set(waitingOnOptions(state?.taskSettings).map((option) => option.label))
-  if (rawWaitingOn !== undefined && rawWaitingOn !== '' && (typeof rawWaitingOn !== 'string' || !allowed.has(rawWaitingOn))) throw new IntegrationError('Choose a valid waiting on value.')
+  const allowed = new Set(waitingOnOptions(state?.taskSettings).map(option => option.label))
+  if (
+    rawWaitingOn !== undefined &&
+    rawWaitingOn !== '' &&
+    (typeof rawWaitingOn !== 'string' || !allowed.has(rawWaitingOn))
+  )
+    throw new IntegrationError('Choose a valid waiting on value.')
   const waitingOn = rawWaitingOn ? rawWaitingOn : defaultWaitingOn(state?.taskSettings)
   const startDate = scheduleDate(body?.startDate, 'start date')
   const dueDate = scheduleDate(body?.dueDate, 'due date')
   const followUpDate = scheduleDate(body?.followUpDate, 'follow-up date')
-  if (startDate && dueDate && dueDate < startDate) throw new IntegrationError('Due date cannot be earlier than start date.')
+  if (startDate && dueDate && dueDate < startDate)
+    throw new IntegrationError('Due date cannot be earlier than start date.')
   return { waitingOn, startDate, dueDate, followUpDate }
 }

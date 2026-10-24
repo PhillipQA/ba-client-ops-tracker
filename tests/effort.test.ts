@@ -1,21 +1,46 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { capacityHoursBetween, effortRows, effortSummary, formatHours, normalizeEstimate, validateTimeEntryInput, workingDaysBetween, type TimeEntry } from '../src/effort'
+import {
+  capacityHoursBetween,
+  effortRows,
+  effortSummary,
+  formatHours,
+  normalizeEstimate,
+  validateTimeEntryInput,
+  workingDaysBetween,
+  type TimeEntry,
+} from '../src/features/tasks/effort'
 import { addTimeEntry, applyEffortSaveRules, removeTimeEntry } from '../server/services/time-entries'
-import { boardColumns } from '../src/taskBoardModel'
+import { boardColumns } from '../src/features/tasks/taskBoardModel'
 import { workspaceVersion } from '../server/services/workspace-version'
-import type { TaskSettings, WorkItem } from '../src/types'
+import type { TaskSettings, WorkItem } from '../src/shared/types'
 
-const entry = (overrides: Partial<TimeEntry> = {}): TimeEntry => ({ id: crypto.randomUUID(), date: '2026-10-15', hours: 1, category: 'Analysis', note: '', userId: 'maria', userName: 'Maria', createdAt: '2026-10-15T01:00:00.000Z', ...overrides })
+const entry = (overrides: Partial<TimeEntry> = {}): TimeEntry => ({
+  id: crypto.randomUUID(),
+  date: '2026-10-15',
+  hours: 1,
+  category: 'Analysis',
+  note: '',
+  userId: 'maria',
+  userName: 'Maria',
+  createdAt: '2026-10-15T01:00:00.000Z',
+  ...overrides,
+})
 
 test('time entry input is validated and rounded to quarter hours', () => {
-  assert.deepEqual(validateTimeEntryInput({ date: '2026-10-19', hours: 1.3, category: 'Meeting', note: '  call  ' }), { ok: true, value: { date: '2026-10-19', hours: 1.25, category: 'Meeting', note: 'call' } })
+  assert.deepEqual(validateTimeEntryInput({ date: '2026-10-19', hours: 1.3, category: 'Meeting', note: '  call  ' }), {
+    ok: true,
+    value: { date: '2026-10-19', hours: 1.25, category: 'Meeting', note: 'call' },
+  })
   assert.equal(validateTimeEntryInput({ date: '2026-02-30', hours: 1, category: 'Meeting' }).ok, false)
   assert.equal(validateTimeEntryInput({ date: '2026-10-19', hours: 0.1, category: 'Meeting' }).ok, false)
   assert.equal(validateTimeEntryInput({ date: '2026-10-19', hours: 25, category: 'Meeting' }).ok, false)
   assert.equal(validateTimeEntryInput({ date: '2026-10-19', hours: 'abc', category: 'Meeting' }).ok, false)
   assert.equal(validateTimeEntryInput({ date: '2026-10-19', hours: 1, category: 'Gaming' }).ok, false)
-  assert.equal(validateTimeEntryInput({ date: '2026-10-19', hours: 1, category: 'Meeting', note: 'x'.repeat(501) }).ok, false)
+  assert.equal(
+    validateTimeEntryInput({ date: '2026-10-19', hours: 1, category: 'Meeting', note: 'x'.repeat(501) }).ok,
+    false,
+  )
 })
 
 test('estimates are optional, non-negative and capped', () => {
@@ -37,7 +62,10 @@ test('parent effort rolls up subtask time, and subtask estimates when the parent
   assert.equal(summary.estimateFromSubtasks, true)
   assert.equal(summary.overBy, 1.5)
   assert.equal(summary.percent, 150)
-  assert.deepEqual(summary.byCategory, [{ category: 'Analysis', hours: 2.5 }, { category: 'Meeting', hours: 2 }])
+  assert.deepEqual(summary.byCategory, [
+    { category: 'Analysis', hours: 2.5 },
+    { category: 'Meeting', hours: 2 },
+  ])
   // A subtask never rolls anything up.
   assert.equal(effortSummary(child, [parent, child]).logged, 2.5)
   // A parent's own estimate wins over its subtasks'.
@@ -58,7 +86,12 @@ test('capacity counts weekdays only', () => {
 
 test('report rows filter by range, client, project and the person who logged the time', () => {
   const items = [
-    { id: 'a', clientId: 'acme', projectId: 'x', timeEntries: [entry({ date: '2026-10-01', userId: 'maria' }), entry({ date: '2026-09-30' })] },
+    {
+      id: 'a',
+      clientId: 'acme',
+      projectId: 'x',
+      timeEntries: [entry({ date: '2026-10-01', userId: 'maria' }), entry({ date: '2026-09-30' })],
+    },
     { id: 'b', clientId: 'acme', projectId: 'y', timeEntries: [entry({ date: '2026-10-02', userId: 'jo' })] },
     { id: 'c', clientId: 'north', timeEntries: [entry({ date: '2026-10-03' })] },
   ]
@@ -74,7 +107,10 @@ test('workspace saves cannot add, change or remove time entries', () => {
   const result = applyEffortSaveRules(stored, forged)
   assert.equal(result.ok, true)
   if (!result.ok) return
-  assert.deepEqual(result.value.timeEntries.map((row: TimeEntry) => row.id), ['kept'])
+  assert.deepEqual(
+    result.value.timeEntries.map((row: TimeEntry) => row.id),
+    ['kept'],
+  )
   assert.equal(result.value.estimateHours, 4)
   // New tasks start with no time logged, whatever the browser sends.
   const created = applyEffortSaveRules(undefined, forged)
@@ -88,7 +124,13 @@ test('workspace saves cannot add, change or remove time entries', () => {
 test('time entries record the signed-in author and only the author or an Administrator can remove them', () => {
   const task = { id: 't', timeEntries: [] }
   const now = new Date('2026-10-19T03:00:00.000Z')
-  const added = addTimeEntry(task, { date: '2026-10-19', hours: 1.5, category: 'Analysis', note: 'Spec', userId: 'someone-else' }, { id: 'maria', name: 'Maria', role: 'Contributor' }, now, 'entry-1')
+  const added = addTimeEntry(
+    task,
+    { date: '2026-10-19', hours: 1.5, category: 'Analysis', note: 'Spec', userId: 'someone-else' },
+    { id: 'maria', name: 'Maria', role: 'Contributor' },
+    now,
+    'entry-1',
+  )
   assert.equal(added.ok, true)
   if (!added.ok) return
   assert.equal(added.value.entry.userId, 'maria')
@@ -106,23 +148,59 @@ test('time entries record the signed-in author and only the author or an Adminis
 })
 
 test('logging time does not change the workspace version used for save conflicts', () => {
-  const base = { clients: [], projects: [], planner: [], rtms: [], items: [{ id: 't', title: 'Task', timeEntries: [] }] }
+  const base = {
+    clients: [],
+    projects: [],
+    planner: [],
+    rtms: [],
+    items: [{ id: 't', title: 'Task', timeEntries: [] }],
+  }
   const withTime = { ...base, items: [{ id: 't', title: 'Task', timeEntries: [entry()] }] }
   assert.equal(workspaceVersion(base), workspaceVersion(withTime))
-  assert.notEqual(workspaceVersion(base), workspaceVersion({ ...base, items: [{ id: 't', title: 'Task', estimateHours: 3, timeEntries: [] }] }))
+  assert.notEqual(
+    workspaceVersion(base),
+    workspaceVersion({ ...base, items: [{ id: 't', title: 'Task', estimateHours: 3, timeEntries: [] }] }),
+  )
 })
 
 test('board columns follow configured statuses or waiting-on, with closed work collapsed', () => {
-  const settings: TaskSettings = { statuses: [{ id: 'open', label: 'Open', closed: false }, { id: 'blocked', label: 'Blocked', closed: false }, { id: 'resolved', label: 'Resolved', closed: true }], visibleColumns: ['status'] }
-  const item = (id: string, status: string, waitingOn: WorkItem['waitingOn'], priority: WorkItem['priority'] = 'Medium', dueDate = '') => ({ id, status, waitingOn, priority, dueDate, title: id, followUpDate: '' }) as WorkItem
-  const items = [item('low', 'Open', 'Me', 'Low'), item('urgent', 'Open', 'Client', 'Urgent'), item('done', 'Resolved', 'Done'), item('legacy', 'Parked', 'Me')]
+  const settings: TaskSettings = {
+    statuses: [
+      { id: 'open', label: 'Open', closed: false },
+      { id: 'blocked', label: 'Blocked', closed: false },
+      { id: 'resolved', label: 'Resolved', closed: true },
+    ],
+    visibleColumns: ['status'],
+  }
+  const item = (
+    id: string,
+    status: string,
+    waitingOn: WorkItem['waitingOn'],
+    priority: WorkItem['priority'] = 'Medium',
+    dueDate = '',
+  ) => ({ id, status, waitingOn, priority, dueDate, title: id, followUpDate: '' }) as WorkItem
+  const items = [
+    item('low', 'Open', 'Me', 'Low'),
+    item('urgent', 'Open', 'Client', 'Urgent'),
+    item('done', 'Resolved', 'Done'),
+    item('legacy', 'Parked', 'Me'),
+  ]
   const byStatus = boardColumns(items, 'status', settings)
-  assert.deepEqual(byStatus.map((column) => column.label), ['Open', 'Blocked', 'Resolved', 'Other status'])
-  assert.deepEqual(byStatus[0].items.map((row) => row.id), ['urgent', 'low'])
+  assert.deepEqual(
+    byStatus.map(column => column.label),
+    ['Open', 'Blocked', 'Resolved', 'Other status'],
+  )
+  assert.deepEqual(
+    byStatus[0].items.map(row => row.id),
+    ['urgent', 'low'],
+  )
   assert.equal(byStatus[1].tone, 'blocked')
   assert.equal(byStatus[2].collapsed, true)
   assert.equal(byStatus[3].acceptsDrops, false)
   const byWaiting = boardColumns(items, 'waiting', settings)
-  assert.deepEqual(byWaiting.map((column) => column.key), ['Me', 'Developer', 'Client', 'QA', 'Design', 'Done'])
-  assert.equal(byWaiting.find((column) => column.key === 'Done')?.acceptsDrops, false)
+  assert.deepEqual(
+    byWaiting.map(column => column.key),
+    ['Me', 'Developer', 'Client', 'QA', 'Design', 'Done'],
+  )
+  assert.equal(byWaiting.find(column => column.key === 'Done')?.acceptsDrops, false)
 })

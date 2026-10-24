@@ -21,7 +21,8 @@ function safeRelativePath(value) {
   const cleaned = normalize(value).replaceAll('\\', '/')
   if (cleaned === '..' || cleaned.startsWith('../') || cleaned.includes('/../')) fail(`Unsafe patch path: ${value}`)
   const protectedRoots = ['node_modules', '.git', '.patch-backups', '.patch-tmp']
-  if (cleaned.startsWith('.env') || protectedRoots.some((item) => cleaned === item || cleaned.startsWith(`${item}/`))) fail(`Patch is not allowed to modify protected path: ${value}`)
+  if (cleaned.startsWith('.env') || protectedRoots.some(item => cleaned === item || cleaned.startsWith(`${item}/`)))
+    fail(`Patch is not allowed to modify protected path: ${value}`)
   return cleaned
 }
 
@@ -35,7 +36,13 @@ function extractArchive(archive, destination) {
   if (process.platform === 'win32') {
     const escapedArchive = archive.replaceAll("'", "''")
     const escapedDestination = destination.replaceAll("'", "''")
-    run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', `Expand-Archive -LiteralPath '${escapedArchive}' -DestinationPath '${escapedDestination}' -Force`])
+    run('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      `Expand-Archive -LiteralPath '${escapedArchive}' -DestinationPath '${escapedDestination}' -Force`,
+    ])
     return
   }
   run('unzip', ['-q', archive, '-d', destination])
@@ -44,7 +51,7 @@ function extractArchive(archive, destination) {
 function findManifestBase(start) {
   const direct = join(start, 'patch-manifest.json')
   if (existsSync(direct)) return start
-  const folders = readdirSync(start, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+  const folders = readdirSync(start, { withFileTypes: true }).filter(entry => entry.isDirectory())
   for (const folder of folders) {
     const candidate = join(start, folder.name, 'patch-manifest.json')
     if (existsSync(candidate)) return join(start, folder.name)
@@ -82,7 +89,9 @@ try {
   if (manifest.format !== 1) fail('Unsupported patch format.')
   if (manifest.app !== packageJson.name) fail(`This patch is for ${manifest.app}, not ${packageJson.name}.`)
   if (!force && manifest.fromVersion && manifest.fromVersion !== packageJson.version) {
-    fail(`Patch expects version ${manifest.fromVersion}, but this project is version ${packageJson.version}. Use the matching patch or --force only if you understand the risk.`)
+    fail(
+      `Patch expects version ${manifest.fromVersion}, but this project is version ${packageJson.version}. Use the matching patch or --force only if you understand the risk.`,
+    )
   }
 
   const files = Array.isArray(manifest.files) ? manifest.files.map(safeRelativePath) : []
@@ -94,7 +103,11 @@ try {
 
   const impacted = [...new Set([...files, ...deletes])]
   const backupStamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
-  const backupRoot = join(root, '.patch-backups', `${backupStamp}_${packageJson.version}_to_${manifest.toVersion || 'unknown'}`)
+  const backupRoot = join(
+    root,
+    '.patch-backups',
+    `${backupStamp}_${packageJson.version}_to_${manifest.toVersion || 'unknown'}`,
+  )
   const backupFilesRoot = join(backupRoot, 'files')
   mkdirSync(backupFilesRoot, { recursive: true })
 
@@ -110,24 +123,38 @@ try {
     }
   }
 
-  writeFileSync(join(backupRoot, 'backup-manifest.json'), JSON.stringify({
-    format: 1,
-    app: packageJson.name,
-    fromVersion: packageJson.version,
-    toVersion: manifest.toVersion,
-    createdAt: new Date().toISOString(),
-    entries: backupEntries,
-    requiresNpmInstall: Boolean(manifest.requiresNpmInstall),
-  }, null, 2))
+  writeFileSync(
+    join(backupRoot, 'backup-manifest.json'),
+    JSON.stringify(
+      {
+        format: 1,
+        app: packageJson.name,
+        fromVersion: packageJson.version,
+        toVersion: manifest.toVersion,
+        createdAt: new Date().toISOString(),
+        entries: backupEntries,
+        requiresNpmInstall: Boolean(manifest.requiresNpmInstall),
+      },
+      null,
+      2,
+    ),
+  )
 
-  writeFileSync(join(root, '.patch-backups', 'last-applied.json'), JSON.stringify({
-    patch: basename(patchPath),
-    fromVersion: packageJson.version,
-    toVersion: manifest.toVersion || packageJson.version,
-    appliedAt: new Date().toISOString(),
-    backup: backupRoot,
-    status: 'in-progress',
-  }, null, 2))
+  writeFileSync(
+    join(root, '.patch-backups', 'last-applied.json'),
+    JSON.stringify(
+      {
+        patch: basename(patchPath),
+        fromVersion: packageJson.version,
+        toVersion: manifest.toVersion || packageJson.version,
+        appliedAt: new Date().toISOString(),
+        backup: backupRoot,
+        status: 'in-progress',
+      },
+      null,
+      2,
+    ),
+  )
 
   for (const relative of files) {
     const source = join(extractedRoot, 'payload', relative)
@@ -157,14 +184,21 @@ try {
   }
 
   mkdirSync(join(root, '.patch-backups'), { recursive: true })
-  writeFileSync(join(root, '.patch-backups', 'last-applied.json'), JSON.stringify({
-    patch: basename(patchPath),
-    fromVersion: packageJson.version,
-    toVersion: manifest.toVersion || updatedPackage.version,
-    appliedAt: new Date().toISOString(),
-    backup: backupRoot,
-    status: 'applied',
-  }, null, 2))
+  writeFileSync(
+    join(root, '.patch-backups', 'last-applied.json'),
+    JSON.stringify(
+      {
+        patch: basename(patchPath),
+        fromVersion: packageJson.version,
+        toVersion: manifest.toVersion || updatedPackage.version,
+        appliedAt: new Date().toISOString(),
+        backup: backupRoot,
+        status: 'applied',
+      },
+      null,
+      2,
+    ),
+  )
 
   console.log('\nPatch applied successfully.')
   console.log(`Version: ${packageJson.version} -> ${manifest.toVersion || updatedPackage.version}`)

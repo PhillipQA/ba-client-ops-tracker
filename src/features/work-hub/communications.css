@@ -1,0 +1,600 @@
+/* Paired surfaces and text for personal interface modes and wallpaper themes. */
+.app-shell.ui-refresh .communications-hub {
+  --comm-surface: var(--ui-surface, var(--theme-surface, #22262e));
+  --comm-card: var(--ui-soft, color-mix(in srgb, var(--theme-surface, #22262e) 92%, #fff));
+  --comm-input: var(--ui-input, #19212a);
+  --comm-text: var(--ui-text, #edf1f7);
+  --comm-muted: var(--ui-muted, #c4ccd7);
+  --comm-border: var(--ui-border, var(--theme-border, #4b5565));
+  --comm-accent: var(--ui-accent, color-mix(in srgb, var(--theme-accent, #9cbdff) 65%, white));
+  --comm-active: var(--ui-accent-soft, var(--theme-accent-soft, #293f60));
+  color: var(--comm-text);
+  min-width: 0;
+}
+.app-shell.ui-refresh .communications-hub .panel {
+  background: var(--comm-surface);
+  color: var(--comm-text);
+  border-color: var(--comm-border);
+}
+.app-shell.ui-refresh .communications-hub .panel-heading {
+  background: var(--comm-card);
+  border-color: var(--comm-border);
+}
+.app-shell.ui-refresh .communications-hub :is(h2, h3, label) {
+  color: var(--comm-text);
+}
+.app-shell.ui-refresh .communications-hub :is(p, small) {
+  color: var(--comm-muted);
+}
+.app-shell.ui-refresh .communications-hub .primary {
+  background: var(--ui-primary, var(--comm-accent));
+  color: var(--ui-on-primary, #14263f);
+  border-color: var(--ui-primary, var(--comm-accent));
+}
+.app-shell.ui-refresh .communications-hub .secondary {
+  background: var(--comm-surface);
+  color: var(--comm-text);
+  border-color: var(--comm-border);
+}
+.app-shell.ui-refresh .communications-hub .secondary:hover:not(:disabled) {
+  background: var(--comm-card);
+}
+.app-shell.ui-refresh .communications-hub .danger-button {
+  color: var(--ui-danger, #ffb7b9);
+}
+.app-shell.ui-refresh .communications-hub :is(button, input, select, textarea, .client-combo-input):focus-visible {
+  outline: 2px solid var(--comm-accent);
+  outline-offset: 3px;
+}
+.app-shell.ui-refresh .communications-hub button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.app-shell.ui-refresh .communications-hub :is(input:not([type="checkbox"]), select, textarea, .client-combo-input) {
+  min-width: 0;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--comm-border);
+  border-radius: 8px;
+  color: var(--comm-text);
+  background: var(--comm-input);
+}
+.app-shell.ui-refresh .communications-hub select option {
+  color: var(--comm-text);
+  background: var(--comm-input);
+}
+.app-shell.ui-refresh .communications-hub input[type="checkbox"] {
+  accent-color: var(--comm-accent);
+}
+.communications-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.4rem;
+}
+.communications-heading h2 {
+  margin: 0;
+}
+.communications-heading p {
+  margin: 0.5rem 0 0;
+  max-width: 54rem;
+  line-height: 1.6;
+}
+.communications-hub .integration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.communication-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 1rem;
+  border-bottom: 1px solid var(--comm-border);
+}
+.communication-tabs button,
+.communication-layout button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 38px;
+  border: 1px solid var(--comm-border);
+  border-radius: 999px;
+  background: transparent;
+  padding: 0.45rem 1rem;
+  color: var(--comm-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+.communication-tabs button:hover,
+.communication-layout button:hover {
+  background: var(--comm-card);
+  color: var(--comm-text);
+}
+.communication-tabs button.active,
+.communication-layout button[aria-pressed="true"] {
+  background: var(--comm-active);
+  color: var(--comm-accent);
+  border-color: var(--comm-accent);
+}
+.communication-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+}
+.communication-view-title {
+  color: var(--comm-muted);
+  font-size: 13px;
+}
+.communication-view-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.communication-layout {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border: 1px solid var(--comm-border);
+  border-radius: 10px;
+}
+.communication-layout button {
+  border-radius: 7px;
+  border-color: transparent;
+  padding: 0.4rem 0.65rem;
+}
+.communication-page-size,
+.communication-label-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  font-size: 13px;
+}
+.communication-label-filter {
+  max-width: 100%;
+  flex: 1 1 280px;
+}
+.communications-hub .communication-label-filter select,
+.communications-hub .communication-label-filter .client-combo-input {
+  max-width: 340px;
+  flex: 1;
+}
+.communications-hub .communication-page-size select,
+.communications-hub .communication-page-size .client-combo-input {
+  width: 72px;
+}
+.communication-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 1rem;
+  padding: 0 1rem 1rem;
+}
+.communication-card {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  border: 1px solid var(--comm-border);
+  border-radius: 12px;
+  padding: 1rem;
+  background: var(--comm-card);
+  color: var(--comm-text);
+  min-width: 0;
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.communication-card:hover,
+.communication-card[aria-pressed="true"] {
+  border-color: var(--comm-accent);
+  box-shadow: inset 0 0 0 1px var(--comm-accent);
+}
+.communication-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 11px;
+  color: var(--comm-muted);
+}
+.communication-source,
+.communication-status,
+.communication-task-badge {
+  border: 1px solid var(--comm-border);
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  line-height: 1.4;
+  font-size: 11px;
+}
+.communication-source {
+  color: var(--comm-text);
+}
+.communication-card-meta time {
+  flex-basis: 100%;
+  line-height: 1.5;
+}
+.communication-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.communication-subject {
+  color: var(--comm-text);
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 700;
+}
+.communication-sender {
+  color: var(--comm-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.communication-preview {
+  color: var(--comm-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.communication-subject,
+.communication-preview,
+.communication-sender {
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+}
+.communication-sender {
+  -webkit-line-clamp: 2;
+}
+.communication-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: auto;
+  padding-top: 0.65rem;
+}
+.communication-task-badge {
+  color: var(--comm-text);
+}
+.communication-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--comm-accent);
+  font-size: 12px;
+  font-weight: 650;
+  margin-left: auto;
+}
+.communication-list--rows {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.6rem;
+}
+.communication-list--rows .communication-card {
+  display: grid;
+  grid-template-columns: 185px minmax(0, 1fr) 130px;
+  align-items: center;
+  gap: 1.2rem;
+}
+.communication-list--rows .communication-card-footer {
+  flex-direction: column;
+  align-items: flex-end;
+  margin: 0;
+  padding: 0;
+}
+.communication-list--rows .communication-subject,
+.communication-list--rows .communication-preview,
+.communication-list--rows .communication-sender {
+  -webkit-line-clamp: 1;
+}
+.communication-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  border-top: 1px solid var(--comm-border);
+  color: var(--comm-muted);
+  font-size: 12px;
+}
+.communication-page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.communication-page-buttons > span {
+  white-space: nowrap;
+}
+.communication-empty {
+  padding: 1.5rem;
+  line-height: 1.6;
+}
+.communication-detail,
+.communication-settings {
+  padding: 1.5rem;
+  min-width: 0;
+}
+.communication-detail .panel-heading {
+  align-items: flex-start;
+  border-radius: 10px;
+}
+.communication-detail .panel-heading > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.communication-detail .panel-heading button {
+  flex-shrink: 0;
+}
+.communication-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 27rem;
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid var(--comm-border);
+  border-radius: 10px;
+  margin: 1rem 0;
+  background: var(--comm-card);
+  color: var(--comm-text);
+  line-height: 1.65;
+}
+.app-shell.ui-refresh .communications-hub .communication-body p {
+  color: var(--comm-text);
+}
+.communication-thread-message {
+  border-bottom: 1px solid var(--comm-border);
+  padding: 1rem 0;
+}
+.communication-thread-message:first-child {
+  padding-top: 0;
+}
+.communication-thread-message p {
+  white-space: pre-wrap;
+}
+.communication-task-form {
+  border-top: 1px solid var(--comm-border);
+  margin-top: 1.5rem;
+  padding-top: 1.2rem;
+}
+.communication-fields,
+.communication-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 1rem;
+}
+.communication-settings-grid > div {
+  min-width: 0;
+}
+.communication-settings-grid p {
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.communication-settings-grid button {
+  margin: 0.25rem 0.4rem 0.25rem 0;
+}
+.communication-detail label,
+.communication-settings label {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.7rem 0;
+}
+.communication-detail textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+.communication-labels {
+  max-height: 16rem;
+  overflow: auto;
+  margin: 1rem 0;
+}
+.communication-labels label,
+.communication-settings .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.app-shell.ui-refresh .communications-hub .settings-message {
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--comm-border);
+  border-radius: 10px;
+  background: var(--comm-surface);
+  color: var(--comm-text);
+}
+@media (max-width: 900px) {
+  .communication-list--rows .communication-card {
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 0.8rem;
+  }
+  .communication-list--rows .communication-card-footer {
+    grid-column: 2;
+    flex-direction: row;
+  }
+}
+@media (max-width: 600px) {
+  .communications-heading,
+  .communication-detail,
+  .communication-settings {
+    padding: 1rem;
+  }
+  .communication-toolbar {
+    align-items: stretch;
+  }
+  .communication-view-controls {
+    margin-left: 0;
+    justify-content: space-between;
+    width: 100%;
+    gap: 0.5rem;
+  }
+  .communication-label-filter {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+  .communication-tabs {
+    gap: 0.4rem;
+  }
+  .communication-tabs button {
+    padding: 0.4rem 0.7rem;
+  }
+  .communication-list--rows .communication-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .communication-list--rows .communication-card-footer {
+    grid-column: 1;
+  }
+  .communication-list--rows .communication-card-meta time {
+    flex-basis: auto;
+  }
+  .communication-list--rows .communication-subject {
+    -webkit-line-clamp: 2;
+  }
+  .communication-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .communication-page-buttons {
+    justify-content: space-between;
+    gap: 0.4rem;
+  }
+  .communication-page-buttons button {
+    padding: 0.45rem 0.55rem;
+  }
+}
+
+.work-hub-shared-inquiries > summary {
+  cursor: pointer;
+  padding: 1rem;
+  font-weight: 650;
+}
+.work-hub-shared-inquiries > .callout {
+  margin: 0.7rem 0;
+}
+.communication-attachments {
+  white-space: normal;
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--comm-border);
+}
+.communication-attachments > strong {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--comm-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.communication-attachments ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.communication-attachments li {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.communication-attachment-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.communication-drive-button {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.communication-drive-saved {
+  color: var(--comm-accent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.communication-drive-picker {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--comm-border);
+  border-radius: 10px;
+  background: var(--comm-surface);
+}
+.communication-drive-picker p {
+  margin: 0;
+  color: var(--comm-text);
+}
+.communication-drive-picker label {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--comm-text);
+  font-weight: 600;
+}
+.communication-drive-picker select,
+.communication-drive-picker .client-combo-input {
+  width: 100%;
+  min-width: 0;
+}
+.communication-drive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.communication-attachments small {
+  color: var(--comm-muted);
+}
+.communication-attachments p[role="alert"] {
+  margin: 0.5rem 0 0;
+  color: #b42318;
+}
+.communication-attachment-link,
+.communication-attachment-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.communication-attachment-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--comm-accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.communication-attachment-link:hover:not(:disabled) {
+  text-decoration-thickness: 2px;
+}
+.communication-attachment-link:focus-visible {
+  outline: 2px solid var(--comm-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.communication-attachment-link:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.communication-attachment-link svg,
+.communication-attachment-name svg {
+  flex-shrink: 0;
+}

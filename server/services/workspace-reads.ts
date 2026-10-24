@@ -5,13 +5,26 @@ export function workspaceRevision(updatedAt: unknown, timeZone: string, now = ne
 }
 
 export async function readWorkspaceRevision(db: any, organizationId: string, timeZone: string) {
-  const { data, error } = await db.from('tenant_state').select('updated_at').eq('organization_id', organizationId).maybeSingle()
+  const { data, error } = await db
+    .from('tenant_state')
+    .select('updated_at')
+    .eq('organization_id', organizationId)
+    .maybeSingle()
   if (error) throw error
-  return { configured: true, updatedAt: data?.updated_at, revision: workspaceRevision(data?.updated_at, timeZone), timeZone }
+  return {
+    configured: true,
+    updatedAt: data?.updated_at,
+    revision: workspaceRevision(data?.updated_at, timeZone),
+    timeZone,
+  }
 }
 
 export async function readNotificationState(db: any, organizationId: string) {
-  const { data, error } = await db.from('tenant_state').select('notifications:data->notifications,updated_at').eq('organization_id', organizationId).maybeSingle()
+  const { data, error } = await db
+    .from('tenant_state')
+    .select('notifications:data->notifications,updated_at')
+    .eq('organization_id', organizationId)
+    .maybeSingle()
   if (error) throw error
   return { notifications: Array.isArray(data?.notifications) ? data.notifications : [], updatedAt: data?.updated_at }
 }

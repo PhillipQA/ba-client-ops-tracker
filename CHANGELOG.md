@@ -1,8 +1,19 @@
 # Changelog
 
-**Current application release: v0.9.0**
+**Current application release: v1.0.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.0.0 — The code, reorganised
+Released October 24, 2026.
+
+**No database migration and no new setting.** Nothing changes for users: every page looks and works as in v0.9.0. This release makes the code easier to read and change. Details in the [release notes](docs/releases/v1.0.0.md).
+
+- **Browser code by feature.** `src/features/<area>` holds each part of the app (trackers, email, work hub, documents, tasks and so on), `src/app` the shell and its state, `src/shared` what several features use, `src/styles` the global styles.
+- **Smaller main files.** `App.tsx` went from about 2,000 lines to about 300: its state lives in one hook and each screen is its own component. `server/index.ts` went from about 2,500 lines to about 140: shared server code is in `server/core` and each group of routes has its own module.
+- **One UI kit and one way to call the server.** Dialogs, popovers, notices and type-to-search fields come from `src/shared/ui`; API calls go through `src/shared/http.ts`.
+- **Formatting and lint.** The code is formatted with Biome (`npm run format`); CI fails on formatting or lint errors and lists warnings on each run. CI also shows the full test suite's totals.
+- **Cleanup.** Dead code the linter found was removed, including an old Discord capture path that was no longer used.
 
 ## v0.9.0 — Trackers that follow a Google Sheet, and reviewing new rows
 Released October 24, 2026.

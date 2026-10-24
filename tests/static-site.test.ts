@@ -14,17 +14,25 @@ let base = ''
 before(async () => {
   dist = mkdtempSync(path.join(tmpdir(), 'static-site-'))
   mkdirSync(path.join(dist, 'assets'))
-  writeFileSync(path.join(dist, 'index.html'), '<!doctype html><script type="module" src="/assets/index-NEW.js"></script>')
+  writeFileSync(
+    path.join(dist, 'index.html'),
+    '<!doctype html><script type="module" src="/assets/index-NEW.js"></script>',
+  )
   writeFileSync(path.join(dist, 'assets', 'index-NEW.js'), 'console.log(1)')
   writeFileSync(path.join(dist, 'favicon.ico'), 'x')
   const app = express()
   registerStaticSite(app, dist)
-  server = await new Promise(resolve => { const s = app.listen(0, () => resolve(s)) })
+  server = await new Promise(resolve => {
+    const s = app.listen(0, () => resolve(s))
+  })
   const address = server.address()
   base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`
 })
 
-after(() => { server?.close(); rmSync(dist, { recursive: true, force: true }) })
+after(() => {
+  server?.close()
+  rmSync(dist, { recursive: true, force: true })
+})
 
 test('index.html is revalidated on every load', async () => {
   for (const url of ['/', '/tasks/123', '/index.html']) {
