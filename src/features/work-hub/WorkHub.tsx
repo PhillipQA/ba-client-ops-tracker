@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LayoutGrid, List, ChevronLeft, ChevronRight, Paperclip, CloudUpload } from 'lucide-react'
 import GitProviderHub from '../integrations/GitProviderHub'
 import {

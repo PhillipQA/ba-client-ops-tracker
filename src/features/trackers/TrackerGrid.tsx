@@ -19,7 +19,7 @@ import {
   type TrackerView,
 } from './trackerModel'
 import type { Lookup } from './trackerQuery'
-import { CellEditor, CellView, LinkedIcon, editable, numberFormat, type Person } from './TrackerCells'
+import { CellEditor, CellView, editable, numberFormat, type Person } from './TrackerCells'
 import { ColumnIcon } from './trackerUi'
 
 export const ROW_HEIGHT = 44

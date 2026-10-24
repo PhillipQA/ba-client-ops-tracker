@@ -1,4 +1,4 @@
-import type { AppState, SignedInUser } from '../../app/useAppState'
+import type { AppState } from '../../app/useAppState'
 import { FilterBar, TaskTable } from './TaskTable'
 import { waitingOnOptions } from './waitingOn'
 import ClientSelect from '../../shared/ui/SearchSelect'

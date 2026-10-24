@@ -16,7 +16,6 @@ export default function RecordEditDialog({ kind, record, canRenameClient, onClos
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const client = kind === 'clients',
-    label = client ? 'client' : 'project',
     archived = isArchived(record)
   useModalDialog(dialog, element => {
     const firstInput = element.querySelector<HTMLInputElement>(

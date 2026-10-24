@@ -75,7 +75,7 @@ import {
   seedStore,
   workEventsForItemChanges,
 } from './store'
-import { activityTime, addDays, weekEndKey, weekStartKey } from '../shared/dates'
+import { addDays, weekEndKey, weekStartKey } from '../shared/dates'
 
 /**
  * Everything the app keeps track of while it runs: the signed-in person, the workspace (clients, projects, tasks,
@@ -609,26 +609,6 @@ export function useAppState() {
     setCloudMessage('Time saved · Database synced')
   }
 
-  const syncCloudNow = async () => {
-    setCloudStatus('saving')
-    setCloudMessage('Saving to database…')
-    try {
-      const result = await queueCloudStoreSave({ ...store, schemaVersion: STORE_SCHEMA_VERSION })
-      if (!result.configured) {
-        setCloudStatus('local')
-        setCloudMessage('Database is not configured yet')
-        return
-      }
-      setLastCloudSync(result.updatedAt || new Date().toISOString())
-      setCloudStatus('synced')
-      setCloudMessage('Database synced')
-    } catch (error) {
-      console.error(error)
-      setCloudStatus('error')
-      setCloudMessage('Cloud sync failed · local cache retained')
-    }
-  }
-
   const handleLogin = async (account: string, username: string, password: string) => {
     setLoginBusy(true)
     setLoginError('')
@@ -698,7 +678,6 @@ export function useAppState() {
         lastLoginAt: authUser.lastLoginAt,
       }
     : null
-  const workspaceModules = currentUser?.organizationModules || currentUser?.modules || []
   const canWrite = Boolean(currentUser && currentUser.role !== 'Viewer' && !lifecycleSaving)
   const canManageAccounts = currentUser?.role === 'Administrator' && currentUser.accountType !== 'platform'
   const hasModule = (module: AppModule) => Boolean(currentUser && currentUser.modules.includes(module))
@@ -937,9 +916,6 @@ export function useAppState() {
       })
   }, [store.clients, store.items, openItems, clientArchiveFilter, clientSearch, clientSort])
 
-  const overdue = openItems.filter(item => item.followUpDate && item.followUpDate < today)
-  const dueToday = openItems.filter(item => item.followUpDate === today)
-  const attentionClientCount = new Set(openItems.map(item => item.clientId).filter(Boolean)).size
   const openInquiryCount = openItems.filter(item => item.type === 'Inquiry').length
 
   const searchedItems = useMemo(() => {

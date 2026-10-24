@@ -18,15 +18,6 @@ function documentAccessAllowed(user: SessionUser) {
   return user.role !== 'Viewer' && moduleAllowed(user, 'documents')
 }
 
-function safeDocumentBase64(value: unknown, maxBytes: number) {
-  const raw = typeof value === 'string' ? value.replace(/^data:[^;]+;base64,/, '') : ''
-  if (!raw || !/^[A-Za-z0-9+/=\r\n]+$/.test(raw)) throw new Error('The uploaded file data is invalid.')
-  const estimatedBytes = Math.floor((raw.replace(/\s/g, '').length * 3) / 4)
-  if (estimatedBytes > maxBytes)
-    throw new Error(`The uploaded file is too large. Maximum size is ${Math.round(maxBytes / 1024 / 1024)} MB.`)
-  return raw.replace(/\s/g, '')
-}
-
 function safeTemplateValue(value: unknown) {
   if (value === null || value === undefined) return ''
   return String(value).slice(0, 10000)

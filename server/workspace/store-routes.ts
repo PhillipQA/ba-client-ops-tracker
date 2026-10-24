@@ -87,7 +87,6 @@ async function prepareAccountPasswords(currentAccounts: any[], nextAccounts: any
 /** The workspace store, its revision, notifications and the data-architecture checks. */
 export function registerStoreRoutes(app: Express) {
   app.get('/api/data-architecture/status', requireAuth, requirePlatformAdmin, async (req, res) => {
-    const user = (req as express.Request & { authUser: SessionUser }).authUser
     try {
       const organization = await organizationById(String(req.query.organizationId || ''))
       if (!organization) return void res.status(400).json({ error: 'Choose an account.' })
@@ -289,7 +288,6 @@ export function registerStoreRoutes(app: Express) {
 
       const currentItems = Array.isArray(current.items) ? current.items : []
       const nextItems = Array.isArray(next.items) ? next.items : []
-      const nextIds = new Set(nextItems.map((item: any) => String(item?.id || '')))
       const legacyDiscordItems = currentItems.filter(
         (item: any) => item?.source === 'Discord' && item?.externalSourceId,
       )
@@ -301,7 +299,6 @@ export function registerStoreRoutes(app: Express) {
           ...legacyDiscordItems,
         ],
       }
-      const missingDiscordItems = legacyDiscordItems.filter((item: any) => !nextIds.has(String(item.id || '')))
 
       const currentAccounts = Array.isArray(current.accounts) ? current.accounts.map(accountDefaults) : []
       const incomingAccounts = preserveInterfaceModes(currentAccounts, currentAccounts)

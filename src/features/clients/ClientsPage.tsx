@@ -1,4 +1,4 @@
-import type { AppState, SignedInUser } from '../../app/useAppState'
+import type { AppState } from '../../app/useAppState'
 import { ChevronRight, Clock3, LayoutGrid, List, Pencil, Plus, Search, Table2, Users } from 'lucide-react'
 import { StatusChip } from '../../shared/ui/Chips'
 import { isArchived } from '../tasks/lifecycle'

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import GithubHub, { type Props } from './GithubHub'
 export default function GitProviderHub(props: Props) {
   const preferenceKey = `work-hub-git-provider:${props.currentUser.organizationId || ''}:${props.currentUser.id}`

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { GitBranch, RefreshCw, ExternalLink, ChevronLeft, ChevronRight, Link, Plus } from 'lucide-react'
 import {
   GITHUB_QA_STATUSES,

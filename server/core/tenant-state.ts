@@ -63,18 +63,6 @@ export async function organizationById(id?: string | null) {
   return data ? normalizeOrganization(data) : null
 }
 
-async function organizationBySlug(slug: string) {
-  if (!supabaseAdmin) return null
-  const { data, error } = await supabaseAdmin
-    .from('organizations')
-    .select('id,name,slug,status,enabled_modules')
-    .eq('slug', slug)
-    .is('deleted_at', null)
-    .maybeSingle()
-  if (error) return null
-  return data ? normalizeOrganization(data) : null
-}
-
 export async function organizationByLoginKey(account: string) {
   if (!supabaseAdmin) return null
   const raw = account.trim()
@@ -671,10 +659,6 @@ export async function syncNormalizedState(
   organizationId?: string,
 ): Promise<NormalizedSyncResult> {
   return commitTenantState(organizationId, state, actor, reason, state)
-}
-
-function isLegacyStore(data: any) {
-  return !data || typeof data !== 'object' || Number(data.schemaVersion || 0) < 3
 }
 
 export function notificationsForUser(state: any, userId: string) {

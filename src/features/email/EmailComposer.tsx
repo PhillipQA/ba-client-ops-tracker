@@ -288,8 +288,7 @@ export function EmailComposer({
     [statusError, setStatusError] = useState('')
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
-  const [clientFilter, setClientFilter] = useState(primary?.clientId ?? ''),
-    [pickTask, setPickTask] = useState('')
+  const [clientFilter, setClientFilter] = useState(primary?.clientId ?? '')
   const [driveOpen, setDriveOpen] = useState(false),
     [fileQuery, setFileQuery] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
@@ -787,7 +786,6 @@ export function EmailComposer({
                   value={clientFilter}
                   onChange={value => {
                     setClientFilter(value)
-                    setPickTask('')
                   }}
                   extra={[{ value: '', label: 'All clients' }]}
                 />
