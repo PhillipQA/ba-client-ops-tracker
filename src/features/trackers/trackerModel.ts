@@ -198,7 +198,7 @@ export type TrackerRow = {
   taskId: string
   version: number
   updatedAt: string
-  /** Rows from a connected Google Sheet: the value in its key column. Empty for rows added in the tracker. */
+  /** Rows from a connected Google Sheet: the row's task name and order (sheetRowKeys). Empty otherwise. */
   sourceKey?: string
   /** The row is no longer in the Sheet. It is kept, and flagged, rather than deleted. */
   sourceMissing?: boolean

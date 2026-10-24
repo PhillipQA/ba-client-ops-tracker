@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ExternalLink, LockKeyhole, Search, Upload } from 'lucide-react'
+import { AlertTriangle, Check, ExternalLink, LockKeyhole, Search, Upload } from 'lucide-react'
 import { COLUMN_TYPES, TRACKER_LIMITS, type ColumnType, type Tracker } from './trackerModel'
 import {
   defaultMappings,
@@ -11,7 +11,7 @@ import {
   type Source,
 } from './trackerImport'
 import { trackerApi, TrackerApiError, type SheetFile } from './trackerApi'
-import { sheetIdFrom } from './trackerSync'
+import { checkNameColumns, sheetIdFrom, type NameColumnCheck } from './trackerSync'
 import { rememberReview } from './trackerNav'
 import { Dialog, plural } from './trackerUi'
 import TrackerClientPicker from './TrackerClientPicker'
@@ -50,6 +50,7 @@ export default function TrackerImportDialog({
   const [files, setFiles] = useState<SheetFile[] | null>(null)
   const [sheet, setSheet] = useState<{ id: string; name: string; tabs: { title: string; rows: number }[] } | null>(null)
   const [tab, setTab] = useState('')
+  // The task name column: a row with a name is a task, a row with a blank name belongs to the task above.
   const [keyHeader, setKeyHeader] = useState('')
   const [looking, setLooking] = useState(false)
   const [text, setText] = useState('')
@@ -226,6 +227,12 @@ export default function TrackerImportDialog({
     }
   }
 
+  const nameChecks = useMemo(
+    () => (source && fromSheet ? checkNameColumns(source.headers, source.rows) : []),
+    [source, fromSheet],
+  )
+  const nameCheck = nameChecks.find(check => check.header === keyHeader)
+
   /** A new tracker that follows the Sheet: columns from the mapping, then the connection, then the first sync. */
   const connect = async () => {
     if (!plan || !sheet || busy) return
@@ -233,7 +240,9 @@ export default function TrackerImportDialog({
     const chosen = mappings.filter(mapping => mapping.include)
     if (!chosen.length) return setError('Choose at least one column to follow.')
     if (!keyHeader || !chosen.some(mapping => source?.headers[mapping.index] === keyHeader))
-      return setError('Choose the key column, and keep it ticked: it is how each row is recognised on every sync.')
+      return setError(
+        'Choose the task name column, and keep it ticked: it is how each row is recognised on every sync.',
+      )
     setBusy(true)
     setError('')
     try {
@@ -544,15 +553,16 @@ export default function TrackerImportDialog({
           </p>
           {fromSheet && (
             <label className="trk-field-block trk-key-column">
-              Key column: what names each row, such as a branch number. Rows are matched by it on every sync, so it
-              should be unique and not change.
+              Task name column: each row with a name here is a task, and the same name may appear on several rows. A row
+              with this cell blank belongs to the task above it. Every row comes into the tracker.
               <select value={keyHeader} onChange={event => setKeyHeader(event.target.value)}>
-                {source.headers.map(item => (
-                  <option key={item} value={item}>
-                    {item}
+                {nameChecks.map(check => (
+                  <option key={check.header} value={check.header}>
+                    {`${check.header} — ${nameOptionNote(check)}`}
                   </option>
                 ))}
               </select>
+              {nameCheck && <NameColumnNote check={nameCheck} />}
             </label>
           )}
           <div className="trk-map-scroll">
@@ -744,5 +754,36 @@ export default function TrackerImportDialog({
         </div>
       )}
     </Dialog>
+  )
+}
+
+/** Short note beside each column in the task name list. */
+function nameOptionNote(check: NameColumnCheck) {
+  return check.under ? `${plural(check.tasks, 'task')}, ${check.under} under them` : plural(check.tasks, 'task')
+}
+
+/** How the rows will group with the chosen column. */
+function NameColumnNote({ check }: { check: NameColumnCheck }) {
+  const parts = [
+    plural(check.tasks, 'row'),
+    check.tasks === 1 ? 'has a name and becomes a task' : 'have a name and become tasks',
+  ].join(' ')
+  const under = check.under
+    ? ` ${plural(check.under, 'row')} with no name ${check.under === 1 ? 'belongs' : 'belong'} to the task above.`
+    : ''
+  const repeats = check.repeated
+    ? ` ${plural(check.repeated, 'row')} ${check.repeated === 1 ? 'uses a name' : 'use names'} from a row above; each is still its own task.`
+    : ''
+  const message = `${parts}.${under}${repeats}`
+  const one = check.beforeFirst === 1
+  const above = `${plural(check.beforeFirst, 'row')} above the first name ${one ? 'has' : 'have'} no task above ${one ? 'it' : 'them'}: ${one ? 'it is' : 'they are'} left for you to decide in the review.`
+  return (
+    <span className="trk-key-note ok">
+      <Check size={14} aria-hidden="true" />
+      <span>
+        {message}
+        {check.beforeFirst > 0 && <strong>{` ${above}`}</strong>}
+      </span>
+    </span>
   )
 }

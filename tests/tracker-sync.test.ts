@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeSync, planSync, sheetIdFrom, tabRange, type SyncRow } from '../src/features/trackers/trackerSync'
+import {
+  checkNameColumns,
+  describeSync,
+  parentKeyOf,
+  planSync,
+  sheetIdFrom,
+  sheetRowKeys,
+  tabRange,
+  type SyncRow,
+} from '../src/features/trackers/trackerSync'
 import type { TrackerColumn } from '../src/features/trackers/trackerModel'
 
 const columns: TrackerColumn[] = [
@@ -31,7 +40,7 @@ test('links and ids are read from what people paste', () => {
   assert.equal(tabRange("Branch's list"), "'Branch''s list'")
 })
 
-test('a first sync adds every row with a key, converting values like an import', () => {
+test('a first sync adds every non-empty row, converting values like an import', () => {
   const plan = run([
     ['Branch #', 'Branch', 'Go-live', 'Terminals', 'Status', 'Extra'],
     ['57', 'Batch 5', '11/25/2026', '3', 'Open', 'x'],
@@ -42,7 +51,12 @@ test('a first sync adds every row with a key, converting values like an import',
   ])
   assert.ok(!('error' in plan))
   if ('error' in plan) return
-  assert.equal(plan.inserts.length, 2)
+  assert.equal(plan.inserts.length, 4, 'the row with no name and the repeated name come in too')
+  assert.deepEqual(
+    plan.inserts.map(insert => insert.key),
+    ['57', '58', '58\u001e1', '57\u001f2'],
+    'the blank row belongs to 58 above it; the second 57 is its own row',
+  )
   assert.deepEqual(plan.inserts[0].cells, {
     c_branch: '57',
     c_name: 'Batch 5',
@@ -54,10 +68,10 @@ test('a first sync adds every row with a key, converting values like an import',
   const scheduled = plan.columns.find(c => c.id === 'c_status')!.options!.find(o => o.label === 'Scheduled')
   assert.ok(scheduled && plan.columnsChanged, 'a new Select option is added')
   assert.equal(plan.inserts[1].cells.c_status, scheduled!.id)
-  assert.equal(plan.report.skippedNoKey, 1)
-  assert.deepEqual(plan.report.duplicateKeys, ['57'])
+  assert.equal(plan.report.skippedNoKey, 0)
+  assert.deepEqual(plan.report.duplicateKeys, [])
   assert.deepEqual(plan.report.newHeaders, ['Extra'])
-  assert.equal(describeSync(plan.report), '2 new rows')
+  assert.equal(describeSync(plan.report), '4 new rows')
 })
 
 test('later syncs match rows by key, update only changed cells, and flag rows that left the Sheet', () => {
@@ -121,4 +135,68 @@ test('a missing key column, an empty tab and the row limit are reported', () => 
   ])
   if ('error' in gone) return assert.fail(gone.error)
   assert.deepEqual(gone.report.missingHeaders.sort(), ['Go-live', 'Status', 'Terminals'])
+})
+
+test('row keys: names may repeat, and rows with a blank name belong to the task above', () => {
+  const keys = sheetRowKeys(['', 'EGG', '', '', 'PUMA', '', 'egg', '', 'EGG\u001f2'])
+  assert.deepEqual(keys, [
+    '\u001e1',
+    'EGG',
+    'EGG\u001e1',
+    'EGG\u001e2',
+    'PUMA',
+    'PUMA\u001e1',
+    'egg\u001f2',
+    'egg\u001f2\u001e1',
+    'EGG\u001f2\u001f2',
+  ])
+  assert.equal(new Set(keys.map(key => key.toLowerCase())).size, keys.length, 'every key is unique')
+  assert.equal(parentKeyOf('EGG'), null, 'a named row is a task')
+  assert.equal(parentKeyOf('EGG\u001e2'), 'EGG')
+  assert.equal(parentKeyOf('egg\u001f2\u001e1'), 'egg\u001f2')
+  assert.equal(parentKeyOf('\u001e1'), '', 'a row above the first name has no task')
+})
+
+test('later syncs recognise each row by name and order, so other rows can be inserted or sorted', () => {
+  const grid = [
+    ['Branch #', 'Branch', 'Go-live', 'Terminals', 'Status'],
+    ['EGG', 'First', '', '', ''],
+    ['', 'Under first', '', '', ''],
+    ['EGG', 'Second', '', '', ''],
+  ]
+  const first = run(grid)
+  assert.ok(!('error' in first))
+  if ('error' in first) return
+  const rows: SyncRow[] = first.inserts.map((insert, at) => ({
+    id: `r${at}`,
+    sourceKey: insert.key,
+    data: insert.cells,
+    values: insert.values,
+    missing: false,
+  }))
+  const moved = run([grid[0], ['PUMA', 'New', '', '', ''], ...grid.slice(1)], rows)
+  assert.ok(!('error' in moved))
+  if ('error' in moved) return
+  assert.deepEqual(
+    moved.inserts.map(insert => insert.key),
+    ['PUMA'],
+    'only the new task comes in; the EGG rows keep their tracker rows',
+  )
+  assert.equal(moved.updates.filter(update => Object.keys(update.cells).length).length, 0, 'no row changed')
+  assert.equal(moved.report.missing, 0)
+})
+
+test('task name check: tasks, rows under them, rows above the first name, repeated names', () => {
+  const headers = ['Client', 'Git #']
+  const rows = [
+    ['', '100'],
+    ['EGG', ''],
+    ['', '101'],
+    ['', ''],
+    ['PUMA', ''],
+    ['egg', '102'],
+  ]
+  const [client, git] = checkNameColumns(headers, rows)
+  assert.deepEqual(client, { header: 'Client', tasks: 3, under: 1, beforeFirst: 1, repeated: 1 })
+  assert.deepEqual(git, { header: 'Git #', tasks: 3, under: 2, beforeFirst: 0, repeated: 0 })
 })

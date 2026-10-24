@@ -1,8 +1,19 @@
 # Changelog
 
-**Current application release: v1.0.1**
+**Current application release: v1.0.2**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.0.2 — Every Sheet row comes in, grouped into tasks and subtasks
+Released October 24, 2026.
+
+**No database migration and no new setting.**
+
+- **Every row comes in.** Before, a tracker connected to a Google Sheet matched rows by a key column and left out rows whose key was blank or repeated, so choosing a column such as Client could bring in one row per client. Now every non-empty row comes into the tracker.
+- **Task name column.** When you connect, choose the **task name column** (the first column by default). A row with a name there is a task, and the same name may appear on several rows; each is its own task. A row with that cell blank belongs to the task above it. The dialog shows how the rows group, for example "3 rows have a name and become tasks. 4 rows with no name belong to the task above."
+- **The review is filled in for you.** New rows from the Sheet open in the review already decided: rows with a name become **new tasks**, and the rows under them become **subtasks** of their task (a task created in the same review, or the task that row already has from an earlier sync). Change anything before you click Create. **Subtask title comes from** picks the column for subtask names (Ticket Title, for example); **Task title comes from** is the same as before.
+- **How rows are recognised on later syncs.** By name and order: the 2nd "EGG" row, the 1st row under it. Adding, removing or sorting other rows is safe; inserting another row with the same name above an existing one shifts the later rows with that name.
+- Trackers already connected keep working: rows they already have are matched as before, and the rows that were left out come in on the next sync, ready to review.
 
 ## v1.0.1 — Clearer Google Sheet errors
 Released October 24, 2026.

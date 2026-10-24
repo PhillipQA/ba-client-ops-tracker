@@ -4,6 +4,7 @@ import { shown, type Lookup } from './trackerQuery'
 import { Dialog, plural } from './trackerUi'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { trackerClients, type TaskDraft, type WorkTools } from './TrackerWork'
+import { parentKeyOf } from './trackerSync'
 
 /** What a reviewed row becomes. */
 export type Choice =
@@ -20,6 +21,8 @@ export type ReviewOutcome = {
 type Props = {
   tracker: Tracker
   rows: TrackerRow[]
+  /** Every loaded row of the tracker, to find the task row a Sheet row belongs to. */
+  allRows?: TrackerRow[]
   lookup: Lookup
   tools: WorkTools
   /** Where the rows came from, for the title. */
@@ -41,19 +44,39 @@ const describe = (choice: Choice | undefined, rows: Map<string, string>, items: 
  * Reviews new rows (from a connected Sheet or an import): each ticked row becomes a new task, a subtask of an existing
  * task, a subtask of a new task from the same list, or stays a plain row. Nothing is created until Create is pressed.
  */
-export default function TrackerReview({ tracker, rows, lookup, tools, origin, onClose, onApply }: Props) {
+export default function TrackerReview({ tracker, rows, allRows, lookup, tools, origin, onClose, onApply }: Props) {
   const columns = tracker.columns
   const textColumns = columns.filter(column =>
     ['text', 'longtext', 'number', 'date', 'select', 'link', 'person'].includes(column.type),
   )
   const [titleColumn, setTitleColumn] = useState(textColumns[0]?.id || '')
-  const titleFrom = (row: TrackerRow) => {
-    const column = columns.find(item => item.id === titleColumn)
-    return column ? shown(column, row, lookup).text.trim() : ''
-  }
   const open = rows.filter(row => !row.taskId)
   const [ticked, setTicked] = useState<Set<string>>(new Set())
-  const [choices, setChoices] = useState<Record<string, Choice>>({})
+  const [initialChoices] = useState<Record<string, Choice>>(() =>
+    origin === 'sheet' && tools.onCreate ? choicesFromSheet(open, allRows ?? rows) : {},
+  )
+  const [choices, setChoices] = useState(initialChoices)
+  const prefilled = Object.keys(initialChoices).length > 0
+  const isSubtask = (row: TrackerRow) => Boolean(choices[row.id]?.kind.startsWith('subtask'))
+  // Rows under a task usually leave the name column blank, so their subtask title comes from another column.
+  const [subTitleColumn, setSubTitleColumn] = useState(() =>
+    bestTitleColumn(
+      textColumns.filter(column => column.id !== titleColumn),
+      open.filter(row => initialChoices[row.id]?.kind.startsWith('subtask')),
+      lookup,
+    ),
+  )
+  // The chosen title column, or when that cell is blank, the row's first filled text cell.
+  const titleFrom = (row: TrackerRow) => {
+    const column = columns.find(item => item.id === (isSubtask(row) && subTitleColumn ? subTitleColumn : titleColumn))
+    const own = column ? shown(column, row, lookup).text.trim() : ''
+    if (own) return own
+    for (const other of textColumns) {
+      const text = shown(other, row, lookup).text.trim()
+      if (text) return text
+    }
+    return ''
+  }
   const [titles, setTitles] = useState<Record<string, string>>({})
   const [ruleColumn, setRuleColumn] = useState(textColumns[0]?.id || '')
   const [ruleOp, setRuleOp] = useState<'is' | 'contains' | 'empty' | 'filled'>('is')
@@ -69,9 +92,13 @@ export default function TrackerReview({ tracker, rows, lookup, tools, origin, on
   const [error, setError] = useState('')
 
   const titleOf = (row: TrackerRow) => (titles[row.id] ?? titleFrom(row)) || 'Untitled row'
-  const rowNames = useMemo(() => new Map(rows.map(row => [row.id, titleOf(row)])), [rows, titles, titleColumn])
+  const rowNames = useMemo(
+    () => new Map(rows.map(row => [row.id, titleOf(row)])),
+    [rows, titles, titleColumn, subTitleColumn, choices],
+  )
   const itemNames = useMemo(() => new Map(tools.items.map(item => [item.id, item.title])), [tools.items])
   const taskRows = open.filter(row => choices[row.id]?.kind === 'task')
+  const subtaskRows = open.filter(isSubtask)
   const openTasks = useMemo(
     () => [
       { value: '', label: 'Choose the task they belong to' },
@@ -236,6 +263,12 @@ export default function TrackerReview({ tracker, rows, lookup, tools, origin, on
       busy={busy}
     >
       <div className="trk-review">
+        {prefilled && (
+          <p className="trk-strip">
+            Filled in from the Sheet: rows with a name become tasks, and the rows under them become their subtasks.
+            Change anything before you create.
+          </p>
+        )}
         <p className="trk-muted-text">
           Tick rows, then choose what they become. Rows you do not decide on stay in this list for later
           {origin === 'sheet' ? ', and every row stays in the tracker either way' : ''}.
@@ -360,7 +393,7 @@ export default function TrackerReview({ tracker, rows, lookup, tools, origin, on
                   )}
                 </span>
                 <span role="cell" className="trk-review-name">
-                  {shown(columns[0], row, lookup).text || '—'}
+                  {shown(columns[0], row, lookup).text || (choice?.kind.startsWith('subtask') ? '↳' : '—')}
                 </span>
                 <span role="cell">
                   {done ? (
@@ -382,6 +415,26 @@ export default function TrackerReview({ tracker, rows, lookup, tools, origin, on
           })}
         </div>
 
+        {subtaskRows.length > 0 && (
+          <label className="trk-field-block trk-review-subtitle">
+            Subtask title comes from
+            <select
+              value={subTitleColumn}
+              onChange={event => {
+                setSubTitleColumn(event.target.value)
+                setTitles(current =>
+                  Object.fromEntries(Object.entries(current).filter(([id]) => !subtaskRows.some(row => row.id === id))),
+                )
+              }}
+            >
+              {textColumns.map(column => (
+                <option key={column.id} value={column.id}>
+                  {column.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {counts.tasks > 0 && (
           <fieldset className="trk-review-settings">
             <legend>For the new tasks</legend>
@@ -439,7 +492,7 @@ export default function TrackerReview({ tracker, rows, lookup, tools, origin, on
               )}
             </div>
             <label className="trk-field-block">
-              Title comes from
+              Task title comes from
               <select
                 value={titleColumn}
                 onChange={event => {
@@ -525,4 +578,44 @@ export default function TrackerReview({ tracker, rows, lookup, tools, origin, on
       </div>
     </Dialog>
   )
+}
+
+/**
+ * The review's starting choices for rows from a Sheet: a row with a name becomes a task, and a row under it becomes a
+ * subtask of that task (a new one from this list, or the task its row already has). Rows above the first name, and
+ * rows whose task row is not loaded, are left undecided.
+ */
+function choicesFromSheet(open: TrackerRow[], rows: TrackerRow[]): Record<string, Choice> {
+  const byKey = new Map(rows.filter(row => row.sourceKey).map(row => [String(row.sourceKey).toLowerCase(), row]))
+  const reviewing = new Set(open.map(row => row.id))
+  const choices: Record<string, Choice> = {}
+  for (const row of open) {
+    if (!row.sourceKey) continue
+    const parentKey = parentKeyOf(row.sourceKey)
+    if (parentKey === null) {
+      choices[row.id] = { kind: 'task' }
+      continue
+    }
+    const parent = parentKey ? byKey.get(parentKey.toLowerCase()) : undefined
+    if (!parent) continue
+    if (parent.taskId) choices[row.id] = { kind: 'subtask', parentTaskId: parent.taskId }
+    else if (reviewing.has(parent.id)) choices[row.id] = { kind: 'subtask_new', parentRowId: parent.id }
+  }
+  return choices
+}
+
+/** The column most often filled on these rows, with the longest text as the tie-break: usually a ticket title. */
+function bestTitleColumn(columns: TrackerColumn[], rows: TrackerRow[], lookup: Lookup) {
+  let best = columns[0]?.id || '',
+    bestScore = -1
+  for (const column of columns) {
+    const texts = rows.map(row => shown(column, row, lookup).text.trim()).filter(Boolean)
+    const average = texts.length ? texts.reduce((sum, text) => sum + text.length, 0) / texts.length : 0
+    const score = texts.length * 1000 + Math.min(average, 999)
+    if (score > bestScore) {
+      best = column.id
+      bestScore = score
+    }
+  }
+  return best
 }
