@@ -44,6 +44,7 @@ import { ClientDetail, ClientForm, ProjectDetail, ProjectForm } from '../feature
 import { TaskEditForm, TaskForm } from '../features/tasks/TaskForms'
 import { useAppState } from './useAppState'
 import { labels } from './navigation'
+import { VIEW_PATHS, opensElsewhere } from './routes'
 import { ActionCenterPage } from '../features/action-center/ActionCenterPage'
 import { ClientsPage } from '../features/clients/ClientsPage'
 import { ProjectsPage } from '../features/clients/ProjectsPage'
@@ -196,11 +197,18 @@ function App() {
                     ? `${label} · ${newExternalInquiryCount > 0 ? `${newExternalInquiryCount} new` : `${openInquiryCount} open`}`
                     : label,
                 )}
-                onClick={() => {
+                onClick={event => {
+                  // Ctrl/⌘-click or Shift-click opens the page in a new tab, as a link would.
+                  if (opensElsewhere(event)) return void window.open(VIEW_PATHS[id], '_blank', 'noopener')
                   setView(id)
                   if (id === 'requirements') setRtmContext({})
                   setSelectedClientId(null)
                   setSelectedProjectId(null)
+                }}
+                onAuxClick={event => {
+                  if (event.button !== 1) return
+                  event.preventDefault()
+                  window.open(VIEW_PATHS[id], '_blank', 'noopener')
                 }}
               >
                 <Icon size={18} />

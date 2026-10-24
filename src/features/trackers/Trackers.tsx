@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link2, Lock, Plus, Search, Table2, Upload } from 'lucide-react'
 import { TRACKER_LIMITS, columnTypeLabel, type Tracker } from './trackerModel'
 import { TRACKER_TEMPLATES, templateById } from './trackerTemplates'
 import { trackerApi } from './trackerApi'
 import { rememberTracker, rememberedTracker } from './trackerNav'
+import { VIEW_PATHS, opensElsewhere, pathForTracker, trackerIdFromPath } from '../../app/routes'
 import TrackerClientPicker from './TrackerClientPicker'
 import type { TaskDraft } from './TrackerWork'
 
@@ -160,10 +161,51 @@ function NewTrackerDialog({
 }
 
 export default function Trackers(props: Props) {
-  const [openId, setOpenIdState] = useState(remembered)
+  // The open tracker lives in the address (/trackers/<id>). Other screens that send the person to a tracker
+  // remember it first (trackerNav), and it opens when the address is just /trackers.
+  const [openId, setOpenIdState] = useState(() => trackerIdFromPath(window.location.pathname) || remembered())
   const setOpenId = (id: string) => {
     remember(id)
     setOpenIdState(id)
+  }
+  const firstAddress = useRef(true)
+  // Set when a tracker was opened from the list in this tab, so its Back button can step back in the history.
+  const openedFromList = useRef(false)
+  useEffect(() => {
+    const { pathname, hash } = window.location
+    const target = pathForTracker(openId)
+    const inTrackers = pathname === VIEW_PATHS.trackers || pathname.startsWith(`${VIEW_PATHS.trackers}/`)
+    if (pathname !== target) {
+      try {
+        if (firstAddress.current && (inTrackers || hash)) window.history.replaceState(null, '', target)
+        else {
+          openedFromList.current = Boolean(openId) && pathname === VIEW_PATHS.trackers
+          window.history.pushState(null, '', target)
+        }
+      } catch {
+        /* The tracker still opens; only the address is not updated. */
+      }
+    }
+    firstAddress.current = false
+  }, [openId])
+  useEffect(() => {
+    const onPop = () => {
+      const { pathname } = window.location
+      if (pathname !== VIEW_PATHS.trackers && !pathname.startsWith(`${VIEW_PATHS.trackers}/`)) return
+      const id = trackerIdFromPath(pathname)
+      openedFromList.current = false
+      remember(id)
+      setOpenIdState(id)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  /** Back to the list: a step back in the history when the tracker was opened from the list, so Back and Forward agree. */
+  const closeTracker = () => {
+    if (openedFromList.current) {
+      openedFromList.current = false
+      window.history.back()
+    } else setOpenId('')
   }
   const [trackers, setTrackers] = useState<Tracker[] | null>(null)
   const [error, setError] = useState('')
@@ -249,7 +291,7 @@ export default function Trackers(props: Props) {
         accounts={props.accounts}
         today={props.today}
         onBack={() => {
-          setOpenId('')
+          closeTracker()
           void load()
         }}
         onOpenTask={props.onOpenTask}
@@ -362,9 +404,17 @@ export default function Trackers(props: Props) {
             {shown.map(tracker => (
               <div className="trk-list-row" role="row" key={tracker.id}>
                 <span role="cell" className="trk-list-name">
-                  <button type="button" className="trk-link-button" onClick={() => setOpenId(tracker.id)}>
+                  <a
+                    className="trk-link-button"
+                    href={pathForTracker(tracker.id)}
+                    onClick={event => {
+                      if (opensElsewhere(event)) return
+                      event.preventDefault()
+                      setOpenId(tracker.id)
+                    }}
+                  >
                     {tracker.name}
-                  </button>
+                  </a>
                   {tracker.private && (
                     <span className="trk-chip">
                       <Lock size={11} aria-hidden="true" /> Only you

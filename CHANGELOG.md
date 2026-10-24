@@ -1,8 +1,20 @@
 # Changelog
 
-**Current application release: v1.0.3**
+**Current application release: v1.0.4**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.0.4 — Back and Forward work, every page has its own address
+Released October 24, 2026.
+
+**No database migration and no new setting.**
+
+- **Back stays in the app.** The browser's Back button used to leave the tracker, because changing pages never told the browser. Every page now has its own address (`/tasks`, `/work-hub`, `/trackers`…), so Back and Forward move between the pages you visited.
+- **Trackers, clients and projects too.** An open tracker is `/trackers/<id>`, a client is `/clients/<id>` and a project is `/projects/<id>`. Back from a tracker returns to the tracker list, and the tracker's own Back button does the same.
+- **Refresh keeps your place**, and any page or tracker can be bookmarked or sent as a link. If you are signed out, the link opens after you sign in.
+- **Open in a new tab.** Ctrl/⌘-click or middle-click a sidebar item or a tracker name to open it in a new tab.
+- **Tab titles name the page** (for example "Trackers · BA Client Ops Tracker"), so the history list under a long-press on Back tells pages apart.
+- Opening a page you cannot use still goes to your first allowed page, without leaving a history entry that Back would bounce off.
 
 ## v1.0.3 — A simpler review of new rows
 Released October 24, 2026.
