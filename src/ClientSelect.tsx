@@ -2,7 +2,9 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSP
 import { createPortal } from 'react-dom'
 
 export type ClientChoice = { id: string; name: string }
-type Extra = { value: string; label: string }
+type Extra = { value: string; label: string; hint?: string; depth?: number }
+/** One choice in a SearchSelect: `hint` is shown small beside it and is searched too; `depth` 1 marks a subtask. */
+export type SearchChoice = Extra
 
 type Props = {
   clients: readonly ClientChoice[]
@@ -26,10 +28,18 @@ const sortByName = (list: readonly ClientChoice[]) => [...list].sort((a, b) => a
  * A client field you type into: it lists clients A to Z and narrows them as you type, like the email recipient box.
  * Arrow keys move, Enter picks, Escape goes back to the last choice. It submits the client id under `name` in forms.
  */
-export default function ClientSelect({ clients, value, defaultValue = '', onChange, extra = [], name, disabled, required, placeholder = 'Type a client name', className = '', ...rest }: Props) {
+export default function ClientSelect({ clients, extra = [], placeholder = 'Type a client name', ...props }: Props) {
+  const choices = useMemo(() => [...extra, ...sortByName(clients).map(client => ({ value: client.id, label: client.name }))], [clients, extra])
+  return <SearchSelect {...props} choices={choices} placeholder={placeholder} empty="No client matches" />
+}
+
+type SearchProps = Omit<Props, 'clients' | 'extra'> & { choices: SearchChoice[]; empty?: string }
+
+/** The type-to-search field behind ClientSelect, for any list: choices keep their order; the first ones with an empty value are hints. */
+export function SearchSelect({ choices, value, defaultValue = '', onChange, name, disabled, required, placeholder = 'Type to search', className = '', empty = 'Nothing matches', ...rest }: SearchProps) {
+  const extra = useMemo(() => choices.filter(choice => choice.value === ''), [choices])
   const [inner, setInner] = useState(defaultValue)
   const current = value ?? inner
-  const choices = useMemo(() => [...extra, ...sortByName(clients).map(client => ({ value: client.id, label: client.name }))], [clients, extra])
   const chosen = choices.find(choice => choice.value === current)
   // An empty choice such as “All clients” shows as the field's hint, so a required field stays empty until a client is chosen.
   const blank = extra.find(choice => choice.value === '')
@@ -50,7 +60,7 @@ export default function ClientSelect({ clients, value, defaultValue = '', onChan
     const words = typed ? text.toLowerCase().split(/\s+/).filter(Boolean) : []
     if (!words.length) return choices
     const name = (choice: Extra) => choice.label.toLowerCase()
-    const hits = choices.filter(choice => words.every(word => name(choice).includes(word)))
+    const hits = choices.filter(choice => words.every(word => `${choice.label} ${choice.hint || ''}`.toLowerCase().includes(word)))
     // Names that start with what was typed come first, then the rest, each A to Z.
     return [...hits.filter(choice => name(choice).startsWith(words[0])), ...hits.filter(choice => !name(choice).startsWith(words[0]))]
   }, [choices, text, typed])
@@ -103,7 +113,7 @@ export default function ClientSelect({ clients, value, defaultValue = '', onChan
   const pick = (choice: Extra) => {
     if (value === undefined) setInner(choice.value)
     if (choice.value !== current) onChange?.(choice.value)
-    setText(choice.label); setTyped(false); setOpen(false)
+    setText(choice.value === '' ? '' : choice.label); setTyped(false); setOpen(false)
   }
   const revert = () => { setText(chosenLabel); setTyped(false); setOpen(false) }
   const settle = () => {
@@ -139,10 +149,10 @@ export default function ClientSelect({ clients, value, defaultValue = '', onChan
       onBlur={settle} onKeyDown={keys} />
     {name && <input type="hidden" name={name} value={current} disabled={disabled} />}
     {open && !disabled && host && createPortal(<ul ref={list} id={listId} role="listbox" className="client-combo-list" style={place}>
-      {shown.map((choice, at) => <li key={choice.value || '__blank'} id={`${listId}-${at}`} role="option" aria-selected={choice.value === current} data-active={at === active}
-        className={`${choice.value === current ? 'chosen' : ''}${extra.includes(choice) ? ' extra' : ''}`}
-        onMouseDown={event => { event.preventDefault(); pick(choice) }} onMouseEnter={() => setActive(at)}>{choice.label}</li>)}
-      {!shown.length && <li className="client-combo-empty" role="presentation">No client matches “{text.trim()}”</li>}
+      {shown.map((choice, at) => <li key={`${choice.value || '__blank'}:${at}`} id={`${listId}-${at}`} role="option" aria-selected={choice.value === current} data-active={at === active}
+        className={`${choice.value === current ? 'chosen' : ''}${extra.includes(choice) ? ' extra' : ''}${choice.depth ? ' sub' : ''}`}
+        onMouseDown={event => { event.preventDefault(); pick(choice) }} onMouseEnter={() => setActive(at)}>{choice.depth ? <span className="client-combo-branch" aria-hidden="true">↳ </span> : null}{choice.label}{choice.hint && <small>{choice.hint}</small>}</li>)}
+      {!shown.length && <li className="client-combo-empty" role="presentation">{empty} “{text.trim()}”</li>}
     </ul>, host)}
   </span>
 }

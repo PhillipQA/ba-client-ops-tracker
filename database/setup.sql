@@ -19,7 +19,7 @@ begin
       raise exception 'Supabase role % is missing. Use a new Supabase project for this setup.', object_name;
     end if;
   end loop;
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     if to_regclass(format('public.%I', object_name)) is not null then
       raise exception 'Fresh setup stopped: public.% already exists. No changes were applied. Use newer migrations for an existing installation; do not replay old migrations.', object_name;
     end if;
@@ -1489,6 +1489,43 @@ create table if not exists public.tenant_tracker_task_links (
 create unique index if not exists tenant_tracker_task_links_unique on public.tenant_tracker_task_links(tenant_id, tracker_id, row_id, column_id, task_id);
 create index if not exists tenant_tracker_task_links_task on public.tenant_tracker_task_links(tenant_id, task_id);
 
+-- Email signatures (one per person) and email templates.
+create table if not exists public.user_email_signatures (
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  user_id text not null,
+  signature text not null default '' check (length(signature) <= 2000),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, user_id)
+);
+
+create table if not exists public.tenant_email_templates (
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  id uuid not null,
+  name text not null check (length(name) between 1 and 120),
+  subject text not null default '' check (length(subject) <= 200),
+  body text not null default '' check (length(body) <= 30000),
+  shared boolean not null default true,
+  created_by text not null default '',
+  created_by_name text not null default '',
+  updated_by_name text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, id)
+);
+create index if not exists tenant_email_templates_name on public.tenant_email_templates(tenant_id, name);
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'alter table public.user_email_signatures enable row level security';
+    execute 'alter table public.tenant_email_templates enable row level security';
+    execute 'revoke all on public.user_email_signatures, public.tenant_email_templates from public, anon, authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant all on public.user_email_signatures, public.tenant_email_templates to service_role';
+  end if;
+end $$;
+
 -- Supabase only: lock the tables to the service role, as for the other private tables.
 -- Plain PostgreSQL (Northflank) has no anon/service_role, and enabling row level security
 -- there would block the app's database user, so it is skipped.
@@ -1526,7 +1563,7 @@ do $setup_grants$
 declare
   object_name text;
 begin
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     execute format('alter table public.%I enable row level security', object_name);
     execute format('revoke all on table public.%I from public, anon, authenticated', object_name);
     execute format('grant all on table public.%I to service_role', object_name);

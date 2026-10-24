@@ -43,6 +43,7 @@ import { preserveTaskSettings } from './services/tenant-save-settings'
 import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
 import { registerCommunications } from './integrations/communications'
 import { registerTrackerRoutes } from './trackers/trackers'
+import { registerEmailTemplateRoutes } from './integrations/email-templates'
 import { applySubtaskAssignmentInheritance } from '../src/subtaskAssignment'
 import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transport'
 import { createLoginLimiter, type LoginIdentity } from './auth/login-limiter'
@@ -1729,6 +1730,7 @@ registerFsdRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireT
 registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
 registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
 registerTrackerRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, load: loadTenantState })
+registerEmailTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
 
 registerSignoffRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace, templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx'), goLiveTemplatePath: path.join(projectRoot, 'templates', 'golive-template.docx'), templatePaths: { uat: path.join(projectRoot, 'templates', 'uat-template.docx'), uatdeploy: path.join(projectRoot, 'templates', 'uatdeploy-template.docx'), training: path.join(projectRoot, 'templates', 'training-template.docx') } })
 

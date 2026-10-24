@@ -6,6 +6,7 @@ For current installation instructions, use the [README](../../README.md). For a 
 
 | Release | Change |
 | --- | --- |
+| [v0.8.0](v0.8.0.md) | Email signature per person, shared and private email templates (create, view, edit, delete), type-to-search task pickers |
 | [v0.7.1](v0.7.1.md) | Fix: the client list in dialogs such as New email opens under the field and no longer shifts the dialog; client fields match the boxes next to them |
 | [v0.7.0](v0.7.0.md) | Type-to-search client fields, A to Z, everywhere a client is chosen; task pickers offer only open tasks and subtasks |
 | [v0.6.98](v0.6.98.md) | Trackers: several clients per tracker, task in the first column and subtasks in other cells (pick or create), Calculated columns and a SUM totals row |

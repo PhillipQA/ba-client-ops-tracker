@@ -1,0 +1,102 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import express from 'express'
+import { registerEmailTemplateRoutes } from '../server/integrations/email-templates'
+
+type Row = Record<string, any>
+const KEYS: Record<string, string[]> = { user_email_signatures: ['tenant_id', 'user_id'], tenant_email_templates: ['tenant_id', 'id'] }
+function memoryDb(missing = false) {
+  const tables: Record<string, Row[]> = { user_email_signatures: [], tenant_email_templates: [] }
+  class Query {
+    action = 'read'; values: Row[] = []; filters: ((row: Row) => boolean)[] = []; counted = false; head = false; one = false; sorts: [string, boolean][] = []
+    constructor(public table: string) {}
+    select(_c = '*', o: { count?: string; head?: boolean } = {}) { this.counted = o.count === 'exact'; this.head = Boolean(o.head); return this }
+    insert(v: Row) { this.action = 'insert'; this.values = [v]; return this }
+    upsert(v: Row) { this.action = 'upsert'; this.values = [v]; return this }
+    update(v: Row) { this.action = 'update'; this.values = [v]; return this }
+    delete() { this.action = 'delete'; return this }
+    eq(c: string, v: any) { this.filters.push(r => r[c] === v); return this }
+    order(c: string, o: { ascending?: boolean } = {}) { this.sorts.push([c, o.ascending !== false]); return this }
+    limit() { return this }
+    maybeSingle() { this.one = true; return this }
+    then(resolve: any, reject: any) { return Promise.resolve(this.run()).then(resolve, reject) }
+    run() {
+      if (missing) return { data: null, error: new Error('relation does not exist'), count: null }
+      const rows = tables[this.table], key = (r: Row) => KEYS[this.table].map(k => r[k]).join('|')
+      if (this.action === 'insert') { rows.push(structuredClone(this.values[0])); return { data: null, error: null } }
+      if (this.action === 'upsert') { const at = rows.findIndex(r => key(r) === key(this.values[0])); if (at >= 0) rows[at] = { ...rows[at], ...this.values[0] }; else rows.push(structuredClone(this.values[0])); return { data: null, error: null } }
+      const matched = rows.filter(r => this.filters.every(f => f(r)))
+      if (this.action === 'update') { matched.forEach(r => Object.assign(r, this.values[0])); return { data: null, error: null } }
+      if (this.action === 'delete') { tables[this.table] = rows.filter(r => !matched.includes(r)); return { data: null, error: null } }
+      if (this.head) return { data: null, error: null, count: matched.length }
+      return { data: this.one ? structuredClone(matched[0] ?? null) : structuredClone(matched), error: null, count: this.counted ? matched.length : null }
+    }
+  }
+  return { from: (t: string) => new Query(t), tables }
+}
+async function serve(db: any, run: (ask: (m: string, p: string, b?: any, h?: Record<string, string>) => Promise<{ status: number; body: any }>) => Promise<void>) {
+  const app = express(); app.use(express.json())
+  app.use((req: any, _res, next) => {
+    const modules = req.headers['x-modules'] === 'none' ? ['clients'] : ['inbox']
+    req.authUser = { id: String(req.headers['x-user'] || 'u1'), name: String(req.headers['x-user'] || 'u1') === 'u2' ? 'Ben Cruz' : 'Ana Reyes', role: String(req.headers['x-role'] || 'Contributor'), organizationId: '11111111-1111-4111-8111-111111111111', modules, accountType: 'tenant' }
+    next()
+  })
+  const pass = (_q: any, _s: any, n: any) => n()
+  registerEmailTemplateRoutes(app as any, { db, requireAuth: pass, requireTenant: pass })
+  const server = app.listen(0)
+  try {
+    const address = server.address() as any
+    await run(async (m, p, b, h = {}) => { const r = await fetch(`http://127.0.0.1:${address.port}${p}`, { method: m, headers: { 'content-type': 'application/json', ...h }, body: b === undefined ? undefined : JSON.stringify(b) }); return { status: r.status, body: await r.json() } })
+  } finally { server.close() }
+}
+
+test('each person has their own signature, kept as plain text', async () => {
+  await serve(memoryDb(), async ask => {
+    assert.deepEqual((await ask('GET', '/api/email/signature')).body, { signature: '', saved: false })
+    assert.equal((await ask('PUT', '/api/email/signature', { signature: 'Ana Reyes\nBusiness Analyst  \n\n' })).body.signature, 'Ana Reyes\nBusiness Analyst')
+    assert.equal((await ask('GET', '/api/email/signature')).body.signature, 'Ana Reyes\nBusiness Analyst')
+    assert.equal((await ask('GET', '/api/email/signature', undefined, { 'x-user': 'u2' })).body.signature, '', 'another person does not see it')
+    assert.equal((await ask('PUT', '/api/email/signature', { signature: 'x'.repeat(2001) })).status, 400)
+    assert.equal((await ask('PUT', '/api/email/signature', { signature: 'Hi' }, { 'x-role': 'Viewer' })).status, 403)
+    assert.equal((await ask('GET', '/api/email/signature', undefined, { 'x-modules': 'none' })).status, 403)
+  })
+})
+
+test('shared templates can be used and changed by anyone who sends email; private ones only by their creator', async () => {
+  await serve(memoryDb(), async ask => {
+    const made = await ask('POST', '/api/email/templates', { name: '  Go-live  reminder ', subject: 'Go-live next week', body: 'Hello,\n\nA reminder that…', shared: true })
+    assert.equal(made.status, 201, JSON.stringify(made.body))
+    assert.equal(made.body.template.name, 'Go-live reminder')
+    const mine = await ask('POST', '/api/email/templates', { name: 'my notes', subject: 'Draft', body: '', shared: false })
+    assert.equal(mine.status, 201)
+    assert.equal((await ask('POST', '/api/email/templates', { name: 'Empty', subject: '', body: '' })).status, 400)
+    assert.equal((await ask('POST', '/api/email/templates', { name: '', subject: 'x' })).status, 400)
+    // Ben sees only the shared one
+    const benList = (await ask('GET', '/api/email/templates', undefined, { 'x-user': 'u2' })).body.templates
+    assert.deepEqual(benList.map((t: any) => t.name), ['Go-live reminder'])
+    assert.equal(benList[0].canEdit, true)
+    const anaList = (await ask('GET', '/api/email/templates')).body.templates
+    assert.deepEqual(anaList.map((t: any) => t.name), ['Go-live reminder', 'my notes'], 'A to Z, ignoring capitals')
+    // Ben edits the shared one, but cannot unshare it, nor touch Ana's private one
+    const edited = await ask('PATCH', `/api/email/templates/${made.body.template.id}`, { body: 'Updated by Ben' }, { 'x-user': 'u2' })
+    assert.equal(edited.status, 200); assert.equal(edited.body.template.updatedByName, 'Ben Cruz')
+    assert.equal((await ask('PATCH', `/api/email/templates/${made.body.template.id}`, { shared: false }, { 'x-user': 'u2' })).status, 403)
+    assert.equal((await ask('PATCH', `/api/email/templates/${mine.body.template.id}`, { body: 'x' }, { 'x-user': 'u2' })).status, 404)
+    assert.equal((await ask('DELETE', `/api/email/templates/${mine.body.template.id}`, undefined, { 'x-user': 'u2' })).status, 404)
+    // Ana shares her private one later
+    assert.equal((await ask('PATCH', `/api/email/templates/${mine.body.template.id}`, { shared: true })).body.template.shared, true)
+    // Viewers read but cannot change
+    assert.equal((await ask('GET', '/api/email/templates', undefined, { 'x-role': 'Viewer', 'x-user': 'v1' })).body.templates.length, 2)
+    assert.equal((await ask('DELETE', `/api/email/templates/${made.body.template.id}`, undefined, { 'x-role': 'Viewer' })).status, 403)
+    assert.equal((await ask('DELETE', `/api/email/templates/${made.body.template.id}`, undefined, { 'x-user': 'u2' })).body.deleted, true)
+    assert.equal((await ask('GET', '/api/email/templates')).body.templates.length, 1)
+    assert.equal((await ask('PATCH', '/api/email/templates/not-an-id', { body: 'x' })).status, 404)
+  })
+})
+
+test('before the migration is applied, the routes say so instead of failing', async () => {
+  await serve(memoryDb(true), async ask => {
+    const r = await ask('GET', '/api/email/templates')
+    assert.equal(r.status, 503); assert.match(r.body.error, /schema-v26/)
+  })
+})
