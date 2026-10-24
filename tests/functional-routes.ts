@@ -79,9 +79,11 @@ try{
   record('FSD writing receives filtered cited requirements only',{requests:wire.length,requirements:writing.requirements.length})
   const preview=result.body;result=await post('/api/documents/fsd/generate',{...draft,preview,reviewed:true});assert.equal(result.status,200,JSON.stringify(result.body));const word=new PizZip(Buffer.from(result.body.fileData,'base64')).file('word/document.xml')!.asText();assert.match(word,/Supporting excerpt/);assert.match(word,/MMS Report lists stock/);assert.ok(!word.includes('POS must allow offline refunds'));record('Reviewed grounded FSD exports with evidence',{status:result.status})
 
-  const index=await fs.readFile(new URL('../server/index.ts',import.meta.url),'utf8')
-  const statement=(name:string)=>{const start=index.search(new RegExp(`^(?:async )?function ${name}\\(`,'m'));assert.ok(start>=0,name);const end=index.indexOf('\n}',start)+2;return index.slice(start,end)}
-  const route=(method:string,path:string)=>{const start=index.indexOf(`app.${method}('${path}'`);assert.ok(start>=0,path);const end=index.indexOf('\n})',start)+3;return index.slice(start,end)}
+  // Server code is read from its modules; route handlers sit inside each module's register function.
+  const serverFiles=['index.ts','core/auth.ts','core/tenant-state.ts','workspace/store-routes.ts','ai/suggestions.ts','ai/assistant-routes.ts','services/account-guard.ts']
+  const index=(await Promise.all(serverFiles.map(f=>fs.readFile(new URL('../server/'+f,import.meta.url),'utf8')))).join('\n')
+  const statement=(name:string)=>{const found=new RegExp(`^(?:export )?((?:async )?function ${name}\\()`,'m').exec(index);assert.ok(found,name);const start=found.index+found[0].length-found[1].length;const end=index.indexOf('\n}',start)+2;return index.slice(start,end)}
+  const route=(method:string,path:string)=>{const start=index.indexOf(`app.${method}('${path}'`);assert.ok(start>=0,path);const indent=index.slice(index.lastIndexOf('\n',start)+1,start);const end=index.indexOf('\n'+indent+'})',start)+indent.length+3;return index.slice(start,end)}
   const mount=(code:string,deps:any)=>Function(...Object.keys(deps),transformSync(code,{loader:'ts',target:'es2022',format:'esm'}).code)(...Object.values(deps))
   const task=(id:string,extra:any={})=>({id,title:id,type:'Task',status:'Open',priority:'Medium',waitingOn:'Me',owner:'',clientId:'client',projectId:'project',dateRaised:'2026-09-01',followUpDate:'',dueDate:'',description:'',resolution:'',source:'Internal',...extra})
   const state=()=>({schemaVersion:6,clients:[{id:'client',name:'Client',status:'Active',contact:'',email:'',health:'Good',notes:''}],projects:[{id:'project',name:'Project',status:'Active',summary:'',targetDate:''}],items:[],activity:[],planner:[],workEvents:[],accounts:[],notifications:[],rtms:[],taskSettings:defaultTaskSettings})
