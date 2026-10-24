@@ -1708,6 +1708,7 @@ export default function TrackerScreen(props: Props) {
           lookup={lookup}
           tools={workTools}
           origin={review.origin}
+          allRows={rows}
           rows={
             review.ids === 'flagged'
               ? rows.filter(row => row.review)

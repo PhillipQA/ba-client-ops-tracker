@@ -1,6 +1,8 @@
 /**
  * One-way sync from a Google Sheet into a tracker. Pure functions, used by the server on every sync and by tests.
- * Rows are matched by the Sheet's key column, never by position, so sorting or inserting rows in the Sheet is safe.
+ * Every non-empty Sheet row comes in. The task name column groups them: a row with a name starts a task (names may
+ * repeat), and a row with a blank name belongs to the task above it. Rows are recognised again by name and order (the
+ * 2nd "EGG" row, the 1st row under it), never by position, so sorting or inserting other rows in the Sheet is safe.
  * The values as they were at the last sync are kept per row (`values`), which is what a later two-way sync needs to
  * tell a Sheet change from a tracker change.
  */
@@ -17,6 +19,51 @@ export function sheetIdFrom(input: string): string {
 
 /** A Sheets A1 range for a whole tab: the name in single quotes, with quotes doubled. */
 export const tabRange = (tab: string) => `'${tab.replace(/'/g, "''")}'`
+
+/** Separates a repeated name from its number: the 2nd "EGG" row is `EGG␟2`. */
+const REPEAT = '\u001f'
+/** Separates a task's key from the number of a row under it: the 1st row under "EGG" is `EGG␞1`. */
+const UNDER = '\u001e'
+
+/**
+ * Keys for the rows of a Sheet tab, from the task name column, in Sheet order.
+ * A row with a name gets the name, then `name␟2`, `name␟3` when it repeats (ignoring case).
+ * A row with a blank name gets the key of the named row above it, then `␞1`, `␞2` and so on.
+ * Rows above the first name get `␞1`, `␞2` with no task key in front.
+ */
+export function sheetRowKeys(names: string[]): string[] {
+  const used = new Set<string>(),
+    repeats = new Map<string, number>()
+  let task = '',
+    under = 0
+  return names.map(raw => {
+    const name = String(raw ?? '').trim()
+    if (!name) {
+      under += 1
+      return `${task}${UNDER}${under}`
+    }
+    let count = (repeats.get(name.toLowerCase()) || 0) + 1
+    let key = count === 1 ? name : `${name}${REPEAT}${count}`
+    while (used.has(key.toLowerCase())) {
+      count += 1
+      key = `${name}${REPEAT}${count}`
+    }
+    repeats.set(name.toLowerCase(), count)
+    used.add(key.toLowerCase())
+    task = key
+    under = 0
+    return key
+  })
+}
+
+/**
+ * The key of the task a Sheet row belongs to: `null` for a row that is a task itself, `''` for a row above the first
+ * name (no task above it), or the named row's key.
+ */
+export function parentKeyOf(key: string): string | null {
+  const at = key.lastIndexOf(UNDER)
+  return at < 0 ? null : key.slice(0, at)
+}
 
 /** Headers as people see them, cleaned for matching. */
 const headerKey = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -85,26 +132,14 @@ export function planSync(input: {
   const mappedKeys = new Set(Object.keys(input.headerMap).map(headerKey))
   const newHeaders = headers.filter(header => header && !mappedKeys.has(headerKey(header)))
 
-  // Rows: the first row with a key wins; blank keys and repeats are skipped and reported.
-  const seen = new Set<string>(),
-    duplicates: string[] = [],
-    kept: { key: string; values: string[] }[] = []
-  let skippedNoKey = 0
-  for (const line of body) {
-    const values = headers.map((_, index) => String(line[index] ?? ''))
-    if (!values.some(value => value.trim())) continue
-    const key = values[keyIndex].trim()
-    if (!key) {
-      skippedNoKey += 1
-      continue
-    }
-    if (seen.has(key.toLowerCase())) {
-      if (duplicates.length < 20) duplicates.push(key)
-      continue
-    }
-    seen.add(key.toLowerCase())
-    kept.push({ key, values })
-  }
+  // Rows: every non-empty row comes in, keyed by its task name and order (see sheetRowKeys).
+  const lines = body
+    .map(line => headers.map((_, index) => String(line[index] ?? '')))
+    .filter(values => values.some(value => value.trim()))
+  const keys = sheetRowKeys(lines.map(values => values[keyIndex]))
+  const kept = lines.map((values, at) => ({ key: keys[at], values }))
+  const skippedNoKey = 0,
+    duplicates: string[] = []
 
   // Values are converted exactly as a manual import would convert them (dates, numbers, Select options, people).
   const plan = mappings.length
@@ -204,58 +239,39 @@ export function describeSync(report: SyncReport) {
 
 export const SYNC_LIMITS = { rows: TRACKER_LIMITS.rows, columns: 200, minSeconds: 60, autoMinutes: 5 } as const
 
-/** How well one Sheet column would work as the key column, using the same rules as the sync. */
-export type KeyColumnCheck = {
+/** What one Sheet column would do as the task name column. */
+export type NameColumnCheck = {
   header: string
-  /** Rows that would come into the tracker with this key. */
-  kept: number
-  /** Rows with nothing in this column: skipped. */
-  blank: number
-  /** Rows whose value an earlier row already has: skipped. */
+  /** Rows with a name: each starts a task. */
+  tasks: number
+  /** Rows with a blank name under a named row: each belongs to the task above. */
+  under: number
+  /** Rows with a blank name above the first name: no task above them. */
+  beforeFirst: number
+  /** Names used on more than one row (each such row is still its own task). */
   repeated: number
-  /** A few of the repeated values, to show. */
-  examples: string[]
-  /** Every row has its own value. */
-  unique: boolean
 }
 
-/** Checks each column of a Sheet tab as a possible key. `rows` are the data rows, without the header row. */
-export function checkKeyColumns(headers: string[], rows: string[][]): KeyColumnCheck[] {
+/** Checks each column of a Sheet tab as the task name column. `rows` are the data rows, without the header row. */
+export function checkNameColumns(headers: string[], rows: string[][]): NameColumnCheck[] {
   const filled = rows.filter(row => row.some(cell => String(cell ?? '').trim()))
   return headers.map((header, index) => {
-    const seen = new Set<string>(),
-      examples = new Set<string>()
-    let blank = 0,
+    const seen = new Set<string>()
+    let tasks = 0,
+      under = 0,
+      beforeFirst = 0,
       repeated = 0
     for (const row of filled) {
-      const key = String(row[index] ?? '').trim()
-      if (!key) {
-        blank += 1
+      const name = String(row[index] ?? '').trim()
+      if (!name) {
+        if (tasks) under += 1
+        else beforeFirst += 1
         continue
       }
-      if (seen.has(key.toLowerCase())) {
-        repeated += 1
-        if (examples.size < 3) examples.add(key)
-        continue
-      }
-      seen.add(key.toLowerCase())
+      tasks += 1
+      if (seen.has(name.toLowerCase())) repeated += 1
+      seen.add(name.toLowerCase())
     }
-    return {
-      header,
-      kept: seen.size,
-      blank,
-      repeated,
-      examples: [...examples],
-      unique: filled.length > 0 && blank === 0 && repeated === 0,
-    }
+    return { header, tasks, under, beforeFirst, repeated }
   })
-}
-
-/** The key to suggest: the first column unique on every row, or else the one that keeps the most rows. */
-export function suggestedKeyColumn(checks: KeyColumnCheck[]): string {
-  const unique = checks.find(check => check.unique)
-  if (unique) return unique.header
-  let best: KeyColumnCheck | null = null
-  for (const check of checks) if (!best || check.kept > best.kept) best = check
-  return best?.header ?? ''
 }

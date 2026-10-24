@@ -2172,6 +2172,9 @@
   border: 1px dashed var(--k-accent);
   border-radius: 10px;
 }
+.trk-review-subtitle {
+  max-width: 360px;
+}
 .trk-key-note {
   display: flex;
   gap: 6px;

@@ -4,14 +4,16 @@
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
 
-## v1.0.2 — Help choosing the key column
+## v1.0.2 — Every Sheet row comes in, grouped into tasks and subtasks
 Released October 24, 2026.
 
 **No database migration and no new setting.**
 
-- **Each column says how many rows it keeps.** When you connect a tracker to a Google Sheet, the key column list shows each column with "different on every row" or how many rows it would keep, such as "Client — 2 of 320 rows". Rows are matched by the key, so a row whose key is blank, or repeats an earlier row's, is left out.
-- **The best column is chosen for you.** The first column with a different value on every row is picked; if there is none, the one that keeps the most rows.
-- **A warning before rows are left out.** If the chosen column repeats or has blank cells, the dialog says how many rows would sync, why (for example "5 rows have no Client and 1 row repeats a value already used (ACME)"), and what to pick instead. Connecting with that column needs **Connect anyway** ticked. Blank cells on heading or note rows are fine.
+- **Every row comes in.** Before, a tracker connected to a Google Sheet matched rows by a key column and left out rows whose key was blank or repeated, so choosing a column such as Client could bring in one row per client. Now every non-empty row comes into the tracker.
+- **Task name column.** When you connect, choose the **task name column** (the first column by default). A row with a name there is a task, and the same name may appear on several rows; each is its own task. A row with that cell blank belongs to the task above it. The dialog shows how the rows group, for example "3 rows have a name and become tasks. 4 rows with no name belong to the task above."
+- **The review is filled in for you.** New rows from the Sheet open in the review already decided: rows with a name become **new tasks**, and the rows under them become **subtasks** of their task (a task created in the same review, or the task that row already has from an earlier sync). Change anything before you click Create. **Subtask title comes from** picks the column for subtask names (Ticket Title, for example); **Task title comes from** is the same as before.
+- **How rows are recognised on later syncs.** By name and order: the 2nd "EGG" row, the 1st row under it. Adding, removing or sorting other rows is safe; inserting another row with the same name above an existing one shifts the later rows with that name.
+- Trackers already connected keep working: rows they already have are matched as before, and the rows that were left out come in on the next sync, ready to review.
 
 ## v1.0.1 — Clearer Google Sheet errors
 Released October 24, 2026.
