@@ -33,5 +33,11 @@ jobs:
       # The whole suite had not been run automatically before this job existed, and some older tests may be
       # out of date. Failures are reported but do not block the build. Remove continue-on-error once it is green.
       - name: Full test suite
-        run: npm test
+        run: |
+          set +e
+          npm test > test-output.txt 2>&1
+          status=$?
+          tail -n 40 test-output.txt
+          node scripts/test-summary.mjs test-output.txt
+          exit $status
         continue-on-error: true

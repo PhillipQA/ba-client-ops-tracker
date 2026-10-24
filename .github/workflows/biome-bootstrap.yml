@@ -1,0 +1,37 @@
+# One-off for v1.0.0: adds Biome to the lock file, formats the code and applies safe lint fixes,
+# then commits the result to this branch. Removed again before the pull request is merged.
+name: Biome bootstrap
+on:
+  push:
+    branches: [refactor/v1]
+permissions:
+  contents: write
+jobs:
+  biome:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm install --save-dev --save-exact @biomejs/biome@2
+      - run: npx biome --version
+      - run: npx biome format --write .
+      - run: npx biome lint --write . || true
+      - name: Lint summary
+        run: |
+          npx biome lint . --reporter=json --max-diagnostics=none > lint.json || true
+          node scripts/lint-summary.mjs lint.json
+      - name: Commit
+        run: |
+          rm -f lint.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then echo "Nothing to commit"; exit 0; fi
+          git commit -m "v1.0.0: format with Biome and apply its safe lint fixes" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01HCg7wxvBQYSdsmyd8ivQT1"
+          git push
