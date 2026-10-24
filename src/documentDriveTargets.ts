@@ -11,9 +11,12 @@ export const archivedContext = ({ clients, projects }: DriveScope, item: WorkIte
 export const placeOf = ({ clients, projects }: DriveScope, item: WorkItem) =>
   [clients.find(c => c.id === item.clientId)?.name, projects.find(p => p.id === item.projectId)?.name].filter(Boolean).join(' / ')
 
-/** Tasks and subtasks that can receive a file, parents first so subtasks sit under them. Work under an archived client or project is left out. */
-export function taskOptions(scope: DriveScope, clientId: string) {
-  const open = scope.items.filter(item => !archivedContext(scope, item) && (!clientId || item.clientId === clientId))
+/**
+ * Tasks and subtasks that can receive a file, parents first so subtasks sit under them. Work under an archived client or
+ * project is left out, and so is closed or resolved work when `isClosed` is given.
+ */
+export function taskOptions(scope: DriveScope, clientId: string, isClosed?: (status: string) => boolean) {
+  const open = scope.items.filter(item => !archivedContext(scope, item) && (!clientId || item.clientId === clientId) && !isClosed?.(item.status))
   const rows: { id: string; label: string }[] = []
   for (const parent of open.filter(item => !item.parentTaskId)) {
     rows.push({ id: parent.id, label: `${parent.title}${placeOf(scope, parent) ? ` — ${placeOf(scope, parent)}` : ''}` })

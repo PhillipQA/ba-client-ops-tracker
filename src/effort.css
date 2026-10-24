@@ -94,7 +94,7 @@
 .board-card-foot { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--ef-border); font-size: 11.5px; color: var(--ef-muted); }
 .board-avatar { margin-left: auto; width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center; background: var(--ef-accent-soft); color: var(--ef-accent); font-size: 11px; font-weight: 800; flex: 0 0 auto; }
 .board-move { display: flex; gap: 6px; align-items: center; }
-.board-move select { min-height: 30px; border: 1px solid var(--ef-border); border-radius: 7px; background: var(--ef-input); color: var(--ef-text); font: inherit; font-size: 11px; padding: 0 6px; max-width: 100%; }
+.board-move select, .board-move .client-combo-input { min-height: 30px; border: 1px solid var(--ef-border); border-radius: 7px; background: var(--ef-input); color: var(--ef-text); font: inherit; font-size: 11px; padding: 0 6px; max-width: 100%; }
 .board-collapsed { min-height: 40px; border: 1px dashed var(--ef-border); border-radius: 10px; background: transparent; color: var(--ef-muted); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
 .board-empty { padding: 18px 8px; text-align: center; color: var(--ef-muted); font-size: 11px; border: 1px dashed var(--ef-border); border-radius: 10px; }
 @media (max-width: 640px) {

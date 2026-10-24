@@ -38,3 +38,17 @@ test('Drive picker helpers format sizes and extensions', () => {
   assert.equal(fileSize(500), '1 KB');assert.equal(fileSize(2048), '2 KB');assert.equal(fileSize(5 * 1048576), '5.0 MB')
   assert.equal(extensionOf('A.COR.PDF'), '.pdf');assert.equal(extensionOf('noextension'), '')
 })
+
+test('task pickers can leave out closed and resolved work', async () => {
+  const { taskOptions } = await import('../src/documentDriveTargets')
+  const scope: any = { clients: [{ id: 'c1', name: 'Acme' }], projects: [], items: [
+    { id: 't1', title: 'Roll out', clientId: 'c1', status: 'Open' },
+    { id: 's1', title: 'DRF', clientId: 'c1', parentTaskId: 't1', status: 'Resolved' },
+    { id: 's2', title: 'Go-live', clientId: 'c1', parentTaskId: 't1', status: 'Open' },
+    { id: 't2', title: 'Old', clientId: 'c1', status: 'Closed' },
+    { id: 's3', title: 'Still open', clientId: 'c1', parentTaskId: 't2', status: 'Open' },
+  ] }
+  const closed = (status: string) => status === 'Resolved' || status === 'Closed'
+  assert.deepEqual(taskOptions(scope, '', closed).map(row => row.id), ['t1', 's2', 's3'], 'closed work is left out; an open subtask of a closed task stays')
+  assert.equal(taskOptions(scope, '').length, 5, 'without a rule nothing is left out')
+})

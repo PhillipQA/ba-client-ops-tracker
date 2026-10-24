@@ -9,6 +9,7 @@ import TrackerLinkChips from './TrackerLinkChips'
 import { trackerApi, type TaskLink } from './trackerApi'
 import type { TaskDraft } from './TrackerWork'
 import { rememberTrackerRow } from './trackerNav'
+import { ClosedStatusContext } from './openWork'
 import RtmTaskLinks from './RtmTaskLinks'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix, type RtmLink } from './rtm'
 import { DocHubHistory } from './DocHubPanel'
@@ -21,7 +22,7 @@ import LifecycleControls from './LifecycleControls'
 import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from './lifecycle'
 import { canBrowseTeamActionCenter, itemMatchesActionCenterScope, resolveActionCenterScope, trackedActionCenterUsers, type ActionCenterScopeSelection } from './actionCenterScope'
 import { applySubtaskAssignmentInheritance, normalizeSubtaskAssignmentInheritance } from './subtaskAssignment'
-import { FormEvent, type ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, type ClipboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -99,6 +100,7 @@ import { normalizeInterfaceMode, type InterfaceMode } from './appearance'
 import { readSidebarCollapsed, writeSidebarCollapsed } from './sidebarState'
 import { useRailTip } from './RailTip'
 import { APP_VERSION } from './version'
+import ClientSelect from './ClientSelect'
 
 type View = 'action' | 'clients' | 'projects' | 'inbox' | 'items' | 'documents' | 'requirements' | 'trackers' | 'reports' | 'ai' | 'settings' | 'internal-admin' | 'users' | 'themes'
 type ClientLayout = 'tiles' | 'list' | 'table'
@@ -1242,6 +1244,8 @@ function App() {
     }
   }
 
+  // Task pickers across the app (email, documents, DocHub, Git tickets) offer only open work, by this account's statuses.
+  const closedStatus = useCallback((status: string) => isTaskClosed(status, store.taskSettings), [store.taskSettings])
   const hasTrackers = Boolean(currentUser?.modules.includes('trackers'))
   // Tasks linked from a tracker say so in the Action Center. Without the Trackers module, or before its links table exists, there is simply nothing to show.
   useEffect(() => {
@@ -1462,6 +1466,7 @@ function App() {
   const currentTheme = themeForContext(currentUser)
 
   return (
+    <ClosedStatusContext.Provider value={closedStatus}>
     <div className={`app-shell ui-refresh theme-${currentTheme}${navCollapsed ? ' nav-collapsed' : ''}`} data-theme={currentTheme} data-interface-mode={normalizeInterfaceMode(currentUser.interfaceMode) || undefined}>
       <aside className="sidebar" aria-label="Main menu">
         <div className="brand">
@@ -1567,7 +1572,7 @@ function App() {
               </div>
               <form className="dashboard-ai-body" onSubmit={assessDashboardAI}>
                 <div className="dashboard-ai-context">
-                  <label>Client<select value={aiClientId} onChange={(e) => { setAiClientId(e.target.value); setAiProjectId(''); setDashboardAiResult(null); setDashboardAiError('') }}><option value="">General / all clients</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+                  <label>Client<ClientSelect clients={store.clients} value={aiClientId} onChange={(value) => { setAiClientId(value); setAiProjectId(''); setDashboardAiResult(null); setDashboardAiError('') }} extra={[{ value: '', label: 'General / all clients' }]} /></label>
                   <label>Project<select value={aiProjectId} onChange={(e) => { setAiProjectId(e.target.value); setDashboardAiResult(null); setDashboardAiError('') }}><option value="">All projects</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 </div>
                 <textarea value={dashboardAiPrompt} onChange={(e) => setDashboardAiPrompt(e.target.value)} rows={3} placeholder="Example: Client says search should support @gmail but it does not. Assess what I should do next." />
@@ -1668,7 +1673,7 @@ function App() {
               <FilterBar query={query} setQuery={setQuery} waiting={waitingFilter} setWaiting={setWaitingFilter} options={waitingOnOptions(store.taskSettings).map((option) => option.label)} />
               <div className="task-filter-grid">
                 <label>Status<select value={taskStatusFilter} onChange={(event) => setTaskStatusFilter(event.target.value)}><option value="">All statuses</option>{[...new Set([...store.taskSettings.statuses.map((status) => status.label), ...store.items.map((item) => item.status)])].filter(Boolean).map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
-                <label>Client<select value={taskClientFilter} onChange={(event) => { setTaskClientFilter(event.target.value); setTaskProjectFilter('') }}><option value="">All clients</option><option value="__none__">General / no client</option>{store.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+                <label>Client<ClientSelect clients={store.clients} value={taskClientFilter} onChange={(value) => { setTaskClientFilter(value); setTaskProjectFilter('') }} extra={[{ value: '', label: 'All clients' }, { value: '__none__', label: 'General / no client' }]} /></label>
                 <label>Project<select value={taskProjectFilter} onChange={(event) => setTaskProjectFilter(event.target.value)}><option value="">All projects</option><option value="__none__">No project</option>{store.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 <label>Due / follow-up<select value={taskDateFilter} onChange={(event) => setTaskDateFilter(event.target.value as typeof taskDateFilter)}><option value="All">All dates</option><option value="due-3">Due in next 3 days</option><option value="due-7">Due in next 7 days</option><option value="followup-3">Follow-up in next 3 days</option><option value="followup-7">Follow-up in next 7 days</option><option value="overdue">Overdue due/follow-up</option></select></label>
                 <button className="secondary task-filter-clear" type="button" onClick={() => { setTaskClientFilter(''); setTaskProjectFilter(''); setTaskStatusFilter(''); setTaskDateFilter('All'); setWaitingFilter('All'); setQuery('') }}>Clear filters</button>
@@ -1728,6 +1733,7 @@ function App() {
       {profileOpen && currentUser.accountType !== 'platform' && <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />}
       <EmailComposerHost enabled={hasModule('inbox') && currentUser.role !== 'Viewer'} items={store.items} clients={store.clients} projects={store.projects} accounts={store.accounts} currentUser={currentUser} onSent={async () => { const result = await loadCloudStore<Store>(); if (result.data) setStore(normalizeStore(result.data, seedStore())) }} />
     </div>
+    </ClosedStatusContext.Provider>
   )
 }
 
@@ -1975,7 +1981,7 @@ function ActivityForm({ clients, projects, initial, onSubmit }: { clients: Clien
     <label>Status<select name="status" defaultValue={initial?.status ?? 'Planned'}><option>Planned</option><option>Done</option><option>Cancelled</option></select></label>
     <label className="checkbox-label"><input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} /> All-day activity</label><div />
     {!allDay && <><label>Start time<input name="startTime" type="time" defaultValue={initial?.startTime ?? ''} /></label><label>End time<input name="endTime" type="time" defaultValue={initial?.endTime ?? ''} /></label></>}
-    <label>Client<select name="clientId" value={clientId} onChange={(e) => setClientId(e.target.value)}><option value="">No client</option>{clients.filter(client => !isArchived(client) || client.id === initial?.clientId).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+    <label>Client<ClientSelect clients={clients.filter(client => !isArchived(client) || client.id === initial?.clientId)} value={clientId} onChange={(value) => setClientId(value)} extra={[{ value: '', label: 'No client' }]} name="clientId" /></label>
     <label>Project<select name="projectId" defaultValue={initial?.projectId ?? ''}><option value="">No project</option>{linkedProjects.filter(project => !isArchived(project) || project.id === initial?.projectId).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
     <label className="span-2">BA notes<textarea name="notes" rows={4} defaultValue={initial?.notes ?? ''} placeholder="Preparation notes, agenda, follow-up context, decisions..." /></label>
     <div className="form-actions span-2"><button className="primary">{initial ? 'Save local changes' : 'Add activity'}</button></div>
@@ -2214,7 +2220,7 @@ function TaskForm({ canLinkRtm, store, preset, onSubmit }: { canLinkRtm: boolean
     {parent && <div className="readonly-notice span-2"><CircleDot size={18} /><div><strong>Subtask of: {parent.title}</strong><span>Client and project are inherited from the parent task so the hierarchy stays consistent.</span></div></div>}
     {!parent && preset?.clientId && <div className="readonly-notice span-2"><CircleDot size={18} /><div><strong>Client context: {clientLabel}</strong><span>This task is being created from the client record, so the client stays fixed. You can assign any global project to it.</span></div></div>}
     <label className="span-2">{parent ? 'Subtask title' : 'Task title'}<input name="title" required placeholder={parent ? 'Enter the work needed under this task...' : 'Rollout, sign-off, client follow-up, QA review...'} /></label>
-    {parent ? <><label>Client<input value={clientLabel} readOnly disabled /></label><label>Project<input value={projectLabel} readOnly disabled /></label></> : <><label>Client{clientLocked ? <input value={clientLabel} readOnly disabled /> : <select value={clientId} required={type !== 'Inquiry'} onChange={(event) => setClientId(event.target.value)}><option value="">{type === 'Inquiry' ? 'Unassigned / select client' : 'Select client'}</option>{store.clients.filter(client => !isArchived(client)).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>}</label><label>Project<select value={projectId} disabled={!clientId} onChange={(event) => setProjectId(event.target.value)}><option value="">{clientId ? 'No project' : 'Select a client first'}</option>{store.projects.filter(project => !isArchived(project)).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></>}
+    {parent ? <><label>Client<input value={clientLabel} readOnly disabled /></label><label>Project<input value={projectLabel} readOnly disabled /></label></> : <><label>Client{clientLocked ? <input value={clientLabel} readOnly disabled /> : <ClientSelect clients={store.clients.filter(client => !isArchived(client))} value={clientId} onChange={(value) => setClientId(value)} extra={[{ value: '', label: type === 'Inquiry' ? 'Unassigned / select client' : 'Select client' }]} required={type !== 'Inquiry'} />}</label><label>Project<select value={projectId} disabled={!clientId} onChange={(event) => setProjectId(event.target.value)}><option value="">{clientId ? 'No project' : 'Select a client first'}</option>{store.projects.filter(project => !isArchived(project)).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></>}
     <label>Type<select value={type} onChange={(event) => setType(event.target.value as ItemType)}><option>Task</option><option>Inquiry</option><option>Requirement</option><option>Issue</option><option>Decision</option><option>Follow-up</option></select></label>
     <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>{store.taskSettings.statuses.map((taskStatus) => <option key={taskStatus.id} value={taskStatus.label}>{taskStatus.label}</option>)}</select></label>
     <label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select></label>

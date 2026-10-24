@@ -4,6 +4,7 @@ import { useDocumentOperation } from './useDocumentOperation'
 import { askBAAssistant, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
 import type { Client, PlannerActivity, Project, TaskSettings, UserAccount, WorkActivityEvent, WorkItem } from './types'
 import { isWaitingOnDone } from './waitingOn'
+import ClientSelect from './ClientSelect'
 
 const THREAD_STORAGE_KEY = 'ba-client-ops-ai-threads-v1'
 
@@ -162,7 +163,7 @@ export default function AIAssistant({
     <div className="ai-context-panel panel">
       <div className="panel-heading"><div><h2>AI BA Assistant</h2><p>Give it the messy client input. It will assess, organize, and suggest next actions.</p></div><Sparkles size={20} /></div>
       <div className="ai-context-form">
-        <label>Client<select value={clientId} onChange={(e) => updateContext(e.target.value, '')}><option value="">All clients / general</option>{clients.map((client) => <option value={client.id} key={client.id}>{client.name}</option>)}</select></label>
+        <label>Client<ClientSelect clients={clients} value={clientId} onChange={(value) => updateContext(value, '')} extra={[{ value: '', label: 'All clients / general' }]} /></label>
         <label>Project<select value={resolvedProjectId} onChange={(e) => updateContext(clientId, e.target.value)}><option value="">All projects</option>{linkedProjects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
       </div>
       <div className="ai-user-context"><strong>{currentUser.name}</strong><span>{currentUser.role} · AI understands “I”, “me”, and “my” as this user.</span></div>

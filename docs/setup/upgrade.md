@@ -1,6 +1,6 @@
 # Upgrade an existing installation
 
-**Current application version: v0.6.98.**
+**Current application version: v0.7.0.**
 
 Use the [README](../../README.md) for a new installation and the [changelog](../../CHANGELOG.md) to review changes. Version numbers in application releases and numbered database schemas are separate.
 
@@ -18,7 +18,7 @@ npm run build
 npm run typecheck:server
 ```
 
-Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.6.98**.
+Reconcile local source edits before pulling. Restart the local production server with `npm start`, or redeploy on your host. Reload the app and confirm **v0.7.0**.
 
 ## Database requirements
 
@@ -45,7 +45,7 @@ Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations m
 - **v0.6.87:** apply v23 before connecting Google Drive. It works on Supabase and on plain PostgreSQL such as Northflank: Supabase-only roles and row-level security are applied only where those roles exist. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_drive_accounts` table afterwards. Until v23 is applied, Settings and Work Hub say so and nothing else changes. Tasks created from an email before v23 are still offered when saving that email's attachments, but only the most recent one.
 - **v0.6.92:** apply v24 before using Trackers. It works on Supabase and on plain PostgreSQL such as Northflank (row-level security is applied only where the Supabase roles exist). On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new `tenant_trackers`, `tenant_tracker_rows` and `tenant_tracker_changes` tables afterwards. Until v24 is applied, the Trackers page says the migration is missing and nothing else changes. After applying it, Administrators see **Trackers** when they next sign in; give other people the **Trackers** module under Users & Permissions → Module access. Secret cells are encrypted with `TENANT_INTEGRATION_MASTER_KEY`, so keep that key: if it changes, stored Secret values can no longer be revealed. The recipient suggestions in the same release need no database change.
 - **v0.6.96:** apply v25 to link tasks and subtasks to tracker rows and cells. It is optional: without it Trackers, move rows and change column type all work, and the link card says the migration is missing. It adds one table, `tenant_tracker_task_links`, and works on Supabase and plain PostgreSQL such as Northflank. On PostgreSQL, run it as the user that owns the tables, or grant the app's database user access to the new table afterwards.
-- **v0.6.97 and v0.6.98 add no new database migration.** v0.6.98's subtask cells use the v25 task links table, so apply v25 first if you skipped it.
+- **v0.6.97, v0.6.98 and v0.7.0 add no new database migration.** v0.6.98's subtask cells use the v25 task links table, so apply v25 first if you skipped it.
 - **v0.6.93, v0.6.94 and v0.6.95 add no new database migration.**
 - Built-in Go Live generation works with the existing template table; v21 enables custom Go Live uploads/removal.
 - The built-in UAT Sign Off, UAT Deployment Approval and Training Sign Off forms also work with the existing template table. Apply v22 before uploading or removing custom templates for them in Settings → Templates; until then those cards can only use the built-in template.

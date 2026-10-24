@@ -463,6 +463,9 @@ test('Drive helpers pick linked tasks and subtasks, skip archived work and build
  assert.deepEqual(targets.map(t=>[t.id,t.kind]),[['t1','Task'],['s1','Subtask'],['s2','Subtask']],'Linked task first, then its subtasks in order; archived and unknown ids are skipped')
  assert.equal(targets[0].clientName,'Acme Bank');assert.equal(targets[0].projectName,'POS Rollout')
  assert.deepEqual(driveTargets(state,['s2']).map(t=>t.id),['s2'],'A linked subtask does not pull in its siblings')
+ const closed:any={...state,taskSettings:{statuses:[{label:'Open',closed:false},{label:'Done',closed:true}]},items:state.items.map((item:any)=>item.id==='s1'?{...item,status:'Done'}:item.id==='s2'?{...item,status:'Open'}:{...item,status:'Open'})}
+ assert.deepEqual(driveTargets(closed,['t1']).map(t=>t.id),['t1','s2'],'A subtask with a closed status is not offered')
+ assert.deepEqual(driveTargets({...closed,taskSettings:undefined,items:closed.items.map((item:any)=>item.id==='s2'?{...item,status:'Resolved'}:item)},['t1']).map(t=>t.id),['t1','s1'],'Without settings, Resolved and Closed count as closed and Done does not')
  assert.deepEqual(driveFolderPath(state,'s1'),[{key:'client:c1',name:'Acme Bank'},{key:'project:c1:p1',name:'POS Rollout'},{key:'task:t1',name:'Install terminals'},{key:'task:s1',name:'Site A'}])
  assert.deepEqual(driveFolderPath({items:[{id:'x',title:'Loose'}]},'x').map(s=>s.name),['No client','No project','Loose'])
  assert.throws(()=>driveFolderPath(state,'nope'),/Task not found/)

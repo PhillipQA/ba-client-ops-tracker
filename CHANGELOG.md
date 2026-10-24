@@ -1,8 +1,18 @@
 # Changelog
 
-**Current application release: v0.6.98**
+**Current application release: v0.7.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v0.7.0 — Type-to-search clients and open-only task pickers
+Released October 24, 2026.
+
+No database migration and no new Google permission.
+
+- **Type a client instead of scrolling.** Every place that asks for a client now works like the email recipient box: click or tab into it, type part of the name and the list narrows as you type. Arrow keys move, Enter picks, Escape goes back. Clients are listed A to Z (ignoring capitals, with numbers in order). This covers the Action Center AI box, the Tasks filter, New task, planner activities, Requirements and RTMs, Reports, the AI BA Assistant, Document Creation (Save to Drive and DocHub "Link to client"), New email, Work Hub task creation, Git ticket mapping and tasks, the Trackers list filter and the client choice when creating a task from a tracker. The free-text client boxes in the FSD and sign-off forms keep their suggestions, now A to Z.
+- "All clients", "No client" and similar choices stay at the top of each list and show as the field's hint when nothing is chosen.
+- **Only open work in task pickers.** Lists that ask you to choose a task or subtask now leave out closed and resolved work: the linked task in **New email**, **Save to Drive** in Document Creation, the DocHub task in document generation, linking a Git ticket to a task, and saving an email attachment to Drive in Work Hub. "Closed" follows your own task statuses (Settings → Task statuses); without them, Resolved and Closed count as closed.
+- An open subtask of a closed task is still offered. A task already linked keeps showing as linked.
 
 ## v0.6.98 — Trackers: clients, task and subtask cells, calculations
 Released October 24, 2026.

@@ -19,9 +19,9 @@
 .app-shell.ui-refresh .communications-hub .secondary { background: var(--comm-surface); color: var(--comm-text); border-color: var(--comm-border); }
 .app-shell.ui-refresh .communications-hub .secondary:hover:not(:disabled) { background: var(--comm-card); }
 .app-shell.ui-refresh .communications-hub .danger-button { color: var(--ui-danger, #ffb7b9); }
-.app-shell.ui-refresh .communications-hub :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--comm-accent); outline-offset: 3px; }
+.app-shell.ui-refresh .communications-hub :is(button, input, select, textarea):focus-visible, .client-combo-input { outline: 2px solid var(--comm-accent); outline-offset: 3px; }
 .app-shell.ui-refresh .communications-hub button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-.app-shell.ui-refresh .communications-hub :is(input:not([type=checkbox]), select, textarea) { min-width: 0; width: 100%; padding: .65rem .75rem; border: 1px solid var(--comm-border); border-radius: 8px; color: var(--comm-text); background: var(--comm-input); }
+.app-shell.ui-refresh .communications-hub :is(input:not([type=checkbox]), select, textarea), .client-combo-input { min-width: 0; width: 100%; padding: .65rem .75rem; border: 1px solid var(--comm-border); border-radius: 8px; color: var(--comm-text); background: var(--comm-input); }
 .app-shell.ui-refresh .communications-hub select option { color: var(--comm-text); background: var(--comm-input); }
 .app-shell.ui-refresh .communications-hub input[type=checkbox] { accent-color: var(--comm-accent); }
 .communications-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1.4rem; }
@@ -39,8 +39,8 @@
 .communication-layout button { border-radius: 7px; border-color: transparent; padding: .4rem .65rem; }
 .communication-page-size, .communication-label-filter { display: flex; align-items: center; gap: .6rem; min-width: 0; font-size: 13px; }
 .communication-label-filter { max-width: 100%; flex: 1 1 280px; }
-.communications-hub .communication-label-filter select { max-width: 340px; flex: 1; }
-.communications-hub .communication-page-size select { width: 72px; }
+.communications-hub .communication-label-filter select, .communications-hub .communication-label-filter .client-combo-input { max-width: 340px; flex: 1; }
+.communications-hub .communication-page-size select, .communications-hub .communication-page-size .client-combo-input { width: 72px; }
 .communication-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 1rem; padding: 0 1rem 1rem; }
 .communication-card { text-align: left; display: flex; flex-direction: column; gap: .85rem; border: 1px solid var(--comm-border); border-radius: 12px; padding: 1rem; background: var(--comm-card); color: var(--comm-text); min-width: 0; overflow: hidden; transition: border-color .15s ease, box-shadow .15s ease; }
 .communication-card:hover, .communication-card[aria-pressed=true] { border-color: var(--comm-accent); box-shadow: inset 0 0 0 1px var(--comm-accent); }
@@ -116,7 +116,7 @@
 .communication-drive-picker { display: grid; gap: .5rem; padding: .75rem; border: 1px solid var(--comm-border); border-radius: 10px; background: var(--comm-surface); }
 .communication-drive-picker p { margin: 0; color: var(--comm-text); }
 .communication-drive-picker label { display: grid; gap: .35rem; margin: 0; color: var(--comm-text); font-weight: 600; }
-.communication-drive-picker select { width: 100%; min-width: 0; }
+.communication-drive-picker select, .communication-drive-picker .client-combo-input { width: 100%; min-width: 0; }
 .communication-drive-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .communication-attachments small { color: var(--comm-muted); }
 .communication-attachments p[role="alert"] { margin: .5rem 0 0; color: #b42318; }

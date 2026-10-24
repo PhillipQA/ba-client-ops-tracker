@@ -4,6 +4,8 @@ import type { TaskDriveFile, WorkItem } from './types'
 import type { GeneratedDocument } from './dochub'
 import { driveFileGroups, fileSize, placeOf, taskOptions, type DriveScope } from './documentDriveTargets'
 import './documentDrive.css'
+import { useIsClosed } from './openWork'
+import ClientSelect from './ClientSelect'
 
 /** Google Drive in Document Creation: pick a saved COR for a DRF, and file generated documents under a task. */
 
@@ -60,7 +62,7 @@ export function DriveFilePicker({ items, clients, projects, accept, maxBytes, di
       <div className="document-drive-head"><div><strong>Files saved in Google Drive</strong><small>Files saved from Work Hub attachments and signed documents, grouped by task or subtask. The chosen file passes through the tracker to your browser and is not stored.</small></div>
         <button type="button" className="icon-button" aria-label="Close Google Drive files" onClick={() => setOpen(false)}><X size={16} /></button></div>
       <div className="document-drive-filters">
-        <label>Client<select value={clientId} onChange={e => setClientId(e.target.value)}><option value="">All clients</option>{clients.filter(c => !c.archived).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label>Client<ClientSelect clients={clients.filter(c => !c.archived)} value={clientId} onChange={(value) => setClientId(value)} extra={[{ value: '', label: 'All clients' }]} /></label>
         <label>Search<input value={query} onChange={e => setQuery(e.target.value)} placeholder="File or task name" /></label>
       </div>
       {error && <p role="alert" className="document-drive-error">{error}</p>}
@@ -90,7 +92,8 @@ export function SaveToDriveBar({ flow, label, items, clients, projects }: DriveS
     window.addEventListener(GENERATED, listen)
     return () => window.removeEventListener(GENERATED, listen)
   }, [flow])
-  const options = useMemo(() => taskOptions({ items, clients, projects }, clientId), [items, clients, projects, clientId])
+  const isClosed = useIsClosed()
+  const options = useMemo(() => taskOptions({ items, clients, projects }, clientId, isClosed), [items, clients, projects, clientId, isClosed])
   if (!available || !file) return null
   const save = async () => {
     if (!taskId || busy) return
@@ -106,7 +109,7 @@ export function SaveToDriveBar({ flow, label, items, clients, projects }: DriveS
     <h3><CloudUpload size={18} /> Save {label} to Google Drive</h3>
     <p>Files “{file.fileName}” in the team Drive under Client / Project / Task / Subtask. The app keeps no copy.</p>
     <div className="document-drive-filters">
-      <label>Client<select value={clientId} disabled={busy} onChange={e => { setClientId(e.target.value); setTaskId('') }}><option value="">All clients</option>{clients.filter(c => !c.archived).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      <label>Client<ClientSelect clients={clients.filter(c => !c.archived)} value={clientId} onChange={(value) => { setClientId(value); setTaskId('') }} extra={[{ value: '', label: 'All clients' }]} disabled={busy} /></label>
       <label className="document-field-wide">Task or subtask<select value={taskId} disabled={busy} onChange={e => setTaskId(e.target.value)}><option value="">Choose a task or subtask</option>{options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
     </div>
     <div className="document-drive-actions"><button type="button" className="primary" disabled={!taskId || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save to Google Drive'}</button></div>

@@ -13,6 +13,7 @@ import TrackerImportDialog from './TrackerImportDialog'
 import { Dialog, Notice, niceTime, plural } from './trackerUi'
 import type { Client, Project, UserAccount, WorkItem } from './types'
 import './trackers.css'
+import ClientSelect from './ClientSelect'
 
 type Props = {
   isAdmin: boolean
@@ -131,7 +132,7 @@ export default function Trackers(props: Props) {
     {trackers && trackers.length > 0 && <>
       <div className="trk-toolbar">
         <label className="trk-search"><Search size={14} aria-hidden="true" /><input type="search" placeholder="Search trackers" aria-label="Search trackers" value={query} onChange={event => setQuery(event.target.value)} /></label>
-        <label className="trk-inline-select">Client<select value={clientFilter} onChange={event => setClientFilter(event.target.value)}><option value="">All clients</option>{props.clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
+        <label className="trk-inline-select">Client<ClientSelect clients={props.clients} value={clientFilter} onChange={(value) => setClientFilter(value)} extra={[{ value: '', label: 'All clients' }]} /></label>
         {archivedCount > 0 && <label className="trk-checkline"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} /> Show archived ({archivedCount})</label>}
       </div>
       <section className="trk-list" aria-label="Trackers">
