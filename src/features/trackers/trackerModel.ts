@@ -165,7 +165,8 @@ export type AutoDone = {
   undone?: string
 }
 
-export const canAutoDone = (column: Pick<TrackerColumn, 'type'>) => column.type === 'checkbox' || column.type === 'select'
+export const canAutoDone = (column: Pick<TrackerColumn, 'type'>) =>
+  column.type === 'checkbox' || column.type === 'select'
 
 /**
  * Cleans the setting for a column, or returns undefined when it does not apply. A Choice column needs a done option

@@ -868,11 +868,11 @@ export function registerCommunications(
             ? hasScope(grant.scope, SHEETS_READ_SCOPE) || hasScope(grant.scope, SHEETS_WRITE_SCOPE)
               ? 'sheets-enabled'
               : 'sheets-denied'
-          : saved.send
-            ? hasScope(grant.scope, SEND_SCOPE)
-              ? 'send-enabled'
-              : 'send-denied'
-            : 'connected'
+            : saved.send
+              ? hasScope(grant.scope, SEND_SCOPE)
+                ? 'send-enabled'
+                : 'send-denied'
+              : 'connected'
     } catch {
       /* Never log authorization codes, tokens, or provider details. */
     }

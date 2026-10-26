@@ -1189,8 +1189,8 @@ export default function TrackerScreen(props: Props) {
       {tracker.source && tracker.source.canWrite === false && autoDoneColumn(columns)?.synced && (
         <div className="trk-banner trk-review-banner" role="status">
           <strong>Done marks are not reaching the Sheet yet.</strong>{' '}
-          {tracker.source.connectedByName || 'The person who connected it'} has not allowed editing Google Sheets, so
-          “{autoDoneColumn(columns)?.name}” changes only here.
+          {tracker.source.connectedByName || 'The person who connected it'} has not allowed editing Google Sheets, so “
+          {autoDoneColumn(columns)?.name}” changes only here.
           {canEdit && (
             <button type="button" className="trk-text-button strong" onClick={() => void allowSheetEdits()}>
               Allow editing with my Google

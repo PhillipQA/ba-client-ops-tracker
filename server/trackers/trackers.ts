@@ -956,16 +956,9 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       let written = 0,
         failed = 0
       for (const entry of entries) {
-        const ok = await saveAutoDone(
-          tenant,
-          fresh,
-          column,
-          entry.row,
-          entry.value,
-          results.get(entry.row.id),
-          user,
-          { reason: 'retry' },
-        )
+        const ok = await saveAutoDone(tenant, fresh, column, entry.row, entry.value, results.get(entry.row.id), user, {
+          reason: 'retry',
+        })
         if (ok && results.get(entry.row.id)?.ok) written += 1
         else failed += 1
       }
@@ -988,7 +981,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           .update({ sheet_issue: null })
           .eq('tenant_id', tenant)
           .eq('tracker_id', id)
-          .in('id', rows.slice(at, at + TRACKER_LIMITS.importBatch).map(row => row.id))
+          .in(
+            'id',
+            rows.slice(at, at + TRACKER_LIMITS.importBatch).map(row => row.id),
+          )
         check(saved.error)
       }
       res.json({ dismissed: rows.length })
@@ -2230,7 +2226,6 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       res.json({ value, seconds: 30 })
     }),
   )
-
 
   app.get(
     '/api/trackers/:id/rows/:rowId/history',
