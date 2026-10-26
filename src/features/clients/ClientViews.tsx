@@ -1,6 +1,6 @@
 import { type Store, isTaskClosed } from '../../app/store'
 import { businessDateKey } from '../../shared/businessDate'
-import { isArchived } from '../tasks/lifecycle'
+import { isArchived, isTaskArchived } from '../tasks/lifecycle'
 import { addDays, niceDate } from '../../shared/dates'
 import { Empty, HealthChip, StatusChip } from '../../shared/ui/Chips'
 import type { Client, Project } from '../../shared/types'
@@ -150,7 +150,10 @@ export function ProjectDetail({
 }) {
   const contextClient = clientContextId ? store.clients.find(client => client.id === clientContextId) : undefined
   const allProjectTasks = store.items.filter(item => item.projectId === project.id)
-  const tasks = clientContextId ? allProjectTasks.filter(item => item.clientId === clientContextId) : allProjectTasks
+  // Archived tasks are put away: they are listed under Tasks → Archived, not here.
+  const tasks = (
+    clientContextId ? allProjectTasks.filter(item => item.clientId === clientContextId) : allProjectTasks
+  ).filter(item => !isTaskArchived(store.items, item))
   const parentTasks = tasks.filter(item => !item.parentTaskId)
   const subtasks = tasks.filter(item => Boolean(item.parentTaskId))
   const openTasks = tasks.filter(

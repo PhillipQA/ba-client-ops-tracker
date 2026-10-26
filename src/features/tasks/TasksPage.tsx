@@ -2,12 +2,17 @@ import type { AppState } from '../../app/useAppState'
 import { FilterBar, TaskTable } from './TaskTable'
 import { waitingOnOptions } from './waitingOn'
 import ClientSelect from '../../shared/ui/SearchSelect'
-import { Columns3, Table2 } from 'lucide-react'
+import { Archive, Columns3, Table2 } from 'lucide-react'
 import TaskBoard from './TaskBoard'
 
 /** Tasks screen. It reads the app state; see app/useAppState. */
 export function TasksPage({ app }: { app: AppState }) {
   const {
+    archiveTask,
+    archivedTaskCount,
+    reopenTask,
+    setTaskArchiveView,
+    taskArchiveView,
     boardGroup,
     boardShowSubtasks,
     canWriteTasks,
@@ -41,12 +46,34 @@ export function TasksPage({ app }: { app: AppState }) {
       <div className="panel">
         <div className="panel-heading">
           <div>
-            <h2>All tasks</h2>
-            <p>Tasks, requirements, issues, inquiries, decisions, and follow-ups in one searchable list.</p>
+            <h2>{taskArchiveView === 'archived' ? 'Archived tasks' : 'All tasks'}</h2>
+            <p>
+              {taskArchiveView === 'archived'
+                ? 'Closed tasks that were put away, with their subtasks. Reopen one to bring it back to Tasks.'
+                : 'Tasks, requirements, issues, inquiries, decisions, and follow-ups in one searchable list.'}
+            </p>
           </div>
           <span className="count-pill">
             {filteredTasks.length} shown · {store.items.length} total
           </span>
+          <div className="client-layout-switch" role="group" aria-label="Active or archived tasks">
+            <button
+              type="button"
+              aria-pressed={taskArchiveView === 'active'}
+              onClick={() => setTaskArchiveView('active')}
+            >
+              <span>Active</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={taskArchiveView === 'archived'}
+              onClick={() => setTaskArchiveView('archived')}
+              title="Archived tasks"
+            >
+              <Archive size={16} />
+              <span>Archived{archivedTaskCount ? ` (${archivedTaskCount})` : ''}</span>
+            </button>
+          </div>
         </div>
         <FilterBar
           query={query}
@@ -213,6 +240,8 @@ export function TasksPage({ app }: { app: AppState }) {
             onCreateSubtask={openSubtaskCreator}
             onReorderSubtasks={reorderSubtasks}
             canEdit={canWriteTasks}
+            onArchive={archiveTask}
+            onReopen={reopenTask}
           />
         )}
       </div>

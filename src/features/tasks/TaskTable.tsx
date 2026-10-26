@@ -1,13 +1,14 @@
 import { isTaskClosed } from '../../app/store'
 import { businessDateKey } from '../../shared/businessDate'
 import { docHubLabels } from '../documents/dochub'
-import { archivedWorkReason } from './lifecycle'
+import { archivedWorkReason, isArchived, taskArchiveBlockers } from './lifecycle'
 import { niceDate } from '../../shared/dates'
 import { Empty, PriorityChip, StatusChip, TypeChip, WaitingChip } from '../../shared/ui/Chips'
 import { taskEvidenceUrl } from './taskEvidence'
 import type { Client, Project, TaskColumnKey, TaskSettings, WaitingOn, WorkItem } from '../../shared/types'
 import { isWaitingOnDone } from './waitingOn'
 import {
+  Archive,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -16,6 +17,7 @@ import {
   Paperclip,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
 } from 'lucide-react'
@@ -68,6 +70,8 @@ export function TaskTable({
   onReorderSubtasks,
   canEdit = true,
   hiddenColumns = [],
+  onArchive,
+  onReopen,
 }: {
   items: WorkItem[]
   allItems?: WorkItem[]
@@ -82,8 +86,13 @@ export function TaskTable({
   onReorderSubtasks: (parentTaskId: string, orderedIds: string[]) => void
   canEdit?: boolean
   hiddenColumns?: TaskColumnKey[]
+  /** Closed tasks with finished subtasks get an Archive button. */
+  onArchive?: (id: string) => void
+  /** Archived tasks get a Reopen button. */
+  onReopen?: (id: string) => void
 }) {
   const sourceItems = allItems || items
+  const isClosedTask = (item: WorkItem) => isTaskClosed(item.status, taskSettings)
   const visibleIds = new Set(items.map(item => item.id))
   const [draggedSubtaskId, setDraggedSubtaskId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
@@ -187,7 +196,13 @@ export function TaskTable({
   }
 
   const renderRow = (item: WorkItem, isSubtask = false) => {
-    const rowEditable = canEdit && !archivedWorkReason({ clients, projects, items: sourceItems, taskSettings }, item)
+    const archived = isArchived(item)
+    const rowEditable =
+      canEdit && !archived && !archivedWorkReason({ clients, projects, items: sourceItems, taskSettings }, item)
+    const archiveBlockers =
+      rowEditable && !isSubtask && isClosedTask(item) && onArchive
+        ? taskArchiveBlockers(sourceItems, item, taskSettings)
+        : []
     const closed = isTaskClosed(item.status, taskSettings)
     const overdue =
       !closed &&
@@ -410,6 +425,32 @@ export function TaskTable({
                 onClick={() => onResolve(item.id)}
               >
                 <CheckCircle2 size={18} />
+              </button>
+            )}
+            {rowEditable && !isSubtask && closed && onArchive && (
+              <button
+                className="icon-button"
+                type="button"
+                title={
+                  archiveBlockers.length
+                    ? `Cannot archive yet: ${archiveBlockers.join(' ')}`
+                    : 'Archive task (hides it from Tasks; reopen it any time)'
+                }
+                aria-label="Archive task"
+                disabled={archiveBlockers.length > 0}
+                onClick={() => onArchive(item.id)}
+              >
+                <Archive size={17} />
+              </button>
+            )}
+            {archived && canEdit && onReopen && (
+              <button
+                className="secondary compact"
+                type="button"
+                title="Reopen: brings the task back to Tasks with an open status"
+                onClick={() => onReopen(item.id)}
+              >
+                <RotateCcw size={15} /> Reopen
               </button>
             )}
             {rowEditable && (

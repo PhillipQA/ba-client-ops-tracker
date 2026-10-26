@@ -9,7 +9,14 @@ import { trackerApi, type TaskLink } from '../features/trackers/trackerApi'
 import type { TaskDraft } from '../features/trackers/TrackerWork'
 import { rememberTrackerRow } from '../features/trackers/trackerNav'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix } from '../features/requirements/rtm'
-import { assertLifecycleMutation, archivedWorkReason, isArchived, stableRecord } from '../features/tasks/lifecycle'
+import {
+  assertLifecycleMutation,
+  archivedWorkReason,
+  isArchived,
+  isTaskArchived,
+  stableRecord,
+  taskArchiveBlockers,
+} from '../features/tasks/lifecycle'
 import {
   itemMatchesActionCenterScope,
   resolveActionCenterScope,
@@ -119,6 +126,8 @@ export function useAppState() {
   const [taskClientFilter, setTaskClientFilter] = useState('')
   const [taskProjectFilter, setTaskProjectFilter] = useState('')
   const [taskStatusFilter, setTaskStatusFilter] = useState('')
+  /** Tasks shows active work; Archived lists archived tasks so they can be reopened. */
+  const [taskArchiveView, setTaskArchiveView] = useState<'active' | 'archived'>('active')
   const [taskDateFilter, setTaskDateFilter] = useState<
     'All' | 'due-3' | 'due-7' | 'followup-3' | 'followup-7' | 'overdue'
   >('All')
@@ -1140,6 +1149,7 @@ export function useAppState() {
     const due3 = addDays(today, 3)
     const due7 = addDays(today, 7)
     return searchedItems.filter(item => {
+      if (isTaskArchived(store.items, item) !== (taskArchiveView === 'archived')) return false
       if (taskClientFilter === '__none__' && item.clientId) return false
       if (taskClientFilter && taskClientFilter !== '__none__' && item.clientId !== taskClientFilter) return false
       if (taskProjectFilter === '__none__' && item.projectId) return false
@@ -1158,7 +1168,21 @@ export function useAppState() {
         )
       return true
     })
-  }, [searchedItems, taskClientFilter, taskProjectFilter, taskStatusFilter, taskDateFilter, store.taskSettings, today])
+  }, [
+    searchedItems,
+    store.items,
+    taskArchiveView,
+    taskClientFilter,
+    taskProjectFilter,
+    taskStatusFilter,
+    taskDateFilter,
+    store.taskSettings,
+    today,
+  ])
+  const archivedTaskCount = useMemo(
+    () => store.items.filter(item => !item.parentTaskId && isArchived(item)).length,
+    [store.items],
+  )
   const selectedClient = store.clients.find(client => client.id === selectedClientId) ?? null
   const selectedProject = store.projects.find(project => project.id === selectedProjectId) ?? null
   // The tab title names the page, so the browser's history list (long-press Back) tells pages apart.
@@ -1210,6 +1234,66 @@ export function useAppState() {
         ...store.activity,
       ],
     })
+  }
+
+  /** Puts a closed task (and its finished subtasks) away: it leaves Tasks until it is reopened. */
+  const archiveTask = (id: string) => {
+    if (!canWriteTasks) return
+    const target = store.items.find(item => item.id === id)
+    if (!target || isArchived(target)) return
+    const blockers = taskArchiveBlockers(store.items, target, store.taskSettings)
+    if (blockers.length) {
+      window.alert(`“${target.title}” cannot be archived yet. ${blockers.join(' ')}`)
+      return
+    }
+    persist({
+      ...store,
+      items: store.items.map(item =>
+        item.id === id ? { ...item, archived: true, archivedAt: new Date().toISOString() } : item,
+      ),
+      activity: [
+        {
+          id: crypto.randomUUID(),
+          clientId: target.clientId,
+          projectId: target.projectId,
+          date: today,
+          text: `Archived task: ${target.title}`,
+        },
+        ...store.activity,
+      ],
+    })
+  }
+
+  /** Brings an archived task back to Tasks with an open status, ready to be worked on again. */
+  const reopenTask = (id: string) => {
+    if (!canWriteTasks) return
+    const target = store.items.find(item => item.id === id)
+    if (!target || !isArchived(target)) return
+    const { archived: _archived, archivedAt: _archivedAt, ...rest } = target
+    const saved = persist({
+      ...store,
+      items: store.items.map(item =>
+        item.id === id
+          ? {
+              ...rest,
+              status: defaultOpenTaskStatus(store.taskSettings),
+              waitingOn: defaultWaitingOn(store.taskSettings),
+              resolvedDate: undefined,
+            }
+          : item,
+      ),
+      activity: [
+        {
+          id: crypto.randomUUID(),
+          clientId: target.clientId,
+          projectId: target.projectId,
+          date: today,
+          text: `Reopened task: ${target.title}`,
+        },
+        ...store.activity,
+      ],
+    })
+    if (saved !== false) setTaskArchiveView('active')
   }
 
   const updateTaskStatus = (id: string, status: string) => {
@@ -1860,6 +1944,11 @@ export function useAppState() {
     reorderSubtasks,
     resetToken,
     resolveItem,
+    archiveTask,
+    reopenTask,
+    archivedTaskCount,
+    taskArchiveView,
+    setTaskArchiveView,
     resolvedActionCenterScope,
     rtmContext,
     saveActivity,

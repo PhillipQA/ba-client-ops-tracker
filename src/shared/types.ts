@@ -145,6 +145,9 @@ export interface WorkItem {
   sourceSender?: string
   evidence?: TaskEvidence[]
   comments?: TaskComment[]
+  /** Closed and put away: hidden from Tasks until reopened. Only top-level tasks; their subtasks go with them. */
+  archived?: boolean
+  archivedAt?: string
 }
 
 export type WorkActivityAction =

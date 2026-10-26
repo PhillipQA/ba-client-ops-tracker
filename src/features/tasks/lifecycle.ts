@@ -1,4 +1,5 @@
 import type { Client, Project, WorkItem, PlannerActivity, ActivityLog, TaskSettings } from '../../shared/types'
+import { isWaitingOnDone } from './waitingOn'
 export type LifecycleStore = {
   clients: Client[]
   projects: Project[]
@@ -20,6 +21,33 @@ export const isArchived = (record?: { archived?: boolean }) => record?.archived 
 export const isWorkDone = (item: WorkItem, settings: TaskSettings) =>
   settings.statuses.find(s => s.label === item.status)?.closed ??
   ['Resolved', 'Closed', 'Completed', 'Done'].includes(item.status)
+/** Completed the way the task list counts it: a closed status, or waiting on the completion option. */
+export const isTaskFinished = (item: WorkItem, settings: TaskSettings) =>
+  isWorkDone(item, settings) || isWaitingOnDone(item.waitingOn, settings)
+/** Subtasks of a task that are not finished yet. */
+export const openSubtasksOf = (items: WorkItem[], taskId: string, settings: TaskSettings) =>
+  items.filter(item => item.parentTaskId === taskId && !isTaskFinished(item, settings))
+/** Archived itself, or a subtask of an archived task. Archived work is hidden from Tasks until it is reopened. */
+export function isTaskArchived(items: WorkItem[], item: WorkItem) {
+  if (isArchived(item)) return true
+  const parent = item.parentTaskId ? items.find(other => other.id === item.parentTaskId) : undefined
+  return isArchived(parent)
+}
+/** Why a task cannot be archived yet; empty when it can. */
+export function taskArchiveBlockers(items: WorkItem[], item: WorkItem, settings: TaskSettings): string[] {
+  if (item.parentTaskId) return ['Archive the parent task; its subtasks are archived with it.']
+  const blockers: string[] = []
+  if (!isWorkDone(item, settings)) blockers.push('Close or resolve the task first.')
+  const open = openSubtasksOf(items, item.id, settings)
+  if (open.length)
+    blockers.push(
+      `Complete ${open.length} open subtask${open.length === 1 ? '' : 's'}: ${open
+        .slice(0, 3)
+        .map(t => t.title)
+        .join(', ')}.`,
+    )
+  return blockers
+}
 export const stableRecord = (value: unknown): string =>
   JSON.stringify(value, (_key, entry) =>
     entry && typeof entry === 'object' && !Array.isArray(entry)
@@ -65,8 +93,39 @@ export function archivedWorkReason(
     if (!parentId || seen.has(parentId)) break
     seen.add(parentId)
     target = state.items.find(t => t.id === parentId)
+    // A subtask of an archived task is archived with it.
+    if (target && isArchived(target as WorkItem))
+      return `Reopen task “${(target as WorkItem).title}” before changing its work.`
   }
   return ''
+}
+
+/**
+ * Task rules checked on every save, in the browser and on the server:
+ * a task closes only when its subtasks are finished; only a closed task with finished subtasks is archived;
+ * an archived task (and its subtasks) changes only by being reopened (unarchived).
+ */
+function assertTaskLifecycle(current: LifecycleStore, next: LifecycleStore, old?: WorkItem, row?: WorkItem) {
+  if (row && row.archived !== undefined && typeof row.archived !== 'boolean')
+    throw new LifecycleError('Archive state must be true or false.', 400)
+  if (old && isArchived(old)) {
+    // Reopening (archived → not archived) is the only change an archived task accepts.
+    if (!row) throw new LifecycleError(`Reopen task “${old.title}” before deleting it.`)
+    if (isArchived(row)) throw new LifecycleError(`Reopen task “${old.title}” before changing it.`)
+  }
+  if (!row) return
+  const closing = isWorkDone(row, next.taskSettings) && !(old && isWorkDone(old, current.taskSettings))
+  if (closing) {
+    const open = openSubtasksOf(next.items, row.id, next.taskSettings)
+    if (open.length)
+      throw new LifecycleError(
+        `Complete the ${open.length} open subtask${open.length === 1 ? '' : 's'} of “${row.title}” before closing it.`,
+      )
+  }
+  if (isArchived(row) && !isArchived(old)) {
+    const blockers = taskArchiveBlockers(next.items, row, next.taskSettings)
+    if (blockers.length) throw new LifecycleError(`“${row.title}” cannot be archived yet. ${blockers.join(' ')}`)
+  }
 }
 
 export function archiveBlockers(state: LifecycleStore, kind: 'clients' | 'projects', id: string): string[] {
@@ -167,6 +226,7 @@ export function assertLifecycleMutation(current: LifecycleStore, next: Lifecycle
       }
       const reason = (old && archivedWorkReason(current, old)) || (row && archivedWorkReason(next, row))
       if (reason) throw new LifecycleError(reason)
+      if (key === 'items') assertTaskLifecycle(current, next, old as WorkItem | undefined, row as WorkItem | undefined)
       if (row && key !== 'activity') {
         const ctx = workContext(next, row)
         if (key === 'items' && 'parentTaskId' in row && row.parentTaskId) {
