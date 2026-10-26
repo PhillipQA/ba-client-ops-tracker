@@ -44,7 +44,7 @@ import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
 import { Dialog, Notice, Popover, plural } from './trackerUi'
 import type { Conflict } from './trackerTwoWay'
-import { rememberSheetEdits, takeReview, takeSheetEdits, takeTrackerRow } from './trackerNav'
+import { rememberSheetEdits, takeReview, takeSheetEdits, takeTrackerRow, type SheetEditsFor } from './trackerNav'
 import { autoDoneColumn } from './trackerAutoDone'
 import TrackerReview, { type ReviewOutcome } from './TrackerReview'
 import { SYNC_LIMITS, describeSync } from './trackerSync'
@@ -126,6 +126,8 @@ export default function TrackerScreen(props: Props) {
     conflicts: Conflict[]
   } | null>(null)
   const [modeBusy, setModeBusy] = useState(false)
+  /** Turning on two-way was refused because this person has not let the app edit Google Sheets. */
+  const [twoWayNeedsWrite, setTwoWayNeedsWrite] = useState(false)
   const [syncing, setSyncing] = useState(false)
   // Full-width view: the page header (Add client, Add task…) is hidden so the grid gets the whole height. The left menu stays.
   const [expanded, setExpanded] = useState(() => {
@@ -216,12 +218,24 @@ export default function TrackerScreen(props: Props) {
     // Arriving straight from an import or a new Sheet connection opens the review of the new rows.
     const pending = takeReview(trackerId)
     if (pending) setReview({ origin: pending === 'flagged' ? 'sheet' : 'import', ids: pending })
-    // Back from allowing Google Sheets edits: done marks now go to the Sheet with this person's access.
-    if (takeSheetEdits(trackerId)) {
+    // Back from allowing Google Sheets edits: carry on with what the person was doing.
+    const purpose = takeSheetEdits(trackerId)
+    if (purpose) {
       if (props.googleReturn === 'write-denied')
-        say('error', 'Editing Google Sheets was not allowed, so done marks still stay in the tracker only.')
+        say(
+          'error',
+          purpose === 'done'
+            ? 'Editing Google Sheets was not allowed, so done marks still stay in the tracker only.'
+            : 'Editing Google Sheets was not allowed, so your changes to the green columns cannot reach the Sheet.',
+        )
       else if (props.googleReturn === 'write-enabled') {
-        if (trackerRef.current?.source && trackerRef.current.source.canWrite === false) void reconnect()
+        if (purpose === 'two_way') void switchMode('two_way')
+        else if (purpose === 'edit')
+          say(
+            'info',
+            'Editing Google Sheets is allowed. Your changes to the green columns are now written to the Sheet.',
+          )
+        else if (trackerRef.current?.source && trackerRef.current.source.canWrite === false) void reconnect()
         else say('info', 'Editing Google Sheets is allowed. Done marks are now written to the Sheet.')
       }
     }
@@ -236,7 +250,9 @@ export default function TrackerScreen(props: Props) {
       const result = await trackerApi.syncSource(trackerId, force)
       if (!alive.current) return
       if (!result.skipped) await refresh()
-      else if (trackerRef.current) setTracker({ ...trackerRef.current, source: result.source })
+      // Keep what was learnt about write permission; a sync result does not carry it.
+      else if (trackerRef.current)
+        setTracker({ ...trackerRef.current, source: { ...trackerRef.current.source, ...result.source } })
       if (force) say('info', result.report ? `Synced. ${describeSync(result.report)}.` : 'Synced.')
     } catch (error) {
       if (force) say('error', error instanceof Error ? error.message : 'The Sheet could not be synced.')
@@ -255,12 +271,12 @@ export default function TrackerScreen(props: Props) {
       say('error', error instanceof Error ? error.message : 'Could not start the Google permission step.')
     }
   }
-  const allowSheetEdits = async () => {
+  const allowSheetEdits = async (purpose: SheetEditsFor = 'done') => {
     try {
       const response = await fetch('/api/communications/gmail/connect?sheets=write', { credentials: 'same-origin' })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.url) throw new Error(result.error || 'Could not start the Google permission step.')
-      rememberSheetEdits(trackerId)
+      rememberSheetEdits(trackerId, purpose)
       window.location.assign(result.url)
     } catch (error) {
       say('error', error instanceof Error ? error.message : 'Could not start the Google permission step.')
@@ -590,7 +606,7 @@ export default function TrackerScreen(props: Props) {
           return
         }
         if (error instanceof TrackerApiError && error.body.needsWrite && trackerRef.current?.source)
-          setTracker({ ...trackerRef.current, source: { ...trackerRef.current.source, canWrite: false } })
+          setTracker({ ...trackerRef.current, source: { ...trackerRef.current.source, youCanWrite: false } })
         rowFailed(error, rowId)
       }
     })
@@ -623,6 +639,7 @@ export default function TrackerScreen(props: Props) {
     try {
       const result = await trackerApi.setSourceMode(trackerId, mode)
       if (alive.current && trackerRef.current) setTracker({ ...trackerRef.current, source: result.source })
+      setTwoWayNeedsWrite(false)
       say(
         'info',
         mode === 'two_way'
@@ -630,8 +647,11 @@ export default function TrackerScreen(props: Props) {
           : 'Two-way sync is off. The Google Sheet is read only; change the green columns there.',
       )
     } catch (error) {
-      if (error instanceof TrackerApiError && error.body.needsWrite && trackerRef.current?.source)
-        setTracker({ ...trackerRef.current, source: { ...trackerRef.current.source, canWrite: false } })
+      // Turning on two-way needs this person's own permission to edit Sheets: offer it right here.
+      if (error instanceof TrackerApiError && error.body.needsWrite) {
+        setTwoWayNeedsWrite(true)
+        return
+      }
       say('error', error instanceof Error ? error.message : 'The sync mode could not be changed.')
     } finally {
       if (alive.current) setModeBusy(false)
@@ -1268,25 +1288,37 @@ export default function TrackerScreen(props: Props) {
         </div>
       )}
       {tracker.source &&
-        tracker.source.canWrite === false &&
-        (autoDoneColumn(columns)?.synced || tracker.source.mode === 'two_way') && (
+        canEdit &&
+        (twoWayNeedsWrite || (tracker.source.mode === 'two_way' && tracker.source.youCanWrite === false)) && (
           <div className="trk-banner trk-review-banner" role="status">
             <strong>
-              {tracker.source.mode === 'two_way'
-                ? 'Edits cannot reach the Sheet yet.'
-                : 'Done marks are not reaching the Sheet yet.'}
+              {twoWayNeedsWrite && tracker.source.mode !== 'two_way'
+                ? 'Two-way needs your permission first.'
+                : 'Your edits to the green columns cannot reach the Sheet yet.'}
             </strong>{' '}
-            {tracker.source.connectedByName || 'The person who connected it'} has not allowed editing Google Sheets
-            {tracker.source.mode === 'two_way'
-              ? ', so edits to the green columns are refused until someone allows it.'
-              : `, so “${autoDoneColumn(columns)?.name}” changes only here.`}
-            {canEdit && (
-              <button type="button" className="trk-text-button strong" onClick={() => void allowSheetEdits()}>
-                Allow editing with my Google
-              </button>
-            )}
+            Changes are written to the Sheet with your own Google account, so Google’s sharing decides what you may do.
+            Your account has not yet let this app edit Google Sheets; Google asks once.
+            <button
+              type="button"
+              className="trk-text-button strong"
+              onClick={() =>
+                void allowSheetEdits(twoWayNeedsWrite && tracker.source?.mode !== 'two_way' ? 'two_way' : 'edit')
+              }
+            >
+              Allow editing with my Google
+            </button>
           </div>
         )}
+      {tracker.source && tracker.source.canWrite === false && autoDoneColumn(columns)?.synced && (
+        <div className="trk-banner trk-review-banner" role="status">
+          <strong>Done marks may not reach the Sheet.</strong> They are written with the Google account of the person
+          who completes the task, or else {tracker.source.connectedByName || 'the person who connected the Sheet'}’s,
+          which has not allowed editing Google Sheets.
+          <button type="button" className="trk-text-button strong" onClick={() => void allowSheetEdits('done')}>
+            Allow editing with my Google
+          </button>
+        </div>
+      )}
       {rows.some(row => row.sheetIssue) && (
         <div className="trk-banner trk-review-banner" role="status">
           <strong>{plural(rows.filter(row => row.sheetIssue).length, 'row')} not marked done in the Sheet.</strong>{' '}

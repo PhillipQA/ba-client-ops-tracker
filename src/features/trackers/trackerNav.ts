@@ -59,21 +59,25 @@ export const takeReview = (trackerId: string): string[] | 'flagged' | null => {
 }
 
 const WRITE_KEY = 'ba.trackers.allowSheetEdits'
-/** Remembers that this person went to allow editing Google Sheets for a tracker, so it can switch to their access on return. */
-export const rememberSheetEdits = (trackerId: string) => {
+/** Why this person went to allow editing Google Sheets: done marks, turning on two-way, or their own edits. */
+export type SheetEditsFor = 'done' | 'two_way' | 'edit'
+/** Remembers that this person went to allow editing Google Sheets for a tracker, so it can carry on when they return. */
+export const rememberSheetEdits = (trackerId: string, purpose: SheetEditsFor = 'done') => {
   rememberTracker(trackerId)
   try {
-    window.sessionStorage.setItem(WRITE_KEY, trackerId)
+    window.sessionStorage.setItem(WRITE_KEY, `${trackerId}|${purpose}`)
   } catch {
-    /* Without storage they can click Reconnect with my Google themselves. */
+    /* Without storage they click the button again after returning. */
   }
 }
-export const takeSheetEdits = (trackerId: string) => {
+/** What this person went to allow for this tracker, once; empty when nothing is pending. */
+export const takeSheetEdits = (trackerId: string): SheetEditsFor | '' => {
   try {
-    if (window.sessionStorage.getItem(WRITE_KEY) !== trackerId) return false
+    const [id, purpose] = (window.sessionStorage.getItem(WRITE_KEY) || '').split('|')
+    if (id !== trackerId) return ''
     window.sessionStorage.removeItem(WRITE_KEY)
-    return true
+    return purpose === 'two_way' || purpose === 'edit' ? purpose : 'done'
   } catch {
-    return false
+    return ''
   }
 }

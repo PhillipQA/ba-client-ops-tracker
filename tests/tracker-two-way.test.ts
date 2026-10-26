@@ -224,7 +224,7 @@ function fakeApp() {
     delete: add('DELETE'),
     use() {},
   }
-  app.ask = async (method: string, path: string, body?: any) => {
+  app.ask = async (method: string, path: string, body?: any, userId = 'u1') => {
     const route = routes.find(r => r.method === method && r.pattern.test(path))
     if (!route) throw new Error(`No route ${method} ${path}`)
     const match = route.pattern.exec(path)!
@@ -235,8 +235,8 @@ function fakeApp() {
       headers: {},
       params: Object.fromEntries(route.keys.map((key, at) => [key, decodeURIComponent(match[at + 1])])),
       authUser: {
-        id: 'u1',
-        name: 'Ana Reyes',
+        id: userId,
+        name: userId === 'u1' ? 'Ana Reyes' : 'Ben Cruz',
         role: 'Contributor',
         organizationId: TENANT,
         modules: ['trackers'],
@@ -269,10 +269,24 @@ const SHEET = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
 const WRITE = 'https://www.googleapis.com/auth/spreadsheets'
 let sheet: string[][] = []
 const calls: string[] = []
+/** Google accounts that may only view the Sheet; Google refuses their writes. */
+const viewOnly = new Set<string>()
+/** The account each Sheets request was made with. */
+const tokens: string[] = []
 const realFetch = globalThis.fetch
 globalThis.fetch = (async (input: any, init?: any) => {
   const url = String(input)
   if (!url.startsWith('https://sheets.googleapis.com/')) return realFetch(input, init)
+  const token = String(init?.headers?.Authorization || '').replace('Bearer ', '')
+  tokens.push(token)
+  if (init?.method === 'POST' && viewOnly.has(token))
+    return new Response(
+      JSON.stringify({ error: { message: 'The caller does not have permission', status: 'PERMISSION_DENIED' } }),
+      {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      },
+    )
   const reply = (body: any) =>
     new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   const cellAt = (range: string) => {
@@ -309,7 +323,7 @@ globalThis.fetch = (async (input: any, init?: any) => {
   return reply({ properties: { title: 'Card Indo Remote' } })
 }) as any
 
-function setup(mode: 'one_way' | 'two_way', scope = WRITE) {
+function setup(mode: 'one_way' | 'two_way', scope = WRITE, scopes: Record<string, string> = {}) {
   const db = memoryDb()
   const app = fakeApp()
   const pass = (_q: any, _s: any, n: any) => n()
@@ -319,7 +333,11 @@ function setup(mode: 'one_way' | 'two_way', scope = WRITE) {
     requireTenant: pass,
     load: async () => ({ data: { accounts: [{ id: 'u1', name: 'Ana Reyes' }], items: [], clients: [], projects: [] } }),
     key: Buffer.alloc(32, 7),
-    googleAccess: async (_tenant, userId) => ({ token: `token-${userId}`, scope }),
+    googleAccess: async (_tenant, userId) => ({
+      token: `token-${userId}`,
+      scope: scopes[userId] ?? scope,
+      email: `${userId}@example.com`,
+    }),
   })
   db.tables.tenant_trackers.push({
     tenant_id: TENANT,
@@ -473,4 +491,58 @@ test('switching modes is recorded and needs edit permission only for two-way', a
   assert.equal(db.tables.tenant_tracker_sources[0].mode, 'two_way')
   const off = await app.ask('POST', `/api/trackers/${TRACKER}/source/mode`, { mode: 'one_way' })
   assert.equal(off.body.source.mode, 'one_way')
+})
+
+test('two-way writes as the person editing: Google sharing decides, not the connector', async () => {
+  fresh()
+  tokens.length = 0
+  const READ = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+  // u1 connected the Sheet and may edit; u2 has only let the app read Sheets.
+  const { app, rowOf } = setup('two_way', WRITE, { u2: READ })
+  const refused = await app.ask(
+    'PATCH',
+    `/api/trackers/${TRACKER}/rows/${ROW_57}`,
+    { version: 1, cells: { c_status: 'o_done' } },
+    'u2',
+  )
+  assert.equal(refused.status, 409)
+  assert.equal(refused.body.needsWrite, true)
+  assert.match(refused.body.error, /Your Google account has not allowed this app to edit Google Sheets/)
+  assert.equal(sheet[1][1], 'Pending', 'the connector’s access is not borrowed')
+  // u3 let the app edit Sheets, but the Sheet is only shared with them as a viewer.
+  const viewer = setup('two_way', WRITE)
+  viewOnly.add('token-u3')
+  const denied = await viewer.app.ask(
+    'PATCH',
+    `/api/trackers/${TRACKER}/rows/${ROW_57}`,
+    { version: 1, cells: { c_status: 'o_done' } },
+    'u3',
+  )
+  viewOnly.clear()
+  assert.equal(denied.status, 403)
+  assert.match(denied.body.error, /Your Google account \(u3@example.com\) can open this Sheet but not edit it/)
+  assert.equal(viewer.rowOf(ROW_57).data.c_status, 'o_pending', 'nothing saved')
+  // An editor's change goes through with their own account.
+  tokens.length = 0
+  const ok = await app.ask(
+    'PATCH',
+    `/api/trackers/${TRACKER}/rows/${ROW_57}`,
+    { version: 1, cells: { c_status: 'o_done' } },
+    'u1',
+  )
+  assert.equal(ok.status, 200)
+  assert.ok(tokens.length > 0 && tokens.every(token => token === 'token-u1'))
+  assert.equal(rowOf(ROW_57).data.c_status, 'o_done')
+})
+
+test('turning on two-way needs the switching person’s own permission to edit Sheets', async () => {
+  fresh()
+  const { app, db } = setup('one_way', WRITE, { u2: 'https://www.googleapis.com/auth/spreadsheets.readonly' })
+  const refused = await app.ask('POST', `/api/trackers/${TRACKER}/source/mode`, { mode: 'two_way' }, 'u2')
+  assert.equal(refused.status, 409)
+  assert.equal(refused.body.needsWrite, true)
+  assert.equal(db.tables.tenant_tracker_sources[0].mode, 'one_way')
+  const on = await app.ask('POST', `/api/trackers/${TRACKER}/source/mode`, { mode: 'two_way' }, 'u1')
+  assert.equal(on.status, 200)
+  assert.equal(on.body.source.youCanWrite, true)
 })

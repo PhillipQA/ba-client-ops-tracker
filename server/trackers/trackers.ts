@@ -731,6 +731,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     source: any,
     column: TrackerColumn,
     entries: { row: any; value: Cell }[],
+    actor: { id: string } | null = null,
   ): Promise<Map<string, SheetResult>> {
     const results = new Map<string, SheetResult>()
     const failAll = (code: SheetIssueCode) => {
@@ -739,13 +740,13 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
     const header = headerFor(source, column.id)
     if (!header) return failAll('no_header')
-    let access: { token: string; scope: string }
+    let access: { token: string }
     try {
-      access = await googleFor(tenant, source.connected_by)
+      // The person who completed the task, when their Google account may edit Sheets; otherwise the connector's.
+      access = await writeAccess(tenant, source, actor, true)
     } catch {
       return failAll('no_access')
     }
-    if (!canWriteSheets(access.scope)) return failAll('no_access')
     let grid: string[][]
     try {
       const values = await sheetsGet(
@@ -929,6 +930,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
             source,
             column,
             toSheet.map(entry => ({ row: entry.row, value: entry.next.value })),
+            actor.id ? actor : null,
           )
         : new Map<string, SheetResult>()
       const retry: string[] = []
@@ -1022,7 +1024,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
       const rows = (await issueRows(tenant, id, req.body)).filter(row => row.source_key)
       const entries = rows.map(row => ({ row, value: row.sheet_issue.value as Cell }))
-      const results = await writeToSheet(tenant, source, column, entries)
+      const results = await writeToSheet(tenant, source, column, entries, user)
       let written = 0,
         failed = 0
       for (const entry of entries) {
@@ -1063,15 +1065,49 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
 
   // ---- two-way: tracker edits written to the Sheet ----
   /** The Google access of the person who connected the Sheet, which must allow editing Sheets. */
-  async function writeToken(tenant: string, source: any) {
+  /**
+   * The Google access a Sheet write uses: the account of the person making the change, so Google's own sharing decides
+   * what they may do there. Only automatic writes (`fallback`, such as done marks) use the account that connected the
+   * Sheet when the person has not connected one that may edit Sheets.
+   */
+  async function writeAccess(
+    tenant: string,
+    source: any,
+    user: { id: string } | null,
+    fallback = false,
+  ): Promise<{ token: string; email: string }> {
+    if (user?.id) {
+      const access = deps.googleAccess ? await deps.googleAccess(tenant, user.id).catch(() => null) : null
+      if (access && canWriteSheets(access.scope)) return { token: access.token, email: access.email || '' }
+      if (!fallback)
+        throw new TrackerError(
+          access
+            ? 'Your Google account has not allowed this app to edit Google Sheets yet. Sharing the Sheet with you is not enough: Google asks you once to let the app make the change for you. Nothing was changed.'
+            : 'Connect your Google account, with permission to edit Google Sheets, to change the Sheet from here. Nothing was changed.',
+          409,
+          { needsWrite: true },
+        )
+    }
     const access = await googleFor(tenant, source.connected_by)
     if (!canWriteSheets(access.scope))
       throw new TrackerError(
-        `${source.connected_by_name || 'The person who connected this Sheet'} has not allowed editing Google Sheets, so the edit could not be written to the Sheet. Nothing was changed.`,
+        `${source.connected_by_name || 'The person who connected this Sheet'} has not allowed editing Google Sheets, so the Sheet could not be updated.`,
         409,
         { needsWrite: true },
       )
-    return access.token
+    return { token: access.token, email: access.email || '' }
+  }
+  /** Google refusing a person names their account, so they know which one to ask access for. */
+  function asAccount(email: string, error: unknown): never {
+    if (error instanceof TrackerError && (error.extra?.noEdit || error.extra?.noAccess))
+      throw new TrackerError(
+        error.extra?.noEdit
+          ? `Your Google account${email ? ` (${email})` : ''} can open this Sheet but not edit it. Ask its owner for edit access. Nothing was changed.`
+          : `Your Google account${email ? ` (${email})` : ''} cannot open this Sheet. Ask its owner to share it with you. Nothing was changed.`,
+        403,
+        { noEdit: true },
+      )
+    throw error
   }
   async function readTab(token: string, source: any): Promise<string[][]> {
     const values = await sheetsGet(
@@ -1119,12 +1155,12 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   }
 
   /** Adds rows that have a task name to the bottom of the Sheet tab. Returns row id → the row fields to store. */
-  async function appendRowsToSheet(tenant: string, tracker: any, source: any, rows: any[]) {
+  async function appendRowsToSheet(tenant: string, tracker: any, source: any, rows: any[], user: { id: string }) {
     const stored = new Map<string, Record<string, unknown>>()
     const candidates = rows.filter(row => !row.source_key)
     if (!candidates.length) return stored
-    const token = await writeToken(tenant, source)
-    const grid = await readTab(token, source)
+    const { token, email } = await writeAccess(tenant, source, user)
+    const grid = await readTab(token, source).catch(error => asAccount(email, error))
     const plan = planAppend({
       grid,
       keyHeader: source.key_header,
@@ -1186,7 +1222,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           .eq('tenant_id', tenant)
           .eq('tracker_id', tracker.id)
           .eq('id', entry.id)
-      throw error
+      asAccount(email, error)
     }
     return stored
   }
@@ -1203,13 +1239,14 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     edits: Record<string, Cell>,
     data: Record<string, Cell>,
     overwrite: boolean,
+    user: { id: string },
   ): Promise<Record<string, unknown>> {
     if (!current.source_key) {
-      const added = await appendRowsToSheet(tenant, tracker, source, [{ ...current, data }])
+      const added = await appendRowsToSheet(tenant, tracker, source, [{ ...current, data }], user)
       return added.get(current.id) || {}
     }
-    const token = await writeToken(tenant, source)
-    const grid = await readTab(token, source)
+    const { token, email } = await writeAccess(tenant, source, user)
+    const grid = await readTab(token, source).catch(error => asAccount(email, error))
     const columns = columnsOf(tracker)
     const plan = planCellWrites({
       grid,
@@ -1244,7 +1281,9 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       text: write.text,
       input: write.input,
     }))
-    const shown = ranges.length ? await writeCells(token, source, ranges) : new Map<string, string>()
+    const shown = ranges.length
+      ? await writeCells(token, source, ranges).catch(error => asAccount(email, error))
+      : new Map<string, string>()
     const values = { ...(current.source_values || {}), ...plan.values }
     for (const write of ranges) values[write.header] = shown.get(write.range) ?? write.text
     return { source_values: values }
@@ -1264,7 +1303,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
       const mode = req.body?.mode === 'two_way' ? 'two_way' : req.body?.mode === 'one_way' ? 'one_way' : ''
       if (!mode) throw new TrackerError('Choose one-way or two-way.')
-      if (mode === 'two_way') await writeToken(tenant, source)
+      // Turning it on needs this person's own permission to edit Sheets; each person's edits then use their own account.
+      if (mode === 'two_way') await writeAccess(tenant, source, user)
       const saved = await db
         .from('tenant_tracker_sources')
         .update({ mode, updated_at: now() })
@@ -1272,7 +1312,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .eq('tracker_id', id)
       sourceCheck(saved.error)
       await record(tenant, id, '', user, 'sheet_mode', { mode })
-      res.json({ source: { ...sourceOut({ ...source, mode }), canWrite: true } })
+      res.json({ source: { ...sourceOut({ ...source, mode }), youCanWrite: true } })
     }),
   )
 
@@ -1873,17 +1913,32 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const source = await sourceRow(user.organizationId, id)
       // Only when done marks go to the Sheet: whether the person who connected it allowed editing.
       let canWrite: boolean | undefined
-      if (source && (source.mode === 'two_way' || autoDoneColumn(columnsOf(row))?.synced))
+      if (source && autoDoneColumn(columnsOf(row))?.synced)
         canWrite = deps.googleAccess
           ? await deps
               .googleAccess(user.organizationId, source.connected_by)
               .then(access => canWriteSheets(access.scope))
               .catch(() => false)
           : false
+      // Two-way: whether this person's own Google account may edit Sheets (their edits are written as them).
+      let youCanWrite: boolean | undefined
+      if (source?.mode === 'two_way')
+        youCanWrite = deps.googleAccess
+          ? await deps
+              .googleAccess(user.organizationId, user.id)
+              .then(access => canWriteSheets(access.scope))
+              .catch(() => false)
+          : false
       res.json({
         tracker: {
           ...trackerOut(row, user, await rowCount(user.organizationId, id)),
-          source: source ? { ...sourceOut(source), ...(canWrite === undefined ? {} : { canWrite }) } : null,
+          source: source
+            ? {
+                ...sourceOut(source),
+                ...(canWrite === undefined ? {} : { canWrite }),
+                ...(youCanWrite === undefined ? {} : { youCanWrite }),
+              }
+            : null,
         },
       })
     }),
@@ -2291,7 +2346,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       let warning = ''
       const source = await sourceRow(tenant, id)
       if (source?.mode === 'two_way') {
-        const added = await appendRowsToSheet(tenant, tracker, source, records).catch((error: unknown) => {
+        const added = await appendRowsToSheet(tenant, tracker, source, records, user).catch((error: unknown) => {
           warning = `The rows were added here but not to the Google Sheet: ${error instanceof Error ? error.message : 'the Sheet could not be updated.'}`
           return new Map<string, Record<string, unknown>>()
         })
@@ -2354,6 +2409,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
             Object.fromEntries(sheetEdits.map(columnId => [columnId, cleaned.cells[columnId]])),
             mergeCells(current.data || {}, columns, cleaned.cells),
             body.overwrite === true,
+            user,
           )
         else if (current.source_key) {
           const locked = byId.get(sheetEdits[0])!

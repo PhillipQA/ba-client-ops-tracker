@@ -1,8 +1,18 @@
 # Changelog
 
-**Current application release: v1.3.0**
+**Current application release: v1.3.1**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.3.1 — Two-way edits use your own Google account
+Released October 26, 2026.
+
+**No database migration and no new setting.**
+
+- **Your account, your access.** In a two-way tracker, a change to a green column is written to the Google Sheet with the Google account of the person making it, so the Sheet's own sharing decides: someone who can edit the Sheet can edit it here, someone who can only view it gets a clear message naming their account, and nobody borrows the access of the person who connected it. Rows added in the tracker are added to the Sheet the same way.
+- **Allow it from the tracker.** Sharing a Sheet with someone is not enough on its own: Google also asks each person once to let the app make changes for them. When that is missing, the tracker says so with **Allow editing with my Google**. Turning on two-way works the same way, and switches on by itself after the person allows it.
+- **Done marks** are written with the account of the person who completes the task when it may edit Sheets, and otherwise with the account that connected the Sheet, as before.
+- Reading the Sheet (syncing) still uses the account that connected it, so everyone who can open the tracker sees the same rows.
 
 ## v1.3.0 — Two-way sync with Google Sheets
 Released October 26, 2026.
