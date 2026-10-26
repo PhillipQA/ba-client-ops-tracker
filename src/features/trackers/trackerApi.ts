@@ -34,14 +34,23 @@ const call = <T>(method: string, path: string, body?: unknown, signal?: AbortSig
       404: 'That was not found. It may have been deleted.',
     },
     fallback: 'Trackers are unavailable right now. Try again in a moment.',
-    error: (message, status, data) =>
-      new TrackerApiError(message, status, {
-        tracker: data?.tracker,
-        row: data?.row,
-        needsGoogle: Boolean(data?.needsGoogle),
-        noAccess: Boolean(data?.noAccess),
-      }),
+    error: (message, status, data) => new TrackerApiError(message, status, errorBody(data)),
   })
+
+/**
+ * The parts of a Trackers error the screens act on. Every field the server sends for the screen to react to must be
+ * copied here, or the screen never sees it.
+ */
+export function errorBody(data: any): TrackerApiError['body'] {
+  return {
+    tracker: data?.tracker,
+    row: data?.row,
+    needsGoogle: Boolean(data?.needsGoogle),
+    noAccess: Boolean(data?.noAccess),
+    needsWrite: Boolean(data?.needsWrite),
+    ...(Array.isArray(data?.conflicts) ? { conflicts: data.conflicts } : {}),
+  }
+}
 
 /** What changing a column's type would do (applied: false), or what it did (applied: true). */
 export type ConvertReport =

@@ -1,8 +1,16 @@
 # Changelog
 
-**Current application release: v1.3.1**
+**Current application release: v1.3.2**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.3.2 — Fix: Allow editing button and the changed-in-the-Sheet window
+Released October 26, 2026.
+
+**No database migration and no new setting.**
+
+- **Allow editing with my Google** now appears when two-way needs your permission. The screen was not receiving the server's signal for it, so only a red message showed.
+- The **Changed in the Google Sheet** window now opens when a cell you edit was changed in the Sheet since the last sync, instead of a red message.
 
 ## v1.3.1 — Two-way edits use your own Google account
 Released October 26, 2026.
