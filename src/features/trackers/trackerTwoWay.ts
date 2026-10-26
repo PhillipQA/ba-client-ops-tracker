@@ -175,7 +175,8 @@ export function planAppend(input: {
       else line[index] = cell.text
     }
     names.push(name)
-    appends.push({ id: row.id, key: sheetRowKeys(names).at(-1) || name, line, typed, values })
+    const keys = sheetRowKeys(names)
+    appends.push({ id: row.id, key: keys[keys.length - 1] || name, line, typed, values })
   }
   return { appends, skipped }
 }

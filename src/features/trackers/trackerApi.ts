@@ -6,7 +6,16 @@ export class TrackerApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public body: { tracker?: Tracker; row?: TrackerRow; needsGoogle?: boolean; noAccess?: boolean } = {},
+    public body: {
+      tracker?: Tracker
+      row?: TrackerRow
+      needsGoogle?: boolean
+      noAccess?: boolean
+      /** The Google account behind the Sheet may not edit Sheets (two-way, done marks). */
+      needsWrite?: boolean
+      /** Two-way: cells changed in the Sheet since the last sync. */
+      conflicts?: import('./trackerTwoWay').Conflict[]
+    } = {},
   ) {
     super(message)
   }

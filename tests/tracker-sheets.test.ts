@@ -298,8 +298,8 @@ test('a person lists, opens and connects a Sheet; the first sync brings every ro
           mode: 'two_way',
         })
       ).status,
-      400,
-      'two-way is not switched on yet',
+      403,
+      'two-way needs permission to edit Sheets, which this account has not given',
     )
     const connected = await ask('POST', `/api/trackers/${tracker.id}/source`, {
       spreadsheetId: SHEET,
