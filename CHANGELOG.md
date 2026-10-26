@@ -1,8 +1,18 @@
 # Changelog
 
-**Current application release: v1.1.0**
+**Current application release: v1.2.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.2.0 — Archive closed tasks, and reopen them
+Released October 26, 2026.
+
+**No database migration and no new setting.**
+
+- **A task closes only when its subtasks are done.** Closing or resolving a task with any open subtask is refused, with the number of open subtasks. This was already checked in the task list; it is now also enforced when the workspace is saved, so Work Hub, the board, edits and any other route follow the same rule.
+- **Archive.** A closed or resolved task whose subtasks are all closed gets an **Archive** button in Tasks. Archiving puts it away with its subtasks: it no longer shows in Tasks (table or board) or on project pages. The button explains what is still missing when a task cannot be archived yet.
+- **Archived view.** Tasks has an **Active / Archived** switch. **Archived** lists archived tasks with their subtasks, read-only.
+- **Reopen.** **Reopen** on an archived task brings it back to Tasks with an open status, ready to work on again. Until it is reopened, an archived task and its subtasks cannot be edited, deleted, or given new subtasks.
 
 ## v1.1.0 — Rows marked done when their tasks are done, in the tracker and in the Sheet
 Released October 26, 2026.
