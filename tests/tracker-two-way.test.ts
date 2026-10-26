@@ -546,3 +546,12 @@ test('turning on two-way needs the switching person’s own permission to edit S
   assert.equal(on.status, 200)
   assert.equal(on.body.source.youCanWrite, true)
 })
+
+test('the screen receives what the server sends for it to act on', async () => {
+  const { errorBody } = await import('../src/features/trackers/trackerApi')
+  const conflicts = [{ columnId: 'c', name: 'Status', header: 'Status', sheet: 'Ongoing', mine: 'Done' }]
+  const body = errorBody({ error: 'x', needsWrite: true, conflicts, needsGoogle: false })
+  assert.equal(body.needsWrite, true, 'the Allow editing with my Google banner depends on it')
+  assert.deepEqual(body.conflicts, conflicts, 'the changed-in-the-Sheet window depends on it')
+  assert.equal(errorBody({}).conflicts, undefined)
+})
