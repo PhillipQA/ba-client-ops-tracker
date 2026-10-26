@@ -24,7 +24,15 @@ import {
   type TrackerRow,
   type TrackerSource,
 } from '../../src/features/trackers/trackerModel'
-import { SYNC_LIMITS, describeSync, planSync, sheetIdFrom, tabRange } from '../../src/features/trackers/trackerSync'
+import {
+  SYNC_LIMITS,
+  describeSync,
+  dropdownOf,
+  mergeDropdownOptions,
+  planSync,
+  sheetIdFrom,
+  tabRange,
+} from '../../src/features/trackers/trackerSync'
 import {
   SHEET_ISSUES,
   autoDoneColumn,
@@ -469,6 +477,59 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   }
   const lastSync = new Map<string, number>()
 
+  /**
+   * The dropdown choices of the Sheet columns that fill Choice columns: Sheet header → choices. Reads the data
+   * validation of each such column (a list typed into the rule, or a range it points to) for the rows in use.
+   */
+  async function dropdownLists(token: string, source: any, grid: string[][], columns: TrackerColumn[]) {
+    const lists: Record<string, string[]> = {}
+    const headers = (grid[0] || []).map(value => String(value ?? '').trim())
+    const byId = new Map(columns.map(column => [column.id, column]))
+    const wanted = Object.entries<string>(source.header_map || {})
+      .filter(([, id]) => ['select', 'multiselect'].includes(byId.get(id)?.type || ''))
+      .map(([header]) => ({ header, index: headers.findIndex(item => item.toLowerCase() === header.toLowerCase()) }))
+      .filter(item => item.index >= 0)
+    if (!token || !wanted.length) return lists
+    // Dropdowns are usually set on more rows than are filled in, so look a little past the last row.
+    const last = Math.min(Math.max(grid.length + 20, 50), 1000)
+    const params = new URLSearchParams({
+      includeGridData: 'true',
+      fields: 'sheets(data(rowData(values(dataValidation(condition)))))',
+    })
+    for (const item of wanted)
+      params.append('ranges', `${tabRange(source.tab)}!${columnLetter(item.index)}2:${columnLetter(item.index)}${last}`)
+    const data = await sheetsGet(
+      token,
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}?${params}`,
+    )
+    const blocks: any[] = data?.sheets?.[0]?.data || []
+    const ranges = new Map<string, string[]>()
+    for (const [at, item] of wanted.entries()) {
+      const choices: string[] = []
+      for (const row of blocks[at]?.rowData || []) {
+        const dropdown = dropdownOf(row?.values?.[0]?.dataValidation)
+        if (!dropdown) continue
+        let list: string[] = []
+        if ('list' in dropdown) list = dropdown.list
+        else if (ranges.has(dropdown.range)) list = ranges.get(dropdown.range)!
+        else if (ranges.size < 5) {
+          const read = await sheetsGet(
+            token,
+            `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}/values/${encodeURIComponent(dropdown.range)}?majorDimension=ROWS`,
+          ).catch(() => null)
+          list = (Array.isArray(read?.values) ? read.values : [])
+            .flat()
+            .map((value: unknown) => String(value ?? '').trim())
+            .filter(Boolean)
+          ranges.set(dropdown.range, list)
+        }
+        for (const choice of list) if (!choices.includes(choice)) choices.push(choice)
+      }
+      if (choices.length) lists[item.header] = choices
+    }
+    return lists
+  }
+
   /** Reads the Sheet and applies the changes. `force` skips the one-minute pause between syncs. */
   async function runSync(
     tenant: string,
@@ -490,8 +551,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .eq('tracker_id', tracker.id)
     }
     let grid: string[][]
+    let token = ''
     try {
       const access = await googleFor(tenant, source.connected_by)
+      token = access.token
       if (!canReadSheets(access.scope))
         throw new TrackerError(
           `${source.connected_by_name || 'The person who connected this Sheet'} needs to allow Google Sheets again. Anyone who can open the Sheet can reconnect it.`,
@@ -511,6 +574,12 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await fail(error instanceof Error ? error.message : 'The Sheet could not be read.')
       throw error
     }
+    // The Sheet's dropdown choices, so options no row uses yet come over too. Best effort: a sync never fails on it.
+    const dropdowns = mergeDropdownOptions(
+      columnsOf(tracker),
+      source.header_map || {},
+      await dropdownLists(token, source, grid, columnsOf(tracker)).catch(() => ({})),
+    )
     const existing = await allRows(tenant, tracker.id)
     const state = await workspace(tenant)
     const people = (Array.isArray(state.accounts) ? state.accounts : []).map((account: any) => ({
@@ -523,7 +592,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       grid,
       keyHeader: source.key_header,
       headerMap: source.header_map || {},
-      columns: columnsOf(tracker),
+      columns: dropdowns.columns,
       rows: existing.map(row => ({
         id: row.id,
         sourceKey: row.source_key || '',
@@ -541,7 +610,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
     const stamp = now()
     let columns = columnsOf(tracker)
-    if (planned.columnsChanged) {
+    if (planned.columnsChanged || dropdowns.changed) {
       columns = normalizeColumns(planned.columns, columnsOf(tracker))
       const saved = await db
         .from('tenant_trackers')
