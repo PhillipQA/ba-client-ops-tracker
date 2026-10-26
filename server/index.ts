@@ -38,6 +38,7 @@ import {
   commitTenantState,
   loadTenantState,
   normalizedSchemaStatus,
+  onTenantCommitted,
   organizationById,
   verifyTenantUserPassword,
 } from './core/tenant-state'
@@ -113,13 +114,15 @@ registerFsdRoutes(app, {
 registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents })
 registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
 // Connected Google Sheets read as the person who connected them, through the same Google sign-in as Gmail (registered below).
-registerTrackerRoutes(app, {
+const trackers = registerTrackerRoutes(app, {
   db: supabaseAdmin,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   load: loadTenantState,
   googleAccess: (tenantId, userId) => communications.googleAccess(tenantId, userId),
 })
+// A completed or reopened task updates the tracker rows linked to it, and their Sheet when the column comes from one.
+onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))
 registerEmailTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
 
 registerSignoffRoutes(app, {

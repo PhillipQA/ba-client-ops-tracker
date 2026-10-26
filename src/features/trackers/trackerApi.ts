@@ -126,7 +126,8 @@ export const trackerApi = {
   /** Every link in every tracker this person can see, for the Action Center. */
   allLinks: (signal?: AbortSignal) => call<{ links: TaskLink[] }>('GET', '/task-links', undefined, signal),
   // Connected Google Sheets
-  sheetsStatus: () => call<{ available: boolean; connected: boolean; email: string }>('GET', '/sheets/status'),
+  sheetsStatus: () =>
+    call<{ available: boolean; connected: boolean; canWrite?: boolean; email: string }>('GET', '/sheets/status'),
   sheetFiles: (q: string) => call<{ files: SheetFile[] }>('GET', `/sheets/files?q=${encodeURIComponent(q)}`),
   sheetTabs: (sheet: string) =>
     call<{ id: string; name: string; tabs: { title: string; rows: number; columns: number }[] }>(
@@ -156,6 +157,11 @@ export const trackerApi = {
     call<{ links: TaskLink[] }>('POST', `/${id}/links/bulk`, { links }),
   history: (id: string, rowId: string, signal?: AbortSignal) =>
     call<{ changes: TrackerChange[] }>('GET', `/${id}/rows/${rowId}/history`, undefined, signal),
+  /** Rows whose done mark did not reach the Sheet. No ids means every such row. */
+  retrySheetIssues: (id: string, ids: string[] = []) =>
+    call<{ written: number; failed: number }>('POST', `/${id}/sheet-issues/retry`, { ids }),
+  dismissSheetIssues: (id: string, ids: string[] = []) =>
+    call<{ dismissed: number }>('POST', `/${id}/sheet-issues/dismiss`, { ids }),
 }
 
 /** Loads every row, one page at a time. */

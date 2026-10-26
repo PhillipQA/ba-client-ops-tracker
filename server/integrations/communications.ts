@@ -35,11 +35,15 @@ const oauthStates = new Map<
     expires: number
     send?: boolean
     sheets?: boolean
+    /** Asked for full Sheets access (editing), so a tracker can mark rows done in its Sheet. */
+    sheetsWrite?: boolean
   }
 >()
 /** Reading Google Sheets for connected trackers: the sheets' values, and the list of sheets a person can open (theirs, shared with them, shared drives). */
 export const SHEETS_READ_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly'
 export const DRIVE_LIST_SCOPE = 'https://www.googleapis.com/auth/drive.metadata.readonly'
+/** Editing Google Sheets, for trackers that mark rows done in their Sheet. It includes reading. */
+export const SHEETS_WRITE_SCOPE = 'https://www.googleapis.com/auth/spreadsheets'
 const gmailKind = 'gmail-refresh' as const
 type GmailCredentials = { clientId: string; clientSecret: string; redirectUri: string }
 const google = async (url: string, init: RequestInit, timeout = 20000) => {
@@ -726,13 +730,17 @@ export function registerCommunications(
         throw new IntegrationError('Too many pending Gmail connections. Try again shortly.', 429)
       // Sending is opt-in (?send=1). A plain reconnect keeps it if the person had already allowed it, so reconnecting never drops it.
       // Google Sheets (for connected trackers) works the same way: asked for with ?sheets=1 and kept on a plain reconnect.
+      // Editing Sheets (?sheets=write, for marking rows done in a Sheet) is asked for separately and also kept.
+      const askedSheets = req.query.sheets === '1' || req.query.sheets === 'write'
       let send = req.query.send === '1',
-        sheets = req.query.sheets === '1'
-      if (!send || !sheets) {
+        sheets = askedSheets,
+        sheetsWrite = req.query.sheets === 'write'
+      if (!send || !sheets || !sheetsWrite) {
         try {
           const scope = (await accessGrant(req)).scope
           send ||= hasScope(scope, SEND_SCOPE)
-          sheets ||= hasScope(scope, SHEETS_READ_SCOPE)
+          sheetsWrite ||= hasScope(scope, SHEETS_WRITE_SCOPE)
+          sheets ||= sheetsWrite || hasScope(scope, SHEETS_READ_SCOPE)
         } catch {
           /* Not connected yet, or the old token no longer works. */
         }
@@ -746,7 +754,8 @@ export function registerCommunications(
         revision: config.row.revision,
         expires: Date.now() + 600000,
         send,
-        sheets: req.query.sheets === '1' ? true : sheets ? undefined : false,
+        sheets: askedSheets ? true : sheets ? undefined : false,
+        sheetsWrite: req.query.sheets === 'write',
       })
       res.cookie(COOKIE, cookie, {
         httpOnly: true,
@@ -759,7 +768,7 @@ export function registerCommunications(
         client_id: config.credentials.clientId,
         redirect_uri: config.credentials.redirectUri,
         response_type: 'code',
-        scope: `${READ_SCOPE}${send ? ` ${SEND_SCOPE}` : ''}${sheets ? ` ${SHEETS_READ_SCOPE} ${DRIVE_LIST_SCOPE}` : ''} https://www.googleapis.com/auth/userinfo.email`,
+        scope: `${READ_SCOPE}${send ? ` ${SEND_SCOPE}` : ''}${sheets ? ` ${sheetsWrite ? SHEETS_WRITE_SCOPE : SHEETS_READ_SCOPE} ${DRIVE_LIST_SCOPE}` : ''} https://www.googleapis.com/auth/userinfo.email`,
         access_type: 'offline',
         prompt: 'consent select_account',
         state,
@@ -851,15 +860,19 @@ export function registerCommunications(
       if (error) throw error
       // Google lets people untick individual permissions, so report what was actually granted.
       result =
-        saved.sheets === true
-          ? hasScope(grant.scope, SHEETS_READ_SCOPE)
-            ? 'sheets-enabled'
-            : 'sheets-denied'
-          : saved.send
-            ? hasScope(grant.scope, SEND_SCOPE)
-              ? 'send-enabled'
-              : 'send-denied'
-            : 'connected'
+        saved.sheets === true && saved.sheetsWrite
+          ? hasScope(grant.scope, SHEETS_WRITE_SCOPE)
+            ? 'sheets-write-enabled'
+            : 'sheets-write-denied'
+          : saved.sheets === true
+            ? hasScope(grant.scope, SHEETS_READ_SCOPE) || hasScope(grant.scope, SHEETS_WRITE_SCOPE)
+              ? 'sheets-enabled'
+              : 'sheets-denied'
+            : saved.send
+              ? hasScope(grant.scope, SEND_SCOPE)
+                ? 'send-enabled'
+                : 'send-denied'
+              : 'connected'
     } catch {
       /* Never log authorization codes, tokens, or provider details. */
     }

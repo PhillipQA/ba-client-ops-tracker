@@ -11,6 +11,8 @@ import {
   OPTION_COLORS,
   TRACKER_LIMITS,
   randomId,
+  canAutoDone,
+  type AutoDone,
   type ColumnGroup,
   type ColumnType,
   type OptionColor,
@@ -27,6 +29,8 @@ export type ColumnDraft = {
   revealBy?: RevealBy
   formula?: string
   total?: 'sum' | null
+  /** Done when its tasks are done: the setting, or null to turn it off. Left out when unchanged. */
+  autoDone?: AutoDone | null
 }
 
 type Props = {
@@ -38,6 +42,8 @@ type Props = {
   onDelete?: () => Promise<void>
   /** Checks (confirm false) or applies (confirm true) a change of the column's type. */
   onConvert?: (type: ColumnType, confirm: boolean, clearUnfit: boolean) => Promise<ConvertReport>
+  /** The connected Sheet's name, when this tracker follows one. */
+  sheetName?: string
 }
 
 const GROUPS: { id: ColumnGroup; label: string; about: string }[] = [
@@ -49,7 +55,16 @@ const GROUPS: { id: ColumnGroup; label: string; about: string }[] = [
 
 const nextColor = (count: number): OptionColor => OPTION_COLORS[(count % (OPTION_COLORS.length - 1)) + 1]
 
-export default function TrackerColumnDialog({ mode, columns, column, onClose, onSave, onDelete, onConvert }: Props) {
+export default function TrackerColumnDialog({
+  mode,
+  columns,
+  column,
+  onClose,
+  onSave,
+  onDelete,
+  onConvert,
+  sheetName,
+}: Props) {
   const adding = mode === 'add'
   const [type, setType] = useState<ColumnType>(column?.type || 'text')
   const [name, setName] = useState(column?.name || '')
@@ -58,6 +73,10 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
   const [query, setQuery] = useState('')
   const [formula, setFormula] = useState(() => (column?.formula ? formulaToText(column.formula, columns) : ''))
   const [total, setTotal] = useState(column?.total === 'sum')
+  const [autoOn, setAutoOn] = useState(Boolean(column?.autoDone))
+  const [autoDoneOption, setAutoDoneOption] = useState(column?.autoDone?.done || '')
+  const [autoUndoneOption, setAutoUndoneOption] = useState(column?.autoDone?.undone || '')
+  const otherAutoDone = columns.find(item => item.id !== column?.id && item.autoDone)
   const formulaInput = useRef<HTMLInputElement>(null)
   const sources = columns.filter(item => item.id !== column?.id && FORMULA_SOURCES.includes(item.type))
   const formulaCheck = type === 'formula' && formula.trim() ? formulaFromText(formula, columns, column?.id || '') : null
@@ -80,6 +99,7 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
   const converting = !adding && Boolean(column) && type !== column!.type
   const hasOptions = (type === 'select' || type === 'multiselect') && !converting
   const [report, setReport] = useState<Extract<ConvertReport, { applied: false }> | null>(null)
+  const autoAllowed = canAutoDone({ type }) && !converting
   const [clearUnfit, setClearUnfit] = useState(false)
 
   const shown = useMemo(() => {
@@ -138,6 +158,21 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
       const checked = formulaFromText(formula, columns, column?.id || '')
       if (!checked.ok) return setError(checked.error)
     }
+    const autoChoices = options.filter(option => option.label.trim())
+    if (autoAllowed && autoOn && type === 'select' && !autoChoices.some(option => option.id === autoDoneOption))
+      return setError('Choose the option to set when the linked tasks are done.')
+    const autoDone: AutoDone | null =
+      !autoAllowed || !autoOn
+        ? null
+        : type === 'checkbox'
+          ? {}
+          : {
+              done: autoDoneOption,
+              ...(autoUndoneOption && autoChoices.some(option => option.id === autoUndoneOption)
+                ? { undone: autoUndoneOption }
+                : {}),
+            }
+    const autoChanged = JSON.stringify(autoDone) !== JSON.stringify(column?.autoDone ?? null)
     if (converting && onConvert && !report) {
       // First ask what the change would do, and show it before anything is touched.
       setBusy(true)
@@ -164,6 +199,7 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
         ...(column?.type === 'secret' ? { revealBy } : {}),
         ...(column?.type === 'formula' ? { formula } : {}),
         ...(summable ? { total: total ? ('sum' as const) : null } : {}),
+        ...(autoChanged ? { autoDone } : {}),
       }
       const renamed =
         column &&
@@ -171,7 +207,8 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
           (sameType.options && JSON.stringify(sameType.options) !== JSON.stringify(column.options || [])) ||
           (column.type === 'secret' && revealBy !== (column.revealBy || 'editors')) ||
           (column.type === 'formula' && formula !== formulaToText(column.formula || '', columns)) ||
-          (summable && total !== (column.total === 'sum')))
+          (summable && total !== (column.total === 'sum')) ||
+          autoChanged)
       if (converting && onConvert) {
         if (renamed) await onSave(sameType as ColumnDraft)
         await onConvert(type, true, clearUnfit)
@@ -183,6 +220,7 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
           ...(type === 'secret' ? { revealBy } : {}),
           ...(type === 'formula' ? { formula } : {}),
           ...(type === 'number' || type === 'formula' ? { total: total ? ('sum' as const) : null } : {}),
+          ...(autoChanged ? { autoDone } : {}),
         })
       onClose()
     } catch (e) {
@@ -421,6 +459,77 @@ export default function TrackerColumnDialog({ mode, columns, column, onClose, on
               <input type="checkbox" checked={total} onChange={event => setTotal(event.target.checked)} /> Show the SUM
               in the totals row
             </label>
+          )}
+          {autoAllowed && (
+            <fieldset className="trk-options">
+              <legend>When the linked tasks are done</legend>
+              <label className="trk-checkline">
+                <input
+                  type="checkbox"
+                  checked={autoOn}
+                  onChange={event => {
+                    setAutoOn(event.target.checked)
+                    setError('')
+                  }}
+                />{' '}
+                {type === 'checkbox'
+                  ? 'Tick this automatically when every task and subtask linked to the row is completed'
+                  : 'Set this automatically when every task and subtask linked to the row is completed'}
+              </label>
+              {autoOn && type === 'select' && (
+                <>
+                  <label className="trk-field-block">
+                    Set to
+                    <select
+                      value={autoDoneOption}
+                      onChange={event => {
+                        setAutoDoneOption(event.target.value)
+                        setError('')
+                      }}
+                    >
+                      <option value="">Choose an option</option>
+                      {options
+                        .filter(option => option.label.trim())
+                        .map(option => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label className="trk-field-block">
+                    If a task is reopened, set it back to
+                    <select value={autoUndoneOption} onChange={event => setAutoUndoneOption(event.target.value)}>
+                      <option value="">(empty)</option>
+                      {options
+                        .filter(option => option.label.trim() && option.id !== autoDoneOption)
+                        .map(option => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </>
+              )}
+              {autoOn && (
+                <p className="trk-muted-text">
+                  {type === 'checkbox'
+                    ? 'If one of the tasks is reopened, it is unticked again. '
+                    : 'A reopen only changes it back while it still shows the done option, so a value someone picked by hand stays. '}
+                  {column?.synced && sheetName
+                    ? `This column comes from “${sheetName}”, so the change is written to the Sheet too. A cell someone changed in the Sheet since the last sync is not overwritten; the row says so instead.`
+                    : sheetName
+                      ? 'This column is not one the Sheet fills, so the change stays in the tracker. To send it to the Sheet, use a column connected to a Sheet column.'
+                      : ''}
+                </p>
+              )}
+              {autoOn && otherAutoDone && (
+                <p className="trk-muted-text">
+                  “{otherAutoDone.name}” does this now. Only one column can, so saving moves it here.
+                </p>
+              )}
+            </fieldset>
           )}
           {type === 'secret' && (
             <fieldset className="trk-options">

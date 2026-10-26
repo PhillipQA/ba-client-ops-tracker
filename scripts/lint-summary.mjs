@@ -52,6 +52,12 @@ for (let i = 0; i < Math.min(8, Math.ceil(detail.join('\n').length / 3500)); i++
   if (!chunk.length) chunk.push(detail.shift().slice(0, 3500))
   console.log(`::notice title=Lint details ${i + 1}::${annotation(chunk.join('\n'))}`)
 }
+// Files Biome would reformat. They fail the build, so they are listed on their own rather than after every warning.
+const unformatted = [...new Set(diagnostics.filter(d => d.category === 'format').map(fileOf))]
+if (unformatted.length)
+  console.log(
+    `::warning title=Not formatted (run npx biome format --write)::${annotation(unformatted.slice(0, 50).join('\n'))}`,
+  )
 // Errors in full (message and raw location), so each can be fixed without running Biome locally.
 const errors = diagnostics.filter(d => d.severity === 'error' && d.category !== 'format')
 const text = d =>

@@ -298,6 +298,7 @@ export default function Trackers(props: Props) {
         isTaskClosed={props.isTaskClosed}
         onCreateTasks={props.onCreateTasks}
         onListChanged={() => void load()}
+        googleReturn={sheetReturn}
       />
     )
 

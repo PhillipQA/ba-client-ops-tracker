@@ -28,6 +28,8 @@ type Props = {
   onAddLink: (row: TrackerRow, taskId: string, columnId: string) => Promise<void>
   onRemoveLink: (link: TaskLink) => Promise<void>
   onReveal: (row: TrackerRow, column: TrackerColumn) => Promise<string>
+  /** Stops showing why this row's done mark did not reach the Sheet. */
+  onDismissSheetIssue?: (row: TrackerRow) => void
 }
 
 /** What the history says happened, in words. Person cells hold account ids, which are shown as names. */
@@ -60,6 +62,18 @@ function describe(change: TrackerChange, columns: TrackerColumn[], people: Perso
       return `linked “${detail.title || 'a task'}”${detail.columnId ? ` to ${columns.find(item => item.id === detail.columnId)?.name || 'a cell'}` : ''}`
     case 'subtask_unlinked':
       return 'removed a task link'
+    case 'auto_done': {
+      const tasks = Array.isArray(detail.tasks) && detail.tasks.length ? ` (“${detail.tasks.join('”, “')}”)` : ''
+      const why =
+        detail.reason === 'reopened'
+          ? `a linked task was reopened${tasks}`
+          : detail.reason === 'retry'
+            ? 'the Sheet was updated on request'
+            : `every linked task was completed${tasks}`
+      return `${detail.to ? `set ${detail.name} to “${detail.to}”` : `cleared ${detail.name}`} because ${why}${detail.sheet ? ', and in the Sheet' : ''}`
+    }
+    case 'auto_done_sheet_failed':
+      return `could not mark ${detail.name || 'the row'} ${detail.to ? `“${detail.to}”` : 'empty'} in the Sheet: ${detail.message || 'the Sheet was not updated.'}`
     default:
       return change.kind.replace(/_/g, ' ')
   }
@@ -565,6 +579,19 @@ export default function TrackerRowPanel(props: Props) {
         </div>
       </header>
       <div className="trk-panel-body">
+        {row.sheetIssue && (
+          <div className="k-notice k-notice-info" role="status">
+            <div>
+              <strong>Not marked done in the Sheet.</strong>
+              <p>{row.sheetIssue.message}</p>
+              {canEdit && props.onDismissSheetIssue && (
+                <button type="button" className="trk-text-button" onClick={() => props.onDismissSheetIssue!(row)}>
+                  Dismiss
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <section className="trk-card" aria-label="Linked task">
           <h3>Linked task</h3>
           {row.taskId && task && (
