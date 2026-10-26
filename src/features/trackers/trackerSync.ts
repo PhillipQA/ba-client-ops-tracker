@@ -6,7 +6,17 @@
  * The values as they were at the last sync are kept per row (`values`), which is what a later two-way sync needs to
  * tell a Sheet change from a tracker change.
  */
-import { TRACKER_LIMITS, emptyCell, isEmptyCell, type Cell, type SyncReport, type TrackerColumn } from './trackerModel'
+import {
+  OPTION_COLORS,
+  TRACKER_LIMITS,
+  emptyCell,
+  isEmptyCell,
+  randomId,
+  type Cell,
+  type SelectOption,
+  type SyncReport,
+  type TrackerColumn,
+} from './trackerModel'
 import { planImport, type Mapping, type Person } from './trackerImport'
 
 /** The spreadsheet id from a link (or an id pasted on its own). */
@@ -274,4 +284,64 @@ export function checkNameColumns(headers: string[], rows: string[][]): NameColum
     }
     return { header, tasks, under, beforeFirst, repeated }
   })
+}
+
+/**
+ * The choices of a Sheets dropdown, from a cell's data validation rule: a list typed into the rule, or the range it
+ * reads its choices from (to be read separately). Anything else (a checkbox, a number rule…) is not a dropdown.
+ */
+export function dropdownOf(validation: any): { list: string[] } | { range: string } | null {
+  const condition = validation?.condition
+  const values: any[] = Array.isArray(condition?.values) ? condition.values : []
+  if (condition?.type === 'ONE_OF_LIST')
+    return { list: values.map(value => String(value?.userEnteredValue ?? '').trim()).filter(Boolean) }
+  if (condition?.type === 'ONE_OF_RANGE') {
+    const range = String(values[0]?.userEnteredValue ?? '')
+      .replace(/^=/, '')
+      .replace(/\$/g, '')
+      .trim()
+    return range ? { range } : null
+  }
+  return null
+}
+
+/**
+ * Adds the choices of the Sheet's dropdowns to the Choice columns they fill, so options that no row uses yet (such as
+ * "Pending") are there too. The Sheet's order comes first; options only the tracker has stay, after them. Existing
+ * options keep their id and colour. `lists` is Sheet header → its dropdown's choices.
+ */
+export function mergeDropdownOptions(
+  columns: TrackerColumn[],
+  headerMap: Record<string, string>,
+  lists: Record<string, string[]>,
+): { columns: TrackerColumn[]; changed: boolean } {
+  const byColumn = new Map<string, string[]>()
+  for (const [header, columnId] of Object.entries(headerMap))
+    if (lists[header]?.length) byColumn.set(columnId, [...(byColumn.get(columnId) || []), ...lists[header]])
+  let changed = false
+  const next = columns.map(column => {
+    const list = byColumn.get(column.id)
+    if (!list || (column.type !== 'select' && column.type !== 'multiselect')) return column
+    const existing = column.options || []
+    const used = new Set<string>()
+    const options: SelectOption[] = []
+    for (const raw of list) {
+      const label = raw.replace(/\s+/g, ' ').trim().slice(0, TRACKER_LIMITS.optionLabel)
+      if (!label || used.has(label.toLowerCase())) continue
+      used.add(label.toLowerCase())
+      options.push(
+        existing.find(option => option.label.toLowerCase() === label.toLowerCase()) || {
+          id: randomId('o_'),
+          label,
+          color: OPTION_COLORS[((existing.length + options.length) % (OPTION_COLORS.length - 1)) + 1],
+        },
+      )
+    }
+    for (const option of existing) if (!used.has(option.label.toLowerCase())) options.push(option)
+    const kept = options.slice(0, TRACKER_LIMITS.optionsPerColumn)
+    if (JSON.stringify(kept) === JSON.stringify(existing)) return column
+    changed = true
+    return { ...column, options: kept }
+  })
+  return { columns: next, changed }
 }

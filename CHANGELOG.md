@@ -15,6 +15,7 @@ Released October 26, 2026.
 - **The Sheet wins a disagreement.** If someone changed that cell in the Sheet since the last sync, it is not overwritten. The row says why, and a banner offers **Write them now** (sync, then overwrite) or **Dismiss**. The same banner appears when Google refuses the write.
 - **Permission to edit Sheets.** Writing uses the Google account that connected the Sheet, which now needs to allow editing Google Sheets once. Until it has, the tracker says so and offers **Allow editing with my Google**, which also switches the connection to your account.
 - Each automatic change appears in the row's history, with the task that caused it.
+- **Every dropdown choice comes over from the Sheet.** A Choice column connected to a Sheet column now gets all the choices of that column's dropdown on each sync (in the Sheet's order), including ones no row uses yet, such as "Pending". Dropdowns that read their choices from a range work too. Options only the tracker has are kept.
 
 ## v1.0.4 — Back and Forward work, every page has its own address
 Released October 24, 2026.

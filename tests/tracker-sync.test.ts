@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   checkNameColumns,
   describeSync,
+  dropdownOf,
+  mergeDropdownOptions,
   parentKeyOf,
   planSync,
   sheetIdFrom,
@@ -199,4 +201,37 @@ test('task name check: tasks, rows under them, rows above the first name, repeat
   const [client, git] = checkNameColumns(headers, rows)
   assert.deepEqual(client, { header: 'Client', tasks: 3, under: 1, beforeFirst: 1, repeated: 1 })
   assert.deepEqual(git, { header: 'Git #', tasks: 3, under: 2, beforeFirst: 0, repeated: 0 })
+})
+
+test('Sheet dropdowns: lists and ranges are read, and their choices merged into Choice columns', () => {
+  assert.deepEqual(
+    dropdownOf({
+      condition: { type: 'ONE_OF_LIST', values: [{ userEnteredValue: 'Pending' }, { userEnteredValue: ' ' }] },
+    }),
+    { list: ['Pending'] },
+  )
+  assert.deepEqual(
+    dropdownOf({ condition: { type: 'ONE_OF_RANGE', values: [{ userEnteredValue: '=Lists!$A$1:$A$9' }] } }),
+    {
+      range: 'Lists!A1:A9',
+    },
+  )
+  assert.equal(dropdownOf({ condition: { type: 'BOOLEAN' } }), null)
+  assert.equal(dropdownOf(undefined), null)
+  const merged = mergeDropdownOptions(columns, map, { Status: ['Pending', 'open', 'Done'], Branch: ['x'] })
+  assert.equal(merged.changed, true)
+  const status = merged.columns.find(column => column.id === 'c_status')!
+  assert.deepEqual(
+    status.options!.map(option => option.label),
+    ['Pending', 'Open', 'Done'],
+    'an existing option keeps its own label and id',
+  )
+  assert.equal(status.options![1].id, 'o1')
+  assert.equal(
+    merged.columns.find(column => column.id === 'c_name'),
+    columns[1],
+    'text columns are left alone',
+  )
+  const again = mergeDropdownOptions(merged.columns, map, { Status: ['Pending', 'Open', 'Done'] })
+  assert.equal(again.changed, false, 'nothing changes when the options already match')
 })

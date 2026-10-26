@@ -116,6 +116,9 @@ const EXCEL = '1l9l1Q5vTHvyElzeUsmyXcXFWbejlSqFG'
 const PRIVATE_XLSX = '1PrivateExcelFileIdAbCdEfGhIjKlMn'
 const API_OFF = '1ApiOffSheetIdAbCdEfGhIjKlMnOpQrStUvWxYz012'
 let grid: string[][] = []
+// The Sheet's data validation per requested column range, in request order (null: no dropdown there).
+let dropdowns: (any | null)[] = []
+const dropdownRanges: string[] = []
 let canOpen = new Set(['u1', 'u2'])
 let lastToken = ''
 const realFetch = globalThis.fetch
@@ -162,6 +165,20 @@ globalThis.fetch = (async (input: any, init?: any) => {
         },
       ],
     })
+  if (url.includes('includeGridData=true')) {
+    const ranges = new URL(url).searchParams.getAll('ranges')
+    dropdownRanges.push(...ranges)
+    return reply(200, {
+      sheets: [
+        {
+          data: ranges.map((_, at) => ({
+            rowData: dropdowns[at] ? [{ values: [{ dataValidation: dropdowns[at] }] }, { values: [{}] }] : [],
+          })),
+        },
+      ],
+    })
+  }
+  if (url.includes('/values/Lists')) return reply(200, { values: [['Pending'], ['Ongoing'], ['Done'], ['On hold']] })
   if (url.includes('/values/')) return reply(200, { values: grid })
   if (url.includes(`/spreadsheets/${SHEET}?`))
     return reply(200, {
@@ -471,4 +488,64 @@ test('Excel files and a switched-off Sheets API get their own messages', async (
     assert.match(shared.body.error, /cannot open/)
     canOpen = new Set(['u1', 'u2'])
   })
+})
+
+test('a sync brings in every choice of the Sheet’s dropdown, including ones no row uses yet', async () => {
+  grid = [
+    ['Branch #', 'Status', 'Phase'],
+    ['57', 'Ongoing', 'Build'],
+    ['58', 'Ongoing', ''],
+  ]
+  dropdownRanges.length = 0
+  dropdowns = [
+    {
+      condition: {
+        type: 'ONE_OF_LIST',
+        values: [{ userEnteredValue: 'Pending' }, { userEnteredValue: 'Ongoing' }, { userEnteredValue: 'Done' }],
+      },
+    },
+    { condition: { type: 'ONE_OF_RANGE', values: [{ userEnteredValue: '=Lists!$A$1:$A$4' }] } },
+  ]
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Statuses',
+        columns: [
+          { name: 'Branch #', type: 'text' },
+          { name: 'Status', type: 'select', options: [{ label: 'Blocked' }] },
+          { name: 'Phase', type: 'select' },
+        ],
+      })
+    ).body.tracker
+    const [cKey, cStatus, cPhase] = tracker.columns.map((c: any) => c.id)
+    const connected = await ask('POST', `/api/trackers/${tracker.id}/source`, {
+      spreadsheetId: SHEET,
+      tab: 'Branches',
+      keyHeader: 'Branch #',
+      headerMap: { 'Branch #': cKey, Status: cStatus, Phase: cPhase },
+    })
+    assert.equal(connected.status, 200, JSON.stringify(connected.body))
+    assert.deepEqual(dropdownRanges, ["'Branches'!B2:B50", "'Branches'!C2:C50"])
+    const columns = connected.body.tracker.columns
+    const status = columns.find((c: any) => c.id === cStatus)
+    assert.deepEqual(
+      status.options.map((o: any) => o.label),
+      ['Pending', 'Ongoing', 'Done', 'Blocked'],
+      'the Sheet’s order first; an option only the tracker has stays',
+    )
+    const phase = columns.find((c: any) => c.id === cPhase)
+    assert.deepEqual(
+      phase.options.map((o: any) => o.label),
+      ['Pending', 'Ongoing', 'Done', 'On hold', 'Build'],
+      'a dropdown that reads its choices from a range',
+    )
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    const ongoing = status.options.find((o: any) => o.label === 'Ongoing').id
+    assert.ok(
+      rows.every((r: any) => r.cells[cStatus] === ongoing),
+      'rows use the same Ongoing option',
+    )
+  })
+  dropdowns = []
 })
