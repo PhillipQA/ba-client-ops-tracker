@@ -1,8 +1,20 @@
 # Changelog
 
-**Current application release: v1.2.0**
+**Current application release: v1.3.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.3.0 — Two-way sync with Google Sheets
+Released October 26, 2026.
+
+**No database migration.** Needs the Google Sheets editing scope added in v1.1.0.
+
+- **Turn on two-way.** A tracker that follows a Google Sheet has a **Turn on two-way** button in its Sheet bar. Once on, the bar reads "Sheet ⇄ tracker (two-way)" and the green columns can be edited in the tracker. Turning it off makes the Sheet read-only again.
+- **Edits go to the Sheet.** Changing a green cell writes it to the same cell in the Sheet first, then saves it here. Text and choices are written exactly as shown; numbers, dates and Yes/No are entered so Google reads them as numbers, dates and checkboxes, and a date keeps the cell's own date format. Columns that are only in the tracker never touch the Sheet.
+- **Changed in both places.** If someone changed that cell in the Sheet since the last sync, nothing is written. A window shows the Sheet's value and yours: **Keep mine (update the Sheet)** or **Use the Sheet's**.
+- **New rows.** A row added in the tracker is added at the bottom of the Sheet tab once it has a name in the key column (for example the Branch #), since a nameless row in the Sheet belongs to the task above it. Rows imported or pasted with a name go in straight away.
+- **Deleting** a row in the tracker leaves the Sheet row alone; the next sync brings it back unless it is removed in the Sheet too.
+- Writing uses the Google account that connected the Sheet. If it has not allowed editing Google Sheets, edits to green columns are refused with a banner offering **Allow editing with my Google**.
 
 ## v1.2.0 — Archive closed tasks, and reopen them
 Released October 26, 2026.

@@ -42,7 +42,8 @@ import { TrackerBulkTasks, TrackerWorkPicker, trackerClients, type TaskDraft, ty
 import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
 import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
-import { Notice, Popover, plural } from './trackerUi'
+import { Dialog, Notice, Popover, plural } from './trackerUi'
+import type { Conflict } from './trackerTwoWay'
 import { rememberSheetEdits, takeReview, takeSheetEdits, takeTrackerRow } from './trackerNav'
 import { autoDoneColumn } from './trackerAutoDone'
 import TrackerReview, { type ReviewOutcome } from './TrackerReview'
@@ -118,6 +119,13 @@ export default function TrackerScreen(props: Props) {
   const [workCell, setWorkCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [review, setReview] = useState<{ origin: 'sheet' | 'import'; ids: string[] | 'flagged' } | null>(null)
+  /** Two-way: an edit whose Sheet cell changed since the last sync, waiting for the person to choose. */
+  const [conflict, setConflict] = useState<{
+    rowId: string
+    cells: Record<string, Cell>
+    conflicts: Conflict[]
+  } | null>(null)
+  const [modeBusy, setModeBusy] = useState(false)
   const [syncing, setSyncing] = useState(false)
   // Full-width view: the page header (Add client, Add task…) is hidden so the grid gets the whole height. The left menu stays.
   const [expanded, setExpanded] = useState(() => {
@@ -561,7 +569,12 @@ export default function TrackerScreen(props: Props) {
   }
   const patchRow = (
     rowId: string,
-    body: { cells?: Record<string, Cell>; secrets?: Record<string, string | null>; taskId?: string | null },
+    body: {
+      cells?: Record<string, Cell>
+      secrets?: Record<string, string | null>
+      taskId?: string | null
+      overwrite?: boolean
+    },
   ) => {
     enqueue(rowId, async behind => {
       const latest = rowsRef.current.find(row => row.id === rowId)
@@ -570,9 +583,59 @@ export default function TrackerScreen(props: Props) {
         const { row } = await trackerApi.updateRow(trackerId, rowId, { version: latest.version, ...body })
         if (alive.current) replaceRow(row, behind())
       } catch (error) {
+        // Two-way: the Sheet cell changed since the last sync. Show both values and let the person choose.
+        if (error instanceof TrackerApiError && Array.isArray(error.body.conflicts) && alive.current) {
+          if (error.body.row) replaceRow(error.body.row, false)
+          setConflict({ rowId, cells: body.cells || {}, conflicts: error.body.conflicts })
+          return
+        }
+        if (error instanceof TrackerApiError && error.body.needsWrite && trackerRef.current?.source)
+          setTracker({ ...trackerRef.current, source: { ...trackerRef.current.source, canWrite: false } })
         rowFailed(error, rowId)
       }
     })
+  }
+  /** Keeps the person's edit: written to the Sheet over what is there now. */
+  const keepMine = () => {
+    if (!conflict) return
+    const { rowId, cells } = conflict
+    setConflict(null)
+    setRows(
+      rowsRef.current.map(row => {
+        if (row.id !== rowId) return row
+        const next = { ...row.cells }
+        for (const [columnId, value] of Object.entries(cells))
+          if (isEmptyCell(value)) delete next[columnId]
+          else next[columnId] = value
+        return { ...row, cells: next }
+      }),
+    )
+    patchRow(rowId, { cells, overwrite: true })
+  }
+  /** Takes the Sheet's values: a sync brings them in. */
+  const takeSheets = async () => {
+    setConflict(null)
+    await syncNow(true)
+    await refresh().catch(() => undefined)
+  }
+  const switchMode = async (mode: 'one_way' | 'two_way') => {
+    setModeBusy(true)
+    try {
+      const result = await trackerApi.setSourceMode(trackerId, mode)
+      if (alive.current && trackerRef.current) setTracker({ ...trackerRef.current, source: result.source })
+      say(
+        'info',
+        mode === 'two_way'
+          ? 'Two-way sync is on. Edits to the green columns are now written to the Google Sheet, and new rows are added there once they have a name.'
+          : 'Two-way sync is off. The Google Sheet is read only; change the green columns there.',
+      )
+    } catch (error) {
+      if (error instanceof TrackerApiError && error.body.needsWrite && trackerRef.current?.source)
+        setTracker({ ...trackerRef.current, source: { ...trackerRef.current.source, canWrite: false } })
+      say('error', error instanceof Error ? error.message : 'The sync mode could not be changed.')
+    } finally {
+      if (alive.current) setModeBusy(false)
+    }
   }
 
   const editCell = (row: TrackerRow, column: TrackerColumn, value: Cell) => {
@@ -674,8 +737,9 @@ export default function TrackerScreen(props: Props) {
     if (rowsRef.current.length >= TRACKER_LIMITS.rows)
       return say('error', `A tracker can have at most ${TRACKER_LIMITS.rows.toLocaleString('en')} rows.`)
     try {
-      const { rows: created } = await trackerApi.addRows(trackerId, [{}])
+      const { rows: created, warning } = await trackerApi.addRows(trackerId, [{}])
       if (!alive.current) return
+      if (warning) say('error', warning)
       setRows([...rowsRef.current, ...created])
       setTracker({ ...trackerRef.current!, rowCount: trackerRef.current!.rowCount + created.length })
       props.onListChanged()
@@ -1153,7 +1217,8 @@ export default function TrackerScreen(props: Props) {
             </a>
           </span>
           <span className="trk-muted">
-            Sheet → tracker · connected by {tracker.source.connectedByName || 'someone'}
+            {tracker.source.mode === 'two_way' ? 'Sheet ⇄ tracker (two-way)' : 'Sheet → tracker'} · connected by{' '}
+            {tracker.source.connectedByName || 'someone'}
             {tracker.source.lastSyncedAt ? ` · synced ${niceTime(tracker.source.lastSyncedAt)}` : ' · not synced yet'}
             {tracker.source.lastReport && tracker.source.lastStatus === 'ok'
               ? ` · ${describeSync(tracker.source.lastReport)}`
@@ -1180,24 +1245,48 @@ export default function TrackerScreen(props: Props) {
             </button>
           )}
           {canEdit && (
+            <button
+              type="button"
+              className="trk-button"
+              disabled={modeBusy || syncing}
+              aria-pressed={tracker.source.mode === 'two_way'}
+              onClick={() => void switchMode(tracker.source?.mode === 'two_way' ? 'one_way' : 'two_way')}
+              title={
+                tracker.source.mode === 'two_way'
+                  ? 'Stop writing tracker edits to the Google Sheet'
+                  : 'Write edits to the green columns, and new rows, to the Google Sheet'
+              }
+            >
+              {modeBusy ? 'Working…' : tracker.source.mode === 'two_way' ? 'Two-way: on' : 'Turn on two-way'}
+            </button>
+          )}
+          {canEdit && (
             <button type="button" className="trk-button" disabled={syncing} onClick={() => void syncNow(true)}>
               {syncing ? 'Syncing…' : 'Sync now'}
             </button>
           )}
         </div>
       )}
-      {tracker.source && tracker.source.canWrite === false && autoDoneColumn(columns)?.synced && (
-        <div className="trk-banner trk-review-banner" role="status">
-          <strong>Done marks are not reaching the Sheet yet.</strong>{' '}
-          {tracker.source.connectedByName || 'The person who connected it'} has not allowed editing Google Sheets, so “
-          {autoDoneColumn(columns)?.name}” changes only here.
-          {canEdit && (
-            <button type="button" className="trk-text-button strong" onClick={() => void allowSheetEdits()}>
-              Allow editing with my Google
-            </button>
-          )}
-        </div>
-      )}
+      {tracker.source &&
+        tracker.source.canWrite === false &&
+        (autoDoneColumn(columns)?.synced || tracker.source.mode === 'two_way') && (
+          <div className="trk-banner trk-review-banner" role="status">
+            <strong>
+              {tracker.source.mode === 'two_way'
+                ? 'Edits cannot reach the Sheet yet.'
+                : 'Done marks are not reaching the Sheet yet.'}
+            </strong>{' '}
+            {tracker.source.connectedByName || 'The person who connected it'} has not allowed editing Google Sheets
+            {tracker.source.mode === 'two_way'
+              ? ', so edits to the green columns are refused until someone allows it.'
+              : `, so “${autoDoneColumn(columns)?.name}” changes only here.`}
+            {canEdit && (
+              <button type="button" className="trk-text-button strong" onClick={() => void allowSheetEdits()}>
+                Allow editing with my Google
+              </button>
+            )}
+          </div>
+        )}
       {rows.some(row => row.sheetIssue) && (
         <div className="trk-banner trk-review-banner" role="status">
           <strong>{plural(rows.filter(row => row.sheetIssue).length, 'row')} not marked done in the Sheet.</strong>{' '}
@@ -1443,6 +1532,7 @@ export default function TrackerScreen(props: Props) {
           lookup={lookup}
           people={people}
           canEdit={canEdit}
+          twoWay={tracker.source?.mode === 'two_way'}
           sort={work.sort}
           selected={selected}
           focus={focus}
@@ -1559,8 +1649,10 @@ export default function TrackerScreen(props: Props) {
         )}
         {tracker.source && (
           <span>
-            <i className="trk-key synced" aria-hidden="true" /> Green headers come from the Google Sheet; change those
-            cells there
+            <i className="trk-key synced" aria-hidden="true" />{' '}
+            {tracker.source.mode === 'two_way'
+              ? 'Green headers sync with the Google Sheet both ways'
+              : 'Green headers come from the Google Sheet; change those cells there'}
           </span>
         )}
         {props.onCreateTasks && canEdit && (
@@ -1846,6 +1938,33 @@ export default function TrackerScreen(props: Props) {
         />
       )}
 
+      {conflict && (
+        <Dialog title="Changed in the Google Sheet" eyebrow="Two-way sync" onClose={() => setConflict(null)}>
+          <div className="trk-config">
+            <p>
+              Since the last sync, someone changed {conflict.conflicts.length === 1 ? 'this cell' : 'these cells'} in
+              the Sheet:
+            </p>
+            <ul className="trk-conflicts">
+              {conflict.conflicts.map(item => (
+                <li key={item.columnId}>
+                  <strong>{item.name}</strong>: the Sheet has “{item.sheet || 'empty'}”, you entered “
+                  {item.mine || 'empty'}”.
+                </li>
+              ))}
+            </ul>
+            <div className="k-dialog-actions">
+              <span className="trk-spacer" />
+              <button type="button" className="trk-button" onClick={() => void takeSheets()}>
+                Use the Sheet’s
+              </button>
+              <button type="button" className="trk-button primary" onClick={keepMine}>
+                Keep mine (update the Sheet)
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
       {columnDialog && (columnDialog.mode === 'add' || editingColumn) && (
         <TrackerColumnDialog
           mode={columnDialog.mode}

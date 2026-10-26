@@ -46,6 +46,7 @@ import {
   type SheetIssue,
   type SheetIssueCode,
 } from '../../src/features/trackers/trackerAutoDone'
+import { planAppend, planCellWrites, type InputOption, type Person } from '../../src/features/trackers/trackerTwoWay'
 
 /**
  * Trackers: user-defined sheets. A tracker owns its columns and views; its rows live in their own table so one
@@ -1060,6 +1061,221 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }),
   )
 
+  // ---- two-way: tracker edits written to the Sheet ----
+  /** The Google access of the person who connected the Sheet, which must allow editing Sheets. */
+  async function writeToken(tenant: string, source: any) {
+    const access = await googleFor(tenant, source.connected_by)
+    if (!canWriteSheets(access.scope))
+      throw new TrackerError(
+        `${source.connected_by_name || 'The person who connected this Sheet'} has not allowed editing Google Sheets, so the edit could not be written to the Sheet. Nothing was changed.`,
+        409,
+        { needsWrite: true },
+      )
+    return access.token
+  }
+  async function readTab(token: string, source: any): Promise<string[][]> {
+    const values = await sheetsGet(
+      token,
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}/values/${encodeURIComponent(tabRange(source.tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
+    )
+    return (Array.isArray(values.values) ? values.values : []).map((line: unknown[]) =>
+      (Array.isArray(line) ? line : []).map(value => String(value ?? '')),
+    )
+  }
+  async function peopleOf(tenant: string): Promise<Person[]> {
+    const state = await workspace(tenant)
+    return (Array.isArray(state.accounts) ? state.accounts : []).map((account: any) => ({
+      id: String(account.id),
+      name: String(account.name || ''),
+    }))
+  }
+  /**
+   * Writes cells, one request per way Google should read them, and returns each range's text as the Sheet now shows
+   * it (a date keeps the cell's own format), which becomes the baseline the next sync compares with.
+   */
+  async function writeCells(token: string, source: any, cells: { range: string; text: string; input: InputOption }[]) {
+    const shown = new Map<string, string>()
+    for (const input of ['RAW', 'USER_ENTERED'] as const) {
+      const batch = cells.filter(cell => cell.input === input)
+      if (!batch.length) continue
+      const result = await sheetsGet(
+        token,
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}/values:batchUpdate`,
+        {
+          method: 'POST',
+          body: {
+            valueInputOption: input,
+            includeValuesInResponse: true,
+            responseValueRenderOption: 'FORMATTED_VALUE',
+            data: batch.map(cell => ({ range: cell.range, values: [[cell.text]] })),
+          },
+        },
+      )
+      batch.forEach((cell, at) => {
+        shown.set(cell.range, String(result?.responses?.[at]?.updatedData?.values?.[0]?.[0] ?? cell.text))
+      })
+    }
+    return shown
+  }
+
+  /** Adds rows that have a task name to the bottom of the Sheet tab. Returns row id → the row fields to store. */
+  async function appendRowsToSheet(tenant: string, tracker: any, source: any, rows: any[]) {
+    const stored = new Map<string, Record<string, unknown>>()
+    const candidates = rows.filter(row => !row.source_key)
+    if (!candidates.length) return stored
+    const token = await writeToken(tenant, source)
+    const grid = await readTab(token, source)
+    const plan = planAppend({
+      grid,
+      keyHeader: source.key_header,
+      headerMap: source.header_map || {},
+      columns: columnsOf(tracker),
+      rows: candidates.map(row => ({ id: row.id, cells: row.data || {} })),
+      people: await peopleOf(tenant),
+    })
+    if (!plan.appends.length) return stored
+    // The key goes on the row first, so a sync running meanwhile recognises the new Sheet row instead of adding it again.
+    for (const entry of plan.appends)
+      await db
+        .from('tenant_tracker_rows')
+        .update({ source_key: entry.key, source_values: entry.values, review: false })
+        .eq('tenant_id', tenant)
+        .eq('tracker_id', tracker.id)
+        .eq('id', entry.id)
+    try {
+      const appended = await sheetsGet(
+        token,
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}/values/${encodeURIComponent(tabRange(source.tab))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+        { method: 'POST', body: { values: plan.appends.map(entry => entry.line) } },
+      )
+      const updatedRange = String(appended?.updates?.updatedRange || '')
+      const first = Number(/^\$?[A-Z]+\$?(\d+)/.exec(updatedRange.slice(updatedRange.lastIndexOf('!') + 1))?.[1])
+      if (!Number.isInteger(first)) throw new TrackerError('Google did not say where the rows were added.', 502)
+      const typed = plan.appends.flatMap((entry, at) =>
+        entry.typed.map(cell => ({
+          range: `${tabRange(source.tab)}!${columnLetter(cell.column)}${first + at}`,
+          text: cell.text,
+          input: 'USER_ENTERED' as const,
+        })),
+      )
+      const shown = typed.length ? await writeCells(token, source, typed) : new Map<string, string>()
+      const headers = (grid[0] || []).map(value => String(value ?? '').trim())
+      plan.appends.forEach((entry, at) => {
+        const values = { ...entry.values }
+        for (const cell of entry.typed) {
+          const header = headers[cell.column]
+          const text = shown.get(`${tabRange(source.tab)}!${columnLetter(cell.column)}${first + at}`)
+          const mapped = Object.keys(values).find(name => name.toLowerCase() === header.toLowerCase())
+          if (mapped && text !== undefined) values[mapped] = text
+        }
+        stored.set(entry.id, { source_key: entry.key, source_values: values, review: false })
+      })
+      for (const [rowId, fields] of stored)
+        await db
+          .from('tenant_tracker_rows')
+          .update({ source_values: fields.source_values })
+          .eq('tenant_id', tenant)
+          .eq('tracker_id', tracker.id)
+          .eq('id', rowId)
+    } catch (error) {
+      // Not in the Sheet after all: take the keys off again so the rows stay tracker-only.
+      for (const entry of plan.appends)
+        await db
+          .from('tenant_tracker_rows')
+          .update({ source_key: '', source_values: {} })
+          .eq('tenant_id', tenant)
+          .eq('tracker_id', tracker.id)
+          .eq('id', entry.id)
+      throw error
+    }
+    return stored
+  }
+
+  /**
+   * Writes one row's edited Sheet columns to the Sheet, before the tracker saves them. A row that is not in the Sheet
+   * yet is added once it has a task name. Returns the row fields to store with the edit (the new baseline).
+   */
+  async function writeRowToSheet(
+    tenant: string,
+    tracker: any,
+    source: any,
+    current: any,
+    edits: Record<string, Cell>,
+    data: Record<string, Cell>,
+    overwrite: boolean,
+  ): Promise<Record<string, unknown>> {
+    if (!current.source_key) {
+      const added = await appendRowsToSheet(tenant, tracker, source, [{ ...current, data }])
+      return added.get(current.id) || {}
+    }
+    const token = await writeToken(tenant, source)
+    const grid = await readTab(token, source)
+    const columns = columnsOf(tracker)
+    const plan = planCellWrites({
+      grid,
+      keyHeader: source.key_header,
+      sourceKey: String(current.source_key),
+      headerMap: source.header_map || {},
+      columns,
+      cells: edits,
+      baseline: current.source_values || {},
+      people: await peopleOf(tenant),
+      overwrite,
+    })
+    if ('error' in plan)
+      throw new TrackerError(
+        plan.error === 'no_row'
+          ? 'This row was not found in the Google Sheet. It may have been renamed or removed there; sync to see the Sheet as it is now.'
+          : 'The key column is no longer in the Google Sheet. Reconnect the Sheet.',
+        409,
+        { row: rowOut(current, columns) },
+      )
+    if (plan.conflicts.length)
+      throw new TrackerError(
+        plan.conflicts.length === 1
+          ? `${plan.conflicts[0].name} was changed in the Google Sheet since the last sync.`
+          : `${plan.conflicts.map(conflict => conflict.name).join(', ')} were changed in the Google Sheet since the last sync.`,
+        409,
+        { conflicts: plan.conflicts, row: rowOut(current, columns) },
+      )
+    const ranges = plan.writes.map(write => ({
+      header: write.header,
+      range: `${tabRange(source.tab)}!${columnLetter(write.column)}${plan.row}`,
+      text: write.text,
+      input: write.input,
+    }))
+    const shown = ranges.length ? await writeCells(token, source, ranges) : new Map<string, string>()
+    const values = { ...(current.source_values || {}), ...plan.values }
+    for (const write of ranges) values[write.header] = shown.get(write.range) ?? write.text
+    return { source_values: values }
+  }
+
+  /** Switches a connected tracker between one-way (Sheet → tracker) and two-way. */
+  app.post(
+    '/api/trackers/:id/source/mode',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req),
+        tenant = user.organizationId,
+        id = idParam(req)
+      const tracker = await trackerRow(tenant, id, user)
+      if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it first.', 409)
+      const source = await sourceRow(tenant, id)
+      if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
+      const mode = req.body?.mode === 'two_way' ? 'two_way' : req.body?.mode === 'one_way' ? 'one_way' : ''
+      if (!mode) throw new TrackerError('Choose one-way or two-way.')
+      if (mode === 'two_way') await writeToken(tenant, source)
+      const saved = await db
+        .from('tenant_tracker_sources')
+        .update({ mode, updated_at: now() })
+        .eq('tenant_id', tenant)
+        .eq('tracker_id', id)
+      sourceCheck(saved.error)
+      await record(tenant, id, '', user, 'sheet_mode', { mode })
+      res.json({ source: { ...sourceOut({ ...source, mode }), canWrite: true } })
+    }),
+  )
+
   app.get(
     '/api/trackers/sheets/status',
     ...scope,
@@ -1175,8 +1391,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       if (!tab) throw new TrackerError('Choose the Sheet tab to follow.')
       if (!keyHeader)
         throw new TrackerError('Choose the key column: the column that names each row, such as a branch number.')
-      if (body.mode === 'two_way')
-        throw new TrackerError('Two-way sync is not available yet. Connect one-way (Sheet → tracker).', 400)
+      const mode = body.mode === 'two_way' ? 'two_way' : 'one_way'
       const columns = columnsOf(tracker),
         byId = new Map(columns.map(column => [column.id, column]))
       const headerMap: Record<string, string> = {}
@@ -1193,6 +1408,14 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         throw new TrackerError('Allow Google Sheets first, so the tracker can read your Sheets.', 403, {
           needsGoogle: true,
         })
+      if (mode === 'two_way' && !canWriteSheets(access.scope))
+        throw new TrackerError(
+          'Allow editing Google Sheets first, so tracker edits can be written to the Sheet.',
+          403,
+          {
+            needsWrite: true,
+          },
+        )
       const meta = await sheetsGet(
         access.token,
         `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title`,
@@ -1217,7 +1440,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         tab,
         key_header: keyHeader,
         header_map: headerMap,
-        mode: 'one_way',
+        mode,
         connected_by: user.id,
         connected_by_name: user.name,
         connected_email: access.email || '',
@@ -1650,7 +1873,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const source = await sourceRow(user.organizationId, id)
       // Only when done marks go to the Sheet: whether the person who connected it allowed editing.
       let canWrite: boolean | undefined
-      if (source && autoDoneColumn(columnsOf(row))?.synced)
+      if (source && (source.mode === 'two_way' || autoDoneColumn(columnsOf(row))?.synced))
         canWrite = deps.googleAccess
           ? await deps
               .googleAccess(user.organizationId, source.connected_by)
@@ -2064,8 +2287,18 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       check(saved.error)
       if (records.length === 1) await record(tenant, id, records[0].id, user, 'row_created', {})
       else await record(tenant, id, '', user, 'rows_added', { count: records.length })
+      // Two-way: rows that already have a task name go to the Sheet too. The rest go when they get one.
+      let warning = ''
+      const source = await sourceRow(tenant, id)
+      if (source?.mode === 'two_way') {
+        const added = await appendRowsToSheet(tenant, tracker, source, records).catch((error: unknown) => {
+          warning = `The rows were added here but not to the Google Sheet: ${error instanceof Error ? error.message : 'the Sheet could not be updated.'}`
+          return new Map<string, Record<string, unknown>>()
+        })
+        for (const entry of records) Object.assign(entry, added.get(entry.id) || {})
+      }
       await touch(tenant, id)
-      res.status(201).json({ rows: records.map(entry => rowOut(entry, columns)) })
+      res.status(201).json({ rows: records.map(entry => rowOut(entry, columns)), ...(warning ? { warning } : {}) })
     }),
   )
 
@@ -2102,15 +2335,33 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           row: rowOut(current, columns),
         })
       const cleaned = cleanRowInput(columns, body, '')
-      if (current.source_key) {
-        const locked = Object.keys(cleaned.cells)
-          .map(columnId => byId.get(columnId))
-          .find(column => column?.synced)
-        if (locked)
+      // Sheet columns: read-only for Sheet rows in one-way; in two-way the edit goes to the Sheet first.
+      let sheetPatch: Record<string, unknown> = {}
+      const sheetEdits = Object.keys(cleaned.cells).filter(
+        columnId =>
+          byId.get(columnId)?.synced &&
+          JSON.stringify(current.data?.[columnId] ?? emptyOf(byId.get(columnId)!)) !==
+            JSON.stringify(cleaned.cells[columnId]),
+      )
+      if (sheetEdits.length) {
+        const source = await sourceRow(tenant, id)
+        if (source?.mode === 'two_way')
+          sheetPatch = await writeRowToSheet(
+            tenant,
+            tracker,
+            source,
+            current,
+            Object.fromEntries(sheetEdits.map(columnId => [columnId, cleaned.cells[columnId]])),
+            mergeCells(current.data || {}, columns, cleaned.cells),
+            body.overwrite === true,
+          )
+        else if (current.source_key) {
+          const locked = byId.get(sheetEdits[0])!
           throw new TrackerError(
             `${locked.name} comes from the connected Google Sheet. Change it in the Sheet; the tracker picks it up on the next sync.`,
             409,
           )
+        }
       }
       let taskId = current.task_id || ''
       if (body.taskId !== undefined)
@@ -2131,7 +2382,15 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const stamp = now()
       const saved = await db
         .from('tenant_tracker_rows')
-        .update({ data, secrets, task_id: taskId, version: body.version + 1, updated_by: user.id, updated_at: stamp })
+        .update({
+          data,
+          secrets,
+          task_id: taskId,
+          version: body.version + 1,
+          updated_by: user.id,
+          updated_at: stamp,
+          ...sheetPatch,
+        })
         .eq('tenant_id', tenant)
         .eq('tracker_id', id)
         .eq('id', current.id)
@@ -2144,7 +2403,15 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           row: rowOut(latest, columns),
         })
       }
-      const next = { ...current, data, secrets, task_id: taskId, version: body.version + 1, updated_at: stamp }
+      const next = {
+        ...current,
+        data,
+        secrets,
+        task_id: taskId,
+        version: body.version + 1,
+        updated_at: stamp,
+        ...sheetPatch,
+      }
       if (changed.length)
         await record(tenant, id, current.id, user, 'cells', {
           cells: changed.map(columnId => ({

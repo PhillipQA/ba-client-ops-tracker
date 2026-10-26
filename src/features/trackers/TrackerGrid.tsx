@@ -63,6 +63,8 @@ type Props = {
   lookup: Lookup
   people: Person[]
   canEdit: boolean
+  /** Two-way sync: Sheet columns are edited here too, and the edit goes to the Sheet. */
+  twoWay?: boolean
   sort: TrackerView['sort']
   selected: ReadonlySet<string>
   focus: GridFocus | null
@@ -242,8 +244,8 @@ export default function TrackerGrid(props: Props) {
     else if (direction === 'right') move(r, c + 1)
   }
   const beginEdit = (row: TrackerRow, column: TrackerColumn, initial?: string) => {
-    // Cells that come from a connected Google Sheet are changed in the Sheet, not here.
-    if (editable(column) && canEdit && !(column.synced && row.sourceKey)) setEditing({ initial })
+    // Cells that come from a connected Google Sheet are changed in the Sheet, not here (unless it syncs both ways).
+    if (editable(column) && canEdit && !(column.synced && row.sourceKey && !props.twoWay)) setEditing({ initial })
     else props.onOpenRow(row)
   }
 
@@ -443,7 +445,13 @@ export default function TrackerGrid(props: Props) {
               data-column={column.id}
               style={place ? { left: place.left } : undefined}
               onClick={() => {
-                if (on && !isEditing && canEdit && editable(column) && !(column.synced && row.sourceKey))
+                if (
+                  on &&
+                  !isEditing &&
+                  canEdit &&
+                  editable(column) &&
+                  !(column.synced && row.sourceKey && !props.twoWay)
+                )
                   beginEdit(row, column)
                 else if (!on) {
                   setActive({ rowId: row.id, columnId: column.id })
@@ -608,7 +616,9 @@ export default function TrackerGrid(props: Props) {
                   aria-haspopup="dialog"
                   title={
                     column.synced
-                      ? `${column.name}. Comes from the Google Sheet; change it there.`
+                      ? props.twoWay
+                        ? `${column.name}. Synced with the Google Sheet both ways; an edit here is written to the Sheet.`
+                        : `${column.name}. Comes from the Google Sheet; change it there.`
                       : computed
                         ? `${column.name} = ${formulaToText(column.formula || '', props.allColumns || columns)}`
                         : connected

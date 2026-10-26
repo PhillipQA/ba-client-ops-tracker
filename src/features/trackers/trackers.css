@@ -2239,3 +2239,10 @@ a.trk-link-button {
 .trk-key.synced {
   background: color-mix(in srgb, #16a34a 55%, var(--k-solid));
 }
+.trk-conflicts {
+  margin: 8px 0 16px;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 13.5px;
+}

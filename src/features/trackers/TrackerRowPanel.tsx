@@ -682,7 +682,7 @@ export default function TrackerRowPanel(props: Props) {
               column={column}
               row={row}
               people={people}
-              canEdit={canEdit && !(column.synced && row.sourceKey)}
+              canEdit={canEdit && !(column.synced && row.sourceKey && tracker.source?.mode !== 'two_way')}
               onEdit={value => props.onEdit(row, column, value)}
             />
           ))}
