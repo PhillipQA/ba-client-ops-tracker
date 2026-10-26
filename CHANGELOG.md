@@ -1,8 +1,20 @@
 # Changelog
 
-**Current application release: v1.0.4**
+**Current application release: v1.1.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.1.0 — Rows marked done when their tasks are done, in the tracker and in the Sheet
+Released October 26, 2026.
+
+**Database migration schema v28 (optional) and one more Google scope for writing to Sheets.** See the [upgrade guide](docs/setup/upgrade.md).
+
+- **Done when its tasks are done.** Edit a Checkbox or Choice column and tick **When the linked tasks are done**. When every task and subtask linked to a row (the row's own task, or tasks linked to the row or its cells) is completed, the column is ticked, or set to the option you chose. It works wherever the task is completed: the task list, Tasks, the Action Center or Work Hub. One column per tracker.
+- **Reopened goes back.** If one of those tasks is reopened, the box is unticked, or the choice goes back to the option you picked (or empty). A value someone set by hand, such as "Blocked", is left alone.
+- **Written to the Google Sheet.** When that column comes from the connected Sheet, the change is written to the same cell in the Sheet, in the style the Sheet already uses (Yes/No, TRUE/FALSE, x…). The row is found the way a sync finds it, by its task name and order, so sorting the Sheet is safe.
+- **The Sheet wins a disagreement.** If someone changed that cell in the Sheet since the last sync, it is not overwritten. The row says why, and a banner offers **Write them now** (sync, then overwrite) or **Dismiss**. The same banner appears when Google refuses the write.
+- **Permission to edit Sheets.** Writing uses the Google account that connected the Sheet, which now needs to allow editing Google Sheets once. Until it has, the tracker says so and offers **Allow editing with my Google**, which also switches the connection to your account.
+- Each automatic change appears in the row's history, with the task that caused it.
 
 ## v1.0.4 — Back and Forward work, every page has its own address
 Released October 24, 2026.

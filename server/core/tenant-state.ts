@@ -540,6 +540,30 @@ const guardWorkspace = createWorkspaceGuard(
   () => emptyTenantData() as any,
 )
 
+/**
+ * Called after a workspace save is stored, with the state before and after it. Listeners run after the save has
+ * answered and never affect it: a listener that fails is only logged.
+ */
+export type TenantCommitListener = (
+  organizationId: string,
+  before: any,
+  after: any,
+  actor: SessionUser | null,
+) => unknown
+const commitListeners = new Set<TenantCommitListener>()
+export function onTenantCommitted(listener: TenantCommitListener) {
+  commitListeners.add(listener)
+  return () => void commitListeners.delete(listener)
+}
+function announceCommit(organizationId: string, before: any, after: any, actor: SessionUser | null) {
+  for (const listener of commitListeners)
+    setImmediate(() => {
+      Promise.resolve()
+        .then(() => listener(organizationId, before, after, actor))
+        .catch(error => console.error('A follow-up to a workspace save failed:', error?.message || error))
+    })
+}
+
 export async function commitTenantState(
   organizationId: string | undefined,
   state: any,
@@ -554,7 +578,9 @@ export async function commitTenantState(
     if (state.rtms === undefined) state = { ...state, rtms: current.rtms || [] }
     assertRtmMutation(current, state, actor)
     const reconciled = reconcileRtm(current, state, actor)
-    return writeTenantState(organizationId, reconciled, actor, reason, current, synchronize)
+    const saved = await writeTenantState(organizationId, reconciled, actor, reason, current, synchronize)
+    announceCommit(organizationId, current, reconciled, actor)
+    return saved
   })
 }
 

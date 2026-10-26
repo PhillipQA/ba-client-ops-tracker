@@ -43,7 +43,8 @@ import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
 import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
 import { Notice, Popover, plural } from './trackerUi'
-import { takeReview, takeTrackerRow } from './trackerNav'
+import { rememberSheetEdits, takeReview, takeSheetEdits, takeTrackerRow } from './trackerNav'
+import { autoDoneColumn } from './trackerAutoDone'
 import TrackerReview, { type ReviewOutcome } from './TrackerReview'
 import { SYNC_LIMITS, describeSync } from './trackerSync'
 import { niceTime } from './trackerUi'
@@ -66,6 +67,8 @@ type Props = {
   onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
   /** The list of trackers on the home screen needs a refresh. */
   onListChanged: () => void
+  /** Back from Google's permission page: what happened (`write-enabled`, `write-denied`…). */
+  googleReturn?: string
 }
 
 type PanelId = 'filter' | 'sort' | 'group' | 'fields' | null
@@ -205,6 +208,15 @@ export default function TrackerScreen(props: Props) {
     // Arriving straight from an import or a new Sheet connection opens the review of the new rows.
     const pending = takeReview(trackerId)
     if (pending) setReview({ origin: pending === 'flagged' ? 'sheet' : 'import', ids: pending })
+    // Back from allowing Google Sheets edits: done marks now go to the Sheet with this person's access.
+    if (takeSheetEdits(trackerId)) {
+      if (props.googleReturn === 'write-denied')
+        say('error', 'Editing Google Sheets was not allowed, so done marks still stay in the tracker only.')
+      else if (props.googleReturn === 'write-enabled') {
+        if (trackerRef.current?.source && trackerRef.current.source.canWrite === false) void reconnect()
+        else say('info', 'Editing Google Sheets is allowed. Done marks are now written to the Sheet.')
+      }
+    }
   }, [status, trackerId])
 
   // Connected Google Sheet: Sync now, and an automatic sync every few minutes while the tracker is open.
@@ -233,6 +245,42 @@ export default function TrackerScreen(props: Props) {
       window.location.assign(result.url)
     } catch (error) {
       say('error', error instanceof Error ? error.message : 'Could not start the Google permission step.')
+    }
+  }
+  const allowSheetEdits = async () => {
+    try {
+      const response = await fetch('/api/communications/gmail/connect?sheets=write', { credentials: 'same-origin' })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.url) throw new Error(result.error || 'Could not start the Google permission step.')
+      rememberSheetEdits(trackerId)
+      window.location.assign(result.url)
+    } catch (error) {
+      say('error', error instanceof Error ? error.message : 'Could not start the Google permission step.')
+    }
+  }
+  const retrySheetIssues = async () => {
+    setSyncing(true)
+    try {
+      const result = await trackerApi.retrySheetIssues(trackerId)
+      await refresh()
+      if (result.failed)
+        say(
+          'error',
+          `${result.written ? `${plural(result.written, 'row')} written to the Sheet; ` : ''}${plural(result.failed, 'row')} still could not be. Open a row to see why.`,
+        )
+      else say('info', `${plural(result.written, 'row')} marked in the Sheet.`)
+    } catch (error) {
+      say('error', error instanceof Error ? error.message : 'The Sheet could not be updated.')
+    } finally {
+      if (alive.current) setSyncing(false)
+    }
+  }
+  const dismissSheetIssues = async (ids: string[] = []) => {
+    try {
+      await trackerApi.dismissSheetIssues(trackerId, ids)
+      await refresh()
+    } catch (error) {
+      say('error', error instanceof Error ? error.message : 'That could not be cleared.')
     }
   }
   const reconnect = async () => {
@@ -672,7 +720,8 @@ export default function TrackerScreen(props: Props) {
     const current = trackerRef.current!
     try {
       const result = await trackerApi.saveColumns(trackerId, next, current.revision)
-      if (alive.current) setTracker(result.tracker)
+      // The column list comes back without the Sheet connection; keep the one already loaded.
+      if (alive.current) setTracker({ ...result.tracker, source: result.tracker.source ?? current.source })
     } catch (error) {
       if (error instanceof TrackerApiError && error.body.tracker && alive.current) {
         setTracker(error.body.tracker)
@@ -687,7 +736,15 @@ export default function TrackerScreen(props: Props) {
       if (draft.formula !== undefined) copy.formula = draft.formula
       if (draft.total === null) delete copy.total
       else if (draft.total) copy.total = draft.total
+      if (draft.autoDone === null) delete copy.autoDone
+      else if (draft.autoDone) copy.autoDone = draft.autoDone
       return copy
+    }
+    // Only one column marks rows done: turning it on here turns it off elsewhere.
+    const others = (column: TrackerColumn): TrackerColumn => {
+      if (!draft.autoDone || !column.autoDone) return column
+      const { autoDone: _off, ...rest } = column
+      return rest
     }
     const next: TrackerColumn[] = existing
       ? columns.map(column =>
@@ -698,10 +755,10 @@ export default function TrackerScreen(props: Props) {
                 ...(draft.options ? { options: draft.options } : {}),
                 ...(draft.revealBy ? { revealBy: draft.revealBy } : {}),
               })
-            : column,
+            : others(column),
         )
       : [
-          ...columns,
+          ...columns.map(others),
           extra({
             id: randomId('c_'),
             name: draft.name,
@@ -1126,6 +1183,43 @@ export default function TrackerScreen(props: Props) {
             <button type="button" className="trk-button" disabled={syncing} onClick={() => void syncNow(true)}>
               {syncing ? 'Syncing…' : 'Sync now'}
             </button>
+          )}
+        </div>
+      )}
+      {tracker.source && tracker.source.canWrite === false && autoDoneColumn(columns)?.synced && (
+        <div className="trk-banner trk-review-banner" role="status">
+          <strong>Done marks are not reaching the Sheet yet.</strong>{' '}
+          {tracker.source.connectedByName || 'The person who connected it'} has not allowed editing Google Sheets, so
+          “{autoDoneColumn(columns)?.name}” changes only here.
+          {canEdit && (
+            <button type="button" className="trk-text-button strong" onClick={() => void allowSheetEdits()}>
+              Allow editing with my Google
+            </button>
+          )}
+        </div>
+      )}
+      {rows.some(row => row.sheetIssue) && (
+        <div className="trk-banner trk-review-banner" role="status">
+          <strong>{plural(rows.filter(row => row.sheetIssue).length, 'row')} not marked done in the Sheet.</strong>{' '}
+          {(() => {
+            const reasons = [...new Set(rows.flatMap(row => (row.sheetIssue ? [row.sheetIssue.message] : [])))]
+            return reasons.length === 1 ? reasons[0] : 'Open a row to see why.'
+          })()}
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                className="trk-text-button strong"
+                disabled={syncing}
+                onClick={() => void retrySheetIssues()}
+                title="Sync, then write the done marks to the Sheet, overwriting what is there"
+              >
+                {syncing ? 'Working…' : 'Write them now'}
+              </button>
+              <button type="button" className="trk-text-button" onClick={() => void dismissSheetIssues()}>
+                Dismiss
+              </button>
+            </>
           )}
         </div>
       )}
@@ -1748,6 +1842,7 @@ export default function TrackerScreen(props: Props) {
           onDelete={row => void removeRows([row.id])}
           onOpenTask={props.onOpenTask}
           onReveal={reveal}
+          onDismissSheetIssue={row => void dismissSheetIssues([row.id])}
         />
       )}
 
@@ -1764,6 +1859,7 @@ export default function TrackerScreen(props: Props) {
               ? (type, confirm, clearUnfit) => convertColumn(editingColumn, type, confirm, clearUnfit)
               : undefined
           }
+          sheetName={tracker.source ? tracker.source.spreadsheetName || 'the Google Sheet' : undefined}
         />
       )}
       {importing && (

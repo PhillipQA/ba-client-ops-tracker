@@ -150,6 +150,37 @@ export type TrackerColumn = {
   total?: 'sum'
   /** Filled from the connected Google Sheet. In one-way sync it is read-only for rows that came from the Sheet. */
   synced?: boolean
+  /**
+   * Checkbox and Choice columns: fills itself from the tasks linked to the row. Ticked (or set to `done`) when every
+   * linked task is completed, unticked (or set to `undone`) when one is reopened. At most one column per tracker.
+   */
+  autoDone?: AutoDone
+}
+
+/** The "done when its tasks are done" setting. Checkbox columns need no values: done is ticked, not done is unticked. */
+export type AutoDone = {
+  /** Choice columns: the option set when every linked task is completed. */
+  done?: string
+  /** Choice columns: the option set when a linked task is reopened. Empty means the cell is cleared. */
+  undone?: string
+}
+
+export const canAutoDone = (column: Pick<TrackerColumn, 'type'>) => column.type === 'checkbox' || column.type === 'select'
+
+/**
+ * Cleans the setting for a column, or returns undefined when it does not apply. A Choice column needs a done option
+ * that exists; a not-done option that no longer exists is dropped (the cell is cleared instead).
+ */
+export function normalizeAutoDone(raw: unknown, column: TrackerColumn): AutoDone | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !canAutoDone(column)) return undefined
+  if (column.type === 'checkbox') return {}
+  const options = new Set((column.options || []).map(option => option.id))
+  const input = raw as Record<string, unknown>
+  const done = typeof input.done === 'string' && options.has(input.done) ? input.done : ''
+  if (!done) return undefined
+  const undone =
+    typeof input.undone === 'string' && options.has(input.undone) && input.undone !== done ? input.undone : ''
+  return undone ? { done, undone } : { done }
 }
 
 export type Cell = string | number | boolean | string[] | null
@@ -204,6 +235,8 @@ export type TrackerRow = {
   sourceMissing?: boolean
   /** A new row waiting to be reviewed: made into a task, a subtask, or left as it is. */
   review?: boolean
+  /** Its done mark could not be written to the connected Sheet, and why. Cleared by a later success or a dismiss. */
+  sheetIssue?: { code: string; message: string; value: Cell; at: string }
 }
 
 /** A tracker that follows a Google Sheet. One-way today; two-way is prepared for but not switched on. */
@@ -223,6 +256,8 @@ export type TrackerSource = {
   lastStatus: 'ok' | 'error' | 'never'
   lastError: string
   lastReport: SyncReport | null
+  /** Sent only when a column marks done in the Sheet: whether the person who connected it allowed editing Sheets. */
+  canWrite?: boolean
 }
 export type SyncReport = {
   added: number
@@ -359,8 +394,17 @@ export function normalizeColumns(input: unknown, previous: TrackerColumn[] = [])
     if (raw.type === 'formula') column.formula = typeof raw.formula === 'string' ? raw.formula.slice(0, 1000) : ''
     if ((raw.type === 'number' || raw.type === 'formula') && raw.total === 'sum') column.total = 'sum'
     if (raw.synced === true && isBasicType(raw.type)) column.synced = true
+    const autoDone = normalizeAutoDone(raw.autoDone, column)
+    if (autoDone) column.autoDone = autoDone
     return column
   })
+  // Only one column fills itself from the linked tasks' completion: the first one that asks to.
+  let autoDoneSeen = false
+  for (const column of columns)
+    if (column.autoDone) {
+      if (autoDoneSeen) delete column.autoDone
+      autoDoneSeen = true
+    }
   // Formulas may name columns as [Name] or {id}; store ids so a rename does not break them, then check them all together.
   for (const column of columns)
     if (column.type === 'formula') {

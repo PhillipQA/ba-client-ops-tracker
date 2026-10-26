@@ -255,6 +255,7 @@ test('a person lists, opens and connects a Sheet; the first sync brings every ro
     assert.deepEqual((await ask('GET', '/api/trackers/sheets/status')).body, {
       available: true,
       connected: true,
+      canWrite: false,
       email: 'u1@example.com',
     })
     const files = await ask('GET', '/api/trackers/sheets/files?q=card')

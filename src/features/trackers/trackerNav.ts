@@ -57,3 +57,23 @@ export const takeReview = (trackerId: string): string[] | 'flagged' | null => {
     return null
   }
 }
+
+const WRITE_KEY = 'ba.trackers.allowSheetEdits'
+/** Remembers that this person went to allow editing Google Sheets for a tracker, so it can switch to their access on return. */
+export const rememberSheetEdits = (trackerId: string) => {
+  rememberTracker(trackerId)
+  try {
+    window.sessionStorage.setItem(WRITE_KEY, trackerId)
+  } catch {
+    /* Without storage they can click Reconnect with my Google themselves. */
+  }
+}
+export const takeSheetEdits = (trackerId: string) => {
+  try {
+    if (window.sessionStorage.getItem(WRITE_KEY) !== trackerId) return false
+    window.sessionStorage.removeItem(WRITE_KEY)
+    return true
+  } catch {
+    return false
+  }
+}

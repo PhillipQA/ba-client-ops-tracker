@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v0.6.92: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 24. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v1.1.0: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 28. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1473,7 +1473,33 @@ create table if not exists public.tenant_tracker_changes (
 );
 create index if not exists tenant_tracker_changes_row on public.tenant_tracker_changes(tenant_id, tracker_id, row_id, created_at desc);
 
--- Tracker task links: a row, or one cell of it, linked to any number of tasks and subtasks.
+-- Supabase only: lock the tables to the service role, as for the other private tables.
+-- Plain PostgreSQL (Northflank) has no anon/service_role, and enabling row level security
+-- there would block the app's database user, so it is skipped.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'alter table public.tenant_trackers enable row level security';
+    execute 'alter table public.tenant_tracker_rows enable row level security';
+    execute 'alter table public.tenant_tracker_changes enable row level security';
+    execute 'revoke all on public.tenant_trackers, public.tenant_tracker_rows, public.tenant_tracker_changes from public, anon, authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant all on public.tenant_trackers, public.tenant_tracker_rows, public.tenant_tracker_changes to service_role';
+  end if;
+end $$;
+
+-- Switch the Trackers module on for existing accounts. Administrators get it with their account's modules;
+-- other users are given it from Account Users. Accounts that already list it are left alone.
+update public.organizations set enabled_modules = enabled_modules || '["trackers"]'::jsonb
+where jsonb_typeof(enabled_modules) = 'array' and not (enabled_modules ? 'trackers');
+
+-- Included source: migrations/schema-v25-tracker-task-links.sql
+-- SHA-256: 0af230418f91b68e07ee01141e159217580693f6af25e9e5fdab0c1b464a3042
+-- Apply once to existing v0.6.95 or older databases (Supabase or Northflank PostgreSQL).
+-- Tracker task links: a tracker row, or one cell of it, can be linked to any number of tasks and subtasks.
+-- The Action Center reads these links to show where a task came from. Nothing else changes.
+
 create table if not exists public.tenant_tracker_task_links (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null,
@@ -1489,7 +1515,23 @@ create table if not exists public.tenant_tracker_task_links (
 create unique index if not exists tenant_tracker_task_links_unique on public.tenant_tracker_task_links(tenant_id, tracker_id, row_id, column_id, task_id);
 create index if not exists tenant_tracker_task_links_task on public.tenant_tracker_task_links(tenant_id, task_id);
 
--- Email signatures (one per person) and email templates.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'alter table public.tenant_tracker_task_links enable row level security';
+    execute 'revoke all on public.tenant_tracker_task_links from public, anon, authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant all on public.tenant_tracker_task_links to service_role';
+  end if;
+end $$;
+
+-- Included source: migrations/schema-v26-email-templates.sql
+-- SHA-256: 0fb80258ca15877a8364e2e5106d8eda759a1c43c122646ec157f0465d2f7ca7
+-- Apply once to existing v0.7.x or older databases (Supabase or Northflank PostgreSQL).
+-- Email signatures (one per person) and email templates (shared with the account, or kept to oneself).
+-- Until it is applied, email works as before: the signature box keeps the copy in this browser and templates are unavailable.
+
 create table if not exists public.user_email_signatures (
   tenant_id uuid not null references public.organizations(id) on delete cascade,
   user_id text not null,
@@ -1514,7 +1556,25 @@ create table if not exists public.tenant_email_templates (
 );
 create index if not exists tenant_email_templates_name on public.tenant_email_templates(tenant_id, name);
 
--- Connected Google Sheets (v27).
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'alter table public.user_email_signatures enable row level security';
+    execute 'alter table public.tenant_email_templates enable row level security';
+    execute 'revoke all on public.user_email_signatures, public.tenant_email_templates from public, anon, authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant all on public.user_email_signatures, public.tenant_email_templates to service_role';
+  end if;
+end $$;
+
+-- Included source: migrations/schema-v27-tracker-sheets.sql
+-- SHA-256: 917ec738bfdd588c7513b0e7e99ebc0bd4425ca64773530f66ab61885ac46098
+-- Apply once to existing v0.8.x or older databases (Supabase or Northflank PostgreSQL). Needs schema v24 (Trackers).
+-- Connected Google Sheets: a tracker can follow one tab of a Sheet. Rows remember their key in the Sheet and the values
+-- at the last sync (what a later two-way sync needs), whether they are still in the Sheet, and whether they wait for review.
+-- Until it is applied, Trackers work as before and connecting a Sheet says the migration is missing.
+
 alter table public.tenant_tracker_rows add column if not exists source_key text not null default '';
 alter table public.tenant_tracker_rows add column if not exists source_values jsonb not null default '{}'::jsonb;
 alter table public.tenant_tracker_rows add column if not exists source_missing boolean not null default false;
@@ -1544,45 +1604,26 @@ create table if not exists public.tenant_tracker_sources (
   foreign key (tenant_id, tracker_id) references public.tenant_trackers(tenant_id, id) on delete cascade
 );
 
-
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
-    execute 'alter table public.user_email_signatures enable row level security';
-    execute 'alter table public.tenant_email_templates enable row level security';
-    execute 'revoke all on public.user_email_signatures, public.tenant_email_templates from public, anon, authenticated';
-  end if;
-  if exists (select 1 from pg_roles where rolname = 'service_role') then
-    execute 'grant all on public.user_email_signatures, public.tenant_email_templates to service_role';
-  end if;
-end $$;
-
--- Supabase only: lock the tables to the service role, as for the other private tables.
--- Plain PostgreSQL (Northflank) has no anon/service_role, and enabling row level security
--- there would block the app's database user, so it is skipped.
-do $$
-begin
-  if exists (select 1 from pg_roles where rolname = 'anon') then
-    execute 'alter table public.tenant_trackers enable row level security';
-    execute 'alter table public.tenant_tracker_rows enable row level security';
-    execute 'alter table public.tenant_tracker_changes enable row level security';
-    execute 'alter table public.tenant_tracker_task_links enable row level security';
     execute 'alter table public.tenant_tracker_sources enable row level security';
     execute 'revoke all on public.tenant_tracker_sources from public, anon, authenticated';
-    execute 'revoke all on public.tenant_tracker_task_links from public, anon, authenticated';
-    execute 'revoke all on public.tenant_trackers, public.tenant_tracker_rows, public.tenant_tracker_changes from public, anon, authenticated';
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
-    execute 'grant all on public.tenant_trackers, public.tenant_tracker_rows, public.tenant_tracker_changes to service_role';
-    execute 'grant all on public.tenant_tracker_task_links to service_role';
     execute 'grant all on public.tenant_tracker_sources to service_role';
   end if;
 end $$;
 
--- Switch the Trackers module on for existing accounts. Administrators get it with their account's modules;
--- other users are given it from Account Users. Accounts that already list it are left alone.
-update public.organizations set enabled_modules = enabled_modules || '["trackers"]'::jsonb
-where jsonb_typeof(enabled_modules) = 'array' and not (enabled_modules ? 'trackers');
+-- Included source: migrations/schema-v28-tracker-auto-done.sql
+-- SHA-256: 5c5f6065a43a6803bca5160b7a3cfe62d4bac55e08b3f7c5457d70012132d661
+-- Apply once to databases at schema v27 (Supabase or Northflank PostgreSQL).
+-- Trackers: a Checkbox or Choice column can mark a row done when its linked tasks are completed, and write that to
+-- the connected Google Sheet. When a row's mark could not be written to the Sheet, the reason is kept on the row so
+-- people can retry or dismiss it. Nothing else changes; the setting itself is stored with the tracker's columns.
+
+alter table public.tenant_tracker_rows add column if not exists sheet_issue jsonb;
+create index if not exists tenant_tracker_rows_sheet_issue on public.tenant_tracker_rows(tenant_id, tracker_id) where sheet_issue is not null;
 
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'::jsonb
@@ -1607,4 +1648,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 24 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 28 as schema_version;
