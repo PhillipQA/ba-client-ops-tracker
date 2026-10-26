@@ -1,7 +1,7 @@
 {
   "name": "ba-client-ops-tracker",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -51,7 +51,7 @@
     "test:tracker-columns": "node --import tsx --test tests/tracker-columns.test.ts",
     "test:sidebar": "node --import tsx --test tests/sidebar-state.test.ts",
     "test:email-templates": "node --import tsx --test tests/email-templates.test.ts",
-    "test:trackers": "node --import tsx --test tests/trackers.test.ts tests/tracker-logic.test.ts tests/tracker-formula.test.ts tests/tracker-sync.test.ts tests/tracker-sheets.test.ts tests/tracker-review.test.ts tests/tracker-auto-done.test.ts",
+    "test:trackers": "node --import tsx --test tests/trackers.test.ts tests/tracker-logic.test.ts tests/tracker-formula.test.ts tests/tracker-sync.test.ts tests/tracker-sheets.test.ts tests/tracker-review.test.ts tests/tracker-auto-done.test.ts tests/tracker-two-way.test.ts",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome ci ."

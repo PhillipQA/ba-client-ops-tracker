@@ -67,6 +67,8 @@ export type RowPatch = {
   cells?: Record<string, Cell>
   secrets?: Record<string, string | null>
   taskId?: string | null
+  /** Two-way: write the edit to the Sheet even though the cell changed there since the last sync. */
+  overwrite?: boolean
 }
 
 export const trackerApi = {
@@ -104,7 +106,8 @@ export const trackerApi = {
       undefined,
       signal,
     ),
-  addRows: (id: string, rows: NewRow[]) => call<{ rows: TrackerRow[] }>('POST', `/${id}/rows`, { rows }),
+  addRows: (id: string, rows: NewRow[]) =>
+    call<{ rows: TrackerRow[]; warning?: string }>('POST', `/${id}/rows`, { rows }),
   updateRow: (id: string, rowId: string, patch: RowPatch) =>
     call<{ row: TrackerRow }>('PATCH', `/${id}/rows/${rowId}`, patch),
   linkRowTasks: (id: string, links: { rowId: string; taskId: string }[]) =>
@@ -151,6 +154,8 @@ export const trackerApi = {
   ) => call<SyncResult & { tracker: Tracker }>('POST', `/${id}/source`, body),
   syncSource: (id: string, force: boolean) => call<SyncResult>('POST', `/${id}/source/sync`, { force }),
   reconnectSource: (id: string) => call<SyncResult>('POST', `/${id}/source/reconnect`, {}),
+  setSourceMode: (id: string, mode: 'one_way' | 'two_way') =>
+    call<{ source: TrackerSource }>('POST', `/${id}/source/mode`, { mode }),
   disconnectSource: (id: string) => call<{ tracker: Tracker }>('DELETE', `/${id}/source`),
   reviewed: (id: string, ids: string[]) => call<{ reviewed: number }>('POST', `/${id}/rows/review`, { ids }),
   bulkLinks: (id: string, links: { rowId: string; columnId: string; taskId: string }[]) =>
