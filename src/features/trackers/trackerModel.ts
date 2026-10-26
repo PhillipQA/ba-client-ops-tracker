@@ -259,6 +259,8 @@ export type TrackerSource = {
   lastReport: SyncReport | null
   /** Sent only when a column marks done in the Sheet: whether the person who connected it allowed editing Sheets. */
   canWrite?: boolean
+  /** Two-way: whether the person viewing may write to Sheets with their own Google account (edits are written as them). */
+  youCanWrite?: boolean
 }
 export type SyncReport = {
   added: number
