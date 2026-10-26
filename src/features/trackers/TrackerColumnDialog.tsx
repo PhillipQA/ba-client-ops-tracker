@@ -77,6 +77,9 @@ export default function TrackerColumnDialog({
   const [autoDoneOption, setAutoDoneOption] = useState(column?.autoDone?.done || '')
   const [autoUndoneOption, setAutoUndoneOption] = useState(column?.autoDone?.undone || '')
   const otherAutoDone = columns.find(item => item.id !== column?.id && item.autoDone)
+  /** When the setting is turned on, an option named like Done is chosen for "Set to", so most people need not pick it. */
+  const guessDoneOption = () =>
+    options.find(option => /^(done|completed?|closed|resolved|finished)$/i.test(option.label.trim()))?.id || ''
   const formulaInput = useRef<HTMLInputElement>(null)
   const sources = columns.filter(item => item.id !== column?.id && FORMULA_SOURCES.includes(item.type))
   const formulaCheck = type === 'formula' && formula.trim() ? formulaFromText(formula, columns, column?.id || '') : null
@@ -469,6 +472,8 @@ export default function TrackerColumnDialog({
                   checked={autoOn}
                   onChange={event => {
                     setAutoOn(event.target.checked)
+                    if (event.target.checked && type === 'select' && !autoDoneOption)
+                      setAutoDoneOption(guessDoneOption())
                     setError('')
                   }}
                 />{' '}
