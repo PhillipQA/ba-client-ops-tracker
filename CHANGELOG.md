@@ -1,8 +1,17 @@
 # Changelog
 
-**Current application release: v1.4.0**
+**Current application release: v1.5.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.5.0 — Subtasks from emails
+Released October 27, 2026.
+
+**No database migration and no new setting.**
+
+- **New task or subtask.** In Work Hub, the form under a message now has **New task** and **Subtask of a task**. For a subtask, type a task name in **Under task**: open, active tasks are listed with their client and project. The subtask takes that task's client and project and goes last in its list of subtasks.
+- Closed and archived tasks are not offered (reopen them first), and a task cannot have two subtasks with the same name.
+- As before, only the title and summary you write are shared; the email itself stays private, and the subtask is listed with the message's tasks for saving attachments to Drive.
 
 ## v1.4.0 — @mentions in emails
 Released October 27, 2026.

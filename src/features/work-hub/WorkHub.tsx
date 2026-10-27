@@ -11,10 +11,11 @@ import {
 import { useWorkHubSync } from './useWorkHubSync'
 import { WORK_HUB_TABS } from '../integrations/github-model'
 import type { Client, Project, TaskSettings, UserAccount, WorkItem } from '../../shared/types'
-import { findCommunicationTaskDuplicate } from './communicationTasks'
+import { findCommunicationTaskDuplicate, findSubtaskDuplicate, subtaskParentProblem } from './communicationTasks'
+import { isTaskClosed } from '../../app/store'
 import { composeEmail, useEmailEnabled } from '../email/EmailComposer'
 import { extractAddress, quoteReply, replySubject } from '../email/emailCompose'
-import ClientSelect from '../../shared/ui/SearchSelect'
+import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { EmailTemplatesManager } from '../email/EmailTemplates'
 import { requestJson, type HttpMethod } from '../../shared/http'
 
@@ -329,6 +330,9 @@ export default function WorkHub({
     [clientId, setClientId] = useState(''),
     [projectId, setProjectId] = useState(''),
     [assignee, setAssignee] = useState(currentUser.id)
+  /** Create a new task, or a subtask under an existing open task (which supplies the client and project). */
+  const [taskKind, setTaskKind] = useState<'task' | 'subtask'>('task'),
+    [parentId, setParentId] = useState('')
   const [message, setMessage] = useState(''),
     [busy, setBusy] = useState(false)
   const hubSync = useWorkHubSync()
@@ -587,12 +591,29 @@ export default function WorkHub({
     focusTaskTitle.current = creatingTask.current
     taskTitleRef.current?.focus()
   }
+  const closed = (status: string) =>
+    taskSettings ? isTaskClosed(status, taskSettings) : ['Resolved', 'Closed'].includes(status)
+  const parentTask = taskKind === 'subtask' ? tasks.find(task => task.id === parentId) : undefined
   const createTask = () => {
     if (!selected || busy || creatingTask.current) return
-    const duplicate = findCommunicationTaskDuplicate(tasks, { title, clientId, projectId })
-    if (duplicate) {
-      showDuplicateTask(duplicate.title)
-      return
+    if (taskKind === 'subtask') {
+      const problem = subtaskParentProblem(parentTask, closed)
+      if (problem) {
+        setMessage(problem)
+        return
+      }
+      const same = findSubtaskDuplicate(tasks, parentId, title)
+      if (same) {
+        setMessage(`“${parentTask!.title}” already has a subtask named “${same.title}”. Enter a different title.`)
+        taskTitleRef.current?.focus()
+        return
+      }
+    } else {
+      const duplicate = findCommunicationTaskDuplicate(tasks, { title, clientId, projectId })
+      if (duplicate) {
+        showDuplicateTask(duplicate.title)
+        return
+      }
     }
     const communication = selected
     creatingTask.current = true
@@ -601,9 +622,8 @@ export default function WorkHub({
         const result = await request(`/api/communications/${communication.id}/create-task`, 'POST', {
           title,
           description,
-          clientId,
-          projectId,
           assignedToUserId: assignee,
+          ...(taskKind === 'subtask' ? { parentTaskId: parentId } : { clientId, projectId }),
         })
         if (!alive.current) return
         setSelected(previous =>
@@ -621,7 +641,7 @@ export default function WorkHub({
         if (!alive.current) return
         reloadMessages()
         setMessage(
-          `Task “${result.task.title}” created. You can create another task from this message. The original communication remains private to you.${warnings.length ? ' ' + warnings.join(' ') : ''}`,
+          `${result.task.parentTaskId ? `Subtask “${result.task.title}” added under “${parentTask?.title || 'the task'}”` : `Task “${result.task.title}” created`}. You can create another from this message. The original communication remains private to you.${warnings.length ? ' ' + warnings.join(' ') : ''}`,
         )
       } catch (error) {
         if (error instanceof CommunicationRequestError && error.code === 'DUPLICATE_TASK') showDuplicateTask(title)
@@ -1268,14 +1288,65 @@ export default function WorkHub({
           ) : null}
           {selected && currentUser.role !== 'Viewer' && (
             <div className="communication-task-form">
-              <h3>Create a project task</h3>
+              <h3>{taskKind === 'subtask' ? 'Add a subtask to a task' : 'Create a project task'}</h3>
               <p>
                 Enter only the information User B should see. The email or Discord thread and sender are never copied
                 into the task.
               </p>
+              <div className="client-layout-switch" role="group" aria-label="Create a task or a subtask">
+                <button
+                  type="button"
+                  aria-pressed={taskKind === 'task'}
+                  disabled={busy}
+                  onClick={() => setTaskKind('task')}
+                >
+                  <span>New task</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={taskKind === 'subtask'}
+                  disabled={busy}
+                  onClick={() => setTaskKind('subtask')}
+                >
+                  <span>Subtask of a task</span>
+                </button>
+              </div>
               <div className="communication-fields">
+                {taskKind === 'subtask' && (
+                  <label>
+                    Under task
+                    <SearchSelect
+                      value={parentId}
+                      onChange={setParentId}
+                      disabled={busy}
+                      placeholder="Type a task name"
+                      empty="No open task matches"
+                      choices={[
+                        { value: '', label: 'Choose a task' },
+                        ...tasks
+                          .filter(
+                            task =>
+                              !task.parentTaskId &&
+                              !subtaskParentProblem(task, closed) &&
+                              clients.some(client => client.id === task.clientId && !client.archived) &&
+                              projects.some(project => project.id === task.projectId && !project.archived),
+                          )
+                          .map(task => ({
+                            value: task.id,
+                            label: task.title,
+                            hint: [
+                              clients.find(client => client.id === task.clientId)?.name,
+                              projects.find(project => project.id === task.projectId)?.name,
+                            ]
+                              .filter(Boolean)
+                              .join(' / '),
+                          })),
+                      ]}
+                    />
+                  </label>
+                )}
                 <label>
-                  Task title
+                  {taskKind === 'subtask' ? 'Subtask title' : 'Task title'}
                   <input
                     ref={taskTitleRef}
                     disabled={busy}
@@ -1284,29 +1355,33 @@ export default function WorkHub({
                     onChange={e => setTitle(e.target.value)}
                   />
                 </label>
-                <label>
-                  Client
-                  <ClientSelect
-                    clients={clients.filter(x => !x.archived)}
-                    value={clientId}
-                    onChange={value => setClientId(value)}
-                    extra={[{ value: '', label: 'Select client' }]}
-                    disabled={busy}
-                  />
-                </label>
-                <label>
-                  Project
-                  <select disabled={busy} value={projectId} onChange={e => setProjectId(e.target.value)}>
-                    <option value="">Select project</option>
-                    {projects
-                      .filter(x => !x.archived)
-                      .map(x => (
-                        <option key={x.id} value={x.id}>
-                          {x.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
+                {taskKind === 'task' && (
+                  <label>
+                    Client
+                    <ClientSelect
+                      clients={clients.filter(x => !x.archived)}
+                      value={clientId}
+                      onChange={value => setClientId(value)}
+                      extra={[{ value: '', label: 'Select client' }]}
+                      disabled={busy}
+                    />
+                  </label>
+                )}
+                {taskKind === 'task' && (
+                  <label>
+                    Project
+                    <select disabled={busy} value={projectId} onChange={e => setProjectId(e.target.value)}>
+                      <option value="">Select project</option>
+                      {projects
+                        .filter(x => !x.archived)
+                        .map(x => (
+                          <option key={x.id} value={x.id}>
+                            {x.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
                 <label>
                   Assign to
                   <select disabled={busy} value={assignee} onChange={e => setAssignee(e.target.value)}>
@@ -1332,10 +1407,12 @@ export default function WorkHub({
               </label>
               <button
                 className="primary"
-                disabled={busy || !title.trim() || !clientId || !projectId || !assignee}
+                disabled={
+                  busy || !title.trim() || !assignee || (taskKind === 'subtask' ? !parentId : !clientId || !projectId)
+                }
                 onClick={createTask}
               >
-                Create task without sharing thread
+                {taskKind === 'subtask' ? 'Add subtask without sharing thread' : 'Create task without sharing thread'}
               </button>
             </div>
           )}
