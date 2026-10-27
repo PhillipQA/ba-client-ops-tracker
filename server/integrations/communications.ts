@@ -17,7 +17,13 @@ import { hasScope, READ_SCOPE, SEND_SCOPE } from './gmail-send'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
-import { findCommunicationTaskDuplicate } from '../../src/features/work-hub/communicationTasks'
+import {
+  findCommunicationTaskDuplicate,
+  findSubtaskDuplicate,
+  nextSubtaskOrder,
+  subtaskParentProblem,
+} from '../../src/features/work-hub/communicationTasks'
+import { isWorkDone } from '../../src/features/tasks/lifecycle'
 import { defaultWaitingOn } from '../../src/features/tasks/waitingOn'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
@@ -618,15 +624,28 @@ export function registerCommunications(
         const stateResult = await deps.load(user.organizationId),
           state = stateResult.data
         if (!state) throw new IntegrationError('Workspace data is unavailable.', 503)
-        const clientId = requireText(req.body?.clientId, 'Client', 100),
-          projectId = requireText(req.body?.projectId, 'Project', 100)
+        // A subtask goes under an existing open task and takes that task's client and project.
+        const parentTaskId = req.body?.parentTaskId ? requireText(req.body.parentTaskId, 'Parent task', 100) : ''
+        const parent = parentTaskId ? (state.items || []).find((x: any) => x.id === parentTaskId) : undefined
+        if (parentTaskId) {
+          const problem = subtaskParentProblem(parent, status =>
+            isWorkDone({ status } as any, state.taskSettings || { statuses: [] }),
+          )
+          if (problem) throw new IntegrationError(problem)
+        }
+        const clientId = parent ? String(parent.clientId || '') : requireText(req.body?.clientId, 'Client', 100),
+          projectId = parent ? String(parent.projectId || '') : requireText(req.body?.projectId, 'Project', 100)
         if (
           !clientId ||
           !projectId ||
           !state.clients?.some((x: any) => x.id === clientId && !x.archived) ||
           !state.projects?.some((x: any) => x.id === projectId && !x.archived)
         )
-          throw new IntegrationError('Select an active client and project.')
+          throw new IntegrationError(
+            parent
+              ? `“${parent.title}” has no active client and project, so a subtask cannot be added to it here.`
+              : 'Select an active client and project.',
+          )
         const assignee = requireText(req.body?.assignedToUserId, 'Assignee', 100)
         const account = (state.accounts || []).find(
           (x: any) => x.id === assignee && x.status !== 'Disabled' && ['Administrator', 'Contributor'].includes(x.role),
@@ -634,12 +653,16 @@ export function registerCommunications(
         if (!account) throw new IntegrationError('Select an active team member.')
         const title = requireText(req.body?.title, 'Task title', 200),
           description = requireText(req.body?.description, 'Task description', 5000)
-        if (!title) throw new IntegrationError('Enter a task title.')
-        const duplicate = findCommunicationTaskDuplicate(state.items || [], { title, clientId, projectId })
+        if (!title) throw new IntegrationError(parent ? 'Enter a subtask title.' : 'Enter a task title.')
+        const duplicate = parent
+          ? findSubtaskDuplicate(state.items || [], parent.id, title)
+          : findCommunicationTaskDuplicate(state.items || [], { title, clientId, projectId })
         if (duplicate) {
           res.status(409).json({
             code: 'DUPLICATE_TASK',
-            error: `A task named “${duplicate.title}” already exists for this client and project. Enter a different task title.`,
+            error: parent
+              ? `“${parent.title}” already has a subtask named “${duplicate.title}”. Enter a different title.`
+              : `A task named “${duplicate.title}” already exists for this client and project. Enter a different task title.`,
             taskId: duplicate.id,
           })
           return
@@ -648,6 +671,7 @@ export function registerCommunications(
           id: randomUUID(),
           clientId,
           projectId,
+          ...(parent ? { parentTaskId: parent.id, subtaskOrder: nextSubtaskOrder(state.items || [], parent.id) } : {}),
           title,
           type: 'Task',
           priority: 'Medium',
