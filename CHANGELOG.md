@@ -1,8 +1,17 @@
 # Changelog
 
-**Current application release: v1.3.2**
+**Current application release: v1.4.0**
 
 Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+
+## v1.4.0 — @mentions in emails
+Released October 27, 2026.
+
+**No database migration and no new setting.**
+
+- **Mention someone.** In Work Hub's New email, type **@** and a few letters of a name in the message. The same suggestions as the To line appear (people you have emailed, clients, teammates). Choosing one writes **@Name** in the message and adds them to **To**, unless they are already in To, Cc or Bcc.
+- **A blue link where they read it.** An email with mentions is sent as HTML with a plain-text copy: in Gmail, Outlook and Apple Mail each mention shows as a blue link to the person's address, and mail apps that only read plain text show the same words without the link. Emails without mentions are sent exactly as before.
+- Deleting a mention from the message stops it being a link; the person stays in To until you remove them.
 
 ## v1.3.2 — Fix: Allow editing button and the changed-in-the-Sheet window
 Released October 26, 2026.

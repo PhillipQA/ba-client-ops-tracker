@@ -15,6 +15,8 @@ import { workHubSync } from '../work-hub/workHubSync'
 import { RecipientInput, addressesOn, type Suggestion } from '../../shared/ui/RecipientInput'
 import { knownPeople } from '../../shared/knownPeople'
 import { searchContacts } from '../../shared/contactSearch'
+import { MentionTextarea } from './MentionTextarea'
+import { activeMentions, type Mention } from './emailMentions'
 import './emailComposer.css'
 import { useIsClosed } from '../tasks/openWork'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
@@ -278,6 +280,8 @@ export function EmailComposer({
   const [showCopies, setShowCopies] = useState(Boolean(prefill.cc || prefill.bcc))
   const [subject, setSubject] = useState(prefill.subject ?? '')
   const [message, setMessage] = useState(prefill.message ?? signatureBlock(signature.current))
+  /** People @mentioned in the message. Only those still written in it are sent. */
+  const [mentions, setMentions] = useState<Mention[]>([])
   const [templates, setTemplates] = useState<EmailTemplate[] | null>(null)
   const [managing, setManaging] = useState(false)
   const [saveAs, setSaveAs] = useState<{ subject: string; body: string } | undefined>(undefined)
@@ -521,6 +525,7 @@ export function EmailComposer({
       driveFiles,
       uploads,
       replyToId: prefill.replyToId,
+      mentions: activeMentions(message, mentions),
     })
     onClose()
   }
@@ -727,11 +732,20 @@ export function EmailComposer({
           </label>
           <label>
             Message
-            <textarea
-              rows={9}
+            <MentionTextarea
               value={message}
               maxLength={EMAIL_LIMITS.body}
-              onChange={e => setMessage(e.target.value)}
+              onChange={setMessage}
+              local={people}
+              search={searchContacts}
+              onMention={mention => {
+                setMentions(list => [...list, mention])
+                // Like Outlook: a mentioned person is added to To, unless they are already on a recipient line.
+                if (!taken.includes(mention.email.toLowerCase()))
+                  setTo(current =>
+                    current.trim() ? `${current.trim().replace(/[,;]\s*$/, '')}, ${mention.email}` : mention.email,
+                  )
+              }}
             />
           </label>
           <details className="email-signature">

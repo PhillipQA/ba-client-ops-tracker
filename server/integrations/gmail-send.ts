@@ -63,6 +63,8 @@ export type OutgoingMessage = {
   bcc?: string[]
   subject: string
   text: string
+  /** An HTML version of the text (for @mention links). Sent with the text as alternatives; mail apps show one. */
+  html?: string
   attachments?: OutgoingAttachment[]
   /** Headers that keep a reply in the same conversation. */
   inReplyTo?: string
@@ -84,12 +86,29 @@ export function buildMessage(message: OutgoingMessage): Buffer {
     ...(message.references?.length ? [`References: ${message.references.join(' ')}`] : []),
   ]
   const text = String(message.text ?? '').replace(/\r\n|\r|\n/g, '\r\n')
-  const textPart = [
+  const plainPart = [
     'Content-Type: text/plain; charset="UTF-8"',
     'Content-Transfer-Encoding: base64',
     '',
     base64Lines(text),
   ]
+  // With HTML, the body is multipart/alternative: plain text first, HTML last (the one mail apps prefer).
+  const alternative = `=_ba_alt_${randomBytes(18).toString('hex')}`
+  const textPart = message.html
+    ? [
+        `Content-Type: multipart/alternative; boundary="${alternative}"`,
+        '',
+        `--${alternative}`,
+        ...plainPart,
+        `--${alternative}`,
+        'Content-Type: text/html; charset="UTF-8"',
+        'Content-Transfer-Encoding: base64',
+        '',
+        base64Lines(message.html.replace(/\r\n|\r|\n/g, '\r\n')),
+        `--${alternative}--`,
+        '',
+      ]
+    : plainPart
   const files = message.attachments || []
   if (!files.length) return Buffer.from([...headers, ...textPart].join('\r\n'), 'utf8')
   const boundary = `=_ba_${randomBytes(18).toString('hex')}`
