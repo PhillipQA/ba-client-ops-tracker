@@ -602,3 +602,10 @@
   flex: none;
   margin: 0;
 }
+.email-mention-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+  font-weight: 400;
+}

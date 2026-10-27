@@ -10,6 +10,7 @@ import {
   recipientSummary,
   replyRecipients,
 } from '../../src/features/email/emailCompose'
+import { activeMentions, cleanMentions, mentionHtml } from '../../src/features/email/emailMentions'
 import { buildMessage, hasScope, messageIds, SEND_SCOPE, type OutgoingAttachment } from './gmail-send'
 import { driveName } from './google-drive'
 import { createContactBook } from './gmail-contacts'
@@ -385,6 +386,8 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
     }
 
     // 5. Send. From here on, never report a failure unless Gmail confirmed that it did not send.
+    // @mentions become blue links in an HTML version; without any, the email stays plain text as before.
+    const mentions = activeMentions(text, cleanMentions(body.mentions))
     const raw = buildMessage({
       from: { email: fromEmail, name: String(user.name || '') },
       to: to.addresses,
@@ -392,6 +395,7 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
       bcc: bcc.addresses,
       subject,
       text,
+      ...(mentions.length ? { html: mentionHtml(text, mentions) } : {}),
       attachments,
       inReplyTo,
       references,

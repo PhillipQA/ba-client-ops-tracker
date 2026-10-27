@@ -20,6 +20,8 @@ export type EmailDraft = {
   driveFiles: DriveRef[]
   uploads: Upload[]
   replyToId?: string
+  /** People @mentioned in the message; their mentions become links in the sent email. */
+  mentions?: { name: string; email: string }[]
 }
 export type OutboxPhase = 'waiting' | 'sending' | 'sent' | 'failed'
 export type OutboxEntry = {
@@ -101,6 +103,7 @@ async function transmit(id: string) {
         message: entry.draft.message,
         taskIds: entry.draft.taskIds,
         replyToId: entry.draft.replyToId,
+        mentions: entry.draft.mentions || [],
         driveFiles: entry.draft.driveFiles.map(({ taskId, fileId }) => ({ taskId, fileId })),
         uploads: entry.draft.uploads.map(({ name, mimeType, data }) => ({ name, mimeType, data })),
       }),
