@@ -94,6 +94,10 @@ test('the Gantt tab is laid out like the schedule template: phase headings over 
   assert.equal(rows[4][9].userEnteredValue.formulaValue, '=($C$2-WEEKDAY($C$2,2)+1)+7*($E$2-1)')
   assert.equal(rows[2][9].userEnteredValue.formulaValue, '=TEXT(J$5,"mmmm yyyy")', 'month and year')
   assert.equal(requests.filter((r: any) => r.mergeCells).length, 52)
+  const guard = requests.find((r: any) => r.addProtectedRange).addProtectedRange.protectedRange
+  assert.equal(guard.warningOnly, true, 'typing over the list asks first instead of breaking it')
+  assert.deepEqual([guard.range.startRowIndex, guard.range.startColumnIndex, guard.range.endColumnIndex], [5, 0, 9])
+  assert.match(rows[2][0].userEnteredValue.stringValue, /edit the Tracker tab/)
 })
 
 test('bars, phase bands and template colours are conditional formatting', () => {

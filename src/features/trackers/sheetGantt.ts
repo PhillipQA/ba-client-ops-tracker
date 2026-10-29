@@ -175,6 +175,10 @@ export function ganttSheetRequests(input: {
   }
 
   grid[0][0] = text(`${input.title} – Project schedule`, { textFormat: { bold: true, fontSize: 14 } })
+  // The list is one formula: typing over any of it stops the formula and empties the list. Say where edits go.
+  grid[2][0] = text(`To change tasks or dates, edit the ${input.dataTab} tab (or the tracker). This tab follows it.`, {
+    textFormat: { italic: true, fontSize: 9, foregroundColor: rgb('#7f7f7f') },
+  })
   grid[1][taskCol] = text('Project start', { ...bold, horizontalAlignment: 'RIGHT' })
   grid[1][taskCol + 1] = formula(`=IF(COUNT(${range(source.start)})=0,TODAY(),MIN(${range(source.start)}))`, {
     numberFormat: { type: 'DATE', pattern: 'd mmm yyyy' },
@@ -372,6 +376,16 @@ export function ganttSheetRequests(input: {
       },
       ...merges,
       ...rules,
+      // A warning, not a lock: anyone who types over the list is asked first, and told where to edit instead.
+      {
+        addProtectedRange: {
+          protectedRange: {
+            range: area(HEAD_ROWS - 1, rows, 0, chart),
+            description: `This list is drawn from the ${input.dataTab} tab. Typing here stops it and the list disappears (undo to bring it back). Edit tasks and dates in the ${input.dataTab} tab or in the tracker.`,
+            warningOnly: true,
+          },
+        },
+      },
     ],
   }
 }
