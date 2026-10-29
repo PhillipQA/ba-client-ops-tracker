@@ -254,6 +254,7 @@ export default function TrackerScreen(props: Props) {
         )
       else if (props.googleReturn === 'write-enabled') {
         if (purpose === 'create') void createSheet()
+        else if (purpose === 'gantt') void addGantt()
         else if (purpose === 'two_way') void switchMode('two_way')
         else if (purpose === 'edit')
           say(
@@ -319,7 +320,7 @@ export default function TrackerScreen(props: Props) {
       await refresh()
       say(
         'info',
-        `Google Sheet “${result.tracker.source?.spreadsheetName || current.name}” made in your Google Drive with ${plural(result.rows, 'row')}${result.emptyRows ? ` (${plural(result.emptyRows, 'empty row')} left out)` : ''}, and synced both ways. Open it from the Sheet bar above; share it from Google Sheets.`,
+        `Google Sheet “${result.tracker.source?.spreadsheetName || current.name}” made in your Google Drive with ${plural(result.rows, 'row')}${result.emptyRows ? ` (${plural(result.emptyRows, 'empty row')} left out)` : ''}${result.gantt ? ' and a Gantt chart tab' : ''}, and synced both ways. Open it from the Sheet bar above; share it from Google Sheets.`,
       )
     } catch (error) {
       if (error instanceof TrackerApiError && error.body.needsWrite) {
@@ -329,6 +330,30 @@ export default function TrackerScreen(props: Props) {
       say('error', error instanceof Error ? error.message : 'The Google Sheet could not be made.')
     } finally {
       if (alive.current) setCreatingSheet(false)
+    }
+  }
+  /** Adds (or draws again) the Gantt chart tab in the connected Sheet. */
+  const [ganttBusy, setGanttBusy] = useState(false)
+  const addGantt = async () => {
+    const current = trackerRef.current
+    if (!current?.source) return
+    setGanttBusy(true)
+    try {
+      const result = await trackerApi.addGantt(current.id)
+      say(
+        'info',
+        result.replaced
+          ? 'The Gantt chart tab in the Google Sheet was drawn again. Open the Sheet from the bar above.'
+          : 'A Gantt chart tab was added to the Google Sheet. It follows every sync; open the Sheet from the bar above.',
+      )
+    } catch (error) {
+      if (error instanceof TrackerApiError && error.body.needsWrite) {
+        void allowSheetEdits('gantt')
+        return
+      }
+      say('error', error instanceof Error ? error.message : 'The Gantt chart could not be added to the Sheet.')
+    } finally {
+      if (alive.current) setGanttBusy(false)
     }
   }
   const retrySheetIssues = async () => {
@@ -1339,6 +1364,17 @@ export default function TrackerScreen(props: Props) {
             </span>
           ) : null}
           <span className="trk-spacer" />
+          {canEdit && columns.some(column => column.type === 'date' && column.synced) && (
+            <button
+              type="button"
+              className="trk-button"
+              disabled={ganttBusy}
+              onClick={() => void addGantt()}
+              title="Add a Gantt chart tab to the Google Sheet, drawn from the synced tab (an existing one is drawn again)"
+            >
+              <CalendarRange size={14} aria-hidden="true" /> {ganttBusy ? 'Adding chart…' : 'Gantt chart in Sheet'}
+            </button>
+          )}
           {canEdit && tracker.source.lastStatus === 'error' && (
             <button
               type="button"
