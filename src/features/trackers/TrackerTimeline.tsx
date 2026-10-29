@@ -48,6 +48,8 @@ type Props = {
   canDrag: (row: TrackerRow) => boolean
   /** Writes the dragged dates: Start, and End when there is an End column. */
   onDates: (row: TrackerRow, cells: Record<string, string>) => void
+  /** Rows tinted with a colour: their highlight, or their state when colouring by status. */
+  tones?: ReadonlyMap<string, string>
 }
 
 type Saved = TimelineSettings
@@ -433,7 +435,10 @@ export default function TrackerTimeline(props: Props) {
                   )}
                   {!closed &&
                     group.items.map(item => (
-                      <div key={item.row.id} className="trk-tl-row">
+                      <div
+                        key={item.row.id}
+                        className={`trk-tl-row${props.tones?.get(item.row.id) ? ` trk-hl trk-tone-${props.tones.get(item.row.id)}` : ''}`}
+                      >
                         <div className="trk-tl-left">
                           <button type="button" className="trk-tl-name trk-tl-open" onClick={() => onOpenRow(item.row)}>
                             {wbs && item.row.cells[wbs.id] ? (

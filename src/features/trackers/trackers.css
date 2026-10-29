@@ -2651,3 +2651,60 @@ a.trk-link-button {
   background: color-mix(in srgb, var(--k-text) 4%, transparent);
   border-bottom: 1px solid var(--k-line);
 }
+
+/* Row highlights: a colour someone picked, or the row's state when colouring by status. */
+.trk-row.trk-hl {
+  --row-bg: color-mix(in srgb, var(--tone) 16%, var(--k-solid));
+}
+.trk-row.trk-hl:not(.trk-head):not(.trk-group-row):hover {
+  --row-bg: color-mix(in srgb, var(--tone) 24%, var(--k-solid));
+}
+.trk-row.trk-hl.selected {
+  --row-bg: color-mix(in srgb, var(--k-accent) 14%, color-mix(in srgb, var(--tone) 16%, var(--k-solid)));
+}
+.trk-row.trk-hl > .trk-cell:first-child {
+  box-shadow: inset 3px 0 0 var(--tone);
+}
+.trk-tl-row.trk-hl .trk-tl-left {
+  background: color-mix(in srgb, var(--tone) 16%, var(--k-solid));
+  box-shadow: inset 3px 0 0 var(--tone);
+}
+.trk-tl-row.trk-hl .trk-tl-chart {
+  background-color: color-mix(in srgb, var(--tone) 8%, transparent);
+}
+.trk-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.trk-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--tone) 60%, transparent);
+  background: color-mix(in srgb, var(--tone) 35%, var(--k-solid));
+  cursor: pointer;
+  padding: 0;
+}
+.trk-swatch.on {
+  outline: 2px solid var(--k-text);
+  outline-offset: 1px;
+}
+.trk-swatch.none {
+  --tone: #94a3b8;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--tone) 40%, transparent) 4px 6px
+  );
+}
+.trk-swatch:focus-visible {
+  outline: 2px solid var(--k-accent);
+  outline-offset: 1px;
+}
+.trk-button.on {
+  background: var(--k-accent-soft);
+  border-color: color-mix(in srgb, var(--k-accent) 55%, transparent);
+  color: var(--k-accent);
+}

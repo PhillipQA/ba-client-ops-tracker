@@ -5,7 +5,7 @@ import { cleanCell, isBasicType, isConnectedType } from './trackerModel'
 import { rowTitle, shown, type Lookup } from './trackerQuery'
 import { trackerApi, type TaskLink, type TrackerChange } from './trackerApi'
 import { CellView, type Person } from './TrackerCells'
-import { ColumnIcon, Pill, Popover, niceTime } from './trackerUi'
+import { ColumnIcon, HighlightSwatches, Pill, Popover, niceTime } from './trackerUi'
 import type { WorkItem } from '../../shared/types'
 
 type Props = {
@@ -30,6 +30,8 @@ type Props = {
   onReveal: (row: TrackerRow, column: TrackerColumn) => Promise<string>
   /** Stops showing why this row's done mark did not reach the Sheet. */
   onDismissSheetIssue?: (row: TrackerRow) => void
+  /** Gives the row a highlight colour ('' clears it). */
+  onHighlight?: (row: TrackerRow, color: string) => void
 }
 
 /** What the history says happened, in words. Person cells hold account ids, which are shown as names. */
@@ -591,6 +593,12 @@ export default function TrackerRowPanel(props: Props) {
               )}
             </div>
           </div>
+        )}
+        {canEdit && props.onHighlight && (
+          <section className="trk-card" aria-label="Highlight">
+            <h3>Highlight</h3>
+            <HighlightSwatches value={row.highlight} onPick={color => props.onHighlight!(row, color)} />
+          </section>
         )}
         <section className="trk-card" aria-label="Linked task">
           <h3>Linked task</h3>

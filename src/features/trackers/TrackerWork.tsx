@@ -15,6 +15,11 @@ export type TaskDraft = {
   newProjectName?: string
   /** A subtask of a task created earlier in the same batch: the index of that draft. */
   parentIndex?: number
+  /** Optional: dates, a description and an assignee (subtasks take their task's assignee). */
+  startDate?: string
+  dueDate?: string
+  description?: string
+  assignedToUserId?: string
 }
 export type WorkTools = {
   items: WorkItem[]

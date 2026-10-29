@@ -1,5 +1,5 @@
 -- BA Client Ops Tracker v1.5.0: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 29. Run this ENTIRE file once in Supabase SQL Editor.
+-- Includes schema versions 1 through 30. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1634,6 +1634,14 @@ create index if not exists tenant_tracker_rows_sheet_issue on public.tenant_trac
 
 alter table public.tenant_trackers add column if not exists timeline jsonb not null default '{}'::jsonb;
 
+-- Included source: migrations/schema-v30-tracker-row-highlight.sql
+-- SHA-256: 76eea5ccaf0456b41478b3da4dcc3cd95eb136ef23d9a4599d2e4c4f4cd3aeb2
+-- Apply once to databases at schema v29 (Supabase or Northflank PostgreSQL).
+-- Trackers: a row can be given a highlight colour that everyone sees (yellow, green, blue…). Nothing else changes.
+-- Without it, the tracker works and rows cannot be highlighted.
+
+alter table public.tenant_tracker_rows add column if not exists highlight text not null default '';
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1657,4 +1665,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 29 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 30 as schema_version;

@@ -6,6 +6,7 @@ import {
   ArrowUp,
   CalendarRange,
   ChevronDown,
+  Palette,
   Download,
   Lock,
   Maximize2,
@@ -33,7 +34,11 @@ import {
   type TrackerRow,
   type TrackerView,
   isFrozenColumn,
+  taskFieldColumn,
 } from './trackerModel'
+import { rowTones, settleTimelineFields, todayNumber } from './timelineModel'
+import { cellText, keepsTasks, phaseRollup, rowTaskPatch, type TaskPatch } from './trackerTasks'
+import { createRowTasks } from './trackerTaskActions'
 import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
 import { exportCsv, exportFileName } from './trackerExport'
 import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type TaskLink } from './trackerApi'
@@ -45,7 +50,7 @@ import { TrackerBulkTasks, TrackerWorkPicker, trackerClients, type TaskDraft, ty
 import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
 import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
-import { Dialog, Notice, Popover, plural } from './trackerUi'
+import { Dialog, HighlightSwatches, Notice, Popover, plural } from './trackerUi'
 import type { Conflict } from './trackerTwoWay'
 import { rememberSheetEdits, takeReview, takeSheetEdits, takeTrackerRow, type SheetEditsFor } from './trackerNav'
 import { autoDoneColumn } from './trackerAutoDone'
@@ -69,6 +74,12 @@ type Props = {
   isTaskClosed: (status: string) => boolean
   /** Present when this person may create tasks; resolves after the workspace is saved. */
   onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
+  /** Changes tasks from this tracker (title, dates, phase, done). */
+  onUpdateTasks?: (patches: TaskPatch[]) => Promise<boolean>
+  /** The person using the tracker: new tasks are assigned to them. */
+  currentUserId?: string
+  /** Said once when the tracker opens, such as how many tasks were made with it. */
+  startNote?: string
   /** The list of trackers on the home screen needs a refresh. */
   onListChanged: () => void
   /** Back from Google's permission page: what happened (`write-enabled`, `write-denied`…). */
@@ -190,6 +201,10 @@ export default function TrackerScreen(props: Props) {
   }, [])
 
   const say = useCallback((kind: 'error' | 'info', text: string) => setNotice({ kind, text }), [])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: said once, when the tracker opens.
+  useEffect(() => {
+    if (props.startNote) say('info', props.startNote)
+  }, [])
   useEffect(() => {
     if (!notice || notice.kind === 'error') return
     const timer = window.setTimeout(() => setNotice(null), 7000)
@@ -755,6 +770,7 @@ export default function TrackerScreen(props: Props) {
     if (!Object.keys(changed).length) return
     setRows(rowsRef.current.map(item => (item.id === row.id ? { ...item, cells } : item)))
     patchRow(row.id, { cells: changed })
+    followTasks(current, cells)
   }
   const editCell = (row: TrackerRow, column: TrackerColumn, value: Cell) => {
     if (!canEdit) return
@@ -767,6 +783,186 @@ export default function TrackerScreen(props: Props) {
     else cells[column.id] = value
     setRows(rowsRef.current.map(item => (item.id === row.id ? { ...item, cells } : item)))
     patchRow(row.id, { cells: { [column.id]: value } })
+    followTasks(current, cells)
+  }
+
+  // ---- the tasks behind a project timeline: each phase a task, each row a subtask (see trackerTasks) ----
+  const tasksKept = keepsTasks(columns)
+  const phaseColumnId = useMemo(
+    () => (tracker ? settleTimelineFields(columns, tracker.timeline?.fields || null).groupId : ''),
+    [columns, tracker],
+  )
+  const taskFailed = (error: unknown) =>
+    say('error', `The task could not be updated: ${error instanceof Error ? error.message : 'try again.'}`)
+  /** Puts newly linked rows on screen without losing edits made meanwhile. */
+  const takeLinked = (linked: TrackerRow[]) => {
+    if (!linked.length || !alive.current) return
+    const byId = new Map(linked.map(row => [row.id, row]))
+    setRows(
+      rowsRef.current.map(row => {
+        const next = byId.get(row.id)
+        return next ? { ...row, taskId: next.taskId, version: Math.max(row.version, next.version) } : row
+      }),
+    )
+  }
+  // The latest tasks, for work that runs after other saves have finished.
+  const itemsRef = useRef(props.items)
+  itemsRef.current = props.items
+  /** Rows with a name and no task get their subtask (under their phase's task), after their own save. */
+  const makeRowTasks = (rowIds: string[]) => {
+    const current = trackerRef.current
+    if (!current || !canEdit || !tasksKept || !props.onCreateTasks) return
+    const create = props.onCreateTasks
+    const last = rowIds[rowIds.length - 1]
+    enqueue(last, async () => {
+      // Read now, not when the edit was made: an earlier run may have linked the row already.
+      const wanted = rowsRef.current.filter(row => rowIds.includes(row.id) && !row.taskId)
+      if (!wanted.length) return
+      const result = await createRowTasks({
+        tracker: trackerRef.current || current,
+        rows: rowsRef.current,
+        onlyRowIds: wanted.map(row => row.id),
+        items: itemsRef.current,
+        currentUserId: props.currentUserId || '',
+        onCreateTasks: create,
+      })
+      if (result.error) say('error', result.error)
+      takeLinked(result.rows)
+      if (result.projectId && trackerRef.current) setTracker({ ...trackerRef.current, projectId: result.projectId })
+    })
+  }
+  /** After a row edit: its task follows (title, dates, done, phase), or a named row gets its task. */
+  const followTasks = (before: TrackerRow, cells: Record<string, Cell>) => {
+    if (!tasksKept || !canEdit) return
+    const item = before.taskId ? props.items.find(entry => entry.id === before.taskId) : undefined
+    if (!item) {
+      const title = taskFieldColumn(columns, 'title')
+      if (title && cellText(title, cells[title.id])) makeRowTasks([before.id])
+      return
+    }
+    if (!props.onUpdateTasks) return
+    const update = props.onUpdateTasks
+    const patch = rowTaskPatch(columns, item.id, before.cells, cells)
+    const phaseColumn = columns.find(column => column.id === phaseColumnId)
+    const phaseBefore = cellText(phaseColumn, phaseColumn ? before.cells[phaseColumn.id] : undefined)
+    const phaseAfter = cellText(phaseColumn, phaseColumn ? cells[phaseColumn.id] : undefined)
+    if (phaseColumn && phaseAfter && phaseAfter !== phaseBefore && item.parentTaskId !== undefined) {
+      // Moved to another phase: under that phase's task (made when there is none yet).
+      const sibling = rowsRef.current.find(
+        row =>
+          row.id !== before.id &&
+          row.taskId &&
+          cellText(phaseColumn, row.cells[phaseColumn.id]).toLowerCase() === phaseAfter.toLowerCase(),
+      )
+      const parentId = sibling ? props.items.find(entry => entry.id === sibling.taskId)?.parentTaskId : undefined
+      const named = props.items.find(
+        entry =>
+          !entry.parentTaskId &&
+          !entry.archived &&
+          entry.projectId === item.projectId &&
+          entry.title.trim().toLowerCase() === phaseAfter.toLowerCase(),
+      )
+      const target = parentId || named?.id
+      if (target) {
+        void update([{ ...(patch || { id: item.id }), parentTaskId: target }]).catch(taskFailed)
+        return
+      }
+      if (props.onCreateTasks) {
+        const create = props.onCreateTasks
+        void create([
+          {
+            title: phaseAfter,
+            clientId: item.clientId || '',
+            projectId: item.projectId || '',
+            description: 'Phase of a project timeline tracker.',
+            assignedToUserId: props.currentUserId,
+          },
+        ])
+          .then(([phase]) => update([{ ...(patch || { id: item.id }), parentTaskId: phase.id }]))
+          .catch(taskFailed)
+        return
+      }
+    }
+    if (patch) void update([patch]).catch(taskFailed)
+  }
+  // Phase tasks span their subtasks and are done when all of them are: kept so even when subtasks change in Tasks.
+  const rolledUp = useRef('')
+  useEffect(() => {
+    if (!tasksKept || !canEdit || !props.onUpdateTasks || status !== 'ready') return
+    const linked = new Set(rows.map(row => row.taskId).filter(Boolean))
+    const parents = props.items
+      .filter(item => linked.has(item.id) && item.parentTaskId)
+      .map(item => item.parentTaskId as string)
+    const patches = phaseRollup(props.items, parents, props.isTaskClosed)
+    const key = JSON.stringify(patches)
+    if (!patches.length || key === rolledUp.current) return
+    rolledUp.current = key
+    const update = props.onUpdateTasks
+    const timer = window.setTimeout(() => void update(patches).catch(() => undefined), 800)
+    return () => window.clearTimeout(timer)
+  }, [props.items, rows, tasksKept, canEdit, props.onUpdateTasks, props.isTaskClosed, status])
+
+  // ---- row highlights, and colouring rows by their state ----
+  const [statusColorsHere, setStatusColorsHere] = useState(() => {
+    try {
+      return localStorage.getItem(`ba.tracker.statusColors.${props.trackerId}`) === '1'
+    } catch {
+      return false
+    }
+  })
+  // Shared on the tracker once schema v29 is in; until then each browser keeps its own choice.
+  const statusColors = tracker?.timeline ? Boolean(tracker.timeline.statusColors) : statusColorsHere
+  const toggleStatusColors = () => {
+    const next = !statusColors
+    setStatusColorsHere(next)
+    try {
+      localStorage.setItem(`ba.tracker.statusColors.${props.trackerId}`, next ? '1' : '0')
+    } catch {
+      /* not remembered */
+    }
+    const current = trackerRef.current
+    if (current?.timeline && canEdit) {
+      const settings = { ...current.timeline, statusColors: next || undefined }
+      setTracker({ ...current, timeline: settings })
+      void trackerApi.saveTimeline(current.id, settings).catch(() => undefined)
+    }
+  }
+  const tones = useMemo(
+    () =>
+      tracker
+        ? rowTones(
+            rows,
+            columns,
+            settleTimelineFields(columns, tracker.timeline?.fields || null),
+            statusColors,
+            todayNumber(),
+          )
+        : new Map(),
+    [rows, columns, tracker, statusColors],
+  )
+  const highlightButton = useRef<HTMLButtonElement>(null)
+  const [highlightOpen, setHighlightOpen] = useState(false)
+  const highlight = async (ids: string[], color: string) => {
+    if (!canEdit || !ids.length) return
+    const before = new Map<string, string | undefined>(
+      rowsRef.current.filter(row => ids.includes(row.id)).map(row => [row.id, row.highlight]),
+    )
+    const paint = (pick: (id: string) => string | undefined) =>
+      setRows(
+        rowsRef.current.map(row => {
+          if (!before.has(row.id)) return row
+          const next = pick(row.id)
+          const { highlight: _old, ...rest } = row
+          return next ? { ...rest, highlight: next as TrackerRow['highlight'] } : rest
+        }),
+      )
+    paint(() => color || undefined)
+    try {
+      await trackerApi.highlightRows(props.trackerId, ids, color)
+    } catch (error) {
+      if (alive.current) paint(id => before.get(id))
+      say('error', error instanceof Error ? error.message : 'The rows could not be highlighted.')
+    }
   }
   const linkTask = (row: TrackerRow, taskId: string | null) => {
     if (!canEdit) return
@@ -1618,6 +1814,15 @@ export default function TrackerScreen(props: Props) {
             <CalendarRange size={14} aria-hidden="true" /> Timeline
           </button>
         </div>
+        <button
+          type="button"
+          className={`trk-button${statusColors ? ' on' : ''}`}
+          aria-pressed={statusColors}
+          onClick={toggleStatusColors}
+          title="Tint rows by their state: done green, past their end red, under way blue. A highlight colour wins."
+        >
+          <Palette size={14} aria-hidden="true" /> Colour by status
+        </button>
         <span className="trk-spacer" />
         <span className="trk-save-state" role="status">
           <span className={`trk-dot${saving > 0 ? ' busy' : ''}`} aria-hidden="true" />
@@ -1685,6 +1890,28 @@ export default function TrackerScreen(props: Props) {
             </button>
           )}
           {canEdit && (
+            <button
+              ref={highlightButton}
+              type="button"
+              className="trk-button"
+              aria-expanded={highlightOpen}
+              onClick={() => setHighlightOpen(open => !open)}
+            >
+              Highlight
+            </button>
+          )}
+          {highlightOpen && canEdit && (
+            <Popover anchor={highlightButton} onClose={() => setHighlightOpen(false)} className="trk-panel-pop">
+              <p className="trk-muted-text">Colour for the {plural(selected.size, 'selected row')}:</p>
+              <HighlightSwatches
+                onPick={color => {
+                  setHighlightOpen(false)
+                  void highlight([...selected], color)
+                }}
+              />
+            </Popover>
+          )}
+          {canEdit && (
             <button type="button" className="trk-button danger" onClick={() => void removeRows([...selected])}>
               Delete
             </button>
@@ -1715,6 +1942,7 @@ export default function TrackerScreen(props: Props) {
                 : undefined
             }
             canDrag={row => canEditDates(row)}
+            tones={tones}
             onDates={editCells}
           />
         </section>
@@ -1727,6 +1955,7 @@ export default function TrackerScreen(props: Props) {
           entries={entries}
           lookup={lookup}
           people={people}
+          tones={tones}
           canEdit={canEdit}
           twoWay={tracker.source?.mode === 'two_way'}
           sort={work.sort}
@@ -2131,6 +2360,7 @@ export default function TrackerScreen(props: Props) {
           onOpenTask={props.onOpenTask}
           onReveal={reveal}
           onDismissSheetIssue={row => void dismissSheetIssues([row.id])}
+          onHighlight={(row, color) => void highlight([row.id], color)}
         />
       )}
 

@@ -99,3 +99,50 @@ export function plural(count: number, one: string, many = `${one}s`) {
 
 // The dialog, popover and notice now live in the shared UI kit; trackers keep importing them from here.
 export { Dialog, Notice, Popover } from '../../shared/ui'
+
+/** Row highlight colours, in the order they are offered. */
+export const HIGHLIGHTS: { color: OptionColor; label: string }[] = [
+  { color: 'amber', label: 'Yellow' },
+  { color: 'green', label: 'Green' },
+  { color: 'blue', label: 'Blue' },
+  { color: 'red', label: 'Red' },
+  { color: 'purple', label: 'Purple' },
+  { color: 'pink', label: 'Pink' },
+  { color: 'teal', label: 'Teal' },
+  { color: 'gray', label: 'Grey' },
+]
+
+/** Colour swatches for highlighting rows; the first clears the highlight. */
+export function HighlightSwatches({
+  value,
+  onPick,
+  label = 'Highlight',
+}: {
+  value?: string
+  onPick: (color: string) => void
+  label?: string
+}) {
+  return (
+    <div className="trk-swatches" role="group" aria-label={label}>
+      <button
+        type="button"
+        className={`trk-swatch none${value ? '' : ' on'}`}
+        title="No highlight"
+        aria-label="No highlight"
+        aria-pressed={!value}
+        onClick={() => onPick('')}
+      />
+      {HIGHLIGHTS.map(item => (
+        <button
+          key={item.color}
+          type="button"
+          className={`trk-swatch trk-tone-${item.color}${value === item.color ? ' on' : ''}`}
+          title={item.label}
+          aria-label={item.label}
+          aria-pressed={value === item.color}
+          onClick={() => onPick(item.color)}
+        />
+      ))}
+    </div>
+  )
+}

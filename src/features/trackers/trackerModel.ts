@@ -157,7 +157,23 @@ export type TrackerColumn = {
    * linked task is completed, unticked (or set to `undone`) when one is reopened. At most one column per tracker.
    */
   autoDone?: AutoDone
+  /**
+   * The column mirrors a field of the task or subtask linked to each row, both ways: the task's title (Text), start
+   * date or due date (Date), or progress (Number: 100 when the task is completed). At most one column per field.
+   */
+  taskField?: TaskField
 }
+
+export type TaskField = 'title' | 'start' | 'due' | 'progress'
+const TASK_FIELD_TYPES: Record<TaskField, ColumnType[]> = {
+  title: ['text'],
+  start: ['date'],
+  due: ['date'],
+  progress: ['number'],
+}
+/** The column that mirrors a task field, if any. */
+export const taskFieldColumn = (columns: TrackerColumn[], field: TaskField) =>
+  columns.find(column => column.taskField === field)
 
 /** The "done when its tasks are done" setting. Checkbox columns need no values: done is ticked, not done is unticked. */
 export type AutoDone = {
@@ -240,6 +256,8 @@ export type TrackerRow = {
   review?: boolean
   /** Its done mark could not be written to the connected Sheet, and why. Cleared by a later success or a dismiss. */
   sheetIssue?: { code: string; message: string; value: Cell; at: string }
+  /** A colour someone gave the row, shown to everyone. Empty when none (needs schema v30). */
+  highlight?: OptionColor
 }
 
 /** A tracker that follows a Google Sheet. One-way today; two-way is prepared for but not switched on. */
@@ -403,8 +421,17 @@ export function normalizeColumns(input: unknown, previous: TrackerColumn[] = [])
     if (raw.synced === true && isBasicType(raw.type)) column.synced = true
     const autoDone = normalizeAutoDone(raw.autoDone, column)
     if (autoDone) column.autoDone = autoDone
+    const field = raw.taskField as TaskField
+    if (field in TASK_FIELD_TYPES && TASK_FIELD_TYPES[field].includes(column.type)) column.taskField = field
     return column
   })
+  // One column per task field: the first that asks for it.
+  const fieldSeen = new Set<TaskField>()
+  for (const column of columns)
+    if (column.taskField) {
+      if (fieldSeen.has(column.taskField)) delete column.taskField
+      else fieldSeen.add(column.taskField)
+    }
   // Only one column fills itself from the linked tasks' completion: the first one that asks to.
   let autoDoneSeen = false
   for (const column of columns)

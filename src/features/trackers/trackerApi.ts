@@ -118,6 +118,9 @@ export const trackerApi = {
     call<{ tracker: Tracker }>('PUT', `/${id}/columns`, { columns, revision }),
   saveViews: (id: string, views: TrackerView[], revision: number) =>
     call<{ tracker: Tracker }>('PUT', `/${id}/views`, { views, revision }),
+  /** Gives rows a highlight colour, or clears it with ''. */
+  highlightRows: (id: string, ids: string[], color: string) =>
+    call<{ ids: string[]; color: string }>('PUT', `/${id}/rows/highlight`, { ids, color }),
   saveTimeline: (id: string, timeline: TimelineSettings) =>
     call<{ timeline: TimelineSettings }>('PUT', `/${id}/timeline`, { timeline }),
   rows: (id: string, offset: number, limit: number, signal?: AbortSignal) =>

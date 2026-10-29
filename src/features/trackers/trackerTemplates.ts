@@ -1,5 +1,5 @@
 import { dayNumber, isoOf, isWeekend } from './timelineModel'
-import type { Cell, ColumnType, OptionColor, TrackerColumn } from './trackerModel'
+import type { Cell, ColumnType, OptionColor, TaskField, TrackerColumn } from './trackerModel'
 
 /** Starting points. Every template can be changed afterwards: rename, reorder, add or remove columns. */
 export type TemplateColumn = {
@@ -7,6 +7,8 @@ export type TemplateColumn = {
   type: ColumnType
   options?: { label: string; color: OptionColor }[]
   revealBy?: 'editors' | 'admins'
+  /** Mirrors this field of the task linked to each row (see trackerTasks). */
+  taskField?: TaskField
 }
 /**
  * A starter row. `cells` are by column name; a Choice value is its option's label. `at` and `days` place it on the
@@ -22,6 +24,10 @@ export type TrackerTemplate = {
   rows?: TemplateRow[]
   /** The column names that get the scheduled dates. */
   schedule?: { start: string; end: string }
+  /** A Choice column that shows done when the linked task is completed, and completes it when set: option labels. */
+  doneColumn?: { column: string; done: string; undone?: string }
+  /** Each phase becomes a task and each row a subtask, in the tracker's client and project. */
+  tasks?: boolean
 }
 
 const status = (...labels: [string, OptionColor][]) => labels.map(([label, color]) => ({ label, color }))
@@ -114,7 +120,7 @@ export const TRACKER_TEMPLATES: TrackerTemplate[] = [
     name: 'Project timeline',
     about: 'A project schedule by phase with start and end dates, % done and a Gantt timeline.',
     columns: [
-      { name: 'Task', type: 'text' },
+      { name: 'Task', type: 'text', taskField: 'title' },
       { name: 'WBS', type: 'text' },
       {
         name: 'Phase',
@@ -133,9 +139,9 @@ export const TRACKER_TEMPLATES: TrackerTemplate[] = [
       },
       { name: 'Lead', type: 'text' },
       { name: 'Predecessor', type: 'text' },
-      { name: 'Start', type: 'date' },
-      { name: 'End', type: 'date' },
-      { name: '% Done', type: 'number' },
+      { name: 'Start', type: 'date', taskField: 'start' },
+      { name: 'End', type: 'date', taskField: 'due' },
+      { name: '% Done', type: 'number', taskField: 'progress' },
       {
         name: 'Status',
         type: 'select',
@@ -144,6 +150,8 @@ export const TRACKER_TEMPLATES: TrackerTemplate[] = [
       { name: 'Man-days', type: 'number' },
       { name: 'Remarks', type: 'longtext' },
     ],
+    doneColumn: { column: 'Status', done: 'Done', undone: 'Pending' },
+    tasks: true,
     // A POS and RMS implementation, as in the HeroHub schedule. Every row, lead and date can be changed afterwards.
     schedule: { start: 'Start', end: 'End' },
     rows: [
@@ -484,4 +492,19 @@ export function templateRows(template: TrackerTemplate, columns: TrackerColumn[]
     }
     return { cells }
   })
+}
+
+/** The template's done column as tracker columns: the column with `autoDone` set to its Done and Pending options. */
+export function withDoneColumn(template: TrackerTemplate, columns: TrackerColumn[]): TrackerColumn[] | null {
+  const spec = template.doneColumn
+  if (!spec) return null
+  const target = columns.find(column => column.name.toLowerCase() === spec.column.toLowerCase())
+  const option = (label?: string) =>
+    label ? target?.options?.find(item => item.label.toLowerCase() === label.toLowerCase())?.id : undefined
+  const done = option(spec.done)
+  if (!target || !done) return null
+  const undone = option(spec.undone)
+  return columns.map(column =>
+    column.id === target.id ? { ...column, autoDone: undone ? { done, undone } : { done } } : column,
+  )
 }
