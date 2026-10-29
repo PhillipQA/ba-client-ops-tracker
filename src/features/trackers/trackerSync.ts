@@ -306,13 +306,25 @@ export function dropdownOf(validation: any): { list: string[] } | { range: strin
 }
 
 /** Column types that turn into a Choice column when the Sheet column they follow has a dropdown. */
-export const DROPDOWN_CONVERTIBLE = ['text', 'longtext'] as const
+export const DROPDOWN_CONVERTIBLE = ['text', 'longtext', 'checkbox'] as const
+
+/** Option names that mean "done", for a ticked box when a Checkbox column becomes a Choice column. */
+const DONE_LABELS = ['done', 'completed', 'complete', 'yes', 'finished', 'closed', 'approved', 'ok']
+/** Option names that mean "not done yet", set when a linked task is reopened. */
+const UNDONE_LABELS = ['pending', 'not started', 'to do', 'todo', 'open', 'ongoing', 'in progress', 'no']
+const optionNamed = (options: SelectOption[], names: string[]) => {
+  for (const name of names) {
+    const found = options.find(option => option.label.toLowerCase() === name)
+    if (found) return found
+  }
+  return undefined
+}
 
 /**
  * Adds the choices of the Sheet's dropdowns to the Choice columns they fill, so options that no row uses yet (such as
  * "Pending") are there too. The Sheet's order comes first; options only the tracker has stay, after them. Existing
  * options keep their id and colour. `lists` is Sheet header → its dropdown's choices.
- * A Text column that follows a Sheet dropdown becomes a Choice column (its ids are listed in `converted`), so the
+ * A Text or Checkbox column that follows a Sheet dropdown becomes a Choice column (its ids are listed in `converted`), so the
  * tracker gets the same dropdown; `convertRowsToChoice` moves the values already in it over to the new options.
  */
 export function mergeDropdownOptions(
@@ -351,7 +363,16 @@ export function mergeDropdownOptions(
       if (!kept.length) return column
       changed = true
       converted.push(column.id)
-      return { ...column, type: 'select', options: kept } as TrackerColumn
+      const choice = { ...column, type: 'select', options: kept } as TrackerColumn
+      // A Checkbox column that filled itself from its tasks keeps doing so, with the Sheet's Done option.
+      if (column.type === 'checkbox' && column.autoDone) {
+        const done = optionNamed(kept, DONE_LABELS)
+        const undone = optionNamed(kept, UNDONE_LABELS)
+        if (done)
+          choice.autoDone = undone && undone.id !== done.id ? { done: done.id, undone: undone.id } : { done: done.id }
+        else delete choice.autoDone
+      }
+      return choice
     }
     if (JSON.stringify(kept) === JSON.stringify(existing)) return column
     changed = true
@@ -380,6 +401,14 @@ export function convertRowsToChoice(
     const options = column.options!
     for (const row of rows) {
       const raw = row.data?.[column.id]
+      if (typeof raw === 'boolean') {
+        // From a Checkbox column: ticked becomes the Done option, unticked becomes empty.
+        const done = raw
+          ? options.find(option => option.id === column.autoDone?.done) || optionNamed(options, DONE_LABELS)
+          : undefined
+        changes.set(row.id, { ...(changes.get(row.id) || {}), [column.id]: done ? done.id : '' })
+        continue
+      }
       if (typeof raw !== 'string') continue
       if (options.some(option => option.id === raw)) continue
       const label = raw.replace(/\s+/g, ' ').trim().slice(0, TRACKER_LIMITS.optionLabel)

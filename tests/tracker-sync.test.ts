@@ -260,3 +260,28 @@ test('values already in a text column move to the dropdown options when it becom
   assert.equal(moved.changes.get('r2')!.c_name, options[3].id, 'a value the dropdown lacks is kept as a new option')
   assert.equal(moved.changes.get('r3')!.c_name, '')
 })
+
+test('a Checkbox column that follows a Sheet dropdown becomes a Choice column, ticked boxes become Done', () => {
+  const boxes: TrackerColumn[] = [
+    { id: 'c_key', name: 'Branch #', type: 'text', synced: true },
+    { id: 'c_cor', name: 'COR', type: 'checkbox', synced: true, autoDone: {} },
+    { id: 'c_drf', name: 'DRF', type: 'checkbox', synced: true },
+  ]
+  const lists = { COR: ['Pending', 'Ongoing', 'Done'], DRF: ['Pending', 'Ongoing', 'Done'] }
+  const merged = mergeDropdownOptions(boxes, { 'Branch #': 'c_key', COR: 'c_cor', DRF: 'c_drf' }, lists)
+  assert.deepEqual(merged.converted, ['c_cor', 'c_drf'])
+  const cor = merged.columns.find(column => column.id === 'c_cor')!
+  assert.equal(cor.type, 'select')
+  const id = (label: string) => cor.options!.find(option => option.label === label)!.id
+  assert.deepEqual(cor.autoDone, { done: id('Done'), undone: id('Pending') }, 'done-when-tasks-done keeps working')
+  assert.equal(merged.columns.find(column => column.id === 'c_drf')!.autoDone, undefined)
+  const moved = convertRowsToChoice(merged.columns, merged.converted, [
+    { id: 'r1', data: { c_cor: true, c_drf: false } },
+  ])
+  const drf = moved.columns.find(column => column.id === 'c_drf')!
+  assert.deepEqual(moved.changes.get('r1'), {
+    c_cor: id('Done'),
+    c_drf: '',
+  })
+  assert.equal(drf.options!.length, 3, 'no options are added for ticked or unticked boxes')
+})
