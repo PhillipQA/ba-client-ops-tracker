@@ -611,3 +611,54 @@ test('a Text column that follows a Sheet dropdown becomes a Choice column with t
   })
   dropdowns = []
 })
+
+test('a Checkbox column that follows a Sheet dropdown becomes a Choice column showing the Sheet’s value', async () => {
+  grid = [
+    ['Branch #', 'COR'],
+    ['57', 'Done'],
+    ['58', 'Pending'],
+  ]
+  dropdownRanges.length = 0
+  dropdowns = [
+    null,
+    {
+      condition: {
+        type: 'ONE_OF_LIST',
+        values: [{ userEnteredValue: 'Pending' }, { userEnteredValue: 'Ongoing' }, { userEnteredValue: 'Done' }],
+      },
+    },
+  ]
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Checkbox statuses',
+        columns: [
+          { name: 'Branch #', type: 'text' },
+          { name: 'COR', type: 'checkbox' },
+        ],
+      })
+    ).body.tracker
+    const [cKey, cCor] = tracker.columns.map((c: any) => c.id)
+    const connected = await ask('POST', `/api/trackers/${tracker.id}/source`, {
+      spreadsheetId: SHEET,
+      tab: 'Branches',
+      keyHeader: 'Branch #',
+      headerMap: { 'Branch #': cKey, COR: cCor },
+    })
+    assert.equal(connected.status, 200, JSON.stringify(connected.body))
+    const cor = connected.body.tracker.columns.find((c: any) => c.id === cCor)
+    assert.equal(cor.type, 'select', 'the tracker shows a dropdown, not a checkbox')
+    assert.deepEqual(
+      cor.options.map((o: any) => o.label),
+      ['Pending', 'Ongoing', 'Done'],
+    )
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    const id = (label: string) => cor.options.find((o: any) => o.label === label).id
+    assert.deepEqual(
+      rows.map((r: any) => r.cells[cCor]),
+      [id('Done'), id('Pending')],
+    )
+  })
+  dropdowns = []
+})

@@ -480,7 +480,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const lastSync = new Map<string, number>()
 
   /**
-   * The dropdown choices of the Sheet columns that fill Choice or Text columns: Sheet header → choices. Reads the data
+   * The dropdown choices of the Sheet columns that fill Choice, Text or Checkbox columns: Sheet header → choices. Reads the data
    * validation of each such column (a list typed into the rule, or a range it points to) for the rows in use.
    */
   async function dropdownLists(token: string, source: any, grid: string[][], columns: TrackerColumn[]) {
@@ -488,7 +488,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     const headers = (grid[0] || []).map(value => String(value ?? '').trim())
     const byId = new Map(columns.map(column => [column.id, column]))
     const wanted = Object.entries<string>(source.header_map || {})
-      .filter(([, id]) => ['select', 'multiselect', 'text', 'longtext'].includes(byId.get(id)?.type || ''))
+      .filter(([, id]) => ['select', 'multiselect', 'text', 'longtext', 'checkbox'].includes(byId.get(id)?.type || ''))
       .map(([header]) => ({ header, index: headers.findIndex(item => item.toLowerCase() === header.toLowerCase()) }))
       .filter(item => item.index >= 0)
     if (!token || !wanted.length) return lists
@@ -583,7 +583,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await dropdownLists(token, source, grid, columnsOf(tracker)).catch(() => ({})),
     )
     const existing = await allRows(tenant, tracker.id)
-    // Text columns that follow a Sheet dropdown just became Choice columns: move their values to the new options
+    // Text and Checkbox columns that follow a Sheet dropdown just became Choice columns: move their values to the new options
     // first, for every row (rows only the tracker has too), so no cell is left holding plain text.
     if (dropdowns.converted.length) {
       const moved = convertRowsToChoice(
