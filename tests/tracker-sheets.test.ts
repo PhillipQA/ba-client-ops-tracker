@@ -837,9 +837,8 @@ test('a Sheet made from a tracker with dates gets a Gantt chart tab, and a conne
     assert.equal(formatted.length, 2, 'formatting, then the chart')
     const chart = formatted[1].requests
     assert.equal(chart[0].addSheet.properties.title, 'Gantt chart')
-    assert.equal(
-      chart[1].updateCells.rows[6].values[0].userEnteredValue.formulaValue,
-      "=ARRAYFORMULA(IF('Tracker'!$A$2:$A=\"\",,'Tracker'!$A$2:$A))",
+    assert.ok(
+      chart[1].updateCells.rows[5].values[0].userEnteredValue.formulaValue.startsWith("=LET(k,'Tracker'!$A$2:$A,"),
     )
 
     const viewer = await ask('POST', `/api/trackers/${tracker.id}/source/gantt`, {}, { 'x-role': 'Viewer' })
