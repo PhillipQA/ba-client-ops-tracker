@@ -1,12 +1,18 @@
 /**
- * A "Gantt chart" tab for a Google Sheet that a tracker follows, laid out like a project schedule kept in a
- * spreadsheet: month and year, week, day and weekday across the top, the tasks down the left, and bars drawn by
- * conditional formatting that fill in by % done. The left columns are formulas that read the synced tab, so the chart
- * follows every sync without being written again. Pure functions: the server sends what they return to the Sheets API.
+ * A "Gantt chart" tab for a Google Sheet that a tracker follows, laid out like the project schedule template: month
+ * and year, week, day and weekday across the top; phase headings ("1 Project Planning") in bold on a grey band with
+ * their tasks under them; Start and End as dates, % Done as a percentage, Remarks coloured; and bars drawn by
+ * conditional formatting that fill in by % done.
+ *
+ * The tab holds plain values, so anyone with the Sheet (a client, say) can edit it: Lead, Start, End, % Done and
+ * Remarks. A hidden column keeps, for each task row, its key in the synced tab and the values last written. On every
+ * sync the server compares the tab with those values; what was changed is written to the synced tab, the sync brings it
+ * into the tracker, and the tab is then written again from the synced tab. Pure functions: the server sends what they
+ * return to the Sheets API, and tests check them.
  */
 import { settleTimelineFields, type TimelineSettings } from './timelineModel'
 import type { TrackerColumn } from './trackerModel'
-import { tabRange } from './trackerSync'
+import { sheetRowKeys, tabRange } from './trackerSync'
 
 export const GANTT_TAB = 'Gantt chart'
 
@@ -20,6 +26,8 @@ export type GanttFields = {
   end?: string
   progress?: string
   status?: string
+  /** The Status column's choices, offered as a dropdown in the tab. */
+  statusOptions?: string[]
 }
 
 /** A, B, … Z, AA, AB… for a 0-based column index. */
@@ -56,18 +64,290 @@ const COLORS = {
   fullDone: '#b6d7a8',
 }
 
-/** Rows above the tasks: title, controls, month and year, week, day, and weekday with the column headers. */
-const HEAD_ROWS = 6
+/** Rows above the tasks: title, controls, hint and month, week, day, and weekday with the column headers. */
+export const HEAD_ROWS = 6
+/** Days from Google Sheets' day 0 (30 December 1899) to 1 January 1970. */
+const SHEETS_EPOCH = 25569
 
-/** Formula text: a string in double quotes. */
-const quoted = (text: string) => `"${text.replace(/"/g, '""')}"`
+// ---- what the tab shows ----
+
+type FieldKey = 'wbs' | 'task' | 'phase' | 'lead' | 'start' | 'end' | 'progress' | 'status'
+/** Columns a person may change in the tab; the rest are written again on the next sync. */
+export const EDITABLE: FieldKey[] = ['lead', 'start', 'end', 'progress', 'status']
+type Left = { key: FieldKey | 'snap' | 'days'; header: string; width: number }
+export type GanttLayout = { left: Left[]; source: Record<FieldKey, number>; fields: GanttFields }
+
+/** Which columns the tab has, and where each one's values are in the synced tab. */
+export function ganttLayout(headers: string[], fields: GanttFields): GanttLayout | { error: string } {
+  const at = (header?: string) =>
+    header
+      ? headers.findIndex(
+          item =>
+            String(item ?? '')
+              .trim()
+              .toLowerCase() === header.trim().toLowerCase(),
+        )
+      : -1
+  const source: Record<FieldKey, number> = {
+    wbs: at(fields.wbs),
+    task: at(fields.task),
+    phase: at(fields.phase),
+    lead: at(fields.lead),
+    start: at(fields.start),
+    end: at(fields.end),
+    progress: at(fields.progress),
+    status: at(fields.status),
+  }
+  if (source.task < 0) return { error: 'The Sheet has no column that names each task, so there is nothing to chart.' }
+  if (source.start < 0) return { error: 'The Sheet has no Start date column, so there is nothing to chart.' }
+  const left: Left[] = []
+  if (source.wbs >= 0) left.push({ key: 'wbs', header: 'WBS', width: 50 })
+  left.push({ key: 'task', header: 'TASK', width: 320 })
+  if (source.lead >= 0) left.push({ key: 'lead', header: 'LEAD', width: 140 })
+  left.push({ key: 'start', header: 'START', width: 95 })
+  if (source.end >= 0) left.push({ key: 'end', header: 'END', width: 95 })
+  if (source.progress >= 0) left.push({ key: 'progress', header: '% DONE', width: 70 })
+  if (source.status >= 0) left.push({ key: 'status', header: 'REMARKS', width: 95 })
+  left.push({ key: 'snap', header: '', width: 20 })
+  left.push({ key: 'days', header: 'DAYS', width: 55 })
+  return { left, source, fields }
+}
+
+type Raw = string | number | boolean | null | undefined
+const isBlank = (value: Raw) => value === undefined || value === null || String(value).trim() === ''
+const asNumber = (value: Raw) =>
+  typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() && !Number.isNaN(Number(value))
+      ? Number(value)
+      : null
+/** Whether two cell values are the same, as a person would see them (numbers within rounding, text trimmed). */
+export function sameValue(a: Raw, b: Raw) {
+  if (isBlank(a) || isBlank(b)) return isBlank(a) && isBlank(b)
+  const x = asNumber(a),
+    y = asNumber(b)
+  if (x !== null && y !== null) return Math.abs(x - y) < 1e-6
+  return String(a).trim() === String(b).trim()
+}
+
+/** How the synced tab keeps % done: 0–1 when every value is at most 1 (how Excel keeps 90%), else 0–100. */
+function progressScale(layout: GanttLayout, body: Raw[][]) {
+  const at = layout.source.progress
+  const numbers = at < 0 ? [] : body.map(line => asNumber(line[at])).filter((value): value is number => value !== null)
+  const fractions = numbers.every(value => value >= 0 && value <= 1)
+  return {
+    /** Divide by this to show a fraction. */
+    shown: fractions ? 1 : 100,
+    /** Multiply a fraction by this to write it back; an empty or all-zero column takes 0–100, as the tracker does. */
+    written: fractions && numbers.some(value => value > 0) ? 1 : 100,
+  }
+}
+
+/** The synced tab's rows that a sync reads (not empty), with the key each is recognised by and its row number. */
+function keyedLines(layout: GanttLayout, grid: Raw[][]) {
+  const [, ...body] = grid
+  const lines = body
+    .map((line, at) => ({ line: Array.isArray(line) ? line : [], row: at + 2 }))
+    .filter(entry => entry.line.some(value => !isBlank(value)))
+  const keys = sheetRowKeys(lines.map(entry => String(entry.line[layout.source.task] ?? '')))
+  return lines.map((entry, at) => ({ ...entry, key: keys[at] }))
+}
+
+type CellData = { userEnteredValue?: Record<string, unknown> }
+const cell = (value: Raw): CellData =>
+  isBlank(value)
+    ? {}
+    : typeof value === 'number'
+      ? { userEnteredValue: { numberValue: value } }
+      : typeof value === 'boolean'
+        ? { userEnteredValue: { boolValue: value } }
+        : { userEnteredValue: { stringValue: String(value) } }
 
 /**
- * The requests that add the Gantt chart tab, laid out like the project schedule template: phase headings ("1 Project
- * Planning") in bold on a grey band with their tasks under them, Start and End as dates, % Done as a percentage, Status
- * coloured, and bars that fill in by % done. `headers` is the synced tab's header row; `fields` names which header
- * holds what. One formula builds the list from the synced tab, so the chart follows every sync. `dataRows` is the synced
- * tab's row count, so the list has room. Returns an error when the Sheet has no Start or task column to chart.
+ * The tab's rows from the synced tab (header row first, read unformatted with dates as serial numbers): a heading row
+ * per phase, in the order phases first appear, with its tasks under it; tasks with no phase last. Each task row ends
+ * with its snapshot (hidden) and a Days formula.
+ */
+export function ganttRows(layout: GanttLayout, grid: Raw[][]): CellData[][] {
+  const lines = keyedLines(layout, grid).filter(entry => !isBlank(entry.line[layout.source.task]))
+  const scale = progressScale(
+    layout,
+    lines.map(entry => entry.line),
+  )
+  const col = (key: Left['key']) => layout.left.findIndex(item => item.key === key)
+  const phaseOf = (line: Raw[]) => (layout.source.phase >= 0 ? String(line[layout.source.phase] ?? '').trim() : '')
+  const groups: { phase: string; lines: typeof lines }[] = []
+  for (const entry of lines) {
+    const phase = phaseOf(entry.line)
+    let group = groups.find(item => item.phase.toLowerCase() === phase.toLowerCase())
+    if (!group) {
+      group = { phase, lines: [] }
+      groups.push(group)
+    }
+    group.lines.push(entry)
+  }
+  // Tasks with no phase go last.
+  groups.sort((a, b) => Number(!a.phase) - Number(!b.phase))
+  const out: CellData[][] = []
+  const days = (row: number) => {
+    const s = `${columnLetter(col('start'))}${row}`
+    const e = col('end') >= 0 ? `${columnLetter(col('end'))}${row}` : s
+    return { userEnteredValue: { formulaValue: `=IF(AND(ISNUMBER(${s}),ISNUMBER(${e})),NETWORKDAYS(${s},${e}),"")` } }
+  }
+  let number = 0
+  for (const group of groups) {
+    if (group.phase) {
+      number += 1
+      out.push(
+        layout.left.map(item =>
+          item.key === 'wbs'
+            ? cell(number)
+            : item.key === 'task'
+              ? cell(group.phase)
+              : item.key === 'snap'
+                ? cell('P')
+                : {},
+        ),
+      )
+    }
+    for (const entry of group.lines) {
+      const row = HEAD_ROWS + 1 + out.length
+      const value = (key: FieldKey): Raw => {
+        const at = layout.source[key]
+        if (at < 0) return ''
+        const raw = entry.line[at]
+        if (key === 'progress') {
+          const n = asNumber(raw)
+          return n === null ? (isBlank(raw) ? '' : raw) : n / scale.shown
+        }
+        return raw
+      }
+      const snapshot: Record<string, Raw> = {}
+      for (const key of EDITABLE) if (col(key) >= 0) snapshot[key] = isBlank(value(key)) ? '' : value(key)
+      out.push(
+        layout.left.map(item =>
+          item.key === 'snap'
+            ? cell(JSON.stringify({ k: entry.key, v: snapshot }))
+            : item.key === 'days'
+              ? days(row)
+              : cell(value(item.key)),
+        ),
+      )
+    }
+  }
+  return out
+}
+
+// ---- edits made in the tab ----
+
+export type GanttEdit = { key: string; field: FieldKey; value: Raw }
+
+/**
+ * What a person changed in the tab since it was last written: task rows (from the first task row down, read
+ * unformatted) whose editable cells differ from their snapshot. Phase headings and rows without a snapshot are skipped.
+ */
+export function ganttEdits(layout: GanttLayout, rows: Raw[][]): GanttEdit[] {
+  const at = (key: Left['key']) => layout.left.findIndex(item => item.key === key)
+  const edits: GanttEdit[] = []
+  for (const line of rows) {
+    const raw = Array.isArray(line) ? line[at('snap')] : undefined
+    if (typeof raw !== 'string' || !raw.startsWith('{')) continue
+    let snap: { k?: string; v?: Record<string, Raw> }
+    try {
+      snap = JSON.parse(raw)
+    } catch {
+      continue
+    }
+    if (!snap.k || !snap.v) continue
+    for (const field of EDITABLE) {
+      if (at(field) < 0 || !(field in snap.v)) continue
+      const now = line[at(field)]
+      if (!sameValue(now, snap.v[field])) edits.push({ key: snap.k, field, value: isBlank(now) ? '' : now })
+    }
+  }
+  return edits
+}
+
+const isoOfSerial = (serial: number) =>
+  new Date(Math.round((serial - SHEETS_EPOCH) * 86_400_000)).toISOString().slice(0, 10)
+
+/**
+ * The synced tab's cells to write for edits made in the Gantt tab, as text Google reads as typed (dates as
+ * YYYY-MM-DD, % done in the synced tab's own scale). Edits to rows no longer in the synced tab are dropped.
+ */
+export function trackerTabWrites(
+  layout: GanttLayout,
+  dataTab: string,
+  grid: Raw[][],
+  edits: GanttEdit[],
+): { range: string; values: string[][] }[] {
+  const lines = keyedLines(layout, grid)
+  const rowOf = new Map(lines.map(entry => [entry.key.toLowerCase(), entry.row]))
+  const scale = progressScale(
+    layout,
+    lines.map(entry => entry.line),
+  )
+  const writes: { range: string; values: string[][] }[] = []
+  for (const edit of edits) {
+    const row = rowOf.get(edit.key.toLowerCase())
+    const column = layout.source[edit.field]
+    if (!row || column < 0) continue
+    let text: string
+    const n = asNumber(edit.value)
+    if (isBlank(edit.value)) text = ''
+    else if ((edit.field === 'start' || edit.field === 'end') && typeof edit.value === 'number')
+      text = isoOfSerial(edit.value)
+    else if (edit.field === 'progress' && n !== null) text = String(Math.round(n * scale.written * 100) / 100)
+    else text = String(edit.value)
+    // A leading = + - @ would be read as a formula.
+    if (/^[=+\-@]/.test(text) && edit.field !== 'progress') text = `'${text}`
+    writes.push({ range: `${tabRange(dataTab)}!${columnLetter(column)}${row}`, values: [[text]] })
+  }
+  return writes
+}
+
+/** Whether the tab already shows these rows (Days formulas aside), so it need not be written again. */
+export function ganttShows(layout: GanttLayout, rows: CellData[][], current: Raw[][]) {
+  const days = layout.left.findIndex(item => item.key === 'days')
+  const length = Math.max(
+    rows.length,
+    current.filter(line => Array.isArray(line) && line.some(v => !isBlank(v))).length,
+  )
+  for (let r = 0; r < length; r++)
+    for (let c = 0; c < layout.left.length; c++) {
+      if (c === days) continue
+      const want = rows[r]?.[c]?.userEnteredValue
+      const wanted = want ? (want.numberValue ?? want.stringValue ?? want.boolValue) : ''
+      if (!sameValue(wanted as Raw, current[r]?.[c])) return false
+    }
+  return true
+}
+
+/** Writes the tab's rows again (values only; formats and rules stay), clearing what is below them. */
+export function ganttRedrawRequests(layout: GanttLayout, sheetId: number, rows: CellData[][], rowCount: number) {
+  const height = Math.max(rows.length, rowCount - HEAD_ROWS)
+  return [
+    {
+      updateCells: {
+        range: {
+          sheetId,
+          startRowIndex: HEAD_ROWS,
+          endRowIndex: HEAD_ROWS + height,
+          startColumnIndex: 0,
+          endColumnIndex: layout.left.length,
+        },
+        rows: Array.from({ length: height }, (_, at) => ({ values: rows[at] || [] })),
+        fields: 'userEnteredValue',
+      },
+    },
+  ]
+}
+
+// ---- the tab itself ----
+
+/**
+ * The requests that add the Gantt chart tab: headings, calendar, column formats, the rows from the synced tab
+ * (`grid`, read unformatted), colours and bars. Returns an error when the Sheet has no Start or task column to chart.
  */
 export function ganttSheetRequests(input: {
   title: string
@@ -75,79 +355,26 @@ export function ganttSheetRequests(input: {
   headers: string[]
   fields: GanttFields
   sheetId: number
+  /** The synced tab, header row first, read unformatted with dates as serial numbers. */
+  grid: Raw[][]
+  /** The synced tab's row count, so the list has room to grow. */
   dataRows: number
   /** Weeks shown from the Display week; 26 is half a year. */
   weeks?: number
 }): { requests: unknown[] } | { error: string } {
-  const at = (header?: string) =>
-    header ? input.headers.findIndex(item => item.trim().toLowerCase() === header.trim().toLowerCase()) : -1
-  const source = {
-    wbs: at(input.fields.wbs),
-    task: at(input.fields.task),
-    phase: at(input.fields.phase),
-    lead: at(input.fields.lead),
-    start: at(input.fields.start),
-    end: at(input.fields.end),
-    progress: at(input.fields.progress),
-    status: at(input.fields.status),
-  }
-  if (source.task < 0) return { error: 'The Sheet has no column that names each task, so there is nothing to chart.' }
-  if (source.start < 0) return { error: 'The Sheet has no Start date column, so there is nothing to chart.' }
-
-  const tab = tabRange(input.dataTab)
-  const range = (index: number) => `${tab}!$${columnLetter(index)}$2:$${columnLetter(index)}`
-  // The left block, in the template's order. All but Days come out of one formula; the last of those is a hidden
-  // marker that says which rows are phase headings.
-  type Left = { key: string; header: string; width: number; value?: string }
-  const left: Left[] = []
-  if (source.wbs >= 0) left.push({ key: 'wbs', header: 'WBS', width: 50, value: range(source.wbs) })
-  left.push({ key: 'task', header: 'TASK', width: 320, value: range(source.task) })
-  if (source.lead >= 0) left.push({ key: 'lead', header: 'LEAD', width: 140, value: range(source.lead) })
-  left.push({ key: 'start', header: 'START', width: 95, value: range(source.start) })
-  if (source.end >= 0) left.push({ key: 'end', header: 'END', width: 95, value: range(source.end) })
-  if (source.progress >= 0)
-    // As a fraction, whether the column holds 0–100 or 0–1 (how Excel keeps 90%), shown as a percentage.
-    left.push({
-      key: 'progress',
-      header: '% DONE',
-      width: 70,
-      value: `MAP(pr,LAMBDA(v,IF(ISNUMBER(v),IF(mx>1,v/100,v),"")))`,
-    })
-  if (source.status >= 0) left.push({ key: 'status', header: 'REMARKS', width: 95, value: range(source.status) })
-  left.push({ key: 'marker', header: '', width: 20, value: 'MAP(k,LAMBDA(v,""))' })
-  left.push({ key: 'days', header: 'DAYS', width: 55 })
-  const col = (key: string) => left.findIndex(item => item.key === key)
-  const L = (key: string) => columnLetter(col(key))
-  const spilled = left.filter(item => item.key !== 'days')
+  const layout = ganttLayout(input.headers, input.fields)
+  if ('error' in layout) return layout
+  const left = layout.left
+  const col = (key: Left['key']) => left.findIndex(item => item.key === key)
+  const L = (key: Left['key']) => columnLetter(col(key))
+  const values = ganttRows(layout, input.grid)
 
   const first = HEAD_ROWS + 1 // the first task row, 1-based
-  const rows = Math.max(input.dataRows + HEAD_ROWS + 40, 200)
+  const rows = Math.max(input.dataRows + HEAD_ROWS + 40, values.length + HEAD_ROWS + 40, 200)
   const chart = left.length // first chart column, 0-based
   const days = Math.max(1, input.weeks ?? 26) * 7
   const columns = chart + days
-
-  // The list: headers, then each phase's heading row and its tasks, in the order phases first appear; tasks with no
-  // phase come last. Without a Phase column it is the tasks as they are.
-  const header = `HSTACK(${spilled.map(item => quoted(item.header)).join(',')})`
-  const phaseRow = `HSTACK(${spilled
-    .map(item => (item.key === 'wbs' ? 'i' : item.key === 'task' ? 'g' : item.key === 'marker' ? '"P"' : '""'))
-    .join(',')})`
-  const rowsOf = `FILTER(HSTACK(${spilled.map(item => item.value).join(',')}),k<>"")`
-  const vars = [
-    `k,${range(source.task)}`,
-    ...(source.progress >= 0 ? [`pr,${range(source.progress)}`, 'mx,MAX(pr)'] : []),
-    `dt,${rowsOf}`,
-    `hd,${header}`,
-  ]
-  const list =
-    source.phase >= 0
-      ? `=LET(${[
-          ...vars,
-          `rp,FILTER(${range(source.phase)},k<>"")`,
-          'gs,UNIQUE(VSTACK(IFERROR(UNIQUE(FILTER(rp,rp<>"")),""),""))',
-          `REDUCE(hd,SEQUENCE(ROWS(gs)),LAMBDA(acc,i,LET(g,INDEX(gs,i),IF(g="",IF(SUMPRODUCT(--(rp=""))=0,acc,VSTACK(acc,FILTER(dt,rp=""))),VSTACK(acc,${phaseRow},FILTER(dt,rp=g))))))`,
-        ].join(',')})`
-      : `=LET(${[...vars, 'VSTACK(hd,dt)'].join(',')})`
+  const startRange = `${tabRange(input.dataTab)}!$${columnLetter(layout.source.start)}$2:$${columnLetter(layout.source.start)}`
 
   // Controls beside the task column, as in the template: the project start and the week the chart starts on.
   const taskCol = col('task')
@@ -165,7 +392,7 @@ export function ganttSheetRequests(input: {
     userEnteredFormat: format,
   })
   const blank = (): Cell => ({})
-  const grid: Cell[][] = Array.from({ length: HEAD_ROWS + 1 }, () => Array.from({ length: columns }, blank))
+  const grid: Cell[][] = Array.from({ length: HEAD_ROWS }, () => Array.from({ length: columns }, blank))
   const bold = { textFormat: { bold: true } }
   const headFormat = {
     backgroundColor: rgb(COLORS.head),
@@ -176,7 +403,7 @@ export function ganttSheetRequests(input: {
 
   grid[0][0] = text(`${input.title} – Project schedule`, { textFormat: { bold: true, fontSize: 14 } })
   grid[1][taskCol] = text('Project start', { ...bold, horizontalAlignment: 'RIGHT' })
-  grid[1][taskCol + 1] = formula(`=IF(COUNT(${range(source.start)})=0,TODAY(),MIN(${range(source.start)}))`, {
+  grid[1][taskCol + 1] = formula(`=IF(COUNT(${startRange})=0,TODAY(),MIN(${startRange}))`, {
     numberFormat: { type: 'DATE', pattern: 'd mmm yyyy' },
     ...bold,
   })
@@ -186,16 +413,12 @@ export function ganttSheetRequests(input: {
     userEnteredFormat: { ...bold, horizontalAlignment: 'CENTER', backgroundColor: rgb('#fff2cc') },
     note: 'Change this to move the chart: 1 starts on the week the project starts, 2 a week later, and so on. Type a date over Project start to fix it.',
   }
-  // The list's formula sits in the header row and writes the headers itself; the other header cells only hold formats.
-  left.forEach((_item, index) => {
-    grid[HEAD_ROWS - 1][index] = { userEnteredFormat: headFormat }
-  })
-  grid[HEAD_ROWS - 1][0] = formula(list, headFormat)
-  grid[HEAD_ROWS - 1][col('days')] = text('DAYS', headFormat)
-  const s = `${L('start')}${first}:${L('start')}`
-  const e = col('end') >= 0 ? `${L('end')}${first}:${L('end')}` : s
-  grid[HEAD_ROWS][col('days')] = formula(`=ARRAYFORMULA(IF(ISNUMBER(${s})*ISNUMBER(${e})=0,,NETWORKDAYS(${s},${e})))`, {
-    horizontalAlignment: 'CENTER',
+  grid[2][0] = text(
+    'You can change Lead, Start, End, % Done and Remarks here; the tracker picks them up on its next sync. Rename or add tasks in the tracker or its tab.',
+    { textFormat: { italic: true, fontSize: 9, foregroundColor: rgb('#7f7f7f') } },
+  )
+  left.forEach((item, index) => {
+    grid[HEAD_ROWS - 1][index] = text(item.header, headFormat)
   })
 
   // The calendar: month and year, week, day number and weekday letter for every day shown.
@@ -236,8 +459,7 @@ export function ganttSheetRequests(input: {
   for (let d = 0; d < days; d += 7)
     for (const row of [2, 3])
       merges.push({ mergeCells: { range: area(row, row + 1, chart + d, chart + d + 7), mergeType: 'MERGE_ALL' } })
-  // Column formats for every task row (the formula's values take them).
-  const columnFormat = (key: string, format: Record<string, unknown>, fields: string) =>
+  const columnFormat = (key: Left['key'], format: Record<string, unknown>, fields: string) =>
     col(key) < 0
       ? []
       : [
@@ -263,18 +485,51 @@ export function ganttSheetRequests(input: {
       'userEnteredFormat(numberFormat,horizontalAlignment)',
     ),
     ...columnFormat('wbs', { horizontalAlignment: 'LEFT' }, 'userEnteredFormat.horizontalAlignment'),
+    ...columnFormat('days', { horizontalAlignment: 'CENTER' }, 'userEnteredFormat.horizontalAlignment'),
+  ]
+  // Helpers for editing in the tab: Remarks takes the tracker's choices; dates must be dates.
+  const validation = [
+    ...(col('status') >= 0 && input.fields.statusOptions?.length
+      ? [
+          {
+            setDataValidation: {
+              range: area(HEAD_ROWS, rows, col('status'), col('status') + 1),
+              rule: {
+                condition: {
+                  type: 'ONE_OF_LIST',
+                  values: input.fields.statusOptions.map(option => ({ userEnteredValue: option })),
+                },
+                strict: false,
+                showCustomUi: true,
+              },
+            },
+          },
+        ]
+      : []),
+    ...(['start', 'end'] as const).flatMap(key =>
+      col(key) < 0
+        ? []
+        : [
+            {
+              setDataValidation: {
+                range: area(HEAD_ROWS, rows, col(key), col(key) + 1),
+                rule: { condition: { type: 'DATE_IS_VALID' }, strict: false },
+              },
+            },
+          ],
+    ),
   ]
 
   // Rules, written for the top-left cell of their range; references shift like any cell reference.
   const C = columnLetter(chart)
   const day = `${C}$5`
-  const M = `$${L('marker')}${first}`
+  const M = `$${L('snap')}${first}`
   const S = `$${L('start')}${first}`
   const E = col('end') >= 0 ? `IF(ISNUMBER($${L('end')}${first}),$${L('end')}${first},${S})` : S
   const P = col('progress') >= 0 ? `$${L('progress')}${first}` : ''
   const T = col('status') >= 0 ? `$${L('status')}${first}` : ''
   const doneWord = T ? `OR(${T}="Done",${T}="Completed",${T}="Complete")` : 'FALSE'
-  // % done as a fraction (the list already turned 0–100 into 0–1); a Done status counts as finished.
+  // % done as a fraction; a Done status counts as finished.
   const pct = P ? `IF(${doneWord},1,IF(ISNUMBER(${P}),${P},0))` : `IF(${doneWord},1,0)`
   const inBar = `AND(ISNUMBER(${S}),${day}>=${S},${day}<=${E})`
   const rule = (ranges: unknown[], condition: string, format: Record<string, unknown>) => ({
@@ -329,6 +584,8 @@ export function ganttSheetRequests(input: {
       fields: 'pixelSize',
     },
   })
+  // Columns that are written again on every sync: a warning (not a lock) before they are typed over.
+  const fixed = (['wbs', 'task', 'days'] as const).filter(key => col(key) >= 0)
   return {
     requests: [
       {
@@ -349,29 +606,35 @@ export function ganttSheetRequests(input: {
       },
       {
         updateCells: {
-          range: area(0, HEAD_ROWS + 1, 0, columns),
-          rows: grid.map(values => ({ values })),
+          range: area(0, HEAD_ROWS, 0, columns),
+          rows: grid.map(cells => ({ values: cells })),
           fields: 'userEnteredValue,userEnteredFormat,note',
         },
       },
       ...formats,
+      ...ganttRedrawRequests(layout, input.sheetId, values, values.length + HEAD_ROWS),
+      ...validation,
       ...left.map((item, index) => width(index, index + 1, item.width)),
       width(chart, columns, 22),
-      // The marker column is only for the rules.
+      // The snapshot column is for the sync and the rules only.
       {
         updateDimensionProperties: {
-          range: {
-            sheetId: input.sheetId,
-            dimension: 'COLUMNS',
-            startIndex: col('marker'),
-            endIndex: col('marker') + 1,
-          },
+          range: { sheetId: input.sheetId, dimension: 'COLUMNS', startIndex: col('snap'), endIndex: col('snap') + 1 },
           properties: { hiddenByUser: true },
           fields: 'hiddenByUser',
         },
       },
       ...merges,
       ...rules,
+      ...fixed.map(key => ({
+        addProtectedRange: {
+          protectedRange: {
+            range: area(HEAD_ROWS, rows, col(key), col(key) + 1),
+            description: `${key === 'days' ? 'Days are worked out from Start and End.' : 'Task names and numbers come from the tracker.'} Change them in the tracker or its ${input.dataTab} tab; this tab is written again on the next sync.`,
+            warningOnly: true,
+          },
+        },
+      })),
     ],
   }
 }
@@ -392,6 +655,7 @@ export function ganttFields(
   const start = pick(fields.startId)
   if (!start || !keyHeader) return null
   const wbs = columns.find(column => column.type === 'text' && /^wbs$|^#$|^no\.?$/i.test(column.name.trim()))
+  const status = columns.find(column => column.id === fields.statusId)
   return {
     task: keyHeader,
     start,
@@ -401,5 +665,6 @@ export function ganttFields(
     end: pick(fields.endId),
     progress: pick(fields.progressId),
     status: pick(fields.statusId),
+    ...(status?.options?.length ? { statusOptions: status.options.map(option => option.label) } : {}),
   }
 }
