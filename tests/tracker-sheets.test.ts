@@ -125,6 +125,29 @@ const NEW_SHEET = '1NewSheetMadeFromATracker0123456789abcdef'
 const created: any[] = []
 const formatted: any[] = []
 let newSheetTabs: any[] = [{ properties: { sheetId: 7, title: 'Tracker', gridProperties: { rowCount: 1000 } } }]
+// The made Sheet as stored (numbers, date serials) next to `grid` as shown; and what its Gantt tab shows.
+let rawGrid: any[][] = []
+let rawOwner: unknown = null
+let ganttShown: any[][] = []
+const writtenValues: any[] = []
+const cellValueOf = (cell: any) => {
+  const value = cell?.userEnteredValue || {}
+  return value.numberValue ?? value.stringValue ?? value.boolValue ?? ''
+}
+const isoOfSerial = (serial: number) => new Date((serial - 25569) * 86_400_000).toISOString().slice(0, 10)
+const shownOf = (value: any) =>
+  typeof value === 'number' && value > 40000 && value < 60000
+    ? isoOfSerial(value)
+    : typeof value === 'boolean'
+      ? value
+        ? 'TRUE'
+        : 'FALSE'
+      : String(value ?? '')
+const setRaw = (rows: any[][]) => {
+  rawGrid = rows
+  grid = rows.map(row => row.map(shownOf))
+  rawOwner = grid
+}
 let lastToken = ''
 const realFetch = globalThis.fetch
 globalThis.fetch = (async (input: any, init?: any) => {
@@ -183,6 +206,25 @@ globalThis.fetch = (async (input: any, init?: any) => {
       ],
     })
   }
+  if (url.includes('UNFORMATTED_VALUE'))
+    return reply(200, {
+      values: url.includes(encodeURIComponent("'Gantt chart'")) ? ganttShown : rawOwner === grid ? rawGrid : grid,
+    })
+  if (url.includes('/values:batchUpdate')) {
+    const body = JSON.parse(String(init.body))
+    writtenValues.push(body)
+    const next = rawGrid.map(row => [...row])
+    for (const entry of body.data) {
+      const [, letter, row] = /!([A-Z]+)(\d+)$/.exec(entry.range) || []
+      const column = letter.split('').reduce((n: number, ch: string) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1
+      const text = String(entry.values[0][0])
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(text) ? Date.parse(`${text}T00:00:00Z`) / 86_400_000 + 25569 : null
+      while (next.length < Number(row)) next.push([])
+      next[Number(row) - 1][column] = date ?? (text !== '' && !Number.isNaN(Number(text)) ? Number(text) : text)
+    }
+    setRaw(next)
+    return reply(200, {})
+  }
   if (url.includes('/values/Lists')) return reply(200, { values: [['Pending'], ['Ongoing'], ['Done'], ['On hold']] })
   if (url.includes('/values/')) return reply(200, { values: grid })
   if (url.includes(`/spreadsheets/${SHEET}?`))
@@ -201,10 +243,15 @@ globalThis.fetch = (async (input: any, init?: any) => {
       return String(value.stringValue ?? '')
     }
     grid = body.sheets[0].data[0].rowData.map((row: any) => row.values.map(shown))
+    setRaw(body.sheets[0].data[0].rowData.map((row: any) => row.values.map(cellValueOf)))
     return reply(200, { spreadsheetId: NEW_SHEET, sheets: [{ properties: { sheetId: 7, title: 'Tracker' } }] })
   }
   if (url.includes(`/spreadsheets/${NEW_SHEET}?fields=`)) return reply(200, { sheets: newSheetTabs })
   if (url.includes(`/spreadsheets/${NEW_SHEET}:batchUpdate`)) {
+    const body = JSON.parse(String(init.body))
+    for (const request of body.requests || [])
+      if (request.updateCells?.range.startRowIndex === 6)
+        ganttShown = request.updateCells.rows.map((row: any) => (row.values || []).map(cellValueOf))
     formatted.push(JSON.parse(String(init.body)))
     return reply(200, {})
   }
@@ -837,9 +884,8 @@ test('a Sheet made from a tracker with dates gets a Gantt chart tab, and a conne
     assert.equal(formatted.length, 2, 'formatting, then the chart')
     const chart = formatted[1].requests
     assert.equal(chart[0].addSheet.properties.title, 'Gantt chart')
-    assert.ok(
-      chart[1].updateCells.rows[5].values[0].userEnteredValue.formulaValue.startsWith("=LET(k,'Tracker'!$A$2:$A,"),
-    )
+    assert.equal(chart[1].updateCells.rows[5].values[0].userEnteredValue.stringValue, 'TASK')
+    assert.equal(ganttShown[0][0], 'Kickoff', 'the tab holds the task as a value')
 
     const viewer = await ask('POST', `/api/trackers/${tracker.id}/source/gantt`, {}, { 'x-role': 'Viewer' })
     assert.equal(viewer.status, 403)
@@ -1017,4 +1063,91 @@ test('a sync brings in a column added to the Sheet, with its values, on any trac
     const quiet = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
     assert.equal(quiet.body.report.addedColumns, undefined)
   })
+})
+
+test('a client edits the Sheet’s Gantt chart tab and the tracker follows', async () => {
+  const WRITE = 'https://www.googleapis.com/auth/spreadsheets'
+  created.length = 0
+  formatted.length = 0
+  writtenValues.length = 0
+  dropdowns = []
+  newSheetTabs = [
+    { properties: { sheetId: 7, title: 'Tracker', gridProperties: { rowCount: 1000 } } },
+    { properties: { sheetId: 77, title: 'Gantt chart', gridProperties: { rowCount: 300 } } },
+  ]
+  const h = harness({ u1: WRITE })
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Barter XI',
+        columns: [
+          { name: 'Task', type: 'text' },
+          { name: 'Phase', type: 'select', options: [{ label: 'Planning' }, { label: 'Build' }] },
+          { name: 'Start', type: 'date' },
+          { name: 'End', type: 'date' },
+          { name: '% Done', type: 'number' },
+          { name: 'Status', type: 'select', options: [{ label: 'Pending' }, { label: 'Ongoing' }, { label: 'Done' }] },
+        ],
+      })
+    ).body.tracker
+    const [cTask, cPhase, cStart, cEnd, cPct, cStatus] = tracker.columns.map((c: any) => c.id)
+    const [planning, build] = tracker.columns[1].options.map((o: any) => o.id)
+    const [pending, ongoing] = tracker.columns[5].options.map((o: any) => o.id)
+    await ask('POST', `/api/trackers/${tracker.id}/rows`, {
+      rows: [
+        {
+          cells: {
+            [cTask]: 'Kickoff',
+            [cPhase]: planning,
+            [cStart]: '2026-11-02',
+            [cEnd]: '2026-11-02',
+            [cPct]: 0,
+            [cStatus]: pending,
+          },
+        },
+        {
+          cells: {
+            [cTask]: 'Products',
+            [cPhase]: build,
+            [cStart]: '2026-11-04',
+            [cEnd]: '2026-11-06',
+            [cPct]: 0,
+            [cStatus]: pending,
+          },
+        },
+      ],
+    })
+    const made = await ask('POST', `/api/trackers/${tracker.id}/source/create`, {})
+    assert.equal(made.status, 200, JSON.stringify(made.body))
+    assert.equal(made.body.gantt, true)
+    assert.deepEqual(
+      ganttShown.map(row => row[0]),
+      ['Planning', 'Kickoff', 'Build', 'Products'],
+      'phase headings with their tasks',
+    )
+
+    // The client moves Products' End to 13 Nov, sets it Ongoing at 50%, in the Gantt tab.
+    const products = ganttShown.findIndex(row => row[0] === 'Products')
+    ganttShown[products][2] = Date.parse('2026-11-13T00:00:00Z') / 86_400_000 + 25569
+    ganttShown[products][3] = 0.5
+    ganttShown[products][4] = 'Ongoing'
+    const synced = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+    assert.equal(synced.status, 200, JSON.stringify(synced.body))
+    assert.equal(writtenValues.length, 1, 'the edits went to the Tracker tab')
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    const row = rows.find((r: any) => r.cells[cTask] === 'Products')
+    assert.equal(row.cells[cEnd], '2026-11-13')
+    assert.equal(row.cells[cPct], 50)
+    assert.equal(row.cells[cStatus], ongoing)
+    const after = ganttShown.find(r => r[0] === 'Products')
+    assert.equal(JSON.parse(after[5]).v.progress, 0.5, 'the tab was written again with fresh snapshots')
+
+    // Nothing changed since: the next sync writes nothing.
+    writtenValues.length = 0
+    formatted.length = 0
+    await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+    assert.equal(writtenValues.length, 0)
+    assert.equal(formatted.length, 0, 'the tab is not rewritten when it already shows the data')
+  })
+  newSheetTabs = newSheetTabs.slice(0, 1)
 })

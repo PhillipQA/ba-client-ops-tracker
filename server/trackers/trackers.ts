@@ -39,7 +39,20 @@ import {
 } from '../../src/features/trackers/trackerSync'
 import { cleanTimelineSettings } from '../../src/features/trackers/timelineModel'
 import { sheetFormatRequests, sheetFromTracker } from '../../src/features/trackers/sheetFromTracker'
-import { GANTT_TAB, ganttFields, ganttSheetRequests } from '../../src/features/trackers/sheetGantt'
+import {
+  GANTT_TAB,
+  HEAD_ROWS,
+  columnLetter as ganttColumn,
+  ganttEdits,
+  ganttFields,
+  ganttLayout,
+  ganttRedrawRequests,
+  ganttRows,
+  ganttSheetRequests,
+  ganttShows,
+  trackerTabWrites,
+  type GanttFields,
+} from '../../src/features/trackers/sheetGantt'
 import { rowCellsFromTask, taskFieldChanges } from '../../src/features/trackers/trackerTasks'
 import {
   SHEET_ISSUES,
@@ -563,6 +576,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
     let grid: string[][]
     let token = ''
+    let gantt: GanttState | null = null
     try {
       const access = await googleFor(tenant, source.connected_by)
       token = access.token
@@ -572,6 +586,12 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           409,
           { noAccess: true },
         )
+      // Edits made in the Gantt chart tab go to the synced tab first, so this sync brings them in. Never fails the sync.
+      if (canWriteSheets(access.scope))
+        gantt = await ganttEditsToTab(access.token, source, tracker).catch((error: any) => {
+          console.error('Reading the Gantt chart tab failed:', error?.message || error)
+          return null
+        })
       const values = await sheetsGet(
         access.token,
         `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}/values/${encodeURIComponent(tabRange(source.tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
@@ -778,6 +798,11 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await record(tenant, tracker.id, '', user, 'sheet_synced', { summary: describeSync(report), ...report })
       await touch(tenant, tracker.id)
     }
+    // The Gantt tab shows the synced tab again (with fresh snapshots), including what changed in the tracker.
+    if (gantt)
+      await redrawGantt(token, source, gantt).catch((error: any) =>
+        console.error('Redrawing the Gantt chart tab failed:', error?.message || error),
+      )
     return {
       source: sourceOut({ ...source, last_synced_at: stamp, last_status: 'ok', last_error: '', last_report: report }),
       report,
@@ -1289,6 +1314,79 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       (Array.isArray(line) ? line : []).map(value => String(value ?? '')),
     )
   }
+  /** A range read as stored: numbers as numbers, dates as serial numbers, text as text. */
+  async function readRaw(token: string, spreadsheetId: string, range: string): Promise<any[][]> {
+    const data = await sheetsGet(
+      token,
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
+    )
+    return Array.isArray(data.values) ? data.values : []
+  }
+  type GanttState = { sheetId: number; rowCount: number; shown: any[][]; fields: GanttFields; written: number }
+  /**
+   * Changes a person made in the Sheet's Gantt chart tab (Lead, Start, End, % Done, Remarks) are written to the synced
+   * tab, so the sync that follows brings them into the tracker. Returns what the redraw afterwards needs, or null when
+   * the Sheet has no Gantt tab or the tracker has nothing to chart. Needs permission to edit the Sheet.
+   */
+  async function ganttEditsToTab(token: string, source: any, tracker: any): Promise<GanttState | null> {
+    const fields = ganttFields(
+      columnsOf(tracker),
+      tracker.timeline || undefined,
+      source.header_map || {},
+      source.key_header,
+    )
+    if (!fields) return null
+    const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}`
+    const meta = await sheetsGet(token, `${base}?fields=sheets.properties(sheetId,title,gridProperties(rowCount))`)
+    const tab = (meta?.sheets || [])
+      .map((sheet: any) => sheet.properties || {})
+      .find((item: any) => item.title === GANTT_TAB)
+    if (!tab) return null
+    const grid = await readRaw(token, source.spreadsheet_id, tabRange(source.tab))
+    const layout = ganttLayout(
+      (grid[0] || []).map((value: unknown) => String(value ?? '')),
+      fields,
+    )
+    if ('error' in layout) return null
+    const rowCount = Number(tab.gridProperties?.rowCount || 1000)
+    const shown = await readRaw(
+      token,
+      source.spreadsheet_id,
+      `${tabRange(GANTT_TAB)}!A${HEAD_ROWS + 1}:${ganttColumn(layout.left.length - 1)}${rowCount}`,
+    )
+    const writes = trackerTabWrites(layout, source.tab, grid, ganttEdits(layout, shown))
+    if (writes.length)
+      await sheetsGet(token, `${base}/values:batchUpdate`, {
+        method: 'POST',
+        body: { valueInputOption: 'USER_ENTERED', data: writes },
+      })
+    return { sheetId: Number(tab.sheetId), rowCount, shown, fields, written: writes.length }
+  }
+  /** Writes the Gantt tab's rows again from the synced tab, when they differ from what it shows. */
+  async function redrawGantt(token: string, source: any, state: GanttState) {
+    const grid = await readRaw(token, source.spreadsheet_id, tabRange(source.tab))
+    const layout = ganttLayout(
+      (grid[0] || []).map((value: unknown) => String(value ?? '')),
+      state.fields,
+    )
+    if ('error' in layout) return
+    const rows = ganttRows(layout, grid)
+    if (ganttShows(layout, rows, state.shown)) return
+    const room = rows.length + HEAD_ROWS + 20 - state.rowCount
+    await sheetsGet(
+      token,
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}:batchUpdate`,
+      {
+        method: 'POST',
+        body: {
+          requests: [
+            ...(room > 0 ? [{ appendDimension: { sheetId: state.sheetId, dimension: 'ROWS', length: room } }] : []),
+            ...ganttRedrawRequests(layout, state.sheetId, rows, Math.max(state.rowCount, rows.length + HEAD_ROWS)),
+          ],
+        },
+      },
+    )
+  }
   async function peopleOf(tenant: string): Promise<Person[]> {
     const state = await workspace(tenant)
     return (Array.isArray(state.accounts) ? state.accounts : []).map((account: any) => ({
@@ -1751,16 +1849,19 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       ).catch(() => undefined)
       // A Gantt chart tab when the tracker has dates, drawn from the synced tab. Best effort, like the formatting.
       const chartFields = ganttFields(columnsOf(tracker), tracker.timeline || undefined, plan.headerMap, plan.keyHeader)
-      const chart = chartFields
-        ? ganttSheetRequests({
-            title,
-            dataTab: tab,
-            headers: plan.headers,
-            fields: chartFields,
-            sheetId: newSheetId([sheetTabId]),
-            dataRows: gridRows,
-          })
-        : null
+      const chartGrid = chartFields ? await readRaw(access.token, spreadsheetId, tabRange(tab)).catch(() => null) : null
+      const chart =
+        chartFields && chartGrid
+          ? ganttSheetRequests({
+              title,
+              dataTab: tab,
+              headers: plan.headers,
+              fields: chartFields,
+              sheetId: newSheetId([sheetTabId]),
+              grid: chartGrid,
+              dataRows: gridRows,
+            })
+          : null
       const gantt =
         chart && 'requests' in chart
           ? await sheetsGet(
@@ -1874,13 +1975,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const data = tabs.find(item => item.title === source.tab)
       if (!data) throw new TrackerError(`The tab “${source.tab}” is no longer in the Sheet.`, 409)
       const old = tabs.find(item => item.title === GANTT_TAB)
-      const head = await sheetsGet(
-        access.token,
-        `${base}/values/${encodeURIComponent(`${tabRange(source.tab)}!1:1`)}?majorDimension=ROWS`,
-      )
-      const headers = (Array.isArray(head?.values?.[0]) ? head.values[0] : []).map((value: unknown) =>
-        String(value ?? ''),
-      )
+      // Changes made in the old tab are kept: written to the synced tab before it is replaced.
+      if (old) await ganttEditsToTab(access.token, source, tracker).catch(() => null)
+      const grid = await readRaw(access.token, source.spreadsheet_id, tabRange(source.tab))
+      const headers = (grid[0] || []).map((value: unknown) => String(value ?? ''))
       const fields = ganttFields(
         columnsOf(tracker),
         tracker.timeline || undefined,
@@ -1899,6 +1997,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         headers,
         fields,
         sheetId: sheetTabId,
+        grid,
         dataRows: Number(data.gridProperties?.rowCount || 1000),
       })
       if ('error' in built) throw new TrackerError(built.error, 409)
