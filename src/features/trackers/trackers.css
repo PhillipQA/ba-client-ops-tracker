@@ -2708,3 +2708,32 @@ a.trk-link-button {
   border-color: color-mix(in srgb, var(--k-accent) 55%, transparent);
   color: var(--k-accent);
 }
+
+/* Working days, typed in on the timeline */
+.trk-tl-days-input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--k-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+.trk-tl-days-input::-webkit-outer-spin-button,
+.trk-tl-days-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.trk-tl-days-input:hover {
+  border-color: var(--k-border);
+  background: var(--k-input);
+}
+.trk-tl-days-input:focus {
+  border-color: var(--k-accent);
+  background: var(--k-input);
+  outline: none;
+}

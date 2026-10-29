@@ -1,5 +1,7 @@
-import { dayNumber, isoOf, isWeekend } from './timelineModel'
+import { addWorkingDays, dayNumber, isoOf } from './timelineModel'
 import type { Cell, ColumnType, OptionColor, TaskField, TrackerColumn } from './trackerModel'
+
+export { addWorkingDays }
 
 /** Starting points. Every template can be changed afterwards: rename, reorder, add or remove columns. */
 export type TemplateColumn = {
@@ -451,17 +453,6 @@ export const TRACKER_TEMPLATES: TrackerTemplate[] = [
 ]
 
 export const templateById = (id: string) => TRACKER_TEMPLATES.find(template => template.id === id)
-
-/** The working day `n` working days after `start` (n = 0 is `start`, moved to Monday if it falls on a weekend). */
-export function addWorkingDays(start: number, n: number) {
-  let day = start
-  while (isWeekend(day)) day++
-  for (let left = n; left > 0; ) {
-    day++
-    if (!isWeekend(day)) left--
-  }
-  return day
-}
 
 /**
  * A template's starter rows as cells for a tracker made from it: column names become the new column ids, Choice

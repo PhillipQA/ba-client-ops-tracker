@@ -84,6 +84,21 @@ export function workingDays(start: number, end: number): number {
   return count
 }
 
+/** The working day `n` working days after `start` (n = 0 is `start`, moved to Monday if it falls on a weekend). */
+export function addWorkingDays(start: number, n: number) {
+  let day = start
+  while (isWeekend(day)) day++
+  for (let left = n; left > 0; ) {
+    day++
+    if (!isWeekend(day)) left--
+  }
+  return day
+}
+
+/** The end date that makes a task `days` working days long from `start` (at least one). */
+export const endAfterWorkingDays = (start: number, days: number) =>
+  addWorkingDays(start, Math.max(1, Math.floor(days)) - 1)
+
 // ---- building the chart ----
 
 export type TimelineItem = {

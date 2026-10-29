@@ -12,6 +12,7 @@ import type { TrackerColumn, TrackerRow } from './trackerModel'
 import {
   buildTimeline,
   draggedDates,
+  endAfterWorkingDays,
   isoOf,
   monthLabel,
   mondayOf,
@@ -415,7 +416,7 @@ export default function TrackerTimeline(props: Props) {
                           <span className="trk-tl-name">{group.label}</span>
                         </button>
                         <span className="trk-tl-meta">{group.items.length}</span>
-                        <span className="trk-tl-num">
+                        <span className="trk-tl-num" title="From the first start to the last end of its tasks">
                           {group.start !== null && group.end !== null ? workingDays(group.start, group.end) : ''}
                         </span>
                         <span className="trk-tl-num">{group.progress}%</span>
@@ -449,9 +450,27 @@ export default function TrackerTimeline(props: Props) {
                           <span className="trk-tl-meta" title={item.lead}>
                             {item.lead}
                           </span>
-                          <span className="trk-tl-num">
-                            {item.start !== null && item.end !== null ? workingDays(item.start, item.end) : ''}
-                          </span>
+                          {item.start !== null && item.end !== null && fields.endId && canDrag(item.row) ? (
+                            <DaysInput
+                              key={`${item.row.id}:${item.start}:${item.end}`}
+                              days={workingDays(item.start, item.end)}
+                              label={`Working days for ${(title && String(item.row.cells[title.id] || '')) || 'this row'}`}
+                              onChange={days => commit(item, item.start!, endAfterWorkingDays(item.start!, days))}
+                            />
+                          ) : (
+                            <span
+                              className="trk-tl-num"
+                              title={
+                                item.start === null
+                                  ? 'Set a Start date to give this task a length'
+                                  : !fields.endId
+                                    ? 'Choose an End column in the timeline settings to change the length'
+                                    : undefined
+                              }
+                            >
+                              {item.start !== null && item.end !== null ? workingDays(item.start, item.end) : ''}
+                            </span>
+                          )}
                           <span className={`trk-tl-num${item.late ? ' late' : ''}`}>{item.progress}%</span>
                         </div>
                         <div className="trk-tl-chart" style={chartStyle}>
@@ -474,5 +493,43 @@ export default function TrackerTimeline(props: Props) {
           : 'These settings are kept in this browser only.'}
       </p>
     </div>
+  )
+}
+
+/**
+ * A task's length in working days, typed in. Enter or leaving the field saves it (the End date moves; the Start stays);
+ * Escape puts the old number back.
+ */
+function DaysInput({ days, label, onChange }: { days: number; label: string; onChange: (days: number) => void }) {
+  const [text, setText] = useState(String(days))
+  const save = () => {
+    const value = Math.floor(Number(text))
+    if (!Number.isFinite(value) || value < 1 || value > 999) {
+      setText(String(days))
+      return
+    }
+    if (value !== days) onChange(value)
+  }
+  return (
+    <input
+      className="trk-tl-days-input"
+      type="number"
+      inputMode="numeric"
+      min={1}
+      max={999}
+      step={1}
+      value={text}
+      aria-label={label}
+      title="Working days: type a number to move the End date"
+      onChange={event => setText(event.target.value)}
+      onBlur={save}
+      onKeyDown={event => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') {
+          setText(String(days))
+          event.currentTarget.blur()
+        }
+      }}
+    />
   )
 }

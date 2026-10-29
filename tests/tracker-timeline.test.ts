@@ -6,6 +6,7 @@ import {
   cleanTimelineSettings,
   dayNumber,
   draggedDates,
+  endAfterWorkingDays,
   guessTimelineFields,
   isoOf,
   mondayOf,
@@ -292,4 +293,21 @@ test('the Project timeline template starts with the task list, scheduled on work
     ],
   )
   assert.equal(timeline.unscheduled, 0)
+})
+
+test('typing a length in working days moves the End date and keeps the Start', () => {
+  const day = (iso: string) => dayNumber(iso)!
+  const end = (start: string, days: number) => isoOf(endAfterWorkingDays(day(start), days))
+  assert.equal(end('2026-11-04', 1), '2026-11-04', 'one day ends the day it starts')
+  assert.equal(end('2026-11-04', 3), '2026-11-06', 'Wednesday + 3 working days ends Friday')
+  assert.equal(end('2026-11-04', 4), '2026-11-09', 'and the weekend is skipped')
+  assert.equal(end('2026-11-05', 20), '2026-12-02')
+  assert.equal(end('2026-11-07', 1), '2026-11-09', 'a Saturday start counts from Monday')
+  assert.equal(end('2026-11-04', 0), '2026-11-04', 'at least one day')
+  for (const days of [1, 2, 5, 9, 20, 38])
+    assert.equal(
+      workingDays(day('2026-11-05'), endAfterWorkingDays(day('2026-11-05'), days)),
+      days,
+      'Days shows what was typed',
+    )
 })
