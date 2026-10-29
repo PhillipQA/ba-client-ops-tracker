@@ -1,0 +1,250 @@
+import { randomUUID } from 'node:crypto'
+import type { Express, Request, RequestHandler, Response } from 'express'
+import { cleanDefinition, emptyDefinition, REPORT_LIMITS } from '../../src/features/reports/custom/reportModel'
+
+/**
+ * Custom reports: dashboards people build from widgets, kept in folders.
+ * - A report or folder is private to the person who made it until they share it with the whole account.
+ * - Its maker can change it; Administrators can also change shared ones. Everyone else can copy a shared report.
+ * - Only the widgets and filters are stored. The numbers are worked out in the browser, from data the person can see.
+ */
+type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; now?: () => Date }
+type User = { id: string; name: string; role: string; organizationId: string; modules?: string[]; accountType?: string }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const TABLE = 'tenant_reports'
+
+class ReportError extends Error {
+  constructor(
+    message: string,
+    public status = 400,
+    public extra: Record<string, unknown> = {},
+  ) {
+    super(message)
+  }
+}
+
+const clean = (value: unknown, label: string, max: number) => {
+  if (value !== undefined && value !== null && typeof value !== 'string')
+    throw new ReportError(`${label} must be text.`)
+  const out = String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (out.length > max) throw new ReportError(`${label} can be at most ${max} characters.`)
+  return out
+}
+
+export function registerCustomReportRoutes(app: Express, deps: Deps) {
+  const { db } = deps
+  const now = () => (deps.now ? deps.now() : new Date()).toISOString()
+  const who = (req: Request) => (req as any).authUser as User
+  const guard: RequestHandler = (req, res, next) => {
+    const user = (req as any).authUser as User | undefined
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (
+      !user?.organizationId ||
+      user.accountType === 'platform' ||
+      (user.role !== 'Administrator' && !user.modules?.includes('reports'))
+    )
+      return void res.status(403).json({ error: 'Reports access is required.' })
+    if (req.method !== 'GET' && user.role === 'Viewer')
+      return void res.status(403).json({ error: 'Your role can view reports but not change them.' })
+    res.setHeader('Cache-Control', 'no-store')
+    next()
+  }
+  const scope = [deps.requireAuth, deps.requireTenant, guard]
+  const missing = (error: any) => {
+    if (error)
+      throw new ReportError(
+        'Custom reports need database/migrations/schema-v31-custom-reports.sql. Apply it and try again.',
+        503,
+        { needsUpgrade: true },
+      )
+  }
+  const route =
+    (handler: (req: Request, res: Response) => Promise<void>): RequestHandler =>
+    async (req, res) => {
+      try {
+        await handler(req, res)
+      } catch (error) {
+        if (error instanceof ReportError)
+          return void res.status(error.status).json({ error: error.message, ...error.extra })
+        res.status(500).json({ error: 'Custom reports are unavailable right now. Try again in a moment.' })
+      }
+    }
+
+  const visible = (row: any, user: User) => Boolean(row.shared) || row.created_by === user.id
+  const canEdit = (row: any, user: User) =>
+    user.role !== 'Viewer' && (row.created_by === user.id || (Boolean(row.shared) && user.role === 'Administrator'))
+  const out = (row: any, user: User) => ({
+    id: row.id,
+    kind: row.kind === 'folder' ? 'folder' : 'report',
+    name: row.name,
+    description: row.description || '',
+    folderId: row.folder_id || '',
+    shared: Boolean(row.shared),
+    position: Number(row.position) || 0,
+    definition: row.kind === 'folder' ? emptyDefinition() : cleanDefinition(row.definition),
+    revision: Number(row.revision) || 1,
+    createdBy: row.created_by || '',
+    createdByName: row.created_by_name || '',
+    updatedByName: row.updated_by_name || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    canEdit: canEdit(row, user),
+  })
+  async function one(user: User, id: string) {
+    if (!UUID.test(id)) throw new ReportError('Report not found.', 404)
+    const r = await db.from(TABLE).select('*').eq('tenant_id', user.organizationId).eq('id', id).maybeSingle()
+    missing(r.error)
+    if (!r.data || !visible(r.data, user)) throw new ReportError('Report not found. It may have been deleted.', 404)
+    return r.data
+  }
+  const definition = (raw: unknown) => {
+    const cleaned = cleanDefinition(raw)
+    if (JSON.stringify(cleaned).length > REPORT_LIMITS.definitionBytes)
+      throw new ReportError('This report is too big to save. Remove some widgets and try again.', 413)
+    return cleaned
+  }
+  /** A folder to put something in: one the person can see. Empty means no folder. */
+  async function folder(user: User, raw: unknown, self = '') {
+    const id = typeof raw === 'string' ? raw : ''
+    if (!id) return ''
+    if (id === self) throw new ReportError('A folder cannot go inside itself.')
+    const target = await one(user, id).catch(() => null)
+    if (target?.kind !== 'folder') throw new ReportError('That folder was not found. It may have been deleted.')
+    return target.id as string
+  }
+
+  app.get(
+    '/api/reports/custom',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req)
+      const r = await db
+        .from(TABLE)
+        .select('*')
+        .eq('tenant_id', user.organizationId)
+        .order('position', { ascending: true })
+        .limit(REPORT_LIMITS.items + 100)
+      missing(r.error)
+      const items = (r.data || [])
+        .filter((row: any) => visible(row, user))
+        .map((row: any) => out(row, user))
+        .sort(
+          (a: any, b: any) =>
+            a.position - b.position || a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }),
+        )
+      res.json({ items })
+    }),
+  )
+
+  app.post(
+    '/api/reports/custom',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req)
+      const kind = req.body?.kind === 'folder' ? 'folder' : 'report'
+      const name = clean(req.body?.name, 'The name', REPORT_LIMITS.name)
+      if (!name) throw new ReportError(kind === 'folder' ? 'Give the folder a name.' : 'Give the report a name.')
+      const count = await db
+        .from(TABLE)
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', user.organizationId)
+      missing(count.error)
+      if (Number(count.count || 0) >= REPORT_LIMITS.items)
+        throw new ReportError(`An account can have at most ${REPORT_LIMITS.items} reports and folders.`, 409)
+      const stamp = now()
+      const row = {
+        tenant_id: user.organizationId,
+        id: randomUUID(),
+        kind,
+        name,
+        description: clean(req.body?.description, 'The description', REPORT_LIMITS.description),
+        folder_id: kind === 'folder' ? '' : await folder(user, req.body?.folderId),
+        shared: req.body?.shared === true,
+        position: Math.max(0, Math.min(1_000_000, Math.round(Number(req.body?.position) || 0))),
+        definition: kind === 'folder' ? {} : definition(req.body?.definition),
+        revision: 1,
+        created_by: user.id,
+        created_by_name: user.name,
+        updated_by_name: user.name,
+        created_at: stamp,
+        updated_at: stamp,
+      }
+      const saved = await db.from(TABLE).insert(row)
+      missing(saved.error)
+      res.status(201).json({ item: out(row, user) })
+    }),
+  )
+
+  app.patch(
+    '/api/reports/custom/:id',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req)
+      const current = await one(user, String(req.params.id))
+      if (!canEdit(current, user))
+        throw new ReportError(
+          current.shared
+            ? 'Only the person who made this report, or an Administrator, can change it. Make a copy to change your own.'
+            : 'Only the person who made this can change it.',
+          403,
+        )
+      const body = req.body || {}
+      const patch: Record<string, unknown> = {}
+      if (body.name !== undefined) {
+        const name = clean(body.name, 'The name', REPORT_LIMITS.name)
+        if (!name) throw new ReportError('Give it a name.')
+        patch.name = name
+      }
+      if (body.description !== undefined)
+        patch.description = clean(body.description, 'The description', REPORT_LIMITS.description)
+      if (body.shared !== undefined) patch.shared = body.shared === true
+      if (body.position !== undefined)
+        patch.position = Math.max(0, Math.min(1_000_000, Math.round(Number(body.position) || 0)))
+      if (body.folderId !== undefined && current.kind !== 'folder')
+        patch.folder_id = await folder(user, body.folderId, current.id)
+      if (body.definition !== undefined && current.kind !== 'folder') {
+        // Two people editing one shared report: the second save is refused rather than overwriting the first.
+        if (body.revision !== undefined && Number(body.revision) !== Number(current.revision))
+          throw new ReportError('Someone else changed this report. It has been reloaded with their changes.', 409, {
+            item: out(current, user),
+          })
+        patch.definition = definition(body.definition)
+      }
+      const changes = {
+        ...patch,
+        revision: (Number(current.revision) || 1) + 1,
+        updated_by_name: user.name,
+        updated_at: now(),
+      }
+      const saved = await db.from(TABLE).update(changes).eq('tenant_id', user.organizationId).eq('id', current.id)
+      missing(saved.error)
+      res.json({ item: out({ ...current, ...changes }, user) })
+    }),
+  )
+
+  app.delete(
+    '/api/reports/custom/:id',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req)
+      const current = await one(user, String(req.params.id))
+      if (!canEdit(current, user)) throw new ReportError('Only the person who made this can delete it.', 403)
+      // Reports in a deleted folder are kept, out of any folder.
+      if (current.kind === 'folder') {
+        const moved = await db
+          .from(TABLE)
+          .update({ folder_id: '' })
+          .eq('tenant_id', user.organizationId)
+          .eq('folder_id', current.id)
+        missing(moved.error)
+      }
+      const removed = await db.from(TABLE).delete().eq('tenant_id', user.organizationId).eq('id', current.id)
+      missing(removed.error)
+      res.json({ deleted: true })
+    }),
+  )
+}

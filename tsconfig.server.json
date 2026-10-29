@@ -20,6 +20,7 @@
     "src/features/tasks/subtaskAssignment.ts",
     "src/shared/types.ts",
     "src/features/tasks/effort.ts",
-    "src/features/tasks/waitingOn.ts"
+    "src/features/tasks/waitingOn.ts",
+    "src/features/reports/custom/reportModel.ts"
   ]
 }
