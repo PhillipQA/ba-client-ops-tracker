@@ -29,6 +29,7 @@ import {
   describeSync,
   dropdownOf,
   mergeDropdownOptions,
+  convertRowsToChoice,
   planSync,
   sheetIdFrom,
   tabRange,
@@ -479,7 +480,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const lastSync = new Map<string, number>()
 
   /**
-   * The dropdown choices of the Sheet columns that fill Choice columns: Sheet header → choices. Reads the data
+   * The dropdown choices of the Sheet columns that fill Choice or Text columns: Sheet header → choices. Reads the data
    * validation of each such column (a list typed into the rule, or a range it points to) for the rows in use.
    */
   async function dropdownLists(token: string, source: any, grid: string[][], columns: TrackerColumn[]) {
@@ -487,7 +488,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     const headers = (grid[0] || []).map(value => String(value ?? '').trim())
     const byId = new Map(columns.map(column => [column.id, column]))
     const wanted = Object.entries<string>(source.header_map || {})
-      .filter(([, id]) => ['select', 'multiselect'].includes(byId.get(id)?.type || ''))
+      .filter(([, id]) => ['select', 'multiselect', 'text', 'longtext'].includes(byId.get(id)?.type || ''))
       .map(([header]) => ({ header, index: headers.findIndex(item => item.toLowerCase() === header.toLowerCase()) }))
       .filter(item => item.index >= 0)
     if (!token || !wanted.length) return lists
@@ -582,6 +583,47 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await dropdownLists(token, source, grid, columnsOf(tracker)).catch(() => ({})),
     )
     const existing = await allRows(tenant, tracker.id)
+    // Text columns that follow a Sheet dropdown just became Choice columns: move their values to the new options
+    // first, for every row (rows only the tracker has too), so no cell is left holding plain text.
+    if (dropdowns.converted.length) {
+      const moved = convertRowsToChoice(
+        dropdowns.columns,
+        dropdowns.converted,
+        existing.map(row => ({ id: row.id, data: row.data || {} })),
+      )
+      const stamp = now()
+      // The column first: if this stops part-way, the next sync finds the leftover text and matches it again.
+      // normalizeColumns refuses type changes against `previous`, so this one sync-made change is given as already made.
+      const previous = columnsOf(tracker).map(column =>
+        dropdowns.converted.includes(column.id) ? ({ ...column, type: 'select', options: [] } as TrackerColumn) : column,
+      )
+      const convertedColumns = normalizeColumns(moved.columns, previous)
+      dropdowns.columns = convertedColumns
+      const savedColumns = await db
+        .from('tenant_trackers')
+        .update({
+          columns: convertedColumns,
+          revision: Number(tracker.revision || 1) + 1,
+          updated_at: stamp,
+        })
+        .eq('tenant_id', tenant)
+        .eq('id', tracker.id)
+      check(savedColumns.error)
+      tracker = { ...tracker, columns: convertedColumns, revision: Number(tracker.revision || 1) + 1 }
+      for (const row of existing) {
+        const cells = moved.changes.get(row.id)
+        if (!cells) continue
+        row.data = { ...(row.data || {}), ...cells }
+        row.version = Number(row.version || 1) + 1
+        const saved = await db
+          .from('tenant_tracker_rows')
+          .update({ data: row.data, version: row.version, updated_at: stamp })
+          .eq('tenant_id', tenant)
+          .eq('tracker_id', tracker.id)
+          .eq('id', row.id)
+        sourceCheck(saved.error)
+      }
+    }
     const state = await workspace(tenant)
     const people = (Array.isArray(state.accounts) ? state.accounts : []).map((account: any) => ({
       id: String(account.id),

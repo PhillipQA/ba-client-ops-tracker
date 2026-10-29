@@ -305,24 +305,32 @@ export function dropdownOf(validation: any): { list: string[] } | { range: strin
   return null
 }
 
+/** Column types that turn into a Choice column when the Sheet column they follow has a dropdown. */
+export const DROPDOWN_CONVERTIBLE = ['text', 'longtext'] as const
+
 /**
  * Adds the choices of the Sheet's dropdowns to the Choice columns they fill, so options that no row uses yet (such as
  * "Pending") are there too. The Sheet's order comes first; options only the tracker has stay, after them. Existing
  * options keep their id and colour. `lists` is Sheet header → its dropdown's choices.
+ * A Text column that follows a Sheet dropdown becomes a Choice column (its ids are listed in `converted`), so the
+ * tracker gets the same dropdown; `convertRowsToChoice` moves the values already in it over to the new options.
  */
 export function mergeDropdownOptions(
   columns: TrackerColumn[],
   headerMap: Record<string, string>,
   lists: Record<string, string[]>,
-): { columns: TrackerColumn[]; changed: boolean } {
+): { columns: TrackerColumn[]; changed: boolean; converted: string[] } {
   const byColumn = new Map<string, string[]>()
   for (const [header, columnId] of Object.entries(headerMap))
     if (lists[header]?.length) byColumn.set(columnId, [...(byColumn.get(columnId) || []), ...lists[header]])
   let changed = false
+  const converted: string[] = []
   const next = columns.map(column => {
     const list = byColumn.get(column.id)
-    if (!list || (column.type !== 'select' && column.type !== 'multiselect')) return column
-    const existing = column.options || []
+    if (!list) return column
+    const toChoice = (DROPDOWN_CONVERTIBLE as readonly string[]).includes(column.type)
+    if (!toChoice && column.type !== 'select' && column.type !== 'multiselect') return column
+    const existing = toChoice ? [] : column.options || []
     const used = new Set<string>()
     const options: SelectOption[] = []
     for (const raw of list) {
@@ -339,9 +347,49 @@ export function mergeDropdownOptions(
     }
     for (const option of existing) if (!used.has(option.label.toLowerCase())) options.push(option)
     const kept = options.slice(0, TRACKER_LIMITS.optionsPerColumn)
+    if (toChoice) {
+      if (!kept.length) return column
+      changed = true
+      converted.push(column.id)
+      return { ...column, type: 'select', options: kept } as TrackerColumn
+    }
     if (JSON.stringify(kept) === JSON.stringify(existing)) return column
     changed = true
     return { ...column, options: kept }
   })
-  return { columns: next, changed }
+  return { columns: next, changed, converted }
+}
+
+/**
+ * The values of columns that just became Choice columns, as option ids. A value matches an option by its label
+ * (ignoring case); a value the dropdown does not list becomes a new option, so nothing typed before is lost.
+ * Returns the columns (with any added options) and, per row id, the cells that changed.
+ */
+export function convertRowsToChoice(
+  columns: TrackerColumn[],
+  converted: string[],
+  rows: { id: string; data: Record<string, Cell> }[],
+): { columns: TrackerColumn[]; changes: Map<string, Record<string, Cell>> } {
+  const changes = new Map<string, Record<string, Cell>>()
+  if (!converted.length) return { columns, changes }
+  const next = columns.map(column =>
+    converted.includes(column.id) ? { ...column, options: [...(column.options || [])] } : column,
+  )
+  for (const column of next) {
+    if (!converted.includes(column.id)) continue
+    const options = column.options!
+    for (const row of rows) {
+      const raw = row.data?.[column.id]
+      if (typeof raw !== 'string') continue
+      if (options.some(option => option.id === raw)) continue
+      const label = raw.replace(/\s+/g, ' ').trim().slice(0, TRACKER_LIMITS.optionLabel)
+      let option = label ? options.find(item => item.label.toLowerCase() === label.toLowerCase()) : undefined
+      if (label && !option && options.length < TRACKER_LIMITS.optionsPerColumn) {
+        option = { id: randomId('o_'), label, color: OPTION_COLORS[(options.length % (OPTION_COLORS.length - 1)) + 1] }
+        options.push(option)
+      }
+      changes.set(row.id, { ...(changes.get(row.id) || {}), [column.id]: option ? option.id : '' })
+    }
+  }
+  return { columns: next, changes }
 }
