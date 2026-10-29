@@ -130,7 +130,7 @@ let rawGrid: any[][] = []
 let rawOwner: unknown = null
 let ganttShown: any[][] = []
 const writtenValues: any[] = []
-const valueOf = (cell: any) => {
+const cellValueOf = (cell: any) => {
   const value = cell?.userEnteredValue || {}
   return value.numberValue ?? value.stringValue ?? value.boolValue ?? ''
 }
@@ -243,7 +243,7 @@ globalThis.fetch = (async (input: any, init?: any) => {
       return String(value.stringValue ?? '')
     }
     grid = body.sheets[0].data[0].rowData.map((row: any) => row.values.map(shown))
-    setRaw(body.sheets[0].data[0].rowData.map((row: any) => row.values.map(valueOf)))
+    setRaw(body.sheets[0].data[0].rowData.map((row: any) => row.values.map(cellValueOf)))
     return reply(200, { spreadsheetId: NEW_SHEET, sheets: [{ properties: { sheetId: 7, title: 'Tracker' } }] })
   }
   if (url.includes(`/spreadsheets/${NEW_SHEET}?fields=`)) return reply(200, { sheets: newSheetTabs })
@@ -251,7 +251,7 @@ globalThis.fetch = (async (input: any, init?: any) => {
     const body = JSON.parse(String(init.body))
     for (const request of body.requests || [])
       if (request.updateCells?.range.startRowIndex === 6)
-        ganttShown = request.updateCells.rows.map((row: any) => (row.values || []).map(valueOf))
+        ganttShown = request.updateCells.rows.map((row: any) => (row.values || []).map(cellValueOf))
     formatted.push(JSON.parse(String(init.body)))
     return reply(200, {})
   }
