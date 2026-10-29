@@ -31,6 +31,7 @@ import {
   describeSync,
   dropdownOf,
   mergeDropdownOptions,
+  planNewColumns,
   convertRowsToChoice,
   planSync,
   sheetIdFrom,
@@ -584,6 +585,36 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await fail(error instanceof Error ? error.message : 'The Sheet could not be read.')
       throw error
     }
+    // Columns added to the Sheet since the last sync become tracker columns, followed from now on (see planNewColumns).
+    const grown = planNewColumns({
+      grid,
+      headerMap: source.header_map || {},
+      keyHeader: source.key_header,
+      columns: columnsOf(tracker),
+      today: now().slice(0, 10),
+      firstSync: !source.last_synced_at,
+    })
+    if (grown.changed) {
+      const stamp = now()
+      if (grown.columns.length) {
+        const nextColumns = normalizeColumns([...columnsOf(tracker), ...grown.columns], columnsOf(tracker))
+        const savedColumns = await db
+          .from('tenant_trackers')
+          .update({ columns: nextColumns, revision: Number(tracker.revision || 1) + 1, updated_at: stamp })
+          .eq('tenant_id', tenant)
+          .eq('id', tracker.id)
+        check(savedColumns.error)
+        tracker = { ...tracker, columns: nextColumns, revision: Number(tracker.revision || 1) + 1 }
+      }
+      const savedMap = await db
+        .from('tenant_tracker_sources')
+        .update({ header_map: grown.headerMap, updated_at: stamp })
+        .eq('tenant_id', tenant)
+        .eq('tracker_id', tracker.id)
+      sourceCheck(savedMap.error)
+      source.header_map = grown.headerMap
+      if (grown.added.length) await record(tenant, tracker.id, '', user, 'columns', { addedFromSheet: grown.added })
+    }
     // The Sheet's dropdown choices, so options no row uses yet come over too. Best effort: a sync never fails on it.
     const dropdowns = mergeDropdownOptions(
       columnsOf(tracker),
@@ -736,7 +767,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .in('id', planned.missing)
       sourceCheck(saved.error)
     }
-    const report = planned.report
+    const report = { ...planned.report, ...(grown.added.length ? { addedColumns: grown.added } : {}) }
     const done = await db
       .from('tenant_tracker_sources')
       .update({ last_synced_at: stamp, last_status: 'ok', last_error: '', last_report: report, updated_at: stamp })

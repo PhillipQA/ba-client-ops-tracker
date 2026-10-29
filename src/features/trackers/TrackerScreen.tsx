@@ -43,6 +43,7 @@ import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
 import { exportCsv, exportFileName } from './trackerExport'
 import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type TaskLink } from './trackerApi'
 import TrackerTimeline from './TrackerTimeline'
+import TrackerColumnSubtasks from './TrackerColumnSubtasks'
 import TrackerGrid, { NUMBER_COLUMN_WIDTH, widthOf, type Entry, type GridFocus } from './TrackerGrid'
 import TrackerToolbar, { emptyWork, type Work } from './TrackerToolbar'
 import TrackerRowPanel from './TrackerRowPanel'
@@ -201,7 +202,7 @@ export default function TrackerScreen(props: Props) {
   }, [])
 
   const say = useCallback((kind: 'error' | 'info', text: string) => setNotice({ kind, text }), [])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: said once, when the tracker opens.
+  // Said once, when the tracker opens.
   useEffect(() => {
     if (props.startNote) say('info', props.startNote)
   }, [])
@@ -969,6 +970,43 @@ export default function TrackerScreen(props: Props) {
         : new Map(),
     [rows, columns, tracker, statusColors],
   )
+  // ---- columns that came over from the Sheet: offer a subtask per column under each row's task ----
+  const newColumnsKey = `ba.tracker.newColumns.${props.trackerId}`
+  const [newColumnIds, setNewColumnIds] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(newColumnsKey) || '{}')
+      return Array.isArray(saved?.ids) ? saved.ids.map(String) : []
+    } catch {
+      return []
+    }
+  })
+  const [columnSubtasksOpen, setColumnSubtasksOpen] = useState(false)
+  const keepNewColumns = (ids: string[], seen?: string) => {
+    setNewColumnIds(ids)
+    try {
+      const saved = JSON.parse(localStorage.getItem(newColumnsKey) || '{}')
+      localStorage.setItem(newColumnsKey, JSON.stringify({ ids, seen: seen ?? saved?.seen ?? '' }))
+    } catch {
+      /* not remembered */
+    }
+  }
+  const lastReport = tracker?.source?.lastReport
+  const lastSyncedAt = tracker?.source?.lastSyncedAt || ''
+  // Once per sync that added columns.
+  useEffect(() => {
+    if (!lastReport?.addedColumns?.length || !lastSyncedAt) return
+    let seen = ''
+    try {
+      seen = JSON.parse(localStorage.getItem(newColumnsKey) || '{}')?.seen || ''
+    } catch {
+      /* nothing seen */
+    }
+    if (seen === lastSyncedAt) return
+    const names = new Set(lastReport.addedColumns.map(name => name.toLowerCase()))
+    const ids = columns.filter(column => names.has(column.name.toLowerCase())).map(column => column.id)
+    keepNewColumns([...new Set([...newColumnIds, ...ids])], lastSyncedAt)
+  }, [lastSyncedAt, lastReport, columns])
+  const newColumns = columns.filter(column => newColumnIds.includes(column.id))
   const highlightButton = useRef<HTMLButtonElement>(null)
   const [highlightOpen, setHighlightOpen] = useState(false)
   const highlight = async (ids: string[], color: string) => {
@@ -1633,6 +1671,40 @@ export default function TrackerScreen(props: Props) {
             </button>
           )}
         </div>
+      )}
+      {canEdit && newColumns.length > 0 && (
+        <div className="trk-banner trk-review-banner" role="status">
+          <strong>
+            {newColumns.length === 1 ? 'New column' : 'New columns'} from the Google Sheet:{' '}
+            {newColumns.map(column => column.name).join(', ')}.
+          </strong>{' '}
+          {props.onCreateTasks
+            ? 'Choose whether each row’s task gets a subtask for it.'
+            : 'They are in the tracker now and follow the Sheet.'}
+          {props.onCreateTasks && (
+            <button type="button" className="trk-text-button strong" onClick={() => setColumnSubtasksOpen(true)}>
+              Choose subtasks
+            </button>
+          )}
+          <button type="button" className="trk-text-button" onClick={() => keepNewColumns([])}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      {columnSubtasksOpen && props.onCreateTasks && newColumns.length > 0 && (
+        <TrackerColumnSubtasks
+          columns={newColumns}
+          rows={rows}
+          items={props.items}
+          links={links}
+          rowTitle={row => rowTitle(columns, row)}
+          onCreate={props.onCreateTasks}
+          onLinks={async cellLinks => {
+            if (cellLinks.length) await applyReview({ rowTasks: [], cellLinks, reviewed: [] })
+          }}
+          onDone={ids => keepNewColumns(newColumnIds.filter(id => !ids.includes(id)))}
+          onClose={() => setColumnSubtasksOpen(false)}
+        />
       )}
       {tracker.source &&
         canEdit &&

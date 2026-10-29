@@ -293,6 +293,8 @@ export type SyncReport = {
   capped: number
   missingHeaders: string[]
   newHeaders: string[]
+  /** Sheet columns that became tracker columns in this sync. */
+  addedColumns?: string[]
   problems: number
 }
 

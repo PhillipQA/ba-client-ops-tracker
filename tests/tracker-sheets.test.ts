@@ -969,3 +969,53 @@ test('rows can be highlighted with a colour everyone sees', async () => {
     )
   })
 })
+
+test('a sync brings in a column added to the Sheet, with its values, on any tracker', async () => {
+  dropdowns = []
+  grid = [
+    ['Branch #', 'Branch', 'Go-live', 'Skipped'],
+    ['57', 'Batch 5', '11/25/2026', 'a'],
+    ['58', 'Sta. Rosa', '12/01/2026', 'b'],
+  ]
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = (await ask('POST', '/api/trackers', { name: 'Rollout', columns })).body.tracker
+    const [cKey, cName, cLive] = tracker.columns.map((c: any) => c.id)
+    const connected = await ask('POST', `/api/trackers/${tracker.id}/source`, {
+      spreadsheetId: SHEET,
+      tab: 'Branches',
+      keyHeader: 'Branch #',
+      headerMap: { 'Branch #': cKey, Branch: cName, 'Go-live': cLive },
+    })
+    assert.equal(connected.status, 200, JSON.stringify(connected.body))
+    assert.equal(connected.body.tracker.columns.length, 4, 'the column not chosen when connecting stays out')
+
+    grid = [
+      ['Branch #', 'Branch', 'Go-live', 'Skipped', 'BIR permit'],
+      ['57', 'Batch 5', '11/25/2026', 'a', 'Approved'],
+      ['58', 'Sta. Rosa', '12/01/2026', 'b', 'Filed'],
+      ['59', 'Calamba', '12/02/2026', 'c', 'Filed'],
+      ['60', 'Lipa', '12/03/2026', 'd', 'Approved'],
+    ]
+    const synced = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+    assert.equal(synced.status, 200, JSON.stringify(synced.body))
+    assert.deepEqual(synced.body.report.addedColumns, ['BIR permit'])
+    const opened = (await ask('GET', `/api/trackers/${tracker.id}`)).body.tracker
+    const permit = opened.columns.find((c: any) => c.name === 'BIR permit')
+    assert.equal(permit.type, 'select')
+    assert.equal(permit.synced, true)
+    assert.equal(
+      opened.columns.some((c: any) => c.name === 'Skipped'),
+      false,
+    )
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    const label = (id: string) => permit.options.find((o: any) => o.id === id)?.label
+    assert.deepEqual(
+      rows.map((r: any) => label(r.cells[permit.id])),
+      ['Approved', 'Filed', 'Filed', 'Approved'],
+      'existing rows get the new column’s values, and new rows come in with them',
+    )
+    const quiet = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+    assert.equal(quiet.body.report.addedColumns, undefined)
+  })
+})

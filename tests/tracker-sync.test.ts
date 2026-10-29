@@ -7,6 +7,7 @@ import {
   mergeDropdownOptions,
   convertRowsToChoice,
   parentKeyOf,
+  planNewColumns,
   planSync,
   sheetIdFrom,
   sheetRowKeys,
@@ -284,4 +285,67 @@ test('a Checkbox column that follows a Sheet dropdown becomes a Choice column, t
     c_drf: '',
   })
   assert.equal(drf.options!.length, 3, 'no options are added for ticked or unticked boxes')
+})
+
+test('columns added to the Sheet become tracker columns of the right type; left-out and password columns stay out', () => {
+  const grid = [
+    ['Branch #', 'Branch', 'Permit', 'Installed on', 'Admin password', 'Our notes'],
+    ['57', 'Batch 5', 'Done', '2026-11-05', 'x', 'n'],
+    ['58', 'Sta. Rosa', 'Pending', '2026-11-09', 'y', 'm'],
+    ['59', 'Calamba', 'Done', '2026-11-10', 'z', 'o'],
+    ['60', 'Lipa', 'Done', '2026-11-11', 'w', 'p'],
+  ]
+  const first = planNewColumns({
+    grid,
+    headerMap: { 'Branch #': 'c_branch', Branch: 'c_name' },
+    keyHeader: 'Branch #',
+    columns,
+    today: '2026-10-29',
+    firstSync: true,
+  })
+  assert.deepEqual(first.added, [], 'right after connecting, columns not chosen were left out on purpose')
+  assert.equal(first.headerMap.Permit, '')
+  const later = planNewColumns({
+    grid,
+    headerMap: { 'Branch #': 'c_branch', Branch: 'c_name', 'Installed on': '' },
+    keyHeader: 'Branch #',
+    columns,
+    today: '2026-10-29',
+    firstSync: false,
+  })
+  assert.deepEqual(later.added, ['Permit', 'Our notes'])
+  const permit = later.columns.find(column => column.name === 'Permit')!
+  assert.equal(permit.type, 'select')
+  assert.deepEqual(
+    permit.options!.map(option => option.label),
+    ['Done', 'Pending'],
+  )
+  assert.equal(permit.synced, true)
+  assert.equal(later.headerMap.Permit, permit.id)
+  assert.equal(later.headerMap['Admin password'], '', 'never copied in as plain text')
+  assert.equal(later.headerMap['Our notes'], 'c_notes', 'a tracker column of that name that follows nothing takes it')
+  assert.equal(later.columns.length, 1)
+  const again = planNewColumns({
+    grid,
+    headerMap: later.headerMap,
+    keyHeader: 'Branch #',
+    columns: [...columns, ...later.columns],
+    today: '2026-10-29',
+    firstSync: false,
+  })
+  assert.equal(again.changed, false, 'nothing new the second time')
+  // A column left out on purpose is still reported as not followed.
+  const planned = planSync({
+    grid,
+    keyHeader: 'Branch #',
+    headerMap: { ...later.headerMap, 'Installed on': '' },
+    columns: [...columns, ...later.columns],
+    rows: [],
+    people: [],
+    today: '2026-10-29',
+    capacity: 5000,
+  })
+  if ('error' in planned) throw new Error(planned.error)
+  assert.deepEqual(planned.report.newHeaders, ['Installed on', 'Admin password'])
+  assert.equal(planned.report.missingHeaders.length, 0)
 })
