@@ -498,6 +498,7 @@ test('a sync brings in every choice of the Sheet’s dropdown, including ones no
   ]
   dropdownRanges.length = 0
   dropdowns = [
+    null,
     {
       condition: {
         type: 'ONE_OF_LIST',
@@ -526,7 +527,12 @@ test('a sync brings in every choice of the Sheet’s dropdown, including ones no
       headerMap: { 'Branch #': cKey, Status: cStatus, Phase: cPhase },
     })
     assert.equal(connected.status, 200, JSON.stringify(connected.body))
-    assert.deepEqual(dropdownRanges, ["'Branches'!B2:B50", "'Branches'!C2:C50"])
+    assert.deepEqual(dropdownRanges, ["'Branches'!A2:A50", "'Branches'!B2:B50", "'Branches'!C2:C50"])
+    assert.equal(
+      connected.body.tracker.columns.find((c: any) => c.id === cKey).type,
+      'text',
+      'a Text column whose Sheet column has no dropdown stays Text',
+    )
     const columns = connected.body.tracker.columns
     const status = columns.find((c: any) => c.id === cStatus)
     assert.deepEqual(
@@ -546,6 +552,62 @@ test('a sync brings in every choice of the Sheet’s dropdown, including ones no
       rows.every((r: any) => r.cells[cStatus] === ongoing),
       'rows use the same Ongoing option',
     )
+  })
+  dropdowns = []
+})
+
+test('a Text column that follows a Sheet dropdown becomes a Choice column with the same options', async () => {
+  grid = [
+    ['Branch #', 'Status'],
+    ['57', 'Ongoing'],
+    ['58', 'done'],
+    ['59', ''],
+  ]
+  dropdownRanges.length = 0
+  dropdowns = [
+    null,
+    {
+      condition: {
+        type: 'ONE_OF_LIST',
+        values: [{ userEnteredValue: 'Pending' }, { userEnteredValue: 'Ongoing' }, { userEnteredValue: 'Done' }],
+      },
+    },
+  ]
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Text statuses',
+        columns: [
+          { name: 'Branch #', type: 'text' },
+          { name: 'Status', type: 'text' },
+        ],
+      })
+    ).body.tracker
+    const [cKey, cStatus] = tracker.columns.map((c: any) => c.id)
+    const connected = await ask('POST', `/api/trackers/${tracker.id}/source`, {
+      spreadsheetId: SHEET,
+      tab: 'Branches',
+      keyHeader: 'Branch #',
+      headerMap: { 'Branch #': cKey, Status: cStatus },
+    })
+    assert.equal(connected.status, 200, JSON.stringify(connected.body))
+    const status = connected.body.tracker.columns.find((c: any) => c.id === cStatus)
+    assert.equal(status.type, 'select', 'the tracker gets a dropdown too')
+    assert.deepEqual(
+      status.options.map((o: any) => o.label),
+      ['Pending', 'Ongoing', 'Done'],
+    )
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    const id = (label: string) => status.options.find((o: any) => o.label === label).id
+    assert.deepEqual(
+      rows.map((r: any) => r.cells[cStatus] || ''),
+      [id('Ongoing'), id('Done'), ''],
+      'values match the options by name, ignoring case',
+    )
+    const again = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+    assert.equal(again.status, 200, JSON.stringify(again.body))
+    assert.equal(again.body.report.updated, 0, 'a second sync changes nothing')
   })
   dropdowns = []
 })

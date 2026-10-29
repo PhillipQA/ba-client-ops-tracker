@@ -595,7 +595,9 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       // The column first: if this stops part-way, the next sync finds the leftover text and matches it again.
       // normalizeColumns refuses type changes against `previous`, so this one sync-made change is given as already made.
       const previous = columnsOf(tracker).map(column =>
-        dropdowns.converted.includes(column.id) ? ({ ...column, type: 'select', options: [] } as TrackerColumn) : column,
+        dropdowns.converted.includes(column.id)
+          ? ({ ...column, type: 'select', options: [] } as TrackerColumn)
+          : column,
       )
       const convertedColumns = normalizeColumns(moved.columns, previous)
       dropdowns.columns = convertedColumns

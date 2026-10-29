@@ -230,7 +230,10 @@ test('Sheet dropdowns: lists and ranges are read, and their choices merged into 
   assert.equal(status.options![1].id, 'o1')
   const branch = merged.columns.find(column => column.id === 'c_name')!
   assert.equal(branch.type, 'select', 'a text column that follows a Sheet dropdown becomes a Choice column')
-  assert.deepEqual(branch.options!.map(option => option.label), ['x'])
+  assert.deepEqual(
+    branch.options!.map(option => option.label),
+    ['x'],
+  )
   assert.deepEqual(merged.converted, ['c_name'])
   assert.equal(
     mergeDropdownOptions(columns, map, { Status: ['Open'] }).columns.find(column => column.id === 'c_name'),
@@ -249,7 +252,10 @@ test('values already in a text column move to the dropdown options when it becom
     { id: 'r3', data: { c_name: '' } },
   ])
   const options = moved.columns.find(column => column.id === 'c_name')!.options!
-  assert.deepEqual(options.map(option => option.label), ['Pending', 'Ongoing', 'Done', 'Blocked'])
+  assert.deepEqual(
+    options.map(option => option.label),
+    ['Pending', 'Ongoing', 'Done', 'Blocked'],
+  )
   assert.equal(moved.changes.get('r1')!.c_name, options[2].id)
   assert.equal(moved.changes.get('r2')!.c_name, options[3].id, 'a value the dropdown lacks is kept as a new option')
   assert.equal(moved.changes.get('r3')!.c_name, '')
