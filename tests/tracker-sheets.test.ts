@@ -711,7 +711,7 @@ test('a tracker makes its own Google Sheet, connected two-way, without adding it
         { cells: {} },
       ],
     })
-    assert.equal(added.status, 200, JSON.stringify(added.body))
+    assert.equal(added.status, 201, JSON.stringify(added.body))
 
     const viewer = await ask('POST', `/api/trackers/${tracker.id}/source/create`, {}, { 'x-role': 'Viewer' })
     assert.equal(viewer.status, 403)
