@@ -10,7 +10,7 @@ import {
   settleTimelineFields,
   weekLabel,
   workingDays,
-} from '../src/features/trackers/trackerTimeline'
+} from '../src/features/trackers/timelineModel'
 import { TRACKER_TEMPLATES } from '../src/features/trackers/trackerTemplates'
 
 const columns: TrackerColumn[] = [

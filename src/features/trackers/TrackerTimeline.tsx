@@ -13,7 +13,7 @@ import {
   workingDays,
   type TimelineFields,
   type TimelineItem,
-} from './trackerTimeline'
+} from './timelineModel'
 
 type Zoom = 'day' | 'week' | 'month'
 /** Width of one day, in pixels, for each zoom. */
