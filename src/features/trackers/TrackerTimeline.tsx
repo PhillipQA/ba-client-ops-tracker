@@ -306,17 +306,25 @@ export default function TrackerTimeline(props: Props) {
     )
     saveWidths({ ...widths, task: clampWidth('task', Math.max(names + wbsWidth, phases + 18) + 14) })
   }
-  /** A handle on a column's right edge: drag it, use the arrow keys, or double-click to fit the column. */
-  const resizer = (key: keyof Widths, name: string) => (
+  /**
+   * A handle on a border: between Task and Lead, between Lead and Days, or on the list's right edge (which widens
+   * Task). Drag it on any row, or double-click to fit the column. The header's handles also take the arrow keys.
+   */
+  const resizer = (key: keyof Widths, name: string, edge: 'task' | 'lead' | 'panel', header: boolean) => (
     <span
-      className={`trk-tl-resize${resizingKey === key ? ' active' : ''}`}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={`Resize the ${name} column`}
-      aria-valuenow={widths[key]}
-      aria-valuemin={WIDTH_LIMITS[key][0]}
-      aria-valuemax={WIDTH_LIMITS[key][1]}
-      tabIndex={0}
+      key={edge}
+      className={`trk-tl-resize edge-${edge}`}
+      {...(header && edge !== 'panel'
+        ? {
+            role: 'separator',
+            'aria-orientation': 'vertical' as const,
+            'aria-label': `Resize the ${name} column`,
+            'aria-valuenow': widths[key],
+            'aria-valuemin': WIDTH_LIMITS[key][0],
+            'aria-valuemax': WIDTH_LIMITS[key][1],
+            tabIndex: 0,
+          }
+        : { 'aria-hidden': true })}
       title={`Drag to resize the ${name} column; double-click to fit it`}
       onPointerDown={event => {
         if (event.button !== 0) return
@@ -343,6 +351,7 @@ export default function TrackerTimeline(props: Props) {
       }}
       onDoubleClick={() => fit(key)}
       onKeyDown={event => {
+        if (!header) return
         const step = event.key === 'ArrowRight' ? 16 : event.key === 'ArrowLeft' ? -16 : 0
         if (step) {
           event.preventDefault()
@@ -354,6 +363,13 @@ export default function TrackerTimeline(props: Props) {
       }}
     />
   )
+
+  /** Every row of the list carries the borders, so they can be dragged anywhere, not only in the header. */
+  const edges = (header = false) => [
+    resizer('task', 'Task', 'task', header),
+    resizer('lead', 'Lead', 'lead', header),
+    resizer('task', 'Task', 'panel', header),
+  ]
 
   const bar = (item: TimelineItem) => {
     if (item.start === null || item.end === null) return <span className="trk-tl-nodate">No dates</span>
@@ -423,6 +439,7 @@ export default function TrackerTimeline(props: Props) {
   return (
     <div
       className={`trk-tl${resizingKey ? ' trk-tl-resizing' : ''}`}
+      data-resizing={resizingKey || undefined}
       style={{ '--tl-task': `${widths.task}px`, '--tl-lead': `${widths.lead}px` } as CSSProperties}
     >
       <div className="trk-tl-toolbar">
@@ -465,16 +482,11 @@ export default function TrackerTimeline(props: Props) {
         <div className="trk-tl-table" style={{ width: `calc(var(--tl-left) + ${days * width}px)` }}>
           <div className="trk-tl-row trk-tl-head">
             <div className="trk-tl-left trk-tl-lefthead">
-              <span className="trk-tl-hcell">
-                Task
-                {resizer('task', 'Task')}
-              </span>
-              <span className="trk-tl-hcell">
-                Lead
-                {resizer('lead', 'Lead')}
-              </span>
+              <span className="trk-tl-hcell">Task</span>
+              <span className="trk-tl-hcell">Lead</span>
               <span className="trk-tl-num">Days</span>
               <span className="trk-tl-num">Done</span>
+              {edges(true)}
             </div>
             <div className="trk-tl-chart trk-tl-scale" style={chartStyle}>
               <div className="trk-tl-weeks trk-tl-months">
@@ -553,6 +565,7 @@ export default function TrackerTimeline(props: Props) {
                           {group.start !== null && group.end !== null ? workingDays(group.start, group.end) : ''}
                         </span>
                         <span className="trk-tl-num">{group.progress}%</span>
+                        {edges()}
                       </div>
                       <div className="trk-tl-chart" style={chartStyle}>
                         {group.start !== null && group.end !== null && (
@@ -610,6 +623,7 @@ export default function TrackerTimeline(props: Props) {
                             </span>
                           )}
                           <span className={`trk-tl-num${item.late ? ' late' : ''}`}>{item.progress}%</span>
+                          {edges()}
                         </div>
                         <div className="trk-tl-chart" style={chartStyle}>
                           {bar(item)}
