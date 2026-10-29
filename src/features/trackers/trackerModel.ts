@@ -4,6 +4,8 @@
  * functions, so a value the grid accepts is a value the server accepts.
  */
 
+import type { TimelineSettings } from './timelineModel'
+
 export const TRACKER_LIMITS = {
   columns: 100,
   rows: 5000,
@@ -288,6 +290,8 @@ export type Tracker = {
   template: string
   columns: TrackerColumn[]
   views: TrackerView[]
+  /** The Timeline view's settings, shared by everyone. Missing before schema v29. */
+  timeline?: TimelineSettings
   revision: number
   rowCount: number
   createdBy: string

@@ -1,4 +1,5 @@
 import { requestJson, type HttpMethod } from '../../shared/http'
+import type { TimelineSettings } from './timelineModel'
 import type { Cell, SyncReport, Tracker, TrackerColumn, TrackerRow, TrackerSource, TrackerView } from './trackerModel'
 
 /** An error from the trackers API. A 409 carries the current copy of whatever was edited, so the screen can reload it. */
@@ -117,6 +118,8 @@ export const trackerApi = {
     call<{ tracker: Tracker }>('PUT', `/${id}/columns`, { columns, revision }),
   saveViews: (id: string, views: TrackerView[], revision: number) =>
     call<{ tracker: Tracker }>('PUT', `/${id}/views`, { views, revision }),
+  saveTimeline: (id: string, timeline: TimelineSettings) =>
+    call<{ timeline: TimelineSettings }>('PUT', `/${id}/timeline`, { timeline }),
   rows: (id: string, offset: number, limit: number, signal?: AbortSignal) =>
     call<{ rows: TrackerRow[]; total: number; offset: number }>(
       'GET',
@@ -170,6 +173,13 @@ export const trackerApi = {
       headerMap: Record<string, string>
     },
   ) => call<SyncResult & { tracker: Tracker }>('POST', `/${id}/source`, body),
+  /** Makes a new Google Sheet from the tracker and connects it two-way. */
+  createSheet: (id: string, title: string) =>
+    call<SyncResult & { tracker: Tracker; url: string; rows: number; emptyRows: number }>(
+      'POST',
+      `/${id}/source/create`,
+      { title },
+    ),
   syncSource: (id: string, force: boolean) => call<SyncResult>('POST', `/${id}/source/sync`, { force }),
   reconnectSource: (id: string) => call<SyncResult>('POST', `/${id}/source/reconnect`, {}),
   setSourceMode: (id: string, mode: 'one_way' | 'two_way') =>
