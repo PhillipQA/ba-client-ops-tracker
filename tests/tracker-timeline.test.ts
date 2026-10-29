@@ -13,7 +13,7 @@ import {
   weekLabel,
   workingDays,
 } from '../src/features/trackers/timelineModel'
-import { TRACKER_TEMPLATES } from '../src/features/trackers/trackerTemplates'
+import { TRACKER_TEMPLATES, addWorkingDays, templateRows } from '../src/features/trackers/trackerTemplates'
 import { sheetFormatRequests, sheetFromTracker } from '../src/features/trackers/sheetFromTracker'
 
 const columns: TrackerColumn[] = [
@@ -220,4 +220,76 @@ test('a new Google Sheet from a tracker: key column first, real dates and checkb
   assert.deepEqual(sheetFromTracker([{ id: 'n', name: 'Hours', type: 'number' }], [], []), {
     error: 'The tracker needs a Text column to name each row in the Sheet, such as Task or Branch.',
   })
+})
+
+test('the Project timeline template starts with the task list, scheduled on working days from the start date', () => {
+  const template = TRACKER_TEMPLATES.find(item => item.id === 'project-timeline')!
+  const made: TrackerColumn[] = template.columns.map((column, at) => ({
+    id: `c${at}`,
+    name: column.name,
+    type: column.type,
+    options: column.options?.map((option, i) => ({ id: `o${at}_${i}`, ...option })),
+  }))
+  const id = (name: string) => made.find(column => column.name === name)!.id
+  const rows = templateRows(template, made, '2026-11-02')
+  assert.equal(rows.length, 22)
+  const byWbs = (wbs: string) => rows.find(row => row.cells[id('WBS')] === wbs)!.cells
+  const kickoff = byWbs('1.1')
+  assert.equal(kickoff[id('Task')], 'Formal Kickoff')
+  assert.equal(kickoff[id('Start')], '2026-11-02')
+  assert.equal(kickoff[id('End')], '2026-11-02')
+  assert.equal(kickoff[id('% Done')], 0)
+  const phase = made.find(column => column.name === 'Phase')!
+  assert.equal(kickoff[phase.id], phase.options!.find(option => option.label === 'Project Planning')!.id)
+  const build = byWbs('2.1')
+  assert.deepEqual([build[id('Start')], build[id('End')]], ['2026-11-09', '2026-12-04'], '20 working days')
+  assert.equal(byWbs('6.1')[id('Predecessor')], '5.1 & 3.9')
+  assert.equal(byWbs('7.1')[id('Start')], '2027-01-04', 'Go Live 45 working days in')
+  // Every task starts after the tasks it follows.
+  for (const row of rows) {
+    const before = String(row.cells[id('Predecessor')] || '')
+    for (const wbs of before
+      .split('&')
+      .map(item => item.trim())
+      .filter(Boolean))
+      assert.ok(
+        String(byWbs(wbs)[id('End')]) < String(row.cells[id('Start')]),
+        `${row.cells[id('WBS')]} starts after ${wbs}`,
+      )
+  }
+  assert.equal(
+    templateRows(template, made, '2026-11-07')[0].cells[id('Start')],
+    '2026-11-09',
+    'a Saturday start moves to Monday',
+  )
+  assert.equal(templateRows(template, made, '')[0].cells[id('Start')], undefined, 'no start date, no dates')
+  assert.equal(addWorkingDays(dayNumber('2026-11-06')!, 1), dayNumber('2026-11-09'), 'Friday + 1 is Monday')
+  const timeline = buildTimeline(
+    rows.map((row, at) => ({
+      id: `r${at}`,
+      position: at,
+      cells: row.cells,
+      secretSet: {},
+      taskId: '',
+      version: 1,
+      updatedAt: '',
+    })),
+    made,
+    guessTimelineFields(made),
+    { today: dayNumber('2026-11-02')! },
+  )
+  assert.deepEqual(
+    timeline.groups.map(group => group.label),
+    [
+      'Project Planning',
+      'Data Build-up',
+      'Hardware & BIR',
+      'Training',
+      'UAT',
+      'Pre-Live',
+      'Go Live',
+      'Support Turnover',
+    ],
+  )
+  assert.equal(timeline.unscheduled, 0)
 })

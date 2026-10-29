@@ -2636,3 +2636,14 @@ a.trk-link-button {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* Starter task list in the New tracker dialog */
+.trk-starter {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--k-border);
+  border-radius: 10px;
+  background: var(--k-soft);
+}

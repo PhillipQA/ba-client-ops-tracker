@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link2, Lock, Plus, Search, Table2, Upload } from 'lucide-react'
 import { TRACKER_LIMITS, columnTypeLabel, type Tracker } from './trackerModel'
-import { TRACKER_TEMPLATES, templateById } from './trackerTemplates'
+import { TRACKER_TEMPLATES, templateById, templateRows } from './trackerTemplates'
 import { trackerApi } from './trackerApi'
 import { rememberTracker, rememberedTracker } from './trackerNav'
 import { VIEW_PATHS, opensElsewhere, pathForTracker, trackerIdFromPath } from '../../app/routes'
@@ -54,7 +54,15 @@ function NewTrackerDialog({
   const [onlyMe, setOnlyMe] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Templates with starter rows (Project timeline): whether to add them, and the date their schedule starts from.
+  const [withRows, setWithRows] = useState(true)
+  const [startDate, setStartDate] = useState(() => {
+    const now = new Date()
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ((8 - now.getDay()) % 7 || 7))
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`
+  })
   const template = templateById(templateId)!
+  const starter = template.rows?.length ? template.rows.length : 0
   const pick = (id: string) => {
     setTemplateId(id)
     if (!touched) setName(id === 'blank' ? '' : templateById(id)?.name || '')
@@ -74,6 +82,14 @@ function NewTrackerDialog({
         projectId,
         private: onlyMe,
       })
+      if (starter && withRows) {
+        // The tracker exists either way; if the rows cannot be added, it opens empty and they can be typed in.
+        const added = await trackerApi
+          .addRows(result.tracker.id, templateRows(template, result.tracker.columns, startDate))
+          .catch(() => null)
+        onCreated(added ? { ...result.tracker, rowCount: added.rows.length } : result.tracker)
+        return
+      }
       onCreated(result.tracker)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The tracker could not be created.')
@@ -132,6 +148,25 @@ function NewTrackerDialog({
               ))}
             </select>
           </label>
+          {starter > 0 && (
+            <fieldset className="trk-starter">
+              <label className="trk-checkline">
+                <input type="checkbox" checked={withRows} onChange={event => setWithRows(event.target.checked)} /> Start
+                with the standard task list ({starter} tasks in{' '}
+                {new Set(template.rows!.map(row => String(row.cells.Phase || ''))).size} phases)
+              </label>
+              {withRows && template.schedule && (
+                <label className="trk-field-block">
+                  Project start date
+                  <input type="date" value={startDate} onChange={event => setStartDate(event.target.value)} />
+                  <span className="trk-muted-text">
+                    Every task gets a first Start and End from this date, on working days. Leave it empty to fill the
+                    dates in yourself. You can change, add or remove any task afterwards.
+                  </span>
+                </label>
+              )}
+            </fieldset>
+          )}
           <label className="trk-checkline">
             <input type="checkbox" checked={onlyMe} onChange={event => setOnlyMe(event.target.checked)} /> Only I can
             see this tracker

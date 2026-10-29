@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
 import { registerTrackerRoutes } from '../server/trackers/trackers'
+import { TRACKER_TEMPLATES, templateRows } from '../src/features/trackers/trackerTemplates'
 
 type Row = Record<string, any>
 const KEYS: Record<string, string[]> = {
@@ -783,5 +784,24 @@ test('timeline settings are shared on the tracker; viewers cannot change them fo
     assert.equal(opened.revision, tracker.revision, 'view settings do not count as a change to the tracker')
     const viewer = await ask('PUT', `/api/trackers/${tracker.id}/timeline`, { timeline: {} }, { 'x-role': 'Viewer' })
     assert.equal(viewer.status, 403)
+  })
+})
+
+test('a tracker made from the Project timeline template takes its starter rows as they are', async () => {
+  const template = TRACKER_TEMPLATES.find(item => item.id === 'project-timeline')!
+  const h = harness()
+  await serve(h, async ask => {
+    const made = await ask('POST', '/api/trackers', {
+      name: 'Barter XI - Implementation',
+      template: template.id,
+      columns: template.columns,
+    })
+    assert.equal(made.status, 201, JSON.stringify(made.body))
+    const tracker = made.body.tracker
+    const added = await ask('POST', `/api/trackers/${tracker.id}/rows`, {
+      rows: templateRows(template, tracker.columns, '2026-11-02'),
+    })
+    assert.equal(added.status, 201, JSON.stringify(added.body))
+    assert.equal(added.body.rows.length, 22)
   })
 })
