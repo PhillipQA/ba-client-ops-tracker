@@ -36,6 +36,7 @@ import {
 } from '../../src/features/trackers/trackerSync'
 import { cleanTimelineSettings } from '../../src/features/trackers/timelineModel'
 import { sheetFormatRequests, sheetFromTracker } from '../../src/features/trackers/sheetFromTracker'
+import { GANTT_TAB, ganttFields, ganttSheetRequests } from '../../src/features/trackers/sheetGantt'
 import {
   SHEET_ISSUES,
   autoDoneColumn,
@@ -1625,6 +1626,28 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
         { method: 'POST', body: { requests: sheetFormatRequests(plan, sheetTabId, gridRows) } },
       ).catch(() => undefined)
+      // A Gantt chart tab when the tracker has dates, drawn from the synced tab. Best effort, like the formatting.
+      const chartFields = ganttFields(columnsOf(tracker), tracker.timeline || undefined, plan.headerMap, plan.keyHeader)
+      const chart = chartFields
+        ? ganttSheetRequests({
+            title,
+            dataTab: tab,
+            headers: plan.headers,
+            fields: chartFields,
+            sheetId: newSheetId([sheetTabId]),
+            dataRows: gridRows,
+          })
+        : null
+      const gantt =
+        chart && 'requests' in chart
+          ? await sheetsGet(
+              access.token,
+              `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
+              { method: 'POST', body: { requests: chart.requests } },
+            )
+              .then(() => true)
+              .catch(() => false)
+          : false
 
       const stamp = now()
       const synced = new Set(Object.values(plan.headerMap))
@@ -1686,10 +1709,88 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
         rows: plan.placed.length,
         emptyRows: plan.skipped,
+        gantt,
         tracker: { ...trackerOut(fresh, user, await rowCount(tenant, id)), source: result.source },
       })
     }),
   )
+  /** A tab id not used in the spreadsheet yet. */
+  const newSheetId = (used: number[]) => {
+    let id = 0
+    while (!id || used.includes(id)) id = 100_000 + Math.floor(Math.random() * 2_000_000_000)
+    return id
+  }
+
+  /**
+   * Adds a Gantt chart tab to the Sheet this tracker follows, or draws it again (the old one is replaced). It reads the
+   * synced tab with formulas, so it keeps up with every sync. Written with the asking person's own Google account.
+   */
+  app.post(
+    '/api/trackers/:id/source/gantt',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req),
+        tenant = user.organizationId,
+        id = idParam(req)
+      const tracker = await trackerRow(tenant, id, user)
+      if (user.role === 'Viewer') throw new TrackerError('Viewers cannot change the Google Sheet.', 403)
+      if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it first.', 409)
+      const source = await sourceRow(tenant, id)
+      if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
+      const access = await googleFor(tenant, user.id)
+      if (!canWriteSheets(access.scope))
+        throw new TrackerError('Allow editing Google Sheets first, so the chart can be added to the Sheet.', 403, {
+          needsWrite: true,
+        })
+      const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}`
+      const meta = await sheetsGet(
+        access.token,
+        `${base}?fields=sheets.properties(sheetId,title,gridProperties(rowCount))`,
+      ).catch(error => explainSheetError(access.token, source.spreadsheet_id, error))
+      const tabs: any[] = (meta?.sheets || []).map((sheet: any) => sheet.properties || {})
+      const data = tabs.find(item => item.title === source.tab)
+      if (!data) throw new TrackerError(`The tab “${source.tab}” is no longer in the Sheet.`, 409)
+      const old = tabs.find(item => item.title === GANTT_TAB)
+      const head = await sheetsGet(
+        access.token,
+        `${base}/values/${encodeURIComponent(`${tabRange(source.tab)}!1:1`)}?majorDimension=ROWS`,
+      )
+      const headers = (Array.isArray(head?.values?.[0]) ? head.values[0] : []).map((value: unknown) =>
+        String(value ?? ''),
+      )
+      const fields = ganttFields(
+        columnsOf(tracker),
+        tracker.timeline || undefined,
+        source.header_map || {},
+        source.key_header,
+      )
+      if (!fields)
+        throw new TrackerError(
+          'The chart needs a Start date column that follows the Sheet. Choose it in the Timeline, then try again.',
+          409,
+        )
+      const sheetTabId = newSheetId(tabs.map(item => Number(item.sheetId)))
+      const built = ganttSheetRequests({
+        title: tracker.name,
+        dataTab: source.tab,
+        headers,
+        fields,
+        sheetId: sheetTabId,
+        dataRows: Number(data.gridProperties?.rowCount || 1000),
+      })
+      if ('error' in built) throw new TrackerError(built.error, 409)
+      await sheetsGet(access.token, `${base}:batchUpdate`, {
+        method: 'POST',
+        body: { requests: [...(old ? [{ deleteSheet: { sheetId: Number(old.sheetId) } }] : []), ...built.requests] },
+      })
+      await record(tenant, id, '', user, 'sheet_gantt', { name: source.spreadsheet_name, replaced: Boolean(old) })
+      res.json({
+        url: `https://docs.google.com/spreadsheets/d/${source.spreadsheet_id}/edit#gid=${sheetTabId}`,
+        replaced: Boolean(old),
+      })
+    }),
+  )
+
   app.post(
     '/api/trackers/:id/source/sync',
     ...scope,

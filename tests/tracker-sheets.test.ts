@@ -124,6 +124,7 @@ let canOpen = new Set(['u1', 'u2'])
 const NEW_SHEET = '1NewSheetMadeFromATracker0123456789abcdef'
 const created: any[] = []
 const formatted: any[] = []
+let newSheetTabs: any[] = [{ properties: { sheetId: 7, title: 'Tracker', gridProperties: { rowCount: 1000 } } }]
 let lastToken = ''
 const realFetch = globalThis.fetch
 globalThis.fetch = (async (input: any, init?: any) => {
@@ -202,6 +203,7 @@ globalThis.fetch = (async (input: any, init?: any) => {
     grid = body.sheets[0].data[0].rowData.map((row: any) => row.values.map(shown))
     return reply(200, { spreadsheetId: NEW_SHEET, sheets: [{ properties: { sheetId: 7, title: 'Tracker' } }] })
   }
+  if (url.includes(`/spreadsheets/${NEW_SHEET}?fields=`)) return reply(200, { sheets: newSheetTabs })
   if (url.includes(`/spreadsheets/${NEW_SHEET}:batchUpdate`)) {
     formatted.push(JSON.parse(String(init.body)))
     return reply(200, {})
@@ -803,5 +805,60 @@ test('a tracker made from the Project timeline template takes its starter rows a
     })
     assert.equal(added.status, 201, JSON.stringify(added.body))
     assert.equal(added.body.rows.length, 22)
+  })
+})
+
+test('a Sheet made from a tracker with dates gets a Gantt chart tab, and a connected Sheet can have it drawn again', async () => {
+  const WRITE = 'https://www.googleapis.com/auth/spreadsheets'
+  created.length = 0
+  formatted.length = 0
+  dropdowns = []
+  const h = harness({ u1: WRITE })
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Barter XI',
+        columns: [
+          { name: 'Task', type: 'text' },
+          { name: 'Start', type: 'date' },
+          { name: 'End', type: 'date' },
+          { name: '% Done', type: 'number' },
+          { name: 'Status', type: 'select', options: [{ label: 'Pending' }, { label: 'Done' }] },
+        ],
+      })
+    ).body.tracker
+    const [cTask, cStart, cEnd, cPct] = tracker.columns.map((c: any) => c.id)
+    await ask('POST', `/api/trackers/${tracker.id}/rows`, {
+      rows: [{ cells: { [cTask]: 'Kickoff', [cStart]: '2026-11-02', [cEnd]: '2026-11-03', [cPct]: 50 } }],
+    })
+    const made = await ask('POST', `/api/trackers/${tracker.id}/source/create`, {})
+    assert.equal(made.status, 200, JSON.stringify(made.body))
+    assert.equal(made.body.gantt, true)
+    assert.equal(formatted.length, 2, 'formatting, then the chart')
+    const chart = formatted[1].requests
+    assert.equal(chart[0].addSheet.properties.title, 'Gantt chart')
+    assert.equal(
+      chart[1].updateCells.rows[6].values[0].userEnteredValue.formulaValue,
+      "=ARRAYFORMULA(IF('Tracker'!$A$2:$A=\"\",,'Tracker'!$A$2:$A))",
+    )
+
+    const viewer = await ask('POST', `/api/trackers/${tracker.id}/source/gantt`, {}, { 'x-role': 'Viewer' })
+    assert.equal(viewer.status, 403)
+    const noWrite = await ask('POST', `/api/trackers/${tracker.id}/source/gantt`, {}, { 'x-user': 'u2' })
+    assert.equal(noWrite.body.needsWrite, true)
+
+    formatted.length = 0
+    const added = await ask('POST', `/api/trackers/${tracker.id}/source/gantt`, {})
+    assert.equal(added.status, 200, JSON.stringify(added.body))
+    assert.equal(added.body.replaced, false)
+    assert.match(added.body.url, /#gid=\d+$/)
+    assert.equal(formatted[0].requests[0].addSheet.properties.title, 'Gantt chart')
+
+    newSheetTabs = [...newSheetTabs, { properties: { sheetId: 42, title: 'Gantt chart' } }]
+    formatted.length = 0
+    const again = await ask('POST', `/api/trackers/${tracker.id}/source/gantt`, {})
+    assert.equal(again.body.replaced, true)
+    assert.deepEqual(formatted[0].requests[0], { deleteSheet: { sheetId: 42 } }, 'the old chart is replaced')
+    newSheetTabs = newSheetTabs.slice(0, 1)
   })
 })

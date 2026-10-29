@@ -2647,3 +2647,7 @@ a.trk-link-button {
   border-radius: 10px;
   background: var(--k-soft);
 }
+.trk-tl-months span {
+  background: color-mix(in srgb, var(--k-text) 4%, transparent);
+  border-bottom: 1px solid var(--k-line);
+}

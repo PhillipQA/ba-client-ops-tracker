@@ -60,7 +60,7 @@ export const takeReview = (trackerId: string): string[] | 'flagged' | null => {
 
 const WRITE_KEY = 'ba.trackers.allowSheetEdits'
 /** Why this person went to allow editing Google Sheets: done marks, turning on two-way, their own edits, or a new Sheet. */
-export type SheetEditsFor = 'done' | 'two_way' | 'edit' | 'create'
+export type SheetEditsFor = 'done' | 'two_way' | 'edit' | 'create' | 'gantt'
 /** Remembers that this person went to allow editing Google Sheets for a tracker, so it can carry on when they return. */
 export const rememberSheetEdits = (trackerId: string, purpose: SheetEditsFor = 'done') => {
   rememberTracker(trackerId)
@@ -76,7 +76,7 @@ export const takeSheetEdits = (trackerId: string): SheetEditsFor | '' => {
     const [id, purpose] = (window.sessionStorage.getItem(WRITE_KEY) || '').split('|')
     if (id !== trackerId) return ''
     window.sessionStorage.removeItem(WRITE_KEY)
-    return purpose === 'two_way' || purpose === 'edit' || purpose === 'create' ? purpose : 'done'
+    return purpose === 'two_way' || purpose === 'edit' || purpose === 'create' || purpose === 'gantt' ? purpose : 'done'
   } catch {
     return ''
   }

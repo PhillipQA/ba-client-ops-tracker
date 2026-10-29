@@ -170,7 +170,8 @@ export default function TrackerTimeline(props: Props) {
   const weeks: number[] = []
   if (from !== null) for (let day = from; day < from + days; day += 7) weeks.push(day)
   const months: { start: number; length: number }[] = []
-  if (from !== null && zoom === 'month')
+  // Months (with the year) head every zoom, so dates always read as a calendar.
+  if (from !== null)
     for (let day = from; day < from + days; day++) {
       const first = new Date(day * 86_400_000).getUTCDate() === 1 || day === from
       if (first) months.push({ start: day, length: 0 })
@@ -342,20 +343,23 @@ export default function TrackerTimeline(props: Props) {
               <span className="trk-tl-num">Done</span>
             </div>
             <div className="trk-tl-chart trk-tl-scale" style={chartStyle}>
-              <div className="trk-tl-weeks">
-                {zoom === 'month'
-                  ? months.map(month => (
-                      <span key={month.start} style={{ width: month.length * width }}>
-                        {monthLabel(month.start)}
-                      </span>
-                    ))
-                  : weeks.map(week => (
-                      <span key={week} style={{ width: 7 * width }} title={`Week of ${isoOf(week)}`}>
-                        {timeline.weekOne !== null && <b>{weekLabel(week, timeline.weekOne)}</b>}
-                        <small>{shortDate(week, zoom === 'day')}</small>
-                      </span>
-                    ))}
+              <div className="trk-tl-weeks trk-tl-months">
+                {months.map(month => (
+                  <span key={month.start} style={{ width: month.length * width }} title={monthLabel(month.start)}>
+                    <b>{month.length * width >= 60 ? monthLabel(month.start) : ''}</b>
+                  </span>
+                ))}
               </div>
+              {zoom !== 'month' && (
+                <div className="trk-tl-weeks">
+                  {weeks.map(week => (
+                    <span key={week} style={{ width: 7 * width }} title={`Week of ${shortDate(week, true)}`}>
+                      {timeline.weekOne !== null && <b>{weekLabel(week, timeline.weekOne)}</b>}
+                      <small>{shortDate(week, true)}</small>
+                    </span>
+                  ))}
+                </div>
+              )}
               {zoom === 'day' && from !== null && (
                 <div className="trk-tl-days">
                   {Array.from({ length: days }, (_, at) => {
