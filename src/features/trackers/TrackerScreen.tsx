@@ -752,6 +752,32 @@ export default function TrackerScreen(props: Props) {
     Boolean(column.synced && row.sourceKey && tracker?.source?.mode !== 'two_way')
   const canEditDates = (row: TrackerRow) =>
     canEdit && !columns.some(column => column.type === 'date' && cellLocked(row, column))
+  /** The % done a Status change implies: 100 when set to Done, 0 when it leaves Done from 100. */
+  const progressFor = (row: TrackerRow, column: TrackerColumn, value: Cell): Record<string, Cell> | null => {
+    if (!tracker || column.type !== 'select') return null
+    const fields = settleTimelineFields(columns, tracker.timeline?.fields || null)
+    const doneColumn = autoDoneColumn(columns)
+    if (column.id !== fields.statusId && column.id !== doneColumn?.id) return null
+    const progress = columns.find(item => item.id === (taskFieldColumn(columns, 'progress')?.id || fields.progressId))
+    if (!progress || progress.type !== 'number') return null
+    const isDone = (cell: Cell | undefined) =>
+      doneColumn?.id === column.id && doneColumn.autoDone?.done
+        ? cell === doneColumn.autoDone.done
+        : /^(done|completed?|finished|closed)$/i.test(column.options?.find(option => option.id === cell)?.label || '')
+    const current = row.cells[progress.id]
+    const scale = rowsRef.current.some(
+      item => typeof item.cells[progress.id] === 'number' && (item.cells[progress.id] as number) > 1,
+    )
+      ? 100
+      : rowsRef.current.some(
+            item => typeof item.cells[progress.id] === 'number' && (item.cells[progress.id] as number) > 0,
+          )
+        ? 1
+        : 100
+    if (isDone(value) && current !== scale) return { [progress.id]: scale }
+    if (!isDone(value) && isDone(row.cells[column.id]) && current === scale) return { [progress.id]: 0 }
+    return null
+  }
   /** Several cells of one row in one save, such as the Start and End of a dragged bar. */
   const editCells = (row: TrackerRow, values: Record<string, Cell>) => {
     if (!canEdit) return
@@ -774,6 +800,9 @@ export default function TrackerScreen(props: Props) {
   }
   const editCell = (row: TrackerRow, column: TrackerColumn, value: Cell) => {
     if (!canEdit) return
+    // Status → Done also sets % done to 100; leaving Done puts 100 back to 0. One save for both.
+    const extra = progressFor(row, column, value)
+    if (extra) return editCells(row, { [column.id]: value, ...extra })
     const current = rowsRef.current.find(item => item.id === row.id)
     if (!current) return
     const before = current.cells[column.id] ?? emptyCell(column.type)
