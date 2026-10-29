@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import type { TrackerColumn, TrackerRow } from '../src/features/trackers/trackerModel'
 import {
   buildTimeline,
+  cleanTimelineSettings,
   dayNumber,
+  draggedDates,
   guessTimelineFields,
   isoOf,
   mondayOf,
@@ -12,6 +14,7 @@ import {
   workingDays,
 } from '../src/features/trackers/timelineModel'
 import { TRACKER_TEMPLATES } from '../src/features/trackers/trackerTemplates'
+import { sheetFormatRequests, sheetFromTracker } from '../src/features/trackers/sheetFromTracker'
 
 const columns: TrackerColumn[] = [
   { id: 'c_task', name: 'Task', type: 'text' },
@@ -155,4 +158,66 @@ test('the Project timeline template has what the timeline needs', () => {
     ],
     ['Start', 'End', '% Done', 'Phase', 'Status', 'Lead'],
   )
+})
+
+test('dragging a bar moves it, or changes one end, and never makes it shorter than a day', () => {
+  const start = dayNumber('2026-03-18')!,
+    end = dayNumber('2026-03-20')!
+  const iso = (dates: { start: number; end: number }) => [isoOf(dates.start), isoOf(dates.end)]
+  assert.deepEqual(iso(draggedDates(start, end, 'move', 5)), ['2026-03-23', '2026-03-25'])
+  assert.deepEqual(iso(draggedDates(start, end, 'start', -2)), ['2026-03-16', '2026-03-20'])
+  assert.deepEqual(iso(draggedDates(start, end, 'end', 10)), ['2026-03-18', '2026-03-30'])
+  assert.deepEqual(iso(draggedDates(start, end, 'start', 9)), ['2026-03-20', '2026-03-20'])
+  assert.deepEqual(iso(draggedDates(start, end, 'end', -9)), ['2026-03-18', '2026-03-18'])
+})
+
+test('saved timeline settings keep only real choices', () => {
+  assert.deepEqual(
+    cleanTimelineSettings(
+      { zoom: 'month', fields: { startId: 'c_end', endId: '', groupId: 'c_phase', progressId: 'c_task', leadId: 7 } },
+      columns,
+    ),
+    { zoom: 'month', fields: { startId: 'c_end', endId: '', groupId: 'c_phase' } },
+  )
+  assert.deepEqual(cleanTimelineSettings({ zoom: 'year', fields: { startId: '' } }, columns), {})
+  assert.deepEqual(cleanTimelineSettings('nonsense', columns), {})
+})
+
+test('a new Google Sheet from a tracker: key column first, real dates and checkboxes, dropdowns, empty rows left out', () => {
+  const plan = sheetFromTracker(
+    [{ id: 'c_secret', name: 'Login', type: 'secret' }, ...columns, { id: 'c_box', name: 'Signed', type: 'checkbox' }],
+    [
+      { id: 'r1', cells: { c_task: 'Kickoff', c_start: '2026-01-21', c_status: 's2', c_box: true, c_pct: 100 } },
+      { id: 'r2', cells: { c_wbs: '1.2' } },
+      { id: 'r3', cells: {} },
+      { id: 'r4', cells: { c_task: '=1+1', c_lead: 'HeroHub' } },
+    ],
+    [],
+  )
+  if ('error' in plan) throw new Error(plan.error)
+  assert.equal(plan.keyHeader, 'Task')
+  assert.deepEqual(plan.headers, ['Task', 'WBS', 'Phase', 'Lead', 'Start', 'End', '% Done', 'Status', 'Signed'])
+  assert.equal(plan.skipped, 1, 'a row with nothing in it has no Sheet row')
+  assert.deepEqual(
+    plan.placed.map(item => item.key),
+    ['Kickoff', 'Kickoff\u001e1', '=1+1'],
+    'a row with no name belongs to the named row above, as a sync reads it',
+  )
+  const first = plan.rowData[1].values
+  assert.equal(first[4].userEnteredValue?.numberValue, 46043, '21 Jan 2026 as a Sheets date')
+  assert.equal(first[7].userEnteredValue?.stringValue, 'Done')
+  assert.equal(first[8].userEnteredValue?.boolValue, true)
+  assert.equal(plan.rowData[3].values[0].userEnteredValue?.stringValue, '=1+1', 'kept as text, not a formula')
+  assert.deepEqual(
+    plan.dropdowns.map(item => item.index),
+    [2, 7],
+  )
+  assert.deepEqual(plan.checkboxes, [8])
+  assert.deepEqual(plan.dates, [4, 5])
+  const requests = sheetFormatRequests(plan, 3, 1000)
+  assert.ok(requests.some((r: any) => r.setDataValidation?.range.startColumnIndex === 7))
+  assert.ok(!JSON.stringify(plan).includes('c_secret'), 'Secret columns never go to the Sheet')
+  assert.deepEqual(sheetFromTracker([{ id: 'n', name: 'Hours', type: 'number' }], [], []), {
+    error: 'The tracker needs a Text column to name each row in the Sheet, such as Task or Branch.',
+  })
 })

@@ -34,6 +34,8 @@ import {
   sheetIdFrom,
   tabRange,
 } from '../../src/features/trackers/trackerSync'
+import { cleanTimelineSettings } from '../../src/features/trackers/timelineModel'
+import { sheetFormatRequests, sheetFromTracker } from '../../src/features/trackers/sheetFromTracker'
 import {
   SHEET_ISSUES,
   autoDoneColumn,
@@ -151,6 +153,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     template: row.template || '',
     columns: Array.isArray(row.columns) ? row.columns : [],
     views: Array.isArray(row.views) ? row.views : [],
+    ...(row.timeline && typeof row.timeline === 'object' ? { timeline: row.timeline } : {}),
     revision: Number(row.revision || 1),
     rowCount: count,
     createdBy: row.created_by || '',
@@ -1551,6 +1554,142 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       })
     }),
   )
+  /**
+   * Makes a new Google Sheet from the tracker, in the Drive of the person asking, and connects it two-way: the
+   * tracker's rows are written to it in order, each row is recognised by its name from then on, and later edits on
+   * either side are synced. Needs that person's permission to edit Google Sheets.
+   */
+  app.post(
+    '/api/trackers/:id/source/create',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req),
+        tenant = user.organizationId,
+        id = idParam(req)
+      const tracker = await trackerRow(tenant, id, user)
+      if (user.role === 'Viewer') throw new TrackerError('Viewers cannot make a Google Sheet from a tracker.', 403)
+      if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it first.', 409)
+      if (await sourceRow(tenant, id))
+        throw new TrackerError(
+          'This tracker already follows a Google Sheet. Disconnect it first to make a new one.',
+          409,
+        )
+      const access = await googleFor(tenant, user.id)
+      if (!canWriteSheets(access.scope))
+        throw new TrackerError('Allow editing Google Sheets first, so the tracker can make your Sheet.', 403, {
+          needsWrite: true,
+        })
+      const existing = await allRows(tenant, id)
+      const state = await workspace(tenant)
+      const people = (Array.isArray(state.accounts) ? state.accounts : []).map((account: any) => ({
+        id: String(account.id),
+        name: String(account.name || account.username || ''),
+      }))
+      const plan = sheetFromTracker(
+        columnsOf(tracker),
+        existing.map(row => ({ id: row.id, cells: row.data || {} })),
+        people,
+      )
+      if ('error' in plan) throw new TrackerError(plan.error)
+      const title =
+        String(req.body?.title || tracker.name)
+          .trim()
+          .slice(0, 100) || 'Tracker'
+      const tab = 'Tracker'
+      const gridRows = Math.max(1000, plan.rowData.length + 200)
+      const created = await sheetsGet(access.token, 'https://sheets.googleapis.com/v4/spreadsheets', {
+        method: 'POST',
+        body: {
+          properties: { title },
+          sheets: [
+            {
+              properties: {
+                title: tab,
+                gridProperties: {
+                  rowCount: gridRows,
+                  columnCount: Math.max(plan.headers.length, 5),
+                  frozenRowCount: 1,
+                },
+              },
+              data: [{ startRow: 0, startColumn: 0, rowData: plan.rowData }],
+            },
+          ],
+        },
+      })
+      const spreadsheetId = String(created?.spreadsheetId || '')
+      if (!spreadsheetId) throw new TrackerError('Google did not make the Sheet. Try again in a moment.', 502)
+      const sheetTabId = Number(created?.sheets?.[0]?.properties?.sheetId ?? 0)
+      // Dropdowns, checkboxes, date format and widths. The Sheet is usable without them, so this never fails the request.
+      await sheetsGet(
+        access.token,
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
+        { method: 'POST', body: { requests: sheetFormatRequests(plan, sheetTabId, gridRows) } },
+      ).catch(() => undefined)
+
+      const stamp = now()
+      const synced = new Set(Object.values(plan.headerMap))
+      const columns = columnsOf(tracker)
+      const nextColumns = normalizeColumns(
+        columns.map(column => ({ ...column, ...(synced.has(column.id) ? { synced: true } : { synced: undefined }) })),
+        columns,
+      )
+      const savedColumns = await db
+        .from('tenant_trackers')
+        .update({ columns: nextColumns, revision: Number(tracker.revision || 1) + 1, updated_at: stamp })
+        .eq('tenant_id', tenant)
+        .eq('id', id)
+      check(savedColumns.error)
+      const record_ = {
+        tenant_id: tenant,
+        tracker_id: id,
+        spreadsheet_id: spreadsheetId,
+        spreadsheet_name: title,
+        tab,
+        key_header: plan.keyHeader,
+        header_map: plan.headerMap,
+        mode: 'two_way',
+        connected_by: user.id,
+        connected_by_name: user.name,
+        connected_email: access.email || '',
+        last_status: 'never',
+        last_error: '',
+        last_report: null,
+        created_at: stamp,
+        updated_at: stamp,
+      }
+      const saved = await db.from('tenant_tracker_sources').insert(record_)
+      sourceCheck(saved.error)
+      // Each row is recognised in the Sheet by its name and order from now on, so the first sync matches every row
+      // instead of adding them again.
+      for (let at = 0; at < plan.placed.length; at += 25)
+        await Promise.all(
+          plan.placed.slice(at, at + 25).map(async item => {
+            const keyed = await db
+              .from('tenant_tracker_rows')
+              .update({ source_key: item.key, source_missing: false })
+              .eq('tenant_id', tenant)
+              .eq('tracker_id', id)
+              .eq('id', item.rowId)
+            sourceCheck(keyed.error)
+          }),
+        )
+      await record(tenant, id, '', user, 'sheet_connected', { name: title, tab, created: true })
+      const result = await runSync(
+        tenant,
+        { ...tracker, columns: nextColumns, revision: Number(tracker.revision || 1) + 1 },
+        user,
+        true,
+      )
+      const fresh = await trackerRow(tenant, id, user)
+      res.json({
+        ...result,
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        rows: plan.placed.length,
+        emptyRows: plan.skipped,
+        tracker: { ...trackerOut(fresh, user, await rowCount(tenant, id)), source: result.source },
+      })
+    }),
+  )
   app.post(
     '/api/trackers/:id/source/sync',
     ...scope,
@@ -2301,6 +2440,33 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await requireRevision(tenant, row, req.body, user)
       const views = normalizeViews(req.body?.views ?? [], columnsOf(row))
       res.json({ tracker: await replaceTracker(tenant, row, { views }, user) })
+    }),
+  )
+
+  /**
+   * The Timeline view's settings, shared by everyone who opens the tracker. They are view settings, not content, so
+   * they neither need nor change the tracker's revision.
+   */
+  app.put(
+    '/api/trackers/:id/timeline',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req),
+        tenant = user.organizationId,
+        id = idParam(req)
+      const row = await trackerRow(tenant, id, user)
+      if (user.role === 'Viewer') throw new TrackerError('Viewers can change the timeline only for themselves.', 403)
+      if (row.archived_at) throw new TrackerError('This tracker is archived. Restore it to change its timeline.', 409)
+      const timeline = cleanTimelineSettings(req.body?.timeline, columnsOf(row))
+      const saved = await db.from('tenant_trackers').update({ timeline }).eq('tenant_id', tenant).eq('id', id)
+      if (saved.error && /timeline/i.test(String(saved.error.message || '')))
+        throw new TrackerError(
+          'Timeline settings can be shared once the database is upgraded (schema v29). Until then they are kept in your browser.',
+          409,
+          { needsMigration: true },
+        )
+      check(saved.error)
+      res.json({ timeline })
     }),
   )
 

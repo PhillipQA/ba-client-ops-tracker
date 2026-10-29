@@ -143,13 +143,16 @@ export default function TrackerScreen(props: Props) {
   // Grid or Timeline, remembered per tracker on this device.
   const [layout, setLayoutState] = useState<'grid' | 'timeline'>('grid')
   const layoutKey = `ba.tracker.layout.${props.trackerId}`
+  // A tracker made from the Project timeline template opens on the timeline until someone picks the grid.
+  const timelineFirst = tracker?.template === 'project-timeline'
   useEffect(() => {
     try {
-      setLayoutState(localStorage.getItem(layoutKey) === 'timeline' ? 'timeline' : 'grid')
+      const chosen = localStorage.getItem(layoutKey)
+      setLayoutState(chosen === 'timeline' || (!chosen && timelineFirst) ? 'timeline' : 'grid')
     } catch {
-      setLayoutState('grid')
+      setLayoutState(timelineFirst ? 'timeline' : 'grid')
     }
-  }, [layoutKey])
+  }, [layoutKey, timelineFirst])
   const setLayout = (next: 'grid' | 'timeline') => {
     setLayoutState(next)
     try {
@@ -250,7 +253,8 @@ export default function TrackerScreen(props: Props) {
             : 'Editing Google Sheets was not allowed, so your changes to the green columns cannot reach the Sheet.',
         )
       else if (props.googleReturn === 'write-enabled') {
-        if (purpose === 'two_way') void switchMode('two_way')
+        if (purpose === 'create') void createSheet()
+        else if (purpose === 'two_way') void switchMode('two_way')
         else if (purpose === 'edit')
           say(
             'info',
@@ -301,6 +305,30 @@ export default function TrackerScreen(props: Props) {
       window.location.assign(result.url)
     } catch (error) {
       say('error', error instanceof Error ? error.message : 'Could not start the Google permission step.')
+    }
+  }
+  /** Makes a Google Sheet from this tracker and connects it two-way; asks for Google permission first when needed. */
+  const [creatingSheet, setCreatingSheet] = useState(false)
+  const createSheet = async () => {
+    const current = trackerRef.current
+    if (!current || current.source) return
+    setCreatingSheet(true)
+    try {
+      const result = await trackerApi.createSheet(current.id, current.name)
+      if (alive.current) setTracker(result.tracker)
+      await refresh()
+      say(
+        'info',
+        `Google Sheet “${result.tracker.source?.spreadsheetName || current.name}” made in your Google Drive with ${plural(result.rows, 'row')}${result.emptyRows ? ` (${plural(result.emptyRows, 'empty row')} left out)` : ''}, and synced both ways. Open it from the Sheet bar above; share it from Google Sheets.`,
+      )
+    } catch (error) {
+      if (error instanceof TrackerApiError && error.body.needsWrite) {
+        void allowSheetEdits('create')
+        return
+      }
+      say('error', error instanceof Error ? error.message : 'The Google Sheet could not be made.')
+    } finally {
+      if (alive.current) setCreatingSheet(false)
     }
   }
   const retrySheetIssues = async () => {
@@ -679,6 +707,30 @@ export default function TrackerScreen(props: Props) {
     }
   }
 
+  /** Rows from a one-way Sheet keep the Sheet's values in synced columns; everything else can be edited. */
+  const cellLocked = (row: TrackerRow, column: TrackerColumn) =>
+    Boolean(column.synced && row.sourceKey && tracker?.source?.mode !== 'two_way')
+  const canEditDates = (row: TrackerRow) =>
+    canEdit && !columns.some(column => column.type === 'date' && cellLocked(row, column))
+  /** Several cells of one row in one save, such as the Start and End of a dragged bar. */
+  const editCells = (row: TrackerRow, values: Record<string, Cell>) => {
+    if (!canEdit) return
+    const current = rowsRef.current.find(item => item.id === row.id)
+    if (!current) return
+    const changed: Record<string, Cell> = {}
+    const cells = { ...current.cells }
+    for (const [id, value] of Object.entries(values)) {
+      const column = columns.find(item => item.id === id)
+      if (!column || cellLocked(current, column)) continue
+      if (sameValue(current.cells[id] ?? emptyCell(column.type), value)) continue
+      changed[id] = value
+      if (isEmptyCell(value)) delete cells[id]
+      else cells[id] = value
+    }
+    if (!Object.keys(changed).length) return
+    setRows(rowsRef.current.map(item => (item.id === row.id ? { ...item, cells } : item)))
+    patchRow(row.id, { cells: changed })
+  }
   const editCell = (row: TrackerRow, column: TrackerColumn, value: Cell) => {
     if (!canEdit) return
     const current = rowsRef.current.find(item => item.id === row.id)
@@ -1073,6 +1125,19 @@ export default function TrackerScreen(props: Props) {
           {tracker.archived && <span className="trk-chip warn">Archived</span>}
         </div>
         <div className="trk-header-actions">
+          {canEdit && !tracker.source && (
+            <button
+              type="button"
+              className="trk-button"
+              disabled={creatingSheet}
+              onClick={() => void createSheet()}
+              title="Make a new Google Sheet from this tracker, in your Google Drive, and keep the two in sync both ways"
+              aria-label="Create a Google Sheet from this tracker"
+            >
+              <Table2 size={14} aria-hidden="true" />
+              <span className="trk-label">{creatingSheet ? 'Making Sheet…' : 'Create Google Sheet'}</span>
+            </button>
+          )}
           {canEdit && (
             <button
               type="button"
@@ -1603,6 +1668,18 @@ export default function TrackerScreen(props: Props) {
             people={people}
             groupBy={work.groupBy}
             onOpenRow={row => setDrawerId(row.id)}
+            shared={tracker.timeline}
+            onShare={
+              canEdit && tracker.timeline
+                ? async settings => {
+                    // Shown at once; the saved copy comes back the same.
+                    if (trackerRef.current) setTracker({ ...trackerRef.current, timeline: settings })
+                    await trackerApi.saveTimeline(tracker.id, settings)
+                  }
+                : undefined
+            }
+            canDrag={row => canEditDates(row)}
+            onDates={editCells}
           />
         </section>
       )}

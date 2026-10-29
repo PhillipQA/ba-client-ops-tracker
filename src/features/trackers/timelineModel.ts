@@ -231,3 +231,52 @@ export const monthLabel = (day: number) => {
 export function todayNumber(now = new Date()) {
   return Math.round(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / DAY)
 }
+
+// ---- settings kept on the tracker, so everyone sees the same timeline ----
+
+export type TimelineZoom = 'day' | 'week' | 'month'
+export type TimelineSettings = { fields?: Partial<TimelineFields>; zoom?: TimelineZoom }
+
+const FIELD_TYPES: Record<keyof TimelineFields, string[]> = {
+  startId: ['date'],
+  endId: ['date'],
+  progressId: ['number', 'formula'],
+  groupId: ['select', 'text', 'person'],
+  statusId: ['select'],
+  leadId: ['text', 'person'],
+}
+
+/**
+ * Cleans timeline settings before they are saved. Only choices made on purpose are kept: a column of the right type,
+ * or '' for "None". Anything else is dropped, so the view guesses it again.
+ */
+export function cleanTimelineSettings(raw: unknown, columns: TrackerColumn[]): TimelineSettings {
+  const out: TimelineSettings = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  const input = raw as Record<string, any>
+  if (input.zoom === 'day' || input.zoom === 'week' || input.zoom === 'month') out.zoom = input.zoom
+  const fields: Partial<TimelineFields> = {}
+  const given = input.fields && typeof input.fields === 'object' ? input.fields : {}
+  for (const key of Object.keys(FIELD_TYPES) as (keyof TimelineFields)[]) {
+    const value = given[key]
+    if (typeof value !== 'string') continue
+    if (value === '' && key !== 'startId') fields[key] = ''
+    else if (columns.some(column => column.id === value && FIELD_TYPES[key].includes(column.type))) fields[key] = value
+  }
+  if (Object.keys(fields).length) out.fields = fields
+  return out
+}
+
+// ---- dragging bars ----
+
+export type DragMode = 'move' | 'start' | 'end'
+
+/**
+ * New dates after dragging a bar by `delta` days: moving keeps the length, dragging an edge changes one end and
+ * never lets the bar get shorter than one day.
+ */
+export function draggedDates(start: number, end: number, mode: DragMode, delta: number) {
+  if (mode === 'move') return { start: start + delta, end: end + delta }
+  if (mode === 'start') return { start: Math.min(start + delta, end), end }
+  return { start, end: Math.max(end + delta, start) }
+}

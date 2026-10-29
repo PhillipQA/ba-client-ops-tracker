@@ -1,8 +1,17 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { AlertTriangle, CalendarDays, ChevronDown, ChevronRight } from 'lucide-react'
 import type { TrackerColumn, TrackerRow } from './trackerModel'
 import {
   buildTimeline,
+  draggedDates,
   isoOf,
   monthLabel,
   mondayOf,
@@ -11,11 +20,14 @@ import {
   todayNumber,
   weekLabel,
   workingDays,
+  type DragMode,
   type TimelineFields,
   type TimelineItem,
+  type TimelineSettings,
+  type TimelineZoom,
 } from './timelineModel'
 
-type Zoom = 'day' | 'week' | 'month'
+type Zoom = TimelineZoom
 /** Width of one day, in pixels, for each zoom. */
 const DAY_WIDTH: Record<Zoom, number> = { day: 30, week: 12, month: 4 }
 
@@ -28,9 +40,18 @@ type Props = {
   /** The grid's Group by, when set; it replaces the Phase column. */
   groupBy: string
   onOpenRow: (row: TrackerRow) => void
+  /** The settings saved on the tracker for everyone. Undefined until the database has schema v29. */
+  shared?: TimelineSettings
+  /** Saves the settings for everyone. Missing for people who cannot edit the tracker: their changes stay in their browser. */
+  onShare?: (settings: TimelineSettings) => Promise<void>
+  /** Whether a row's dates can be changed by dragging its bar. */
+  canDrag: (row: TrackerRow) => boolean
+  /** Writes the dragged dates: Start, and End when there is an End column. */
+  onDates: (row: TrackerRow, cells: Record<string, string>) => void
 }
 
-type Saved = { fields?: Partial<TimelineFields>; zoom?: Zoom }
+type Saved = TimelineSettings
+type Drag = { rowId: string; mode: DragMode; x: number; start: number; end: number; delta: number; moved: boolean }
 const storageKey = (trackerId: string) => `ba.tracker.timeline.${trackerId}`
 function readSaved(trackerId: string): Saved {
   try {
@@ -48,14 +69,24 @@ function writeSaved(trackerId: string, saved: Saved) {
   }
 }
 
-export default function TrackerTimeline({ trackerId, columns, rows, people, groupBy, onOpenRow }: Props) {
-  const [saved, setSaved] = useState<Saved>(() => readSaved(trackerId))
+const hasSettings = (settings?: TimelineSettings) => Boolean(settings && (settings.zoom || settings.fields))
+
+export default function TrackerTimeline(props: Props) {
+  const { trackerId, columns, rows, people, groupBy, onOpenRow, shared, onShare, canDrag, onDates } = props
+  // The tracker's shared settings win; this browser's copy is the fallback before schema v29, and for viewers.
+  const [saved, setSaved] = useState<Saved>(() => (hasSettings(shared) ? shared! : readSaved(trackerId)))
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [drag, setDrag] = useState<Drag | null>(null)
+  const dragRef = useRef<Drag | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  useEffect(() => setSaved(readSaved(trackerId)), [trackerId])
+  const sharedKey = JSON.stringify(shared ?? null)
+  // sharedKey stands for `shared`, compared by value, so a new object with the same settings does not reset.
+  useEffect(() => setSaved(hasSettings(shared) ? shared! : readSaved(trackerId)), [trackerId, sharedKey])
   const update = (next: Saved) => {
     setSaved(next)
     writeSaved(trackerId, next)
+    // Kept in this browser either way; shared when the tracker can hold it.
+    if (onShare) void onShare(next).catch(() => undefined)
   }
   const zoom: Zoom = saved.zoom === 'day' || saved.zoom === 'month' ? saved.zoom : 'week'
   const fields = useMemo(() => {
@@ -148,34 +179,118 @@ export default function TrackerTimeline({ trackerId, columns, rows, people, grou
   const chartStyle = { '--tl-day': `${width}px`, width: `${days * width}px` } as CSSProperties
   const todayInRange = from !== null && today >= from && today < from + days
 
+  const setDragBoth = (next: Drag | null) => {
+    dragRef.current = next
+    setDrag(next)
+  }
+  const commit = (item: TimelineItem, start: number, end: number) => {
+    if (start === item.start && end === item.end) return
+    const cells: Record<string, string> = { [fields.startId]: isoOf(start) }
+    if (fields.endId) cells[fields.endId] = isoOf(end)
+    onDates(item.row, cells)
+  }
+  const startDrag = (event: ReactPointerEvent<HTMLElement>, item: TimelineItem, mode: DragMode) => {
+    if (event.button !== 0 || item.start === null || item.end === null || !canDrag(item.row)) return
+    event.stopPropagation()
+    ;(event.currentTarget.closest('.trk-tl-bar') as HTMLElement | null)?.setPointerCapture(event.pointerId)
+    setDragBoth({
+      rowId: item.row.id,
+      mode,
+      x: event.clientX,
+      start: item.start,
+      end: item.end,
+      delta: 0,
+      moved: false,
+    })
+  }
+  const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const current = dragRef.current
+    if (!current) return
+    const moved = current.moved || Math.abs(event.clientX - current.x) > 3
+    const delta = Math.round((event.clientX - current.x) / width)
+    if (delta !== current.delta || moved !== current.moved) setDragBoth({ ...current, delta, moved })
+  }
+  const endDrag = (item: TimelineItem) => {
+    const current = dragRef.current
+    if (!current) return
+    setDragBoth(null)
+    if (current.moved) {
+      const next = draggedDates(current.start, current.end, current.mode, current.delta)
+      commit(item, next.start, next.end)
+    } else onOpenRow(item.row)
+  }
+  // Keyboard: arrows move the bar a day; Shift with arrows changes the end; Enter opens the row.
+  const keyDrag = (event: ReactKeyboardEvent<HTMLElement>, item: TimelineItem) => {
+    if (item.start === null || item.end === null || !canDrag(item.row)) return
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+    if (!step) return
+    event.preventDefault()
+    const next = draggedDates(item.start, item.end, event.shiftKey ? 'end' : 'move', step)
+    commit(item, next.start, next.end)
+  }
+
   const bar = (item: TimelineItem) => {
     if (item.start === null || item.end === null) return <span className="trk-tl-nodate">No dates</span>
-    const span = item.end - item.start + 1
+    const dragging = drag && drag.rowId === item.row.id ? drag : null
+    const draggable = canDrag(item.row)
+    const shown = dragging ? draggedDates(dragging.start, dragging.end, dragging.mode, dragging.delta) : item
+    const span = shown.end! - shown.start! + 1
     const tone = item.status?.color || 'blue'
-    const range = `${shortDate(item.start, true)}${span > 1 ? ` – ${shortDate(item.end, true)}` : ''}`
+    const range = `${shortDate(shown.start!, true)}${span > 1 ? ` – ${shortDate(shown.end!, true)}` : ''}`
     const tip = [
       title ? String(item.row.cells[title.id] || '') : '',
       range,
-      `${workingDays(item.start, item.end)} working day${workingDays(item.start, item.end) === 1 ? '' : 's'}`,
+      `${workingDays(shown.start!, shown.end!)} working day${workingDays(shown.start!, shown.end!) === 1 ? '' : 's'}`,
       `${item.progress}% done`,
       item.status?.label || '',
       item.lead ? `Lead: ${item.lead}` : '',
       item.late ? 'Past its end date' : '',
+      draggable ? 'Drag to move, drag an edge to change a date, or use the arrow keys (Shift for the end)' : '',
     ]
       .filter(Boolean)
       .join(' · ')
+    const pixels = Math.max(span * width, 6)
     return (
-      <button
-        type="button"
-        className={`trk-tl-bar trk-tone-${tone}${item.late ? ' late' : ''}${item.progress >= 100 ? ' done' : ''}`}
-        style={{ left: x(item.start), width: Math.max(span * width, 6) }}
-        title={tip}
-        aria-label={tip}
-        onClick={() => onOpenRow(item.row)}
-      >
-        <span className="trk-tl-fill" style={{ width: `${item.progress}%` }} />
-        {span * width >= 44 && <span className="trk-tl-pct">{item.progress}%</span>}
-      </button>
+      <>
+        <button
+          type="button"
+          className={`trk-tl-bar trk-tone-${tone}${item.late ? ' late' : ''}${item.progress >= 100 ? ' done' : ''}${draggable ? ' draggable' : ''}${dragging?.moved ? ' dragging' : ''}`}
+          style={{ left: x(shown.start!), width: pixels }}
+          title={dragging ? undefined : tip}
+          aria-label={tip}
+          onPointerDown={event => startDrag(event, item, 'move')}
+          onPointerMove={moveDrag}
+          onPointerUp={() => endDrag(item)}
+          onPointerCancel={() => setDragBoth(null)}
+          onKeyDown={event => keyDrag(event, item)}
+          // Mouse clicks on a draggable bar are handled on pointer up; Enter and Space still open the row.
+          onClick={event => {
+            if (!draggable || event.detail === 0) onOpenRow(item.row)
+          }}
+        >
+          <span className="trk-tl-fill" style={{ width: `${item.progress}%` }} />
+          {pixels >= 44 && <span className="trk-tl-pct">{item.progress}%</span>}
+          {draggable && pixels >= 18 && (
+            <>
+              <span
+                className="trk-tl-handle start"
+                aria-hidden="true"
+                onPointerDown={event => startDrag(event, item, 'start')}
+              />
+              <span
+                className="trk-tl-handle end"
+                aria-hidden="true"
+                onPointerDown={event => startDrag(event, item, 'end')}
+              />
+            </>
+          )}
+        </button>
+        {dragging?.moved && (
+          <span className="trk-tl-dragtip" style={{ left: x(shown.start!) }} role="status">
+            {range}
+          </span>
+        )}
+      </>
     )
   }
 
@@ -343,7 +458,11 @@ export default function TrackerTimeline({ trackerId, columns, rows, people, grou
       </div>
       <p className="trk-tl-legend">
         Bars fill in by % done. <span className="trk-tl-key late" /> past the end date and not finished.{' '}
-        <span className="trk-tl-key today" /> today. Click a bar or task to open the row.
+        <span className="trk-tl-key today" /> today. Click a bar or task to open the row
+        {rows.some(canDrag) ? '; drag a bar to change its dates.' : '.'}{' '}
+        {shared && onShare
+          ? 'These settings are shared with everyone who opens this tracker.'
+          : 'These settings are kept in this browser only.'}
       </p>
     </div>
   )

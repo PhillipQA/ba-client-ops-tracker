@@ -41,6 +41,7 @@ For an existing Supabase database, the recent incremental migrations are:
 | v0.8.0 | [schema-v26](../../database/migrations/schema-v26-email-templates.sql) | Email signatures saved per person, and shared or private email templates |
 | v0.9.0 | [schema-v27](../../database/migrations/schema-v27-tracker-sheets.sql) | Trackers that follow a Google Sheet, and the review list for new rows |
 | v1.1.0 | [schema-v28](../../database/migrations/schema-v28-tracker-auto-done.sql) | Optional: keep the reason a row's done mark could not be written to its Google Sheet |
+| v1.6.0 | [schema-v29](../../database/migrations/schema-v29-tracker-timeline.sql) | Optional: share each tracker's Timeline settings with everyone who opens it |
 
 Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations missing the Git provider tables, the [combined v19/v20 upgrade](../../database/upgrades/schema-v19-v20-work-hub-git-providers.sql) is available. Do not run both the combined script and the same individual migrations.
 
@@ -51,6 +52,7 @@ Apply missing migrations in numerical order. For v0.6.74/v0.6.75 installations m
 - **v1.5.0 adds no database migration.**
 - **v1.4.0 adds no database migration.**
 - **v1.3.2 adds no database migration.**
+- **v1.6.0:** apply v29 so a tracker's Timeline settings (which columns are Start, End, % done, Phase…, and the zoom) are shared with everyone who opens it. It adds one column, `timeline`, to `tenant_trackers`, on Supabase or plain PostgreSQL such as Northflank. Without it, the Timeline works and each person's settings are kept in their own browser. **Create Google Sheet** needs the `https://www.googleapis.com/auth/spreadsheets` scope from v1.1.0; each person allows editing Google Sheets once, the first time they make a Sheet.
 - **v1.3.1 adds no database migration.** Each person who edits Sheet columns in a two-way tracker allows editing Google Sheets once, from the tracker.
 - **v1.3.0 adds no database migration.** Two-way sync needs the `https://www.googleapis.com/auth/spreadsheets` scope from v1.1.0, and the person who connected each Sheet must allow editing Google Sheets once.
 - **v1.2.0 adds no database migration.** Archived tasks are stored with the rest of the workspace.

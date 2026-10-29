@@ -1,5 +1,5 @@
--- BA Client Ops Tracker v1.1.0: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 28. Run this ENTIRE file once in Supabase SQL Editor.
+-- BA Client Ops Tracker v1.5.0: ONE-RUN FRESH DATABASE SETUP
+-- Includes schema versions 1 through 29. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1625,6 +1625,15 @@ end $$;
 alter table public.tenant_tracker_rows add column if not exists sheet_issue jsonb;
 create index if not exists tenant_tracker_rows_sheet_issue on public.tenant_tracker_rows(tenant_id, tracker_id) where sheet_issue is not null;
 
+-- Included source: migrations/schema-v29-tracker-timeline.sql
+-- SHA-256: 2da8b229abb3b3c818f7ab8f07c361f85213c81f4e9a33b07b62edf59a04b708
+-- Apply once to databases at schema v28 (Supabase or Northflank PostgreSQL).
+-- Trackers: the Timeline view's settings (which columns are Start, End, % done, Phase…, and the zoom) are kept on the
+-- tracker, so everyone who opens it sees the same timeline. Nothing else changes. Without it, the settings are kept
+-- in each person's browser instead.
+
+alter table public.tenant_trackers add column if not exists timeline jsonb not null default '{}'::jsonb;
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1648,4 +1657,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 28 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 29 as schema_version;

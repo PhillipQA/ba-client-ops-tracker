@@ -120,6 +120,9 @@ let grid: string[][] = []
 let dropdowns: (any | null)[] = []
 const dropdownRanges: string[] = []
 let canOpen = new Set(['u1', 'u2'])
+const NEW_SHEET = '1NewSheetMadeFromATracker0123456789abcdef'
+const created: any[] = []
+const formatted: any[] = []
 let lastToken = ''
 const realFetch = globalThis.fetch
 globalThis.fetch = (async (input: any, init?: any) => {
@@ -185,6 +188,23 @@ globalThis.fetch = (async (input: any, init?: any) => {
       properties: { title: 'Card Indo Remote' },
       sheets: [{ properties: { title: 'Branches', index: 0, gridProperties: { rowCount: 100, columnCount: 6 } } }],
     })
+  // Making a new Sheet: what was sent is kept, and the new Sheet's values are what a sync reads back.
+  if (url === 'https://sheets.googleapis.com/v4/spreadsheets' && init?.method === 'POST') {
+    const body = JSON.parse(String(init.body))
+    created.push(body)
+    const shown = (cell: any) => {
+      const value = cell?.userEnteredValue || {}
+      if ('boolValue' in value) return value.boolValue ? 'TRUE' : 'FALSE'
+      if ('numberValue' in value) return String(value.numberValue)
+      return String(value.stringValue ?? '')
+    }
+    grid = body.sheets[0].data[0].rowData.map((row: any) => row.values.map(shown))
+    return reply(200, { spreadsheetId: NEW_SHEET, sheets: [{ properties: { sheetId: 7, title: 'Tracker' } }] })
+  }
+  if (url.includes(`/spreadsheets/${NEW_SHEET}:batchUpdate`)) {
+    formatted.push(JSON.parse(String(init.body)))
+    return reply(200, {})
+  }
   return reply(404, { error: { message: 'not found' } })
 }) as any
 
@@ -661,4 +681,107 @@ test('a Checkbox column that follows a Sheet dropdown becomes a Choice column sh
     )
   })
   dropdowns = []
+})
+
+test('a tracker makes its own Google Sheet, connected two-way, without adding its rows twice', async () => {
+  const WRITE = 'https://www.googleapis.com/auth/spreadsheets'
+  created.length = 0
+  formatted.length = 0
+  dropdowns = []
+  const h = harness({ u1: WRITE })
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'HeroHub schedule',
+        columns: [
+          { name: 'Task', type: 'text' },
+          { name: 'Status', type: 'select', options: [{ label: 'Pending' }, { label: 'Done' }] },
+          { name: 'Signed', type: 'checkbox' },
+          { name: 'Hours', type: 'number' },
+        ],
+      })
+    ).body.tracker
+    const [cTask, cStatus, cSigned, cHours] = tracker.columns.map((c: any) => c.id)
+    const done = tracker.columns[1].options.find((o: any) => o.label === 'Done').id
+    const added = await ask('POST', `/api/trackers/${tracker.id}/rows`, {
+      rows: [
+        { cells: { [cTask]: 'Kickoff', [cStatus]: done, [cSigned]: true, [cHours]: 8 } },
+        { cells: { [cTask]: 'BPM', [cHours]: 4 } },
+        { cells: { [cTask]: 'Kickoff' } },
+        { cells: {} },
+      ],
+    })
+    assert.equal(added.status, 200, JSON.stringify(added.body))
+
+    const viewer = await ask('POST', `/api/trackers/${tracker.id}/source/create`, {}, { 'x-role': 'Viewer' })
+    assert.equal(viewer.status, 403)
+    const noWrite = await ask('POST', `/api/trackers/${tracker.id}/source/create`, {}, { 'x-user': 'u2' })
+    assert.equal(noWrite.status, 403)
+    assert.equal(noWrite.body.needsWrite, true, 'the person is asked to allow editing Sheets first')
+
+    const made = await ask('POST', `/api/trackers/${tracker.id}/source/create`, { title: 'HeroHub schedule' })
+    assert.equal(made.status, 200, JSON.stringify(made.body))
+    assert.equal(made.body.url, `https://docs.google.com/spreadsheets/d/${NEW_SHEET}/edit`)
+    assert.equal(made.body.rows, 3)
+    assert.equal(made.body.emptyRows, 1, 'the empty row is left out')
+    assert.equal(created[0].properties.title, 'HeroHub schedule')
+    assert.deepEqual(grid[0], ['Task', 'Status', 'Signed', 'Hours'])
+    assert.deepEqual(grid[1], ['Kickoff', 'Done', 'TRUE', '8'])
+    assert.deepEqual(grid[2], ['BPM', '', 'FALSE', '4'])
+    const requests = formatted[0].requests
+    assert.ok(
+      requests.some(
+        (r: any) =>
+          r.setDataValidation?.rule.condition.type === 'ONE_OF_LIST' &&
+          r.setDataValidation.rule.condition.values.map((v: any) => v.userEnteredValue).join() === 'Pending,Done',
+      ),
+      'Status gets the same dropdown in the Sheet',
+    )
+    assert.ok(requests.some((r: any) => r.setDataValidation?.rule.condition.type === 'BOOLEAN'))
+
+    const source = made.body.tracker.source
+    assert.equal(source.mode, 'two_way')
+    assert.equal(source.keyHeader, 'Task')
+    assert.equal(made.body.report.added, 0, 'the first sync finds every row instead of adding it again')
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    assert.equal(rows.length, 4)
+    assert.deepEqual(
+      rows.map((r: any) => r.sourceKey || ''),
+      ['Kickoff', 'BPM', 'Kickoff\u001f2', ''],
+    )
+    assert.ok(
+      made.body.tracker.columns.every((c: any) => c.synced),
+      'every column follows the Sheet',
+    )
+
+    const again = await ask('POST', `/api/trackers/${tracker.id}/source/create`, {})
+    assert.equal(again.status, 409, 'a tracker follows one Sheet at a time')
+  })
+})
+
+test('timeline settings are shared on the tracker; viewers cannot change them for everyone', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Timeline',
+        columns: [
+          { name: 'Task', type: 'text' },
+          { name: 'Start', type: 'date' },
+          { name: 'Finish', type: 'date' },
+        ],
+      })
+    ).body.tracker
+    const [, cStart, cFinish] = tracker.columns.map((c: any) => c.id)
+    const saved = await ask('PUT', `/api/trackers/${tracker.id}/timeline`, {
+      timeline: { zoom: 'day', fields: { startId: cFinish, endId: '', progressId: 'c_gone', leadId: cStart } },
+    })
+    assert.equal(saved.status, 200, JSON.stringify(saved.body))
+    assert.deepEqual(saved.body.timeline, { zoom: 'day', fields: { startId: cFinish, endId: '' } })
+    const opened = (await ask('GET', `/api/trackers/${tracker.id}`)).body.tracker
+    assert.deepEqual(opened.timeline, { zoom: 'day', fields: { startId: cFinish, endId: '' } })
+    assert.equal(opened.revision, tracker.revision, 'view settings do not count as a change to the tracker')
+    const viewer = await ask('PUT', `/api/trackers/${tracker.id}/timeline`, { timeline: {} }, { 'x-role': 'Viewer' })
+    assert.equal(viewer.status, 403)
+  })
 })
