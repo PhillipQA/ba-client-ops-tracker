@@ -2597,6 +2597,10 @@ a.trk-link-button {
   .trk-tl-left > :nth-child(3) {
     display: none;
   }
+  /* The narrow layout has a fixed list width: nothing to resize. */
+  .trk-tl-resize {
+    display: none;
+  }
 }
 
 /* Dragging timeline bars */
@@ -2741,12 +2745,14 @@ a.trk-link-button {
   outline: none;
 }
 
-/* Resizing the timeline's Task and Lead columns */
+/* Resizing the timeline's Task and Lead columns: their borders, and the list's right edge, on every row */
 .trk-tl-lefthead {
   align-self: stretch;
   align-items: stretch;
+  user-select: none;
 }
-.trk-tl-lefthead > span {
+.trk-tl-lefthead > .trk-tl-hcell,
+.trk-tl-lefthead > .trk-tl-num {
   display: flex;
   align-items: center;
 }
@@ -2754,36 +2760,54 @@ a.trk-link-button {
   justify-content: flex-end;
 }
 .trk-tl-hcell {
-  position: relative;
   min-width: 0;
 }
 .trk-tl-resize {
   position: absolute;
   top: 0;
   bottom: 0;
-  right: -8px;
-  width: 9px;
-  z-index: 2;
+  width: 12px;
+  z-index: 4;
   cursor: col-resize;
   touch-action: none;
+}
+/* In the 8px gaps between the columns (the list has 10px padding on the left). */
+.trk-tl-resize.edge-task {
+  left: calc(10px + var(--tl-task) - 2px);
+}
+.trk-tl-resize.edge-lead {
+  left: calc(10px + var(--tl-task) + 8px + var(--tl-lead) - 2px);
+}
+.trk-tl-resize.edge-panel {
+  right: -7px;
 }
 .trk-tl-resize::after {
   content: "";
   position: absolute;
-  top: 25%;
-  bottom: 25%;
-  left: 4px;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+.trk-tl-lefthead .trk-tl-resize.edge-task::after,
+.trk-tl-lefthead .trk-tl-resize.edge-lead::after {
+  top: 22%;
+  bottom: 22%;
+  left: 6px;
   width: 1px;
   background: var(--k-border);
 }
 .trk-tl-resize:hover::after,
 .trk-tl-resize:focus-visible::after,
-.trk-tl-resize.active::after {
+.trk-tl[data-resizing="task"] .trk-tl-resize.edge-task::after,
+.trk-tl[data-resizing="task"] .trk-tl-resize.edge-panel::after,
+.trk-tl[data-resizing="lead"] .trk-tl-resize.edge-lead::after {
   top: 0;
   bottom: 0;
-  left: 3px;
+  left: 4px;
   width: 3px;
-  border-radius: 2px;
   background: var(--k-accent);
 }
 .trk-tl-resize:focus-visible {
