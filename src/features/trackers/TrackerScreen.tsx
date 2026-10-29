@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  CalendarRange,
   ChevronDown,
   Download,
   Lock,
@@ -12,6 +13,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Table2,
   Upload,
   X,
 } from 'lucide-react'
@@ -35,6 +37,7 @@ import {
 import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
 import { exportCsv, exportFileName } from './trackerExport'
 import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type TaskLink } from './trackerApi'
+import TrackerTimeline from './TrackerTimeline'
 import TrackerGrid, { NUMBER_COLUMN_WIDTH, widthOf, type Entry, type GridFocus } from './TrackerGrid'
 import TrackerToolbar, { emptyWork, type Work } from './TrackerToolbar'
 import TrackerRowPanel from './TrackerRowPanel'
@@ -137,6 +140,24 @@ export default function TrackerScreen(props: Props) {
       return false
     }
   })
+  // Grid or Timeline, remembered per tracker on this device.
+  const [layout, setLayoutState] = useState<'grid' | 'timeline'>('grid')
+  const layoutKey = `ba.tracker.layout.${props.trackerId}`
+  useEffect(() => {
+    try {
+      setLayoutState(localStorage.getItem(layoutKey) === 'timeline' ? 'timeline' : 'grid')
+    } catch {
+      setLayoutState('grid')
+    }
+  }, [layoutKey])
+  const setLayout = (next: 'grid' | 'timeline') => {
+    setLayoutState(next)
+    try {
+      localStorage.setItem(layoutKey, next)
+    } catch {
+      /* not remembered */
+    }
+  }
   const toggleExpanded = () =>
     setExpanded(current => {
       const next = !current
@@ -1478,6 +1499,24 @@ export default function TrackerScreen(props: Props) {
           onOpen={setPanel}
           onChange={setWork}
         />
+        <div className="trk-segmented" role="group" aria-label="Layout">
+          <button
+            type="button"
+            className={layout === 'grid' ? 'on' : ''}
+            aria-pressed={layout === 'grid'}
+            onClick={() => setLayout('grid')}
+          >
+            <Table2 size={14} aria-hidden="true" /> Grid
+          </button>
+          <button
+            type="button"
+            className={layout === 'timeline' ? 'on' : ''}
+            aria-pressed={layout === 'timeline'}
+            onClick={() => setLayout('timeline')}
+          >
+            <CalendarRange size={14} aria-hidden="true" /> Timeline
+          </button>
+        </div>
         <span className="trk-spacer" />
         <span className="trk-save-state" role="status">
           <span className={`trk-dot${saving > 0 ? ' busy' : ''}`} aria-hidden="true" />
@@ -1489,7 +1528,7 @@ export default function TrackerScreen(props: Props) {
           </button>
         )}
       </div>
-      {selected.size > 0 && (
+      {layout === 'grid' && selected.size > 0 && (
         <div className="trk-selection" role="status">
           <strong>{plural(selected.size, 'row')} selected</strong>
           {canEdit && (
@@ -1555,7 +1594,19 @@ export default function TrackerScreen(props: Props) {
         </div>
       )}
 
-      <section className="trk-grid-panel" aria-label={`${tracker.name} rows`}>
+      {layout === 'timeline' && (
+        <section aria-label={`${tracker.name} timeline`}>
+          <TrackerTimeline
+            trackerId={tracker.id}
+            columns={columns}
+            rows={visible}
+            people={people}
+            groupBy={work.groupBy}
+            onOpenRow={row => setDrawerId(row.id)}
+          />
+        </section>
+      )}
+      <section className="trk-grid-panel" aria-label={`${tracker.name} rows`} hidden={layout === 'timeline'}>
         <TrackerGrid
           columns={shownColumns}
           frozen={frozenIds}
