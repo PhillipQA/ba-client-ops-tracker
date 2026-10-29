@@ -731,7 +731,7 @@ test('Gmail functional sync imports beyond page one, updates existing messages, 
         body = {
           id,
           threadId: 'thread',
-          labelIds: ['L1', 'L2'],
+          labelIds: id === 'm65' ? ['L1', 'L2', 'UNREAD'] : ['L1', 'L2'],
           internalDate: '1790553600000',
           snippet: 'Too short',
           payload: {
@@ -776,6 +776,9 @@ test('Gmail functional sync imports beyond page one, updates existing messages, 
     assert.equal(imported.length, 66)
     assert.deepEqual(imported[0].source_labels, ['L1', 'L2'])
     assert.match(imported[0].body, /Refund limit: 500/)
+    // Mail already read in Gmail arrives read; mail Gmail has unread stays unread.
+    assert.ok(imported[0].read_at)
+    assert.equal(imported.find(r => r.external_id === 'm65').read_at, null)
     assert.deepEqual(seenPages.slice(0, 9), ['L1:', 'L2:', 'L1:1', 'L1:', 'L2:', 'L1:2', 'L1:', 'L2:', 'L1:3'])
     const filtered = await original(base + '/api/communications?tab=Gmail&label=L2&page=1')
     assert.equal(filtered.status, 200)
@@ -1873,5 +1876,65 @@ test('Admin connects one shared Drive; attachments save into Client/Project/Task
     server.close()
     if (oldKey === undefined) delete process.env.TENANT_INTEGRATION_MASTER_KEY
     else process.env.TENANT_INTEGRATION_MASTER_KEY = oldKey
+  }
+})
+
+test('unread email and Discord messages are counted, and read when opened', async () => {
+  const { app, records } = fixture()
+  const at = new Date().toISOString()
+  const add = (fields: any) =>
+    records.push({
+      id: crypto.randomUUID(),
+      tenant_id: 'tenant',
+      owner_user_id: 'user-a',
+      status: 'New',
+      received_at: at,
+      read_at: null,
+      ...fields,
+    })
+  records[0].read_at = at
+  add({ source: 'Gmail', external_id: 'g1', thread_id: 't1', subject: 'One' })
+  add({ source: 'Gmail', external_id: 'g2', thread_id: 't1', subject: 'Reply' })
+  add({ source: 'Gmail', external_id: 'g3', thread_id: 't3', subject: 'Archived', status: 'Archived' })
+  add({ source: 'Discord', external_id: 'd1', thread_id: 'c1', subject: 'Mention' })
+  add({ source: 'Manual', subject: 'Log' })
+  add({ source: 'Discord', external_id: 'd2', owner_user_id: 'user-b', subject: 'Not mine' })
+  const server = app.listen(0)
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('No port')
+    const base = `http://127.0.0.1:${address.port}`
+    const ask = async (path: string, method = 'GET', body?: any) => {
+      const response = await fetch(base + path, {
+        method,
+        headers: { 'x-test-user': 'user-a', 'content-type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      return { status: response.status, body: await response.json() }
+    }
+    // Archived mail, manual logs and other people's messages are not counted.
+    assert.deepEqual((await ask('/api/communications/unread')).body, { available: true, gmail: 2, discord: 1 })
+
+    // Opening one message reads its whole conversation.
+    const first = records.find(r => r.external_id === 'g1')
+    assert.equal((await ask(`/api/communications/${first.id}/read`, 'PATCH', { read: true })).status, 200)
+    assert.deepEqual((await ask('/api/communications/unread')).body, { available: true, gmail: 0, discord: 1 })
+
+    // Marked unread again: only that message.
+    await ask(`/api/communications/${first.id}/read`, 'PATCH', { read: false })
+    assert.equal((await ask('/api/communications/unread')).body.gmail, 1)
+    assert.equal((await ask(`/api/communications/${first.id}/read`, 'PATCH', {})).status, 400)
+
+    // Mark all read, one source at a time.
+    assert.equal((await ask('/api/communications/read-all', 'POST', { source: 'GitLab' })).status, 400)
+    await ask('/api/communications/read-all', 'POST', { source: 'Discord' })
+    assert.deepEqual((await ask('/api/communications/unread')).body, { available: true, gmail: 1, discord: 0 })
+    assert.equal(records.find(r => r.external_id === 'd2').read_at, null, "Another person's message stays unread")
+
+    // Someone else's message cannot be marked.
+    const theirs = records.find(r => r.external_id === 'd2')
+    assert.equal((await ask(`/api/communications/${theirs.id}/read`, 'PATCH', { read: true })).status, 404)
+  } finally {
+    server.close()
   }
 })

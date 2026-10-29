@@ -107,6 +107,12 @@ function requireText(input: unknown, field: string, max = 4000) {
   if (typeof input !== 'string' || input.trim().length > max) throw new IntegrationError(`${field} is invalid.`)
   return input.trim()
 }
+/** The database has no read_at column yet (schema-v32 not applied): reading and writing go on without it. */
+const missingReadColumn = (error: any) =>
+  Boolean(error) && (error.code === '42703' || error.code === 'PGRST204' || /read_at/.test(String(error.message || '')))
+/** Unread counts cover received email and Discord messages only: not GitHub, GitLab or manual logs. */
+export const UNREAD_SOURCES = ['Gmail', 'Discord'] as const
+
 export function registerCommunications(
   app: Express,
   deps: {
@@ -611,6 +617,82 @@ export function registerCommunications(
       res.json({ item: data })
     }),
   )
+  // Unread email and Discord messages, for the badge on Work Hub. Archived messages are not counted.
+  app.get(
+    '/api/communications/unread',
+    ...auth,
+    guard,
+    wrap(async (req, res) => {
+      const user = current(req)
+      const counts: Record<string, number> = {}
+      for (const source of UNREAD_SOURCES) {
+        const { count, error } = await db
+          .from('user_communications')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', user.organizationId)
+          .eq('owner_user_id', user.id)
+          .eq('source', source)
+          .neq('status', 'Archived')
+          .is('read_at', null)
+        if (missingReadColumn(error)) {
+          res.json({ available: false, gmail: 0, discord: 0 })
+          return
+        }
+        if (error) throw error
+        counts[source] = count || 0
+      }
+      res.json({ available: true, gmail: counts.Gmail, discord: counts.Discord })
+    }),
+  )
+  // Opening a message marks it, and the rest of its conversation, as read. It can be marked unread again.
+  app.patch(
+    '/api/communications/:id/read',
+    ...auth,
+    guard,
+    wrap(async (req, res) => {
+      const message = await own(req, String(req.params.id)),
+        user = current(req)
+      if (typeof req.body?.read !== 'boolean') throw new IntegrationError('Say whether the message is read.')
+      if (!('read_at' in message))
+        throw new IntegrationError('Read and unread need schema-v32-communication-unread.sql. Apply it and retry.', 503)
+      const readAt = req.body.read ? new Date().toISOString() : null
+      let query = db
+        .from('user_communications')
+        .update({ read_at: readAt })
+        .eq('tenant_id', user.organizationId)
+        .eq('owner_user_id', user.id)
+      query =
+        req.body.read && message.thread_id
+          ? query.eq('source', message.source).eq('thread_id', message.thread_id).is('read_at', null)
+          : query.eq('id', message.id)
+      const { error } = await query
+      if (error) throw error
+      res.json({ id: message.id, read_at: readAt })
+    }),
+  )
+  app.post(
+    '/api/communications/read-all',
+    ...auth,
+    guard,
+    wrap(async (req, res) => {
+      const user = current(req),
+        source = String(req.body?.source || '')
+      if (!(UNREAD_SOURCES as readonly string[]).includes(source))
+        throw new IntegrationError('Choose Gmail or Discord.')
+      const { error } = await db
+        .from('user_communications')
+        .update({ read_at: new Date().toISOString() })
+        .eq('tenant_id', user.organizationId)
+        .eq('owner_user_id', user.id)
+        .eq('source', source)
+        .neq('status', 'Archived')
+        .is('read_at', null)
+      if (missingReadColumn(error))
+        throw new IntegrationError('Read and unread need schema-v32-communication-unread.sql. Apply it and retry.', 503)
+      if (error) throw error
+      res.json({ ok: true })
+    }),
+  )
   app.post(
     '/api/communications/:id/create-task',
     ...auth,
@@ -1032,7 +1114,7 @@ export function registerCommunications(
             message: async (externalId, label) => {
               const { data: found, error: lookupError } = await db
                 .from('user_communications')
-                .select('id,source_labels')
+                .select('*')
                 .eq('tenant_id', user.organizationId)
                 .eq('owner_user_id', user.id)
                 .eq('source', 'Gmail')
@@ -1073,21 +1155,27 @@ export function registerCommunications(
                 source_labels: sourceLabels,
                 received_at: new Date(Number(detail.internalDate || Date.now())).toISOString(),
               }
-              const query = found
-                ? db
-                    .from('user_communications')
-                    .update(fields)
-                    .eq('id', found.id)
-                    .eq('tenant_id', user.organizationId)
-                    .eq('owner_user_id', user.id)
-                : db.from('user_communications').insert({
-                    tenant_id: user.organizationId,
-                    owner_user_id: user.id,
-                    source: 'Gmail',
-                    external_id: externalId,
-                    ...fields,
-                  })
-              const { error } = await query
+              // New mail stays unread while Gmail has it unread; mail already read in Gmail arrives read.
+              const unread = sourceLabels.includes('UNREAD')
+              const readAt = unread ? null : new Date().toISOString()
+              const write = (withRead: boolean) =>
+                found
+                  ? db
+                      .from('user_communications')
+                      .update(withRead && found.read_at == null && !unread ? { ...fields, read_at: readAt } : fields)
+                      .eq('id', found.id)
+                      .eq('tenant_id', user.organizationId)
+                      .eq('owner_user_id', user.id)
+                  : db.from('user_communications').insert({
+                      tenant_id: user.organizationId,
+                      owner_user_id: user.id,
+                      source: 'Gmail',
+                      external_id: externalId,
+                      ...fields,
+                      ...(withRead ? { read_at: readAt } : {}),
+                    })
+              let { error } = await write(!found || 'read_at' in found)
+              if (missingReadColumn(error)) ({ error } = await write(false))
               if (error && error.code !== '23505') throw error
               if (!error) {
                 if (found) updated++

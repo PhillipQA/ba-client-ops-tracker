@@ -18,6 +18,7 @@ import { extractAddress, quoteReply, replySubject } from '../email/emailCompose'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { EmailTemplatesManager } from '../email/EmailTemplates'
 import { requestJson, type HttpMethod } from '../../shared/http'
+import { badgeText, unreadStore, useUnreadCounts, type UnreadSource } from './unreadCount'
 
 type Message = {
   id: string
@@ -33,7 +34,12 @@ type Message = {
   received_at: string
   linked_task_id?: string
   linked_task_ids?: string[]
+  /** When it was read. null: unread. Missing before schema v32 (then nothing is shown as unread). */
+  read_at?: string | null
 }
+/** Received email and Discord messages can be unread; manual logs never are. */
+const isUnread = (item: Message) => item.source !== 'Manual' && item.read_at === null
+const unreadKey = (item: Message) => (item.source === 'Gmail' ? 'gmail' : 'discord') as UnreadSource
 // Older Gmail rows stored only file names; newer rows also carry part id, type and size.
 type Attachment = string | { name: string; partId?: string; mimeType?: string; size?: number }
 type Settings = {
@@ -319,6 +325,7 @@ export default function WorkHub({
   const [items, setItems] = useState<Message[]>([]),
     [settings, setSettings] = useState<Settings | null>(null),
     [labels, setLabels] = useState<Label[]>([])
+  const unread = useUnreadCounts()
   const [tab, setTab] = useState('Gmail'),
     [archived, setArchived] = useState(false),
     [labelFilter, setLabelFilter] = useState(''),
@@ -583,6 +590,8 @@ export default function WorkHub({
       await load()
       reloadMessages()
       setSelected(null)
+      // Archived messages are not counted as unread.
+      void unreadStore.refresh()
     })
   const showDuplicateTask = (name: string) => {
     const warning = `Duplicate task: “${name}” already exists for this client and project. Enter a different task title.`
@@ -696,6 +705,41 @@ export default function WorkHub({
     setReplying(false)
   }
   const pages = Math.max(1, Math.ceil(total / view.pageSize))
+  /** Marks a message read (with the rest of its conversation) or unread. The count changes at once. */
+  const markRead = async (item: Message, read: boolean) => {
+    const stamp = read ? new Date().toISOString() : null
+    const affected = items.filter(other =>
+      read
+        ? other.id === item.id ||
+          (Boolean(item.thread_id) &&
+            other.source === item.source &&
+            other.thread_id === item.thread_id &&
+            isUnread(other))
+        : other.id === item.id,
+    )
+    const ids = new Set(affected.map(other => other.id))
+    setItems(current => current.map(other => (ids.has(other.id) ? { ...other, read_at: stamp } : other)))
+    setSelected(current => (current && ids.has(current.id) ? { ...current, read_at: stamp } : current))
+    unreadStore.adjust(unreadKey(item), read ? -Math.max(1, affected.filter(isUnread).length) : 1)
+    try {
+      await request(`/api/communications/${item.id}/read`, 'PATCH', { read })
+    } catch {
+      // The count below is the server's, so a failed mark shows as still unread.
+    }
+    workHubSync.invalidate(item.source === 'Gmail' ? 'gmail' : 'discord')
+    void unreadStore.refresh()
+  }
+  const markAllRead = (source: 'Gmail' | 'Discord') =>
+    act(async () => {
+      await request('/api/communications/read-all', 'POST', { source })
+      const stamp = new Date().toISOString()
+      setItems(current =>
+        current.map(other => (other.source === source && isUnread(other) ? { ...other, read_at: stamp } : other)),
+      )
+      unreadStore.clear(source === 'Gmail' ? 'gmail' : 'discord')
+      workHubSync.invalidate(source === 'Gmail' ? 'gmail' : 'discord')
+      void unreadStore.refresh()
+    })
   const openMessage = (item: Message) => {
     if (busy) return
     setSelected(item)
@@ -712,6 +756,8 @@ export default function WorkHub({
     setClientId('')
     setProjectId('')
     setAssignee(currentUser.id)
+    // After it is selected, so the open message shows as read too.
+    if (isUnread(item)) void markRead(item, true)
   }
   return (
     <section className="communications-hub page-stack">
@@ -960,6 +1006,13 @@ export default function WorkHub({
               }}
             >
               {label}
+              {(id === 'Gmail' || id === 'Discord') &&
+                unread.available &&
+                unread[id === 'Gmail' ? 'gmail' : 'discord'] > 0 && (
+                  <span className="tab-unread" aria-label={`${unread[id === 'Gmail' ? 'gmail' : 'discord']} unread`}>
+                    {badgeText(unread[id === 'Gmail' ? 'gmail' : 'discord'])}
+                  </span>
+                )}
             </button>
           ))}
         </div>
@@ -998,6 +1051,18 @@ export default function WorkHub({
                     : `Sync ${integrationLabel[source]}`}
                 </button>
               )}
+              {(tab === 'Gmail' || tab === 'Discord') &&
+                !archived &&
+                unread.available &&
+                unread[tab === 'Gmail' ? 'gmail' : 'discord'] > 0 && (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => void markAllRead(tab as 'Gmail' | 'Discord')}
+                  >
+                    Mark all as read
+                  </button>
+                )}
               {tab === 'Gmail' && settings?.gmailLabels.length ? (
                 <label className="communication-label-filter">
                   Gmail label{' '}
@@ -1085,8 +1150,9 @@ export default function WorkHub({
                   {items.map(item => (
                     <button
                       key={item.id}
-                      className="communication-card"
+                      className={`communication-card${isUnread(item) ? ' unread' : ''}`}
                       aria-pressed={selected?.id === item.id}
+                      aria-label={isUnread(item) ? `Unread: ${item.subject || 'Untitled communication'}` : undefined}
                       onClick={() => openMessage(item)}
                     >
                       <span className="communication-card-meta">
@@ -1237,6 +1303,18 @@ export default function WorkHub({
                 )}
               </div>
               <div className="integration-actions">
+                {selected.source !== 'Manual' && selected.read_at && (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      void markRead(selected, false)
+                      setSelected(null)
+                    }}
+                  >
+                    Mark as unread
+                  </button>
+                )}
                 {canEmail && selected.source === 'Gmail' && (
                   <button className="secondary" disabled={busy || replying} onClick={replyByEmail}>
                     {replying ? 'Opening reply…' : 'Reply by email'}
