@@ -7,6 +7,7 @@ import { workHubSync, WORK_HUB_INTEGRATIONS } from '../features/work-hub/workHub
 import { useWorkHubSync } from '../features/work-hub/useWorkHubSync'
 import { trackerApi, type TaskLink } from '../features/trackers/trackerApi'
 import type { TaskDraft } from '../features/trackers/TrackerWork'
+import { applyTaskPatches, type TaskPatch } from '../features/trackers/trackerTasks'
 import { rememberTrackerRow } from '../features/trackers/trackerNav'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix } from '../features/requirements/rtm'
 import {
@@ -1579,6 +1580,12 @@ export function useAppState() {
         order = base
         nextOrder.set(parent.id, base + 1)
       }
+      const assignee =
+        parent?.assignedToUserId ||
+        (draft.assignedToUserId && current.accounts.some(account => account.id === draft.assignedToUserId)
+          ? draft.assignedToUserId
+          : undefined)
+      const isoDate = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '')
       made.push({
         id: crypto.randomUUID(),
         clientId,
@@ -1590,12 +1597,14 @@ export function useAppState() {
         priority: 'Medium',
         status: defaultOpenTaskStatus(current.taskSettings),
         waitingOn: defaultWaitingOn(current.taskSettings),
-        assignedToUserId: parent?.assignedToUserId,
-        assignmentInherited: parent ? true : undefined,
-        owner: parent?.owner || '',
+        assignedToUserId: assignee,
+        assignmentInherited: parent?.assignedToUserId ? true : undefined,
+        owner: parent?.owner || current.accounts.find(account => account.id === assignee)?.name || '',
         dateRaised: today,
+        startDate: isoDate(draft.startDate),
+        dueDate: isoDate(draft.dueDate),
         followUpDate: '',
-        description: '',
+        description: (draft.description || '').slice(0, 2000),
         resolution: '',
         source: 'Internal',
         qaResult: 'Not Run',
@@ -1625,6 +1634,55 @@ export function useAppState() {
     if (cloudStatus !== 'local') await waitForCloudSaves()
     void addedProjects
     return made.map(item => storeRef.current.items.find(saved => saved.id === item.id) || created.get(item.id)!)
+  }
+  /**
+   * Changes from a project timeline tracker: titles, start and due dates, the phase a subtask sits under, and done or
+   * reopened. Phase tasks are rolled up from their subtasks (see trackerTasks). Returns false when nothing could be saved.
+   */
+  const updateTrackerTasks = async (patches: TaskPatch[]): Promise<boolean> => {
+    if (!canWriteTasks || !hasModule('items') || !patches.length) return false
+    const current = storeRef.current
+    const today = businessDateKey()
+    const closedStatus = defaultClosedTaskStatus(current.taskSettings)
+    const { items, changed } = applyTaskPatches(
+      current.items.filter(item => !archivedWorkReason(current, item)),
+      patches,
+      {
+        isClosed: status => isTaskClosed(status, current.taskSettings),
+        close: () => ({
+          status: closedStatus,
+          waitingOn: doneWaitingOn(current.taskSettings),
+          followUpDate: '',
+          resolvedDate: today,
+        }),
+        open: () => ({
+          status: defaultOpenTaskStatus(current.taskSettings),
+          waitingOn: defaultWaitingOn(current.taskSettings),
+          resolvedDate: undefined,
+        }),
+      },
+    )
+    if (!changed.length) return true
+    const updated = new Map(items.map(item => [item.id, item]))
+    const activity = changed
+      .filter(entry => entry.done !== undefined)
+      .map(entry => ({
+        id: crypto.randomUUID(),
+        clientId: entry.item.clientId,
+        projectId: entry.item.projectId,
+        date: today,
+        text: `${entry.done ? 'Completed' : 'Reopened'} ${entry.item.parentTaskId ? 'subtask' : 'task'} from a tracker: ${entry.item.title}`,
+      }))
+    if (
+      persist({
+        ...current,
+        items: current.items.map(item => updated.get(item.id) || item),
+        activity: [...activity, ...current.activity],
+      }) === false
+    )
+      return false
+    if (cloudStatus !== 'local') await waitForCloudSaves()
+    return true
   }
   const openTaskEditor = (id: string) => {
     if (!canWriteTasks) return
@@ -1893,6 +1951,7 @@ export function useAppState() {
     cloudStatus,
     convertInquiry,
     createTrackerTasks,
+    updateTrackerTasks,
     currentUser,
     dashboardAiBusy,
     dashboardAiError,

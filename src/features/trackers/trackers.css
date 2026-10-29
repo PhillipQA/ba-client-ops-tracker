@@ -2281,7 +2281,10 @@ a.trk-link-button {
 
 /* Timeline (Gantt) */
 .trk-tl {
-  --tl-left: 440px;
+  --tl-task: 240px;
+  --tl-lead: 120px;
+  /* Task + Lead + Days + Done, the gaps between them, the padding and the border. */
+  --tl-left: calc(var(--tl-task) + var(--tl-lead) + 137px);
   --tl-row: 38px;
   background: var(--k-solid);
   border: 1px solid var(--k-border);
@@ -2343,7 +2346,7 @@ a.trk-link-button {
   flex: none;
   width: var(--tl-left);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px 44px 48px;
+  grid-template-columns: var(--tl-task) var(--tl-lead) 44px 48px;
   align-items: center;
   gap: 8px;
   padding: 0 10px;
@@ -2650,4 +2653,144 @@ a.trk-link-button {
 .trk-tl-months span {
   background: color-mix(in srgb, var(--k-text) 4%, transparent);
   border-bottom: 1px solid var(--k-line);
+}
+
+/* Row highlights: a colour someone picked, or the row's state when colouring by status. */
+.trk-row.trk-hl {
+  --row-bg: color-mix(in srgb, var(--tone) 16%, var(--k-solid));
+}
+.trk-row.trk-hl:not(.trk-head):not(.trk-group-row):hover {
+  --row-bg: color-mix(in srgb, var(--tone) 24%, var(--k-solid));
+}
+.trk-row.trk-hl.selected {
+  --row-bg: color-mix(in srgb, var(--k-accent) 14%, color-mix(in srgb, var(--tone) 16%, var(--k-solid)));
+}
+.trk-row.trk-hl > .trk-cell:first-child {
+  box-shadow: inset 3px 0 0 var(--tone);
+}
+.trk-tl-row.trk-hl .trk-tl-left {
+  background: color-mix(in srgb, var(--tone) 16%, var(--k-solid));
+  box-shadow: inset 3px 0 0 var(--tone);
+}
+.trk-tl-row.trk-hl .trk-tl-chart {
+  background-color: color-mix(in srgb, var(--tone) 8%, transparent);
+}
+.trk-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.trk-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--tone) 60%, transparent);
+  background: color-mix(in srgb, var(--tone) 35%, var(--k-solid));
+  cursor: pointer;
+  padding: 0;
+}
+.trk-swatch.on {
+  outline: 2px solid var(--k-text);
+  outline-offset: 1px;
+}
+.trk-swatch.none {
+  --tone: #94a3b8;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--tone) 40%, transparent) 4px 6px
+  );
+}
+.trk-swatch:focus-visible {
+  outline: 2px solid var(--k-accent);
+  outline-offset: 1px;
+}
+.trk-button.on {
+  background: var(--k-accent-soft);
+  border-color: color-mix(in srgb, var(--k-accent) 55%, transparent);
+  color: var(--k-accent);
+}
+
+/* Working days, typed in on the timeline */
+.trk-tl-days-input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--k-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+.trk-tl-days-input::-webkit-outer-spin-button,
+.trk-tl-days-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.trk-tl-days-input:hover {
+  border-color: var(--k-border);
+  background: var(--k-input);
+}
+.trk-tl-days-input:focus {
+  border-color: var(--k-accent);
+  background: var(--k-input);
+  outline: none;
+}
+
+/* Resizing the timeline's Task and Lead columns */
+.trk-tl-lefthead {
+  align-self: stretch;
+  align-items: stretch;
+}
+.trk-tl-lefthead > span {
+  display: flex;
+  align-items: center;
+}
+.trk-tl-lefthead > .trk-tl-num {
+  justify-content: flex-end;
+}
+.trk-tl-hcell {
+  position: relative;
+  min-width: 0;
+}
+.trk-tl-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -8px;
+  width: 9px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+.trk-tl-resize::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  left: 4px;
+  width: 1px;
+  background: var(--k-border);
+}
+.trk-tl-resize:hover::after,
+.trk-tl-resize:focus-visible::after,
+.trk-tl-resize.active::after {
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--k-accent);
+}
+.trk-tl-resize:focus-visible {
+  outline: none;
+}
+.trk-tl.trk-tl-resizing,
+.trk-tl.trk-tl-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }

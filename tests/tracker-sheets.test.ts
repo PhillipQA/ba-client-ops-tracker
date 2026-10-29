@@ -246,7 +246,7 @@ function harness(scopes: Record<string, string> = {}) {
       email: `${userId}@example.com`,
     }
   }
-  registerTrackerRoutes(app as any, {
+  const hooks = registerTrackerRoutes(app as any, {
     db,
     requireAuth: pass,
     requireTenant: pass,
@@ -254,7 +254,7 @@ function harness(scopes: Record<string, string> = {}) {
     key: Buffer.alloc(32, 7),
     googleAccess,
   })
-  return { app, db }
+  return { app, db, hooks }
 }
 async function serve(
   h: ReturnType<typeof harness>,
@@ -860,5 +860,162 @@ test('a Sheet made from a tracker with dates gets a Gantt chart tab, and a conne
     assert.equal(again.body.replaced, true)
     assert.deepEqual(formatted[0].requests[0], { deleteSheet: { sheetId: 42 } }, 'the old chart is replaced')
     newSheetTabs = newSheetTabs.slice(0, 1)
+  })
+})
+
+test('a row that mirrors its task takes the task’s new title, dates and completion after a save', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Barter XI',
+        columns: [
+          { name: 'Task', type: 'text', taskField: 'title' },
+          { name: 'Start', type: 'date', taskField: 'start' },
+          { name: 'End', type: 'date', taskField: 'due' },
+          { name: '% Done', type: 'number', taskField: 'progress' },
+          { name: 'Status', type: 'select', options: [{ label: 'Pending' }, { label: 'Done' }] },
+        ],
+      })
+    ).body.tracker
+    assert.deepEqual(
+      tracker.columns.map((c: any) => c.taskField || ''),
+      ['title', 'start', 'due', 'progress', ''],
+    )
+    const status = tracker.columns[4]
+    const [pending, done] = status.options.map((o: any) => o.id)
+    const withDone = await ask('PUT', `/api/trackers/${tracker.id}/columns`, {
+      revision: tracker.revision,
+      columns: tracker.columns.map((c: any) =>
+        c.id === status.id ? { ...c, autoDone: { done, undone: pending } } : c,
+      ),
+    })
+    assert.equal(withDone.status, 200, JSON.stringify(withDone.body))
+    const [cTask, cStart, cEnd, cPct] = tracker.columns.map((c: any) => c.id)
+    const row = (
+      await ask('POST', `/api/trackers/${tracker.id}/rows`, {
+        rows: [{ cells: { [cTask]: 'DRF', [cStart]: '2026-11-02', [cPct]: 40, [status.id]: pending } }],
+      })
+    ).body.rows[0]
+    const linked = await ask('POST', `/api/trackers/${tracker.id}/rows/tasks`, {
+      links: [{ rowId: row.id, taskId: 's1' }],
+    })
+    assert.equal(linked.status, 200, JSON.stringify(linked.body))
+
+    const tenant = '11111111-1111-4111-8111-111111111111'
+    const before = { items: [{ id: 's1', title: 'DRF', parentTaskId: 't1', status: 'Open' }] }
+    const after = {
+      items: [
+        {
+          id: 's1',
+          title: 'Submission of DRF',
+          parentTaskId: 't1',
+          status: 'Resolved',
+          startDate: '2026-11-05',
+          dueDate: '2026-11-09',
+        },
+      ],
+    }
+    await h.hooks.onWorkspaceSaved(tenant, before, after, { id: 'u1', name: 'Ana Reyes' } as any)
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    assert.deepEqual(rows[0].cells, {
+      [cTask]: 'Submission of DRF',
+      [cStart]: '2026-11-05',
+      [cEnd]: '2026-11-09',
+      [cPct]: 100,
+      [status.id]: done,
+    })
+
+    // Reopened: back to Pending, and 100% back to 0.
+    await h.hooks.onWorkspaceSaved(tenant, after, { items: [{ ...after.items[0], status: 'Open' }] }, null)
+    const reopened = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows[0]
+    assert.equal(reopened.cells[status.id], pending)
+    assert.equal(reopened.cells[cPct], 0)
+  })
+})
+
+test('rows can be highlighted with a colour everyone sees', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = (await ask('POST', '/api/trackers', { name: 'Colours', columns: [{ name: 'Task', type: 'text' }] }))
+      .body.tracker
+    const rows = (
+      await ask('POST', `/api/trackers/${tracker.id}/rows`, {
+        rows: [{ cells: { [tracker.columns[0].id]: 'A' } }, { cells: { [tracker.columns[0].id]: 'B' } }],
+      })
+    ).body.rows
+    const painted = await ask('PUT', `/api/trackers/${tracker.id}/rows/highlight`, {
+      ids: [rows[0].id],
+      color: 'amber',
+    })
+    assert.equal(painted.status, 200, JSON.stringify(painted.body))
+    const read = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    assert.equal(read[0].highlight, 'amber')
+    assert.equal(read[1].highlight, undefined)
+    assert.equal(read[0].version, rows[0].version, 'a highlight is not an edit to the row')
+    const bad = await ask('PUT', `/api/trackers/${tracker.id}/rows/highlight`, { ids: [rows[0].id], color: 'neon' })
+    assert.equal(bad.status, 400)
+    const viewer = await ask(
+      'PUT',
+      `/api/trackers/${tracker.id}/rows/highlight`,
+      { ids: [rows[0].id], color: '' },
+      { 'x-role': 'Viewer' },
+    )
+    assert.equal(viewer.status, 403)
+    await ask('PUT', `/api/trackers/${tracker.id}/rows/highlight`, { ids: [rows[0].id], color: '' })
+    assert.equal(
+      (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows[0].highlight,
+      undefined,
+    )
+  })
+})
+
+test('a sync brings in a column added to the Sheet, with its values, on any tracker', async () => {
+  dropdowns = []
+  grid = [
+    ['Branch #', 'Branch', 'Go-live', 'Skipped'],
+    ['57', 'Batch 5', '11/25/2026', 'a'],
+    ['58', 'Sta. Rosa', '12/01/2026', 'b'],
+  ]
+  const h = harness()
+  await serve(h, async ask => {
+    const tracker = (await ask('POST', '/api/trackers', { name: 'Rollout', columns })).body.tracker
+    const [cKey, cName, cLive] = tracker.columns.map((c: any) => c.id)
+    const connected = await ask('POST', `/api/trackers/${tracker.id}/source`, {
+      spreadsheetId: SHEET,
+      tab: 'Branches',
+      keyHeader: 'Branch #',
+      headerMap: { 'Branch #': cKey, Branch: cName, 'Go-live': cLive },
+    })
+    assert.equal(connected.status, 200, JSON.stringify(connected.body))
+    assert.equal(connected.body.tracker.columns.length, 4, 'the column not chosen when connecting stays out')
+
+    grid = [
+      ['Branch #', 'Branch', 'Go-live', 'Skipped', 'BIR permit'],
+      ['57', 'Batch 5', '11/25/2026', 'a', 'Approved'],
+      ['58', 'Sta. Rosa', '12/01/2026', 'b', 'Filed'],
+      ['59', 'Calamba', '12/02/2026', 'c', 'Filed'],
+      ['60', 'Lipa', '12/03/2026', 'd', 'Approved'],
+    ]
+    const synced = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+    assert.equal(synced.status, 200, JSON.stringify(synced.body))
+    assert.deepEqual(synced.body.report.addedColumns, ['BIR permit'])
+    const opened = (await ask('GET', `/api/trackers/${tracker.id}`)).body.tracker
+    const permit = opened.columns.find((c: any) => c.name === 'BIR permit')
+    assert.equal(permit.type, 'select')
+    assert.equal(permit.synced, true)
+    assert.equal(
+      opened.columns.some((c: any) => c.name === 'Skipped'),
+      false,
+    )
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    const label = (id: string) => permit.options.find((o: any) => o.id === id)?.label
+    assert.deepEqual(
+      rows.map((r: any) => label(r.cells[permit.id])),
+      ['Approved', 'Filed', 'Filed', 'Approved'],
+      'existing rows get the new column’s values, and new rows come in with them',
+    )
+    const quiet = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+    assert.equal(quiet.body.report.addedColumns, undefined)
   })
 })

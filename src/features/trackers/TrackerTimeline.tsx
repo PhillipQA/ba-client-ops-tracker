@@ -12,6 +12,7 @@ import type { TrackerColumn, TrackerRow } from './trackerModel'
 import {
   buildTimeline,
   draggedDates,
+  endAfterWorkingDays,
   isoOf,
   monthLabel,
   mondayOf,
@@ -48,9 +49,38 @@ type Props = {
   canDrag: (row: TrackerRow) => boolean
   /** Writes the dragged dates: Start, and End when there is an End column. */
   onDates: (row: TrackerRow, cells: Record<string, string>) => void
+  /** Rows tinted with a colour: their highlight, or their state when colouring by status. */
+  tones?: ReadonlyMap<string, string>
 }
 
 type Saved = TimelineSettings
+
+/** Widths of the Task and Lead columns, set by dragging their edges. Kept per tracker in this browser. */
+type Widths = { task: number; lead: number }
+const DEFAULT_WIDTHS: Widths = { task: 240, lead: 120 }
+const WIDTH_LIMITS: Record<keyof Widths, [number, number]> = { task: [140, 720], lead: [60, 320] }
+const clampWidth = (key: keyof Widths, value: number) =>
+  Math.round(Math.min(WIDTH_LIMITS[key][1], Math.max(WIDTH_LIMITS[key][0], value)))
+const widthsKey = (trackerId: string) => `ba.tracker.timeline.widths.${trackerId}`
+function readWidths(trackerId: string): Widths {
+  try {
+    const value = JSON.parse(localStorage.getItem(widthsKey(trackerId)) || '{}')
+    return {
+      task: clampWidth('task', Number(value?.task) || DEFAULT_WIDTHS.task),
+      lead: clampWidth('lead', Number(value?.lead) || DEFAULT_WIDTHS.lead),
+    }
+  } catch {
+    return DEFAULT_WIDTHS
+  }
+}
+/** The width text takes in the timeline's font, for fitting a column to its longest entry. */
+function textWidth(texts: string[], element: HTMLElement | null, bold = false) {
+  const canvas = document.createElement('canvas').getContext('2d')
+  if (!canvas) return 0
+  const style = element ? getComputedStyle(element) : null
+  canvas.font = `${bold ? '700 ' : ''}13px ${style?.fontFamily || 'sans-serif'}`
+  return Math.max(0, ...texts.map(text => canvas.measureText(text).width))
+}
 type Drag = { rowId: string; mode: DragMode; x: number; start: number; end: number; delta: number; moved: boolean }
 const storageKey = (trackerId: string) => `ba.tracker.timeline.${trackerId}`
 function readSaved(trackerId: string): Saved {
@@ -77,6 +107,18 @@ export default function TrackerTimeline(props: Props) {
   const [saved, setSaved] = useState<Saved>(() => (hasSettings(shared) ? shared! : readSaved(trackerId)))
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [drag, setDrag] = useState<Drag | null>(null)
+  const [widths, setWidths] = useState<Widths>(() => readWidths(trackerId))
+  useEffect(() => setWidths(readWidths(trackerId)), [trackerId])
+  const resizing = useRef<{ key: keyof Widths; x: number; start: number } | null>(null)
+  const [resizingKey, setResizingKey] = useState<keyof Widths | ''>('')
+  const saveWidths = (next: Widths) => {
+    setWidths(next)
+    try {
+      localStorage.setItem(widthsKey(trackerId), JSON.stringify(next))
+    } catch {
+      /* not remembered */
+    }
+  }
   const dragRef = useRef<Drag | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const sharedKey = JSON.stringify(shared ?? null)
@@ -230,6 +272,89 @@ export default function TrackerTimeline(props: Props) {
     commit(item, next.start, next.end)
   }
 
+  /** Fits a column to its longest entry: task names (with WBS numbers) and phase names, or leads. */
+  const fit = (key: keyof Widths) => {
+    const items = timeline.groups.flatMap(group => group.items)
+    if (key === 'lead')
+      return saveWidths({
+        ...widths,
+        lead: clampWidth(
+          'lead',
+          textWidth(
+            items.map(item => item.lead),
+            scrollRef.current,
+          ) + 12,
+        ),
+      })
+    const wbsWidth = wbs
+      ? Math.max(
+          30,
+          textWidth(
+            items.map(item => String(item.row.cells[wbs.id] || '')),
+            scrollRef.current,
+          ),
+        ) + 6
+      : 0
+    const names = textWidth(
+      items.map(item => (title && String(item.row.cells[title.id] || '')) || 'Untitled row'),
+      scrollRef.current,
+    )
+    const phases = textWidth(
+      timeline.groups.map(group => group.label),
+      scrollRef.current,
+      true,
+    )
+    saveWidths({ ...widths, task: clampWidth('task', Math.max(names + wbsWidth, phases + 18) + 14) })
+  }
+  /** A handle on a column's right edge: drag it, use the arrow keys, or double-click to fit the column. */
+  const resizer = (key: keyof Widths, name: string) => (
+    <span
+      className={`trk-tl-resize${resizingKey === key ? ' active' : ''}`}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize the ${name} column`}
+      aria-valuenow={widths[key]}
+      aria-valuemin={WIDTH_LIMITS[key][0]}
+      aria-valuemax={WIDTH_LIMITS[key][1]}
+      tabIndex={0}
+      title={`Drag to resize the ${name} column; double-click to fit it`}
+      onPointerDown={event => {
+        if (event.button !== 0) return
+        event.preventDefault()
+        event.currentTarget.setPointerCapture(event.pointerId)
+        resizing.current = { key, x: event.clientX, start: widths[key] }
+        setResizingKey(key)
+      }}
+      onPointerMove={event => {
+        const current = resizing.current
+        if (!current) return
+        const value = clampWidth(current.key, current.start + event.clientX - current.x)
+        setWidths(previous => ({ ...previous, [current.key]: value }))
+      }}
+      onPointerUp={() => {
+        if (!resizing.current) return
+        resizing.current = null
+        setResizingKey('')
+        saveWidths({ ...widths })
+      }}
+      onPointerCancel={() => {
+        resizing.current = null
+        setResizingKey('')
+      }}
+      onDoubleClick={() => fit(key)}
+      onKeyDown={event => {
+        const step = event.key === 'ArrowRight' ? 16 : event.key === 'ArrowLeft' ? -16 : 0
+        if (step) {
+          event.preventDefault()
+          saveWidths({ ...widths, [key]: clampWidth(key, widths[key] + step) })
+        } else if (event.key === 'Enter') {
+          event.preventDefault()
+          fit(key)
+        }
+      }}
+    />
+  )
+
   const bar = (item: TimelineItem) => {
     if (item.start === null || item.end === null) return <span className="trk-tl-nodate">No dates</span>
     const dragging = drag && drag.rowId === item.row.id ? drag : null
@@ -296,7 +421,10 @@ export default function TrackerTimeline(props: Props) {
   }
 
   return (
-    <div className="trk-tl">
+    <div
+      className={`trk-tl${resizingKey ? ' trk-tl-resizing' : ''}`}
+      style={{ '--tl-task': `${widths.task}px`, '--tl-lead': `${widths.lead}px` } as CSSProperties}
+    >
       <div className="trk-tl-toolbar">
         {pick('startId', 'Start', ['date'], false)}
         {pick('endId', 'End', ['date'], true)}
@@ -337,8 +465,14 @@ export default function TrackerTimeline(props: Props) {
         <div className="trk-tl-table" style={{ width: `calc(var(--tl-left) + ${days * width}px)` }}>
           <div className="trk-tl-row trk-tl-head">
             <div className="trk-tl-left trk-tl-lefthead">
-              <span className="trk-tl-name">Task</span>
-              <span className="trk-tl-meta">Lead</span>
+              <span className="trk-tl-hcell">
+                Task
+                {resizer('task', 'Task')}
+              </span>
+              <span className="trk-tl-hcell">
+                Lead
+                {resizer('lead', 'Lead')}
+              </span>
               <span className="trk-tl-num">Days</span>
               <span className="trk-tl-num">Done</span>
             </div>
@@ -410,10 +544,12 @@ export default function TrackerTimeline(props: Props) {
                           ) : (
                             <ChevronDown size={14} aria-hidden="true" />
                           )}
-                          <span className="trk-tl-name">{group.label}</span>
+                          <span className="trk-tl-name" title={group.label}>
+                            {group.label}
+                          </span>
                         </button>
                         <span className="trk-tl-meta">{group.items.length}</span>
-                        <span className="trk-tl-num">
+                        <span className="trk-tl-num" title="From the first start to the last end of its tasks">
                           {group.start !== null && group.end !== null ? workingDays(group.start, group.end) : ''}
                         </span>
                         <span className="trk-tl-num">{group.progress}%</span>
@@ -433,9 +569,17 @@ export default function TrackerTimeline(props: Props) {
                   )}
                   {!closed &&
                     group.items.map(item => (
-                      <div key={item.row.id} className="trk-tl-row">
+                      <div
+                        key={item.row.id}
+                        className={`trk-tl-row${props.tones?.get(item.row.id) ? ` trk-hl trk-tone-${props.tones.get(item.row.id)}` : ''}`}
+                      >
                         <div className="trk-tl-left">
-                          <button type="button" className="trk-tl-name trk-tl-open" onClick={() => onOpenRow(item.row)}>
+                          <button
+                            type="button"
+                            className="trk-tl-name trk-tl-open"
+                            title={`${wbs && item.row.cells[wbs.id] ? `${String(item.row.cells[wbs.id])} ` : ''}${(title && String(item.row.cells[title.id] || '')) || 'Untitled row'}`}
+                            onClick={() => onOpenRow(item.row)}
+                          >
                             {wbs && item.row.cells[wbs.id] ? (
                               <span className="trk-tl-wbs">{String(item.row.cells[wbs.id])}</span>
                             ) : null}
@@ -444,9 +588,27 @@ export default function TrackerTimeline(props: Props) {
                           <span className="trk-tl-meta" title={item.lead}>
                             {item.lead}
                           </span>
-                          <span className="trk-tl-num">
-                            {item.start !== null && item.end !== null ? workingDays(item.start, item.end) : ''}
-                          </span>
+                          {item.start !== null && item.end !== null && fields.endId && canDrag(item.row) ? (
+                            <DaysInput
+                              key={`${item.row.id}:${item.start}:${item.end}`}
+                              days={workingDays(item.start, item.end)}
+                              label={`Working days for ${(title && String(item.row.cells[title.id] || '')) || 'this row'}`}
+                              onChange={days => commit(item, item.start!, endAfterWorkingDays(item.start!, days))}
+                            />
+                          ) : (
+                            <span
+                              className="trk-tl-num"
+                              title={
+                                item.start === null
+                                  ? 'Set a Start date to give this task a length'
+                                  : !fields.endId
+                                    ? 'Choose an End column in the timeline settings to change the length'
+                                    : undefined
+                              }
+                            >
+                              {item.start !== null && item.end !== null ? workingDays(item.start, item.end) : ''}
+                            </span>
+                          )}
                           <span className={`trk-tl-num${item.late ? ' late' : ''}`}>{item.progress}%</span>
                         </div>
                         <div className="trk-tl-chart" style={chartStyle}>
@@ -469,5 +631,43 @@ export default function TrackerTimeline(props: Props) {
           : 'These settings are kept in this browser only.'}
       </p>
     </div>
+  )
+}
+
+/**
+ * A task's length in working days, typed in. Enter or leaving the field saves it (the End date moves; the Start stays);
+ * Escape puts the old number back.
+ */
+function DaysInput({ days, label, onChange }: { days: number; label: string; onChange: (days: number) => void }) {
+  const [text, setText] = useState(String(days))
+  const save = () => {
+    const value = Math.floor(Number(text))
+    if (!Number.isFinite(value) || value < 1 || value > 999) {
+      setText(String(days))
+      return
+    }
+    if (value !== days) onChange(value)
+  }
+  return (
+    <input
+      className="trk-tl-days-input"
+      type="number"
+      inputMode="numeric"
+      min={1}
+      max={999}
+      step={1}
+      value={text}
+      aria-label={label}
+      title="Working days: type a number to move the End date"
+      onChange={event => setText(event.target.value)}
+      onBlur={save}
+      onKeyDown={event => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') {
+          setText(String(days))
+          event.currentTarget.blur()
+        }
+      }}
+    />
   )
 }

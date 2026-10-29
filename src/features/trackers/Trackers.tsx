@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link2, Lock, Plus, Search, Table2, Upload } from 'lucide-react'
 import { TRACKER_LIMITS, columnTypeLabel, type Tracker } from './trackerModel'
-import { TRACKER_TEMPLATES, templateById, templateRows } from './trackerTemplates'
+import { TRACKER_TEMPLATES, templateById, templateRows, withDoneColumn } from './trackerTemplates'
+import { createRowTasks } from './trackerTaskActions'
+import type { TaskPatch } from './trackerTasks'
 import { trackerApi } from './trackerApi'
 import { rememberTracker, rememberedTracker } from './trackerNav'
 import { VIEW_PATHS, opensElsewhere, pathForTracker, trackerIdFromPath } from '../../app/routes'
@@ -28,6 +30,9 @@ type Props = {
   onOpenTask?: (taskId: string) => void
   isTaskClosed: (status: string) => boolean
   onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
+  /** Changes tasks from a tracker (dates, titles, done); see trackerTasks. */
+  onUpdateTasks?: (patches: TaskPatch[]) => Promise<boolean>
+  currentUserId?: string
 }
 
 const remembered = rememberedTracker
@@ -37,14 +42,20 @@ function NewTrackerDialog({
   initialTemplate,
   clients,
   projects,
+  items,
+  currentUserId,
+  onCreateTasks,
   onClose,
   onCreated,
 }: {
   initialTemplate: string
   clients: Client[]
   projects: Project[]
+  items: WorkItem[]
+  currentUserId: string
+  onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
   onClose: () => void
-  onCreated: (tracker: Tracker) => void
+  onCreated: (tracker: Tracker, note?: string) => void
 }) {
   const [templateId, setTemplateId] = useState(initialTemplate)
   const [name, setName] = useState(initialTemplate === 'blank' ? '' : templateById(initialTemplate)?.name || '')
@@ -56,6 +67,7 @@ function NewTrackerDialog({
   const [error, setError] = useState('')
   // Templates with starter rows (Project timeline): whether to add them, and the date their schedule starts from.
   const [withRows, setWithRows] = useState(true)
+  const [withTasks, setWithTasks] = useState(true)
   const [startDate, setStartDate] = useState(() => {
     const now = new Date()
     const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ((8 - now.getDay()) % 7 || 7))
@@ -82,15 +94,39 @@ function NewTrackerDialog({
         projectId,
         private: onlyMe,
       })
+      let tracker = result.tracker
+      // The done column (Status → Done) completes and reopens the linked tasks, and follows them.
+      const doneColumns = withDoneColumn(template, tracker.columns)
+      if (doneColumns)
+        tracker =
+          (await trackerApi.saveColumns(tracker.id, doneColumns, tracker.revision).catch(() => null))?.tracker ||
+          tracker
       if (starter && withRows) {
         // The tracker exists either way; if the rows cannot be added, it opens empty and they can be typed in.
         const added = await trackerApi
-          .addRows(result.tracker.id, templateRows(template, result.tracker.columns, startDate))
+          .addRows(tracker.id, templateRows(template, tracker.columns, startDate))
           .catch(() => null)
-        onCreated(added ? { ...result.tracker, rowCount: added.rows.length } : result.tracker)
-        return
+        tracker = added ? { ...tracker, rowCount: added.rows.length } : tracker
+        if (added && template.tasks && withTasks && onCreateTasks && clientIds.length) {
+          const made = await createRowTasks({
+            tracker: { ...tracker, clientIds },
+            rows: added.rows,
+            items,
+            currentUserId,
+            onCreateTasks,
+          }).catch(error => ({ created: 0, error: error instanceof Error ? error.message : String(error) }))
+          onCreated(
+            tracker,
+            'error' in made && made.error
+              ? `The tracker was made, but its tasks were not: ${made.error}`
+              : made.created
+                ? `${plural(made.created, 'task')} made in Tasks: one for each phase and a subtask for each row.`
+                : undefined,
+          )
+          return
+        }
       }
-      onCreated(result.tracker)
+      onCreated(tracker)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The tracker could not be created.')
       setBusy(false)
@@ -155,6 +191,19 @@ function NewTrackerDialog({
                 with the standard task list ({starter} tasks in{' '}
                 {new Set(template.rows!.map(row => String(row.cells.Phase || ''))).size} phases)
               </label>
+              {withRows && template.tasks && onCreateTasks && (
+                <label className="trk-checkline">
+                  <input
+                    type="checkbox"
+                    checked={withTasks && clientIds.length > 0}
+                    disabled={!clientIds.length}
+                    onChange={event => setWithTasks(event.target.checked)}
+                  />{' '}
+                  {clientIds.length
+                    ? `Make a task for each phase and a subtask for each row in Tasks, assigned to you${projectId ? '' : `, in a new project “${name.trim() || 'named after the tracker'}”`}`
+                    : 'Choose a client above to also make a task for each phase and a subtask for each row'}
+                </label>
+              )}
               {withRows && template.schedule && (
                 <label className="trk-field-block">
                   Project start date
@@ -248,6 +297,8 @@ export default function Trackers(props: Props) {
   const [clientFilter, setClientFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [creating, setCreating] = useState<string | null>(null)
+  /** Said once when the new tracker opens, such as how many tasks were made. */
+  const [createdNote, setCreatedNote] = useState('')
   const [importing, setImporting] = useState(false)
   // Back from Google's permission page (#sheets=enabled|denied|error): say what happened and reopen the Sheet picker.
   const [sheetReturn] = useState(() => {
@@ -332,6 +383,9 @@ export default function Trackers(props: Props) {
         onOpenTask={props.onOpenTask}
         isTaskClosed={props.isTaskClosed}
         onCreateTasks={props.onCreateTasks}
+        onUpdateTasks={props.onUpdateTasks}
+        currentUserId={props.currentUserId || ''}
+        startNote={createdNote}
         onListChanged={() => void load()}
         googleReturn={sheetReturn}
       />
@@ -493,9 +547,13 @@ export default function Trackers(props: Props) {
           initialTemplate={creating}
           clients={props.clients}
           projects={props.projects}
+          items={props.items}
+          currentUserId={props.currentUserId || ''}
+          onCreateTasks={props.onCreateTasks}
           onClose={() => setCreating(null)}
-          onCreated={tracker => {
+          onCreated={(tracker, note) => {
             setCreating(null)
+            if (note) setCreatedNote(note)
             setOpenId(tracker.id)
             void load()
           }}

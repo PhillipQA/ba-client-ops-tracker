@@ -62,6 +62,8 @@ type Props = {
   entries: Entry[]
   lookup: Lookup
   people: Person[]
+  /** Rows tinted with a colour: their highlight, or their state when colouring by status. */
+  tones?: ReadonlyMap<string, string>
   canEdit: boolean
   /** Two-way sync: Sheet columns are edited here too, and the edit goes to the Sheet. */
   twoWay?: boolean
@@ -348,14 +350,15 @@ export default function TrackerGrid(props: Props) {
     }
     const { row, n } = entry
     const isSelected = selected.has(row.id),
-      rowActive = active?.rowId === row.id
+      rowActive = active?.rowId === row.id,
+      tone = props.tones?.get(row.id)
     rendered.push(
       <div
         key={row.id}
         role="row"
         aria-rowindex={index + 2}
         aria-selected={isSelected}
-        className={`trk-row${isSelected ? ' selected' : ''}${rowActive ? ' current' : ''}${dragIds?.has(row.id) ? ' dragging' : ''}${row.sourceMissing ? ' trk-missing' : ''}${row.review ? ' trk-to-review' : ''}${dropAt?.rowId === row.id && dragIds && !dragIds.has(row.id) ? (dropAt.after ? ' drop-after' : ' drop-before') : ''}`}
+        className={`trk-row${tone ? ` trk-hl trk-tone-${tone}` : ''}${isSelected ? ' selected' : ''}${rowActive ? ' current' : ''}${dragIds?.has(row.id) ? ' dragging' : ''}${row.sourceMissing ? ' trk-missing' : ''}${row.review ? ' trk-to-review' : ''}${dropAt?.rowId === row.id && dragIds && !dragIds.has(row.id) ? (dropAt.after ? ' drop-after' : ' drop-before') : ''}`}
         style={{ gridTemplateColumns: template, height: ROW_HEIGHT }}
         onDragOver={
           dragIds

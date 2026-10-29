@@ -16,8 +16,10 @@ import {
   isEmptyCell,
   normalizeColumns,
   normalizeViews,
+  OPTION_COLORS,
   planConversion,
   type Cell,
+  type OptionColor,
   type SyncReport,
   type Tracker,
   type TrackerColumn,
@@ -29,6 +31,7 @@ import {
   describeSync,
   dropdownOf,
   mergeDropdownOptions,
+  planNewColumns,
   convertRowsToChoice,
   planSync,
   sheetIdFrom,
@@ -37,6 +40,7 @@ import {
 import { cleanTimelineSettings } from '../../src/features/trackers/timelineModel'
 import { sheetFormatRequests, sheetFromTracker } from '../../src/features/trackers/sheetFromTracker'
 import { GANTT_TAB, ganttFields, ganttSheetRequests } from '../../src/features/trackers/sheetGantt'
+import { rowCellsFromTask, taskFieldChanges } from '../../src/features/trackers/trackerTasks'
 import {
   SHEET_ISSUES,
   autoDoneColumn,
@@ -188,6 +192,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       ...(row.source_missing ? { sourceMissing: true } : {}),
       ...(row.review ? { review: true } : {}),
       ...(row.sheet_issue?.code ? { sheetIssue: row.sheet_issue as SheetIssue } : {}),
+      ...(OPTION_COLORS.includes(row.highlight) ? { highlight: row.highlight as OptionColor } : {}),
     }
   }
 
@@ -580,6 +585,36 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await fail(error instanceof Error ? error.message : 'The Sheet could not be read.')
       throw error
     }
+    // Columns added to the Sheet since the last sync become tracker columns, followed from now on (see planNewColumns).
+    const grown = planNewColumns({
+      grid,
+      headerMap: source.header_map || {},
+      keyHeader: source.key_header,
+      columns: columnsOf(tracker),
+      today: now().slice(0, 10),
+      firstSync: !source.last_synced_at,
+    })
+    if (grown.changed) {
+      const stamp = now()
+      if (grown.columns.length) {
+        const nextColumns = normalizeColumns([...columnsOf(tracker), ...grown.columns], columnsOf(tracker))
+        const savedColumns = await db
+          .from('tenant_trackers')
+          .update({ columns: nextColumns, revision: Number(tracker.revision || 1) + 1, updated_at: stamp })
+          .eq('tenant_id', tenant)
+          .eq('id', tracker.id)
+        check(savedColumns.error)
+        tracker = { ...tracker, columns: nextColumns, revision: Number(tracker.revision || 1) + 1 }
+      }
+      const savedMap = await db
+        .from('tenant_tracker_sources')
+        .update({ header_map: grown.headerMap, updated_at: stamp })
+        .eq('tenant_id', tenant)
+        .eq('tracker_id', tracker.id)
+      sourceCheck(savedMap.error)
+      source.header_map = grown.headerMap
+      if (grown.added.length) await record(tenant, tracker.id, '', user, 'columns', { addedFromSheet: grown.added })
+    }
     // The Sheet's dropdown choices, so options no row uses yet come over too. Best effort: a sync never fails on it.
     const dropdowns = mergeDropdownOptions(
       columnsOf(tracker),
@@ -732,7 +767,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .in('id', planned.missing)
       sourceCheck(saved.error)
     }
-    const report = planned.report
+    const report = { ...planned.report, ...(grown.added.length ? { addedColumns: grown.added } : {}) }
     const done = await db
       .from('tenant_tracker_sources')
       .update({ last_synced_at: stamp, last_status: 'ok', last_error: '', last_report: report, updated_at: stamp })
@@ -996,10 +1031,98 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     if (changed) await touch(tenant, trackerId)
   }
 
+  /**
+   * Rows that mirror a field of their task (see trackerTasks): after a save, a task's new title, start or due date is
+   * copied to its row, and progress goes to 100 when the task is completed. Columns that come from a two-way Sheet are
+   * written there too, as the person who saved (best effort; the next sync settles any difference).
+   */
+  async function followTaskFields(
+    tenant: string,
+    fields: Map<string, { title?: string; startDate?: string; dueDate?: string }>,
+    completed: Map<string, boolean>,
+    actor: Actor,
+  ) {
+    const ids = [...new Set([...fields.keys(), ...completed.keys()])]
+    const byTracker = new Map<string, any[]>()
+    for (let at = 0; at < ids.length; at += 200) {
+      const found = await db
+        .from('tenant_tracker_rows')
+        .select('*')
+        .eq('tenant_id', tenant)
+        .in('task_id', ids.slice(at, at + 200))
+      for (const row of found.error ? [] : found.data || [])
+        byTracker.set(row.tracker_id, [...(byTracker.get(row.tracker_id) || []), row])
+    }
+    for (const [trackerId, rows] of byTracker) {
+      const loaded = await db
+        .from('tenant_trackers')
+        .select('*')
+        .eq('tenant_id', tenant)
+        .eq('id', trackerId)
+        .maybeSingle()
+      const tracker = loaded.data
+      if (!tracker || tracker.archived_at) continue
+      const columns = columnsOf(tracker)
+      if (!columns.some(column => column.taskField)) continue
+      let changed = false
+      const toSheet = new Map<string, { row: any; value: Cell }[]>()
+      for (const row of rows) {
+        const cells = rowCellsFromTask(columns, row.data || {}, fields.get(row.task_id), completed.get(row.task_id))
+        if (!Object.keys(cells).length) continue
+        const version = Number(row.version || 1)
+        const saved = await db
+          .from('tenant_tracker_rows')
+          .update({
+            data: mergeCells(row.data || {}, columns, cells),
+            version: version + 1,
+            updated_by: actor.id,
+            updated_at: now(),
+          })
+          .eq('tenant_id', tenant)
+          .eq('tracker_id', trackerId)
+          .eq('id', row.id)
+          .eq('version', version)
+          .select('id')
+        if (saved.error || !saved.data?.length) continue
+        changed = true
+        const byId = new Map(columns.map(column => [column.id, column]))
+        await record(tenant, trackerId, row.id, actor as User, 'cells', {
+          fromTask: true,
+          cells: Object.keys(cells).map(columnId => ({
+            columnId,
+            name: byId.get(columnId)!.name,
+            from: shown(byId.get(columnId)!, row.data?.[columnId]),
+            to: shown(byId.get(columnId)!, cells[columnId]),
+          })),
+        })
+        for (const [columnId, value] of Object.entries(cells))
+          if (byId.get(columnId)?.synced && row.source_key)
+            toSheet.set(columnId, [...(toSheet.get(columnId) || []), { row, value }])
+      }
+      if (toSheet.size) {
+        const source = await sourceRow(tenant, trackerId)
+        if (source?.mode === 'two_way')
+          for (const [columnId, entries] of toSheet) {
+            const column = columns.find(item => item.id === columnId)!
+            await writeToSheet(tenant, source, column, entries, actor.id ? actor : null).catch(() => undefined)
+          }
+      }
+      if (changed) await touch(tenant, trackerId)
+    }
+  }
+
   /** Follows up a workspace save. Never throws: a failure here must not look like a failed save. */
   async function onWorkspaceSaved(tenant: string, before: any, after: any, actor: Actor | null) {
     if (!db || !tenant) return
     const changes = completionChanges(before, after)
+    const fields = taskFieldChanges(before, after)
+    if (fields.size || changes.size)
+      await followTaskFields(
+        tenant,
+        fields,
+        changes,
+        actor ? { id: actor.id, name: actor.name } : { id: '', name: 'Automatic' },
+      ).catch((error: any) => console.error('Updating tracker rows from their tasks failed:', error?.message || error))
     if (!changes.size) return
     const ids = [...changes.keys()]
     const touched = new Map<string, Set<string>>()
@@ -2453,6 +2576,41 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   )
 
   /** Moves rows to just before another row, or to the end. The rest keep their order. */
+  /** Gives rows a highlight colour everyone sees, or clears it (''). A view setting: rows keep their version. */
+  app.put(
+    '/api/trackers/:id/rows/highlight',
+    ...scope,
+    route(async (req, res) => {
+      const user = who(req),
+        tenant = user.organizationId,
+        id = idParam(req)
+      const tracker = await trackerRow(tenant, id, user)
+      if (user.role === 'Viewer') throw new TrackerError('Viewers cannot highlight rows.', 403)
+      if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to highlight rows.', 409)
+      const ids = Array.isArray(req.body?.ids) ? [...new Set<string>(req.body.ids.map(String))] : []
+      if (!ids.length || ids.length > TRACKER_LIMITS.importBatch || ids.some(value => !UUID.test(value)))
+        throw new TrackerError('Choose the rows to highlight.')
+      const color = String(req.body?.color ?? '')
+      if (color && !OPTION_COLORS.includes(color as OptionColor)) throw new TrackerError('Choose one of the colours.')
+      const saved = await db
+        .from('tenant_tracker_rows')
+        .update({ highlight: color })
+        .eq('tenant_id', tenant)
+        .eq('tracker_id', id)
+        .in('id', ids)
+      if (saved.error && /highlight/i.test(String(saved.error.message || '')))
+        throw new TrackerError(
+          'Highlighting rows needs the database upgrade schema v30. An admin applies it once.',
+          409,
+          {
+            needsMigration: true,
+          },
+        )
+      check(saved.error)
+      res.json({ ids, color })
+    }),
+  )
+
   app.post(
     '/api/trackers/:id/rows/move',
     ...scope,

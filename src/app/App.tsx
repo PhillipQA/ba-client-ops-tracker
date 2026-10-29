@@ -68,6 +68,7 @@ function App() {
     cloudMessage,
     cloudStatus,
     createTrackerTasks,
+    updateTrackerTasks,
     currentUser,
     deleteTask,
     documentLaunch,
@@ -520,6 +521,8 @@ function App() {
               onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
               isTaskClosed={status => isTaskClosed(status, store.taskSettings)}
               onCreateTasks={canWriteTasks && hasModule('items') ? createTrackerTasks : undefined}
+              onUpdateTasks={canWriteTasks && hasModule('items') ? updateTrackerTasks : undefined}
+              currentUserId={currentUser?.id}
             />
           )}
           {hasModule('documents') && (

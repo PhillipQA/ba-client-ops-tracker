@@ -84,6 +84,21 @@ export function workingDays(start: number, end: number): number {
   return count
 }
 
+/** The working day `n` working days after `start` (n = 0 is `start`, moved to Monday if it falls on a weekend). */
+export function addWorkingDays(start: number, n: number) {
+  let day = start
+  while (isWeekend(day)) day++
+  for (let left = n; left > 0; ) {
+    day++
+    if (!isWeekend(day)) left--
+  }
+  return day
+}
+
+/** The end date that makes a task `days` working days long from `start` (at least one). */
+export const endAfterWorkingDays = (start: number, days: number) =>
+  addWorkingDays(start, Math.max(1, Math.floor(days)) - 1)
+
 // ---- building the chart ----
 
 export type TimelineItem = {
@@ -235,7 +250,12 @@ export function todayNumber(now = new Date()) {
 // ---- settings kept on the tracker, so everyone sees the same timeline ----
 
 export type TimelineZoom = 'day' | 'week' | 'month'
-export type TimelineSettings = { fields?: Partial<TimelineFields>; zoom?: TimelineZoom }
+export type TimelineSettings = {
+  fields?: Partial<TimelineFields>
+  zoom?: TimelineZoom
+  /** Rows are tinted by their state: done green, late red, under way blue (a highlight colour wins). */
+  statusColors?: boolean
+}
 
 const FIELD_TYPES: Record<keyof TimelineFields, string[]> = {
   startId: ['date'],
@@ -255,6 +275,7 @@ export function cleanTimelineSettings(raw: unknown, columns: TrackerColumn[]): T
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
   const input = raw as Record<string, any>
   if (input.zoom === 'day' || input.zoom === 'week' || input.zoom === 'month') out.zoom = input.zoom
+  if (input.statusColors === true) out.statusColors = true
   const fields: Partial<TimelineFields> = {}
   const given = input.fields && typeof input.fields === 'object' ? input.fields : {}
   for (const key of Object.keys(FIELD_TYPES) as (keyof TimelineFields)[]) {
@@ -279,4 +300,30 @@ export function draggedDates(start: number, end: number, mode: DragMode, delta: 
   if (mode === 'move') return { start: start + delta, end: end + delta }
   if (mode === 'start') return { start: Math.min(start + delta, end), end }
   return { start, end: Math.max(end + delta, start) }
+}
+
+/**
+ * The colour each row is tinted: its highlight, else (when colouring by status) green when done, red when past its
+ * end and unfinished, blue when under way. Rows with no colour are left out. All rows at once, so % values are read
+ * the same way the timeline reads them.
+ */
+export function rowTones(
+  rows: TrackerRow[],
+  columns: TrackerColumn[],
+  fields: TimelineFields,
+  byStatus: boolean,
+  today: number,
+): Map<string, OptionColor> {
+  const tones = new Map<string, OptionColor>()
+  for (const row of rows) if (row.highlight) tones.set(row.id, row.highlight)
+  if (!byStatus) return tones
+  for (const group of buildTimeline(rows, columns, fields, { today }).groups)
+    for (const item of group.items) {
+      if (tones.has(item.row.id)) continue
+      if (item.progress >= 100) tones.set(item.row.id, 'green')
+      else if (item.late) tones.set(item.row.id, 'red')
+      else if (item.progress > 0 || /^(ongoing|in progress|started|doing)$/i.test(item.status?.label || ''))
+        tones.set(item.row.id, 'blue')
+    }
+  return tones
 }

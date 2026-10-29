@@ -10,6 +10,7 @@ import {
   OPTION_COLORS,
   TRACKER_LIMITS,
   emptyCell,
+  isBasicType,
   isEmptyCell,
   randomId,
   type Cell,
@@ -17,7 +18,7 @@ import {
   type SyncReport,
   type TrackerColumn,
 } from './trackerModel'
-import { planImport, type Mapping, type Person } from './trackerImport'
+import { guessColumn, planImport, type Mapping, type Person } from './trackerImport'
 
 /** The spreadsheet id from a link (or an id pasted on its own). */
 export function sheetIdFrom(input: string): string {
@@ -131,6 +132,8 @@ export function planSync(input: {
   for (const [header, columnId] of Object.entries(input.headerMap)) {
     const index = indexOf.get(headerKey(header)),
       column = byId.get(columnId)
+    // '' marks a Sheet column left out on purpose: it is not followed, and not added on a later sync.
+    if (!columnId) continue
     if (index === undefined) {
       missingHeaders.push(header)
       continue
@@ -139,7 +142,11 @@ export function planSync(input: {
     mappings.push({ index, include: true, target: column.id, name: column.name, type: column.type, options: [] })
     used.push({ header, index, column })
   }
-  const mappedKeys = new Set(Object.keys(input.headerMap).map(headerKey))
+  const mappedKeys = new Set(
+    Object.entries(input.headerMap)
+      .filter(([, columnId]) => columnId)
+      .map(([header]) => headerKey(header)),
+  )
   const newHeaders = headers.filter(header => header && !mappedKeys.has(headerKey(header)))
 
   // Rows: every non-empty row comes in, keyed by its task name and order (see sheetRowKeys).
@@ -243,6 +250,8 @@ export function describeSync(report: SyncReport) {
   if (report.updated) parts.push(`${report.updated} updated`)
   if (report.missing) parts.push(`${report.missing} no longer in the Sheet`)
   if (report.returned) parts.push(`${report.returned} back in the Sheet`)
+  if (report.addedColumns?.length)
+    parts.push(`${report.addedColumns.length} new column${report.addedColumns.length === 1 ? '' : 's'}`)
   if (!parts.length) parts.push('No changes')
   return parts.join(' · ')
 }
@@ -421,4 +430,75 @@ export function convertRowsToChoice(
     }
   }
   return { columns: next, changes }
+}
+
+/**
+ * Sheet columns that appeared since the last sync become tracker columns, of the type their values suggest (as Import
+ * guesses it), and are followed from then on. Not on the first sync after connecting: the columns not chosen then were
+ * left out on purpose, and are remembered as left out (''), as are columns that look like they hold passwords.
+ */
+export function planNewColumns(input: {
+  grid: string[][]
+  headerMap: Record<string, string>
+  keyHeader: string
+  columns: TrackerColumn[]
+  today: string
+  firstSync: boolean
+}): { columns: TrackerColumn[]; headerMap: Record<string, string>; added: string[]; changed: boolean } {
+  const [rawHeaders = [], ...body] = input.grid
+  const headers = rawHeaders.map(value => String(value ?? '').trim())
+  const known = new Set(Object.keys(input.headerMap).map(headerKey))
+  known.add(headerKey(input.keyHeader))
+  const headerMap = { ...input.headerMap }
+  const added: string[] = []
+  const columns: TrackerColumn[] = []
+  const names = new Set(input.columns.map(column => column.name.toLowerCase()))
+  let room = TRACKER_LIMITS.columns - input.columns.length
+  let changed = false
+  headers.forEach((header, index) => {
+    const key = headerKey(header)
+    if (!header || known.has(key)) return
+    known.add(key)
+    if (input.firstSync) {
+      headerMap[header] = ''
+      changed = true
+      return
+    }
+    const values = body.map(line => String(line[index] ?? ''))
+    const guess = guessColumn(header, values, false, input.today)
+    if (guess.type === 'secret') {
+      headerMap[header] = ''
+      changed = true
+      return
+    }
+    // A tracker column of the same name that does not follow anything yet takes the Sheet column.
+    const followed = new Set(Object.values(input.headerMap))
+    const same = input.columns.find(
+      column => column.name.trim().toLowerCase() === header.toLowerCase() && !followed.has(column.id),
+    )
+    if (same && isBasicType(same.type)) {
+      headerMap[header] = same.id
+      added.push(same.name)
+      changed = true
+      return
+    }
+    if (room <= 0) return
+    let name = header.slice(0, TRACKER_LIMITS.columnName)
+    if (names.has(name.toLowerCase())) name = `${header.slice(0, TRACKER_LIMITS.columnName - 8)} (Sheet)`
+    if (names.has(name.toLowerCase())) return
+    names.add(name.toLowerCase())
+    room -= 1
+    const column: TrackerColumn = { id: randomId('c_'), name, type: guess.type, synced: true }
+    if (guess.type === 'select' || guess.type === 'multiselect')
+      column.options = guess.options.map((label, at) => ({
+        id: randomId('o_'),
+        label: label.slice(0, TRACKER_LIMITS.optionLabel),
+        color: OPTION_COLORS[(at % (OPTION_COLORS.length - 1)) + 1],
+      }))
+    columns.push(column)
+    headerMap[header] = column.id
+    added.push(name)
+    changed = true
+  })
+  return { columns, headerMap, added, changed }
 }
