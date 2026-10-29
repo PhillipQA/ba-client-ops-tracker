@@ -34,6 +34,10 @@ import {
   Users,
   Hash,
   GanttChartSquare,
+  Eye,
+  EyeOff,
+  LayoutTemplate,
+  RotateCcw,
   BarChartHorizontal,
   Pencil,
 } from 'lucide-react'
@@ -89,6 +93,7 @@ import './customReports.css'
 
 const SELECTED_KEY = 'ba.reports.custom.selected'
 const COLLAPSED_KEY = 'ba.reports.custom.collapsed'
+const TEMPLATES_KEY = '__templates'
 const readStore = (key: string, fallback: string) => {
   try {
     return localStorage.getItem(key) ?? fallback
@@ -182,8 +187,9 @@ export default function CustomReports(props: Props) {
   const [selectedWidget, setSelectedWidget] = useState('')
   const [newKind, setNewKind] = useState<WidgetKind | null>(null)
   const [dialog, setDialog] = useState<
-    | { kind: 'new-report' }
+    | { kind: 'new-report'; template?: string }
     | { kind: 'new-folder' }
+    | { kind: 'save-template'; item: ReportItem }
     | { kind: 'rename'; item: ReportItem }
     | { kind: 'delete'; item: ReportItem }
     | null
@@ -213,9 +219,42 @@ export default function CustomReports(props: Props) {
   }, [])
   useEffect(load, [load])
 
+  const isAdmin = currentUser.role === 'Administrator'
   const folders = useMemo(() => (items || []).filter(item => item.kind === 'folder'), [items])
   const reports = useMemo(() => (items || []).filter(item => item.kind === 'report'), [items])
-  const report = reports.find(item => item.id === selectedId) || null
+  // The suggested templates, each replaced by the account's own copy once an Administrator changes it.
+  const suggested = useMemo(() => REPORT_TEMPLATES.map(template => ({ ...template, definition: template.build() })), [])
+  const templates = useMemo(() => {
+    const rows = (items || []).filter(item => item.kind === 'template')
+    const changed = new Set(rows.map(row => row.templateKey).filter(Boolean))
+    const untouched: ReportItem[] = suggested
+      .filter(template => !changed.has(template.id))
+      .map(template => ({
+        id: `builtin-${template.id}`,
+        kind: 'template',
+        name: template.name,
+        description: template.about,
+        folderId: '',
+        shared: true,
+        position: 0,
+        definition: template.definition,
+        revision: 0,
+        createdBy: '',
+        createdByName: '',
+        updatedByName: '',
+        createdAt: '',
+        updatedAt: '',
+        canEdit: isAdmin && canChange,
+        templateKey: template.id,
+        hidden: false,
+        builtIn: true,
+      }))
+    const byName = (a: ReportItem, b: ReportItem) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    return [...untouched, ...rows].sort((a, b) => Number(b.shared) - Number(a.shared) || byName(a, b))
+  }, [items, suggested, isAdmin, canChange])
+  const report = reports.find(item => item.id === selectedId) || templates.find(item => item.id === selectedId) || null
+  const isTemplate = report?.kind === 'template'
   useEffect(() => {
     if (items && !report && reports.length) setSelectedId(reports[0].id)
   }, [items, report, reports])
@@ -344,7 +383,8 @@ export default function CustomReports(props: Props) {
       )
       if (item.id === selectedId) {
         setDraft(null)
-        setSelectedId('')
+        // The account's copy of a suggested template is gone: the suggested one is back.
+        setSelectedId(item.templateKey ? `builtin-${item.templateKey}` : '')
       }
       setDialog(null)
     } catch (error) {
@@ -370,6 +410,47 @@ export default function CustomReports(props: Props) {
       definition: item.definition,
     })
     if (made) setSelectedId(made.id)
+  }
+  /** A suggested template is stored as the account's own copy the first time it is changed or hidden. */
+  const materialize = async (item: ReportItem, hidden = false): Promise<ReportItem | null> => {
+    if (!item.builtIn) return item
+    setBusy(true)
+    try {
+      const result = await reportApi.create({
+        kind: 'template',
+        name: item.name,
+        description: item.description,
+        shared: true,
+        hidden,
+        templateKey: item.templateKey,
+        definition: item.definition,
+      })
+      setItems(current => [...(current || []), result.item])
+      if (selectedId === item.id) setSelectedId(result.item.id)
+      return result.item
+    } catch (error) {
+      const theirs = conflictItem(error)
+      if (theirs) {
+        setItems(current => [...(current || []).filter(existing => existing.id !== theirs.id), theirs])
+        if (selectedId === item.id) setSelectedId(theirs.id)
+        return theirs
+      }
+      fail(error)
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }
+  const startEditing = async (item: ReportItem) => {
+    const target = await materialize(item)
+    if (!target) return
+    setSelectedId(target.id)
+    setDraft(JSON.parse(JSON.stringify(target.definition)))
+    if (canUseTrackers) trackers.loadList()
+  }
+  const setHidden = async (item: ReportItem, hidden: boolean) => {
+    if (item.builtIn) await materialize(item, hidden)
+    else await update(item, { hidden })
   }
   const choose = (id: string) => {
     if (dirty && !window.confirm('Leave without saving your changes to this report?')) return
@@ -449,6 +530,25 @@ export default function CustomReports(props: Props) {
       }
     },
   })
+  /** Templates people can start a report from: hidden ones are left out, even for Administrators. */
+  const startable = templates.filter(item => !item.hidden)
+  const shownTemplates = templates.filter(
+    item => !term || item.name.toLowerCase().includes(term) || item.description.toLowerCase().includes(term),
+  )
+  const templatesClosed = collapsed.includes(TEMPLATES_KEY) && !term
+  const templateLink = (item: ReportItem) => (
+    <button
+      type="button"
+      key={item.id}
+      className={`crp-side-report${item.id === selectedId ? ' on' : ''}${item.hidden ? ' is-hidden' : ''}`}
+      onClick={() => choose(item.id)}
+      title={item.hidden ? `${item.name} (hidden from everyone)` : item.description || item.name}
+    >
+      <LayoutTemplate size={14} />
+      <span>{item.name}</span>
+      {item.hidden && <EyeOff size={12} aria-label="Hidden from everyone" className="crp-faint" />}
+    </button>
+  )
   const reportLink = (item: ReportItem) => (
     <button
       type="button"
@@ -489,7 +589,6 @@ export default function CustomReports(props: Props) {
     if (editing) setDraft(current => (current ? { ...current, filters: next } : current))
     else setViewFilters(next)
   }
-  const isAdmin = currentUser.role === 'Administrator'
   const trackedUsers = props.accounts.filter(account => account.status === 'Active')
 
   return (
@@ -572,8 +671,30 @@ export default function CustomReports(props: Props) {
               )
             })}
           <div className={`crp-folder loose${dropTarget === '' ? ' drop' : ''}`} {...dropProps('')}>
-            {folders.length > 0 && <p className="crp-tree-label">Not in a folder</p>}
+            {folders.length > 0 && inFolder('').length > 0 && <p className="crp-tree-label">Not in a folder</p>}
             {inFolder('').map(reportLink)}
+          </div>
+          <div className="crp-folder crp-template-list">
+            <div className="crp-folder-head">
+              <button
+                type="button"
+                className="crp-folder-toggle"
+                aria-expanded={!templatesClosed}
+                onClick={() => toggleFolder(TEMPLATES_KEY)}
+              >
+                {templatesClosed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                <LayoutTemplate size={14} />
+                <span>Templates</span>
+                <em>{shownTemplates.length}</em>
+              </button>
+            </div>
+            {!templatesClosed && (
+              <div className="crp-folder-items">
+                {shownTemplates.filter(item => item.shared).map(templateLink)}
+                {shownTemplates.some(item => !item.shared) && <p className="crp-tree-label">Yours</p>}
+                {shownTemplates.filter(item => !item.shared).map(templateLink)}
+              </div>
+            )}
           </div>
         </nav>
       </aside>
@@ -597,6 +718,25 @@ export default function CustomReports(props: Props) {
                 <Plus size={15} /> New report
               </button>
             )}
+            {startable.length > 0 && (
+              <>
+                <p className="crp-tree-label">Or start from a template</p>
+                <div className="crp-templates">
+                  {startable.map(item => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() =>
+                        canChange ? setDialog({ kind: 'new-report', template: item.id }) : choose(item.id)
+                      }
+                    >
+                      <strong>{item.name}</strong>
+                      <span>{item.description || `${item.definition.widgets.length} widgets`}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
         {report && (
@@ -605,12 +745,30 @@ export default function CustomReports(props: Props) {
               <div className="crp-title">
                 <h2>{report.name}</h2>
                 <p>
-                  {report.shared ? 'Shared with everyone' : 'Only you'} · by {report.createdByName || 'someone'}
+                  {isTemplate
+                    ? report.builtIn
+                      ? 'Suggested template'
+                      : report.templateKey
+                        ? 'Suggested template, changed for this account'
+                        : report.shared
+                          ? 'Template for everyone'
+                          : 'Your template'
+                    : report.shared
+                      ? 'Shared with everyone'
+                      : 'Only you'}
+                  {isTemplate && report.hidden ? ' · hidden from everyone' : ''}
+                  {!report.builtIn && report.createdByName ? ` · by ${report.createdByName}` : ''}
                   {report.updatedByName && report.updatedAt
                     ? ` · updated ${niceDate(report.updatedAt.slice(0, 10))}`
                     : ''}
                 </p>
                 {report.description && <p className="crp-description">{report.description}</p>}
+                {isTemplate && !editing && (
+                  <p className="crp-template-note no-print">
+                    A preview with your data. Starting a report copies the template; later changes to the template do
+                    not change reports already made from it.
+                  </p>
+                )}
               </div>
               <div className="crp-head-actions no-print">
                 {editing ? (
@@ -621,38 +779,49 @@ export default function CustomReports(props: Props) {
                       className="crp-btn"
                       disabled={busy}
                       onClick={() => {
-                        if (!dirty || window.confirm('Throw away your changes to this report?')) setDraft(null)
+                        if (
+                          !dirty ||
+                          window.confirm(`Throw away your changes to this ${isTemplate ? 'template' : 'report'}?`)
+                        )
+                          setDraft(null)
                       }}
                     >
                       Cancel
                     </button>
                     <button type="button" className="crp-btn primary" disabled={busy || !dirty} onClick={save}>
-                      {busy ? 'Saving…' : 'Save report'}
+                      {busy ? 'Saving…' : isTemplate ? 'Save template' : 'Save report'}
                     </button>
                   </>
                 ) : (
                   <>
-                    {report.canEdit && (
+                    {isTemplate && canChange && (
                       <button
                         type="button"
                         className="crp-btn primary"
-                        onClick={() => {
-                          setDraft(JSON.parse(JSON.stringify(report.definition)))
-                          if (canUseTrackers) trackers.loadList()
-                        }}
+                        onClick={() => setDialog({ kind: 'new-report', template: report.id })}
                       >
-                        <Pencil size={14} /> Edit
+                        <Plus size={14} /> Start a report from it
+                      </button>
+                    )}
+                    {report.canEdit && (
+                      <button
+                        type="button"
+                        className={`crp-btn${isTemplate ? '' : ' primary'}`}
+                        disabled={busy}
+                        onClick={() => startEditing(report)}
+                      >
+                        <Pencil size={14} /> {isTemplate ? 'Edit template' : 'Edit'}
                       </button>
                     )}
                     <button type="button" className="crp-btn" onClick={print}>
                       <Printer size={14} /> PDF / Print
                     </button>
-                    {canChange && (
+                    {canChange && !isTemplate && (
                       <button type="button" className="crp-btn" disabled={busy} onClick={() => copy(report)}>
                         <Copy size={14} /> Make a copy
                       </button>
                     )}
-                    {report.canEdit && (
+                    {canChange && (!isTemplate || report.canEdit) && (
                       <>
                         <button
                           type="button"
@@ -665,59 +834,27 @@ export default function CustomReports(props: Props) {
                           <MoreHorizontal size={16} />
                         </button>
                         {menuOpen && (
-                          <Popover anchor={menuAnchor} onClose={() => setMenuOpen(false)} label="Report" minWidth={240}>
-                            <div className="crp-menu">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMenuOpen(false)
-                                  setDialog({ kind: 'rename', item: report })
-                                }}
-                              >
-                                <Pencil size={14} /> Rename and describe
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMenuOpen(false)
-                                  update(report, { shared: !report.shared })
-                                }}
-                              >
-                                {report.shared ? <Lock size={14} /> : <Users size={14} />}
-                                {report.shared ? 'Make private' : 'Share with everyone'}
-                              </button>
-                              <label className="crp-menu-field">
-                                <span>
-                                  <Folder size={14} /> Folder
-                                </span>
-                                <select
-                                  value={folderIds.has(report.folderId) ? report.folderId : ''}
-                                  onChange={event => {
-                                    setMenuOpen(false)
-                                    moveTo(report.id, event.target.value)
-                                  }}
-                                >
-                                  <option value="">Not in a folder</option>
-                                  {folders
-                                    .filter(folder => folder.canEdit || folder.shared)
-                                    .map(folder => (
-                                      <option key={folder.id} value={folder.id}>
-                                        {folder.name}
-                                      </option>
-                                    ))}
-                                </select>
-                              </label>
-                              <button
-                                type="button"
-                                className="danger"
-                                onClick={() => {
-                                  setMenuOpen(false)
-                                  setDialog({ kind: 'delete', item: report })
-                                }}
-                              >
-                                <Trash2 size={14} /> Delete report
-                              </button>
-                            </div>
+                          <Popover
+                            anchor={menuAnchor}
+                            onClose={() => setMenuOpen(false)}
+                            label={isTemplate ? 'Template' : 'Report'}
+                            minWidth={250}
+                          >
+                            <ItemMenu
+                              item={report}
+                              isAdmin={isAdmin}
+                              folders={folders}
+                              onClose={() => setMenuOpen(false)}
+                              onRename={async () => {
+                                const target = await materialize(report)
+                                if (target) setDialog({ kind: 'rename', item: target })
+                              }}
+                              onShare={shared => update(report, { shared })}
+                              onHide={hidden => setHidden(report, hidden)}
+                              onMove={folderId => moveTo(report.id, folderId)}
+                              onSaveTemplate={() => setDialog({ kind: 'save-template', item: report })}
+                              onDelete={() => setDialog({ kind: 'delete', item: report })}
+                            />
                           </Popover>
                         )}
                       </>
@@ -857,15 +994,13 @@ export default function CustomReports(props: Props) {
               <div className="crp-canvas-wrap">
                 {!editing && !definition.widgets.length && (
                   <div className="crp-welcome small">
-                    <p>This report has no widgets yet.</p>
+                    <p>This {isTemplate ? 'template' : 'report'} has no widgets yet.</p>
                     {report.canEdit && (
                       <button
                         type="button"
                         className="crp-btn primary"
-                        onClick={() => {
-                          setDraft(JSON.parse(JSON.stringify(report.definition)))
-                          if (canUseTrackers) trackers.loadList()
-                        }}
+                        disabled={busy}
+                        onClick={() => startEditing(report)}
                       >
                         <Pencil size={14} /> Add widgets
                       </button>
@@ -954,6 +1089,8 @@ export default function CustomReports(props: Props) {
       {dialog?.kind === 'new-report' && (
         <NewReportDialog
           folders={folders.filter(folder => folder.canEdit || folder.shared)}
+          templates={startable}
+          initial={dialog.template}
           busy={busy}
           onClose={() => setDialog(null)}
           onCreate={async (body, template) => {
@@ -982,15 +1119,48 @@ export default function CustomReports(props: Props) {
           }}
         />
       )}
+      {dialog?.kind === 'save-template' && (
+        <SaveTemplateDialog
+          item={dialog.item}
+          isAdmin={isAdmin}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSave={async (name, description, shared) => {
+            const made = await create({
+              kind: 'template',
+              name,
+              description,
+              shared,
+              definition: dialog.item.definition,
+            })
+            if (!made) return
+            setDialog(null)
+            setNotice('')
+            setCollapsed(current => current.filter(key => key !== TEMPLATES_KEY))
+          }}
+        />
+      )}
       {dialog?.kind === 'delete' && (
-        <Dialog title={`Delete ${dialog.item.name}?`} onClose={() => setDialog(null)} busy={busy}>
+        <Dialog
+          title={
+            dialog.item.kind === 'template' && dialog.item.templateKey
+              ? `Reset ${dialog.item.name}?`
+              : `Delete ${dialog.item.name}?`
+          }
+          onClose={() => setDialog(null)}
+          busy={busy}
+        >
           <div className="crp-dialog-body">
             <p>
               {dialog.item.kind === 'folder'
                 ? 'The folder is deleted. Reports in it are kept, out of any folder.'
-                : dialog.item.shared
-                  ? 'This report is shared, so it is deleted for everyone. The tasks, time and trackers it reads are not touched.'
-                  : 'The report is deleted. The tasks, time and trackers it reads are not touched.'}
+                : dialog.item.kind === 'template'
+                  ? dialog.item.templateKey
+                    ? "The account's changes to this template are thrown away and the suggested version comes back for everyone. Reports already made from it are not changed."
+                    : 'The template is deleted. Reports already made from it are not changed.'
+                  : dialog.item.shared
+                    ? 'This report is shared, so it is deleted for everyone. The tasks, time and trackers it reads are not touched.'
+                    : 'The report is deleted. The tasks, time and trackers it reads are not touched.'}
             </p>
             <div className="k-dialog-actions">
               <span className="crp-spacer" />
@@ -998,13 +1168,110 @@ export default function CustomReports(props: Props) {
                 Cancel
               </button>
               <button type="button" className="crp-btn danger" disabled={busy} onClick={() => remove(dialog.item)}>
-                {busy ? 'Deleting…' : 'Delete'}
+                {busy ? 'Working…' : dialog.item.kind === 'template' && dialog.item.templateKey ? 'Reset' : 'Delete'}
               </button>
             </div>
           </div>
         </Dialog>
       )}
     </section>
+  )
+}
+
+/** The More menu of a report or a template. */
+function ItemMenu({
+  item,
+  isAdmin,
+  folders,
+  onClose,
+  onRename,
+  onShare,
+  onHide,
+  onMove,
+  onSaveTemplate,
+  onDelete,
+}: {
+  item: ReportItem
+  isAdmin: boolean
+  folders: ReportItem[]
+  onClose: () => void
+  onRename: () => void
+  onShare: (shared: boolean) => void
+  onHide: (hidden: boolean) => void
+  onMove: (folderId: string) => void
+  onSaveTemplate: () => void
+  onDelete: () => void
+}) {
+  const run = (action: () => void) => () => {
+    onClose()
+    action()
+  }
+  const template = item.kind === 'template'
+  const folderIds = new Set(folders.map(folder => folder.id))
+  return (
+    <div className="crp-menu">
+      {item.canEdit && (
+        <button type="button" onClick={run(onRename)}>
+          <Pencil size={14} /> Rename and describe
+        </button>
+      )}
+      {!template && (
+        <button type="button" onClick={run(onSaveTemplate)}>
+          <LayoutTemplate size={14} /> Save as a template
+        </button>
+      )}
+      {!template && item.canEdit && (
+        <button type="button" onClick={run(() => onShare(!item.shared))}>
+          {item.shared ? <Lock size={14} /> : <Users size={14} />}
+          {item.shared ? 'Make private' : 'Share with everyone'}
+        </button>
+      )}
+      {template && isAdmin && item.canEdit && !item.shared && (
+        <button type="button" onClick={run(() => onShare(true))}>
+          <Users size={14} /> Make it a template for everyone
+        </button>
+      )}
+      {template && isAdmin && item.shared && !item.templateKey && (
+        <button type="button" onClick={run(() => onShare(false))}>
+          <Lock size={14} /> Keep it as my own template
+        </button>
+      )}
+      {template && isAdmin && item.shared && (
+        <button type="button" onClick={run(() => onHide(!item.hidden))}>
+          {item.hidden ? <Eye size={14} /> : <EyeOff size={14} />}
+          {item.hidden ? 'Show to everyone again' : 'Hide from everyone'}
+        </button>
+      )}
+      {!template && item.canEdit && (
+        <label className="crp-menu-field">
+          <span>
+            <Folder size={14} /> Folder
+          </span>
+          <select
+            value={folderIds.has(item.folderId) ? item.folderId : ''}
+            onChange={event => {
+              onClose()
+              onMove(event.target.value)
+            }}
+          >
+            <option value="">Not in a folder</option>
+            {folders
+              .filter(folder => folder.canEdit || folder.shared)
+              .map(folder => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.name}
+                </option>
+              ))}
+          </select>
+        </label>
+      )}
+      {item.canEdit && !item.builtIn && (
+        <button type="button" className="danger" onClick={run(onDelete)}>
+          {template && item.templateKey ? <RotateCcw size={14} /> : <Trash2 size={14} />}
+          {template ? (item.templateKey ? 'Reset to the suggested version' : 'Delete template') : 'Delete report'}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -1159,11 +1426,16 @@ function WidgetCard({
 
 function NewReportDialog({
   folders,
+  templates,
+  initial,
   busy,
   onClose,
   onCreate,
 }: {
   folders: ReportItem[]
+  templates: ReportItem[]
+  /** The template chosen to start with. */
+  initial?: string
   busy: boolean
   onClose: () => void
   onCreate: (
@@ -1171,40 +1443,55 @@ function NewReportDialog({
     template: ReportDefinition,
   ) => void
 }) {
-  const [template, setTemplate] = useState('blank')
+  const [chosenId, setChosenId] = useState(initial && templates.some(item => item.id === initial) ? initial : '')
   const [name, setName] = useState('')
   const [folderId, setFolderId] = useState('')
   const [shared, setShared] = useState(false)
-  const chosen = REPORT_TEMPLATES.find(item => item.id === template) || REPORT_TEMPLATES[0]
+  const chosen = templates.find(item => item.id === chosenId) || null
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const title = name.trim() || (chosen.id === 'blank' ? 'Untitled report' : chosen.name)
-    onCreate({ name: title, description: '', folderId, shared }, chosen.build())
+    const title = name.trim() || chosen?.name || 'Untitled report'
+    // The report gets its own copy, with new widget ids, so changing the template later leaves it alone.
+    const definition: ReportDefinition = chosen ? JSON.parse(JSON.stringify(chosen.definition)) : emptyDefinition()
+    definition.widgets = definition.widgets.map(widget => ({ ...widget, id: newId() }))
+    onCreate({ name: title, description: chosen?.description || '', folderId, shared }, definition)
   }
+  const option = (item: ReportItem | null) => (
+    <button
+      type="button"
+      key={item?.id || 'blank'}
+      className={(item?.id || '') === chosenId ? 'on' : ''}
+      aria-pressed={(item?.id || '') === chosenId}
+      onClick={() => setChosenId(item?.id || '')}
+    >
+      <strong>{item ? item.name : 'Blank page'}</strong>
+      <span>
+        {item
+          ? item.description || `${item.definition.widgets.length} widgets`
+          : 'An empty page. Drag widgets onto it.'}
+      </span>
+    </button>
+  )
   return (
     <Dialog title="New report" onClose={onClose} busy={busy} size="medium">
       <form className="crp-dialog-body" onSubmit={submit}>
         <p className="crp-tree-label">Start from</p>
         <div className="crp-templates">
-          {REPORT_TEMPLATES.map(item => (
-            <button
-              type="button"
-              key={item.id}
-              className={item.id === template ? 'on' : ''}
-              aria-pressed={item.id === template}
-              onClick={() => setTemplate(item.id)}
-            >
-              <strong>{item.name}</strong>
-              <span>{item.about}</span>
-            </button>
-          ))}
+          {option(null)}
+          {templates.filter(item => item.shared).map(option)}
         </div>
+        {templates.some(item => !item.shared) && (
+          <>
+            <p className="crp-tree-label">Your templates</p>
+            <div className="crp-templates">{templates.filter(item => !item.shared).map(option)}</div>
+          </>
+        )}
         <label className="crp-form-row">
           <span>Name</span>
           <input
             value={name}
             maxLength={120}
-            placeholder={chosen.id === 'blank' ? 'Untitled report' : chosen.name}
+            placeholder={chosen?.name || 'Untitled report'}
             onChange={event => setName(event.target.value)}
           />
         </label>
@@ -1237,6 +1524,69 @@ function NewReportDialog({
   )
 }
 
+function SaveTemplateDialog({
+  item,
+  isAdmin,
+  busy,
+  onClose,
+  onSave,
+}: {
+  item: ReportItem
+  isAdmin: boolean
+  busy: boolean
+  onClose: () => void
+  onSave: (name: string, description: string, shared: boolean) => void
+}) {
+  const [name, setName] = useState(item.name)
+  const [description, setDescription] = useState(item.description)
+  const [shared, setShared] = useState(false)
+  return (
+    <Dialog title="Save as a template" onClose={onClose} busy={busy}>
+      <form
+        className="crp-dialog-body"
+        onSubmit={event => {
+          event.preventDefault()
+          if (name.trim()) onSave(name.trim(), description.trim(), isAdmin && shared)
+        }}
+      >
+        <p className="crp-muted">
+          The template keeps this report&apos;s widgets and filters. Reports started from it get their own copy.
+        </p>
+        <label className="crp-form-row">
+          <span>Template name</span>
+          <input value={name} maxLength={120} required onChange={event => setName(event.target.value)} />
+        </label>
+        <label className="crp-form-row">
+          <span>What it is for</span>
+          <textarea
+            rows={3}
+            maxLength={500}
+            value={description}
+            onChange={event => setDescription(event.target.value)}
+          />
+        </label>
+        {isAdmin ? (
+          <label className="crp-check">
+            <input type="checkbox" checked={shared} onChange={event => setShared(event.target.checked)} />A template for
+            everyone on the account (otherwise only you see it)
+          </label>
+        ) : (
+          <p className="crp-muted">Only you see this template. An Administrator can add templates for everyone.</p>
+        )}
+        <div className="k-dialog-actions">
+          <span className="crp-spacer" />
+          <button type="button" className="crp-btn" disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="crp-btn primary" disabled={busy || !name.trim()}>
+            {busy ? 'Saving…' : 'Save template'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
 function NameDialog({
   item,
   busy,
@@ -1252,7 +1602,7 @@ function NameDialog({
   const [name, setName] = useState(item?.name || '')
   const [description, setDescription] = useState(item?.description || '')
   const [shared, setShared] = useState(false)
-  const isReport = item?.kind === 'report'
+  const isReport = Boolean(item && item.kind !== 'folder')
   return (
     <Dialog title={item ? `Rename ${item.kind}` : 'New folder'} onClose={onClose} busy={busy}>
       <form

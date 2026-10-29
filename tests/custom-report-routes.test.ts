@@ -207,3 +207,70 @@ test('Viewers read, the upgrade is named when missing, and widgets are cleaned',
     assert.equal(result.body.needsUpgrade, true)
   })
 })
+
+test('templates: anyone keeps their own; Administrators change, hide and reset the account ones', async () => {
+  await serve(memoryDb(), async ask => {
+    const definition = REPORT_TEMPLATES[0].build()
+    // Contributors keep private templates, and cannot make or change the account's.
+    const mine = await ask('POST', '/api/reports/custom', { kind: 'template', name: 'My week', definition }, ben)
+    assert.equal(mine.status, 201)
+    assert.equal(mine.body.item.shared, false)
+    assert.equal(mine.body.item.canEdit, true)
+    assert.equal(
+      (await ask('POST', '/api/reports/custom', { kind: 'template', name: 'Ours', shared: true }, ben)).status,
+      403,
+    )
+    assert.equal(
+      (await ask('POST', '/api/reports/custom', { kind: 'template', name: 'Team', templateKey: 'team' }, ben)).status,
+      403,
+    )
+    assert.equal((await ask('GET', '/api/reports/custom', undefined, admin)).body.items.length, 0)
+
+    // An Administrator changes a suggested template: the account's copy is stored with its key, once.
+    const changed = await ask(
+      'POST',
+      '/api/reports/custom',
+      { kind: 'template', name: 'Team workload', templateKey: 'team', definition },
+      admin,
+    )
+    assert.equal(changed.status, 201)
+    assert.equal(changed.body.item.shared, true)
+    assert.equal(changed.body.item.templateKey, 'team')
+    const again = await ask('POST', '/api/reports/custom', { kind: 'template', name: 'X', templateKey: 'team' }, admin)
+    assert.equal(again.status, 409)
+    assert.equal(again.body.item.id, changed.body.item.id)
+    assert.equal(
+      (await ask('POST', '/api/reports/custom', { kind: 'template', name: 'X', templateKey: 'nope' }, admin)).status,
+      400,
+    )
+    const id = changed.body.item.id
+
+    // Everyone sees it; only Administrators change it.
+    const seen = (await ask('GET', '/api/reports/custom', undefined, ben)).body.items
+    assert.deepEqual(
+      seen.map((item: any) => [item.name, item.canEdit]),
+      [
+        ['My week', true],
+        ['Team workload', false],
+      ].sort(),
+    )
+    assert.equal((await ask('PATCH', `/api/reports/custom/${id}`, { name: 'Ours now' }, ben)).status, 403)
+    assert.equal((await ask('PATCH', `/api/reports/custom/${id}`, { shared: false }, admin)).status, 400)
+
+    // Hidden: gone for everyone but Administrators.
+    assert.equal((await ask('PATCH', `/api/reports/custom/${id}`, { hidden: true }, ben)).status, 403)
+    assert.equal((await ask('PATCH', `/api/reports/custom/${id}`, { hidden: true }, admin)).body.item.hidden, true)
+    assert.equal(
+      (await ask('GET', '/api/reports/custom', undefined, ben)).body.items.some((item: any) => item.id === id),
+      false,
+    )
+    assert.equal(
+      (await ask('GET', '/api/reports/custom', undefined, admin)).body.items.find((item: any) => item.id === id).hidden,
+      true,
+    )
+
+    // Reset: the account's copy is deleted, so the suggested one is used again.
+    assert.equal((await ask('DELETE', `/api/reports/custom/${id}`, undefined, admin)).status, 200)
+    assert.equal((await ask('GET', '/api/reports/custom', undefined, admin)).body.items.length, 0)
+  })
+})

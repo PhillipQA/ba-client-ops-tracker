@@ -27,7 +27,7 @@ import DocumentCreation from '../features/documents/DocumentCreation'
 import InternalAdmin from '../features/admin/InternalAdmin'
 import { ResetPassword } from '../features/accounts/PasswordRecovery'
 import { loadCloudStore } from './cloudStore'
-import ReportsHome from '../features/reports/ReportsHome'
+import CustomReports from '../features/reports/custom/CustomReports'
 import Settings from '../features/settings/Settings'
 import '../features/work-hub/communications.css'
 import '../features/integrations/github.css'
@@ -545,7 +545,7 @@ function App() {
           )}
 
           {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && (
-            <ReportsHome
+            <CustomReports
               canUseTrackers={hasModule('trackers')}
               clients={store.clients}
               projects={store.projects}

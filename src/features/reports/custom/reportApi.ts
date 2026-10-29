@@ -21,6 +21,7 @@ export type ReportPatch = {
   description?: string
   folderId?: string
   shared?: boolean
+  hidden?: boolean
   position?: number
   definition?: ReportDefinition
   revision?: number
@@ -29,11 +30,14 @@ export type ReportPatch = {
 export const reportApi = {
   list: (signal?: AbortSignal) => call<{ items: ReportItem[] }>('GET', '', undefined, signal),
   create: (body: {
-    kind: 'report' | 'folder'
+    kind: 'report' | 'folder' | 'template'
     name: string
     description?: string
     folderId?: string
     shared?: boolean
+    hidden?: boolean
+    /** Templates: the suggested template this account copy replaces. */
+    templateKey?: string
     position?: number
     definition?: ReportDefinition
   }) => call<{ item: ReportItem }>('POST', '', body),

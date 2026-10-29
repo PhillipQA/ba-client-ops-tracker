@@ -142,9 +142,10 @@ export type ReportFilters = {
 }
 export type ReportDefinition = { widgets: Widget[]; filters: ReportFilters }
 
+export type ItemKind = 'report' | 'folder' | 'template'
 export type ReportItem = {
   id: string
-  kind: 'report' | 'folder'
+  kind: ItemKind
   name: string
   description: string
   /** The folder it sits in. Empty: not in a folder. */
@@ -159,6 +160,12 @@ export type ReportItem = {
   createdAt: string
   updatedAt: string
   canEdit: boolean
+  /** Templates: which suggested template this account's copy replaces. Empty for templates people made. */
+  templateKey: string
+  /** Templates: hidden from everyone but Administrators. */
+  hidden: boolean
+  /** A suggested template nobody has changed yet. It is not stored; changing it stores the account's own copy. */
+  builtIn?: boolean
 }
 
 /** A sensible size for each kind of widget, in grid cells. */
@@ -462,14 +469,12 @@ const seed = (widgets: Seed[]): Widget[] =>
   settle(widgets.map(widget => ({ filters: [], measure: { op: 'count' }, ...widget, id: newId() }) as Widget))
 const open: WidgetFilter = { field: 'done', op: 'false' }
 
+/**
+ * The suggested templates every account starts with. Administrators can change, hide or reset each one for their
+ * account; the changed copy is stored with the template's key, and replaces this one.
+ */
 export type ReportTemplate = { id: string; name: string; about: string; build: () => ReportDefinition }
 export const REPORT_TEMPLATES: ReportTemplate[] = [
-  {
-    id: 'blank',
-    name: 'Blank report',
-    about: 'An empty page. Drag widgets onto it.',
-    build: emptyDefinition,
-  },
   {
     id: 'team',
     name: 'Team workload',
@@ -768,3 +773,5 @@ export const REPORT_TEMPLATES: ReportTemplate[] = [
     }),
   },
 ]
+
+export const TEMPLATE_KEYS = REPORT_TEMPLATES.map(template => template.id)

@@ -1643,23 +1643,27 @@ alter table public.tenant_trackers add column if not exists timeline jsonb not n
 alter table public.tenant_tracker_rows add column if not exists highlight text not null default '';
 
 -- Included source: migrations/schema-v31-custom-reports.sql
--- SHA-256: aad20d3f6029345a6f146ac26f87b2f5620bd24818da595e1cc4a89238c22e2a
+-- SHA-256: 8f4153bed685a029edc4e50fdd6c7f31981deb0df7e031b96e73e3e14afe935f
 -- Apply once to databases at schema v30 (Supabase or Northflank PostgreSQL).
--- Custom reports: dashboards each person builds from widgets (number tiles, charts, tables, timelines), kept in folders.
--- A report or folder is private to the person who made it until they share it with the whole account. The widgets and
--- the report's filters are kept as one JSON value; the numbers are worked out when the report is opened, so nothing
--- else is copied. Without it, the Reports overview works as before and Custom reports says the upgrade is missing.
+-- Reports: dashboards people build from widgets (number tiles, charts, tables, timelines), kept in folders, and the
+-- templates new reports start from. A report, folder or template is private to the person who made it until it is
+-- shared with the whole account; only Administrators share templates, and they can change, hide or reset the
+-- suggested ones (their copy is kept with the suggested template's key). The widgets and filters are kept as one JSON
+-- value; the numbers are worked out when a report is opened, so nothing else is copied. Without it, Reports says the
+-- upgrade is missing.
 
 create table if not exists public.tenant_reports (
   tenant_id uuid not null references public.organizations(id) on delete cascade,
   id uuid not null,
-  kind text not null default 'report' check (kind in ('report', 'folder')),
+  kind text not null default 'report' check (kind in ('report', 'folder', 'template')),
   name text not null check (length(name) between 1 and 120),
   description text not null default '',
   folder_id text not null default '',
   shared boolean not null default false,
   position integer not null default 0,
   definition jsonb not null default '{}'::jsonb,
+  template_key text not null default '',
+  hidden boolean not null default false,
   revision integer not null default 1,
   created_by text not null default '',
   created_by_name text not null default '',

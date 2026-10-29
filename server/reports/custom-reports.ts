@@ -1,11 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import type { Express, Request, RequestHandler, Response } from 'express'
-import { cleanDefinition, emptyDefinition, REPORT_LIMITS } from '../../src/features/reports/custom/reportModel'
+import {
+  cleanDefinition,
+  emptyDefinition,
+  REPORT_LIMITS,
+  TEMPLATE_KEYS,
+} from '../../src/features/reports/custom/reportModel'
 
 /**
- * Custom reports: dashboards people build from widgets, kept in folders.
+ * Reports: dashboards people build from widgets, kept in folders, and the templates new reports start from.
  * - A report or folder is private to the person who made it until they share it with the whole account.
  * - Its maker can change it; Administrators can also change shared ones. Everyone else can copy a shared report.
+ * - Templates: anyone may keep private ones. Only Administrators make, change, hide or delete the account's shared
+ *   templates. A suggested template (templateKey) is changed by storing the account's own copy; deleting that copy
+ *   puts the suggested one back, and hiding it hides the template from everyone but Administrators.
  * - Only the widgets and filters are stored. The numbers are worked out in the browser, from data the person can see.
  */
 type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; now?: () => Date }
@@ -74,12 +82,18 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
       }
     }
 
-  const visible = (row: any, user: User) => Boolean(row.shared) || row.created_by === user.id
-  const canEdit = (row: any, user: User) =>
-    user.role !== 'Viewer' && (row.created_by === user.id || (Boolean(row.shared) && user.role === 'Administrator'))
+  const isAdmin = (user: User) => user.role === 'Administrator'
+  const visible = (row: any, user: User) =>
+    (Boolean(row.shared) || row.created_by === user.id) && !(row.kind === 'template' && row.hidden && !isAdmin(user))
+  const canEdit = (row: any, user: User) => {
+    if (user.role === 'Viewer') return false
+    if (row.kind === 'template') return row.shared ? isAdmin(user) : row.created_by === user.id
+    return row.created_by === user.id || (Boolean(row.shared) && isAdmin(user))
+  }
+  const kindOf = (value: unknown) => (value === 'folder' || value === 'template' ? value : 'report')
   const out = (row: any, user: User) => ({
     id: row.id,
-    kind: row.kind === 'folder' ? 'folder' : 'report',
+    kind: kindOf(row.kind),
     name: row.name,
     description: row.description || '',
     folderId: row.folder_id || '',
@@ -93,6 +107,8 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     canEdit: canEdit(row, user),
+    templateKey: row.template_key || '',
+    hidden: Boolean(row.hidden),
   })
   async function one(user: User, id: string) {
     if (!UUID.test(id)) throw new ReportError('Report not found.', 404)
@@ -145,25 +161,55 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
     ...scope,
     route(async (req, res) => {
       const user = who(req)
-      const kind = req.body?.kind === 'folder' ? 'folder' : 'report'
+      const kind = kindOf(req.body?.kind)
       const name = clean(req.body?.name, 'The name', REPORT_LIMITS.name)
-      if (!name) throw new ReportError(kind === 'folder' ? 'Give the folder a name.' : 'Give the report a name.')
+      if (!name)
+        throw new ReportError(
+          kind === 'folder'
+            ? 'Give the folder a name.'
+            : kind === 'template'
+              ? 'Give the template a name.'
+              : 'Give the report a name.',
+        )
+      let shared = req.body?.shared === true
+      let templateKey = ''
+      if (kind === 'template') {
+        templateKey = typeof req.body?.templateKey === 'string' ? req.body.templateKey : ''
+        if (templateKey && !TEMPLATE_KEYS.includes(templateKey))
+          throw new ReportError('That suggested template does not exist.')
+        if (templateKey) shared = true
+        if (shared && !isAdmin(user))
+          throw new ReportError('Only Administrators make templates for everyone. Keep it as your own template.', 403)
+        if (templateKey) {
+          const existing = await db
+            .from(TABLE)
+            .select('*')
+            .eq('tenant_id', user.organizationId)
+            .eq('template_key', templateKey)
+            .maybeSingle()
+          missing(existing.error)
+          if (existing.data)
+            throw new ReportError('This template was already changed for the account.', 409, {
+              item: out(existing.data, user),
+            })
+        }
+      }
       const count = await db
         .from(TABLE)
         .select('id', { count: 'exact', head: true })
         .eq('tenant_id', user.organizationId)
       missing(count.error)
       if (Number(count.count || 0) >= REPORT_LIMITS.items)
-        throw new ReportError(`An account can have at most ${REPORT_LIMITS.items} reports and folders.`, 409)
+        throw new ReportError(`An account can have at most ${REPORT_LIMITS.items} reports, folders and templates.`, 409)
       const stamp = now()
-      const row = {
+      const row: Record<string, unknown> = {
         tenant_id: user.organizationId,
         id: randomUUID(),
         kind,
         name,
         description: clean(req.body?.description, 'The description', REPORT_LIMITS.description),
-        folder_id: kind === 'folder' ? '' : await folder(user, req.body?.folderId),
-        shared: req.body?.shared === true,
+        folder_id: kind === 'report' ? await folder(user, req.body?.folderId) : '',
+        shared,
         position: Math.max(0, Math.min(1_000_000, Math.round(Number(req.body?.position) || 0))),
         definition: kind === 'folder' ? {} : definition(req.body?.definition),
         revision: 1,
@@ -172,6 +218,10 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
         updated_by_name: user.name,
         created_at: stamp,
         updated_at: stamp,
+      }
+      if (kind === 'template') {
+        row.template_key = templateKey
+        row.hidden = shared && req.body?.hidden === true
       }
       const saved = await db.from(TABLE).insert(row)
       missing(saved.error)
@@ -187,9 +237,11 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
       const current = await one(user, String(req.params.id))
       if (!canEdit(current, user))
         throw new ReportError(
-          current.shared
-            ? 'Only the person who made this report, or an Administrator, can change it. Make a copy to change your own.'
-            : 'Only the person who made this can change it.',
+          current.kind === 'template' && current.shared
+            ? "Only Administrators change the account's templates. Start a report from it, or save your own template."
+            : current.shared
+              ? 'Only the person who made this report, or an Administrator, can change it. Make a copy to change your own.'
+              : 'Only the person who made this can change it.',
           403,
         )
       const body = req.body || {}
@@ -201,10 +253,24 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
       }
       if (body.description !== undefined)
         patch.description = clean(body.description, 'The description', REPORT_LIMITS.description)
-      if (body.shared !== undefined) patch.shared = body.shared === true
+      if (body.shared !== undefined) {
+        const shared = body.shared === true
+        if (current.kind === 'template') {
+          if (shared && !isAdmin(user)) throw new ReportError('Only Administrators make templates for everyone.', 403)
+          if (!shared && current.template_key)
+            throw new ReportError('A suggested template stays with everyone. Hide it instead.')
+          if (!shared) patch.hidden = false
+        }
+        patch.shared = shared
+      }
+      if (body.hidden !== undefined) {
+        if (current.kind !== 'template' || !isAdmin(user))
+          throw new ReportError('Only Administrators hide templates.', 403)
+        patch.hidden = body.hidden === true && (patch.shared ?? current.shared) === true
+      }
       if (body.position !== undefined)
         patch.position = Math.max(0, Math.min(1_000_000, Math.round(Number(body.position) || 0)))
-      if (body.folderId !== undefined && current.kind !== 'folder')
+      if (body.folderId !== undefined && current.kind === 'report')
         patch.folder_id = await folder(user, body.folderId, current.id)
       if (body.definition !== undefined && current.kind !== 'folder') {
         // Two people editing one shared report: the second save is refused rather than overwriting the first.
@@ -233,7 +299,8 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
       const user = who(req)
       const current = await one(user, String(req.params.id))
       if (!canEdit(current, user)) throw new ReportError('Only the person who made this can delete it.', 403)
-      // Reports in a deleted folder are kept, out of any folder.
+      // Reports in a deleted folder are kept, out of any folder. Deleting the account's copy of a suggested template
+      // brings the suggested one back.
       if (current.kind === 'folder') {
         const moved = await db
           .from(TABLE)
