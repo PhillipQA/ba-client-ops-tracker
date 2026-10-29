@@ -5,6 +5,7 @@ import {
   describeSync,
   dropdownOf,
   mergeDropdownOptions,
+  convertRowsToChoice,
   parentKeyOf,
   planSync,
   sheetIdFrom,
@@ -227,11 +228,29 @@ test('Sheet dropdowns: lists and ranges are read, and their choices merged into 
     'an existing option keeps its own label and id',
   )
   assert.equal(status.options![1].id, 'o1')
+  const branch = merged.columns.find(column => column.id === 'c_name')!
+  assert.equal(branch.type, 'select', 'a text column that follows a Sheet dropdown becomes a Choice column')
+  assert.deepEqual(branch.options!.map(option => option.label), ['x'])
+  assert.deepEqual(merged.converted, ['c_name'])
   assert.equal(
-    merged.columns.find(column => column.id === 'c_name'),
+    mergeDropdownOptions(columns, map, { Status: ['Open'] }).columns.find(column => column.id === 'c_name'),
     columns[1],
-    'text columns are left alone',
+    'text columns without a dropdown are left alone',
   )
-  const again = mergeDropdownOptions(merged.columns, map, { Status: ['Pending', 'Open', 'Done'] })
+  const again = mergeDropdownOptions(merged.columns, map, { Status: ['Pending', 'Open', 'Done'], Branch: ['x'] })
   assert.equal(again.changed, false, 'nothing changes when the options already match')
+})
+
+test('values already in a text column move to the dropdown options when it becomes a Choice column', () => {
+  const merged = mergeDropdownOptions(columns, map, { Branch: ['Pending', 'Ongoing', 'Done'] })
+  const moved = convertRowsToChoice(merged.columns, merged.converted, [
+    { id: 'r1', data: { c_name: 'done' } },
+    { id: 'r2', data: { c_name: 'Blocked' } },
+    { id: 'r3', data: { c_name: '' } },
+  ])
+  const options = moved.columns.find(column => column.id === 'c_name')!.options!
+  assert.deepEqual(options.map(option => option.label), ['Pending', 'Ongoing', 'Done', 'Blocked'])
+  assert.equal(moved.changes.get('r1')!.c_name, options[2].id)
+  assert.equal(moved.changes.get('r2')!.c_name, options[3].id, 'a value the dropdown lacks is kept as a new option')
+  assert.equal(moved.changes.get('r3')!.c_name, '')
 })
