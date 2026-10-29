@@ -1,12 +1,20 @@
 // Custom reports: the settings of one widget, with a live preview beside them.
 import { useMemo, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react'
+import { CHOICE_COLORS } from './ReportWidgets'
 import { Dialog } from '../../../shared/ui'
 import type { Tracker } from '../../trackers/trackerModel'
 import { fieldValues, SOURCES, type Field, type FieldType, type Rec } from './reportData'
 import {
   BUCKETS,
+  DATA_COLORS,
+  newId,
+  sourceRef,
   WIDGET_LABELS,
+  type DataColor,
+  type DataColumn,
+  type DataColumnType,
+  type DataTable,
   type Bucket,
   type FilterOp,
   type Measure,
@@ -204,12 +212,174 @@ function Condition({
   )
 }
 
+const COLUMN_TYPES: { type: DataColumnType; label: string }[] = [
+  { type: 'text', label: 'Text' },
+  { type: 'choice', label: 'Choice (coloured)' },
+  { type: 'date', label: 'Date' },
+  { type: 'number', label: 'Number' },
+]
+const COLOR_NAMES: Record<DataColor, string> = {
+  gray: 'Grey',
+  blue: 'Blue',
+  green: 'Green',
+  amber: 'Amber',
+  red: 'Red',
+  violet: 'Violet',
+}
+
+/** A fill-in table's columns: names, kinds, and the choices of choice columns with their colours. */
+function TableColumnsEditor({ table, onChange }: { table: DataTable; onChange: (table: DataTable) => void }) {
+  const [adding, setAdding] = useState<Record<string, string>>({})
+  const setColumn = (index: number, patch: Partial<DataColumn>) =>
+    onChange({
+      ...table,
+      columns: table.columns.map((column, at) => (at === index ? { ...column, ...patch } : column)),
+    })
+  const move = (index: number, by: number) => {
+    const columns = [...table.columns]
+    const [column] = columns.splice(index, 1)
+    columns.splice(index + by, 0, column)
+    onChange({ ...table, columns })
+  }
+  const remove = (index: number) => {
+    const column = table.columns[index]
+    if (
+      table.rows.some(row => row.cells[column.id]) &&
+      !window.confirm(`Remove the column “${column.name}” and what was typed in it?`)
+    )
+      return
+    onChange({ ...table, columns: table.columns.filter((_, at) => at !== index) })
+  }
+  return (
+    <fieldset>
+      <legend>Columns</legend>
+      {table.columns.map((column, index) => (
+        <div key={column.id} className="crp-colset">
+          <div className="crp-condition-line">
+            <input
+              value={column.name}
+              maxLength={80}
+              aria-label="Column name"
+              onChange={event => setColumn(index, { name: event.target.value })}
+            />
+            <select
+              value={column.type}
+              aria-label="Kind of column"
+              onChange={event => {
+                const type = event.target.value as DataColumnType
+                setColumn(index, { type, options: type === 'choice' ? column.options || [] : undefined })
+              }}
+            >
+              {COLUMN_TYPES.map(item => (
+                <option key={item.type} value={item.type}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="crp-icon"
+              aria-label="Move up"
+              disabled={index === 0}
+              onClick={() => move(index, -1)}
+            >
+              <ArrowUp size={13} />
+            </button>
+            <button
+              type="button"
+              className="crp-icon"
+              aria-label="Move down"
+              disabled={index === table.columns.length - 1}
+              onClick={() => move(index, 1)}
+            >
+              <ArrowDown size={13} />
+            </button>
+            <button type="button" className="crp-icon" aria-label="Remove column" onClick={() => remove(index)}>
+              <X size={13} />
+            </button>
+          </div>
+          {column.type === 'choice' && (
+            <div className="crp-choice-list">
+              {(column.options || []).map((option, at) => (
+                <span key={option.label} className="crp-choice-edit">
+                  <span className="crp-chip" style={{ ['--chip' as string]: CHOICE_COLORS[option.color] }}>
+                    {option.label}
+                  </span>
+                  <select
+                    value={option.color}
+                    aria-label={`Colour of ${option.label}`}
+                    onChange={event =>
+                      setColumn(index, {
+                        options: (column.options || []).map((item, i) =>
+                          i === at ? { ...item, color: event.target.value as DataColor } : item,
+                        ),
+                      })
+                    }
+                  >
+                    {DATA_COLORS.map(color => (
+                      <option key={color} value={color}>
+                        {COLOR_NAMES[color]}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="crp-icon small"
+                    aria-label={`Remove ${option.label}`}
+                    onClick={() => setColumn(index, { options: (column.options || []).filter((_, i) => i !== at) })}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+              <input
+                value={adding[column.id] || ''}
+                placeholder="Add a choice, then Enter"
+                maxLength={80}
+                onChange={event => setAdding({ ...adding, [column.id]: event.target.value })}
+                onKeyDown={event => {
+                  if (event.key !== 'Enter') return
+                  event.preventDefault()
+                  const label = (adding[column.id] || '').trim()
+                  if (
+                    !label ||
+                    (column.options || []).some(option => option.label.toLowerCase() === label.toLowerCase())
+                  )
+                    return
+                  setColumn(index, { options: [...(column.options || []), { label, color: 'gray' }] })
+                  setAdding({ ...adding, [column.id]: '' })
+                }}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+      {table.columns.length < 20 && (
+        <button
+          type="button"
+          className="crp-btn subtle"
+          onClick={() =>
+            onChange({ ...table, columns: [...table.columns, { id: newId(), name: 'New column', type: 'text' }] })
+          }
+        >
+          <Plus size={14} /> Add a column
+        </button>
+      )}
+      <p className="crp-muted">
+        {table.rows.filter(row => Object.values(row.cells).some(Boolean)).length} rows filled in. Rows are typed into
+        the report itself, not here.
+      </p>
+    </fieldset>
+  )
+}
+
 export function WidgetEditor({
   widget: initial,
   trackers,
   canUseTrackers,
   fieldsFor,
   recordsFor,
+  tables,
   preview,
   onSave,
   onClose,
@@ -217,17 +387,25 @@ export function WidgetEditor({
   widget: Widget
   trackers: Tracker[] | null
   canUseTrackers: boolean
-  fieldsFor: (source: SourceId, trackerId?: string) => Field[]
-  recordsFor: (source: SourceId, trackerId?: string) => Rec[]
+  fieldsFor: (source: SourceId, ref?: string) => Field[]
+  recordsFor: (source: SourceId, ref?: string) => Rec[]
+  /** This report's fill-in tables, which charts and counts can read. */
+  tables: { id: string; title: string }[]
   preview: (widget: Widget) => ReactNode
   onSave: (widget: Widget) => void
   onClose: () => void
 }) {
   const [widget, setWidget] = useState<Widget>(initial)
   const set = (patch: Partial<Widget>) => setWidget(current => ({ ...current, ...patch }))
-  const fields = fieldsFor(widget.source, widget.trackerId)
-  const records = recordsFor(widget.source, widget.trackerId)
-  const isText = widget.kind === 'heading' || widget.kind === 'note'
+  const fields = fieldsFor(widget.source, sourceRef(widget))
+  const records = recordsFor(widget.source, sourceRef(widget))
+  const isTable = widget.kind === 'datatable'
+  const isText = widget.kind === 'heading' || widget.kind === 'note' || isTable
+  const otherTables = tables.filter(table => table.id !== widget.id)
+  const sourceName =
+    widget.source === 'table'
+      ? tables.find(table => table.id === widget.tableId)?.title || 'the table'
+      : SOURCES.find(item => item.id === widget.source)?.label
   const groupField = fields.find(field => field.key === widget.groupBy)
   const summary = widget.kind === 'table' && Boolean(widget.groupBy)
   const charted = ['bar', 'column', 'line', 'pie'].includes(widget.kind) || summary
@@ -235,15 +413,17 @@ export function WidgetEditor({
   const dates = fields.filter(field => field.type === 'date')
 
   const setMeasure = (measure: Measure) => set({ measure })
-  const changeSource = (source: SourceId, trackerId?: string) => {
-    const next = fieldsFor(source, trackerId)
+  const changeSource = (source: SourceId, ref?: string) => {
+    const next = fieldsFor(source, ref)
     const has = (key?: string) => Boolean(key && next.some(field => field.key === key))
     const firstDate = next.find(field => field.type === 'date')?.key
     setWidget(current => ({
       ...current,
       source,
-      trackerId: source === 'tracker' ? trackerId : undefined,
-      dateField: source === 'tasks' || source === 'tracker' ? undefined : has('date') ? 'date' : undefined,
+      trackerId: source === 'tracker' ? ref : undefined,
+      tableId: source === 'table' ? ref : undefined,
+      dateField:
+        source === 'tasks' || source === 'tracker' || source === 'table' ? undefined : has('date') ? 'date' : undefined,
       filters: current.filters.filter(filter => has(filter.field)),
       measure: has(current.measure.field) ? current.measure : { op: 'count' },
       groupBy: has(current.groupBy) ? current.groupBy : next.find(field => field.type === 'text')?.key,
@@ -273,8 +453,7 @@ export function WidgetEditor({
           <div className={`crp-cell crp-kind-${widget.kind} crp-preview-cell`}>{preview(widget)}</div>
           {!isText && (
             <p className="crp-muted">
-              {records.length} {records.length === 1 ? 'row' : 'rows'} in{' '}
-              {SOURCES.find(s => s.id === widget.source)?.label} before filters.
+              {records.length} {records.length === 1 ? 'row' : 'rows'} in {sourceName} before filters.
             </p>
           )}
         </div>
@@ -316,7 +495,8 @@ export function WidgetEditor({
               <input value={widget.title} maxLength={120} onChange={event => set({ title: event.target.value })} />
             </Row>
           )}
-          {isText && (
+          {isTable && widget.table && <TableColumnsEditor table={widget.table} onChange={table => set({ table })} />}
+          {isText && !isTable && (
             <Row label={widget.kind === 'heading' ? 'Heading' : 'Note'}>
               {widget.kind === 'heading' ? (
                 <input
@@ -340,16 +520,31 @@ export function WidgetEditor({
               <legend>Data</legend>
               <Row label="Comes from">
                 <select
-                  value={widget.source}
-                  onChange={event =>
-                    changeSource(event.target.value as SourceId, widget.trackerId || trackers?.[0]?.id)
-                  }
+                  value={widget.source === 'table' ? `table:${widget.tableId || ''}` : widget.source}
+                  onChange={event => {
+                    const value = event.target.value
+                    if (value.startsWith('table:')) changeSource('table', value.slice(6))
+                    else changeSource(value as SourceId, widget.trackerId || trackers?.[0]?.id)
+                  }}
                 >
-                  {SOURCES.filter(source => source.id !== 'tracker' || canUseTrackers).map(source => (
-                    <option key={source.id} value={source.id}>
-                      {source.label}
-                    </option>
-                  ))}
+                  {otherTables.length > 0 && (
+                    <optgroup label="Tables in this report">
+                      {otherTables.map(table => (
+                        <option key={table.id} value={`table:${table.id}`}>
+                          {table.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Data in the app">
+                    {SOURCES.filter(source => source.id !== 'table' && (source.id !== 'tracker' || canUseTrackers)).map(
+                      source => (
+                        <option key={source.id} value={source.id}>
+                          {source.label}
+                        </option>
+                      ),
+                    )}
+                  </optgroup>
                 </select>
               </Row>
               {widget.source === 'tracker' && (

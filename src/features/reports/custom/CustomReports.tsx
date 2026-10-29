@@ -34,6 +34,8 @@ import {
   Users,
   Hash,
   GanttChartSquare,
+  TableProperties,
+  CalendarPlus,
   Eye,
   EyeOff,
   LayoutTemplate,
@@ -53,6 +55,7 @@ import type {
 } from '../../../shared/types'
 import { Dialog, Notice, Popover } from '../../../shared/ui'
 import { loadAllRows, trackerApi } from '../../trackers/trackerApi'
+import { dayNumber, isoOf } from '../../trackers/timelineModel'
 import type { Tracker, TrackerRow } from '../../trackers/trackerModel'
 import { conflictItem, needsUpgrade, reportApi } from './reportApi'
 import {
@@ -76,8 +79,12 @@ import {
   placeWidget,
   RANGE_PRESETS,
   REPORT_TEMPLATES,
+  reidentify,
+  fillDetails,
+  sourceRef,
   WIDGET_LABELS,
   WIDGET_SIZES,
+  type DataTable,
   type RangePreset,
   type ReportDefinition,
   type ReportFilters,
@@ -89,6 +96,7 @@ import {
 import { ReportCanvas, WIDGET_TYPE } from './ReportCanvas'
 import { WidgetBody } from './ReportWidgets'
 import { WidgetEditor } from './WidgetEditor'
+import { FillInTable } from './FillInTable'
 import './customReports.css'
 
 const SELECTED_KEY = 'ba.reports.custom.selected'
@@ -110,6 +118,7 @@ const writeStore = (key: string, value: string) => {
 }
 
 const PALETTE: { kind: WidgetKind; icon: ReactNode }[] = [
+  { kind: 'datatable', icon: <TableProperties size={16} /> },
   { kind: 'metric', icon: <Hash size={16} /> },
   { kind: 'bar', icon: <BarChartHorizontal size={16} /> },
   { kind: 'column', icon: <BarChart3 size={16} /> },
@@ -190,6 +199,7 @@ export default function CustomReports(props: Props) {
     | { kind: 'new-report'; template?: string }
     | { kind: 'new-folder' }
     | { kind: 'save-template'; item: ReportItem }
+    | { kind: 'next-week'; item: ReportItem }
     | { kind: 'rename'; item: ReportItem }
     | { kind: 'delete'; item: ReportItem }
     | null
@@ -199,6 +209,7 @@ export default function CustomReports(props: Props) {
   const [collapsed, setCollapsed] = useState<string[]>(() => readStore(COLLAPSED_KEY, '').split(',').filter(Boolean))
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [openPast, setOpenPast] = useState<string[]>([])
   const menuAnchor = useRef<HTMLButtonElement>(null)
   const trackers = useTrackerData(canUseTrackers)
 
@@ -255,6 +266,8 @@ export default function CustomReports(props: Props) {
   }, [items, suggested, isAdmin, canChange])
   const report = reports.find(item => item.id === selectedId) || templates.find(item => item.id === selectedId) || null
   const isTemplate = report?.kind === 'template'
+  /** A past week, kept as the record. */
+  const locked = Boolean(report?.definition.locked)
   useEffect(() => {
     if (items && !report && reports.length) setSelectedId(reports[0].id)
   }, [items, report, reports])
@@ -305,7 +318,7 @@ export default function CustomReports(props: Props) {
     ],
   )
   // Each source's records are worked out once per change of data, then shared by every widget that reads them.
-  const recordsFor = useMemo(() => {
+  const appRecords = useMemo(() => {
     const cache = new Map<string, Rec[]>()
     return (source: SourceId, trackerId = '') => {
       const key = `${source}:${source === 'tracker' ? trackerId : ''}`
@@ -317,7 +330,7 @@ export default function CustomReports(props: Props) {
       return records
     }
   }, [data])
-  const fieldsFor = useMemo(() => {
+  const appFields = useMemo(() => {
     const cache = new Map<string, Field[]>()
     return (source: SourceId, trackerId?: string) => {
       const key = `${source}:${source === 'tracker' ? trackerId || '' : ''}`
@@ -332,6 +345,43 @@ export default function CustomReports(props: Props) {
       return fields
     }
   }, [trackers.loaded, trackers.list])
+  // This report's own fill-in tables, read by its charts and counts. They change as people type.
+  const reportTables = useMemo(() => {
+    const tables = new Map(
+      definition.widgets.filter(widget => widget.kind === 'datatable').map(widget => [widget.id, widget.table]),
+    )
+    const records = new Map<string, Rec[]>(),
+      fields = new Map<string, Field[]>()
+    return {
+      list: definition.widgets
+        .filter(widget => widget.kind === 'datatable')
+        .map(widget => ({ id: widget.id, title: widget.title || 'Table' })),
+      records: (id: string) => {
+        let found = records.get(id)
+        if (!found) {
+          found = sourceRecords('table', data, '', tables.get(id))
+          records.set(id, found)
+        }
+        return found
+      },
+      fields: (id: string) => {
+        let found = fields.get(id)
+        if (!found) {
+          found = sourceFields('table', undefined, tables.get(id))
+          fields.set(id, found)
+        }
+        return found
+      },
+    }
+  }, [definition.widgets, data])
+  const recordsFor = useCallback(
+    (source: SourceId, ref = '') => (source === 'table' ? reportTables.records(ref) : appRecords(source, ref)),
+    [reportTables, appRecords],
+  )
+  const fieldsFor = useCallback(
+    (source: SourceId, ref = '') => (source === 'table' ? reportTables.fields(ref) : appFields(source, ref)),
+    [reportTables, appFields],
+  )
 
   // --- Changing reports ---
 
@@ -401,6 +451,105 @@ export default function CustomReports(props: Props) {
       setNotice('')
     }
   }
+  // --- Typing into fill-in tables: saved a moment after the last change ---
+
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+  const pendingSave = useRef<{ id: string; definition: ReportDefinition } | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const saving = useRef(false)
+  const [dataState, setDataState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const flushSave = useCallback(async () => {
+    clearTimeout(saveTimer.current)
+    if (saving.current) {
+      saveTimer.current = setTimeout(() => void flushSave(), 300)
+      return
+    }
+    const job = pendingSave.current
+    if (!job) return
+    pendingSave.current = null
+    saving.current = true
+    const current = (itemsRef.current || []).find(item => item.id === job.id)
+    try {
+      const result = await reportApi.update(job.id, { definition: job.definition, revision: current?.revision })
+      // Typing that went on during the save stays; it is saved next.
+      setItems(list =>
+        (list || []).map(item =>
+          item.id === job.id
+            ? {
+                ...result.item,
+                definition: pendingSave.current?.id === job.id ? item.definition : result.item.definition,
+              }
+            : item,
+        ),
+      )
+      setDataState(pendingSave.current ? 'saving' : 'saved')
+    } catch (error) {
+      const theirs = conflictItem(error)
+      if (theirs) {
+        setItems(list => (list || []).map(item => (item.id === theirs.id ? theirs : item)))
+        setNotice('Someone else changed this report at the same time. It now shows their changes; type yours again.')
+      } else setNotice((error as Error)?.message || 'Your typing could not be saved. Try again.')
+      setDataState('error')
+    } finally {
+      saving.current = false
+    }
+  }, [])
+  // Leaving the page or the report saves what was typed.
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!pendingSave.current && !saving.current) return
+      void flushSave()
+      event.preventDefault()
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => {
+      window.removeEventListener('beforeunload', warn)
+      void flushSave()
+    }
+  }, [flushSave])
+  const updateTable = (widgetId: string, table: DataTable) => {
+    const apply = (current: ReportDefinition) => ({
+      ...current,
+      widgets: current.widgets.map(widget => (widget.id === widgetId ? { ...widget, table } : widget)),
+    })
+    if (editing) {
+      setDraft(current => (current ? apply(current) : current))
+      return
+    }
+    if (!report || report.builtIn) return
+    const next = apply(report.definition)
+    replace({ ...report, definition: next })
+    pendingSave.current = { id: report.id, definition: next }
+    setDataState('saving')
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => void flushSave(), 700)
+  }
+
+  // --- Week by week ---
+
+  /** Copies this week's report into the next week's; this one is kept, unchanged, as the record. */
+  const startNextWeek = async (item: ReportItem, week: string) => {
+    await flushSave()
+    const series = item.definition.series || item.id
+    const made = await create({
+      kind: 'report',
+      name: item.name,
+      description: item.description,
+      folderId: item.folderId,
+      shared: item.shared,
+      definition: { ...item.definition, week, series, locked: false },
+    })
+    if (!made) return
+    const latest = (itemsRef.current || []).find(entry => entry.id === item.id) || item
+    await update(latest, { definition: { ...latest.definition, series, locked: true }, revision: latest.revision })
+    setDialog(null)
+    setSelectedId(made.id)
+  }
+  const unlock = async (item: ReportItem) => {
+    await update(item, { definition: { ...item.definition, locked: false }, revision: item.revision })
+  }
+
   const copy = async (item: ReportItem) => {
     const made = await create({
       kind: 'report',
@@ -454,6 +603,7 @@ export default function CustomReports(props: Props) {
   }
   const choose = (id: string) => {
     if (dirty && !window.confirm('Leave without saving your changes to this report?')) return
+    void flushSave()
     setDraft(null)
     setSelectedId(id)
   }
@@ -497,8 +647,24 @@ export default function CustomReports(props: Props) {
     item => !term || item.name.toLowerCase().includes(term) || item.description.toLowerCase().includes(term),
   )
   const folderIds = new Set(folders.map(folder => folder.id))
+  // A weekly report shows its latest week; the past weeks are listed under it.
+  const latestOf = new Map<string, ReportItem>()
+  for (const item of reports) {
+    const series = item.definition.series
+    if (!series) continue
+    const current = latestOf.get(series)
+    if (!current || (item.definition.week || '') > (current.definition.week || '')) latestOf.set(series, item)
+  }
+  const pastWeeks = (item: ReportItem) => {
+    const series = item.definition.series
+    if (!series || latestOf.get(series)?.id !== item.id) return []
+    return reports
+      .filter(other => other.definition.series === series && other.id !== item.id)
+      .sort((a, b) => (b.definition.week || '').localeCompare(a.definition.week || ''))
+  }
   const inFolder = (id: string) =>
     visibleReports
+      .filter(item => !item.definition.series || latestOf.get(item.definition.series)?.id === item.id)
       .filter(item => (id ? item.folderId === id : !folderIds.has(item.folderId)))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
   const toggleFolder = (id: string) =>
@@ -549,6 +715,42 @@ export default function CustomReports(props: Props) {
       {item.hidden && <EyeOff size={12} aria-label="Hidden from everyone" className="crp-faint" />}
     </button>
   )
+  const reportEntry = (item: ReportItem) => {
+    const past = pastWeeks(item)
+    const series = item.definition.series || ''
+    const open = openPast.includes(series) || past.some(other => other.id === selectedId)
+    return (
+      <div key={item.id} className="crp-series">
+        {reportLink(item)}
+        {past.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="crp-past-toggle"
+              aria-expanded={open}
+              onClick={() =>
+                setOpenPast(current => (open ? current.filter(key => key !== series) : [...current, series]))
+              }
+            >
+              {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Past weeks ({past.length})
+            </button>
+            {open &&
+              past.map(other => (
+                <button
+                  type="button"
+                  key={other.id}
+                  className={`crp-side-report crp-past${other.id === selectedId ? ' on' : ''}`}
+                  onClick={() => choose(other.id)}
+                >
+                  <Lock size={12} className="crp-faint" />
+                  <span>Week of {other.definition.week ? niceDate(other.definition.week) : '—'}</span>
+                </button>
+              ))}
+          </>
+        )}
+      </div>
+    )
+  }
   const reportLink = (item: ReportItem) => (
     <button
       type="button"
@@ -663,7 +865,7 @@ export default function CustomReports(props: Props) {
                   </div>
                   {!closed && (
                     <div className="crp-folder-items">
-                      {inside.map(reportLink)}
+                      {inside.map(reportEntry)}
                       {!inside.length && <p className="crp-faint crp-small">Drag reports here.</p>}
                     </div>
                   )}
@@ -672,7 +874,7 @@ export default function CustomReports(props: Props) {
             })}
           <div className={`crp-folder loose${dropTarget === '' ? ' drop' : ''}`} {...dropProps('')}>
             {folders.length > 0 && inFolder('').length > 0 && <p className="crp-tree-label">Not in a folder</p>}
-            {inFolder('').map(reportLink)}
+            {inFolder('').map(reportEntry)}
           </div>
           <div className="crp-folder crp-template-list">
             <div className="crp-folder-head">
@@ -762,6 +964,12 @@ export default function CustomReports(props: Props) {
                     ? ` · updated ${niceDate(report.updatedAt.slice(0, 10))}`
                     : ''}
                 </p>
+                {report.definition.week && (
+                  <p className="crp-week">
+                    <CalendarPlus size={14} aria-hidden="true" /> Week of {niceDate(report.definition.week)}
+                    {locked && ' · kept as the record'}
+                  </p>
+                )}
                 {report.description && <p className="crp-description">{report.description}</p>}
                 {isTemplate && !editing && (
                   <p className="crp-template-note no-print">
@@ -803,15 +1011,25 @@ export default function CustomReports(props: Props) {
                         <Plus size={14} /> Start a report from it
                       </button>
                     )}
-                    {report.canEdit && (
+                    {!isTemplate && report.canEdit && !locked && (
                       <button
                         type="button"
-                        className={`crp-btn${isTemplate ? '' : ' primary'}`}
+                        className="crp-btn primary"
                         disabled={busy}
-                        onClick={() => startEditing(report)}
+                        onClick={() => setDialog({ kind: 'next-week', item: report })}
                       >
-                        <Pencil size={14} /> {isTemplate ? 'Edit template' : 'Edit'}
+                        <CalendarPlus size={14} /> Start next week
                       </button>
+                    )}
+                    {report.canEdit && !locked && (
+                      <button type="button" className="crp-btn" disabled={busy} onClick={() => startEditing(report)}>
+                        <Pencil size={14} /> {isTemplate ? 'Edit template' : 'Edit layout'}
+                      </button>
+                    )}
+                    {dataState !== 'idle' && (
+                      <span className={`crp-save-state ${dataState}`} role="status">
+                        {dataState === 'saving' ? 'Saving…' : dataState === 'saved' ? 'Saved' : 'Not saved'}
+                      </span>
                     )}
                     <button type="button" className="crp-btn" onClick={print}>
                       <Printer size={14} /> PDF / Print
@@ -853,6 +1071,7 @@ export default function CustomReports(props: Props) {
                               onHide={hidden => setHidden(report, hidden)}
                               onMove={folderId => moveTo(report.id, folderId)}
                               onSaveTemplate={() => setDialog({ kind: 'save-template', item: report })}
+                              onUnlock={locked ? () => unlock(report) : undefined}
                               onDelete={() => setDialog({ kind: 'delete', item: report })}
                             />
                           </Popover>
@@ -864,6 +1083,24 @@ export default function CustomReports(props: Props) {
               </div>
             </header>
 
+            {locked && (
+              <div className="no-print">
+                <Notice kind="info">
+                  This is the record for the week of {niceDate(report.definition.week || today)}, kept as it was.{' '}
+                  {report.definition.series &&
+                    latestOf.get(report.definition.series) &&
+                    latestOf.get(report.definition.series)?.id !== report.id && (
+                      <button
+                        type="button"
+                        className="crp-link"
+                        onClick={() => choose(latestOf.get(report.definition.series as string)?.id as string)}
+                      >
+                        Open the latest week
+                      </button>
+                    )}
+                </Notice>
+              </div>
+            )}
             <div className="crp-filters">
               <label>
                 <span>Dates</span>
@@ -1034,6 +1271,8 @@ export default function CustomReports(props: Props) {
                               (trackers.loaded[widget.trackerId] ? '' : 'Loading the tracker…')
                           : ''
                       }
+                      canType={Boolean(report.canEdit && !locked && !report.builtIn)}
+                      onTable={table => updateTable(widget.id, table)}
                       onEdit={() => setEditingWidget(widget)}
                       onDuplicate={() => duplicateWidget(widget)}
                       onRemove={() => setWidgets(definition.widgets.filter(item => item.id !== widget.id))}
@@ -1051,9 +1290,10 @@ export default function CustomReports(props: Props) {
           widget={editingWidget}
           trackers={trackers.list}
           canUseTrackers={canUseTrackers}
-          fieldsFor={(source, trackerId) => {
-            if (source === 'tracker') trackers.ensure(trackerId)
-            return fieldsFor(source, trackerId)
+          tables={reportTables.list}
+          fieldsFor={(source, ref) => {
+            if (source === 'tracker') trackers.ensure(ref)
+            return fieldsFor(source, ref)
           }}
           recordsFor={recordsFor}
           preview={widget => (
@@ -1091,10 +1331,30 @@ export default function CustomReports(props: Props) {
           folders={folders.filter(folder => folder.canEdit || folder.shared)}
           templates={startable}
           initial={dialog.template}
+          clients={props.clients.filter(client => !client.archived)}
+          projects={props.projects.filter(project => !project.archived)}
           busy={busy}
           onClose={() => setDialog(null)}
-          onCreate={async (body, template) => {
-            const made = await create({ kind: 'report', ...body, definition: template })
+          onCreate={async (body, template, scope) => {
+            const client = props.clients.find(item => item.id === scope.clientId)
+            const project = props.projects.find(item => item.id === scope.projectId)
+            let definition = fillDetails(template, {
+              client: client?.name || '',
+              'client name': client?.name || '',
+              project: project?.name || '',
+              'project name': project?.name || '',
+            })
+            definition = {
+              ...definition,
+              filters: {
+                ...definition.filters,
+                ...(client ? { clientId: client.id } : {}),
+                ...(project ? { projectId: project.id } : {}),
+              },
+            }
+            // A weekly template starts week one.
+            if (scope.weekly) definition = { ...definition, week: today, series: newId(), locked: false }
+            const made = await create({ kind: 'report', ...body, definition })
             if (!made) return
             setDialog(null)
             setSelectedId(made.id)
@@ -1131,13 +1391,23 @@ export default function CustomReports(props: Props) {
               name,
               description,
               shared,
-              definition: dialog.item.definition,
+              // A weekly report makes a weekly template: it keeps that, not its weeks.
+              definition: { ...dialog.item.definition, series: undefined, locked: false },
             })
             if (!made) return
             setDialog(null)
             setNotice('')
             setCollapsed(current => current.filter(key => key !== TEMPLATES_KEY))
           }}
+        />
+      )}
+      {dialog?.kind === 'next-week' && (
+        <NextWeekDialog
+          item={dialog.item}
+          today={today}
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onStart={week => startNextWeek(dialog.item, week)}
         />
       )}
       {dialog?.kind === 'delete' && (
@@ -1189,6 +1459,7 @@ function ItemMenu({
   onHide,
   onMove,
   onSaveTemplate,
+  onUnlock,
   onDelete,
 }: {
   item: ReportItem
@@ -1200,6 +1471,8 @@ function ItemMenu({
   onHide: (hidden: boolean) => void
   onMove: (folderId: string) => void
   onSaveTemplate: () => void
+  /** Past weeks: lets their maker correct them. */
+  onUnlock?: () => void
   onDelete: () => void
 }) {
   const run = (action: () => void) => () => {
@@ -1213,6 +1486,11 @@ function ItemMenu({
       {item.canEdit && (
         <button type="button" onClick={run(onRename)}>
           <Pencil size={14} /> Rename and describe
+        </button>
+      )}
+      {item.canEdit && onUnlock && (
+        <button type="button" onClick={run(onUnlock)}>
+          <Pencil size={14} /> Unlock this week to correct it
         </button>
       )}
       {!template && (
@@ -1348,6 +1626,8 @@ function WidgetCard({
   fieldsFor,
   recordsFor,
   trackerProblem,
+  canType = false,
+  onTable,
   onEdit,
   onDuplicate,
   onRemove,
@@ -1356,15 +1636,18 @@ function WidgetCard({
   filters: ReportFilters
   editing: boolean
   today: string
-  fieldsFor: (source: SourceId, trackerId?: string) => Field[]
-  recordsFor: (source: SourceId, trackerId?: string) => Rec[]
+  fieldsFor: (source: SourceId, ref?: string) => Field[]
+  recordsFor: (source: SourceId, ref?: string) => Rec[]
   trackerProblem: string
+  /** Fill-in tables: whether this person may type into them now. */
+  canType?: boolean
+  onTable?: (table: DataTable) => void
   onEdit?: () => void
   onDuplicate?: () => void
   onRemove?: () => void
 }) {
-  const fields = fieldsFor(widget.source, widget.trackerId)
-  const records = recordsFor(widget.source, widget.trackerId)
+  const fields = fieldsFor(widget.source, sourceRef(widget))
+  const records = recordsFor(widget.source, sourceRef(widget))
   // Moving or resizing a widget does not change its numbers, so they are kept while it is dragged.
   const settings = JSON.stringify({ ...widget, x: 0, y: 0, w: 0, h: 0 })
   const computed = useMemo(
@@ -1372,20 +1655,32 @@ function WidgetCard({
     [settings, records, fields, filters, today, trackerProblem],
   )
   const isText = widget.kind === 'heading' || widget.kind === 'note'
+  const isTable = widget.kind === 'datatable'
   const title = widget.title || (isText ? '' : WIDGET_LABELS[widget.kind])
   const source = SOURCES.find(item => item.id === widget.source)?.label
+  const csv = () => {
+    if (isTable && widget.table) {
+      const { columns, rows } = widget.table
+      downloadCsv(title || 'table', [
+        columns.map(column => column.name),
+        ...rows
+          .filter(row => Object.values(row.cells).some(Boolean))
+          .map(row => columns.map(column => row.cells[column.id] || '')),
+      ])
+    } else if (computed) downloadCsv(title || 'widget', widgetCsv(widget, computed, fields))
+  }
   return (
     <>
       {(title || editing) && (
         <div className="crp-card-head">
           <h3 title={title}>{title}</h3>
-          {!isText && !editing && computed && (
+          {!isText && !editing && (computed || isTable) && (
             <button
               type="button"
               className="crp-icon small no-print"
               aria-label={`Download ${title} as CSV`}
               title="Download as CSV"
-              onClick={() => downloadCsv(title || 'widget', widgetCsv(widget, computed, fields))}
+              onClick={csv}
             >
               <Download size={13} />
             </button>
@@ -1396,7 +1691,7 @@ function WidgetCard({
                 type="button"
                 className="crp-icon small"
                 aria-label="Settings"
-                title={isText ? 'Settings' : `Settings · from ${source}`}
+                title={isText || isTable ? 'Settings' : `Settings · from ${source}`}
                 onClick={onEdit}
               >
                 <Settings2 size={14} />
@@ -1417,8 +1712,17 @@ function WidgetCard({
           )}
         </div>
       )}
-      <div className="crp-card-body" onDoubleClick={editing ? onEdit : undefined}>
-        <WidgetBody widget={widget} computed={computed} fields={fields} today={today} problem={trackerProblem} />
+      <div className="crp-card-body" onDoubleClick={editing && !isTable ? onEdit : undefined}>
+        {isTable ? (
+          <FillInTable
+            widgetId={widget.id}
+            table={widget.table || { columns: [], rows: [] }}
+            editable={canType && Boolean(onTable)}
+            onChange={table => onTable?.(table)}
+          />
+        ) : (
+          <WidgetBody widget={widget} computed={computed} fields={fields} today={today} problem={trackerProblem} />
+        )}
       </div>
     </>
   )
@@ -1428,6 +1732,8 @@ function NewReportDialog({
   folders,
   templates,
   initial,
+  clients,
+  projects,
   busy,
   onClose,
   onCreate,
@@ -1436,25 +1742,36 @@ function NewReportDialog({
   templates: ReportItem[]
   /** The template chosen to start with. */
   initial?: string
+  clients: Client[]
+  projects: Project[]
   busy: boolean
   onClose: () => void
   onCreate: (
     body: { name: string; description: string; folderId: string; shared: boolean },
     template: ReportDefinition,
+    scope: { clientId: string; projectId: string; weekly: boolean },
   ) => void
 }) {
   const [chosenId, setChosenId] = useState(initial && templates.some(item => item.id === initial) ? initial : '')
   const [name, setName] = useState('')
   const [folderId, setFolderId] = useState('')
   const [shared, setShared] = useState(false)
+  const [clientId, setClientId] = useState('')
+  const [projectId, setProjectId] = useState('')
   const chosen = templates.find(item => item.id === chosenId) || null
+  const weekly = Boolean(chosen && (chosen.definition.week || chosen.templateKey === 'rollout'))
+  const clientName = clients.find(client => client.id === clientId)?.name
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const title = name.trim() || chosen?.name || 'Untitled report'
-    // The report gets its own copy, with new widget ids, so changing the template later leaves it alone.
-    const definition: ReportDefinition = chosen ? JSON.parse(JSON.stringify(chosen.definition)) : emptyDefinition()
-    definition.widgets = definition.widgets.map(widget => ({ ...widget, id: newId() }))
-    onCreate({ name: title, description: chosen?.description || '', folderId, shared }, definition)
+    const base = name.trim() || chosen?.name || 'Untitled report'
+    const title = !name.trim() && clientName ? `${base} – ${clientName}`.slice(0, 120) : base
+    // The report gets its own copy, so changing the template later leaves it alone.
+    const definition = chosen ? reidentify(chosen.definition) : emptyDefinition()
+    onCreate({ name: title, description: chosen?.description || '', folderId, shared }, definition, {
+      clientId,
+      projectId,
+      weekly,
+    })
   }
   const option = (item: ReportItem | null) => (
     <button
@@ -1486,15 +1803,53 @@ function NewReportDialog({
             <div className="crp-templates">{templates.filter(item => !item.shared).map(option)}</div>
           </>
         )}
+        <div className="crp-pair">
+          <label className="crp-form-row">
+            <span>Client</span>
+            <select value={clientId} onChange={event => setClientId(event.target.value)}>
+              <option value="">No client</option>
+              {clients.map(client => (
+                <option key={client.id} value={client.id}>
+                  {client.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="crp-form-row">
+            <span>Project</span>
+            <select value={projectId} onChange={event => setProjectId(event.target.value)}>
+              <option value="">No project</option>
+              {projects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label className="crp-form-row">
           <span>Name</span>
           <input
             value={name}
             maxLength={120}
-            placeholder={chosen?.name || 'Untitled report'}
+            placeholder={
+              chosen?.name
+                ? clientName
+                  ? `${chosen.name} – ${clientName}`
+                  : chosen.name
+                : clientName
+                  ? `Untitled report – ${clientName}`
+                  : 'Untitled report'
+            }
             onChange={event => setName(event.target.value)}
           />
         </label>
+        {weekly && (
+          <p className="crp-muted">
+            A weekly report: type this week&apos;s update into its tables, then use <strong>Start next week</strong>{' '}
+            each week. Past weeks are kept as they were.
+          </p>
+        )}
         <label className="crp-form-row">
           <span>Folder</span>
           <select value={folderId} onChange={event => setFolderId(event.target.value)}>
@@ -1580,6 +1935,55 @@ function SaveTemplateDialog({
           </button>
           <button type="submit" className="crp-btn primary" disabled={busy || !name.trim()}>
             {busy ? 'Saving…' : 'Save template'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+function NextWeekDialog({
+  item,
+  today,
+  busy,
+  onClose,
+  onStart,
+}: {
+  item: ReportItem
+  today: string
+  busy: boolean
+  onClose: () => void
+  onStart: (week: string) => void
+}) {
+  const from = item.definition.week || today
+  const [week, setWeek] = useState(() => {
+    const day = dayNumber(from)
+    return day === null ? today : isoOf(day + 7)
+  })
+  return (
+    <Dialog title="Start next week" onClose={onClose} busy={busy}>
+      <form
+        className="crp-dialog-body"
+        onSubmit={event => {
+          event.preventDefault()
+          if (week) onStart(week)
+        }}
+      >
+        <p>
+          The report for the week of <strong>{niceDate(from)}</strong> is kept as the record, as it is now. The new week
+          starts as a copy of it, so you only change what moved.
+        </p>
+        <label className="crp-form-row">
+          <span>New week (update date)</span>
+          <input type="date" value={week} required onChange={event => setWeek(event.target.value)} />
+        </label>
+        <div className="k-dialog-actions">
+          <span className="crp-spacer" />
+          <button type="button" className="crp-btn" disabled={busy} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="crp-btn primary" disabled={busy || !week}>
+            {busy ? 'Starting…' : 'Start next week'}
           </button>
         </div>
       </form>

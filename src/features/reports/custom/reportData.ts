@@ -20,6 +20,8 @@ import { dayNumber, isoOf, mondayOf } from '../../trackers/timelineModel'
 import { isWaitingOnDone } from '../../tasks/waitingOn'
 import type {
   Bucket,
+  DataColor,
+  DataTable,
   FilterOp,
   Measure,
   RangePreset,
@@ -30,7 +32,13 @@ import type {
 } from './reportModel'
 
 export type FieldType = 'text' | 'number' | 'date' | 'bool'
-export type Field = { key: string; label: string; type: FieldType }
+export type Field = {
+  key: string
+  label: string
+  type: FieldType
+  /** Choice columns of fill-in tables: the colour of each choice, used by charts and timelines. */
+  colors?: Record<string, DataColor>
+}
 export type Value = string | number | boolean | null
 export type Rec = Record<string, Value>
 
@@ -56,6 +64,7 @@ export const SOURCES: { id: SourceId; label: string; about: string }[] = [
   { id: 'activities', label: 'Planner activities', about: 'Meetings and activities from the planner.' },
   { id: 'events', label: 'Activity log', about: 'Who created, started, completed or reassigned which task, and when.' },
   { id: 'tracker', label: 'Tracker rows', about: "Any tracker's own columns, such as status or % done." },
+  { id: 'table', label: 'A table in this report', about: 'What was typed into one of this report’s fill-in tables.' },
 ]
 
 const TASK_FIELDS: Field[] = [
@@ -159,9 +168,21 @@ function trackerFieldType(column: TrackerColumn): FieldType | null {
   }
 }
 
+/** A fill-in table column's field key. */
+export const tableKey = (column: { id: string }) => `d.${column.id}`
+
 /** The fields a source offers. Tracker rows offer the tracker's own columns (Secret columns never). */
-export function sourceFields(source: SourceId, tracker?: Tracker): Field[] {
+export function sourceFields(source: SourceId, tracker?: Tracker, table?: DataTable): Field[] {
   switch (source) {
+    case 'table':
+      return (table?.columns || []).map(column => ({
+        key: tableKey(column),
+        label: column.name,
+        type: column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : 'text',
+        ...(column.type === 'choice'
+          ? { colors: Object.fromEntries((column.options || []).map(option => [option.label, option.color])) }
+          : {}),
+      }))
     case 'tasks':
       return TASK_FIELDS
     case 'time':
@@ -190,6 +211,7 @@ export const SOURCE_SCOPE: Record<SourceId, { client: boolean; user: boolean }> 
   activities: { client: true, user: false },
   events: { client: true, user: true },
   tracker: { client: false, user: false },
+  table: { client: false, user: false },
 }
 
 const daysBetween = (start: string, end: string) => {
@@ -207,7 +229,7 @@ const minutesOf = (time: string) => {
  * assigned to them, time they logged, events they took part in), as on the Reports overview. Planner activities are
  * shared, and tracker rows follow the tracker's own access.
  */
-export function sourceRecords(source: SourceId, data: ReportData, trackerId = ''): Rec[] {
+export function sourceRecords(source: SourceId, data: ReportData, trackerId = '', table?: DataTable): Rec[] {
   const me = data.currentUser.role === 'Administrator' ? '' : data.currentUser.id
   const clientName = new Map(data.clients.map(client => [client.id, client.name]))
   const projectName = new Map(data.projects.map(project => [project.id, project.name]))
@@ -225,6 +247,22 @@ export function sourceRecords(source: SourceId, data: ReportData, trackerId = ''
   const today = data.today
 
   switch (source) {
+    case 'table':
+      // Rows nobody has typed into yet are not counted.
+      return (table?.rows || [])
+        .filter(row => Object.values(row.cells).some(Boolean))
+        .map(row => {
+          const record: Rec = { $id: row.id, $user: '' }
+          for (const column of table?.columns || []) {
+            const value = row.cells[column.id] ?? ''
+            if (column.type === 'number') {
+              const number = Number(value)
+              record[tableKey(column)] = value !== '' && Number.isFinite(number) ? number : null
+            } else if (column.type === 'date') record[tableKey(column)] = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
+            else record[tableKey(column)] = value
+          }
+          return record
+        })
     case 'tasks': {
       const byId = new Map(data.items.map(item => [item.id, item]))
       const children = new Map<string, WorkItem[]>()
@@ -805,7 +843,7 @@ export function computeWidget(
   filters: ReportFilters,
   today: string,
 ): Computed {
-  if (widget.kind === 'heading' || widget.kind === 'note') return { kind: 'text' }
+  if (widget.kind === 'heading' || widget.kind === 'note' || widget.kind === 'datatable') return { kind: 'text' }
   const records = widgetRecords(widget, all, fields, filters, today)
   switch (widget.kind) {
     case 'metric':

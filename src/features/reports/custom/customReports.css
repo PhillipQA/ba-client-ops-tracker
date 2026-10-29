@@ -13,6 +13,7 @@
   --crp-good: #0ca30c;
   --crp-critical: #d03b3b;
   --crp-other: #898781;
+  --crp-amber: #e0a100;
   --crp-grid: color-mix(in srgb, var(--k-border) 55%, transparent);
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr);
@@ -1171,6 +1172,166 @@
   }
 }
 
+/* Fill-in tables: typed into like a sheet */
+.crp-fill {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.crp-fill-table td {
+  height: 30px;
+  padding: 0;
+  vertical-align: middle;
+}
+.crp-fill-table th.crp-rownum,
+.crp-fill-table td.crp-rownum {
+  width: 30px;
+  padding: 0 6px;
+  color: var(--k-muted);
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.crp-cell-text {
+  display: block;
+  padding: 5px 8px;
+  min-height: 29px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.crp-fill.editable td:not(.crp-rownum):not(.crp-rowtools) {
+  cursor: text;
+}
+.crp-fill.editable td:not(.crp-rownum):not(.crp-rowtools):hover {
+  background: color-mix(in srgb, var(--k-accent) 7%, transparent);
+}
+.crp-fill-table td.typing {
+  box-shadow: inset 0 0 0 2px var(--k-accent);
+}
+.crp-page .crp-fill-table td.typing input {
+  width: 100%;
+  min-height: 29px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 0;
+  background: var(--k-input);
+  outline: none;
+}
+.crp-fill-table .crp-rowtools {
+  width: 28px;
+  text-align: center;
+}
+.crp-fill-table tr .crp-rowtools button {
+  opacity: 0;
+}
+.crp-fill-table tr:hover .crp-rowtools button,
+.crp-fill-table .crp-rowtools button:focus-visible {
+  opacity: 1;
+}
+.crp-fill-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding-top: 6px;
+}
+.crp-fill-foot .crp-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  text-decoration: none;
+}
+.crp-fill-foot .crp-muted {
+  font-size: 11.5px;
+}
+.crp-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 9px;
+  border: 1px solid color-mix(in srgb, var(--chip) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chip) 22%, transparent);
+  color: var(--k-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.crp-week {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--k-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.crp-save-state {
+  color: var(--k-muted);
+  font-size: 12px;
+}
+.crp-save-state.error {
+  color: var(--k-danger);
+}
+.crp-series {
+  display: flex;
+  flex-direction: column;
+}
+.crp-past-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 2px 28px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--k-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.crp-side-report.crp-past {
+  padding-left: 28px;
+  font-size: 12.5px;
+}
+.crp-colset {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--k-line);
+  border-radius: 8px;
+}
+.crp-colset .crp-condition-line > input {
+  flex: 1.4;
+}
+.crp-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.crp-choice-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.crp-page .crp-choice-edit select {
+  width: auto;
+  min-height: 26px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+.crp-page .crp-choice-list > input {
+  flex: 1 1 160px;
+  min-height: 28px;
+  font-size: 12.5px;
+}
+
 /* PDF and print: only the report, on white */
 @media print {
   body.crp-printing *:not(:has(.crp-print-area)):not(.crp-print-area):not(.crp-print-area *) {
@@ -1226,6 +1387,7 @@
     --crp-s6: #008300;
     --crp-s7: #6250d6;
     --crp-s8: #e34948;
+    --crp-amber: #eda100;
     color: #111827;
     background: #fff;
     print-color-adjust: exact;
@@ -1244,5 +1406,8 @@
   }
   body.crp-printing .crp-canvas.editing {
     outline: 0;
+  }
+  body.crp-printing :is(.crp-rowtools, .crp-fill-foot) {
+    display: none !important;
   }
 }

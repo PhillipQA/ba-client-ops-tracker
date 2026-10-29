@@ -278,7 +278,13 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
           throw new ReportError('Someone else changed this report. It has been reloaded with their changes.', 409, {
             item: out(current, user),
           })
-        patch.definition = definition(body.definition)
+        const next = definition(body.definition)
+        // A past week is the record: it changes only once its maker unlocks it.
+        if (current.definition?.locked === true && next.locked)
+          throw new ReportError('This week is kept as the record. Unlock it to correct it.', 409, {
+            item: out(current, user),
+          })
+        patch.definition = next
       }
       const changes = {
         ...patch,

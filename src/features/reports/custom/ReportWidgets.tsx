@@ -11,7 +11,7 @@ import {
   type Field,
   type GanttBar,
 } from './reportData'
-import type { Widget } from './reportModel'
+import type { DataColor, Widget } from './reportModel'
 
 /** The size of an element, kept up to date. */
 function useSize<T extends HTMLElement>() {
@@ -39,8 +39,20 @@ const SEMANTIC: Record<string, string> = {
   Overdue: 'var(--crp-critical)',
   Open: 'var(--crp-s1)',
 }
-/** Colours for a set of values: in name order, so a value keeps its colour whatever its size. Other is grey. */
-function palette(keys: { key: string; label: string }[], field?: string) {
+/** The colours people pick for choices in fill-in tables. */
+export const CHOICE_COLORS: Record<DataColor, string> = {
+  gray: 'var(--crp-other)',
+  blue: 'var(--crp-s1)',
+  green: 'var(--crp-good)',
+  amber: 'var(--crp-amber)',
+  red: 'var(--crp-critical)',
+  violet: 'var(--crp-s7)',
+}
+/**
+ * Colours for a set of values: the colour picked for a choice when there is one, else in name order, so a value keeps
+ * its colour whatever its size. Other is grey.
+ */
+function palette(keys: { key: string; label: string }[], field?: Field) {
   const named = keys
     .filter(item => item.key !== '__other')
     .map(item => item.label)
@@ -48,10 +60,13 @@ function palette(keys: { key: string; label: string }[], field?: string) {
   const index = new Map(named.map((label, at) => [label, at]))
   return (item: { key: string; label: string }) => {
     if (item.key === '__other') return 'var(--crp-other)'
-    if (field === 'state' && SEMANTIC[item.label]) return SEMANTIC[item.label]
+    const picked = field?.colors?.[item.label]
+    if (picked) return CHOICE_COLORS[picked]
+    if (field?.key === 'state' && SEMANTIC[item.label]) return SEMANTIC[item.label]
     return `var(--crp-s${((index.get(item.label) ?? 0) % 8) + 1})`
   }
 }
+const fieldOf = (fields: Field[], key?: string) => fields.find(field => field.key === key)
 
 // --- Tooltip ---
 
@@ -136,8 +151,9 @@ function BarChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
   const tip = useTip()
   const series = chart.series[0]
   const max = Math.max(0, ...series.values.map(value => value ?? 0))
-  const color = palette(chart.categories, widget.groupBy)
-  const single = widget.groupBy !== 'state'
+  const groupField = fieldOf(fields, widget.groupBy)
+  const color = palette(chart.categories, groupField)
+  const single = widget.groupBy !== 'state' && !groupField?.colors
   return (
     <div className="crp-bars" ref={tip.host} onMouseLeave={tip.hide}>
       {chart.categories.map((category, index) => {
@@ -178,7 +194,7 @@ function ColumnOrLine({ widget, chart, fields }: { widget: Widget; chart: ChartD
   const [hover, setHover] = useState<number | null>(null)
   const line = widget.kind === 'line'
   const stacked = !line && (widget.measure.op === 'count' || widget.measure.op === 'sum') && chart.series.length > 1
-  const color = palette(chart.series, widget.splitBy)
+  const color = palette(chart.series, fieldOf(fields, widget.splitBy))
   const n = chart.categories.length
   const totals = chart.categories.map((_, index) =>
     stacked
@@ -403,7 +419,7 @@ function PieChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
   const [hover, setHover] = useState<string | null>(null)
   const values = chart.series[0].values.map(value => Math.max(0, value ?? 0))
   const total = values.reduce((sum, value) => sum + value, 0)
-  const color = palette(chart.categories, widget.groupBy)
+  const color = palette(chart.categories, fieldOf(fields, widget.groupBy))
   const diameter = Math.max(0, Math.min(size.width, size.height) - 8)
   const radius = diameter / 2,
     inner = radius * 0.58
@@ -543,7 +559,16 @@ function RowsTable({ computed }: { computed: Extract<Computed, { kind: 'rows' }>
                   key={column.key}
                   className={column.type === 'number' ? 'num' : column.type === 'date' ? 'date' : ''}
                 >
-                  {displayValue(row[column.key], column.type)}
+                  {column.colors && typeof row[column.key] === 'string' && column.colors[row[column.key] as string] ? (
+                    <span
+                      className="crp-chip"
+                      style={{ ['--chip' as string]: CHOICE_COLORS[column.colors[row[column.key] as string]] }}
+                    >
+                      {row[column.key]}
+                    </span>
+                  ) : (
+                    displayValue(row[column.key], column.type)
+                  )}
                 </td>
               ))}
             </tr>
@@ -559,7 +584,7 @@ function RowsTable({ computed }: { computed: Extract<Computed, { kind: 'rows' }>
   )
 }
 
-function Gantt({ widget, bars, today }: { widget: Widget; bars: GanttBar[]; today: string }) {
+function Gantt({ widget, bars, today, fields }: { widget: Widget; bars: GanttBar[]; today: string; fields: Field[] }) {
   const tip = useTip()
   const groups = useMemo(() => {
     const seen = new Map<string, { key: string; label: string }>()
@@ -568,7 +593,7 @@ function Gantt({ widget, bars, today }: { widget: Widget; bars: GanttBar[]; toda
     return [...seen.values()]
   }, [bars])
   if (!bars.length) return <Empty>No rows with dates to show.</Empty>
-  const color = palette(groups, widget.splitBy)
+  const color = palette(groups, fieldOf(fields, widget.splitBy))
   const first = Math.min(...bars.map(bar => dayNumber(bar.start) as number))
   const last = Math.max(...bars.map(bar => dayNumber(bar.end) as number))
   const from = first - 1,
@@ -674,7 +699,7 @@ export function WidgetBody({
     case 'rows':
       return <RowsTable computed={computed} />
     case 'gantt':
-      return <Gantt widget={widget} bars={computed.bars} today={today} />
+      return <Gantt widget={widget} bars={computed.bars} today={today} fields={fields} />
     case 'text':
       return null
   }

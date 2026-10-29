@@ -2,7 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   cleanDefinition,
+  enterCell,
+  fillDetails,
   freeSpot,
+  parseClipboard,
+  pasteInto,
+  readDate,
+  reidentify,
+  rolloutReport,
   newWidget,
   overlaps,
   placeWidget,
@@ -241,4 +248,118 @@ test('weekly buckets fill the gaps between weeks', () => {
     ['2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19'],
   )
   assert.deepEqual(result.chart.series[0].values, [2, 0, 0, 1])
+})
+
+test('fill-in tables: dates, choices and numbers are kept the way they were typed', () => {
+  assert.equal(readDate('Nov 4, 2025'), '2025-11-04')
+  assert.equal(readDate('4 Nov 2025'), '2025-11-04')
+  assert.equal(readDate('11/4/2025'), '2025-11-04')
+  assert.equal(readDate('2025-11-04 00:00:00'), '2025-11-04')
+  assert.equal(readDate('2/30/2025'), null)
+  const date = { id: 'd', name: 'Due', type: 'date' as const }
+  assert.equal(enterCell(date, 'Sep 22, 2025').value, '2025-09-22')
+  assert.equal(enterCell(date, 'TBA').value, 'TBA')
+  const number = { id: 'n', name: 'Qty', type: 'number' as const }
+  assert.equal(enterCell(number, '1,250').value, '1250')
+  const status = {
+    id: 's',
+    name: 'Status',
+    type: 'choice' as const,
+    options: [{ label: 'Completed', color: 'green' as const }],
+  }
+  assert.equal(enterCell(status, 'completed').value, 'Completed')
+  const added = enterCell(status, 'On Hold')
+  assert.deepEqual(
+    added.column.options?.map(option => option.label),
+    ['Completed', 'On Hold'],
+  )
+})
+
+test('pasting rows copied from Excel fills the table from the cell, adding rows', () => {
+  const grid = parseClipboard('PUMA TRINOMA\tConfigured\tNov 4, 2025\r\n"PUMA ""PITX""\nannex"\tNo Mall Integ\tTBA\r\n')
+  assert.deepEqual(grid, [
+    ['PUMA TRINOMA', 'Configured', 'Nov 4, 2025'],
+    ['PUMA "PITX"\nannex', 'No Mall Integ', 'TBA'],
+  ])
+  const table = {
+    columns: [
+      { id: 'a', name: 'Location', type: 'text' as const },
+      {
+        id: 'b',
+        name: 'Mall sending',
+        type: 'choice' as const,
+        options: [{ label: 'Configured', color: 'green' as const }],
+      },
+      { id: 'c', name: 'Target', type: 'date' as const },
+    ],
+    rows: [{ id: 'r1', cells: {} }],
+  }
+  const pasted = pasteInto(table, 0, 0, grid)
+  assert.equal(pasted.rows.length, 2)
+  assert.deepEqual(pasted.rows[0].cells, { a: 'PUMA TRINOMA', b: 'Configured', c: '2025-11-04' })
+  assert.equal(pasted.rows[1].cells.c, 'TBA')
+  assert.deepEqual(
+    pasted.columns[1].options?.map(option => option.label),
+    ['Configured', 'No Mall Integ'],
+  )
+  assert.equal(table.rows.length, 1, 'the original table is not changed')
+})
+
+test('the weekly roll-out report: details filled, tables counted, timeline coloured by health', () => {
+  const report = fillDetails(rolloutReport(), { 'client name': 'Cougar Athletic Trends, Inc.' })
+  const tidy = cleanDefinition(report)
+  assert.equal(tidy.widgets.length, report.widgets.length)
+  noOverlap(tidy.widgets)
+  const details = report.widgets.find(widget => widget.title === 'Project details')!
+  const [label, value] = details.table!.columns
+  assert.equal(
+    details.table!.rows.find(row => row.cells[label.id] === 'Client name')!.cells[value.id],
+    'Cougar Athletic Trends, Inc.',
+  )
+
+  // A copy for a new report keeps its charts pointed at its own tables.
+  const copy = reidentify(report)
+  const goLive = copy.widgets.find(widget => widget.title === 'Go-live schedule')!
+  const live = copy.widgets.find(widget => widget.title === 'Live')!
+  assert.notEqual(goLive.id, report.widgets.find(widget => widget.title === 'Go-live schedule')!.id)
+  assert.equal(live.tableId, goLive.id)
+
+  // Type two branches, one live: the counts follow.
+  const [location, , target, status] = goLive.table!.columns
+  goLive.table = pasteInto(goLive.table!, 0, 0, [
+    ['PUMA TRINOMA', 'Configured', 'Nov 4, 2025', 'Completed'],
+    ['FTS RIVERBANKS', 'No mall integ', 'TBA', 'On hold'],
+  ])
+  assert.equal(goLive.table.rows[1].cells[target.id], 'TBA')
+  const fields = sourceFields('table', undefined, goLive.table)
+  const records = sourceRecords('table', data(), '', goLive.table)
+  assert.equal(records.length, 2, 'rows nobody typed into are not counted')
+  const count = (widget: Widget) => {
+    const result = computeWidget(widget, records, fields, { range: 'all' }, '2026-10-29')
+    return result.kind === 'metric' ? result.value : null
+  }
+  assert.equal(count(copy.widgets.find(widget => widget.title === 'Branches')!), 2)
+  assert.equal(count(live), 1)
+  assert.equal(count(copy.widgets.find(widget => widget.title === 'On hold or for reset')!), 1)
+  assert.ok(fields.find(field => field.key === `d.${status.id}`)?.colors?.Completed === 'green')
+  assert.ok(location)
+
+  // The timeline draws phases that have dates, coloured by their health.
+  const phases = copy.widgets.find(widget => widget.title === 'Activity by month')!
+  phases.table = pasteInto(phases.table!, 0, 1, [['Aug 18, 2025', 'Aug 22, 2025', 'On track']])
+  const gantt = copy.widgets.find(widget => widget.kind === 'gantt')!
+  assert.equal(gantt.tableId, phases.id)
+  const timeline = computeWidget(
+    gantt,
+    sourceRecords('table', data(), '', phases.table),
+    sourceFields('table', undefined, phases.table),
+    { range: 'all' },
+    '2026-10-29',
+  )
+  assert.equal(timeline.kind, 'gantt')
+  if (timeline.kind === 'gantt')
+    assert.deepEqual(
+      timeline.bars.map(bar => [bar.label, bar.start, bar.end, bar.group]),
+      [['Kick off', '2025-08-18', '2025-08-22', 'On track']],
+    )
 })

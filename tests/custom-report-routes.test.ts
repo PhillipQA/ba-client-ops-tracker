@@ -274,3 +274,29 @@ test('templates: anyone keeps their own; Administrators change, hide and reset t
     assert.equal((await ask('GET', '/api/reports/custom', undefined, admin)).body.items.length, 0)
   })
 })
+
+test('a past week is kept as the record until its maker unlocks it', async () => {
+  await serve(memoryDb(), async ask => {
+    const definition = { ...REPORT_TEMPLATES[0].build(), week: '2025-11-14', series: 'cougar' }
+    const report = (await ask('POST', '/api/reports/custom', { kind: 'report', name: 'Roll-out', definition })).body
+      .item
+    assert.equal(report.definition.week, '2025-11-14')
+    const locked = await ask('PATCH', `/api/reports/custom/${report.id}`, {
+      definition: { ...report.definition, locked: true },
+      revision: report.revision,
+    })
+    assert.equal(locked.body.item.definition.locked, true)
+    const changed = await ask('PATCH', `/api/reports/custom/${report.id}`, {
+      definition: { ...locked.body.item.definition, widgets: [] },
+      revision: locked.body.item.revision,
+    })
+    assert.equal(changed.status, 409)
+    assert.equal(changed.body.item.definition.widgets.length, definition.widgets.length)
+    const unlocked = await ask('PATCH', `/api/reports/custom/${report.id}`, {
+      definition: { ...locked.body.item.definition, locked: false },
+      revision: locked.body.item.revision,
+    })
+    assert.equal(unlocked.status, 200)
+    assert.equal(unlocked.body.item.definition.locked, undefined)
+  })
+})
