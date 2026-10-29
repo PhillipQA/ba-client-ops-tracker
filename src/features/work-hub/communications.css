@@ -598,3 +598,46 @@
 .communication-attachment-name svg {
   flex-shrink: 0;
 }
+
+/* Unread email and Discord messages: the count on the Work Hub menu item and tabs, and unread cards. */
+.app-shell .nav-button b.nav-unread,
+.app-shell.ui-refresh[data-interface-mode] .nav-button b.nav-unread {
+  padding: 0 6px;
+  background: #d03b3b;
+  color: #fff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.communication-tabs .tab-unread {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #d03b3b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.communication-card.unread .communication-subject {
+  font-weight: 750;
+}
+.communication-card.unread .communication-source::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: #d03b3b;
+  vertical-align: 1px;
+}
+.communication-unread-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

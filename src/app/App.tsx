@@ -1,5 +1,6 @@
 import { workspaceAutoRefreshAllowed } from './activePolling'
 import { workHubSync } from '../features/work-hub/workHubSync'
+import { badgeText, useUnreadCounts, useUnreadPolling } from '../features/work-hub/unreadCount'
 import RequirementsTraceability from '../features/requirements/RequirementsTraceability'
 import Trackers from '../features/trackers/Trackers'
 import { ClosedStatusContext } from '../features/tasks/openWork'
@@ -81,16 +82,13 @@ function App() {
     handleReadAllNotifications,
     hasModule,
     hubSyncing,
-    inquiryItems,
     lastCloudSync,
     loginBusy,
     loginError,
     logoutBusy,
     modal,
     navCollapsed,
-    newExternalInquiryCount,
     notificationBusy,
-    openInquiryCount,
     openNotification,
     openRtms,
     openSubtaskCreator,
@@ -147,6 +145,15 @@ function App() {
     view,
     visibleNavItems,
   } = appState
+  useUnreadPolling(authUser)
+  const unread = useUnreadCounts()
+  const unreadTotal = unread.available ? unread.gmail + unread.discord : 0
+  const unreadTitle = [
+    unread.gmail ? `${unread.gmail} unread email${unread.gmail === 1 ? '' : 's'}` : '',
+    unread.discord ? `${unread.discord} unread Discord message${unread.discord === 1 ? '' : 's'}` : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
 
   if (resetToken !== null)
     return (
@@ -193,11 +200,7 @@ function App() {
                 key={id}
                 className={view === id ? 'nav-button active' : 'nav-button'}
                 aria-current={view === id ? 'page' : undefined}
-                {...railTip.bind(
-                  id === 'inbox' && inquiryItems.length > 0
-                    ? `${label} · ${newExternalInquiryCount > 0 ? `${newExternalInquiryCount} new` : `${openInquiryCount} open`}`
-                    : label,
-                )}
+                {...railTip.bind(id === 'inbox' && unreadTotal > 0 ? `${label} · ${unreadTitle}` : label)}
                 onClick={event => {
                   // Ctrl/⌘-click or Shift-click opens the page in a new tab, as a link would.
                   if (opensElsewhere(event)) return void window.open(VIEW_PATHS[id], '_blank', 'noopener')
@@ -214,16 +217,9 @@ function App() {
               >
                 <Icon size={18} />
                 <span>{label}</span>
-                {id === 'inbox' && inquiryItems.length > 0 && (
-                  <b
-                    className={newExternalInquiryCount > 0 ? 'has-new' : ''}
-                    title={
-                      newExternalInquiryCount > 0
-                        ? `${newExternalInquiryCount} new external inquiry${newExternalInquiryCount === 1 ? '' : 'ies'}`
-                        : `${inquiryItems.length} open inquiries`
-                    }
-                  >
-                    {newExternalInquiryCount > 0 ? newExternalInquiryCount : openInquiryCount}
+                {id === 'inbox' && unreadTotal > 0 && (
+                  <b className="nav-unread" title={unreadTitle} aria-label={unreadTitle}>
+                    {badgeText(unreadTotal)}
                   </b>
                 )}
               </button>

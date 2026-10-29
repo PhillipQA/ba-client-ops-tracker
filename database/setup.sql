@@ -1,5 +1,5 @@
 -- BA Client Ops Tracker v1.5.0: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 31. Run this ENTIRE file once in Supabase SQL Editor.
+-- Includes schema versions 1 through 32. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1688,6 +1688,20 @@ begin
   end if;
 end $$;
 
+-- Included source: migrations/schema-v32-communication-unread.sql
+-- SHA-256: cbad59a78eb0cd643096c8c19f4fafe9056c1a7878f52ea3c870902e5551c2b0
+-- Apply once to databases at schema v31 (Supabase or Northflank PostgreSQL).
+-- Work Hub: each received email and Discord message can be read or unread, so Work Hub shows how many are unread.
+-- Messages already in Work Hub are marked read, so the count starts from what arrives next. New Gmail mail is unread
+-- while Gmail has it unread; Discord messages arrive unread. Opening a message marks it read. Without it, Work Hub
+-- works as before and shows no unread count.
+
+alter table public.user_communications add column if not exists read_at timestamptz;
+update public.user_communications set read_at = coalesce(created_at, now()) where read_at is null;
+create index if not exists user_communications_unread
+  on public.user_communications(tenant_id, owner_user_id, source)
+  where read_at is null;
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1711,4 +1725,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 31 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 32 as schema_version;
