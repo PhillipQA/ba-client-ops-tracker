@@ -20,6 +20,7 @@ import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
 import { registerCommunications } from './integrations/communications'
 import { registerTrackerRoutes } from './trackers/trackers'
 import { registerEmailTemplateRoutes } from './integrations/email-templates'
+import { registerCustomReportRoutes } from './reports/custom-reports'
 import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transport'
 import { securityHeaders } from './auth/security-headers'
 import { followUpTimeZone, isProduction, port, projectRoot } from './core/config'
@@ -124,6 +125,7 @@ const trackers = registerTrackerRoutes(app, {
 // A completed or reopened task updates the tracker rows linked to it, and their Sheet when the column comes from one.
 onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))
 registerEmailTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
+registerCustomReportRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
 
 registerSignoffRoutes(app, {
   db: supabaseAdmin,

@@ -2416,111 +2416,6 @@ select option {
   }
 }
 
-/* Reports */
-.report-filter-panel {
-  overflow: visible;
-}
-.report-filters {
-  padding: 14px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-.report-filters label {
-  display: grid;
-  gap: 5px;
-  color: #bdbdbd;
-  font-size: 11px;
-  font-weight: 700;
-}
-.report-filters input,
-.report-filters select,
-.report-filters .client-combo-input {
-  width: 100%;
-  min-height: 38px;
-  border: 1px solid #3d3d3d;
-  border-radius: 8px;
-  background: #181818;
-  color: #f7f7f7;
-  padding: 7px 9px;
-}
-.report-grid-two {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-.report-panel > .panel-heading svg {
-  color: #aeb9e8;
-}
-.report-bars {
-  padding: 15px;
-  display: grid;
-  gap: 13px;
-}
-.report-bar-row {
-  display: grid;
-  gap: 7px;
-}
-.report-bar-label {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-}
-.report-bar-label span {
-  color: #e9e9e9;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.report-bar-label strong {
-  color: #b9b9b9;
-  font-size: 11px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-.report-bar-track {
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #303030;
-}
-.report-bar-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: #68769f;
-}
-.report-mini-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background: #383838;
-}
-.report-mini-stats > div {
-  min-height: 94px;
-  padding: 17px;
-  background: #212121;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-}
-.report-mini-stats strong {
-  font-size: 24px;
-  color: #fff;
-}
-.report-mini-stats span {
-  color: #aaa;
-  font-size: 11.5px;
-}
-.report-empty {
-  padding: 18px;
-  color: #8f8f8f;
-  font-size: 11px;
-}
-.report-table {
-  min-width: 760px;
-}
-
 /* Gantt */
 .gantt-scroll {
   overflow-x: auto;
@@ -2851,9 +2746,6 @@ select option {
 }
 
 @media (max-width: 980px) {
-  .report-filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .role-grid {
     grid-template-columns: 1fr;
   }
@@ -2862,12 +2754,6 @@ select option {
   }
 }
 @media (max-width: 760px) {
-  .report-grid-two {
-    grid-template-columns: 1fr;
-  }
-  .report-filters {
-    grid-template-columns: 1fr;
-  }
   .current-user-card {
     grid-template-columns: auto 1fr;
   }

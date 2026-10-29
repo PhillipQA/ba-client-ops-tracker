@@ -1,5 +1,5 @@
 -- BA Client Ops Tracker v1.5.0: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 30. Run this ENTIRE file once in Supabase SQL Editor.
+-- Includes schema versions 1 through 31. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -19,7 +19,7 @@ begin
       raise exception 'Supabase role % is missing. Use a new Supabase project for this setup.', object_name;
     end if;
   end loop;
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_reports','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     if to_regclass(format('public.%I', object_name)) is not null then
       raise exception 'Fresh setup stopped: public.% already exists. No changes were applied. Use newer migrations for an existing installation; do not replay old migrations.', object_name;
     end if;
@@ -1642,6 +1642,52 @@ alter table public.tenant_trackers add column if not exists timeline jsonb not n
 
 alter table public.tenant_tracker_rows add column if not exists highlight text not null default '';
 
+-- Included source: migrations/schema-v31-custom-reports.sql
+-- SHA-256: 8f4153bed685a029edc4e50fdd6c7f31981deb0df7e031b96e73e3e14afe935f
+-- Apply once to databases at schema v30 (Supabase or Northflank PostgreSQL).
+-- Reports: dashboards people build from widgets (number tiles, charts, tables, timelines), kept in folders, and the
+-- templates new reports start from. A report, folder or template is private to the person who made it until it is
+-- shared with the whole account; only Administrators share templates, and they can change, hide or reset the
+-- suggested ones (their copy is kept with the suggested template's key). The widgets and filters are kept as one JSON
+-- value; the numbers are worked out when a report is opened, so nothing else is copied. Without it, Reports says the
+-- upgrade is missing.
+
+create table if not exists public.tenant_reports (
+  tenant_id uuid not null references public.organizations(id) on delete cascade,
+  id uuid not null,
+  kind text not null default 'report' check (kind in ('report', 'folder', 'template')),
+  name text not null check (length(name) between 1 and 120),
+  description text not null default '',
+  folder_id text not null default '',
+  shared boolean not null default false,
+  position integer not null default 0,
+  definition jsonb not null default '{}'::jsonb,
+  template_key text not null default '',
+  hidden boolean not null default false,
+  revision integer not null default 1,
+  created_by text not null default '',
+  created_by_name text not null default '',
+  updated_by_name text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, id)
+);
+create index if not exists tenant_reports_by_owner on public.tenant_reports(tenant_id, created_by);
+
+-- Supabase only: lock the table to the service role, as for the other private tables.
+-- Plain PostgreSQL (Northflank) has no anon/service_role, and enabling row level security
+-- there would block the app's database user, so it is skipped.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'alter table public.tenant_reports enable row level security';
+    execute 'revoke all on public.tenant_reports from public, anon, authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant all on public.tenant_reports to service_role';
+  end if;
+end $$;
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1655,7 +1701,7 @@ do $setup_grants$
 declare
   object_name text;
 begin
-  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
+  foreach object_name in array array['activity_logs','app_settings','app_users','audit_logs','clients','data_migration_runs','document_attachments','document_versions','documents','drf_error_logs','gmail_accounts','google_calendar_accounts','google_calendar_connections','inquiries','organizations','password_reset_tokens','planner_activities','platform_users','projects','task_statuses','tasks','tenant_ai_agents','tenant_dochub_accounts','tenant_dochub_documents','tenant_drive_accounts','tenant_email_templates','tenant_integrations','tenant_reports','tenant_state','tenant_templates','tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_trackers','tracker_state','user_communication_settings','user_communications','user_email_signatures','user_github_connections','user_github_issues','user_gitlab_connections','user_gitlab_issues'] loop
     execute format('alter table public.%I enable row level security', object_name);
     execute format('revoke all on table public.%I from public, anon, authenticated', object_name);
     execute format('grant all on table public.%I to service_role', object_name);
@@ -1665,4 +1711,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 30 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 31 as schema_version;
