@@ -43,54 +43,92 @@ test('column letters run A…Z, AA…ZZ, AAA', () => {
   assert.deepEqual([0, 25, 26, 51, 701, 702].map(columnLetter), ['A', 'Z', 'AA', 'AZ', 'ZZ', 'AAA'])
 })
 
-test('the Gantt tab reads the synced tab with formulas and lays out months, weeks, days and weekdays', () => {
+test('the Gantt tab is laid out like the schedule template: phase headings over their tasks, from one live formula', () => {
   const requests = build()
   const sheet = requests[0].addSheet.properties
   assert.equal(sheet.title, GANTT_TAB)
   assert.equal(sheet.gridProperties.frozenRowCount, 6)
   assert.equal(sheet.gridProperties.frozenColumnCount, 2, 'WBS and Task stay in view')
-  assert.equal(sheet.gridProperties.rowCount, 1211, 'room for every synced row below the headers')
-  // Left block: WBS, Task, Phase, Lead, Start, End, Days, % Done, Status → the chart starts in column J.
+  // Left: WBS, TASK, LEAD, START, END, % DONE, REMARKS, (hidden marker), DAYS → the chart starts in column J.
   assert.equal(sheet.gridProperties.columnCount, 9 + 182)
   const rows = requests[1].updateCells.rows.map((row: any) => row.values)
-  const value = (r: number, c: number) => rows[r][c].userEnteredValue
-  assert.deepEqual(
-    rows[5].slice(0, 9).map((cell: any) => cell.userEnteredValue.stringValue),
-    ['WBS', 'Task', 'Phase', 'Lead', 'Start', 'End', 'Days', '% Done', 'Status'],
+  const list = rows[5][0].userEnteredValue.formulaValue as string
+  assert.ok(list.startsWith("=LET(k,'Tracker'!$A$2:$A,"), list)
+  assert.ok(list.includes('hd,HSTACK("WBS","TASK","LEAD","START","END","% DONE","REMARKS","")'))
+  assert.ok(
+    list.includes(
+      "dt,FILTER(HSTACK('Tracker'!$B$2:$B,'Tracker'!$A$2:$A,'Tracker'!$D$2:$D,'Tracker'!$F$2:$F,'Tracker'!$G$2:$G,",
+    ),
+    'the columns in the template’s order',
   )
-  assert.equal(value(6, 1).formulaValue, "=ARRAYFORMULA(IF('Tracker'!$A$2:$A=\"\",,'Tracker'!$A$2:$A))")
-  assert.equal(value(6, 0).formulaValue, "=ARRAYFORMULA(IF('Tracker'!$A$2:$A=\"\",,'Tracker'!$B$2:$B))")
-  assert.equal(value(6, 4).formulaValue, "=ARRAYFORMULA(IF('Tracker'!$A$2:$A=\"\",,'Tracker'!$F$2:$F))")
+  assert.ok(list.includes('MAP(pr,LAMBDA(v,IF(ISNUMBER(v),IF(mx>1,v/100,v),"")))'), '% done as a fraction either way')
+  assert.ok(list.includes('rp,FILTER(\'Tracker\'!$C$2:$C,k<>"")'), 'grouped by Phase')
+  assert.ok(
+    list.includes('VSTACK(acc,HSTACK(i,g,"","","","","","P"),FILTER(dt,rp=g))'),
+    'a numbered heading row per phase',
+  )
+  assert.ok(list.includes('IF(SUMPRODUCT(--(rp=""))=0,acc,VSTACK(acc,FILTER(dt,rp="")))'), 'tasks with no phase last')
   assert.equal(
-    value(6, 6).formulaValue,
-    '=ARRAYFORMULA(IF(ISNUMBER(E7:E)*ISNUMBER(F7:F)=0,,NETWORKDAYS(E7:E,F7:F)))',
-    'working days, like the DAYS column',
+    rows[6][8].userEnteredValue.formulaValue,
+    '=ARRAYFORMULA(IF(ISNUMBER(D7:D)*ISNUMBER(E7:E)=0,,NETWORKDAYS(D7:D,E7:E)))',
+    'working days',
   )
-  // Controls beside the task column, like Project Start Date and Display Week in the sheet.
-  assert.equal(value(1, 2).formulaValue, "=IF(COUNT('Tracker'!$F$2:$F)=0,TODAY(),MIN('Tracker'!$F$2:$F))")
-  assert.equal(value(1, 4).numberValue, 1)
-  // The calendar, from column J.
-  assert.equal(value(4, 9).formulaValue, '=($C$2-WEEKDAY($C$2,2)+1)+7*($E$2-1)')
-  assert.equal(value(4, 10).formulaValue, '=J5+1')
-  assert.equal(value(5, 9).formulaValue, '=CHOOSE(WEEKDAY(J$5,1),"S","M","T","W","T","F","S")')
-  assert.equal(value(2, 9).formulaValue, '=TEXT(J$5,"mmmm yyyy")', 'month and year')
-  assert.equal(value(3, 16).formulaValue, '="Week "&((Q$5-($C$2-WEEKDAY($C$2,2)+1))/7+1)&"  ·  "&TEXT(Q$5,"d mmm")')
-  assert.equal(rows[2][10].userEnteredValue, undefined, 'one label per week; the cells are merged')
-  assert.equal(requests.filter(r => r.mergeCells).length, 52)
+  assert.equal(rows[5][8].userEnteredValue.stringValue, 'DAYS')
+  const formats = requests.filter((r: any) => r.repeatCell).map((r: any) => r.repeatCell)
+  const dates = formats.filter((f: any) => f.cell.userEnteredFormat.numberFormat?.type === 'DATE')
+  assert.deepEqual(
+    dates.map((f: any) => [f.range.startColumnIndex, f.range.startRowIndex, f.range.endRowIndex]),
+    [
+      [3, 6, 1246],
+      [4, 6, 1246],
+    ],
+    'Start and End are dates on every row, not serial numbers',
+  )
+  assert.ok(formats.some((f: any) => f.cell.userEnteredFormat.numberFormat?.type === 'PERCENT'))
+  const hidden = requests.find((r: any) => r.updateDimensionProperties?.properties.hiddenByUser)
+  assert.equal(hidden.updateDimensionProperties.range.startIndex, 7, 'the marker column is hidden')
+  assert.equal(
+    rows[1][2].userEnteredValue.formulaValue,
+    "=IF(COUNT('Tracker'!$F$2:$F)=0,TODAY(),MIN('Tracker'!$F$2:$F))",
+  )
+  assert.equal(rows[4][9].userEnteredValue.formulaValue, '=($C$2-WEEKDAY($C$2,2)+1)+7*($E$2-1)')
+  assert.equal(rows[2][9].userEnteredValue.formulaValue, '=TEXT(J$5,"mmmm yyyy")', 'month and year')
+  assert.equal(requests.filter((r: any) => r.mergeCells).length, 52)
 })
 
-test('bars are conditional formatting: done, in progress, late, planned, today and weekends', () => {
+test('bars, phase bands and template colours are conditional formatting', () => {
   const rules = build()
-    .filter(r => r.addConditionalFormatRule)
-    .map(r => r.addConditionalFormatRule.rule.booleanRule.condition.values[0].userEnteredValue)
-  assert.equal(rules.length, 7)
-  assert.equal(rules[0], '=WEEKDAY(J$5,2)>5')
-  assert.equal(rules[1], '=J$5=TODAY()')
-  assert.equal(rules[2], '=AND(ISNUMBER($E7),J$5>=$E7,J$5<=IF(ISNUMBER($F7),$F7,$E7))')
+    .filter((r: any) => r.addConditionalFormatRule)
+    .map((r: any) => r.addConditionalFormatRule.rule)
+  const formulas = rules.map((rule: any) => rule.booleanRule.condition.values[0].userEnteredValue)
+  assert.equal(formulas[0], '=WEEKDAY(J$5,2)>5')
+  assert.equal(formulas[2], '=AND(ISNUMBER($D7),J$5>=$D7,J$5<=IF(ISNUMBER($E7),$E7,$D7))')
   assert.ok(
-    rules[4].includes('ROUNDDOWN((IF(ISNUMBER($F7),$F7,$E7)-$E7+1)*IF(ISNUMBER($H7),IF(MAX($H$7:$H)>1,$H7/100,$H7)'),
+    formulas[4].includes('IF(OR($G7="Done",$G7="Completed",$G7="Complete"),1,IF(ISNUMBER($F7),$F7,0))'),
+    'a Done status counts as finished even at 0%',
   )
-  assert.ok(rules[5].endsWith('>=1)'), 'finished bars')
+  const phase = rules.filter((rule: any) => rule.booleanRule.condition.values[0].userEnteredValue === '=$H7="P"')
+  assert.equal(phase.length, 2, 'phase rows banded across the list and the chart')
+  const band = phase.find((rule: any) => rule.ranges[0].startColumnIndex === 0)
+  assert.equal(band.booleanRule.format.textFormat.bold, true, 'and bold')
+  assert.ok(formulas.includes('=OR($G7="Done",$G7="Completed",$G7="Complete")'), 'Done remarks coloured')
+  assert.ok(formulas.includes('=$G7="Ongoing"'))
+  assert.ok(formulas.includes('=AND(ISNUMBER($F7),$F7>=1)'), '100% coloured')
+})
+
+test('without a Phase column the list is the tasks as they are', () => {
+  const out = ganttSheetRequests({
+    title: 'x',
+    dataTab: 'T',
+    headers: ['Task', 'Start', 'End'],
+    fields: { task: 'Task', start: 'Start', end: 'End' },
+    sheetId: 1,
+    dataRows: 10,
+  }) as any
+  assert.equal(
+    out.requests[1].updateCells.rows[5].values[0].userEnteredValue.formulaValue,
+    '=LET(k,\'T\'!$A$2:$A,dt,FILTER(HSTACK(\'T\'!$A$2:$A,\'T\'!$B$2:$B,\'T\'!$C$2:$C,MAP(k,LAMBDA(v,""))),k<>""),hd,HSTACK("TASK","START","END",""),VSTACK(hd,dt))',
+  )
 })
 
 test('without a Start column there is nothing to chart; with only Task and Start it still works', () => {
