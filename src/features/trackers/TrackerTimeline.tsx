@@ -121,6 +121,24 @@ export default function TrackerTimeline(props: Props) {
   }
   const dragRef = useRef<Drag | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // The visible width, so the list never crowds the chart out (see `shown` below).
+  const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null)
+  const [viewWidth, setViewWidth] = useState(0)
+  useEffect(() => {
+    if (!scrollNode || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => setViewWidth(Math.round(entries[0]?.contentRect.width || 0)))
+    observer.observe(scrollNode)
+    return () => observer.disconnect()
+  }, [scrollNode])
+  // The list (Task, Lead, Days, Done) takes at most two-thirds of the visible width, so the chart always shows: on a
+  // narrow window Task, then Lead, give way. The widths people chose are kept and come back when there is room.
+  const listCap = viewWidth ? Math.round(viewWidth * 0.66) : Number.POSITIVE_INFINITY
+  const fitted: Widths = (() => {
+    const others = 137 // Days, Done, the gaps, the padding and the border
+    const lead = Math.max(WIDTH_LIMITS.lead[0], Math.min(widths.lead, listCap - others - WIDTH_LIMITS.task[0]))
+    const task = Math.max(WIDTH_LIMITS.task[0], Math.min(widths.task, listCap - others - lead))
+    return { task, lead }
+  })()
   const sharedKey = JSON.stringify(shared ?? null)
   // sharedKey stands for `shared`, compared by value, so a new object with the same settings does not reset.
   useEffect(() => setSaved(hasSettings(shared) ? shared! : readSaved(trackerId)), [trackerId, sharedKey])
@@ -330,7 +348,7 @@ export default function TrackerTimeline(props: Props) {
         if (event.button !== 0) return
         event.preventDefault()
         event.currentTarget.setPointerCapture(event.pointerId)
-        resizing.current = { key, x: event.clientX, start: widths[key] }
+        resizing.current = { key, x: event.clientX, start: fitted[key] }
         setResizingKey(key)
       }}
       onPointerMove={event => {
@@ -440,7 +458,7 @@ export default function TrackerTimeline(props: Props) {
     <div
       className={`trk-tl${resizingKey ? ' trk-tl-resizing' : ''}`}
       data-resizing={resizingKey || undefined}
-      style={{ '--tl-task': `${widths.task}px`, '--tl-lead': `${widths.lead}px` } as CSSProperties}
+      style={{ '--tl-task': `${fitted.task}px`, '--tl-lead': `${fitted.lead}px` } as CSSProperties}
     >
       <div className="trk-tl-toolbar">
         {pick('startId', 'Start', ['date'], false)}
@@ -478,7 +496,13 @@ export default function TrackerTimeline(props: Props) {
           {timeline.unscheduled === 1 ? ' has' : 's have'} no dates yet. They are listed without a bar.
         </p>
       )}
-      <div className="trk-tl-scroll" ref={scrollRef}>
+      <div
+        className="trk-tl-scroll"
+        ref={node => {
+          scrollRef.current = node
+          if (node !== scrollNode) setScrollNode(node)
+        }}
+      >
         <div className="trk-tl-table" style={{ width: `calc(var(--tl-left) + ${days * width}px)` }}>
           <div className="trk-tl-row trk-tl-head">
             <div className="trk-tl-left trk-tl-lefthead">
