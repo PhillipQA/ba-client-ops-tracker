@@ -543,6 +543,8 @@ function App() {
           {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && (
             <CustomReports
               canUseTrackers={hasModule('trackers')}
+              canExplore={hasModule('explorer')}
+              canUseInbox={hasModule('inbox')}
               clients={store.clients}
               projects={store.projects}
               items={store.items}

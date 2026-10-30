@@ -15,6 +15,7 @@ export type AppModule =
   | 'requirements'
   | 'trackers'
   | 'reports'
+  | 'explorer'
   | 'ai'
   | 'settings'
 

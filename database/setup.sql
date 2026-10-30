@@ -1,5 +1,5 @@
 -- BA Client Ops Tracker v1.5.0: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 32. Run this ENTIRE file once in Supabase SQL Editor.
+-- Includes schema versions 1 through 33. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1702,6 +1702,21 @@ create index if not exists user_communications_unread
   on public.user_communications(tenant_id, owner_user_id, source)
   where read_at is null;
 
+-- Included source: migrations/schema-v33-data-explorer.sql
+-- SHA-256: c0e273d9f87edf3f32abedf6ef22fd3fd7319368523fede107ff14c186854a5b
+-- Apply once to databases at schema v32 (Supabase or Northflank PostgreSQL).
+-- Reports → Data explorer: people query their account's data with SQL in the browser and save queries to reuse.
+-- Saved queries are kept with reports (kind 'query'): private to whoever saved them, or shared by an Administrator
+-- as the account's query templates. The Data explorer module is switched on for existing accounts, so
+-- Administrators have it; other users are given it from Users & Permissions. Without this upgrade, queries still run
+-- but cannot be saved.
+
+alter table public.tenant_reports drop constraint if exists tenant_reports_kind_check;
+alter table public.tenant_reports
+  add constraint tenant_reports_kind_check check (kind in ('report', 'folder', 'template', 'query'));
+update public.organizations set enabled_modules = enabled_modules || '["explorer"]'::jsonb
+where jsonb_typeof(enabled_modules) = 'array' and not (enabled_modules ? 'explorer');
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1725,4 +1740,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 32 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 33 as schema_version;

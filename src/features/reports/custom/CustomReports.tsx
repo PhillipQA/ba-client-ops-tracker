@@ -40,6 +40,7 @@ import {
   RotateCcw,
   BarChartHorizontal,
   Pencil,
+  Database,
 } from 'lucide-react'
 import { businessDateKey, useBusinessDate } from '../../../shared/businessDate'
 import type {
@@ -89,11 +90,19 @@ import {
 import { ReportCanvas, WIDGET_TYPE } from './ReportCanvas'
 import { WidgetBody } from './ReportWidgets'
 import { WidgetEditor } from './WidgetEditor'
+import { DataExplorer } from '../explorer/DataExplorer'
+import { QueryResultView, useQueryRun, type QueryRunner } from '../explorer/QueryResult'
+import { QueryWidgetEditor } from '../explorer/QueryWidgetEditor'
+import { reportQueryParams, type ReportFilterValues } from '../explorer/reportParams'
+import { resultCsv } from '../explorer/resultView'
+import { useExplorerData } from '../explorer/useExplorerData'
 import './customReports.css'
+import '../explorer/dataExplorer.css'
 
 const SELECTED_KEY = 'ba.reports.custom.selected'
 const COLLAPSED_KEY = 'ba.reports.custom.collapsed'
 const TEMPLATES_KEY = '__templates'
+const MODE_KEY = 'ba.reports.custom.mode'
 const readStore = (key: string, fallback: string) => {
   try {
     return localStorage.getItem(key) ?? fallback
@@ -109,6 +118,7 @@ const writeStore = (key: string, value: string) => {
   }
 }
 
+const QUERY_ENTRY: { kind: WidgetKind; icon: ReactNode } = { kind: 'query', icon: <Database size={16} /> }
 const PALETTE: { kind: WidgetKind; icon: ReactNode }[] = [
   { kind: 'metric', icon: <Hash size={16} /> },
   { kind: 'bar', icon: <BarChartHorizontal size={16} /> },
@@ -171,12 +181,23 @@ type Props = {
   workEvents: WorkActivityEvent[]
   currentUser: UserAccount
   canUseTrackers: boolean
+  /** Data explorer: Administrators, and people given the Data explorer module. */
+  canExplore: boolean
+  /** Work Hub, whose messages the Data explorer can read. */
+  canUseInbox: boolean
 }
 
 export default function CustomReports(props: Props) {
-  const { currentUser, canUseTrackers } = props
+  const { currentUser, canUseTrackers, canExplore } = props
   const today = useBusinessDate()
   const canChange = currentUser.role !== 'Viewer'
+  const [mode, setModeState] = useState<'reports' | 'explorer'>(() =>
+    readStore(MODE_KEY, '') === 'explorer' ? 'explorer' : 'reports',
+  )
+  const setMode = (next: 'reports' | 'explorer') => {
+    setModeState(next)
+    writeStore(MODE_KEY, next)
+  }
   const [items, setItems] = useState<ReportItem[] | null>(null)
   const [problem, setProblem] = useState<{ message: string; upgrade?: boolean } | null>(null)
   const [notice, setNotice] = useState('')
@@ -220,6 +241,20 @@ export default function CustomReports(props: Props) {
   useEffect(load, [load])
 
   const isAdmin = currentUser.role === 'Administrator'
+  const explorer = useExplorerData({
+    clients: props.clients,
+    projects: props.projects,
+    items: props.items,
+    planner: props.planner,
+    workEvents: props.workEvents,
+    accounts: props.accounts,
+    taskSettings: props.taskSettings,
+    currentUser,
+    canUseTrackers,
+    canUseInbox: props.canUseInbox,
+    wholeAccount: isAdmin || canExplore,
+  })
+  const queries = useMemo(() => (items || []).filter(item => item.kind === 'query'), [items])
   const folders = useMemo(() => (items || []).filter(item => item.kind === 'folder'), [items])
   const reports = useMemo(() => (items || []).filter(item => item.kind === 'report'), [items])
   // The suggested templates, each replaced by the account's own copy once an Administrator changes it.
@@ -457,6 +492,12 @@ export default function CustomReports(props: Props) {
     setDraft(null)
     setSelectedId(id)
   }
+  const switchMode = (next: 'reports' | 'explorer') => {
+    if (next === mode) return
+    if (dirty && !window.confirm('Leave without saving your changes to this report?')) return
+    setDraft(null)
+    setMode(next)
+  }
 
   // --- Widgets while editing ---
 
@@ -574,13 +615,62 @@ export default function CustomReports(props: Props) {
 
   // --- The page ---
 
+  const switcher = canExplore ? (
+    <div className="crp-modes" role="tablist" aria-label="Reports or Data explorer">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'reports'}
+        className={mode === 'reports' ? 'on' : ''}
+        onClick={() => switchMode('reports')}
+      >
+        <FileText size={14} /> Reports
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === 'explorer'}
+        className={mode === 'explorer' ? 'on' : ''}
+        onClick={() => switchMode('explorer')}
+      >
+        <Database size={14} /> Data explorer
+      </button>
+    </div>
+  ) : null
+
+  if (canExplore && mode === 'explorer')
+    return (
+      <DataExplorer
+        switcher={switcher}
+        explorer={explorer}
+        queries={queries}
+        reports={reports.filter(item => item.canEdit)}
+        clients={props.clients}
+        projects={props.projects}
+        accounts={props.accounts}
+        isAdmin={isAdmin}
+        canChange={canChange && !problem?.upgrade}
+        busy={busy}
+        problem={notice || problem?.message || ''}
+        onDismissProblem={() => setNotice('')}
+        create={create}
+        update={update}
+        remove={remove}
+        openReport={id => {
+          setMode('reports')
+          setDraft(null)
+          setSelectedId(id)
+        }}
+      />
+    )
+
   if (problem?.upgrade)
     return (
       <section className="crp-page">
-        <Notice kind="info">
-          Custom reports need a database upgrade: apply <code>database/migrations/schema-v31-custom-reports.sql</code>,
-          then reload. The Overview tab works as before.
-        </Notice>
+        <aside className="crp-side">{switcher}</aside>
+        <div className="crp-main">
+          <Notice kind="info">{problem.message} Then reload the page.</Notice>
+        </div>
       </section>
     )
 
@@ -590,10 +680,17 @@ export default function CustomReports(props: Props) {
     else setViewFilters(next)
   }
   const trackedUsers = props.accounts.filter(account => account.status === 'Active')
+  const filterValues: ReportFilterValues = {
+    range,
+    client: props.clients.find(client => client.id === filters.clientId)?.name || '',
+    project: props.projects.find(project => project.id === filters.projectId)?.name || '',
+    person: (filters.userId && props.accounts.find(account => account.id === filters.userId)?.name) || '',
+  }
 
   return (
     <section className={`crp-page${editing ? ' is-editing' : ''}`}>
       <aside className="crp-side" aria-label="Your reports">
+        {switcher}
         <div className="crp-side-actions">
           {canChange && (
             <>
@@ -971,7 +1068,7 @@ export default function CustomReports(props: Props) {
               {editing && (
                 <aside className="crp-palette no-print" aria-label="Widgets">
                   <p className="crp-tree-label">Drag onto the page</p>
-                  {PALETTE.map(entry => (
+                  {(canExplore ? [QUERY_ENTRY, ...PALETTE] : PALETTE).map(entry => (
                     <button
                       type="button"
                       key={entry.kind}
@@ -1018,27 +1115,41 @@ export default function CustomReports(props: Props) {
                     setNewKind(null)
                     addWidget(kind, at)
                   }}
-                  renderWidget={widget => (
-                    <WidgetCard
-                      widget={widget}
-                      filters={filters}
-                      editing={editing}
-                      today={today}
-                      fieldsFor={fieldsFor}
-                      recordsFor={recordsFor}
-                      trackerProblem={
-                        widget.source === 'tracker'
-                          ? !widget.trackerId
-                            ? 'Choose a tracker in this widget’s settings.'
-                            : trackers.failed[widget.trackerId] ||
-                              (trackers.loaded[widget.trackerId] ? '' : 'Loading the tracker…')
-                          : ''
-                      }
-                      onEdit={() => setEditingWidget(widget)}
-                      onDuplicate={() => duplicateWidget(widget)}
-                      onRemove={() => setWidgets(definition.widgets.filter(item => item.id !== widget.id))}
-                    />
-                  )}
+                  renderWidget={widget =>
+                    widget.kind === 'query' ? (
+                      <QueryWidgetCard
+                        widget={widget}
+                        editing={editing}
+                        today={today}
+                        run={explorer.run}
+                        refresh={data}
+                        filters={filterValues}
+                        onEdit={() => setEditingWidget(widget)}
+                        onDuplicate={() => duplicateWidget(widget)}
+                        onRemove={() => setWidgets(definition.widgets.filter(item => item.id !== widget.id))}
+                      />
+                    ) : (
+                      <WidgetCard
+                        widget={widget}
+                        filters={filters}
+                        editing={editing}
+                        today={today}
+                        fieldsFor={fieldsFor}
+                        recordsFor={recordsFor}
+                        trackerProblem={
+                          widget.source === 'tracker'
+                            ? !widget.trackerId
+                              ? 'Choose a tracker in this widget’s settings.'
+                              : trackers.failed[widget.trackerId] ||
+                                (trackers.loaded[widget.trackerId] ? '' : 'Loading the tracker…')
+                            : ''
+                        }
+                        onEdit={() => setEditingWidget(widget)}
+                        onDuplicate={() => duplicateWidget(widget)}
+                        onRemove={() => setWidgets(definition.widgets.filter(item => item.id !== widget.id))}
+                      />
+                    )
+                  }
                 />
               </div>
             </div>
@@ -1046,7 +1157,35 @@ export default function CustomReports(props: Props) {
         )}
       </div>
 
-      {editingWidget && (
+      {editingWidget?.kind === 'query' && (
+        <QueryWidgetEditor
+          widget={editingWidget}
+          canWriteSql={isAdmin || canExplore}
+          clients={props.clients}
+          projects={props.projects}
+          accounts={props.accounts}
+          preview={widget => (
+            <QueryWidgetCard
+              widget={widget}
+              editing={false}
+              today={today}
+              run={explorer.run}
+              refresh={data}
+              filters={filterValues}
+            />
+          )}
+          onClose={() => setEditingWidget(null)}
+          onSave={widget => {
+            setDraft(current =>
+              current
+                ? { ...current, widgets: current.widgets.map(item => (item.id === widget.id ? widget : item)) }
+                : current,
+            )
+            setEditingWidget(null)
+          }}
+        />
+      )}
+      {editingWidget && editingWidget.kind !== 'query' && (
         <WidgetEditor
           widget={editingWidget}
           trackers={trackers.list}
@@ -1419,6 +1558,85 @@ function WidgetCard({
       )}
       <div className="crp-card-body" onDoubleClick={editing ? onEdit : undefined}>
         <WidgetBody widget={widget} computed={computed} fields={fields} today={today} problem={trackerProblem} />
+      </div>
+    </>
+  )
+}
+
+/** A query widget on a report: runs its SQL in the browser whenever the report's data or filters change. */
+function QueryWidgetCard({
+  widget,
+  editing,
+  today,
+  run,
+  refresh,
+  filters,
+  onEdit,
+  onDuplicate,
+  onRemove,
+}: {
+  widget: Widget
+  editing: boolean
+  today: string
+  run: QueryRunner
+  refresh: unknown
+  filters: ReportFilterValues
+  onEdit?: () => void
+  onDuplicate?: () => void
+  onRemove?: () => void
+}) {
+  const query = widget.query ? { ...widget.query, params: reportQueryParams(widget.query, filters) } : undefined
+  const { result, error, running } = useQueryRun(run, query, refresh)
+  const title = widget.title || WIDGET_LABELS.query
+  return (
+    <>
+      <div className="crp-card-head">
+        <h3 title={title}>{title}</h3>
+        {!editing && result && (
+          <button
+            type="button"
+            className="crp-icon small no-print"
+            aria-label={`Download ${title} as CSV`}
+            title="Download as CSV"
+            onClick={() => downloadCsv(title, resultCsv(result))}
+          >
+            <Download size={13} />
+          </button>
+        )}
+        {editing && onEdit && (
+          <span className="crp-card-tools">
+            <button
+              type="button"
+              className="crp-icon small"
+              aria-label="Settings"
+              title="Settings · SQL query"
+              onClick={onEdit}
+            >
+              <Settings2 size={14} />
+            </button>
+            <button
+              type="button"
+              className="crp-icon small"
+              aria-label="Duplicate"
+              title="Duplicate"
+              onClick={onDuplicate}
+            >
+              <Copy size={13} />
+            </button>
+            <button type="button" className="crp-icon small" aria-label="Remove" title="Remove" onClick={onRemove}>
+              <Trash2 size={13} />
+            </button>
+          </span>
+        )}
+      </div>
+      <div className="crp-card-body dx-card-body" onDoubleClick={editing ? onEdit : undefined}>
+        {error ? (
+          <div className="crp-empty dx-error">{error}</div>
+        ) : result ? (
+          <QueryResultView result={result} view={widget.query?.view || 'table'} today={today} />
+        ) : (
+          <div className="crp-empty">{running ? 'Running the query…' : ''}</div>
+        )}
       </div>
     </>
   )

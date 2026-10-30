@@ -805,7 +805,7 @@ export function computeWidget(
   filters: ReportFilters,
   today: string,
 ): Computed {
-  if (widget.kind === 'heading' || widget.kind === 'note') return { kind: 'text' }
+  if (widget.kind === 'heading' || widget.kind === 'note' || widget.kind === 'query') return { kind: 'text' }
   const records = widgetRecords(widget, all, fields, filters, today)
   switch (widget.kind) {
     case 'metric':

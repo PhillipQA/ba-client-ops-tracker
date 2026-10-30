@@ -19,8 +19,9 @@ export const REPORT_LIMITS = {
 export type SourceId = 'tasks' | 'time' | 'activities' | 'events' | 'tracker'
 export const SOURCE_IDS: SourceId[] = ['tasks', 'time', 'activities', 'events', 'tracker']
 
-export type WidgetKind = 'metric' | 'bar' | 'column' | 'line' | 'pie' | 'table' | 'gantt' | 'heading' | 'note'
+export type WidgetKind = 'metric' | 'bar' | 'column' | 'line' | 'pie' | 'table' | 'gantt' | 'heading' | 'note' | 'query'
 export const WIDGET_KINDS: WidgetKind[] = [
+  'query',
   'metric',
   'bar',
   'column',
@@ -130,7 +131,17 @@ export type Widget = {
   end?: string
   /** Headings and notes. */
   text?: string
+  /** A saved SQL query from the Data explorer, run each time the report opens. */
+  query?: SavedQuery
+  /** What the numbers are, when a query names them itself. */
+  valueLabel?: string
 }
+
+/** How a query's result is shown. */
+export type QueryView = 'table' | 'bar' | 'column' | 'line' | 'pie' | 'number'
+export const QUERY_VIEWS: QueryView[] = ['table', 'bar', 'column', 'line', 'pie', 'number']
+/** A Data explorer query: its SQL, how its result is shown, and its {{parameters}}' values. */
+export type SavedQuery = { sql: string; view: QueryView; params: Record<string, string> }
 
 export type ReportFilters = {
   range: RangePreset
@@ -140,9 +151,14 @@ export type ReportFilters = {
   projectId?: string
   userId?: string
 }
-export type ReportDefinition = { widgets: Widget[]; filters: ReportFilters }
+export type ReportDefinition = {
+  widgets: Widget[]
+  filters: ReportFilters
+  /** Saved queries (kind 'query'): the query itself. */
+  query?: SavedQuery
+}
 
-export type ItemKind = 'report' | 'folder' | 'template'
+export type ItemKind = 'report' | 'folder' | 'template' | 'query'
 export type ReportItem = {
   id: string
   kind: ItemKind
@@ -170,6 +186,7 @@ export type ReportItem = {
 
 /** A sensible size for each kind of widget, in grid cells. */
 export const WIDGET_SIZES: Record<WidgetKind, { w: number; h: number }> = {
+  query: { w: 6, h: 8 },
   metric: { w: 3, h: 3 },
   bar: { w: 6, h: 8 },
   column: { w: 6, h: 8 },
@@ -181,6 +198,7 @@ export const WIDGET_SIZES: Record<WidgetKind, { w: number; h: number }> = {
   note: { w: 4, h: 3 },
 }
 export const MIN_SIZE: Record<WidgetKind, { w: number; h: number }> = {
+  query: { w: 2, h: 2 },
   metric: { w: 2, h: 2 },
   bar: { w: 3, h: 4 },
   column: { w: 3, h: 4 },
@@ -288,7 +306,21 @@ export function cleanWidget(raw: unknown): Widget | null {
   }
   const body = text(input.text, REPORT_LIMITS.text, kind === 'note')
   if (body) widget.text = body
+  const valueLabel = text(input.valueLabel, REPORT_LIMITS.title)
+  if (valueLabel) widget.valueLabel = valueLabel
+  if (kind === 'query') widget.query = cleanQuery(input.query)
   return widget
+}
+
+/** Cleans a saved query: SQL text, how it is shown, and up to 20 parameter values. */
+export function cleanQuery(raw: unknown): SavedQuery {
+  const input = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const sql = typeof input.sql === 'string' ? input.sql.replace(/\r\n?/g, '\n').slice(0, 20_000) : ''
+  const params: Record<string, string> = {}
+  const given = (input.params && typeof input.params === 'object' ? input.params : {}) as Record<string, unknown>
+  for (const [name, value] of Object.entries(given).slice(0, 20))
+    if (/^[a-z_][a-z0-9_]{0,40}$/.test(name)) params[name] = text(value, 200)
+  return { sql, view: pick(input.view, QUERY_VIEWS, 'table'), params }
 }
 
 export function cleanReportFilters(raw: unknown): ReportFilters {
@@ -319,7 +351,9 @@ export function cleanDefinition(raw: unknown): ReportDefinition {
       return true
     })
     .slice(0, REPORT_LIMITS.widgets)
-  return { widgets: settle(widgets), filters: cleanReportFilters(input.filters) }
+  const out: ReportDefinition = { widgets: settle(widgets), filters: cleanReportFilters(input.filters) }
+  if (input.query !== undefined) out.query = cleanQuery(input.query)
+  return out
 }
 
 export function newId() {
@@ -390,6 +424,7 @@ export function freeSpot(widgets: Box[], w: number, h: number): { x: number; y: 
 // --- New widgets and ready-made reports ---
 
 export const WIDGET_LABELS: Record<WidgetKind, string> = {
+  query: 'SQL query',
   metric: 'Number tile',
   bar: 'Bar chart',
   column: 'Column chart',
@@ -461,6 +496,16 @@ export function newWidget(kind: WidgetKind, at: { x: number; y: number }, source
       return { ...base, title: '', text: 'Section' }
     case 'note':
       return { ...base, title: '', text: 'Write a note for whoever reads this report.' }
+    case 'query':
+      return {
+        ...base,
+        title: 'Tasks by status',
+        query: {
+          sql: 'SELECT status, COUNT(*) AS tasks\nFROM tasks\nGROUP BY status\nORDER BY tasks DESC',
+          view: 'bar',
+          params: {},
+        },
+      }
   }
 }
 

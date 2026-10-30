@@ -11,6 +11,7 @@ export const ALL_MODULES = [
   'requirements',
   'trackers',
   'reports',
+  'explorer',
   'ai',
   'settings',
 ]

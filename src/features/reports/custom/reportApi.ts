@@ -30,7 +30,7 @@ export type ReportPatch = {
 export const reportApi = {
   list: (signal?: AbortSignal) => call<{ items: ReportItem[] }>('GET', '', undefined, signal),
   create: (body: {
-    kind: 'report' | 'folder' | 'template'
+    kind: 'report' | 'folder' | 'template' | 'query'
     name: string
     description?: string
     folderId?: string
