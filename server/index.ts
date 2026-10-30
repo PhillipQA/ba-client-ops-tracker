@@ -118,7 +118,8 @@ registerStoreRoutes(app)
 
 registerInternalAdminRoutes(app)
 
-registerAssistantRoutes(app)
+// The assistant reads trackers through the tracker routes (registered below), with the same access rules.
+registerAssistantRoutes(app, { trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick) })
 
 registerBrdRoutes(app, {
   db: supabaseAdmin,

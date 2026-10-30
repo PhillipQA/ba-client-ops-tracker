@@ -6,6 +6,7 @@ import { transformSync } from 'esbuild'
 import { registerTestCaseRoutes } from '../server/documents/testcase-documents'
 import { registerFsdRoutes } from '../server/documents/fsd-documents'
 import { buildAssistantContext } from '../server/ai/assistant-context'
+import { addTrackers } from '../server/ai/assistant-trackers'
 import { workspaceVersion, mergeActivity } from '../server/services/workspace-version'
 import { runTenantAi } from '../server/ai/tenant-ai'
 import { emptyFsdDraft, fsdSectionsForModules } from '../src/features/documents/fsd-model'
@@ -343,6 +344,8 @@ try {
       app,
       openWaitingOnOptions,
       buildAssistantContext,
+      addTrackers,
+      deps: {},
       requireAuth: pass,
       requireTenantWorkspace: pass,
       moduleAllowed: (u: any, m: string) => u.modules.includes(m),
