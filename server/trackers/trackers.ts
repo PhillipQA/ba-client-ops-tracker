@@ -102,6 +102,8 @@ type Deps = {
   }
 }
 
+/** Blank rows a new Sheet gets below the tracker's rows. */
+const SPARE_SHEET_ROWS = 3
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const PAGE = 1000
 const HISTORY = 50
@@ -1833,7 +1835,9 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           .trim()
           .slice(0, 100) || 'Tracker'
       const tab = 'Tracker'
-      const gridRows = Math.max(1000, plan.rowData.length + 200)
+      // The header, the tracker's rows and 3 blank rows ready to fill. Rows added later are inserted above the blank
+      // ones, so they keep the dropdowns, checkboxes and date format.
+      const gridRows = plan.rowData.length + SPARE_SHEET_ROWS
       const gridProperties = { rowCount: gridRows, columnCount: Math.max(plan.headers.length, 5), frozenRowCount: 1 }
       // In the account Drive under Client / Project when one is connected; otherwise in the person's own Drive.
       const driveReady =
