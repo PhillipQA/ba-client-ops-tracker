@@ -133,3 +133,71 @@ test('a save refused because someone else saved first is merged onto theirs and 
     resetCloudSession()
   }
 })
+
+test('an edit to the same field made while a merged save is going out stops saving instead of undoing the other changes', async () => {
+  let server = { version: 'v0', data: structuredClone(base) as any }
+  const puts: any[] = []
+  const conflicts: string[] = []
+  // What the app shows. Its handler takes merged changes in, or refuses them when they clash with an edit made since.
+  let screen: any = structuredClone(base)
+  const realFetch = globalThis.fetch
+  const realWindow = (globalThis as any).window
+  ;(globalThis as any).window = {
+    dispatchEvent: (event: any) => {
+      if (event.type === 'workspace-save-conflict') conflicts.push(event.detail)
+      if (event.type !== WORKSPACE_MERGED) return true
+      const merged = mergeWorkspace(event.detail.saved, screen, event.detail.data)
+      if (merged.ok) screen = merged.data
+      else {
+        event.detail.clash = merged.clash
+        event.preventDefault()
+      }
+      return !event.defaultPrevented
+    },
+  }
+  globalThis.fetch = (async (url: string, init?: any) => {
+    const reply = (status: number, body: any) =>
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    if (url === '/api/store' && !init?.method)
+      return reply(200, { configured: true, ...server, revision: server.version })
+    const body = JSON.parse(init.body)
+    puts.push(body)
+    if (body.baseVersion !== server.version)
+      return reply(409, { configured: true, refreshRequired: true, error: 'This workspace has newer changes.' })
+    server = { version: `v${puts.length}`, data: body.data }
+    return reply(200, { configured: true, version: server.version, updatedAt: 'now' })
+  }) as any
+  const status = (data: any) => data.items.map((item: any) => `${item.id}:${item.status}`).join(' ')
+  try {
+    resetCloudSession()
+    await loadCloudStore()
+    // Ben, elsewhere: adds a task and marks b Blocked.
+    server = {
+      version: 'v-ben',
+      data: { ...base, items: [task('ben'), task('a'), task('b', { status: 'Blocked' }), task('c')] },
+    }
+    // Ana completes a; her save goes out, and while it is merged with Ben's she sets b to Done.
+    screen = {
+      ...screen,
+      items: screen.items.map((item: any) => (item.id === 'a' ? { ...item, status: 'Done' } : item)),
+    }
+    const first = queueCloudStoreSave(screen)
+    screen = {
+      ...screen,
+      items: screen.items.map((item: any) => (item.id === 'b' ? { ...item, status: 'Done' } : item)),
+    }
+    await assert.rejects(first, /changed the same record you are editing now \(items\[b\]\.status\)/)
+    assert.equal(status(server.data), 'ben:Open a:Done b:Blocked c:Open', 'her first change is saved with Ben’s')
+    assert.equal(conflicts.length, 1, 'the Save conflict box appears')
+
+    // Her screen still lacks Ben's changes, so it is not saved over them.
+    const putsBefore = puts.length
+    await assert.rejects(queueCloudStoreSave(screen))
+    assert.equal(puts.length, putsBefore, 'nothing more is sent')
+    assert.equal(status(server.data), 'ben:Open a:Done b:Blocked c:Open', 'Ben’s task and status are still there')
+  } finally {
+    globalThis.fetch = realFetch
+    ;(globalThis as any).window = realWindow
+    resetCloudSession()
+  }
+})

@@ -41,9 +41,12 @@ let pendingSnapshot: unknown
 let serverData: unknown
 /** The server copy this browser's own data was last brought up to date with: queued saves are changes from it. */
 let localBase: unknown
-/** Fired when a save merged changes saved elsewhere: the app takes them into what it shows. */
+/**
+ * Fired when a save merged changes saved elsewhere: the app takes them into what it shows. When it cannot (the person
+ * changed the same field meanwhile), it cancels the event and names the field in `clash`.
+ */
 export const WORKSPACE_MERGED = 'workspace-merged'
-export type WorkspaceMerged = { saved: unknown; data: unknown }
+export type WorkspaceMerged = { saved: unknown; data: unknown; clash?: string }
 export function pendingCloudEdits<T>(): T | undefined {
   return pendingSnapshot === undefined ? undefined : (structuredClone(pendingSnapshot) as T)
 }
@@ -157,13 +160,23 @@ async function saveCloudStoreNow<T>(data: T, activeSession: number, parent: unkn
       loadedRevision = undefined
       saveError = undefined
       if (pendingSnapshot === data) pendingSnapshot = undefined
+      localBase = payload
       if (payload !== data && typeof window !== 'undefined') {
         // Changes saved elsewhere came in with this save: the app shows them too, and builds on them from now on.
-        window.dispatchEvent(
-          new CustomEvent<WorkspaceMerged>(WORKSPACE_MERGED, { detail: { saved: data, data: payload } }),
-        )
+        const merged = new CustomEvent<WorkspaceMerged>(WORKSPACE_MERGED, {
+          detail: { saved: data, data: payload },
+          cancelable: true,
+        })
+        window.dispatchEvent(merged)
+        if (merged.defaultPrevented) {
+          // The app could not take them in: the person changed the same field while this was saving. Saving what is on
+          // screen next would undo the changes from elsewhere, so saving stops and the person chooses, as with a clash.
+          conflict = true
+          throw new Error(
+            `Your earlier change was saved, but someone else changed the same record you are editing now (${merged.detail.clash || 'workspace'}). Your newer edits are retained locally. Download them and reload the latest workspace before reapplying them.`,
+          )
+        }
       }
-      localBase = payload
       return { configured: true as const, updatedAt: body.updatedAt as string | undefined }
     }
     // Saved elsewhere since: fetch the latest and merge onto it, a few times at most.

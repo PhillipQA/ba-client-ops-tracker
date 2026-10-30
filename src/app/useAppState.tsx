@@ -225,9 +225,15 @@ export function useAppState() {
   // A save merged changes made elsewhere (another person, tab or capture): show them, keeping edits made since.
   useEffect(() => {
     const onMerged = (event: Event) => {
-      const { saved, data } = (event as CustomEvent<WorkspaceMerged>).detail
-      const merged = mergeWorkspace(saved as Store, storeRef.current, data as Store)
-      if (!merged.ok) return
+      const detail = (event as CustomEvent<WorkspaceMerged>).detail
+      const merged = mergeWorkspace(detail.saved as Store, storeRef.current, detail.data as Store)
+      if (!merged.ok) {
+        // The person changed the same field meanwhile. Their screen cannot show the other changes, and saving it as it
+        // is would undo them: refuse, so saving stops and the Save conflict box appears (see cloudStore).
+        detail.clash = merged.clash
+        event.preventDefault()
+        return
+      }
       const next = normalizeStore(merged.data, seedStore())
       storeRef.current = next
       setStore(next)
