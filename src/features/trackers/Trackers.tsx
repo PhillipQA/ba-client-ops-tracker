@@ -33,6 +33,8 @@ type Props = {
   onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
   /** Changes tasks from a tracker (dates, titles, done); see trackerTasks. */
   onUpdateTasks?: (patches: TaskPatch[]) => Promise<boolean>
+  /** Loads the workspace again after the server changed tasks (boxes ticked in a connected Sheet). */
+  onTasksChanged?: () => Promise<void>
   currentUserId?: string
 }
 
@@ -396,6 +398,7 @@ export default function Trackers(props: Props) {
         isTaskClosed={props.isTaskClosed}
         onCreateTasks={props.onCreateTasks}
         onUpdateTasks={props.onUpdateTasks}
+        onTasksChanged={props.onTasksChanged}
         currentUserId={props.currentUserId || ''}
         startNote={createdNote}
         onListChanged={() => void load()}

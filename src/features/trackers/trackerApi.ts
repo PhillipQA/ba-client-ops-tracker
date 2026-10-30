@@ -66,7 +66,13 @@ export type SheetFile = {
   shared: boolean
   sharedDrive: boolean
 }
-export type SyncResult = { source: TrackerSource; report: SyncReport | null; skipped?: boolean }
+export type SyncResult = {
+  source: TrackerSource
+  report: SyncReport | null
+  skipped?: boolean
+  /** Tasks the sync completed or reopened because their boxes were ticked or unticked in the Sheet. */
+  tasks?: number
+}
 /** A task or subtask linked to a tracker row, or to one cell of it (columnId is empty for the whole row). */
 export type TaskLink = {
   id: string
