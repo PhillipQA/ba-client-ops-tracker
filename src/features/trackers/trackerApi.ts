@@ -1,5 +1,6 @@
 import { requestJson, type HttpMethod } from '../../shared/http'
 import type { TimelineSettings } from './timelineModel'
+import type { SavedTemplate } from './trackerTemplates'
 import type { Cell, SyncReport, Tracker, TrackerColumn, TrackerRow, TrackerSource, TrackerView } from './trackerModel'
 
 /** An error from the trackers API. A 409 carries the current copy of whatever was edited, so the screen can reload it. */
@@ -211,4 +212,44 @@ export async function loadAllRows(id: string, signal?: AbortSignal): Promise<Tra
     rows.push(...result.rows)
     if (!result.rows.length || rows.length >= result.total) return rows
   }
+}
+
+// --- Templates the account keeps (see server/trackers/tracker-templates.ts) ---
+
+export type TemplateBody = {
+  name?: string
+  about?: string
+  columns?: unknown[]
+  shared?: boolean
+  hidden?: boolean
+  /** The built-in template this account copy replaces. */
+  templateKey?: string
+  revision?: number
+}
+const templateCall = <T>(method: string, path: string, body?: unknown, signal?: AbortSignal) =>
+  requestJson<T>(`/api/tracker-templates${path}`, {
+    method: method as HttpMethod,
+    body,
+    signal,
+    noStore: true,
+    bare: true,
+    offline: 'The connection was interrupted. Check your connection and try again.',
+    statusFallback: { 403: 'You do not have access to Trackers.', 404: 'That template was not found.' },
+    fallback: 'Tracker templates are unavailable right now. Try again in a moment.',
+    error: (message, status, data) => new TemplateApiError(message, status, (data || {}) as TemplateApiError['body']),
+  })
+export class TemplateApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public body: { needsUpgrade?: boolean; template?: SavedTemplate } = {},
+  ) {
+    super(message)
+  }
+}
+export const templateApi = {
+  list: (signal?: AbortSignal) => templateCall<{ templates: SavedTemplate[] }>('GET', '', undefined, signal),
+  create: (body: TemplateBody) => templateCall<{ template: SavedTemplate }>('POST', '', body),
+  update: (id: string, body: TemplateBody) => templateCall<{ template: SavedTemplate }>('PATCH', `/${id}`, body),
+  remove: (id: string) => templateCall<{ deleted: true }>('DELETE', `/${id}`),
 }
