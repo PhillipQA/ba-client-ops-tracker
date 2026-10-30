@@ -1848,7 +1848,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
         { method: 'POST', body: { requests: sheetFormatRequests(plan, sheetTabId, gridRows) } },
       ).catch(() => undefined)
-      // A Gantt chart tab when the tracker has dates, drawn from the synced tab. Best effort, like the formatting.
+      // Project timeline trackers only: a Gantt chart tab drawn from the synced tab. Best effort, like the formatting.
       const chartFields = sheetHasGantt(tracker.template)
         ? ganttFields(columnsOf(tracker), tracker.timeline || undefined, plan.headerMap, plan.keyHeader)
         : null
