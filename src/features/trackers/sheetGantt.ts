@@ -640,6 +640,12 @@ export function ganttSheetRequests(input: {
 }
 
 /**
+ * Only a tracker made from the Project timeline template has a Gantt chart tab in its Google Sheet. Every other
+ * tracker's Sheet is just its columns and rows, however many date columns it has.
+ */
+export const sheetHasGantt = (template: unknown) => template === 'project-timeline'
+
+/**
  * Which Sheet headers the chart reads, from the tracker's Timeline settings (or its guesses) and the connection's
  * header map. Null when the Start column is not one the Sheet holds.
  */
