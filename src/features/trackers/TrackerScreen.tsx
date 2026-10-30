@@ -880,7 +880,13 @@ export default function TrackerScreen(props: Props) {
   /** Named rows without a task get one, with a subtask in each step cell. Null: every such row. */
   const makeStepTasks = (rowIds: string[] | null) => {
     const current = trackerRef.current
-    if (!current || !canEdit || !keepsStepTasks(current) || !props.onCreateTasks) return
+    if (!current || !canEdit || !keepsStepTasks(current)) return
+    if (!props.onCreateTasks) {
+      if (!noClientSaid.current || rowIds === null)
+        say('error', 'Your role cannot create tasks, so this site’s task and subtasks were not made.')
+      noClientSaid.current = true
+      return
+    }
     const clientId = trackerClients(current)[0] || ''
     if (!clientId) {
       if (!noClientSaid.current || rowIds === null)
@@ -1552,6 +1558,14 @@ export default function TrackerScreen(props: Props) {
             </span>
           )}
           {tracker.archived && <span className="trk-chip warn">Archived</span>}
+          {stepTasks && (
+            <span
+              className="trk-chip"
+              title="Each row with a name becomes a task, and each Checkbox column a subtask of it. Ticking a box completes its subtask."
+            >
+              Rows → tasks · checkboxes → subtasks
+            </span>
+          )}
         </div>
         <div className="trk-header-actions">
           {canEdit && !tracker.source && (
@@ -1638,6 +1652,23 @@ export default function TrackerScreen(props: Props) {
                 }}
               >
                 Rename, client and project…
+              </button>
+            )}
+            {tracker.canEdit && !tracker.archived && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMoreOpen(false)
+                  void patchTracker(
+                    { stepTasks: !stepTasks },
+                    stepTasks
+                      ? 'Rows no longer become tasks here. Tasks already made stay in Tasks.'
+                      : 'Each row with a name now becomes a task, with a subtask for each Checkbox column.',
+                  )
+                }}
+              >
+                {stepTasks ? 'Stop making tasks for rows' : 'Make each row a task, checkboxes subtasks'}
               </button>
             )}
             {canEdit && !tracker.archived && (

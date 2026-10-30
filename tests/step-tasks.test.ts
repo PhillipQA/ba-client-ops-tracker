@@ -99,3 +99,9 @@ test('a row whose task was picked from the cell gets the missing step subtasks, 
   )
   assert.deepEqual(plan.ticked, [0], 'COR was ticked on the first row')
 })
+
+test('the tracker’s own switch wins over its template', () => {
+  assert.equal(keepsStepTasks({ template: 'site-rollout', stepTasks: false }), false)
+  assert.equal(keepsStepTasks({ template: 'saved', stepTasks: true }), true)
+  assert.equal(keepsStepTasks({ template: 'saved' }), false)
+})

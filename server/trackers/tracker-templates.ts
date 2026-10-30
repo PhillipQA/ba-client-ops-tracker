@@ -78,6 +78,7 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
     shared: Boolean(row.shared),
     hidden: Boolean(row.hidden),
     templateKey: row.template_key || '',
+    ...(typeof row.step_tasks === 'boolean' ? { stepTasks: row.step_tasks } : {}),
     revision: Number(row.revision) || 1,
     createdBy: row.created_by || '',
     createdByName: row.created_by_name || '',
@@ -158,6 +159,7 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
         shared,
         hidden: shared && body.hidden === true,
         template_key: templateKey,
+        ...(typeof body.stepTasks === 'boolean' ? { step_tasks: body.stepTasks } : {}),
         revision: 1,
         created_by: user.id,
         created_by_name: user.name,
@@ -165,7 +167,14 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
         created_at: stamp,
         updated_at: stamp,
       }
-      const saved = await db.from(TABLE).insert(row)
+      let saved = await db.from(TABLE).insert(row)
+      // Before schema v35 there is no step_tasks column: the template is kept without the setting.
+      if (saved.error && 'step_tasks' in row) {
+        const { step_tasks: _off, ...plain } = row as Record<string, unknown>
+        saved = await db.from(TABLE).insert(plain)
+        missing(saved.error)
+        return void res.status(201).json({ template: out(plain, user) })
+      }
       missing(saved.error)
       res.status(201).json({ template: out(row, user) })
     }),
@@ -193,6 +202,7 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
       if (body.name !== undefined) patch.name = cleanName(body.name, 'template name', TEMPLATE_LIMITS.name)
       if (body.about !== undefined) patch.about = about(body.about)
       if (body.columns !== undefined) patch.columns = normalizeColumns(body.columns)
+      if (body.stepTasks !== undefined) patch.step_tasks = body.stepTasks === true
       if (body.shared !== undefined) {
         const shared = body.shared === true
         if (shared && !isAdmin(user)) throw new TrackerError('Only Administrators make templates for everyone.', 403)
@@ -212,6 +222,11 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
         updated_at: now(),
       }
       const saved = await db.from(TABLE).update(changes).eq('tenant_id', user.organizationId).eq('id', current.id)
+      if (saved.error && 'step_tasks' in changes)
+        throw new TrackerError(
+          'Saving whether rows become tasks needs database/migrations/schema-v35-step-tasks.sql. Ask your administrator to apply it.',
+          503,
+        )
       missing(saved.error)
       res.json({ template: out({ ...current, ...changes }, user) })
     }),

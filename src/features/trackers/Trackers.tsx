@@ -95,6 +95,7 @@ function NewTrackerDialog({
         name: name.trim(),
         columns: template.columns,
         template: template.saved && !template.builtIn ? 'saved' : template.id,
+        ...(template.stepTasks !== undefined ? { stepTasks: template.stepTasks } : {}),
         clientIds,
         projectId,
         private: onlyMe,

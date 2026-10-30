@@ -30,6 +30,8 @@ export type TrackerTemplate = {
   doneColumn?: { column: string; done: string; undone?: string }
   /** Each phase becomes a task and each row a subtask, in the tracker's client and project. */
   tasks?: boolean
+  /** Each row becomes a task and each Checkbox column a subtask of it (see stepTasks). */
+  stepTasks?: boolean
 }
 
 const status = (...labels: [string, OptionColor][]) => labels.map(([label, color]) => ({ label, color }))
@@ -39,6 +41,7 @@ export const TRACKER_TEMPLATES: TrackerTemplate[] = [
     id: 'site-rollout',
     name: 'Site rollout',
     about: 'POS sites from DRF and BIR to go-live: mall integration, Barter version, install steps and turnover.',
+    stepTasks: true,
     columns: [
       { name: 'Terminal/Site', type: 'text' },
       { name: 'Branch', type: 'text' },
@@ -556,6 +559,8 @@ export type SavedTemplate = {
   shared: boolean
   hidden: boolean
   templateKey: string
+  /** Trackers made from it keep a task per row and a subtask per Checkbox column. Missing before schema v35. */
+  stepTasks?: boolean
   revision: number
   createdBy: string
   createdByName: string
@@ -589,6 +594,7 @@ export function templateChoices(saved: SavedTemplate[], withHidden = false): Tem
             builtIn: true,
             saved: copy,
             doneColumn: copy.columns.some(column => column.autoDone) ? undefined : template.doneColumn,
+            stepTasks: copy.stepTasks ?? template.stepTasks,
           }
         : { ...template, builtIn: true },
     ]
@@ -601,6 +607,7 @@ export function templateChoices(saved: SavedTemplate[], withHidden = false): Tem
       name: item.name,
       about: item.about,
       columns: item.columns,
+      stepTasks: item.stepTasks,
       builtIn: false,
       saved: item,
     }))
