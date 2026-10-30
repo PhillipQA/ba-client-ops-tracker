@@ -160,14 +160,14 @@ function harness(options: { failChanges?: boolean } = {}) {
     next()
   })
   const pass = (_req: any, _res: any, next: any) => next()
-  registerTrackerRoutes(app as any, {
+  const hooks = registerTrackerRoutes(app as any, {
     db,
     requireAuth: pass,
     requireTenant: pass,
     load: async () => ({ data: state }),
     key: Buffer.alloc(32, 7),
   })
-  return { app, db, state }
+  return { app, db, state, hooks }
 }
 async function serve(
   h: ReturnType<typeof harness>,
@@ -841,5 +841,57 @@ test('Calculated columns are saved by id and refuse values typed into them', asy
       ).status,
       400,
     )
+  })
+})
+
+test('the AI assistant reads only trackers the person can open, never Secret values, and rows only of those picked', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const shared = await makeTracker(ask)
+    const site = idOf(shared, 'Site')
+    const login = idOf(shared, 'Admin login')
+    const status = idOf(shared, 'Status')
+    const live = shared.columns.find((c: any) => c.id === status).options.find((o: any) => o.label === 'Live').id
+    const added = await ask('POST', `/api/trackers/${shared.id}/rows`, {
+      rows: [
+        { cells: { [site]: 'Store 001', [status]: live }, secrets: { [login]: 'correct horse battery' } },
+        { cells: { [site]: 'Store 002' } },
+      ],
+    })
+    assert.equal(added.status, 201, JSON.stringify(added.body))
+    const mine = await makeTracker(ask, { name: 'My notes', private: true })
+    const theirs = await makeTracker(ask, { name: 'Ben private', private: true }, { 'x-user': 'u2' })
+    const old = await makeTracker(ask, { name: 'Old rollout' })
+    assert.equal((await ask('PATCH', `/api/trackers/${old.id}`, { archived: true })).status, 200)
+
+    const offered: string[][] = []
+    const tenant = '11111111-1111-4111-8111-111111111111'
+    const read = await h.hooks.trackersFor(tenant, { id: 'u1', name: 'Ana Reyes', role: 'Contributor' }, all => {
+      offered.push(all.map(tracker => tracker.name))
+      return [shared.id, theirs.id]
+    })
+    assert.deepEqual(offered[0].sort(), ['My notes', 'Site rollout'], 'not archived, not someone else’s private one')
+    assert.deepEqual(read.trackers.map(tracker => tracker.id).sort(), [mine.id, shared.id].sort())
+    assert.equal(read.loaded.length, 1, 'only picked trackers the person can open are read')
+    const [loaded] = read.loaded
+    assert.equal(loaded.tracker.id, shared.id)
+    assert.equal(loaded.tracker.rowCount, 2)
+    assert.deepEqual(
+      loaded.rows.map(row => row.cells[site]),
+      ['Store 001', 'Store 002'],
+    )
+    assert.equal(loaded.rows[0].cells[status], live)
+    assert.ok(!JSON.stringify(read).includes('correct horse battery'), 'Secret values are never read into rows')
+    assert.equal(loaded.rows[0].cells[login], undefined)
+
+    const ben = await h.hooks.trackersFor(tenant, { id: 'u2', name: 'Ben Cruz', role: 'Administrator' }, () => [
+      mine.id,
+    ])
+    assert.deepEqual(
+      ben.trackers.map(tracker => tracker.name).sort(),
+      ['Ben private', 'Site rollout'],
+      'a private tracker stays private, even from an Administrator',
+    )
+    assert.equal(ben.loaded.length, 0)
   })
 })

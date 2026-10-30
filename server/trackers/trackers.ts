@@ -3459,7 +3459,39 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }),
   )
 
-  return { onWorkspaceSaved }
+  /**
+   * Trackers as data for the AI assistant: every tracker the person can open (not archived; a private one only for
+   * its creator), newest first, and the rows of the ones `pick` chooses, in their order. Rows carry ordinary cells
+   * only: Secret values are never read into them.
+   */
+  async function trackersFor(
+    tenant: string,
+    user: { id: string; name: string; role: string },
+    pick: (trackers: Tracker[]) => string[],
+  ) {
+    const r = await db
+      .from('tenant_trackers')
+      .select('*')
+      .eq('tenant_id', tenant)
+      .order('updated_at', { ascending: false })
+      .limit(TRACKER_LIMITS.trackers + 100)
+    check(r.error)
+    const visible = (r.data || []).filter(
+      (row: any) => !row.archived_at && (!row.private || row.created_by === user.id),
+    )
+    // Row counts are left at 0 here: only the trackers that are read get their rows, and so their count.
+    const trackers: Tracker[] = visible.map((row: any) => trackerOut(row, user as User, 0))
+    const chosen = new Set(pick(trackers))
+    const loaded: { tracker: Tracker; rows: TrackerRow[] }[] = []
+    for (const [at, row] of visible.entries()) {
+      if (!chosen.has(row.id)) continue
+      const rows = (await allRows(tenant, row.id)).map(entry => rowOut(entry, columnsOf(row)))
+      loaded.push({ tracker: { ...trackers[at], rowCount: rows.length }, rows })
+    }
+    return { trackers, loaded }
+  }
+
+  return { onWorkspaceSaved, trackersFor }
 }
 
 const emptyOf = (column: TrackerColumn): Cell =>

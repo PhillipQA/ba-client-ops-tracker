@@ -322,6 +322,18 @@ export default function AIAssistant({
           >
             Draft client update
           </button>
+          {currentUser.modules?.includes('trackers') && (
+            <button
+              type="button"
+              onClick={() =>
+                setInput(
+                  'Summarize the trackers in this context: progress, dates passed or coming up, and what needs attention. Tracker name (optional): ',
+                )
+              }
+            >
+              Summarize trackers
+            </button>
+          )}
         </div>
       </div>
 
