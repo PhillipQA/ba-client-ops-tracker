@@ -14,7 +14,10 @@ import {
  * - Templates: anyone may keep private ones. Only Administrators make, change, hide or delete the account's shared
  *   templates. A suggested template (templateKey) is changed by storing the account's own copy; deleting that copy
  *   puts the suggested one back, and hiding it hides the template from everyone but Administrators.
- * - Only the widgets and filters are stored. The numbers are worked out in the browser, from data the person can see.
+ * - Saved queries (Data explorer) are for Administrators and people given the Data explorer module. They are private to
+ *   whoever saved them; shared ones are the account's query templates, which only Administrators make and change.
+ * - Only the widgets, filters and queries are stored. The numbers are worked out in the browser, from data the person
+ *   can see.
  */
 type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; now?: () => Date }
 type User = { id: string; name: string; role: string; organizationId: string; modules?: string[]; accountType?: string }
@@ -83,14 +86,28 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
     }
 
   const isAdmin = (user: User) => user.role === 'Administrator'
+  /** The Data explorer: people given its module. Administrators have every module the account has. */
+  const explores = (user: User) => Boolean(user.modules?.includes('explorer'))
   const visible = (row: any, user: User) =>
-    (Boolean(row.shared) || row.created_by === user.id) && !(row.kind === 'template' && row.hidden && !isAdmin(user))
+    (Boolean(row.shared) || row.created_by === user.id) &&
+    !(row.kind === 'template' && row.hidden && !isAdmin(user)) &&
+    (row.kind !== 'query' || explores(user))
   const canEdit = (row: any, user: User) => {
     if (user.role === 'Viewer') return false
-    if (row.kind === 'template') return row.shared ? isAdmin(user) : row.created_by === user.id
+    if (row.kind === 'query' && !explores(user)) return false
+    if (row.kind === 'template' || row.kind === 'query') return row.shared ? isAdmin(user) : row.created_by === user.id
     return row.created_by === user.id || (Boolean(row.shared) && isAdmin(user))
   }
-  const kindOf = (value: unknown) => (value === 'folder' || value === 'template' ? value : 'report')
+  const kindOf = (value: unknown): 'report' | 'folder' | 'template' | 'query' =>
+    value === 'folder' || value === 'template' || value === 'query' ? value : 'report'
+  /** Saving a query before the Data explorer's database upgrade: the rest of Reports keeps working. */
+  const missingQueries = (error: any) => {
+    if (error)
+      throw new ReportError(
+        'Saved queries need database/migrations/schema-v33-data-explorer.sql. Apply it and try again. Queries still run without it.',
+        503,
+      )
+  }
   const out = (row: any, user: User) => ({
     id: row.id,
     kind: kindOf(row.kind),
@@ -163,15 +180,23 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
       const user = who(req)
       const kind = kindOf(req.body?.kind)
       const name = clean(req.body?.name, 'The name', REPORT_LIMITS.name)
+      if (kind === 'query' && !explores(user)) throw new ReportError('Data explorer access is required.', 403)
       if (!name)
         throw new ReportError(
           kind === 'folder'
             ? 'Give the folder a name.'
             : kind === 'template'
               ? 'Give the template a name.'
-              : 'Give the report a name.',
+              : kind === 'query'
+                ? 'Give the query a name.'
+                : 'Give the report a name.',
         )
       let shared = req.body?.shared === true
+      if (kind === 'query' && shared && !isAdmin(user))
+        throw new ReportError('Only Administrators make query templates for everyone. Keep it as your own query.', 403)
+      const cleaned = kind === 'folder' ? {} : definition(req.body?.definition)
+      if (kind === 'query' && !(cleaned as any).query?.sql?.trim())
+        throw new ReportError('Write a query before saving it.')
       let templateKey = ''
       if (kind === 'template') {
         templateKey = typeof req.body?.templateKey === 'string' ? req.body.templateKey : ''
@@ -211,7 +236,7 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
         folder_id: kind === 'report' ? await folder(user, req.body?.folderId) : '',
         shared,
         position: Math.max(0, Math.min(1_000_000, Math.round(Number(req.body?.position) || 0))),
-        definition: kind === 'folder' ? {} : definition(req.body?.definition),
+        definition: cleaned,
         revision: 1,
         created_by: user.id,
         created_by_name: user.name,
@@ -224,6 +249,8 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
         row.hidden = shared && req.body?.hidden === true
       }
       const saved = await db.from(TABLE).insert(row)
+      // Before v33 the table refuses the 'query' kind; everything else about reports still works.
+      if (kind === 'query') missingQueries(saved.error)
       missing(saved.error)
       res.status(201).json({ item: out(row, user) })
     }),
@@ -237,11 +264,15 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
       const current = await one(user, String(req.params.id))
       if (!canEdit(current, user))
         throw new ReportError(
-          current.kind === 'template' && current.shared
-            ? "Only Administrators change the account's templates. Start a report from it, or save your own template."
-            : current.shared
-              ? 'Only the person who made this report, or an Administrator, can change it. Make a copy to change your own.'
-              : 'Only the person who made this can change it.',
+          current.kind === 'query'
+            ? current.shared && explores(user)
+              ? "Only Administrators change the account's query templates. Save your own copy to change it."
+              : 'Only the person who saved this query can change it.'
+            : current.kind === 'template' && current.shared
+              ? "Only Administrators change the account's templates. Start a report from it, or save your own template."
+              : current.shared
+                ? 'Only the person who made this report, or an Administrator, can change it. Make a copy to change your own.'
+                : 'Only the person who made this can change it.',
           403,
         )
       const body = req.body || {}
@@ -255,6 +286,8 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
         patch.description = clean(body.description, 'The description', REPORT_LIMITS.description)
       if (body.shared !== undefined) {
         const shared = body.shared === true
+        if (current.kind === 'query' && shared && !isAdmin(user))
+          throw new ReportError('Only Administrators make query templates for everyone.', 403)
         if (current.kind === 'template') {
           if (shared && !isAdmin(user)) throw new ReportError('Only Administrators make templates for everyone.', 403)
           if (!shared && current.template_key)
@@ -279,6 +312,8 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
             item: out(current, user),
           })
         patch.definition = definition(body.definition)
+        if (current.kind === 'query' && !(patch.definition as any).query?.sql?.trim())
+          throw new ReportError('Write a query before saving it.')
       }
       const changes = {
         ...patch,

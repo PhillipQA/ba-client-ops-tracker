@@ -6,7 +6,7 @@ import { REPORT_TEMPLATES } from '../src/features/reports/custom/reportModel'
 
 type Row = Record<string, any>
 const KEYS: Record<string, string[]> = { tenant_reports: ['tenant_id', 'id'] }
-function memoryDb(missing = false) {
+function memoryDb(missing = false, refusedKinds: string[] = []) {
   const tables: Record<string, Row[]> = { tenant_reports: [] }
   class Query {
     action = 'read'
@@ -64,6 +64,9 @@ function memoryDb(missing = false) {
       const rows = tables[this.table],
         key = (r: Row) => KEYS[this.table].map(k => r[k]).join('|')
       if (this.action === 'insert') {
+        // A database before an upgrade: its check constraint refuses kinds it does not know.
+        if (refusedKinds.includes(this.values[0].kind))
+          return { data: null, error: new Error('violates check constraint "tenant_reports_kind_check"') }
         rows.push(structuredClone(this.values[0]))
         return { data: null, error: null }
       }
@@ -101,7 +104,13 @@ async function serve(
   const app = express()
   app.use(express.json())
   app.use((req: any, _res, next) => {
-    const modules = req.headers['x-modules'] === 'none' ? ['clients'] : ['reports']
+    const asked = String(req.headers['x-modules'] || '')
+    const modules =
+      asked === 'none'
+        ? ['clients']
+        : asked === 'explorer' || (!asked && req.headers['x-role'] === 'Administrator')
+          ? ['reports', 'explorer']
+          : ['reports']
     req.authUser = {
       id: String(req.headers['x-user'] || 'u1'),
       name: String(req.headers['x-user'] || 'u1') === 'u2' ? 'Ben Cruz' : 'Ana Reyes',
@@ -272,5 +281,117 @@ test('templates: anyone keeps their own; Administrators change, hide and reset t
     // Reset: the account's copy is deleted, so the suggested one is used again.
     assert.equal((await ask('DELETE', `/api/reports/custom/${id}`, undefined, admin)).status, 200)
     assert.equal((await ask('GET', '/api/reports/custom', undefined, admin)).body.items.length, 0)
+  })
+})
+
+test('saved queries: only for Data explorer, private to their maker; Administrators share them as templates', async () => {
+  await serve(memoryDb(), async ask => {
+    const ana = { 'x-modules': 'explorer' }
+    const benExplores = { 'x-user': 'u2', 'x-modules': 'explorer' }
+    const query = (sql: string, params: Record<string, string> = {}) => ({
+      widgets: [],
+      filters: { range: 'all' },
+      query: { sql, view: 'bar', params },
+    })
+    // Without the module, saved queries cannot be made.
+    const refused = await ask('POST', '/api/reports/custom', {
+      kind: 'query',
+      name: 'Q',
+      definition: query('SELECT 1'),
+    })
+    assert.equal(refused.status, 403)
+    assert.equal(
+      (await ask('POST', '/api/reports/custom', { kind: 'query', name: 'Q', definition: query(' ') }, ana)).status,
+      400,
+    )
+    const shared = await ask(
+      'POST',
+      '/api/reports/custom',
+      { kind: 'query', name: 'Q', shared: true, definition: query('SELECT 1') },
+      ana,
+    )
+    assert.equal(shared.status, 403)
+
+    const mine = await ask(
+      'POST',
+      '/api/reports/custom',
+      {
+        kind: 'query',
+        name: 'Open by client',
+        definition: query('SELECT client, COUNT(*) AS open FROM tasks WHERE client = {{client}} GROUP BY client', {
+          client: 'Acme',
+          'bad name': 'x',
+        }),
+      },
+      ana,
+    )
+    assert.equal(mine.status, 201)
+    assert.equal(mine.body.item.kind, 'query')
+    assert.equal(mine.body.item.canEdit, true)
+    assert.deepEqual(mine.body.item.definition.query.params, { client: 'Acme' })
+    assert.equal(mine.body.item.definition.query.view, 'bar')
+
+    // Private: Ben does not see Ana's query, and people without Data explorer see no queries at all.
+    const benList = await ask('GET', '/api/reports/custom', undefined, benExplores)
+    assert.equal(benList.body.items.filter((item: any) => item.kind === 'query').length, 0)
+    const template = await ask(
+      'POST',
+      '/api/reports/custom',
+      {
+        kind: 'query',
+        name: 'Hours by person',
+        shared: true,
+        definition: query('SELECT user, SUM(hours) FROM time_entries GROUP BY user'),
+      },
+      admin,
+    )
+    assert.equal(template.status, 201)
+    const seen = await ask('GET', '/api/reports/custom', undefined, benExplores)
+    const sharedQuery = seen.body.items.find((item: any) => item.id === template.body.item.id)
+    assert.equal(sharedQuery.canEdit, false)
+    const without = await ask('GET', '/api/reports/custom', undefined, ben)
+    assert.equal(without.body.items.filter((item: any) => item.kind === 'query').length, 0)
+    assert.equal((await ask('PATCH', `/api/reports/custom/${template.body.item.id}`, { name: 'X' }, ben)).status, 404)
+
+    // Only Administrators change the account's query templates; only their maker changes a private one.
+    const change = { definition: query('SELECT 2') }
+    assert.equal((await ask('PATCH', `/api/reports/custom/${template.body.item.id}`, change, benExplores)).status, 403)
+    assert.equal((await ask('PATCH', `/api/reports/custom/${mine.body.item.id}`, { shared: true }, ana)).status, 403)
+    assert.equal((await ask('PATCH', `/api/reports/custom/${mine.body.item.id}`, change, benExplores)).status, 404)
+    const edited = await ask('PATCH', `/api/reports/custom/${mine.body.item.id}`, change, ana)
+    assert.equal(edited.status, 200)
+    assert.equal(edited.body.item.definition.query.sql, 'SELECT 2')
+    assert.equal((await ask('PATCH', `/api/reports/custom/${template.body.item.id}`, change, admin)).status, 200)
+    assert.equal(
+      (await ask('DELETE', `/api/reports/custom/${template.body.item.id}`, undefined, benExplores)).status,
+      403,
+    )
+    assert.equal((await ask('DELETE', `/api/reports/custom/${mine.body.item.id}`, undefined, ana)).status, 200)
+
+    // A report keeps its query widgets, with the query that runs in them.
+    const report = await ask('POST', '/api/reports/custom', {
+      kind: 'report',
+      name: 'With a query',
+      definition: {
+        widgets: [{ kind: 'query', id: 'q', title: 'Open', query: { sql: 'SELECT 1', view: 'nope', params: {} } }],
+      },
+    })
+    assert.equal(report.status, 201)
+    assert.equal(report.body.item.definition.widgets[0].kind, 'query')
+    assert.equal(report.body.item.definition.widgets[0].query.sql, 'SELECT 1')
+    assert.equal(report.body.item.definition.widgets[0].query.view, 'table')
+  })
+  // Before the v33 upgrade, saving a query names the upgrade, and the rest of Reports keeps working.
+  await serve(memoryDb(false, ['query']), async ask => {
+    const result = await ask(
+      'POST',
+      '/api/reports/custom',
+      { kind: 'query', name: 'Q', definition: { widgets: [], query: { sql: 'SELECT 1', view: 'table', params: {} } } },
+      admin,
+    )
+    assert.equal(result.status, 503)
+    assert.match(result.body.error, /schema-v33-data-explorer/)
+    assert.equal(result.body.needsUpgrade, undefined)
+    assert.equal((await ask('POST', '/api/reports/custom', { kind: 'report', name: 'R' })).status, 201)
   })
 })

@@ -1,0 +1,370 @@
+/* Reports → Data explorer, and SQL query widgets on reports. Builds on the custom reports styles (crp-*). */
+
+.crp-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--k-border);
+  border-radius: 10px;
+  background: var(--k-soft);
+}
+.crp-modes button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--k-muted);
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.crp-modes button.on {
+  background: var(--k-solid);
+  color: var(--k-text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+.crp-modes button:focus-visible {
+  outline: 2px solid var(--k-accent);
+  outline-offset: 1px;
+}
+
+/* The sidebar: tables and their columns, then saved queries. */
+.dx-tables {
+  display: grid;
+  gap: 1px;
+}
+.dx-table-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.dx-toggle {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--k-muted);
+  cursor: pointer;
+}
+.dx-name,
+.dx-columns button,
+.dx-saved button:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.dx-name {
+  flex: 1;
+  font-family: var(--k-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.dx-name:hover,
+.dx-toggle:hover,
+.dx-columns button:hover,
+.dx-saved button:first-child:hover {
+  background: var(--k-soft);
+}
+.dx-columns {
+  display: grid;
+  margin: 0 0 4px 22px;
+  padding-left: 6px;
+  border-left: 1px solid var(--k-line);
+}
+.dx-columns button {
+  justify-content: space-between;
+  padding: 3px 7px;
+  font-family: var(--k-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+}
+.dx-columns span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dx-columns em {
+  color: var(--k-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-style: normal;
+}
+.dx-more {
+  justify-self: start;
+  margin: 4px 0 0 6px;
+  font-size: 12.5px;
+}
+.dx-saved {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.dx-saved button:first-child {
+  flex: 1;
+}
+.dx-saved button:first-child span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dx-saved.on button:first-child {
+  background: var(--k-accent-soft);
+  font-weight: 650;
+}
+.dx-saved .crp-icon {
+  opacity: 0;
+}
+.dx-saved:hover .crp-icon,
+.dx-saved .crp-icon:focus-visible {
+  opacity: 1;
+}
+
+/* The main column: builder, SQL, result. */
+.dx-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.dx-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--k-border);
+  border-radius: 14px;
+  background: var(--k-solid);
+}
+.dx-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+.dx-panel-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dx-builder {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.dx-builder > label,
+.dx-param {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+}
+.dx-builder > label > span,
+.dx-param > span {
+  color: var(--k-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.dx-builder .dx-wide {
+  grid-column: span 2;
+}
+.dx-filters {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+}
+.dx-filters > .crp-btn {
+  justify-self: start;
+}
+.dx-filter {
+  display: grid;
+  grid-template-columns: 74px minmax(120px, 1.2fr) minmax(120px, 1fr) minmax(100px, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+.dx-filter > span {
+  color: var(--k-muted);
+  font-size: 12px;
+}
+.dx-filter .crp-check {
+  white-space: nowrap;
+}
+
+.dx-editor {
+  position: relative;
+}
+.crp-page textarea.dx-sql,
+textarea.dx-sql {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--k-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+  white-space: pre;
+}
+textarea.dx-sql[readonly] {
+  color: var(--k-muted);
+}
+.dx-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: -4px;
+}
+.dx-suggest span {
+  color: var(--k-muted);
+  font-size: 11.5px;
+}
+.dx-suggest button {
+  padding: 2px 8px;
+  border: 1px solid var(--k-border);
+  border-radius: 6px;
+  background: var(--k-soft);
+  font-family: var(--k-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dx-suggest button:first-of-type {
+  border-color: var(--k-accent);
+  background: var(--k-accent-soft);
+}
+.dx-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.dx-param {
+  width: 190px;
+}
+.dx-param > span {
+  font-family: var(--k-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+.dx-run kbd {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 18%);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.dx-views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.dx-views button:not(.crp-icon) {
+  padding: 4px 10px;
+  border: 1px solid var(--k-border);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dx-views button.on {
+  border-color: var(--k-accent);
+  background: var(--k-accent-soft);
+}
+.dx-result {
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+}
+.dx-result:not(.dx-result-table) {
+  height: 360px;
+}
+.dx-result .crp-pie {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.dx-result-table .crp-table-wrap {
+  max-height: 480px;
+  overflow: auto;
+}
+.dx-result-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.dx-help {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.dx-help svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* The grid of rows. */
+.dx-grid th,
+.dx-grid td {
+  white-space: nowrap;
+}
+.dx-grid th {
+  font-family: var(--k-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 11.5px;
+}
+.dx-grid td.dx-null::after {
+  content: "—";
+  color: var(--k-muted);
+}
+
+/* Query widgets on reports. */
+.dx-card-body .crp-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.dx-error {
+  color: var(--k-danger);
+}
+
+@media (max-width: 900px) {
+  .dx-filter {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .dx-filter > span {
+    grid-column: 1 / -1;
+  }
+  .dx-builder .dx-wide {
+    grid-column: auto;
+  }
+  .dx-param {
+    width: 100%;
+  }
+}
+
+@media print {
+  .crp-modes {
+    display: none;
+  }
+}

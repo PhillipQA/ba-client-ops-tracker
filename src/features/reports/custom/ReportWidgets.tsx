@@ -126,6 +126,9 @@ function Legend({ items, color }: { items: { key: string; label: string }[]; col
   )
 }
 
+/** What a widget's numbers are: its own label, or what its measure says. */
+const valueName = (widget: Widget, fields: Field[]) => widget.valueLabel || measureName(widget.measure, fields)
+
 const Empty = ({ children = 'Nothing to show for these filters.' }: { children?: ReactNode }) => (
   <div className="crp-empty">{children}</div>
 )
@@ -149,7 +152,7 @@ function BarChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
             key={category.key}
             onMouseMove={event =>
               tip.show(event, category.label, [
-                { label: measureName(widget.measure, fields), value: formatNumber(value, widget.measure) },
+                { label: valueName(widget, fields), value: formatNumber(value, widget.measure) },
                 { label: 'Rows', value: String(chart.counts[index]) },
               ])
             }
@@ -206,7 +209,7 @@ function ColumnOrLine({ widget, chart, fields }: { widget: Widget; chart: ChartD
       chart.categories[index].label,
       [
         ...chart.series.map(series => ({
-          label: multi ? series.label : measureName(widget.measure, fields),
+          label: multi ? series.label : valueName(widget, fields),
           value: formatNumber(series.values[index], widget.measure),
           color: multi ? color(series) : undefined,
         })),
@@ -422,7 +425,7 @@ function PieChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
     return `M${point(radius, start)}A${radius},${radius} 0 ${large} 1 ${point(radius, end)}L${point(inner, end)}A${inner},${inner} 0 ${large} 0 ${point(inner, start)}Z`
   }
   const lines = (index: number) => [
-    { label: measureName(widget.measure, fields), value: formatNumber(chart.series[0].values[index], widget.measure) },
+    { label: valueName(widget, fields), value: formatNumber(chart.series[0].values[index], widget.measure) },
     { label: 'Share', value: `${total ? Math.round((values[index] / total) * 100) : 0}%` },
   ]
   if (!total) return <Empty />
@@ -497,7 +500,7 @@ function SummaryTable({ widget, chart, fields }: { widget: Widget; chart: ChartD
             <th>{group}</th>
             {chart.series.map(series => (
               <th key={series.key} className="num">
-                {chart.series.length > 1 ? series.label : measureName(widget.measure, fields)}
+                {chart.series.length > 1 ? series.label : valueName(widget, fields)}
               </th>
             ))}
             <th className="num">Rows</th>
@@ -660,7 +663,7 @@ export function WidgetBody({
         <div className="crp-metric">
           <strong>{formatNumber(computed.value, widget.measure)}</strong>
           <span>
-            {measureName(widget.measure, fields)}
+            {valueName(widget, fields)}
             {widget.measure.op !== 'count' && ` · ${computed.rows} rows`}
           </span>
         </div>
