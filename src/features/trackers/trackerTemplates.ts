@@ -72,7 +72,7 @@ export const TRACKER_TEMPLATES: TrackerTemplate[] = [
       { name: 'Signed DRF', type: 'checkbox' },
       { name: 'BIR Permit', type: 'checkbox' },
       { name: 'BIR Date of Approval', type: 'date' },
-      { name: 'Go Live Date', type: 'date' },
+      { name: 'Go Live Date', type: 'date', taskField: 'due' },
       { name: 'Terminal Creation', type: 'checkbox' },
       { name: 'License Creation', type: 'checkbox' },
       {

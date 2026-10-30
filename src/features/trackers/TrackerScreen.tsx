@@ -60,6 +60,7 @@ import { SYNC_LIMITS, describeSync } from './trackerSync'
 import { niceTime } from './trackerUi'
 import { SaveAsTemplateDialog } from './TemplateManager'
 import { sheetHasGantt } from './sheetGantt'
+import { keepsStepTasks, planStepTasks, siteTaskPatch, siteTaskTitle, stepColumns } from './stepTasks'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
 
@@ -864,8 +865,104 @@ export default function TrackerScreen(props: Props) {
       if (result.projectId && trackerRef.current) setTracker({ ...trackerRef.current, projectId: result.projectId })
     })
   }
+  // ---- Site rollout: a task for each site and a subtask for each step (see stepTasks) ----
+  const stepTasks = keepsStepTasks(tracker)
+  const linksRef = useRef(links)
+  linksRef.current = links
+  const noClientSaid = useRef(false)
+  /** Named rows without a task get one, with a subtask in each step cell. Null: every such row. */
+  const makeStepTasks = (rowIds: string[] | null) => {
+    const current = trackerRef.current
+    if (!current || !canEdit || !keepsStepTasks(current) || !props.onCreateTasks) return
+    const clientId = trackerClients(current)[0] || ''
+    if (!clientId) {
+      if (!noClientSaid.current || rowIds === null)
+        say(
+          'error',
+          'Choose a client for this tracker (More › Rename, client and project) so each site gets its task and subtasks.',
+        )
+      noClientSaid.current = true
+      return
+    }
+    const create = props.onCreateTasks
+    const update = props.onUpdateTasks
+    const run = async () => {
+      // Read now, not when the edit was made: an earlier run may have made the task already.
+      const wanted = rowsRef.current.filter(row => !row.taskId && (rowIds === null || rowIds.includes(row.id)))
+      const plan = planStepTasks({
+        columns: current.columns,
+        rows: wanted,
+        clientId,
+        projectId: current.projectId,
+        assigneeId: props.currentUserId || '',
+      })
+      if (!plan.drafts.length) return
+      try {
+        const made = await create(plan.drafts)
+        const rowLinks = plan.rowTasks.flatMap(link =>
+          made[link.draft] ? [{ rowId: link.rowId, taskId: made[link.draft].id }] : [],
+        )
+        for (let at = 0; at < rowLinks.length; at += TRACKER_LIMITS.importBatch)
+          takeLinked(
+            (await trackerApi.linkRowTasks(trackerId, rowLinks.slice(at, at + TRACKER_LIMITS.importBatch))).rows,
+          )
+        const cellLinks = plan.cellTasks.flatMap(link =>
+          made[link.draft] ? [{ rowId: link.rowId, columnId: link.columnId, taskId: made[link.draft].id }] : [],
+        )
+        for (let at = 0; at < cellLinks.length; at += TRACKER_LIMITS.importBatch) {
+          const result = await trackerApi.bulkLinks(trackerId, cellLinks.slice(at, at + TRACKER_LIMITS.importBatch))
+          if (alive.current) setLinks(result.links)
+        }
+        const ticked = plan.ticked.flatMap(at => (made[at] ? [{ id: made[at].id, done: true }] : []))
+        if (ticked.length && update) await update(ticked)
+        say(
+          'info',
+          `${plural(rowLinks.length, 'site')} now ${rowLinks.length === 1 ? 'has a task' : 'have tasks'}, with ${plural(cellLinks.length, 'subtask')} for the steps.`,
+        )
+      } catch (error) {
+        taskFailed(error)
+      }
+    }
+    if (rowIds?.length) enqueue(rowIds[rowIds.length - 1], run)
+    else void run()
+  }
+  /** After a row edit on a Site rollout tracker: a named row gets its task; the task follows its name and Go Live Date. */
+  const followStepTasks = (before: TrackerRow, cells: Record<string, Cell>) => {
+    const task = before.taskId ? props.items.find(entry => entry.id === before.taskId) : undefined
+    if (!task) {
+      if (siteTaskTitle(columns, cells)) makeStepTasks([before.id])
+      return
+    }
+    const patch = siteTaskPatch(columns, task.id, before.cells, cells)
+    if (patch && props.onUpdateTasks) void props.onUpdateTasks([patch]).catch(taskFailed)
+  }
+  // A step ticked or unticked (here, or in the Google Sheet) completes or reopens its subtask. Completing a subtask in
+  // Tasks ticks the step on the server, so only changes seen here are followed, and only when the subtask differs.
+  const seenSteps = useRef(new Map<string, string>())
+  useEffect(() => {
+    if (!stepTasks || status !== 'ready') return
+    const steps = stepColumns(columns)
+    const patches: TaskPatch[] = []
+    for (const row of rows) {
+      const key = steps.map(step => (row.cells[step.id] === true ? '1' : '0')).join('')
+      const before = seenSteps.current.get(row.id)
+      seenSteps.current.set(row.id, key)
+      if (before === undefined || before === key || !canEdit) continue
+      steps.forEach((step, at) => {
+        if (before[at] === key[at]) return
+        const done = key[at] === '1'
+        const link = linksRef.current.find(item => item.rowId === row.id && item.columnId === step.id)
+        const subtask = link ? props.items.find(entry => entry.id === link.taskId) : undefined
+        if (subtask && props.isTaskClosed(subtask.status) !== done) patches.push({ id: subtask.id, done })
+      })
+    }
+    if (patches.length && props.onUpdateTasks) void props.onUpdateTasks(patches).catch(taskFailed)
+  }, [rows, stepTasks, status])
+  const sitesWithoutTask = stepTasks ? rows.filter(row => !row.taskId && siteTaskTitle(columns, row.cells)).length : 0
+
   /** After a row edit: its task follows (title, dates, done, phase), or a named row gets its task. */
   const followTasks = (before: TrackerRow, cells: Record<string, Cell>) => {
+    if (stepTasks && canEdit) return followStepTasks(before, cells)
     if (!tasksKept || !canEdit) return
     const item = before.taskId ? props.items.find(entry => entry.id === before.taskId) : undefined
     if (!item) {
@@ -1722,6 +1819,25 @@ export default function TrackerScreen(props: Props) {
           onDone={ids => keepNewColumns(newColumnIds.filter(id => !ids.includes(id)))}
           onClose={() => setColumnSubtasksOpen(false)}
         />
+      )}
+      {canEdit && sitesWithoutTask > 0 && props.onCreateTasks && (
+        <div className="trk-banner trk-review-banner" role="status">
+          <strong>
+            {plural(sitesWithoutTask, 'site')} {sitesWithoutTask === 1 ? 'has' : 'have'} no task yet.
+          </strong>{' '}
+          {trackerClients(tracker).length
+            ? 'Each site gets a task, with a subtask for each step; ticking a step completes its subtask.'
+            : 'Choose a client for this tracker first, so its tasks have a client.'}
+          {trackerClients(tracker).length ? (
+            <button type="button" className="trk-text-button strong" onClick={() => makeStepTasks(null)}>
+              Make tasks
+            </button>
+          ) : (
+            <button type="button" className="trk-text-button strong" onClick={() => setDetails(true)}>
+              Choose a client
+            </button>
+          )}
+        </div>
       )}
       {tracker.source &&
         canEdit &&
