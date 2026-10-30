@@ -58,6 +58,7 @@ import { autoDoneColumn } from './trackerAutoDone'
 import TrackerReview, { type ReviewOutcome } from './TrackerReview'
 import { SYNC_LIMITS, describeSync } from './trackerSync'
 import { niceTime } from './trackerUi'
+import { SaveAsTemplateDialog } from './TemplateManager'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
 
@@ -124,6 +125,7 @@ export default function TrackerScreen(props: Props) {
   const [columnDialog, setColumnDialog] = useState<{ mode: 'add' } | { mode: 'edit'; id: string } | null>(null)
   const [importing, setImporting] = useState(false)
   const [details, setDetails] = useState(false)
+  const [savingTemplate, setSavingTemplate] = useState(false)
   const [headerMenu, setHeaderMenu] = useState<TrackerColumn | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const [saveViewOpen, setSaveViewOpen] = useState(false)
@@ -1499,6 +1501,18 @@ export default function TrackerScreen(props: Props) {
                 Rename, client and project…
               </button>
             )}
+            {canEdit && !tracker.archived && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMoreOpen(false)
+                  setSavingTemplate(true)
+                }}
+              >
+                Save as template…
+              </button>
+            )}
             {tracker.canManage && !tracker.archived && (
               <button
                 type="button"
@@ -2530,6 +2544,17 @@ export default function TrackerScreen(props: Props) {
                   error instanceof Error ? error.message : 'Imported, but the tracker could not be refreshed.',
                 ),
               )
+          }}
+        />
+      )}
+      {savingTemplate && (
+        <SaveAsTemplateDialog
+          tracker={tracker}
+          isAdmin={props.isAdmin}
+          onClose={() => setSavingTemplate(false)}
+          onDone={message => {
+            setSavingTemplate(false)
+            say('info', message)
           }}
         />
       )}

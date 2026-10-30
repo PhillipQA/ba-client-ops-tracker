@@ -21,6 +21,7 @@ import { registerCommunications } from './integrations/communications'
 import { registerTrackerRoutes } from './trackers/trackers'
 import { registerEmailTemplateRoutes } from './integrations/email-templates'
 import { registerCustomReportRoutes } from './reports/custom-reports'
+import { registerTrackerTemplateRoutes } from './trackers/tracker-templates'
 import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transport'
 import { securityHeaders } from './auth/security-headers'
 import { followUpTimeZone, isProduction, port, projectRoot } from './core/config'
@@ -126,6 +127,7 @@ const trackers = registerTrackerRoutes(app, {
 onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))
 registerEmailTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
 registerCustomReportRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
+registerTrackerTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
 
 registerSignoffRoutes(app, {
   db: supabaseAdmin,

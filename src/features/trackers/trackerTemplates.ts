@@ -33,23 +33,62 @@ export type TrackerTemplate = {
 }
 
 const status = (...labels: [string, OptionColor][]) => labels.map(([label, color]) => ({ label, color }))
-const progress = status(['Not started', 'gray'], ['In progress', 'blue'], ['Live', 'green'], ['Delayed', 'amber'])
 
 export const TRACKER_TEMPLATES: TrackerTemplate[] = [
   {
     id: 'site-rollout',
     name: 'Site rollout',
-    about: 'Sites with go-live dates, owners, sign-off and access details.',
+    about: 'POS sites from DRF and BIR to go-live: mall integration, Barter version, install steps and turnover.',
     columns: [
-      { name: 'Site', type: 'text' },
-      { name: 'Go-live', type: 'date' },
-      { name: 'Status', type: 'select', options: progress },
-      { name: 'Owner', type: 'person' },
-      { name: 'Task status', type: 'task_status' },
-      { name: 'Sign-off', type: 'signoff' },
-      { name: 'Drive files', type: 'drive_files' },
-      { name: 'Admin login', type: 'secret' },
-      { name: 'Notes', type: 'longtext' },
+      { name: 'Terminal/Site', type: 'text' },
+      { name: 'Branch', type: 'text' },
+      {
+        name: 'Status',
+        type: 'select',
+        options: status(
+          ['Live', 'green'],
+          ['DRF Approval', 'blue'],
+          ['BIR Application', 'amber'],
+          ['Pre Live', 'purple'],
+        ),
+      },
+      { name: 'Serial #', type: 'text' },
+      {
+        name: 'Mall Integ Req?',
+        type: 'select',
+        options: status(
+          ['NA', 'gray'],
+          ['Pending', 'amber'],
+          ['Waiting for Wavelet', 'purple'],
+          ['For Setup', 'blue'],
+          ['Waiting for Credentials', 'pink'],
+          ['Completed', 'green'],
+        ),
+      },
+      { name: 'Lessor', type: 'text' },
+      { name: 'SLSS #', type: 'text' },
+      { name: 'Hardware', type: 'checkbox' },
+      { name: 'COR', type: 'checkbox' },
+      { name: 'Signed DRF', type: 'checkbox' },
+      { name: 'BIR Permit', type: 'checkbox' },
+      { name: 'BIR Date of Approval', type: 'date' },
+      { name: 'Go Live Date', type: 'date' },
+      { name: 'Terminal Creation', type: 'checkbox' },
+      { name: 'License Creation', type: 'checkbox' },
+      {
+        name: 'Barter Version',
+        type: 'select',
+        options: status(['Barter RPOS 5.1', 'blue'], ['Barter 5.0', 'teal'], ['Barter CX v1.1', 'purple']),
+      },
+      { name: 'POS Installation', type: 'checkbox' },
+      { name: 'POS Configuration', type: 'checkbox' },
+      { name: 'Rest POS & RMS', type: 'checkbox' },
+      { name: 'PCOUNT', type: 'checkbox' },
+      { name: 'Z-reading 0', type: 'checkbox' },
+      { name: 'Mall integ', type: 'checkbox' },
+      { name: 'Sign off', type: 'checkbox' },
+      { name: 'Anydesk / Ultraviewer', type: 'text' },
+      { name: 'Support Turn Over', type: 'checkbox' },
     ],
   },
   {
@@ -499,3 +538,79 @@ export function withDoneColumn(template: TrackerTemplate, columns: TrackerColumn
     column.id === target.id ? { ...column, autoDone: undone ? { done, undone } : { done } } : column,
   )
 }
+
+// --- The account's own templates ---
+
+export const TEMPLATE_LIMITS = { name: 80, about: 300, templates: 100 }
+
+/**
+ * A template kept for the account: made from a tracker, written from scratch, or an Administrator's changed copy of a
+ * built-in one (`templateKey` names it). Private to whoever made it unless shared; only Administrators share, change,
+ * hide or reset shared ones.
+ */
+export type SavedTemplate = {
+  id: string
+  name: string
+  about: string
+  columns: TrackerColumn[]
+  shared: boolean
+  hidden: boolean
+  templateKey: string
+  revision: number
+  createdBy: string
+  createdByName: string
+  updatedByName: string
+  updatedAt: string
+  canEdit: boolean
+}
+
+/** A template to start from: a built-in one (perhaps changed for the account) or one the account made. */
+export type TemplateChoice = TrackerTemplate & { builtIn: boolean; saved?: SavedTemplate }
+
+export const savedChoiceId = (saved: SavedTemplate) => (saved.templateKey ? saved.templateKey : `saved:${saved.id}`)
+
+/**
+ * The templates in the order they are offered: built-in ones first (the account's copy replaces one that was changed;
+ * hidden ones are left out unless asked for), then the account's own, shared before private. A changed built-in
+ * keeps its starter rows, schedule and task settings, matched to the new columns by name.
+ */
+export function templateChoices(saved: SavedTemplate[], withHidden = false): TemplateChoice[] {
+  const copies = new Map(saved.filter(item => item.templateKey).map(item => [item.templateKey, item]))
+  const builtIn: TemplateChoice[] = TRACKER_TEMPLATES.flatMap(template => {
+    const copy = copies.get(template.id)
+    if (copy?.hidden && !withHidden) return []
+    return [
+      copy
+        ? {
+            ...template,
+            name: copy.name,
+            about: copy.about,
+            columns: copy.columns,
+            builtIn: true,
+            saved: copy,
+            doneColumn: copy.columns.some(column => column.autoDone) ? undefined : template.doneColumn,
+          }
+        : { ...template, builtIn: true },
+    ]
+  })
+  const own = saved
+    .filter(item => !item.templateKey && (withHidden || !item.hidden))
+    .sort((a, b) => Number(b.shared) - Number(a.shared) || a.name.localeCompare(b.name))
+    .map(item => ({
+      id: savedChoiceId(item),
+      name: item.name,
+      about: item.about,
+      columns: item.columns,
+      builtIn: false,
+      saved: item,
+    }))
+  // Blank stays last.
+  const blank = builtIn.filter(item => item.id === 'blank')
+  return [...builtIn.filter(item => item.id !== 'blank'), ...own, ...blank]
+}
+
+/** A tracker's columns as template columns: the same names, types, choices and settings, without sizes or Sheet links. */
+export const columnsForTemplate = (columns: TrackerColumn[]): TrackerColumn[] =>
+  columns.map(({ width: _width, frozen: _frozen, synced: _synced, ...column }) =>
+    column.options ? { ...column, options: column.options.map(option => ({ ...option })) } : column,
+  )

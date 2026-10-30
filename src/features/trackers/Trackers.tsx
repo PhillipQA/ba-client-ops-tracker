@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link2, Lock, Plus, Search, Table2, Upload } from 'lucide-react'
+import { LayoutTemplate, Link2, Lock, Plus, Search, Table2, Upload } from 'lucide-react'
 import { TRACKER_LIMITS, columnTypeLabel, type Tracker } from './trackerModel'
-import { TRACKER_TEMPLATES, templateById, templateRows, withDoneColumn } from './trackerTemplates'
+import { templateChoices, templateRows, withDoneColumn, type TemplateChoice } from './trackerTemplates'
+import { TemplatesDialog, TemplateTag, useTrackerTemplates } from './TemplateManager'
 import { createRowTasks } from './trackerTaskActions'
 import type { TaskPatch } from './trackerTasks'
 import { trackerApi } from './trackerApi'
@@ -40,6 +41,7 @@ const remember = rememberTracker
 
 function NewTrackerDialog({
   initialTemplate,
+  choices,
   clients,
   projects,
   items,
@@ -49,6 +51,8 @@ function NewTrackerDialog({
   onCreated,
 }: {
   initialTemplate: string
+  /** The templates to start from: built-in ones, changed or not, and the account's own. */
+  choices: TemplateChoice[]
   clients: Client[]
   projects: Project[]
   items: WorkItem[]
@@ -57,7 +61,8 @@ function NewTrackerDialog({
   onClose: () => void
   onCreated: (tracker: Tracker, note?: string) => void
 }) {
-  const [templateId, setTemplateId] = useState(initialTemplate)
+  const templateById = (id: string) => choices.find(choice => choice.id === id)
+  const [templateId, setTemplateId] = useState(templateById(initialTemplate) ? initialTemplate : 'blank')
   const [name, setName] = useState(initialTemplate === 'blank' ? '' : templateById(initialTemplate)?.name || '')
   const [touched, setTouched] = useState(false)
   const [clientIds, setClientIds] = useState<string[]>([])
@@ -89,7 +94,7 @@ function NewTrackerDialog({
       const result = await trackerApi.create({
         name: name.trim(),
         columns: template.columns,
-        template: template.id,
+        template: template.saved && !template.builtIn ? 'saved' : template.id,
         clientIds,
         projectId,
         private: onlyMe,
@@ -137,7 +142,7 @@ function NewTrackerDialog({
       <form className="trk-new" onSubmit={event => void submit(event)}>
         <fieldset className="trk-templates">
           <legend>Start from</legend>
-          {TRACKER_TEMPLATES.map(item => (
+          {choices.map(item => (
             <label key={item.id} className={`trk-template${item.id === templateId ? ' on' : ''}`}>
               <input
                 type="radio"
@@ -146,7 +151,10 @@ function NewTrackerDialog({
                 checked={item.id === templateId}
                 onChange={() => pick(item.id)}
               />
-              <strong>{item.name}</strong>
+              <strong>
+                {item.name}
+                <TemplateTag choice={item} />
+              </strong>
               <span>{item.about}</span>
               <small>
                 {item.columns
@@ -300,6 +308,9 @@ export default function Trackers(props: Props) {
   /** Said once when the new tracker opens, such as how many tasks were made. */
   const [createdNote, setCreatedNote] = useState('')
   const [importing, setImporting] = useState(false)
+  const [managing, setManaging] = useState(false)
+  const templates = useTrackerTemplates()
+  const choices = useMemo(() => templateChoices(templates.saved), [templates.saved])
   // Back from Google's permission page (#sheets=enabled|denied|error): say what happened and reopen the Sheet picker.
   const [sheetReturn] = useState(() => {
     try {
@@ -418,6 +429,9 @@ export default function Trackers(props: Props) {
                 <Link2 size={14} aria-hidden="true" /> From Google Sheet
               </button>
             )}
+            <button type="button" className="trk-button" onClick={() => setManaging(true)}>
+              <LayoutTemplate size={14} aria-hidden="true" /> Templates
+            </button>
             <button type="button" className="trk-button primary" onClick={() => setCreating('blank')}>
               <Plus size={14} aria-hidden="true" /> New tracker
             </button>
@@ -431,19 +445,21 @@ export default function Trackers(props: Props) {
           <h3>Start your first tracker</h3>
           <p className="trk-muted-text">Pick a starting point. You can rename, add and remove columns afterwards.</p>
           <div className="trk-template-grid">
-            {TRACKER_TEMPLATES.filter(item => item.id !== 'blank').map(item => (
-              <button
-                type="button"
-                key={item.id}
-                className="trk-template-card"
-                disabled={!props.canCreate}
-                onClick={() => setCreating(item.id)}
-              >
-                <Table2 size={18} aria-hidden="true" />
-                <strong>{item.name}</strong>
-                <span>{item.about}</span>
-              </button>
-            ))}
+            {choices
+              .filter(item => item.id !== 'blank')
+              .map(item => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className="trk-template-card"
+                  disabled={!props.canCreate}
+                  onClick={() => setCreating(item.id)}
+                >
+                  <Table2 size={18} aria-hidden="true" />
+                  <strong>{item.name}</strong>
+                  <span>{item.about}</span>
+                </button>
+              ))}
           </div>
           {!props.canCreate && <p className="trk-muted-text">Your role can view trackers but not create them.</p>}
         </section>
@@ -542,9 +558,20 @@ export default function Trackers(props: Props) {
         </p>
       )}
 
+      {managing && (
+        <TemplatesDialog
+          saved={templates.saved}
+          isAdmin={props.isAdmin}
+          canCreate={props.canCreate}
+          missing={templates.missing}
+          onSaved={templates.setSaved}
+          onClose={() => setManaging(false)}
+        />
+      )}
       {creating && (
         <NewTrackerDialog
           initialTemplate={creating}
+          choices={choices}
           clients={props.clients}
           projects={props.projects}
           items={props.items}
