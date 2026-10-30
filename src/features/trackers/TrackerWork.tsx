@@ -113,13 +113,12 @@ export function TrackerWorkPicker(props: PickerProps) {
 
   const options = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+    // A tracker with clients only offers their tasks; one without a client offers every task.
     const pool =
       mode === 'task'
-        ? tools.items.filter(item => !item.parentTaskId)
+        ? tools.items.filter(item => !item.parentTaskId && (!own.length || own.includes(item.clientId || '')))
         : tools.items.filter(item => item.parentTaskId && item.parentTaskId === row.taskId)
-    const rank = (item: WorkItem) =>
-      (own.length && !own.includes(item.clientId || '') ? 2 : 0) +
-      (tracker.projectId && item.projectId !== tracker.projectId ? 1 : 0)
+    const rank = (item: WorkItem) => (tracker.projectId && item.projectId !== tracker.projectId ? 1 : 0)
     return pool
       .filter(item => item.id !== current?.id && !tools.isClosed(item.status))
       .filter(item =>
@@ -275,7 +274,9 @@ export function TrackerWorkPicker(props: PickerProps) {
                     {query
                       ? 'Nothing open matches.'
                       : mode === 'task'
-                        ? 'No open tasks to pick.'
+                        ? own.length
+                          ? `No open tasks for ${own.map(clientName).filter(Boolean).join(', ') || 'this tracker’s client'}.`
+                          : 'No open tasks to pick.'
                         : 'This task has no other open subtasks.'}
                   </p>
                 )}
