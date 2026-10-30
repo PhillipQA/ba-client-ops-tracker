@@ -855,7 +855,7 @@ test('a tracker made from the Project timeline template takes its starter rows a
   })
 })
 
-test('a Sheet made from a tracker with dates gets a Gantt chart tab, and a connected Sheet can have it drawn again', async () => {
+test('a Sheet made from a Project timeline tracker gets a Gantt chart tab, and a connected Sheet can have it drawn again', async () => {
   const WRITE = 'https://www.googleapis.com/auth/spreadsheets'
   created.length = 0
   formatted.length = 0
@@ -865,6 +865,7 @@ test('a Sheet made from a tracker with dates gets a Gantt chart tab, and a conne
     const tracker = (
       await ask('POST', '/api/trackers', {
         name: 'Barter XI',
+        template: 'project-timeline',
         columns: [
           { name: 'Task', type: 'text' },
           { name: 'Start', type: 'date' },
@@ -914,6 +915,7 @@ test('a row that mirrors its task takes the task’s new title, dates and comple
     const tracker = (
       await ask('POST', '/api/trackers', {
         name: 'Barter XI',
+        template: 'project-timeline',
         columns: [
           { name: 'Task', type: 'text', taskField: 'title' },
           { name: 'Start', type: 'date', taskField: 'start' },
@@ -1080,6 +1082,7 @@ test('a client edits the Sheet’s Gantt chart tab and the tracker follows', asy
     const tracker = (
       await ask('POST', '/api/trackers', {
         name: 'Barter XI',
+        template: 'project-timeline',
         columns: [
           { name: 'Task', type: 'text' },
           { name: 'Phase', type: 'select', options: [{ label: 'Planning' }, { label: 'Build' }] },
@@ -1150,4 +1153,59 @@ test('a client edits the Sheet’s Gantt chart tab and the tracker follows', asy
     assert.equal(formatted.length, 0, 'the tab is not rewritten when it already shows the data')
   })
   newSheetTabs = newSheetTabs.slice(0, 1)
+})
+
+test('only a Project timeline tracker has a Gantt chart in its Sheet: any other tracker gets just its columns and rows', async () => {
+  const WRITE = 'https://www.googleapis.com/auth/spreadsheets'
+  created.length = 0
+  formatted.length = 0
+  dropdowns = []
+  const h = harness({ u1: WRITE })
+  await serve(h, async ask => {
+    for (const template of ['site-rollout', 'pos-bir', 'defects', 'client-tickets', 'saved', '']) {
+      formatted.length = 0
+      const tracker = (
+        await ask('POST', '/api/trackers', {
+          name: `Rollout ${template || 'plain'}`,
+          template,
+          columns: [
+            { name: 'Terminal/Site', type: 'text' },
+            { name: 'Go Live Date', type: 'date' },
+            { name: 'BIR Date of Approval', type: 'date' },
+            { name: 'Hardware', type: 'checkbox' },
+            { name: 'Status', type: 'select', options: [{ label: 'Live' }, { label: 'Pre Live' }] },
+          ],
+        })
+      ).body.tracker
+      const [cSite, cGo, cBir, cHw] = tracker.columns.map((c: any) => c.id)
+      await ask('POST', `/api/trackers/${tracker.id}/rows`, {
+        rows: [{ cells: { [cSite]: 'Robinsons Naga', [cGo]: '2026-11-02', [cBir]: '2026-10-01', [cHw]: true } }],
+      })
+      const made = await ask('POST', `/api/trackers/${tracker.id}/source/create`, {})
+      assert.equal(made.status, 200, JSON.stringify(made.body))
+      assert.equal(made.body.gantt, false, `${template || 'plain'}: no Gantt tab`)
+      assert.equal(formatted.length, 1, 'formatting only, no chart')
+      assert.equal(
+        formatted[0].requests.some((request: any) => request.addSheet),
+        false,
+      )
+      // The Sheet follows the tracker: its columns, with a dropdown, a checkbox and dates where the tracker has them.
+      assert.deepEqual(
+        created[created.length - 1].sheets[0].data[0].rowData[0].values.map(
+          (cell: any) => cell.userEnteredValue.stringValue,
+        ),
+        ['Terminal/Site', 'Go Live Date', 'BIR Date of Approval', 'Hardware', 'Status'],
+      )
+      assert.equal(formatted[0].requests.filter((request: any) => request.setDataValidation).length, 2)
+      assert.equal(
+        formatted[0].requests.filter((request: any) => request.repeatCell?.cell?.userEnteredFormat?.numberFormat)
+          .length,
+        2,
+      )
+      // And nothing can add one by hand.
+      const added = await ask('POST', `/api/trackers/${tracker.id}/source/gantt`, {})
+      assert.equal(added.status, 409)
+      assert.match(added.body.error, /Project timeline/)
+    }
+  })
 })

@@ -59,6 +59,7 @@ import TrackerReview, { type ReviewOutcome } from './TrackerReview'
 import { SYNC_LIMITS, describeSync } from './trackerSync'
 import { niceTime } from './trackerUi'
 import { SaveAsTemplateDialog } from './TemplateManager'
+import { sheetHasGantt } from './sheetGantt'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
 
@@ -1641,17 +1642,19 @@ export default function TrackerScreen(props: Props) {
             </span>
           ) : null}
           <span className="trk-spacer" />
-          {canEdit && columns.some(column => column.type === 'date' && column.synced) && (
-            <button
-              type="button"
-              className="trk-button"
-              disabled={ganttBusy}
-              onClick={() => void addGantt()}
-              title="Add a Gantt chart tab to the Google Sheet, drawn from the synced tab (an existing one is drawn again)"
-            >
-              <CalendarRange size={14} aria-hidden="true" /> {ganttBusy ? 'Adding chart…' : 'Gantt chart in Sheet'}
-            </button>
-          )}
+          {canEdit &&
+            sheetHasGantt(tracker.template) &&
+            columns.some(column => column.type === 'date' && column.synced) && (
+              <button
+                type="button"
+                className="trk-button"
+                disabled={ganttBusy}
+                onClick={() => void addGantt()}
+                title="Add a Gantt chart tab to the Google Sheet, drawn from the synced tab (an existing one is drawn again)"
+              >
+                <CalendarRange size={14} aria-hidden="true" /> {ganttBusy ? 'Adding chart…' : 'Gantt chart in Sheet'}
+              </button>
+            )}
           {canEdit && tracker.source.lastStatus === 'error' && (
             <button
               type="button"

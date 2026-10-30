@@ -50,6 +50,7 @@ import {
   ganttRows,
   ganttSheetRequests,
   ganttShows,
+  sheetHasGantt,
   trackerTabWrites,
   type GanttFields,
 } from '../../src/features/trackers/sheetGantt'
@@ -1847,8 +1848,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
         { method: 'POST', body: { requests: sheetFormatRequests(plan, sheetTabId, gridRows) } },
       ).catch(() => undefined)
-      // A Gantt chart tab when the tracker has dates, drawn from the synced tab. Best effort, like the formatting.
-      const chartFields = ganttFields(columnsOf(tracker), tracker.timeline || undefined, plan.headerMap, plan.keyHeader)
+      // Project timeline trackers only: a Gantt chart tab drawn from the synced tab. Best effort, like the formatting.
+      const chartFields = sheetHasGantt(tracker.template)
+        ? ganttFields(columnsOf(tracker), tracker.timeline || undefined, plan.headerMap, plan.keyHeader)
+        : null
       const chartGrid = chartFields ? await readRaw(access.token, spreadsheetId, tabRange(tab)).catch(() => null) : null
       const chart =
         chartFields && chartGrid
@@ -1958,6 +1961,11 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         id = idParam(req)
       const tracker = await trackerRow(tenant, id, user)
       if (user.role === 'Viewer') throw new TrackerError('Viewers cannot change the Google Sheet.', 403)
+      if (!sheetHasGantt(tracker.template))
+        throw new TrackerError(
+          'Only trackers made from the Project timeline template have a Gantt chart in their Sheet.',
+          409,
+        )
       if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it first.', 409)
       const source = await sourceRow(tenant, id)
       if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
