@@ -1,5 +1,5 @@
 -- BA Client Ops Tracker v1.5.0: ONE-RUN FRESH DATABASE SETUP
--- Includes schema versions 1 through 34. Run this ENTIRE file once in Supabase SQL Editor.
+-- Includes schema versions 1 through 35. Run this ENTIRE file once in Supabase SQL Editor.
 -- Requires a NEW Supabase database with no existing BA Tracker tables.
 -- Existing deployment / restored backup: DO NOT run this file. See database/README.md.
 -- This creates schema and initial accounts, not a copy of your current data.
@@ -1759,6 +1759,16 @@ begin
   end if;
 end $$;
 
+-- Included source: migrations/schema-v35-step-tasks.sql
+-- SHA-256: 9e9e50252f230793fa2bd662c13a73d268f43ee4e8b26dde6ac41c7d098d7e8a
+-- Apply once to databases at schema v34 (Supabase or Northflank PostgreSQL).
+-- Trackers: a switch that makes each row a task and each Checkbox column a subtask of it, on a tracker and on a
+-- template. Site rollout trackers have it on unless someone switches it off; templates saved from such a tracker keep
+-- it. Without it, only trackers made from the built-in Site rollout template make these tasks.
+
+alter table public.tenant_trackers add column if not exists step_tasks boolean;
+alter table public.tenant_tracker_templates add column if not exists step_tasks boolean;
+
 -- Fresh BXI-Core starts with the current module list, including Requirements & Traceability.
 update public.organizations set enabled_modules = '["action","clients","projects","inbox","items","documents","requirements","trackers","reports","ai","settings"]'::jsonb
 where id = '00000000-0000-0000-0000-000000000001';
@@ -1782,4 +1792,4 @@ $setup_grants$;
 
 notify pgrst, 'reload schema';
 commit;
-select 'BA Client Ops Tracker database setup complete' as result, 34 as schema_version;
+select 'BA Client Ops Tracker database setup complete' as result, 35 as schema_version;

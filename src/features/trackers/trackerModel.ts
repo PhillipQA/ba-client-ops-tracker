@@ -308,6 +308,11 @@ export type Tracker = {
   projectId: string
   private: boolean
   template: string
+  /**
+   * Each row is a task and each Checkbox column a subtask of it (see stepTasks). Unset: as the template decides
+   * (Site rollout is on). Missing before schema v35.
+   */
+  stepTasks?: boolean
   columns: TrackerColumn[]
   views: TrackerView[]
   /** The Timeline view's settings, shared by everyone. Missing before schema v29. */

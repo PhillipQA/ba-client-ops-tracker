@@ -186,6 +186,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     projectId: row.project_id || '',
     private: Boolean(row.private),
     template: row.template || '',
+    ...(typeof row.step_tasks === 'boolean' ? { stepTasks: row.step_tasks } : {}),
     columns: Array.isArray(row.columns) ? row.columns : [],
     views: Array.isArray(row.views) ? row.views : [],
     ...(row.timeline && typeof row.timeline === 'object' ? { timeline: row.timeline } : {}),
@@ -2328,6 +2329,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         project_id: links.projectId || '',
         private: body.private === true,
         template: String(body.template || '').slice(0, 40),
+        ...(typeof body.stepTasks === 'boolean' ? { step_tasks: body.stepTasks } : {}),
         columns,
         views: [],
         revision: 1,
@@ -2337,7 +2339,12 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         updated_at: now(),
         archived_at: null,
       }
-      const saved = await db.from('tenant_trackers').insert(row)
+      let saved = await db.from('tenant_trackers').insert(row)
+      // Before schema v35 there is no step_tasks column: the tracker is made without it (its template still decides).
+      if (saved.error && 'step_tasks' in row) {
+        const { step_tasks: _off, ...plain } = row as Record<string, unknown>
+        saved = await db.from('tenant_trackers').insert(plain)
+      }
       check(saved.error)
       await record(tenant, row.id, '', user, 'tracker_created', { name })
       res.status(201).json({ tracker: trackerOut(row, user, 0) })
@@ -2642,10 +2649,16 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         if (body.private !== undefined) patch.private = body.private === true
         if (body.archived !== undefined) patch.archived_at = body.archived === true ? now() : null
       }
+      if (body.stepTasks !== undefined) patch.step_tasks = body.stepTasks === true
       if (!Object.keys(patch).length)
         return void res.json({ tracker: trackerOut(row, user, await rowCount(tenant, id)) })
       patch.updated_at = now()
       const saved = await db.from('tenant_trackers').update(patch).eq('tenant_id', tenant).eq('id', id).select('*')
+      if (saved.error && 'step_tasks' in patch)
+        throw new TrackerError(
+          'Turning tasks for rows and steps on or off needs database/migrations/schema-v35-step-tasks.sql. Ask your administrator to apply it.',
+          503,
+        )
       check(saved.error)
       if (body.archived !== undefined)
         await record(tenant, id, '', user, body.archived === true ? 'tracker_archived' : 'tracker_restored', {})

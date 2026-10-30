@@ -101,6 +101,7 @@ export const trackerApi = {
     clientIds?: string[]
     projectId?: string
     private?: boolean
+    stepTasks?: boolean
   }) => call<{ tracker: Tracker }>('POST', '', body),
   get: (id: string, signal?: AbortSignal) => call<{ tracker: Tracker }>('GET', `/${id}`, undefined, signal),
   update: (
@@ -112,6 +113,7 @@ export const trackerApi = {
       projectId?: string
       private?: boolean
       archived?: boolean
+      stepTasks?: boolean
     },
   ) => call<{ tracker: Tracker }>('PATCH', `/${id}`, body),
   remove: (id: string) => call<{ ok: true }>('DELETE', `/${id}`),
@@ -230,6 +232,7 @@ export type TemplateBody = {
   hidden?: boolean
   /** The built-in template this account copy replaces. */
   templateKey?: string
+  stepTasks?: boolean
   revision?: number
 }
 const templateCall = <T>(method: string, path: string, body?: unknown, signal?: AbortSignal) =>

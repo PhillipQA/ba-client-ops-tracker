@@ -22,6 +22,7 @@ import {
 } from './trackerTemplates'
 import { TemplateApiError, templateApi, type TemplateBody } from './trackerApi'
 import { ColumnIcon, Dialog, Notice } from './trackerUi'
+import { keepsStepTasks } from './stepTasks'
 
 /** The account's templates. Before the database upgrade there are none, and the built-in ones are offered as before. */
 export function useTrackerTemplates() {
@@ -272,6 +273,7 @@ export function TemplateEditor({
   choice,
   isAdmin,
   initialColumns,
+  initialStepTasks,
   onClose,
   onSaved,
 }: {
@@ -280,6 +282,8 @@ export function TemplateEditor({
   isAdmin: boolean
   /** A new template's first columns, such as a tracker's. */
   initialColumns?: TrackerColumn[]
+  /** A new template's first setting for tasks, such as the tracker's. */
+  initialStepTasks?: boolean
   onClose: () => void
   onSaved: (template: SavedTemplate) => void
 }) {
@@ -289,6 +293,7 @@ export function TemplateEditor({
   const [name, setName] = useState(choice?.name || '')
   const [about, setAbout] = useState(choice?.about || '')
   const [shared, setShared] = useState(Boolean(choice?.saved?.shared))
+  const [stepTasks, setStepTasks] = useState(Boolean(choice?.stepTasks ?? initialStepTasks))
   const [drafts, setDrafts] = useState<Draft[]>(() => start.map(toDraft))
   const [doneKey, setDoneKey] = useState(() => {
     const at = start.findIndex(column => column.autoDone)
@@ -333,6 +338,7 @@ export function TemplateEditor({
           about: about.trim(),
           columns,
           shared: builtIn || (isAdmin && shared),
+          stepTasks,
         }),
       )
     } catch (problem) {
@@ -493,9 +499,14 @@ export function TemplateEditor({
             </select>
           </label>
         </div>
+        <label className="trk-checkline">
+          <input type="checkbox" checked={stepTasks} onChange={event => setStepTasks(event.target.checked)} /> Each row
+          becomes a task, and each Checkbox column a subtask of it
+          <small>(made as soon as a row has a name; ticking a box completes its subtask)</small>
+        </label>
         <p className="trk-muted-text">
           The first column names each row and holds the row’s task; the other cells can each hold one subtask of it.
-          Trackers already made from this template keep their own columns.
+          Trackers already made from this template keep their own columns and settings.
         </p>
         {error && (
           <p className="trk-field-error" role="alert">
@@ -551,6 +562,7 @@ export function SaveAsTemplateDialog({
               about: `Made from the tracker “${tracker.name}”.`,
               columns,
               shared: isAdmin && shared,
+              stepTasks: keepsStepTasks(tracker),
             },
       )
       onDone(chosen ? `“${template.name}” now has this tracker’s columns.` : `Saved the template “${template.name}”.`)
