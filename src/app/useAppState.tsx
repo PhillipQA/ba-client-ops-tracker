@@ -33,8 +33,11 @@ import {
   pendingCloudEdits,
   queueCloudStoreSave,
   waitForCloudSaves,
+  WORKSPACE_MERGED,
   type CloudStorageStatus,
+  type WorkspaceMerged,
 } from './cloudStore'
+import { mergeWorkspace } from './workspaceMerge'
 import { settingsRequest } from '../features/settings/Settings'
 import { askBAAssistant, type AIMessage, type AISuggestion } from '../features/ai/ai'
 import {
@@ -218,6 +221,24 @@ export function useAppState() {
     }
     window.addEventListener('workspace-save-conflict', onConflict)
     return () => window.removeEventListener('workspace-save-conflict', onConflict)
+  }, [authUser?.organizationId])
+  // A save merged changes made elsewhere (another person, tab or capture): show them, keeping edits made since.
+  useEffect(() => {
+    const onMerged = (event: Event) => {
+      const { saved, data } = (event as CustomEvent<WorkspaceMerged>).detail
+      const merged = mergeWorkspace(saved as Store, storeRef.current, data as Store)
+      if (!merged.ok) return
+      const next = normalizeStore(merged.data, seedStore())
+      storeRef.current = next
+      setStore(next)
+      try {
+        localStorage.setItem(organizationStorageKey(authUser?.organizationId), JSON.stringify(next))
+      } catch {
+        /* The workspace on screen is current; only the browser copy is behind. */
+      }
+    }
+    window.addEventListener(WORKSPACE_MERGED, onMerged)
+    return () => window.removeEventListener(WORKSPACE_MERGED, onMerged)
   }, [authUser?.organizationId])
 
   const recoverCloud = async () => {
