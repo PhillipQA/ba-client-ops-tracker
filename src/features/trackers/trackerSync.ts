@@ -149,10 +149,11 @@ export function planSync(input: {
   )
   const newHeaders = headers.filter(header => header && !mappedKeys.has(headerKey(header)))
 
-  // Rows: every non-empty row comes in, keyed by its task name and order (see sheetRowKeys).
+  // Rows: every non-empty row comes in, keyed by its task name and order (see sheetRowKeys). A row whose only values
+  // are unticked checkboxes (FALSE) is empty: blank rows with checkboxes ready to fill are not rows yet.
   const lines = body
     .map(line => headers.map((_, index) => String(line[index] ?? '')))
-    .filter(values => values.some(value => value.trim()))
+    .filter(values => values.some(value => value.trim() && !/^false$/i.test(value.trim())))
   const keys = sheetRowKeys(lines.map(values => values[keyIndex]))
   const kept = lines.map((values, at) => ({ key: keys[at], values }))
   const skippedNoKey = 0,

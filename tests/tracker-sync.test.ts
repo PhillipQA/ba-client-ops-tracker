@@ -349,3 +349,29 @@ test('columns added to the Sheet become tracker columns of the right type; left-
   assert.deepEqual(planned.report.newHeaders, ['Installed on', 'Admin password'])
   assert.equal(planned.report.missingHeaders.length, 0)
 })
+
+test('blank Sheet rows whose checkboxes are unticked are not rows', () => {
+  const planned = planSync({
+    grid: [
+      ['Branch #', 'Hardware', 'COR'],
+      ['57', 'TRUE', 'FALSE'],
+      ['', 'FALSE', 'FALSE'],
+      ['', 'false', ''],
+      ['', 'TRUE', 'FALSE'],
+    ],
+    keyHeader: 'Branch #',
+    headerMap: { 'Branch #': 'c_branch', Hardware: 'c_hw', COR: 'c_cor' },
+    columns: [
+      { id: 'c_branch', name: 'Branch #', type: 'text', synced: true },
+      { id: 'c_hw', name: 'Hardware', type: 'checkbox', synced: true },
+      { id: 'c_cor', name: 'COR', type: 'checkbox', synced: true },
+    ],
+    rows: [],
+    people: [],
+    today: '2026-10-30',
+    capacity: 5000,
+  })
+  assert.ok(!('error' in planned))
+  if ('error' in planned) return
+  assert.equal(planned.report.added, 2, 'the named row, and the one with a ticked box; not the two blank ones')
+})
