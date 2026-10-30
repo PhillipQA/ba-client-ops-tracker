@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   keepsStepTasks,
+  planMissingSteps,
   planStepTasks,
   siteTaskPatch,
   siteTaskTitle,
@@ -65,4 +66,36 @@ test('the site task follows its name and Go Live Date; ticks are found per step'
     { columnId: 'c_hw', done: false },
     { columnId: 'c_cor', done: true },
   ])
+})
+
+test('a row whose task was picked from the cell gets the missing step subtasks, reusing ones named like a step', () => {
+  const plan = planMissingSteps({
+    columns,
+    rows: [
+      { id: 'r1', cells: { c_cor: true }, taskId: 'picked' },
+      { id: 'r2', cells: {}, taskId: 'old' },
+      { id: 'r3', cells: {}, taskId: 'fresh' },
+    ],
+    links: [{ rowId: 'r2', columnId: 'c_hw', taskId: 'hw2' }],
+    items: [
+      { id: 'picked', title: 'Sta Rosa', clientId: 'c9', projectId: 'p9' },
+      { id: 'hw1', title: 'hardware', parentTaskId: 'picked' },
+      { id: 'old', title: 'Greenhills', archived: false },
+      { id: 'hw2', title: 'Hardware', parentTaskId: 'old' },
+    ],
+    clientId: 'c1',
+    projectId: 'p1',
+    assigneeId: 'u1',
+  })
+  assert.deepEqual(plan.existing, [{ rowId: 'r1', columnId: 'c_hw', taskId: 'hw1' }])
+  assert.deepEqual(
+    plan.drafts.map(draft => [draft.title, draft.parentTaskId, draft.clientId]),
+    [
+      ['COR', 'picked', 'c9'],
+      ['COR', 'old', 'c1'],
+      ['Hardware', 'fresh', 'c1'],
+      ['COR', 'fresh', 'c1'],
+    ],
+  )
+  assert.deepEqual(plan.ticked, [0], 'COR was ticked on the first row')
 })
