@@ -48,7 +48,9 @@ export const labels: Record<View, string> = {
   'internal-admin': 'BXI-Core Internal Admin',
 }
 
-export const navItems: { id: AppModule; label: string; icon: typeof LayoutDashboard }[] = [
+/** Modules that are pages of their own. Data explorer lives inside Reports. */
+export type PageModule = Exclude<AppModule, 'explorer'>
+export const navItems: { id: PageModule; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'action', label: 'Action Center', icon: LayoutDashboard },
   { id: 'clients', label: 'Clients', icon: Users },
   { id: 'projects', label: 'Projects', icon: BriefcaseBusiness },
