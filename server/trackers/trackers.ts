@@ -86,8 +86,24 @@ type Deps = {
   now?: () => Date
   /** A Google access token for a person, used to read connected Sheets as the person who connected them. */
   googleAccess?: (tenantId: string, userId: string) => Promise<{ token: string; scope: string; email?: string }>
+  /**
+   * The account Google Drive: a tracker's new Sheet is made there under Client / Project, shared with the person who
+   * makes it. Without a connected Drive the Sheet goes to that person's own Drive.
+   */
+  drive?: {
+    ready: (tenantId: string) => Promise<boolean>
+    sheet?: (job: {
+      tenantId: string
+      title: string
+      clientId?: string
+      projectId?: string
+      editorEmail: string
+    }) => Promise<{ spreadsheetId: string; path: string[] }>
+  }
 }
 
+/** Blank rows a new Sheet gets below the tracker's rows. */
+const SPARE_SHEET_ROWS = 3
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const PAGE = 1000
 const HISTORY = 50
@@ -1819,29 +1835,70 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           .trim()
           .slice(0, 100) || 'Tracker'
       const tab = 'Tracker'
-      const gridRows = Math.max(1000, plan.rowData.length + 200)
-      const created = await sheetsGet(access.token, 'https://sheets.googleapis.com/v4/spreadsheets', {
-        method: 'POST',
-        body: {
-          properties: { title },
-          sheets: [
-            {
-              properties: {
-                title: tab,
-                gridProperties: {
-                  rowCount: gridRows,
-                  columnCount: Math.max(plan.headers.length, 5),
-                  frozenRowCount: 1,
+      // The header, the tracker's rows and 3 blank rows ready to fill. Rows added later are inserted above the blank
+      // ones, so they keep the dropdowns, checkboxes and date format.
+      const gridRows = plan.rowData.length + SPARE_SHEET_ROWS
+      const gridProperties = { rowCount: gridRows, columnCount: Math.max(plan.headers.length, 5), frozenRowCount: 1 }
+      // In the account Drive under Client / Project when one is connected; otherwise in the person's own Drive.
+      const driveReady =
+        Boolean(deps.drive?.sheet && access.email) && (await deps.drive!.ready(tenant).catch(() => false))
+      let spreadsheetId = ''
+      let sheetTabId = 0
+      let folder: string[] = []
+      if (driveReady) {
+        const made = await deps.drive!.sheet!({
+          tenantId: tenant,
+          title,
+          clientId: splitClientIds(tracker.client_id)[0] || undefined,
+          projectId: tracker.project_id || undefined,
+          editorEmail: String(access.email),
+        })
+        spreadsheetId = made.spreadsheetId
+        folder = made.path
+        const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}`
+        // Sharing can take a moment to reach Google Sheets, so the first look is tried again once.
+        const meta = await sheetsGet(access.token, `${base}?fields=sheets.properties(sheetId)`).catch(async () => {
+          await new Promise(resolve => setTimeout(resolve, 1500))
+          return sheetsGet(access.token, `${base}?fields=sheets.properties(sheetId)`)
+        })
+        sheetTabId = Number(meta?.sheets?.[0]?.properties?.sheetId ?? 0)
+        await sheetsGet(access.token, `${base}:batchUpdate`, {
+          method: 'POST',
+          body: {
+            requests: [
+              {
+                updateSheetProperties: {
+                  properties: { sheetId: sheetTabId, title: tab, gridProperties },
+                  fields: 'title,gridProperties(rowCount,columnCount,frozenRowCount)',
                 },
               },
-              data: [{ startRow: 0, startColumn: 0, rowData: plan.rowData }],
-            },
-          ],
-        },
-      })
-      const spreadsheetId = String(created?.spreadsheetId || '')
-      if (!spreadsheetId) throw new TrackerError('Google did not make the Sheet. Try again in a moment.', 502)
-      const sheetTabId = Number(created?.sheets?.[0]?.properties?.sheetId ?? 0)
+              {
+                updateCells: {
+                  rows: plan.rowData,
+                  fields: 'userEnteredValue',
+                  start: { sheetId: sheetTabId, rowIndex: 0, columnIndex: 0 },
+                },
+              },
+            ],
+          },
+        })
+      } else {
+        const created = await sheetsGet(access.token, 'https://sheets.googleapis.com/v4/spreadsheets', {
+          method: 'POST',
+          body: {
+            properties: { title },
+            sheets: [
+              {
+                properties: { title: tab, gridProperties },
+                data: [{ startRow: 0, startColumn: 0, rowData: plan.rowData }],
+              },
+            ],
+          },
+        })
+        spreadsheetId = String(created?.spreadsheetId || '')
+        if (!spreadsheetId) throw new TrackerError('Google did not make the Sheet. Try again in a moment.', 502)
+        sheetTabId = Number(created?.sheets?.[0]?.properties?.sheetId ?? 0)
+      }
       // Dropdowns, checkboxes, date format and widths. The Sheet is usable without them, so this never fails the request.
       await sheetsGet(
         access.token,
@@ -1937,6 +1994,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         rows: plan.placed.length,
         emptyRows: plan.skipped,
         gantt,
+        /** Where it was made: the account Drive's folders, or empty for the person's own Drive. */
+        folder,
         tracker: { ...trackerOut(fresh, user, await rowCount(tenant, id)), source: result.source },
       })
     }),

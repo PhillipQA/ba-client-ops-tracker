@@ -122,6 +122,15 @@ const trackers = registerTrackerRoutes(app, {
   requireTenant: requireTenantWorkspace,
   load: loadTenantState,
   googleAccess: (tenantId, userId) => communications.googleAccess(tenantId, userId),
+  // Looked up when a Sheet is made: the Drive is set up further down, with the rest of communications.
+  drive: {
+    ready: tenantId => communications.driveFiler.ready(tenantId),
+    sheet: job => {
+      const make = communications.driveFiler.sheet
+      if (!make) throw new Error('Google Drive is not available.')
+      return make(job)
+    },
+  },
 })
 // A completed or reopened task updates the tracker rows linked to it, and their Sheet when the column comes from one.
 onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))

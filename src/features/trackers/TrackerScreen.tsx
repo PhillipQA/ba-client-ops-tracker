@@ -339,7 +339,7 @@ export default function TrackerScreen(props: Props) {
       await refresh()
       say(
         'info',
-        `Google Sheet “${result.tracker.source?.spreadsheetName || current.name}” made in your Google Drive with ${plural(result.rows, 'row')}${result.emptyRows ? ` (${plural(result.emptyRows, 'empty row')} left out)` : ''}${result.gantt ? ' and a Gantt chart tab' : ''}, and synced both ways. Open it from the Sheet bar above; share it from Google Sheets.`,
+        `Google Sheet “${result.tracker.source?.spreadsheetName || current.name}” made ${result.folder?.length ? `in the account Google Drive, in ${result.folder.join(' › ')},` : 'in your Google Drive'} with ${plural(result.rows, 'row')}${result.emptyRows ? ` (${plural(result.emptyRows, 'empty row')} left out)` : ''}${result.gantt ? ' and a Gantt chart tab' : ''}, and synced both ways. Open it from the Sheet bar above${result.folder?.length ? '' : '; share it from Google Sheets'}.${result.folder?.length ? '' : ' Once an Administrator connects the account Google Drive in Settings, new Sheets go to Client › Project folders there.'}`,
       )
     } catch (error) {
       if (error instanceof TrackerApiError && error.body.needsWrite) {

@@ -179,11 +179,17 @@ export const trackerApi = {
   ) => call<SyncResult & { tracker: Tracker }>('POST', `/${id}/source`, body),
   /** Makes a new Google Sheet from the tracker and connects it two-way. */
   createSheet: (id: string, title: string) =>
-    call<SyncResult & { tracker: Tracker; url: string; rows: number; emptyRows: number; gantt: boolean }>(
-      'POST',
-      `/${id}/source/create`,
-      { title },
-    ),
+    call<
+      SyncResult & {
+        tracker: Tracker
+        url: string
+        rows: number
+        emptyRows: number
+        gantt: boolean
+        /** The account Drive's folders it was made in; empty when it went to the person's own Drive. */
+        folder?: string[]
+      }
+    >('POST', `/${id}/source/create`, { title }),
   /** Adds a Gantt chart tab to the connected Sheet, or draws it again. */
   addGantt: (id: string) => call<{ url: string; replaced: boolean }>('POST', `/${id}/source/gantt`, {}),
   syncSource: (id: string, force: boolean) => call<SyncResult>('POST', `/${id}/source/sync`, { force }),
