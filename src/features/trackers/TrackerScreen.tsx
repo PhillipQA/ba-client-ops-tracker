@@ -60,7 +60,7 @@ import { SYNC_LIMITS, describeSync } from './trackerSync'
 import { niceTime } from './trackerUi'
 import { SaveAsTemplateDialog } from './TemplateManager'
 import { sheetHasGantt } from './sheetGantt'
-import { keepsStepTasks, planStepTasks, siteTaskPatch, siteTaskTitle, stepColumns } from './stepTasks'
+import { keepsStepTasks, planMissingSteps, planStepTasks, siteTaskPatch, siteTaskTitle, stepColumns } from './stepTasks'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
 
@@ -870,6 +870,13 @@ export default function TrackerScreen(props: Props) {
   const linksRef = useRef(links)
   linksRef.current = links
   const noClientSaid = useRef(false)
+  const linkCells = async (cellLinks: { rowId: string; columnId: string; taskId: string }[]) => {
+    for (let at = 0; at < cellLinks.length; at += TRACKER_LIMITS.importBatch) {
+      const result = await trackerApi.bulkLinks(trackerId, cellLinks.slice(at, at + TRACKER_LIMITS.importBatch))
+      if (alive.current) setLinks(result.links)
+      linksRef.current = result.links
+    }
+  }
   /** Named rows without a task get one, with a subtask in each step cell. Null: every such row. */
   const makeStepTasks = (rowIds: string[] | null) => {
     const current = trackerRef.current
@@ -896,29 +903,56 @@ export default function TrackerScreen(props: Props) {
         projectId: current.projectId,
         assigneeId: props.currentUserId || '',
       })
-      if (!plan.drafts.length) return
       try {
-        const made = await create(plan.drafts)
-        const rowLinks = plan.rowTasks.flatMap(link =>
-          made[link.draft] ? [{ rowId: link.rowId, taskId: made[link.draft].id }] : [],
-        )
-        for (let at = 0; at < rowLinks.length; at += TRACKER_LIMITS.importBatch)
-          takeLinked(
-            (await trackerApi.linkRowTasks(trackerId, rowLinks.slice(at, at + TRACKER_LIMITS.importBatch))).rows,
+        let sites = 0
+        if (plan.drafts.length) {
+          const made = await create(plan.drafts)
+          const rowLinks = plan.rowTasks.flatMap(link =>
+            made[link.draft] ? [{ rowId: link.rowId, taskId: made[link.draft].id }] : [],
           )
-        const cellLinks = plan.cellTasks.flatMap(link =>
-          made[link.draft] ? [{ rowId: link.rowId, columnId: link.columnId, taskId: made[link.draft].id }] : [],
-        )
-        for (let at = 0; at < cellLinks.length; at += TRACKER_LIMITS.importBatch) {
-          const result = await trackerApi.bulkLinks(trackerId, cellLinks.slice(at, at + TRACKER_LIMITS.importBatch))
-          if (alive.current) setLinks(result.links)
+          for (let at = 0; at < rowLinks.length; at += TRACKER_LIMITS.importBatch)
+            takeLinked(
+              (await trackerApi.linkRowTasks(trackerId, rowLinks.slice(at, at + TRACKER_LIMITS.importBatch))).rows,
+            )
+          sites = rowLinks.length
+          const cellLinks = plan.cellTasks.flatMap(link =>
+            made[link.draft] ? [{ rowId: link.rowId, columnId: link.columnId, taskId: made[link.draft].id }] : [],
+          )
+          await linkCells(cellLinks)
+          const ticked = plan.ticked.flatMap(at => (made[at] ? [{ id: made[at].id, done: true }] : []))
+          if (ticked.length && update) await update(ticked)
         }
-        const ticked = plan.ticked.flatMap(at => (made[at] ? [{ id: made[at].id, done: true }] : []))
-        if (ticked.length && update) await update(ticked)
-        say(
-          'info',
-          `${plural(rowLinks.length, 'site')} now ${rowLinks.length === 1 ? 'has a task' : 'have tasks'}, with ${plural(cellLinks.length, 'subtask')} for the steps.`,
-        )
+        // Rows whose task was picked or made from the cell, or that lack a step added later: their missing subtasks.
+        const missing = planMissingSteps({
+          columns: current.columns,
+          rows: rowsRef.current.filter(row => row.taskId && (rowIds === null || rowIds.includes(row.id))),
+          links: linksRef.current,
+          items: itemsRef.current,
+          clientId,
+          projectId: current.projectId,
+          assigneeId: props.currentUserId || '',
+        })
+        let subtasks = 0
+        if (missing.drafts.length || missing.existing.length) {
+          const made = missing.drafts.length ? await create(missing.drafts) : []
+          const cellLinks = [
+            ...missing.existing,
+            ...missing.cellTasks.flatMap(link =>
+              made[link.draft] ? [{ rowId: link.rowId, columnId: link.columnId, taskId: made[link.draft].id }] : [],
+            ),
+          ]
+          await linkCells(cellLinks)
+          const ticked = missing.ticked.flatMap(at => (made[at] ? [{ id: made[at].id, done: true }] : []))
+          if (ticked.length && update) await update(ticked)
+          subtasks = cellLinks.length
+        }
+        if (sites)
+          say(
+            'info',
+            `${plural(sites, 'site')} now ${sites === 1 ? 'has a task' : 'have tasks'}, with subtasks for the steps.`,
+          )
+        else if (subtasks)
+          say('info', `${plural(subtasks, 'step')} now ${subtasks === 1 ? 'has its subtask' : 'have subtasks'}.`)
       } catch (error) {
         taskFailed(error)
       }
@@ -958,7 +992,14 @@ export default function TrackerScreen(props: Props) {
     }
     if (patches.length && props.onUpdateTasks) void props.onUpdateTasks(patches).catch(taskFailed)
   }, [rows, stepTasks, status])
-  const sitesWithoutTask = stepTasks ? rows.filter(row => !row.taskId && siteTaskTitle(columns, row.cells)).length : 0
+  const stepCount = stepTasks ? stepColumns(columns).length : 0
+  const sitesWithoutTask = stepTasks
+    ? rows.filter(row =>
+        row.taskId
+          ? links.filter(link => link.rowId === row.id && link.columnId).length < stepCount
+          : siteTaskTitle(columns, row.cells),
+      ).length
+    : 0
 
   /** After a row edit: its task follows (title, dates, done, phase), or a named row gets its task. */
   const followTasks = (before: TrackerRow, cells: Record<string, Cell>) => {
@@ -1823,7 +1864,7 @@ export default function TrackerScreen(props: Props) {
       {canEdit && sitesWithoutTask > 0 && props.onCreateTasks && (
         <div className="trk-banner trk-review-banner" role="status">
           <strong>
-            {plural(sitesWithoutTask, 'site')} {sitesWithoutTask === 1 ? 'has' : 'have'} no task yet.
+            {plural(sitesWithoutTask, 'site')} {sitesWithoutTask === 1 ? 'is' : 'are'} missing tasks or step subtasks.
           </strong>{' '}
           {trackerClients(tracker).length
             ? 'Each site gets a task, with a subtask for each step; ticking a step completes its subtask.'
@@ -2541,6 +2582,8 @@ export default function TrackerScreen(props: Props) {
               onClose={() => setWorkCell(null)}
               onPickTask={async taskId => {
                 linkTask(row, taskId)
+                // A Site rollout row's task, however it was picked or made, gets a subtask for each step.
+                if (taskId && stepTasks) makeStepTasks([row.id])
               }}
               onPickSubtask={taskId => setCellSubtask(row, column.id, taskId)}
               onSwitchToTask={() => setWorkCell({ rowId: row.id, columnId: columns[0].id })}
