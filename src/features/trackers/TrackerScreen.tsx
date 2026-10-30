@@ -61,6 +61,8 @@ import { niceTime } from './trackerUi'
 import { SaveAsTemplateDialog } from './TemplateManager'
 import { sheetHasGantt } from './sheetGantt'
 import { keepsStepTasks, planMissingSteps, planStepTasks, siteTaskPatch, siteTaskTitle, stepColumns } from './stepTasks'
+import { cellSubtaskPatches } from './cellSubtasks'
+import { waitForCloudSaves } from '../../app/cloudStore'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
 
@@ -80,6 +82,8 @@ type Props = {
   onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
   /** Changes tasks from this tracker (title, dates, phase, done). */
   onUpdateTasks?: (patches: TaskPatch[]) => Promise<boolean>
+  /** The server changed tasks (boxes ticked in the connected Sheet): load the workspace again to show them. */
+  onTasksChanged?: () => Promise<void>
   /** The person using the tracker: new tasks are assigned to them. */
   currentUserId?: string
   /** Said once when the tracker opens, such as how many tasks were made with it. */
@@ -287,14 +291,24 @@ export default function TrackerScreen(props: Props) {
     }
   }, [status, trackerId])
 
+  /**
+   * Boxes ticked or unticked in the Sheet completed or reopened their subtasks on the server during a sync: the
+   * workspace is loaded again so they show as done here and in Tasks.
+   */
+  const followServerTasks = (result: { tasks?: number }) => {
+    if (result.tasks && props.onTasksChanged) void props.onTasksChanged().catch(() => undefined)
+  }
   // Connected Google Sheet: Sync now, and an automatic sync every few minutes while the tracker is open.
   const syncNow = async (force: boolean) => {
     const current = trackerRef.current
     if (!current?.source || syncing) return
     setSyncing(true)
     try {
+      // Task edits still saving go first: a sync can complete subtasks, and those must not collide with them.
+      await waitForCloudSaves().catch(() => undefined)
       const result = await trackerApi.syncSource(trackerId, force)
       if (!alive.current) return
+      followServerTasks(result)
       if (!result.skipped) await refresh()
       // Keep what was learnt about write permission; a sync result does not carry it.
       else if (trackerRef.current)
@@ -404,7 +418,9 @@ export default function TrackerScreen(props: Props) {
   const reconnect = async () => {
     setSyncing(true)
     try {
+      await waitForCloudSaves().catch(() => undefined)
       const result = await trackerApi.reconnectSource(trackerId)
+      followServerTasks(result)
       await refresh()
       say('info', `Reconnected with your Google account. ${result.report ? describeSync(result.report) : ''}`)
     } catch (error) {
@@ -685,6 +701,8 @@ export default function TrackerScreen(props: Props) {
       taskId?: string | null
       overwrite?: boolean
     },
+    /** Runs once the row is saved, for work that must not happen when the save fails. */
+    onSaved?: () => void,
   ) => {
     enqueue(rowId, async behind => {
       const latest = rowsRef.current.find(row => row.id === rowId)
@@ -692,6 +710,7 @@ export default function TrackerScreen(props: Props) {
       try {
         const { row } = await trackerApi.updateRow(trackerId, rowId, { version: latest.version, ...body })
         if (alive.current) replaceRow(row, behind())
+        onSaved?.()
       } catch (error) {
         // Two-way: the Sheet cell changed since the last sync. Show both values and let the person choose.
         if (error instanceof TrackerApiError && Array.isArray(error.body.conflicts) && alive.current) {
@@ -710,17 +729,13 @@ export default function TrackerScreen(props: Props) {
     if (!conflict) return
     const { rowId, cells } = conflict
     setConflict(null)
-    setRows(
-      rowsRef.current.map(row => {
-        if (row.id !== rowId) return row
-        const next = { ...row.cells }
-        for (const [columnId, value] of Object.entries(cells))
-          if (isEmptyCell(value)) delete next[columnId]
-          else next[columnId] = value
-        return { ...row, cells: next }
-      }),
-    )
-    patchRow(rowId, { cells, overwrite: true })
+    const before = rowsRef.current.find(row => row.id === rowId)?.cells || {}
+    const after = { ...before }
+    for (const [columnId, value] of Object.entries(cells))
+      if (isEmptyCell(value)) delete after[columnId]
+      else after[columnId] = value
+    setRows(rowsRef.current.map(row => (row.id === rowId ? { ...row, cells: after } : row)))
+    patchRow(rowId, { cells, overwrite: true }, () => followTicks(rowId, before, after))
   }
   /** Takes the Sheet's values: a sync brings them in. */
   const takeSheets = async () => {
@@ -800,7 +815,7 @@ export default function TrackerScreen(props: Props) {
     }
     if (!Object.keys(changed).length) return
     setRows(rowsRef.current.map(item => (item.id === row.id ? { ...item, cells } : item)))
-    patchRow(row.id, { cells: changed })
+    patchRow(row.id, { cells: changed }, () => followTicks(row.id, current.cells, cells))
     followTasks(current, cells)
   }
   const editCell = (row: TrackerRow, column: TrackerColumn, value: Cell) => {
@@ -816,7 +831,7 @@ export default function TrackerScreen(props: Props) {
     if (isEmptyCell(value)) delete cells[column.id]
     else cells[column.id] = value
     setRows(rowsRef.current.map(item => (item.id === row.id ? { ...item, cells } : item)))
-    patchRow(row.id, { cells: { [column.id]: value } })
+    patchRow(row.id, { cells: { [column.id]: value } }, () => followTicks(row.id, current.cells, cells))
     followTasks(current, cells)
   }
 
@@ -976,28 +991,20 @@ export default function TrackerScreen(props: Props) {
     const patch = siteTaskPatch(columns, task.id, before.cells, cells)
     if (patch && props.onUpdateTasks) void props.onUpdateTasks([patch]).catch(taskFailed)
   }
-  // A step ticked or unticked (here, or in the Google Sheet) completes or reopens its subtask. Completing a subtask in
-  // Tasks ticks the step on the server, so only changes seen here are followed, and only when the subtask differs.
-  const seenSteps = useRef(new Map<string, string>())
-  useEffect(() => {
-    if (!stepTasks || status !== 'ready') return
-    const steps = stepColumns(columns)
-    const patches: TaskPatch[] = []
-    for (const row of rows) {
-      const key = steps.map(step => (row.cells[step.id] === true ? '1' : '0')).join('')
-      const before = seenSteps.current.get(row.id)
-      seenSteps.current.set(row.id, key)
-      if (before === undefined || before === key || !canEdit) continue
-      steps.forEach((step, at) => {
-        if (before[at] === key[at]) return
-        const done = key[at] === '1'
-        const link = linksRef.current.find(item => item.rowId === row.id && item.columnId === step.id)
-        const subtask = link ? props.items.find(entry => entry.id === link.taskId) : undefined
-        if (subtask && props.isTaskClosed(subtask.status) !== done) patches.push({ id: subtask.id, done })
-      })
-    }
-    if (patches.length && props.onUpdateTasks) void props.onUpdateTasks(patches).catch(taskFailed)
-  }, [rows, stepTasks, status])
+  /**
+   * A box the person ticked or unticked here completes or reopens the subtask in that cell, on any tracker, once the row
+   * is saved (see cellSubtasks). Ticks from the Google Sheet are followed on the server during the sync, and completing
+   * a subtask in Tasks ticks its box on the server, so neither is followed here.
+   */
+  const followTicks = (rowId: string, before: Record<string, Cell>, after: Record<string, Cell>) => {
+    const update = props.onUpdateTasks
+    if (!canEdit || !update) return
+    const patches = cellSubtaskPatches(columns, [{ rowId, before, after }], linksRef.current).filter(patch => {
+      const subtask = itemsRef.current.find(item => item.id === patch.id)
+      return subtask && props.isTaskClosed(subtask.status) !== patch.done
+    })
+    if (patches.length) void update(patches).catch(taskFailed)
+  }
   const stepCount = stepTasks ? stepColumns(columns).length : 0
   const sitesWithoutTask = stepTasks
     ? rows.filter(row =>

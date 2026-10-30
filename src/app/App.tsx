@@ -518,6 +518,7 @@ function App() {
               isTaskClosed={status => isTaskClosed(status, store.taskSettings)}
               onCreateTasks={canWriteTasks && hasModule('items') ? createTrackerTasks : undefined}
               onUpdateTasks={canWriteTasks && hasModule('items') ? updateTrackerTasks : undefined}
+              onTasksChanged={() => refreshWorkspace(false)}
               currentUserId={currentUser?.id}
             />
           )}

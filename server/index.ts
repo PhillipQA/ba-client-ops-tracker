@@ -19,6 +19,8 @@ import { reconcileNotifications } from './services/notification-engine'
 import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
 import { registerCommunications } from './integrations/communications'
 import { registerTrackerRoutes } from './trackers/trackers'
+import { trackerTaskUpdater } from './trackers/tracker-task-updates'
+import { LifecycleError } from '../src/features/tasks/lifecycle'
 import { registerEmailTemplateRoutes } from './integrations/email-templates'
 import { registerCustomReportRoutes } from './reports/custom-reports'
 import { registerTrackerTemplateRoutes } from './trackers/tracker-templates'
@@ -34,6 +36,7 @@ import {
   secureHashPassword,
   sessionFromRequest,
   sessions,
+  type SessionUser,
 } from './core/auth'
 import {
   authoritativeWorkEvents,
@@ -42,6 +45,7 @@ import {
   normalizedSchemaStatus,
   onTenantCommitted,
   organizationById,
+  TenantSaveError,
   verifyTenantUserPassword,
 } from './core/tenant-state'
 import { aiAgents, integrations } from './core/services'
@@ -67,6 +71,25 @@ import { registerInternalAdminRoutes } from './platform/internal-admin'
 import { registerAssistantRoutes } from './ai/assistant-routes'
 import { registerDrfRoutes } from './documents/drf-documents'
 import { registerTaskRoutes } from './tasks/task-routes'
+
+/**
+ * Saves work the server changed for a person (a subtask made from an email, a subtask completed by a tick in a Google
+ * Sheet), with its work history and notifications, like that person's own save.
+ */
+function commitServerWork(id: string, next: any, user: SessionUser, reason: string, current: any) {
+  const workEvents = authoritativeWorkEvents(current, next, user)
+  const priorIds = new Set(
+    (Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event.id)),
+  )
+  const newEventIds = workEvents
+    .filter((event: any) => !priorIds.has(String(event.id)))
+    .map((event: any) => String(event.id))
+  const notified = reconcileNotifications(
+    { ...next, workEvents },
+    { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds },
+  ).state
+  return commitTenantState(id, notified, user, reason, current)
+}
 
 const app = express()
 
@@ -131,6 +154,13 @@ const trackers = registerTrackerRoutes(app, {
       return make(job)
     },
   },
+  // A box ticked or unticked in a connected Sheet completes or reopens the subtask in that cell, as whoever synced.
+  updateTasks: trackerTaskUpdater({
+    load: loadTenantState,
+    commit: (id, next, actor, reason, current) => commitServerWork(id, next, actor as SessionUser, reason, current),
+    today: () => dateKeyInTimeZone(new Date(), followUpTimeZone),
+    retryable: error => error instanceof LifecycleError || (error instanceof TenantSaveError && error.status === 409),
+  }),
 })
 // A completed or reopened task updates the tracker rows linked to it, and their Sheet when the column comes from one.
 onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))
@@ -212,20 +242,7 @@ const communications = registerCommunications(app, {
   requirePlatformAdmin,
   organizationById,
   load: loadTenantState,
-  commit: (id, next, user, reason, current) => {
-    const workEvents = authoritativeWorkEvents(current, next, user)
-    const priorIds = new Set(
-      (Array.isArray(current.workEvents) ? current.workEvents : []).map((event: any) => String(event.id)),
-    )
-    const newEventIds = workEvents
-      .filter((event: any) => !priorIds.has(String(event.id)))
-      .map((event: any) => String(event.id))
-    const notified = reconcileNotifications(
-      { ...next, workEvents },
-      { today: dateKeyInTimeZone(new Date(), followUpTimeZone), newEventIds },
-    ).state
-    return commitTenantState(id, notified, user, reason, current)
-  },
+  commit: commitServerWork,
   openStatus: openTaskStatus,
 })
 

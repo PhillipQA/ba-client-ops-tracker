@@ -258,7 +258,10 @@ globalThis.fetch = (async (input: any, init?: any) => {
   return reply(404, { error: { message: 'not found' } })
 }) as any
 
-function harness(scopes: Record<string, string> = {}) {
+function harness(
+  scopes: Record<string, string> = {},
+  extra: Partial<Parameters<typeof registerTrackerRoutes>[1]> = {},
+) {
   const db = memoryDb()
   const state = {
     clients: [{ id: 'c1', name: 'Card Indogrosir' }],
@@ -300,6 +303,7 @@ function harness(scopes: Record<string, string> = {}) {
     load: async () => ({ data: state }),
     key: Buffer.alloc(32, 7),
     googleAccess,
+    ...extra,
   })
   return { app, db, hooks }
 }
@@ -680,6 +684,143 @@ test('a Text column that follows a Sheet dropdown becomes a Choice column with t
     assert.equal(again.body.report.updated, 0, 'a second sync changes nothing')
   })
   dropdowns = []
+})
+
+test('a box ticked or unticked in the Sheet completes or reopens the subtask in that cell', async () => {
+  grid = [
+    ['Site', 'Signed DRF', 'Notes'],
+    ['Batch 5', 'FALSE', ''],
+    ['Calamba', 'FALSE', ''],
+  ]
+  dropdowns = []
+  const calls: { tenant: string; patches: any[]; actor: any; from: string }[] = []
+  const h = harness(
+    {},
+    {
+      updateTasks: async (tenant, patches, actor, from) => {
+        calls.push({ tenant, patches, actor, from })
+        return patches.length
+      },
+    },
+  )
+  await serve(h, async ask => {
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Rollout',
+        columns: [
+          { name: 'Site', type: 'text' },
+          { name: 'Signed DRF', type: 'checkbox' },
+          { name: 'Notes', type: 'text' },
+        ],
+      })
+    ).body.tracker
+    const [cSite, cSigned, cNotes] = tracker.columns.map((c: any) => c.id)
+    const connected = await ask('POST', `/api/trackers/${tracker.id}/source`, {
+      spreadsheetId: SHEET,
+      tab: 'Branches',
+      keyHeader: 'Site',
+      headerMap: { Site: cSite, 'Signed DRF': cSigned, Notes: cNotes },
+    })
+    assert.equal(connected.status, 200, JSON.stringify(connected.body))
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    const batch = rows.find((r: any) => r.sourceKey === 'Batch 5')
+    // Only Batch 5's box holds a subtask; Calamba's has none.
+    const linked = await ask('POST', `/api/trackers/${tracker.id}/links`, {
+      rowId: batch.id,
+      columnId: cSigned,
+      taskId: 's1',
+    })
+    assert.equal(linked.status, 201, JSON.stringify(linked.body))
+    const sync = () => ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+
+    grid = [
+      ['Site', 'Signed DRF', 'Notes'],
+      ['Batch 5', 'TRUE', ''],
+      ['Calamba', 'TRUE', ''],
+    ]
+    const ticked = await sync()
+    assert.equal(ticked.status, 200, JSON.stringify(ticked.body))
+    assert.equal(ticked.body.tasks, 1, 'the browser is told to reload the workspace')
+    assert.deepEqual(calls.length, 1)
+    assert.deepEqual(calls[0].patches, [{ id: 's1', done: true }], 'only the box that holds a subtask counts')
+    assert.equal(calls[0].from, 'the Google Sheet')
+    assert.equal(calls[0].actor.id, 'u1', 'as the person who synced')
+
+    // Nothing changed in the Sheet: nothing to follow.
+    const again = await sync()
+    assert.equal(again.body.tasks, undefined)
+    assert.equal(calls.length, 1)
+
+    // Other columns changing do not touch the subtask.
+    grid = [
+      ['Site', 'Signed DRF', 'Notes'],
+      ['Batch 5', 'TRUE', 'Waiting on client'],
+      ['Calamba', 'TRUE', ''],
+    ]
+    await sync()
+    assert.equal(calls.length, 1)
+
+    grid = [
+      ['Site', 'Signed DRF', 'Notes'],
+      ['Batch 5', 'FALSE', 'Waiting on client'],
+      ['Calamba', 'TRUE', ''],
+    ]
+    const unticked = await sync()
+    assert.equal(unticked.body.tasks, 1)
+    assert.deepEqual(calls[1].patches, [{ id: 's1', done: false }], 'unticking reopens it')
+    const after = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    assert.notEqual(after.find((r: any) => r.id === batch.id).cells[cSigned], true, 'the box shows unticked')
+  })
+})
+
+test('a sync still succeeds when completing the subtasks fails', async () => {
+  grid = [
+    ['Site', 'Signed DRF'],
+    ['Batch 5', 'FALSE'],
+  ]
+  dropdowns = []
+  const h = harness(
+    {},
+    {
+      updateTasks: async () => {
+        throw new Error('The workspace could not be saved.')
+      },
+    },
+  )
+  const quiet = console.error
+  console.error = () => undefined
+  try {
+    await serve(h, async ask => {
+      const tracker = (
+        await ask('POST', '/api/trackers', {
+          name: 'Rollout',
+          columns: [
+            { name: 'Site', type: 'text' },
+            { name: 'Signed DRF', type: 'checkbox' },
+          ],
+        })
+      ).body.tracker
+      const [cSite, cSigned] = tracker.columns.map((c: any) => c.id)
+      await ask('POST', `/api/trackers/${tracker.id}/source`, {
+        spreadsheetId: SHEET,
+        tab: 'Branches',
+        keyHeader: 'Site',
+        headerMap: { Site: cSite, 'Signed DRF': cSigned },
+      })
+      const row = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows[0]
+      await ask('POST', `/api/trackers/${tracker.id}/links`, { rowId: row.id, columnId: cSigned, taskId: 's1' })
+      grid = [
+        ['Site', 'Signed DRF'],
+        ['Batch 5', 'TRUE'],
+      ]
+      const synced = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, { force: true })
+      assert.equal(synced.status, 200, JSON.stringify(synced.body))
+      assert.equal(synced.body.report.updated, 1)
+      assert.equal(synced.body.tasks, undefined)
+    })
+  } finally {
+    console.error = quiet
+  }
 })
 
 test('a Checkbox column that follows a Sheet dropdown becomes a Choice column showing the Sheet’s value', async () => {

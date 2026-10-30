@@ -2,7 +2,7 @@
  * Site rollout trackers keep a task for each site and a subtask for each step. A row with a name ("Branch – Terminal/
  * Site") gets its task, assigned to whoever added it, due on the Go Live Date; each Checkbox column (Hardware, COR,
  * Signed DRF…) becomes a subtask of it, named after the column and linked to that cell. Ticking a step completes its
- * subtask and completing the subtask ticks the step (the server does that side, see trackers.ts).
+ * subtask and completing the subtask ticks the step, as for any box that holds a subtask (see cellSubtasks).
  *
  * Pure functions, shared by the screen and the tests.
  */

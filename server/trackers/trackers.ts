@@ -69,6 +69,12 @@ import {
   type SheetIssueCode,
 } from '../../src/features/trackers/trackerAutoDone'
 import { planAppend, planCellWrites, type InputOption, type Person } from '../../src/features/trackers/trackerTwoWay'
+import {
+  cellSubtaskPatches,
+  tickChanges,
+  type DonePatch,
+  type RowChange,
+} from '../../src/features/trackers/cellSubtasks'
 
 /**
  * Trackers: user-defined sheets. A tracker owns its columns and views; its rows live in their own table so one
@@ -100,6 +106,16 @@ type Deps = {
       editorEmail: string
     }) => Promise<{ spreadsheetId: string; path: string[] }>
   }
+  /**
+   * Completes or reopens tasks in the workspace as the given person, saying where the change came from. Used for boxes
+   * ticked or unticked in a connected Google Sheet (see cellSubtasks). Returns how many tasks changed.
+   */
+  updateTasks?: (
+    tenantId: string,
+    patches: DonePatch[],
+    actor: { id: string; name: string; role: string },
+    from: string,
+  ) => Promise<number>
 }
 
 /** Blank rows a new Sheet gets below the tracker's rows. */
@@ -578,7 +594,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     tracker: any,
     user: User,
     force: boolean,
-  ): Promise<{ source: TrackerSource; report: SyncReport | null; skipped?: boolean }> {
+  ): Promise<{ source: TrackerSource; report: SyncReport | null; skipped?: boolean; tasks?: number }> {
     const source = await sourceRow(tenant, tracker.id)
     if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
     const key = `${tenant}:${tracker.id}`
@@ -766,6 +782,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
     const byId = new Map(existing.map(row => [row.id, row]))
     const returned = new Set(planned.returned)
+    const fromSheet: RowChange[] = []
     for (const update of planned.updates) {
       const current = byId.get(update.id)
       if (!current) continue
@@ -787,7 +804,13 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .eq('tracker_id', tracker.id)
         .eq('id', update.id)
       sourceCheck(saved.error)
+      if (changed) fromSheet.push({ rowId: update.id, before: current.data || {}, after: patch.data as any })
     }
+    // Boxes ticked or unticked in the Sheet complete or reopen the subtasks in those cells. Never fails the sync.
+    const tasks = await followSheetTicks(tenant, tracker.id, columns, fromSheet, user).catch((error: any) => {
+      console.error('Completing subtasks from Sheet ticks failed:', error?.message || error)
+      return 0
+    })
     for (const id of planned.returned)
       if (!planned.updates.some(update => update.id === id))
         await db
@@ -824,7 +847,45 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     return {
       source: sourceOut({ ...source, last_synced_at: stamp, last_status: 'ok', last_error: '', last_report: report }),
       report,
+      // Tasks completed or reopened from Sheet ticks: the browser reloads the workspace to show them.
+      ...(tasks ? { tasks } : {}),
     }
+  }
+
+  /**
+   * Checkbox cells changed by a sync: the subtask in each one is completed when the box was ticked and reopened when it
+   * was unticked (see cellSubtasks), as the person who synced. Returns how many tasks changed.
+   */
+  async function followSheetTicks(
+    tenant: string,
+    trackerId: string,
+    columns: TrackerColumn[],
+    changes: RowChange[],
+    user: User,
+  ) {
+    if (!deps.updateTasks || !changes.length) return 0
+    const ticked = changes.filter(change => tickChanges(columns, change.before, change.after).length)
+    if (!ticked.length) return 0
+    const links: any[] = []
+    const rowIds = ticked.map(change => change.rowId)
+    for (let at = 0; at < rowIds.length; at += 200) {
+      // Before schema v25 there is no links table, and no subtasks in cells.
+      const found = await db
+        .from('tenant_tracker_task_links')
+        .select('*')
+        .eq('tenant_id', tenant)
+        .eq('tracker_id', trackerId)
+        .in('row_id', rowIds.slice(at, at + 200))
+      if (found.error) return 0
+      links.push(...(found.data || []))
+    }
+    const patches = cellSubtaskPatches(
+      columns,
+      ticked,
+      links.map(link => ({ rowId: String(link.row_id), columnId: link.column_id, taskId: String(link.task_id) })),
+    )
+    if (!patches.length) return 0
+    return deps.updateTasks(tenant, patches, user, 'the Google Sheet')
   }
 
   // ---- done when its tasks are done ----
