@@ -14,6 +14,7 @@ import { attachmentContentType } from './gmail-content'
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 export const DRIVE_ROOT_NAME = 'BA Client Ops Tracker'
 const FOLDER = 'application/vnd.google-apps.folder'
+const SPREADSHEET = 'application/vnd.google-apps.spreadsheet'
 const DRIVE = 'https://www.googleapis.com/drive/v3'
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
 const COOKIE = 'ba_drive_oauth'
@@ -131,6 +132,19 @@ export function driveContextPath(state: any, clientId?: string, projectId?: stri
   ]
 }
 
+/**
+ * Folders for a Google Sheet made from a tracker: Client / Project, the same folders as attachments. A tracker with
+ * several clients goes under its first; one with no client under "No client".
+ */
+export function driveSheetPath(state: any, clientId?: string, projectId?: string): DriveFolderStep[] {
+  if (clientId) return driveContextPath(state, clientId, projectId)
+  const project = (state?.projects || []).find((x: any) => x.id === projectId)
+  return [
+    { key: 'client:none', name: 'No client' },
+    ...(projectId ? [{ key: `project:none:${projectId}`, name: driveName(project?.name, 'No project') }] : []),
+  ]
+}
+
 export function driveFileUrl(id: string) {
   return `https://drive.google.com/file/d/${encodeURIComponent(id)}/view`
 }
@@ -223,6 +237,27 @@ export function driveClient(token: string) {
         throw new IntegrationError(bytes.length ? 'This file is too large.' : 'This file is empty.', 413)
       return bytes
     },
+    /** An empty Google Sheet in a folder. */
+    async createSheet(name: string, parentId: string) {
+      const { data } = await call(`${DRIVE}/files?fields=id&supportsAllDrives=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, mimeType: SPREADSHEET, parents: [parentId] }),
+      })
+      if (!data.id) throw new IntegrationError('Google Drive did not return the new Sheet.', 502)
+      return String(data.id)
+    },
+    /** Lets one person edit a file, without an email from Google. */
+    async shareWith(id: string, email: string) {
+      await call(
+        `${DRIVE}/files/${encodeURIComponent(id)}/permissions?fields=id&supportsAllDrives=true&sendNotificationEmail=false`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: 'writer', type: 'user', emailAddress: email }),
+        },
+      )
+    },
     async upload(parentId: string, name: string, mimeType: string, file: Buffer) {
       const { response } = await call(`${UPLOAD}/files?uploadType=resumable&fields=id&supportsAllDrives=true`, {
         method: 'POST',
@@ -280,7 +315,20 @@ export type FileJob = {
   source: 'gmail' | 'generated' | 'dochub'
 }
 export type FileResult = { file: TaskDriveFile; path: string[]; task?: any; duplicate: boolean }
-export type DriveFiler = { ready: (tenantId: string) => Promise<boolean>; file: (job: FileJob) => Promise<FileResult> }
+export type SheetJob = {
+  tenantId: string
+  title: string
+  clientId?: string
+  projectId?: string
+  /** The Google account that will fill and sync the Sheet; it is made an editor. */
+  editorEmail: string
+}
+export type DriveFiler = {
+  ready: (tenantId: string) => Promise<boolean>
+  file: (job: FileJob) => Promise<FileResult>
+  /** An empty Google Sheet in the account Drive, under Client / Project, that the editor can fill. */
+  sheet?: (job: SheetJob) => Promise<{ spreadsheetId: string; path: string[] }>
+}
 
 type Deps = {
   db: any
@@ -896,6 +944,25 @@ export function registerDrive(app: Express, deps: Deps) {
       })
     }),
   )
-  const filer: DriveFiler = { ready: driveReady, file: fileInDrive }
+  /** A tracker's new Google Sheet in the account Drive, owned by the Drive's account and shared with its maker. */
+  const sheetInDrive = async (job: SheetJob) => {
+    const { tenantId } = job
+    const state = (await deps.load(tenantId)).data
+    if (!state) throw new IntegrationError('Workspace data is unavailable.', 503)
+    const steps = driveSheetPath(state, job.clientId, job.projectId)
+    const { row, config } = await liveConnection(tenantId)
+    const drive = driveClient(await accessToken(tenantId, row, config))
+    const rootId =
+      (row.root_folder_id && (await drive.existingFolder(row.root_folder_id, DRIVE_ROOT_NAME))) ||
+      (await drive.createFolder(DRIVE_ROOT_NAME))
+    const resolved = await ensureDrivePath(drive, rootId, rootId === row.root_folder_id ? row.folders || {} : {}, steps)
+    await saveFolders(tenantId, { root_folder_id: rootId, folders: resolved.folders })
+    const spreadsheetId = await drive.createSheet(driveName(job.title, 'Tracker'), resolved.folderId)
+    // The Drive's own account already owns it; anyone else is made an editor so their Google account can sync it.
+    if (job.editorEmail && job.editorEmail.toLowerCase() !== String(row.drive_email || '').toLowerCase())
+      await drive.shareWith(spreadsheetId, job.editorEmail)
+    return { spreadsheetId, path: [DRIVE_ROOT_NAME, ...steps.map(step => step.name)] }
+  }
+  const filer: DriveFiler = { ready: driveReady, file: fileInDrive, sheet: sheetInDrive }
   return { handles, callback, filer, taskFile }
 }
