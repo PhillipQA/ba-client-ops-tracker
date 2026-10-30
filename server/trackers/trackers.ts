@@ -1153,6 +1153,101 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
   }
 
+  /**
+   * A Checkbox cell that holds a subtask (a Site rollout step, or any cell linked to one) is ticked when the subtask is
+   * completed and unticked when it is reopened. Columns that come from a two-way Sheet are written there too, as the
+   * person who saved (best effort; the next sync settles any difference).
+   */
+  async function followCellTasks(tenant: string, completed: Map<string, boolean>, actor: Actor) {
+    const ids = [...completed.keys()]
+    const links: any[] = []
+    for (let at = 0; at < ids.length; at += 200) {
+      // Before schema v25 there is no links table, and nothing to follow.
+      const found = await db
+        .from('tenant_tracker_task_links')
+        .select('*')
+        .eq('tenant_id', tenant)
+        .in('task_id', ids.slice(at, at + 200))
+      if (found.error) return
+      links.push(...(found.data || []).filter((link: any) => link.column_id))
+    }
+    const byTracker = new Map<string, any[]>()
+    for (const link of links) byTracker.set(link.tracker_id, [...(byTracker.get(link.tracker_id) || []), link])
+    for (const [trackerId, trackerLinks] of byTracker) {
+      const loaded = await db
+        .from('tenant_trackers')
+        .select('*')
+        .eq('tenant_id', tenant)
+        .eq('id', trackerId)
+        .maybeSingle()
+      const tracker = loaded.data
+      if (!tracker || tracker.archived_at) continue
+      const columns = columnsOf(tracker)
+      const byId = new Map(columns.map(column => [column.id, column]))
+      const wanted = trackerLinks.filter(link => byId.get(link.column_id)?.type === 'checkbox')
+      if (!wanted.length) continue
+      const rowIds = [...new Set(wanted.map(link => String(link.row_id)))]
+      const rows: any[] = []
+      for (let at = 0; at < rowIds.length; at += 200) {
+        const found = await db
+          .from('tenant_tracker_rows')
+          .select('*')
+          .eq('tenant_id', tenant)
+          .eq('tracker_id', trackerId)
+          .in('id', rowIds.slice(at, at + 200))
+        rows.push(...(found.error ? [] : found.data || []))
+      }
+      let changed = false
+      const toSheet = new Map<string, { row: any; value: Cell }[]>()
+      for (const row of rows) {
+        const cells: Record<string, Cell> = {}
+        for (const link of wanted)
+          if (link.row_id === row.id) {
+            const done = completed.get(String(link.task_id))
+            if (done !== undefined && (row.data?.[link.column_id] === true) !== done) cells[link.column_id] = done
+          }
+        if (!Object.keys(cells).length) continue
+        const version = Number(row.version || 1)
+        const saved = await db
+          .from('tenant_tracker_rows')
+          .update({
+            data: mergeCells(row.data || {}, columns, cells),
+            version: version + 1,
+            updated_by: actor.id,
+            updated_at: now(),
+          })
+          .eq('tenant_id', tenant)
+          .eq('tracker_id', trackerId)
+          .eq('id', row.id)
+          .eq('version', version)
+          .select('id')
+        if (saved.error || !saved.data?.length) continue
+        changed = true
+        await record(tenant, trackerId, row.id, actor as User, 'cells', {
+          fromTask: true,
+          cells: Object.keys(cells).map(columnId => ({
+            columnId,
+            name: byId.get(columnId)!.name,
+            from: shown(byId.get(columnId)!, row.data?.[columnId]),
+            to: shown(byId.get(columnId)!, cells[columnId]),
+          })),
+        })
+        for (const [columnId, value] of Object.entries(cells))
+          if (byId.get(columnId)?.synced && row.source_key)
+            toSheet.set(columnId, [...(toSheet.get(columnId) || []), { row, value }])
+      }
+      if (toSheet.size) {
+        const source = await sourceRow(tenant, trackerId)
+        if (source?.mode === 'two_way')
+          for (const [columnId, entries] of toSheet)
+            await writeToSheet(tenant, source, byId.get(columnId)!, entries, actor.id ? actor : null).catch(
+              () => undefined,
+            )
+      }
+      if (changed) await touch(tenant, trackerId)
+    }
+  }
+
   /** Follows up a workspace save. Never throws: a failure here must not look like a failed save. */
   async function onWorkspaceSaved(tenant: string, before: any, after: any, actor: Actor | null) {
     if (!db || !tenant) return
@@ -1166,6 +1261,11 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         actor ? { id: actor.id, name: actor.name } : { id: '', name: 'Automatic' },
       ).catch((error: any) => console.error('Updating tracker rows from their tasks failed:', error?.message || error))
     if (!changes.size) return
+    await followCellTasks(
+      tenant,
+      changes,
+      actor ? { id: actor.id, name: actor.name } : { id: '', name: 'Automatic' },
+    ).catch((error: any) => console.error('Ticking tracker steps from their subtasks failed:', error?.message || error))
     const ids = [...changes.keys()]
     const touched = new Map<string, Set<string>>()
     const add = (trackerId: string, rowId: string) => {

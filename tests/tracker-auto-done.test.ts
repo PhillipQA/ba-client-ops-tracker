@@ -440,3 +440,71 @@ test('a column the Sheet does not fill is updated in the tracker only', async ()
   assert.equal(writes.length, 0)
   assert.equal(db.tables.tenant_tracker_changes.at(-1).actor_name, 'Automatic')
 })
+
+test('a step cell holding a subtask is ticked when the subtask is completed, and unticked when reopened', async () => {
+  const db = memoryDb()
+  const noop = () => undefined
+  const app = { get: noop, post: noop, put: noop, patch: noop, delete: noop, use: noop }
+  const engine = registerTrackerRoutes(app as any, {
+    db,
+    requireAuth: noop as any,
+    requireTenant: noop as any,
+    load: async () => ({ data: {} }),
+    key: Buffer.alloc(32, 7),
+  })
+  db.tables.tenant_trackers.push({
+    tenant_id: TENANT,
+    id: TRACKER,
+    name: 'Site rollout',
+    template: 'site-rollout',
+    columns: [
+      { id: 'c_site', name: 'Terminal/Site', type: 'text' },
+      { id: 'c_hw', name: 'Hardware', type: 'checkbox' },
+      { id: 'c_cor', name: 'COR', type: 'checkbox' },
+      { id: 'c_note', name: 'Lessor', type: 'text' },
+    ],
+    views: [],
+    revision: 1,
+    archived_at: null,
+  })
+  db.tables.tenant_tracker_rows.push({
+    tenant_id: TENANT,
+    tracker_id: TRACKER,
+    id: ROW_57,
+    position: 1,
+    data: { c_site: 'Terminal 1', c_cor: true },
+    secrets: {},
+    task_id: 'site',
+    version: 1,
+  })
+  const link = (columnId: string, taskId: string, n: number) => ({
+    id: `66666666-6666-4666-8666-66666666666${n}`,
+    tenant_id: TENANT,
+    tracker_id: TRACKER,
+    row_id: ROW_57,
+    column_id: columnId,
+    task_id: taskId,
+  })
+  db.tables.tenant_tracker_task_links.push(link('c_hw', 'hw', 1), link('c_cor', 'cor', 2), link('c_note', 'note', 3))
+  const state = (hw: string, cor: string, note: string) => ({
+    taskSettings: { statuses },
+    items: [
+      { id: 'site', title: 'Sta Rosa – Terminal 1', status: 'Open' },
+      { id: 'hw', title: 'Hardware', status: hw, parentTaskId: 'site' },
+      { id: 'cor', title: 'COR', status: cor, parentTaskId: 'site' },
+      { id: 'note', title: 'Lessor', status: note, parentTaskId: 'site' },
+    ],
+  })
+  const row = () => db.tables.tenant_tracker_rows.find(item => item.id === ROW_57)!
+  await engine.onWorkspaceSaved(TENANT, state('Open', 'Done', 'Open'), state('Done', 'Done', 'Done'), {
+    id: 'u2',
+    name: 'Ben Cruz',
+  } as any)
+  assert.equal(row().data.c_hw, true, 'Hardware ticked')
+  assert.equal(row().data.c_note, undefined, 'a text cell is not ticked')
+  await engine.onWorkspaceSaved(TENANT, state('Done', 'Done', 'Done'), state('Done', 'Open', 'Done'), null)
+  assert.notEqual(row().data.c_cor, true, 'COR unticked when its subtask is reopened')
+  assert.equal(row().data.c_hw, true)
+  const history = db.tables.tenant_tracker_changes.filter(change => change.row_id === ROW_57)
+  assert.ok(history.some(change => change.detail?.fromTask && change.actor_name === 'Ben Cruz'))
+})
