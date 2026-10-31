@@ -86,13 +86,13 @@ export function validateCredentials(input: any, origin: string): Credentials {
 function check(error: any) {
   if (error)
     throw new IntegrationError(
-      'Calendar storage is unavailable. Apply supabase/schema-v9-google-calendar.sql and check Supabase.',
+      'Calendar storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
       503,
     )
 }
 export function createCalendarStore(db: any) {
   const table = (name: string) => {
-    if (!db) throw new IntegrationError('Supabase is required for Google Calendar.', 503)
+    if (!db) throw new IntegrationError('A database is required for Google Calendar.', 503)
     return db.from(name)
   }
   const config = async (tenantId: string) => {
@@ -284,7 +284,7 @@ export function registerGoogleCalendarRoutes(
       throw new IntegrationError('Sign in to your tenant account.', 401)
     const org = await deps.organizationById(user.organizationId)
     if (!org || org.status !== 'Active') throw new IntegrationError('This account is unavailable.', 403)
-    if (!deps.db) throw new IntegrationError('Supabase is required for Calendar.', 503)
+    if (!deps.db) throw new IntegrationError('A database is required for Calendar.', 503)
     const { data: record, error } = await deps.db
       .from('app_users')
       .select('id,role,status,modules')

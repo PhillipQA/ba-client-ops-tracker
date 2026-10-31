@@ -1,6 +1,6 @@
 # Configure email password recovery
 
-The current app includes **Forgot password?** on the login screen. Configure SMTP and a registered recovery email to enable it. The original v0.6.4 patch instructions are retained in the [historical archive](../releases/archive/email-password-recovery-v0.6.4.md).
+The current app includes **Forgot password?** on the login screen. Configure SMTP and a registered recovery email to enable it.
 
 ## 1. Configure SMTP on the server
 
@@ -42,6 +42,6 @@ The acknowledgement is deliberately the same for matching and nonmatching detail
 
 ## Database prerequisites
 
-A current fresh installation includes recovery-token storage/functions. Existing databases need the recovery schema from their original upgrade path. Imported PostgreSQL databases must also include the recovery functions; consult the [cutover guide](northflank-postgres-cutover.md) if they are absent.
+The recovery tokens and functions are part of [database/schema.sql](../../database/schema.sql), so every installation has them.
 
 A code rollback does not reverse a password already reset. Application sessions are currently in memory, so run one application instance.

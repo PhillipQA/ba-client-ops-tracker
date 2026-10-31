@@ -6,17 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": [
-      "**",
-      "!dist",
-      "!.github",
-      "!payload",
-      "!public",
-      "!templates",
-      "!database",
-      "!package-lock.json",
-      "!**/*.md"
-    ]
+    "includes": ["**", "!dist", "!.github", "!public", "!templates", "!database", "!package-lock.json", "!**/*.md"]
   },
   "formatter": {
     "enabled": true,

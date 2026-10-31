@@ -295,12 +295,12 @@ export function createDocHubService(deps: Deps) {
   function check(error: any) {
     if (error)
       throw new DocHubError(
-        'DocHub storage is unavailable. Apply supabase/schema-v10-dochub.sql and check the database connection.',
+        'DocHub storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
         503,
       )
   }
   function database() {
-    if (!db) throw new DocHubError('Supabase is not configured.', 503)
+    if (!db) throw new DocHubError('The database is not configured.', 503)
     return db
   }
   async function account(tenant: string) {

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { archivedWorkReason, LifecycleError } from '../../src/features/tasks/lifecycle'
 import { moduleAllowed, requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
 import { followUpTimeZone } from '../core/config'
-import { supabaseAdmin } from '../core/database'
+import { db } from '../core/database'
 import {
   authoritativeWorkEvents,
   commitTenantState,
@@ -39,8 +39,6 @@ const TASK_EVIDENCE_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ])
-
-let taskEvidenceBucketReady = false
 
 function taskEvidenceWriteAllowed(user: SessionUser) {
   return user.role !== 'Viewer' && moduleAllowed(user, 'items')
@@ -97,24 +95,6 @@ function evidenceBase64(value: unknown) {
   return buffer
 }
 
-async function ensureTaskEvidenceBucket() {
-  if (!supabaseAdmin) throw new Error('Database is not configured.')
-  if (taskEvidenceBucketReady) return
-  const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets()
-  if (listError) throw listError
-  if (
-    !(buckets || []).some((bucket: any) => bucket.id === TASK_EVIDENCE_BUCKET || bucket.name === TASK_EVIDENCE_BUCKET)
-  ) {
-    const { error: createError } = await supabaseAdmin.storage.createBucket(TASK_EVIDENCE_BUCKET, {
-      public: false,
-      fileSizeLimit: TASK_EVIDENCE_MAX_BYTES,
-      allowedMimeTypes: [...TASK_EVIDENCE_MIME_TYPES],
-    })
-    if (createError) throw createError
-  }
-  taskEvidenceBucketReady = true
-}
-
 async function saveEvidenceState(current: any, next: any, actor: SessionUser, source: string) {
   const workEvents = authoritativeWorkEvents(current, next, actor)
   const existingEventIds = new Set(
@@ -161,7 +141,7 @@ async function mutateTimeEntries(
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceWriteAllowed(user))
     return void res.status(403).json({ error: 'Task edit access is required to log time.' })
-  if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+  if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
   try {
     const taskId = String(req.params.taskId || '')
     const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
@@ -195,7 +175,7 @@ export function registerTaskRoutes(app: Express) {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     if (!taskEvidenceWriteAllowed(user))
       return void res.status(403).json({ error: 'Task edit access is required to add comments.' })
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
     if (!text) return void res.status(400).json({ error: 'Comment text is required.' })
     if (text.length > 2000) return void res.status(400).json({ error: 'Comments must be 2,000 characters or fewer.' })
@@ -272,7 +252,7 @@ export function registerTaskRoutes(app: Express) {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     if (!taskEvidenceWriteAllowed(user))
       return void res.status(403).json({ error: 'Task edit access is required to upload evidence.' })
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
 
     const taskId = String(req.params.taskId || '')
     const fileName = safeEvidenceFileName(req.body?.fileName)
@@ -301,16 +281,13 @@ export function registerTaskRoutes(app: Express) {
       if (!task.parentTaskId)
         return void res.status(400).json({ error: 'Evidence uploads are currently available for subtasks only.' })
 
-      await ensureTaskEvidenceBucket()
       const evidenceId = randomUUID()
       const storagePath = `organizations/${tenantIdForUser(user)}/subtasks/${taskId}/${evidenceId}-${fileName}`
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from(TASK_EVIDENCE_BUCKET)
-        .upload(storagePath, fileBuffer, {
-          contentType: mimeType,
-          cacheControl: '3600',
-          upsert: false,
-        })
+      const { error: uploadError } = await db.storage.from(TASK_EVIDENCE_BUCKET).upload(storagePath, fileBuffer, {
+        contentType: mimeType,
+        cacheControl: '3600',
+        upsert: false,
+      })
       if (uploadError) throw uploadError
 
       const evidence = {
@@ -347,7 +324,7 @@ export function registerTaskRoutes(app: Express) {
           updatedAt: saved.updatedAt,
         })
       } catch (saveError) {
-        await supabaseAdmin.storage
+        await db.storage
           .from(TASK_EVIDENCE_BUCKET)
           .remove([storagePath])
           .catch(() => undefined)
@@ -365,7 +342,7 @@ export function registerTaskRoutes(app: Express) {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     if (!taskEvidenceWriteAllowed(user))
       return void res.status(403).json({ error: 'Task edit access is required to remove evidence.' })
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
 
     try {
       const taskId = String(req.params.taskId || '')
@@ -383,7 +360,6 @@ export function registerTaskRoutes(app: Express) {
       )
       if (!evidence) return void res.status(404).json({ error: 'Evidence was not found.' })
 
-      await ensureTaskEvidenceBucket()
       const updatedTask = {
         ...task,
         evidence: (Array.isArray(task.evidence) ? task.evidence : []).filter(
@@ -403,7 +379,7 @@ export function registerTaskRoutes(app: Express) {
         activity: [activity, ...(Array.isArray(current.activity) ? current.activity : [])],
       }
       const saved = await saveEvidenceState(current, next, user, 'task-evidence-delete')
-      const { error: removeError } = await supabaseAdmin.storage
+      const { error: removeError } = await db.storage
         .from(TASK_EVIDENCE_BUCKET)
         .remove([String(evidence.storagePath || '')])
       if (removeError) console.warn('Task evidence storage cleanup warning:', removeError.message)
@@ -425,7 +401,7 @@ export function registerTaskRoutes(app: Express) {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     if (!taskEvidenceReadAllowed(user))
       return void res.status(403).json({ error: 'Task access is required to view evidence.' })
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
 
     try {
       const taskId = String(req.params.taskId || '')
@@ -439,10 +415,7 @@ export function registerTaskRoutes(app: Express) {
       )
       if (!evidence?.storagePath) return void res.status(404).json({ error: 'Evidence was not found.' })
 
-      await ensureTaskEvidenceBucket()
-      const { data, error } = await supabaseAdmin.storage
-        .from(TASK_EVIDENCE_BUCKET)
-        .download(String(evidence.storagePath))
+      const { data, error } = await db.storage.from(TASK_EVIDENCE_BUCKET).download(String(evidence.storagePath))
       if (error || !data) throw error || new Error('Evidence could not be downloaded.')
       const buffer = Buffer.from(await data.arrayBuffer())
       const mimeType = String(evidence.mimeType || 'application/octet-stream')

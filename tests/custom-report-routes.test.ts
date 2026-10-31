@@ -390,7 +390,7 @@ test('saved queries: only for Data explorer, private to their maker; Administrat
       admin,
     )
     assert.equal(result.status, 503)
-    assert.match(result.body.error, /schema-v33-data-explorer/)
+    assert.match(result.body.error, /database\/schema\.sql/)
     assert.equal(result.body.needsUpgrade, undefined)
     assert.equal((await ask('POST', '/api/reports/custom', { kind: 'report', name: 'R' })).status, 201)
   })

@@ -411,7 +411,7 @@ try {
       mergeActivity,
       requireAuth: pass,
       requireTenantWorkspace: pass,
-      supabaseAdmin: {},
+      db: {},
       tenantIdForUser: (u: any) => u.organizationId,
       ensureTenantFollowUpsCurrent: async () => ({ data: structuredClone(workspace), changes: [] }),
       defaultTaskSettings,

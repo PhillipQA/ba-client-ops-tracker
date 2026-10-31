@@ -96,7 +96,7 @@ function missingAgentTable(error: any) {
 
 export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIntegrationStore>) {
   function database() {
-    if (!db) throw new IntegrationError('Supabase is not configured.', 503)
+    if (!db) throw new IntegrationError('The database is not configured.', 503)
     return db
   }
 
@@ -110,7 +110,7 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
     if (error && missingAgentTable(error)) return { row: null, schemaReady: false }
     if (error)
       throw new IntegrationError(
-        'AI Agent storage is unavailable. Check Supabase and apply schema-v11-ai-agent-manager.sql.',
+        'AI Agent storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
         503,
       )
     return { row: data, schemaReady: true }
@@ -193,7 +193,7 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
   async function save(tenantId: string, agentId: AiAgentId, input: any) {
     if (!(await schemaReady()))
       throw new IntegrationError(
-        'Apply supabase/schema-v11-ai-agent-manager.sql before saving separate AI agents.',
+        'Separate AI agents cannot be saved. Check the database connection; a new database needs database/schema.sql.',
         503,
       )
     const definition = AI_AGENT_DEFINITIONS[agentId]
@@ -237,7 +237,10 @@ export function createAiAgentManager(db: any, legacy: ReturnType<typeof createIn
     }
     const { error } = await database().from('tenant_ai_agents').upsert(record, { onConflict: 'tenant_id,agent_id' })
     if (error)
-      throw new IntegrationError('Could not save this AI agent. Apply schema-v11-ai-agent-manager.sql and retry.', 503)
+      throw new IntegrationError(
+        'Could not save this AI agent. Check the database connection; a new database needs database/schema.sql.',
+        503,
+      )
     return summary(tenantId, agentId)
   }
 

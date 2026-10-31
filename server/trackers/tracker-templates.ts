@@ -48,7 +48,7 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
   const missing = (error: any) => {
     if (error)
       throw new TrackerError(
-        'Editable tracker templates need database/migrations/schema-v34-tracker-templates.sql. Apply it and try again. The built-in templates still work without it.',
+        'Editable tracker templates are unavailable (the built-in templates still work). Check the database connection; a new database needs database/schema.sql.',
         503,
         { needsUpgrade: true },
       )
@@ -224,7 +224,7 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
       const saved = await db.from(TABLE).update(changes).eq('tenant_id', user.organizationId).eq('id', current.id)
       if (saved.error && 'step_tasks' in changes)
         throw new TrackerError(
-          'Saving whether rows become tasks needs database/migrations/schema-v35-step-tasks.sql. Ask your administrator to apply it.',
+          'Saving whether rows become tasks is unavailable. Check the database connection; a new database needs database/schema.sql.',
           503,
         )
       missing(saved.error)

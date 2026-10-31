@@ -1,20 +1,6 @@
-// The database client (Supabase or plain Postgres).
+// The database: PostgreSQL (on Northflank), reached through DATABASE_URL. Without it the app still starts, and every
+// feature that needs the database says it is not configured.
 import './env'
-import { createClient } from '@supabase/supabase-js'
 import { createPostgresClient } from '../postgres-client'
 
-const supabaseUrl = process.env.SUPABASE_URL
-
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const databaseProvider = process.env.DATABASE_PROVIDER === 'postgres' ? 'postgres' : 'supabase'
-
-if (databaseProvider === 'postgres' && !process.env.DATABASE_URL)
-  throw new Error('DATABASE_URL is required for PostgreSQL mode.')
-
-export const supabaseAdmin: any =
-  databaseProvider === 'postgres'
-    ? createPostgresClient(process.env.DATABASE_URL!)
-    : supabaseUrl && supabaseServiceRoleKey
-      ? createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
-      : null
+export const db: any = process.env.DATABASE_URL ? createPostgresClient(process.env.DATABASE_URL) : null

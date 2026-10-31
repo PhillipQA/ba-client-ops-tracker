@@ -1,49 +1,44 @@
-# Database setup
+# Database
 
-The current fresh Supabase setup includes **schema versions 1–24**. Application v0.6.92 adds schema v24 (Trackers: custom sheets with saved views, encrypted Secret cells, row history and a log of Secret reveals). Application v0.6.87 added schema v23 (the shared Google Drive connection for Gmail attachments and a private list of tasks created from each email).
+The app uses **PostgreSQL** (on Northflank in production), reached through `DATABASE_URL`.
 
-## Choose the correct path
+- [`schema.sql`](schema.sql) creates everything the app needs on an **empty** database, at schema version **35**, plus the two starting sign-ins. It contains no data and no passwords.
 
-| Situation | Action |
-| --- | --- |
-| New, empty Supabase project | Run the complete [setup.sql](setup.sql) once in SQL Editor |
-| Existing Supabase database | Apply only missing migrations from the [upgrade guide](../docs/setup/upgrade.md) |
-| Moving the app while keeping the same database | Reuse the connection settings and integration master key; no fresh setup |
-| Restoring existing data to another Supabase project | Restore a backup, copy storage files and apply only missing migrations |
-| Existing Supabase data moving to Northflank PostgreSQL | Follow the [cutover guide](../docs/setup/northflank-postgres-cutover.md) |
+## Set up a new database
 
-The fresh setup creates empty tables and the initial account placeholders. It does not transfer users, workspaces, communications, documents, credentials or storage files. It checks for existing tracker tables and stops if it finds an existing or partial installation. It is not a rerunnable upgrade script.
-
-## Fresh Supabase installation
-
-1. Create a new, empty Supabase project.
-2. Open SQL Editor, paste the complete [setup.sql](setup.sql), and run it once.
-3. Confirm the result reports `BA Client Ops Tracker database setup complete` and `schema_version = 22`.
-4. Configure `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `TENANT_INTEGRATION_MASTER_KEY`, `APP_BASE_URL` and the two bootstrap passwords on the application server.
-5. Continue with the [installation and first-login guide](../README.md#install-locally).
-
-No default working passwords are stored in the SQL. Bootstrap passwords must have at least 12 characters; the initial Account/User pairs are `internal_admin`/`admin` and `BXI-Core`/`Admin`.
-
-## PostgreSQL / Northflank
-
-The application supports `DATABASE_PROVIDER=postgres` with an application-user `DATABASE_URL`. The supported cutover imports an existing tracker database and prepares its permissions and evidence storage. [setup.sql](setup.sql) contains Supabase-specific setup and is not a standalone plain-PostgreSQL initialization script.
-
-Database maintenance scripts read `.env` by default. When running locally with `.env.local`, either provide the variables to the process or set `DOTENV_CONFIG_PATH=.env.local`. The app server itself loads `.env.local` automatically.
-
-## Folder contents
-
-- `setup.sql` — complete fresh Supabase setup.
-- `migrations/` — incremental schema changes.
-- `upgrades/` — selected combined upgrades for matching older installations.
-- [Upgrade guide](../docs/setup/upgrade.md) — current migration requirements and ordering.
-
-## Maintaining the setup bundle
-
-After adding a numbered migration:
+Run `schema.sql` once, as the same database user the app connects with, so that user owns the tables:
 
 ```bash
-npm run db:bundle
-npm run db:check
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql
 ```
 
-The generator builds the ordered fresh-install script and records source checksums. These commands do not execute SQL or connect to a database. Commit the matching setup script and migrations together. Keep database exports and credentials out of this folder.
+It should end with `BA Client Ops Tracker database ready | 35`. No `psql`? Open the file in DBeaver (or any SQL client) connected to the database and run the whole script.
+
+`schema.sql` stops without changing anything if the app's tables already exist, so running it against the live database by mistake is harmless. **Never run it to "reset" a database**: it does not copy, keep or remove data.
+
+On Northflank, the database is reachable only inside the project. To run the script from your computer, forward the addon first (Northflank CLI: `northflank forward addon --projectId <project> --addonId <addon>`), then use the forwarded connection string.
+
+## The live database
+
+The live Northflank database was moved from Supabase, so it still carries a few Supabase leftovers that `schema.sql` no longer creates: disabled row-level security policies, the `request_organization_id()` helper, and possibly the `pgcrypto` extension. They are not used and do no harm; leave them, or drop them at a quiet time:
+
+```sql
+-- Optional tidy-up on the live database (as the table owner). The app does not use any of these.
+do $$ declare r record; begin
+  for r in select schemaname, tablename, policyname from pg_policies where schemaname = 'public' loop
+    execute format('drop policy %I on %I.%I', r.policyname, r.schemaname, r.tablename);
+  end loop;
+end $$;
+drop function if exists public.request_organization_id();
+```
+
+## Changing the schema later
+
+1. Add a migration file, `database/migrations/schema-v36-<what-it-does>.sql`, written so it can run once on an existing database (for example `alter table … add column if not exists …`).
+2. Apply it to every existing database (the live one, and any test copies).
+3. Fold the same change into `schema.sql` and bump its version number, so a new install gets it too.
+4. Note it in [CHANGELOG.md](../CHANGELOG.md), saying what to run before deploying.
+
+## Backups
+
+Use Northflank's addon backups (or `pg_dump`) before applying a migration. Evidence files (task screenshots and attachments) are stored in the database, in `tracker_evidence_files`, so a database backup includes them.

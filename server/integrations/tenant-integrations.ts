@@ -162,7 +162,7 @@ export function documentTemplateKind(value: unknown): DocumentTemplateKind {
   return kind as DocumentTemplateKind
 }
 export async function documentTemplateRow(db: any, tenantId: string, kind: DocumentTemplateKind) {
-  if (!db) throw new IntegrationError('Supabase is not configured.', 503)
+  if (!db) throw new IntegrationError('The database is not configured.', 503)
   const { data, error } = await db
     .from('tenant_templates')
     .select('template_type,name,content_base64,is_enabled,updated_at')
@@ -171,7 +171,7 @@ export async function documentTemplateRow(db: any, tenantId: string, kind: Docum
     .maybeSingle()
   if (error)
     throw new IntegrationError(
-      'Document template storage is unavailable. Apply schema-v15-document-templates.sql.',
+      'Document template storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
       503,
     )
   return data
@@ -313,7 +313,7 @@ function decodeTemplateUpload(kind: DocumentTemplateKind, nameValue: unknown, co
 
 export function createIntegrationStore(db: any) {
   function database() {
-    if (!db) throw new IntegrationError('Supabase is not configured.', 503)
+    if (!db) throw new IntegrationError('The database is not configured.', 503)
     return db
   }
   function check(error: any) {
@@ -321,7 +321,7 @@ export function createIntegrationStore(db: any) {
     if (error.code === '23505')
       throw new IntegrationError('This Discord bot is already assigned to another account.', 409)
     throw new IntegrationError(
-      'Integration storage is unavailable. Check the connection and apply schema-v8-tenant-integrations.sql.',
+      'Integration storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
       503,
     )
   }

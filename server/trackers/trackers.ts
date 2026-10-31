@@ -147,7 +147,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const check = (error: any) => {
     if (error)
       throw new TrackerError(
-        'Trackers storage is unavailable. Apply database/migrations/schema-v24-trackers.sql and check the database connection.',
+        'Trackers storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
         503,
       )
   }
@@ -393,7 +393,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const sourceCheck = (error: any) => {
     if (error)
       throw new TrackerError(
-        'Connected Sheets need database/migrations/schema-v27-tracker-sheets.sql. Apply it and try again.',
+        'Connected Sheets are unavailable. Check the database connection; a new database needs database/schema.sql.',
         503,
       )
   }
@@ -1014,7 +1014,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .eq('tenant_id', tenant)
         .eq('tracker_id', tracker.id)
         .eq('id', row.id)
-      if (saved.error) console.error('A Sheet problem could not be stored on the row. Apply schema-v28.')
+      if (saved.error) console.error('A Sheet problem could not be stored on the row. Check the database connection.')
       await record(tenant, tracker.id, row.id, actor as User, 'auto_done_sheet_failed', {
         ...detail,
         name: column.name,
@@ -2418,7 +2418,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const linkCheck = (error: any) => {
     if (error)
       throw new TrackerError(
-        'Task links need database/migrations/schema-v25-tracker-task-links.sql. Apply it and try again.',
+        'Task links are unavailable. Check the database connection; a new database needs database/schema.sql.',
         503,
       )
   }
@@ -2717,7 +2717,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const saved = await db.from('tenant_trackers').update(patch).eq('tenant_id', tenant).eq('id', id).select('*')
       if (saved.error && 'step_tasks' in patch)
         throw new TrackerError(
-          'Turning tasks for rows and steps on or off needs database/migrations/schema-v35-step-tasks.sql. Ask your administrator to apply it.',
+          'Turning tasks for rows and steps on or off is unavailable. Check the database connection; a new database needs database/schema.sql.',
           503,
         )
       check(saved.error)

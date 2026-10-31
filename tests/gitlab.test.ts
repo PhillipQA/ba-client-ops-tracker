@@ -672,7 +672,7 @@ test('repository discovery supports pagination and unavailable storage gives mig
     f.setMissingTable(true)
     const result = await f.ask('/connection')
     assert.equal(result.status, 503)
-    assert.match(result.body.error, /schema-v20/)
+    assert.match(result.body.error, /database\/schema\.sql/)
   }))
 
 test('provider dropdown and GitLab settings use the selected provider without mixing credentials', () => {

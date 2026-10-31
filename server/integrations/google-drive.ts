@@ -20,7 +20,7 @@ const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
 const COOKIE = 'ba_drive_oauth'
 const TABLE = 'tenant_drive_accounts'
 const KIND = 'drive-refresh' as const
-const MIGRATION = 'Apply database migration schema-v23-drive-attachments.sql, then retry.'
+const MIGRATION = 'Check the database connection; a new database needs database/schema.sql.'
 const MAX_FILES_PER_TASK = 200
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any

@@ -5,7 +5,7 @@ import { validRecoveryEmail } from '../auth/password-recovery-email'
 import { recoverySubmitLimiter } from '../auth/rate-limits'
 import { requireAuth, safeUser, secureHashPassword, sessions, type SessionUser, verifyPassword } from '../core/auth'
 import { INTERNAL_ADMIN_ACCOUNT_KEY } from '../core/constants'
-import { supabaseAdmin } from '../core/database'
+import { db } from '../core/database'
 import {
   cleanModules,
   cleanSlug,
@@ -24,19 +24,19 @@ import { requirePlatformAdmin } from './platform-auth'
 /** The internal admin console: organisations, users and passwords. */
 export function registerInternalAdminRoutes(app: Express) {
   app.get('/api/internal-admin/dashboard', requireAuth, requirePlatformAdmin, async (_req, res) => {
-    if (!supabaseAdmin || !(await multiTenantSchemaReady()) || !(await platformAuthSchemaReady()))
+    if (!db || !(await multiTenantSchemaReady()) || !(await platformAuthSchemaReady()))
       return void res.status(409).json({
         error:
-          'Run supabase/schema-v3-multitenant.sql and supabase/schema-v4-account-login.sql before using Internal Admin.',
+          'Internal Admin needs the account tables. Check the database connection; a new database needs database/schema.sql.',
       })
     try {
       const [{ data: organizations, error: orgError }, { data: users, error: userError }] = await Promise.all([
-        supabaseAdmin
+        db
           .from('organizations')
           .select('id,name,slug,status,enabled_modules,created_at')
           .is('deleted_at', null)
           .order('name'),
-        supabaseAdmin
+        db
           .from('app_users')
           .select(
             'id,organization_id,username,name,email,phone,role,modules,status,created_on,is_platform_admin,last_login_at',
@@ -89,7 +89,7 @@ export function registerInternalAdminRoutes(app: Express) {
   })
 
   app.post('/api/internal-admin/organizations', requireAuth, requirePlatformAdmin, async (req, res) => {
-    if (!supabaseAdmin || !(await multiTenantSchemaReady()) || !(await platformAuthSchemaReady()))
+    if (!db || !(await multiTenantSchemaReady()) || !(await platformAuthSchemaReady()))
       return void res.status(409).json({ error: 'Run the multi-tenant and account-login schemas first.' })
     const name = String(req.body?.name || '').trim()
     const slug = cleanSlug(req.body?.slug || name)
@@ -106,7 +106,7 @@ export function registerInternalAdminRoutes(app: Express) {
     if (password.length < 8)
       return void res.status(400).json({ error: 'Use an initial password with at least 8 characters.' })
     try {
-      const { data: duplicateSlug } = await supabaseAdmin
+      const { data: duplicateSlug } = await db
         .from('organizations')
         .select('id')
         .eq('slug', slug)
@@ -130,11 +130,11 @@ export function registerInternalAdminRoutes(app: Express) {
         createdAt,
         theme: 'default',
       }
-      const { error: orgError } = await supabaseAdmin
+      const { error: orgError } = await db
         .from('organizations')
         .insert({ id: organizationId, name, slug, status: 'Active', enabled_modules: modules })
       if (orgError) throw orgError
-      const { error: userError } = await supabaseAdmin.from('app_users').insert({
+      const { error: userError } = await db.from('app_users').insert({
         id: userId,
         organization_id: organizationId,
         username,
@@ -150,7 +150,7 @@ export function registerInternalAdminRoutes(app: Express) {
         is_platform_admin: false,
       })
       if (userError) {
-        await supabaseAdmin.from('organizations').delete().eq('id', organizationId)
+        await db.from('organizations').delete().eq('id', organizationId)
         throw userError
       }
       const initial = await loadTenantState(organizationId)
@@ -166,7 +166,7 @@ export function registerInternalAdminRoutes(app: Express) {
     requireAuth,
     requirePlatformAdmin,
     async (req, res) => {
-      if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+      if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
       const organizationId = String(req.params.organizationId || '')
       try {
         const current = await organizationById(organizationId)
@@ -177,10 +177,10 @@ export function registerInternalAdminRoutes(app: Express) {
           patch.status = req.body.status
         }
         if (Array.isArray(req.body?.enabledModules)) patch.enabled_modules = cleanModules(req.body.enabledModules)
-        const { error } = await supabaseAdmin.from('organizations').update(patch).eq('id', organizationId)
+        const { error } = await db.from('organizations').update(patch).eq('id', organizationId)
         if (error) throw error
         if (patch.enabled_modules) {
-          const { data: orgUsers, error: orgUsersError } = await supabaseAdmin
+          const { data: orgUsers, error: orgUsersError } = await db
             .from('app_users')
             .select('id,role,modules')
             .eq('organization_id', organizationId)
@@ -191,10 +191,7 @@ export function registerInternalAdminRoutes(app: Express) {
               orgUser.role === 'Administrator'
                 ? patch.enabled_modules
                 : cleanModules(orgUser.modules).filter(module => patch.enabled_modules.includes(module))
-            await supabaseAdmin
-              .from('app_users')
-              .update({ modules, updated_at: new Date().toISOString() })
-              .eq('id', orgUser.id)
+            await db.from('app_users').update({ modules, updated_at: new Date().toISOString() }).eq('id', orgUser.id)
             await updateTenantAccountSnapshot(organizationId, String(orgUser.id), account =>
               account ? { ...account, modules } : account,
             )
@@ -213,11 +210,7 @@ export function registerInternalAdminRoutes(app: Express) {
             sessions.delete(token)
             continue
           }
-          const { data: account } = await supabaseAdmin
-            .from('app_users')
-            .select('*')
-            .eq('id', sessionUser.id)
-            .maybeSingle()
+          const { data: account } = await db.from('app_users').select('*').eq('id', sessionUser.id).maybeSingle()
           if (account) sessions.set(token, safeUser(account, organization))
         }
         res.json({ ok: true })
@@ -232,7 +225,7 @@ export function registerInternalAdminRoutes(app: Express) {
     requireAuth,
     requirePlatformAdmin,
     async (req, res) => {
-      if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+      if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
       const organizationId = String(req.params.organizationId || '')
       const username = String(req.body?.username || '').trim()
       const password = String(req.body?.password || '')
@@ -263,7 +256,7 @@ export function registerInternalAdminRoutes(app: Express) {
           createdAt: new Date().toISOString().slice(0, 10),
           theme: 'default',
         }
-        const { error } = await supabaseAdmin.from('app_users').insert({
+        const { error } = await db.from('app_users').insert({
           id: account.id,
           organization_id: organizationId,
           username,
@@ -288,10 +281,10 @@ export function registerInternalAdminRoutes(app: Express) {
   )
 
   app.patch('/api/internal-admin/users/:userId', requireAuth, requirePlatformAdmin, async (req, res) => {
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
     const userId = String(req.params.userId || '')
     try {
-      const { data: existing, error: readError } = await supabaseAdmin
+      const { data: existing, error: readError } = await db
         .from('app_users')
         .select('*')
         .eq('id', userId)
@@ -312,7 +305,7 @@ export function registerInternalAdminRoutes(app: Express) {
         patch.modules = cleanModules(req.body.modules).filter(module => organization.enabledModules.includes(module))
       const nextRole = patch.role || existing.role
       if (nextRole === 'Administrator') patch.modules = organization.enabledModules
-      const { error } = await supabaseAdmin.from('app_users').update(patch).eq('id', userId)
+      const { error } = await db.from('app_users').update(patch).eq('id', userId)
       if (error) throw error
       const snapshotPatch: any = {}
       for (const [dbKey, appKey] of [
@@ -331,7 +324,7 @@ export function registerInternalAdminRoutes(app: Express) {
         if (sessionUser.id !== userId) continue
         if (patch.status === 'Disabled') sessions.delete(token)
         else {
-          const { data: refreshed } = await supabaseAdmin.from('app_users').select('*').eq('id', userId).maybeSingle()
+          const { data: refreshed } = await db.from('app_users').select('*').eq('id', userId).maybeSingle()
           if (refreshed) sessions.set(token, safeUser(refreshed, organization))
         }
       }
@@ -347,14 +340,14 @@ export function registerInternalAdminRoutes(app: Express) {
     requirePlatformAdmin,
     recoverySubmitLimiter,
     async (req, res) => {
-      if (!supabaseAdmin) return void res.status(503).json({ error: 'Account settings are unavailable.' })
+      if (!db) return void res.status(503).json({ error: 'Account settings are unavailable.' })
       const user = (req as express.Request & { authUser: SessionUser }).authUser
       const email = typeof req.body?.email === 'string' ? req.body.email.trim() : ''
       const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : ''
       if (!validRecoveryEmail(email))
         return void res.status(400).json({ error: 'Enter a valid recovery email address.' })
       try {
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await db
           .from('platform_users')
           .select('id,password_hash,status')
           .eq('id', user.id)
@@ -363,7 +356,7 @@ export function registerInternalAdminRoutes(app: Express) {
         if (error) throw error
         if (!data || data.status !== 'Active' || !(await verifyPassword(currentPassword, data.password_hash)))
           return void res.status(401).json({ error: 'Current password is incorrect.' })
-        const { data: updated, error: updateError } = await supabaseAdmin
+        const { data: updated, error: updateError } = await db
           .from('platform_users')
           .update({ email, updated_at: new Date().toISOString() })
           .eq('id', user.id)
@@ -386,17 +379,18 @@ export function registerInternalAdminRoutes(app: Express) {
   )
 
   app.post('/api/internal-admin/password', requireAuth, requirePlatformAdmin, async (req, res) => {
-    if (!supabaseAdmin || !(await platformAuthSchemaReady()))
-      return void res
-        .status(409)
-        .json({ error: 'Run supabase/schema-v4-account-login.sql before changing the Internal Admin password.' })
+    if (!db || !(await platformAuthSchemaReady()))
+      return void res.status(409).json({
+        error:
+          'Internal Admin sign-in is not set up. Check the database connection; a new database needs database/schema.sql.',
+      })
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     const currentPassword = String(req.body?.currentPassword || '')
     const newPassword = String(req.body?.newPassword || '')
     if (newPassword.length < 8)
       return void res.status(400).json({ error: 'Use a new password with at least 8 characters.' })
     try {
-      const { data: platformAccount, error: readError } = await supabaseAdmin
+      const { data: platformAccount, error: readError } = await db
         .from('platform_users')
         .select('id,password_hash')
         .eq('id', user.id)
@@ -406,7 +400,7 @@ export function registerInternalAdminRoutes(app: Express) {
       if (!platformAccount || !(await verifyPassword(currentPassword, platformAccount.password_hash)))
         return void res.status(401).json({ error: 'Current password is incorrect.' })
       const updatedAt = new Date().toISOString()
-      const { error } = await supabaseAdmin
+      const { error } = await db
         .from('platform_users')
         .update({
           password_hash: await secureHashPassword(newPassword),
@@ -429,12 +423,12 @@ export function registerInternalAdminRoutes(app: Express) {
   })
 
   app.post('/api/internal-admin/users/:userId/password', requireAuth, requirePlatformAdmin, async (req, res) => {
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
     const userId = String(req.params.userId || '')
     const password = String(req.body?.password || '')
     if (password.length < 8) return void res.status(400).json({ error: 'Use a password with at least 8 characters.' })
     try {
-      const { data: existing, error: readError } = await supabaseAdmin
+      const { data: existing, error: readError } = await db
         .from('app_users')
         .select('id,organization_id')
         .eq('id', userId)
@@ -443,7 +437,7 @@ export function registerInternalAdminRoutes(app: Express) {
       if (readError) throw readError
       if (!existing) return void res.status(404).json({ error: 'User was not found.' })
       const nextHash = await secureHashPassword(password)
-      const { error } = await supabaseAdmin
+      const { error } = await db
         .from('app_users')
         .update({ password_hash: nextHash, updated_at: new Date().toISOString() })
         .eq('id', userId)

@@ -18,7 +18,7 @@ import {
 } from '../core/auth'
 import { followUpTimeZone } from '../core/config'
 import { ALL_MODULES, defaultTaskSettings } from '../core/constants'
-import { supabaseAdmin } from '../core/database'
+import { db } from '../core/database'
 import {
   authoritativeWorkEvents,
   commitTenantState,
@@ -125,10 +125,10 @@ export function registerStoreRoutes(app: Express) {
 
   app.get('/api/store/revision', requireAuth, requireTenantWorkspace, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store')
-    if (!supabaseAdmin) return void res.status(503).json({ configured: false, error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ configured: false, error: 'Database is not configured.' })
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     try {
-      res.json(await readWorkspaceRevision(supabaseAdmin, String(tenantIdForUser(user)), followUpTimeZone))
+      res.json(await readWorkspaceRevision(db, String(tenantIdForUser(user)), followUpTimeZone))
     } catch {
       res.status(500).json({ error: 'Could not check the workspace revision.' })
     }
@@ -136,7 +136,7 @@ export function registerStoreRoutes(app: Express) {
 
   app.get('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store')
-    if (!supabaseAdmin) {
+    if (!db) {
       res.status(503).json({ configured: false, data: null, error: 'Database is not configured.' })
       return
     }
@@ -162,11 +162,11 @@ export function registerStoreRoutes(app: Express) {
   })
 
   app.get('/api/notifications', requireAuth, requireTenantWorkspace, async (req, res) => {
-    if (!supabaseAdmin)
+    if (!db)
       return void res.status(503).json({ configured: false, notifications: [], error: 'Database is not configured.' })
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     try {
-      const current = await readNotificationState(supabaseAdmin, String(tenantIdForUser(user)))
+      const current = await readNotificationState(db, String(tenantIdForUser(user)))
       res.json({
         configured: true,
         notifications: notificationsForUser(current, user.id),
@@ -182,7 +182,7 @@ export function registerStoreRoutes(app: Express) {
   })
 
   app.put('/api/notifications/:notificationId', requireAuth, requireTenantWorkspace, async (req, res) => {
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     const action = String(req.body?.action || '') as 'read' | 'unread' | 'dismiss'
     if (!['read', 'unread', 'dismiss'].includes(action))
@@ -208,7 +208,7 @@ export function registerStoreRoutes(app: Express) {
   })
 
   app.post('/api/notifications/read-all', requireAuth, requireTenantWorkspace, async (req, res) => {
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     try {
       const current = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
@@ -235,7 +235,7 @@ export function registerStoreRoutes(app: Express) {
   })
 
   app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
-    if (!supabaseAdmin) {
+    if (!db) {
       res.status(503).json({ configured: false, error: 'Database is not configured.' })
       return
     }
@@ -426,7 +426,7 @@ export function registerStoreRoutes(app: Express) {
               .json({ configured: true, error: 'A user cannot be assigned a module disabled for this workspace.' })
         }
         if (await multiTenantSchemaReady()) {
-          const { data: existingUsers, error: existingUsersError } = await supabaseAdmin
+          const { data: existingUsers, error: existingUsersError } = await db
             .from('app_users')
             .select('id,username,organization_id')
             .eq('organization_id', organizationId)

@@ -46,8 +46,7 @@ export function useTrackerTemplates() {
   return { saved, setSaved, missing, reload: load }
 }
 
-const upgradeNote =
-  'Changing templates needs database/migrations/schema-v34-tracker-templates.sql. Ask your administrator to apply it.'
+const upgradeNote = 'Changing templates is unavailable right now. Ask your administrator to check the database.'
 const errorText = (error: unknown) =>
   error instanceof TemplateApiError && error.body.needsUpgrade
     ? upgradeNote
