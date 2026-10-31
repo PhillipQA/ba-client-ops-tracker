@@ -895,3 +895,69 @@ test('the AI assistant reads only trackers the person can open, never Secret val
     assert.equal(ben.loaded.length, 0)
   })
 })
+
+test('only the tracker’s owner or an Administrator changes who can reveal a Secret column, or deletes one', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const owner = { 'x-user': 'owner', 'x-role': 'Contributor' }
+    const mallory = { 'x-user': 'mallory', 'x-role': 'Contributor' }
+    const admin = { 'x-user': 'boss', 'x-role': 'Administrator' }
+    const made = await ask(
+      'POST',
+      '/api/trackers',
+      {
+        name: 'Servers',
+        columns: [
+          { name: 'Host', type: 'text' },
+          { name: 'Root password', type: 'secret', revealBy: 'admins' },
+        ],
+      },
+      owner,
+    )
+    const tracker = made.body.tracker
+    const [host, secret] = tracker.columns.map((c: any) => c.id)
+    const row = (
+      await ask(
+        'POST',
+        `/api/trackers/${tracker.id}/rows`,
+        { rows: [{ cells: { [host]: 'db1' }, secrets: { [secret]: 'hunter2-prod' } }] },
+        owner,
+      )
+    ).body.rows[0]
+    const save = async (headers: Record<string, string>, change: (columns: any[]) => any[]) => {
+      const current = (await ask('GET', `/api/trackers/${tracker.id}`, undefined, headers)).body.tracker
+      return ask(
+        'PUT',
+        `/api/trackers/${tracker.id}/columns`,
+        { revision: current.revision, columns: change(current.columns) },
+        headers,
+      )
+    }
+    const loosen = (columns: any[]) => columns.map(c => (c.id === secret ? { ...c, revealBy: 'editors' } : c))
+
+    // Someone else who edits the tracker cannot loosen the rule, so cannot then reveal the value.
+    const refused = await save(mallory, loosen)
+    assert.equal(refused.status, 403, JSON.stringify(refused.body))
+    assert.match(refused.body.error, /owner or an Administrator/)
+    assert.equal(
+      (await ask('POST', `/api/trackers/${tracker.id}/rows/${row.id}/reveal`, { columnId: secret }, mallory)).status,
+      403,
+    )
+    // Nor delete the column, which would erase every stored value.
+    assert.equal((await save(mallory, columns => columns.filter(c => c.id !== secret))).status, 403)
+    assert.ok(h.db.tables.tenant_tracker_rows[0].secrets?.[secret], 'the stored value is still there')
+    // Renaming it, or adding another Secret column, is still fine for anyone who edits the tracker.
+    const renamed = await save(mallory, columns => [
+      ...columns.map(c => (c.id === secret ? { ...c, name: 'Root pw' } : c)),
+      { name: 'API key', type: 'secret', revealBy: 'admins' },
+    ])
+    assert.equal(renamed.status, 200, JSON.stringify(renamed.body))
+
+    // The owner may change the rule; the change is recorded.
+    assert.equal((await save(owner, loosen)).status, 200)
+    const logged = h.db.tables.tenant_tracker_changes.find((c: any) => c.detail?.revealRules)
+    assert.deepEqual(logged?.detail.revealRules, [{ name: 'Root pw', from: 'admins', to: 'editors' }])
+    // An Administrator may delete it.
+    assert.equal((await save(admin, columns => columns.filter(c => c.id !== secret))).status, 200)
+  })
+})

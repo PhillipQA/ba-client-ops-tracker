@@ -2784,17 +2784,34 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await requireRevision(tenant, row, req.body, user)
       const before = columnsOf(row)
       const columns = normalizeColumns(req.body?.columns, before)
+      const revealRules = secretRuleChanges(before, columns)
+      // Who may reveal a Secret column, and deleting one (which erases every stored value), are for the tracker's
+      // owner or an Administrator. Anyone who edits the tracker may still add and rename Secret columns.
+      if (!manageable(user, row)) {
+        const deleted = before.find(old => old.type === 'secret' && !columns.some(column => column.id === old.id))
+        if (deleted)
+          throw new TrackerError(
+            `Only the tracker's owner or an Administrator can delete the Secret column “${deleted.name}”.`,
+            403,
+          )
+        if (revealRules.length)
+          throw new TrackerError(
+            `Only the tracker's owner or an Administrator can change who can reveal “${revealRules[0].name}”.`,
+            403,
+          )
+      }
       const views = normalizeViews(row.views, columns)
       const tracker = await replaceTracker(tenant, row, { columns, views }, user)
       const kept = new Set(columns.map(column => column.id))
       const removed = before.filter(column => !kept.has(column.id)),
         added = columns.filter(column => !before.some(old => old.id === column.id))
       const renamed = columns.filter(column => before.some(old => old.id === column.id && old.name !== column.name))
-      if (removed.length || added.length || renamed.length)
+      if (removed.length || added.length || renamed.length || revealRules.length)
         await record(tenant, id, '', user, 'columns', {
           added: added.map(c => c.name),
           removed: removed.map(c => c.name),
           renamed: renamed.map(c => c.name),
+          ...(revealRules.length ? { revealRules } : {}),
         })
       // A deleted Secret column takes its encrypted values with it.
       const gone = removed.filter(column => column.type === 'secret').map(column => column.id)
@@ -3492,6 +3509,18 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   }
 
   return { onWorkspaceSaved, trackersFor }
+}
+
+/** Secret columns whose reveal rule changed between two versions of a tracker's columns. */
+export function secretRuleChanges(before: TrackerColumn[], after: TrackerColumn[]) {
+  const changes: { name: string; from: string; to: string }[] = []
+  for (const old of before) {
+    if (old.type !== 'secret') continue
+    const next = after.find(column => column.id === old.id)
+    if (next && (next.revealBy || 'editors') !== (old.revealBy || 'editors'))
+      changes.push({ name: next.name, from: old.revealBy || 'editors', to: next.revealBy || 'editors' })
+  }
+  return changes
 }
 
 const emptyOf = (column: TrackerColumn): Cell =>

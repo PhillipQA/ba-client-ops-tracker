@@ -45,6 +45,7 @@ import { QueryResultView } from './QueryResult'
 import { resultCsv } from './resultView'
 import { isKeyword, queryParams, SQL_FUNCTIONS, SqlError, type SqlResult } from './sqlEngine'
 import type { TableInfo } from './explorerTables'
+import { csvText } from '../../../shared/csv'
 
 export const VIEW_LABELS: Record<QueryView, string> = {
   table: 'Table',
@@ -107,8 +108,8 @@ const START_SQL =
   'SELECT status, COUNT(*) AS tasks\nFROM tasks\nWHERE done = FALSE\nGROUP BY status\nORDER BY tasks DESC'
 
 function downloadCsv(name: string, rows: string[][]) {
-  const quote = (value: string) => `"${String(value ?? '').replace(/"/g, '""')}"`
-  const blob = new Blob([rows.map(row => row.map(quote).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
+  // Formula-safe: text such as an email subject starting with = stays text when the file is opened.
+  const blob = new Blob([csvText(rows)], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
