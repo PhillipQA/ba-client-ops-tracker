@@ -190,7 +190,7 @@ export default function PlatformSettings({
       <div className="panel-heading">
         <div>
           <h2>Platform settings</h2>
-          <p>System updates, database sync, and account configuration.</p>
+          <p>Database sync and account configuration.</p>
         </div>
         <span className="version-badge">v{system?.version || '…'}</span>
       </div>
@@ -201,18 +201,6 @@ export default function PlatformSettings({
       )}
       <div className="platform-settings-grid">
         <section>
-          <h3>Patch Updater</h3>
-          <p>Run from the server’s project folder. Each patch creates a rollback backup.</p>
-          <code>npm run patch -- "C:\Downloads\ba-client-ops-patch-vX.Y.Z.zip"</code>
-          <p>
-            <code>npm run patch:status</code>
-          </p>
-          <p>
-            <code>npm run patch:rollback</code>
-          </p>
-          <small>Apply source updates locally, build, then redeploy to Render.</small>
-        </section>
-        <section>
           <h3>Database & credential storage</h3>
           <p>
             {system?.databaseProvider || 'Database'}: {system?.databaseConfigured ? 'Configured' : 'Not configured'}
@@ -220,8 +208,8 @@ export default function PlatformSettings({
           <p>Integration tables: {system?.integrationsReady ? 'Ready' : 'Setup required'}</p>
           <p>Encryption key: {system?.encryptionReady ? 'Configured' : 'Setup required'}</p>
           <small>
-            PostgreSQL mode uses DATABASE_PROVIDER=postgres, DATABASE_URL, and TENANT_INTEGRATION_MASTER_KEY. Keep these
-            infrastructure secrets server-side.
+            The server uses DATABASE_URL and TENANT_INTEGRATION_MASTER_KEY. Keep these infrastructure secrets
+            server-side.
           </small>
         </section>
       </div>

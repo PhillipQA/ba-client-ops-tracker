@@ -9,10 +9,6 @@ dist/
 .env.*
 !.env.example
 
-# Patch updater runtime state
-.patch-backups/
-.patch-tmp/
-
 # Logs, temp files and editor/OS noise
 *.log
 logs/
@@ -26,4 +22,3 @@ Thumbs.db
 # Local uploads / generated working files
 uploads/
 build-output/
-patch-output/

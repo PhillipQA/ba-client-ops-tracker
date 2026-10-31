@@ -1,23 +1,28 @@
 # BA Client Ops Tracker
 
-**Current application version: v1.5.0**
+**Version 1.5.0** · [Changelog](CHANGELOG.md)
 
-A workspace for clients, projects, tasks, follow-ups, Work Hub communications, document creation, requirements traceability, customizable trackers and reports. This guide covers installation, first login, deployment and updates.
+A workspace for business analysts: clients, projects, tasks and follow-ups, Work Hub (Gmail, Discord, GitHub, GitLab), document creation (BRD, FSD, DRF, sign-offs), requirements traceability, trackers that can follow a Google Sheet, reports, and an AI BA assistant.
 
-Already installed? Go to [Update an existing installation](#update-an-existing-installation). Read the [changelog](CHANGELOG.md) for changes by version.
+It is a React + Vite frontend served by an Express server (TypeScript, Node.js), with a PostgreSQL database. In production it runs on [Northflank](https://northflank.com).
 
-## Requirements
+- [Quick start (your computer)](#quick-start-your-computer)
+- [Deploy on Northflank](#deploy-on-northflank)
+- [Update a deployment](#update-a-deployment)
+- [Settings (environment variables)](#settings-environment-variables)
+- [Integrations](#integrations)
+- [Commands](#commands)
+- [Troubleshooting](#troubleshooting)
 
-- Node.js **22 or newer**, with npm. Check with `node --version` and `npm --version`.
-- Git and access to this private repository, or a complete source ZIP.
-- A configured database: Supabase for the fresh setup below, or an already imported/prepared PostgreSQL database.
-- An environment file for local development, or environment variables configured on the application host.
+## What you need
 
-The application uses React, TypeScript and Vite with an Express server. Run the commands below from the folder containing `package.json`.
+- **Node.js 22 or newer**, with npm (`node --version`).
+- **PostgreSQL 14 or newer**: a local one, or the Northflank addon forwarded to your computer.
+- **Git**, with access to this repository.
 
-## Install locally
+## Quick start (your computer)
 
-### 1. Get the source and install dependencies
+**1. Get the code**
 
 ```bash
 git clone https://github.com/PhillipQA/ba-client-ops-tracker.git
@@ -25,168 +30,155 @@ cd ba-client-ops-tracker
 npm ci
 ```
 
-If using a source ZIP, extract the complete project, open a terminal in that folder and run `npm ci`. Keep `package-lock.json`; it pins the dependency versions used by the build.
+**2. Create the database**
 
-### 2. Choose the database setup
-
-| Situation | Action |
-| --- | --- |
-| New installation with a new, empty Supabase project | Run the complete [database/setup.sql](database/setup.sql) once in Supabase SQL Editor. The result should report schema version **21**. |
-| Existing Supabase database | Reuse its URL and service-role key. Apply only missing migrations from the [upgrade guide](docs/setup/upgrade.md). |
-| Existing Northflank PostgreSQL database with imported tracker data | Use `DATABASE_PROVIDER=postgres` and `DATABASE_URL`. The database must already have the tracker schema, permissions and evidence storage. |
-| Moving existing Supabase data to Northflank PostgreSQL | Follow the [PostgreSQL cutover guide](docs/setup/northflank-postgres-cutover.md) before changing the running service. |
-
-**Do not run the fresh setup script on an existing or restored database.** It creates an empty installation; it does not transfer your current data. The script targets Supabase and is not a standalone fresh-install script for a plain PostgreSQL addon.
-
-### 3. Configure the environment
-
-Copy the example file.
-
-**Windows PowerShell**
-
-```powershell
-Copy-Item .env.example .env.local
-```
-
-**macOS / Linux**
+Create an empty database, then run the schema once, as the user the app will connect with:
 
 ```bash
-cp .env.example .env.local
+createdb ba_tracker
+psql "postgresql://localhost/ba_tracker" -v ON_ERROR_STOP=1 -f database/schema.sql
 ```
 
-Edit `.env.local` and replace the placeholders.
+It ends with `BA Client Ops Tracker database ready | 35`. No `psql`? Open `database/schema.sql` in DBeaver, connected to the empty database, and run the whole script. More in [database/README.md](database/README.md).
 
-| Variable | When required |
-| --- | --- |
-| `DATABASE_PROVIDER` | `supabase` for Supabase; `postgres` for a prepared PostgreSQL database. The default is Supabase. |
-| `SUPABASE_URL` | Supabase mode: your project's URL. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase mode: your project's server-side service-role key. |
-| `DATABASE_URL` | PostgreSQL mode: the application user's connection URI, including the database host's required TLS settings. |
-| `TENANT_INTEGRATION_MASTER_KEY` | Key for encrypted integration credentials. Generate it for a new installation; preserve the existing key when upgrading or moving data. |
-| `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` | Fresh installation: choose at least 12 characters for the initial Internal Admin login. |
-| `BXI_CORE_BOOTSTRAP_PASSWORD` | Fresh installation: choose at least 12 characters for the initial BXI-Core administrator login. |
-| `APP_BASE_URL` | `http://localhost:5173` locally; the public HTTPS origin when hosted. Do not include a query string or fragment. |
-| `PORT` | Defaults to `5173` locally. Use the port supplied/configured by your host in production. |
-
-Generate a new integration key with:
+**3. Add your settings**
 
 ```bash
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+cp .env.example .env.local        # Windows PowerShell: Copy-Item .env.example .env.local
 ```
 
-Paste the result into `TENANT_INTEGRATION_MASTER_KEY`. Real environment files and credentials are excluded from Git. Existing users keep their saved passwords; bootstrap passwords do not reset an existing account.
+Edit `.env.local`:
 
-### 4. Start the app
+- `DATABASE_URL`: the database from step 2, e.g. `postgresql://localhost/ba_tracker`.
+- `TENANT_INTEGRATION_MASTER_KEY`: generate one with
+  `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
+- `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` and `BXI_CORE_BOOTSTRAP_PASSWORD`: any two passwords of 12+ characters.
+
+**4. Start it**
 
 ```bash
 npm run dev
 ```
 
-Open **http://localhost:5173**. If you changed `PORT`, use that port instead. The Express server also serves the Vite development frontend; no second server is needed.
+Open **http://localhost:5173**. One server runs both the app and its API.
 
-### 5. Sign in
+**5. Sign in**
 
-For a fresh installation:
-
-| Account | User | Password |
+| Account | Username | Password |
 | --- | --- | --- |
-| `internal_admin` | `admin` | Your `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` |
-| `BXI-Core` | `Admin` | Your `BXI_CORE_BOOTSTRAP_PASSWORD` |
+| `internal_admin` | `admin` | your `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` |
+| `BXI-Core` | `Admin` | your `BXI_CORE_BOOTSTRAP_PASSWORD` |
 
-Internal Admin manages accounts, enabled modules and platform integration access. BXI-Core opens the initial tenant workspace. Complete the Internal Admin password-change prompt, then configure users and integrations as needed.
+The first sign-in saves each bootstrap password as that account's password; changing the variable later does not reset it. Internal Admin must choose a new password straight away; change the BXI-Core one too, from your profile. **Internal Admin** manages accounts and which modules they have. **BXI-Core** is the first workspace: add people under **Users & Permissions**.
 
-For an existing/imported database, use its existing account and user credentials.
+## Deploy on Northflank
 
-## Build and deploy
+Do this once per environment. Everything below is in the Northflank project dashboard.
 
-Build and validate the source:
+**1. Database.** Create a **PostgreSQL** addon (version 16, private, with backups on).
+
+**2. Schema.** Forward the addon to your computer and run the schema with the addon's `POSTGRES_URI` (from the addon's **Connection details**):
 
 ```bash
-npm ci
-npm run build
-npm run typecheck:server
-npm start
+sudo northflank forward addon --projectId <project> --addonId <addon>
+psql "<POSTGRES_URI>" -v ON_ERROR_STOP=1 -f database/schema.sql
 ```
 
-`npm start` runs the Express server in production mode and serves `dist/`. **Do not use `npm run preview` as the deployed app server**; it does not provide the Express API.
+Without `sudo`, add `--skipHostnames` and connect to the address and port the CLI prints. DBeaver through the forwarded port works too. If the script says `permission denied for schema public`, run it with the `POSTGRES_URI_ADMIN` connection string instead, then give the app's user access (its username is in `POSTGRES_URI`):
 
-For Northflank or another Node host:
+```sql
+grant usage on schema public to "<app user>";
+grant select, insert, update, delete on all tables in schema public to "<app user>";
+alter default privileges in schema public grant select, insert, update, delete on tables to "<app user>";
+```
+
+**3. Settings.** Create a **secret group** of runtime variables:
+
+- link the addon's `POSTGRES_URI` with the alias **`DATABASE_URL`**;
+- add `TENANT_INTEGRATION_MASTER_KEY` (generate it as above; keep it forever, see [Settings](#settings-environment-variables));
+- add `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` and `BXI_CORE_BOOTSTRAP_PASSWORD`;
+- add `APP_BASE_URL` (the public `https://` address, no trailing slash) and `PORT=8080`.
+
+**4. Service.** Create a **combined service**:
 
 | Setting | Value |
 | --- | --- |
-| Source | This repository and the intended branch, normally `main` |
-| Node version | 22 or newer |
-| Build command | `npm ci && npm run build` |
-| Start command | `npm start` |
-| Environment | The database variables above, the existing integration key and the public `APP_BASE_URL` |
-| HTTP port | The value configured/provided as `PORT` |
+| Repository / branch | `PhillipQA/ba-client-ops-tracker`, `main` |
+| Build | Buildpack (Node.js). It runs `npm ci` and `npm run build` |
+| Start command | `npm start` (never `npm run preview`: it has no API) |
+| Port | `8080`, HTTP, **public** |
+| Instances | **1** (sign-ins are kept in the server's memory) |
+| Secret group | the group from step 3 |
 
-Configure environment values before building if using the optional `VITE_GOOGLE_CLIENT_ID`. Run **one application instance**: login sessions are stored in server memory. A restart can require signing in again; database records remain in the database. Sessions end 8 hours after sign-in, or after 2 hours without activity (change this with `SESSION_IDLE_TIMEOUT_MINUTES`).
+**5. Open it.** Use the service's public URL, or add your own domain under **Networking**; then set `APP_BASE_URL` to that address. Sign in as in the quick start, then set up [integrations](#integrations).
 
-Follow [Deploy on a new server](docs/setup/deploy-new-server.md) for moving an existing installation.
+## Update a deployment
 
-## Optional integrations
+Northflank builds and deploys every push to `main`. Before pushing:
 
-The app can be installed before connecting external services.
+1. Read the [changelog](CHANGELOG.md) entry. If it says the database changes, back up the addon and run the new migration from `database/migrations/` against it **first** (as in step 2 above).
+2. Check locally: `npm ci && npm run build && npm test`.
+3. Push or merge to `main`. Watch the build in Northflank, then hard-refresh the app (Ctrl+Shift+R) and check the version on the sign-in page.
 
-| Feature | Setup location |
+A restart or deploy signs everyone out; their data is unaffected. To roll back, redeploy the previous build in Northflank.
+
+## Settings (environment variables)
+
+Locally they go in `.env.local` (see [.env.example](.env.example)); on Northflank, in the secret group.
+
+| Variable | Needed | What it is |
+| --- | --- | --- |
+| `DATABASE_URL` | yes | PostgreSQL connection string. On Northflank: the addon's `POSTGRES_URI`. |
+| `TENANT_INTEGRATION_MASTER_KEY` | yes | 64 hex characters. Encrypts saved integration credentials and tracker Secret cells. **Never change it** on a database that has data: what it encrypted can no longer be read. |
+| `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD`, `BXI_CORE_BOOTSTRAP_PASSWORD` | first sign-in | 12+ characters each. Read only at the first sign-in of the two starting accounts. |
+| `APP_BASE_URL` | yes | The app's address: `http://localhost:5173` locally, the public `https://` address when hosted. Used in sign-in links and Google redirect addresses. |
+| `PORT` | no | Port the server listens on (default `5173`). |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | no | Sign-out after this many idle minutes (default 120). Sessions also end 8 hours after sign-in. |
+| `FOLLOW_UP_TIME_ZONE` | no | Time zone for business dates (default `Asia/Manila`). |
+| `SMTP_*` | no | Email for **Forgot password**; see [password recovery](docs/setup/password-recovery.md). |
+
+Discord, DocHub, AI providers and Google credentials are entered in the app (**Settings**), not here.
+
+## Integrations
+
+All optional; the app works without them.
+
+| Integration | Where |
 | --- | --- |
-| Gmail | Internal Admin enables access; the account administrator configures OAuth; each user connects Gmail and selects labels in Work Hub. To send document emails from the tracker, add the `gmail.send` scope to the Google consent screen and have each sender choose **Allow sending email** in Work Hub (once). |
-| Google Drive (Gmail attachments) | Needs Gmail first and schema v23. Enable the Google Drive API in the same Google Cloud project, then an account administrator connects one shared Drive in Settings → Integrations. Users save attachments to task folders from Work Hub. Document Creation can use a COR saved there, files generated BRD, FSD and test case documents, and files every fully signed DRF and Sign Off PDF automatically. |
-| Discord | Account Settings configures the workspace bot; users link their Discord IDs in Work Hub. |
-| GitHub / GitLab | Each user's Work Hub integration settings. |
-| DocHub | Account Settings integration configuration. |
-| BA Assistant / Document Agent | Account Settings → AI Agent Manager. |
-| Google Calendar | Configure the public Google client ID and the account settings shown by the app. |
-| Email password recovery | Server SMTP variables and registered user emails; see [password recovery setup](docs/setup/password-recovery.md). |
+| Gmail, Google Drive, Google Sheets, Google Calendar | One Google Cloud project; see [Google setup](docs/setup/google.md). |
+| Discord | Settings → Integrations (workspace bot); each user links their Discord ID in Work Hub. |
+| GitHub, GitLab | Each user, in Work Hub → integration settings. |
+| DocHub (e-signatures) | Settings → Integrations. |
+| AI BA assistant and document agent | Settings → AI Agent Manager. |
+| Forgot password emails | `SMTP_*` settings; see [password recovery](docs/setup/password-recovery.md). |
 
-Work Hub syncs connected integrations once at sign-in. **Refresh now** syncs all; each integration's **Sync** button refreshes only that source. Creating tasks from an email does not trigger another Gmail sync.
+## Commands
 
-## Update an existing installation
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Runs the app locally with live reload, on `PORT` (default 5173). |
+| `npm run build` | Type-checks the frontend and builds it into `dist/`. |
+| `npm start` | Runs the production server (serves `dist/` and the API). |
+| `npm test` | Runs every automated test. `npm run test:trackers`, `test:communications` and others run one area. |
+| `npm run typecheck:server` | Type-checks the server code. |
+| `npm run format` / `npm run lint` / `npm run check` | Formats the code / lists lint findings / what CI runs ([Biome](https://biomejs.dev)). |
 
-1. Back up the database and any separately stored files. Keep the environment values and integration master key.
-2. Review the [changelog](CHANGELOG.md) and [upgrade guide](docs/setup/upgrade.md). Apply only the migrations your database is missing.
-3. From your existing checkout, update and validate:
-
-```bash
-git pull --ff-only
-npm ci
-npm run build
-npm run typecheck:server
-```
-
-4. Restart with `npm start`, or redeploy through your host. Confirm the version shown on the login page.
-
-If your checkout contains local source edits, reconcile them before pulling. For an official patch ZIP, use the [patch instructions](docs/setup/upgrade.md#official-patch-zips); a source update does not require a patch ZIP.
-
-**v1.5.0 has no database change.** **v1.4.0 has no database change.** **v1.3.2 has no database change.** **v1.3.1 has no database change.** **v1.3.0 has no database change** (two-way Sheet sync uses the Google scope added in v1.1.0). **v1.2.0 has no database change.** **v1.1.0 needs database migration schema v28** only to show which rows could not be marked done in a Google Sheet; marking rows done when their tasks are done works without it. To write done marks to a Sheet, add the `https://www.googleapis.com/auth/spreadsheets` scope in Google Cloud (see the upgrade guide). **v1.0.4, v1.0.3, v1.0.2, v1.0.1 and v1.0.0 have no database change** (it reorganises the code; nothing changes for users). **v0.9.0 needs database migration schema v27** and the Google Sheets API for trackers that follow a Google Sheet; importing and reviewing rows works without it. **v0.8.0 needs database migration schema v26** for email signatures saved to your account and for email templates; without it email works as before and the signature stays in the browser. **v0.6.96 has an optional database migration, schema v25,** that is needed only to link tasks and subtasks to tracker rows and cells; everything else works without it. **v0.6.93, v0.6.94 and v0.6.95 have no database change.** **v0.6.92 needs database migration schema v24** before Trackers can be used; everything else works without it, and Administrators see Trackers after signing in again. See the [upgrade guide](docs/setup/upgrade.md#database-requirements). **v0.6.87 needs database migration schema v23** before Google Drive can be used for Gmail attachments; everything else works without it. See the [upgrade guide](docs/setup/upgrade.md#database-requirements). The optional schema v22 migration (from v0.6.83) enables custom templates for the UAT Sign Off, UAT Deployment Approval and Training Sign Off forms; the built-in forms and templates work without it. The optional v21 migration enables custom Go Live templates.
+GitHub Actions runs the build, Biome and the tests on every push and pull request.
 
 ## Troubleshooting
 
-| Symptom | Check |
+| Problem | Check |
 | --- | --- |
-| Invalid credentials on a fresh installation | Run the database setup, set both bootstrap passwords and use the Account/User values above. Restart after changing the environment. |
-| Database unavailable or schema missing | Check the selected provider, database connection, schema and application-user permissions. Follow the database/upgrade guide for the installed version. |
-| Cannot reach a private Northflank database from your computer | The app needs a reachable database URI. For desktop administration, use the addon connection/forwarding configuration rather than assuming its private hostname is public. |
-| Blank page or an older version after deployment | Confirm the host built and started successfully. Hard-refresh with Ctrl+Shift+R; if the old HTML is still cached, check in a private browser window. |
-| Production page loads but API requests fail | Run `npm start`, not `npm run preview`, and check the server logs/environment. |
-| Forgot password email does not arrive | Configure SMTP, save the user's recovery email and check [password recovery setup](docs/setup/password-recovery.md). |
+| "Invalid credentials" on a new install | Both bootstrap passwords set (12+ characters), the server restarted after setting them, and the Account/Username exactly as in the table above. |
+| "Database is not configured" | `DATABASE_URL` is set for the server process (and, on Northflank, the secret group is attached to the service). |
+| "…is unavailable. Check the database connection; a new database needs database/schema.sql." | The database is unreachable, or `schema.sql` was never run on it. |
+| `permission denied` errors in the server log | The app's database user lacks access: run the `grant` statements in [Deploy on Northflank](#deploy-on-northflank) step 2. |
+| Saved integrations stopped working after a move | `TENANT_INTEGRATION_MASTER_KEY` changed. Restore the old key. |
+| Blank page or the old version after a deploy | The build failed (check Northflank's build log), or the browser cached the old page: hard-refresh (Ctrl+Shift+R). |
+| Pages load but nothing saves | The service runs `npm run preview` instead of `npm start`. |
+| Google says "redirect_uri_mismatch" | The redirect addresses in Google Cloud must match `APP_BASE_URL`; see [Google setup](docs/setup/google.md). |
+| Everyone was signed out | The service restarted or redeployed. Expected; nothing is lost. |
 
-## Documentation and checks
+## Project structure
 
-- [Changelog](CHANGELOG.md) — current and recent updates.
-- [Documentation index](docs/README.md) — setup and reference guides.
-- [Release archive](docs/releases/README.md) — detailed notes by version.
-- [Database guide](database/README.md) — fresh setup versus existing database upgrades.
-
-Focused Work Hub checks:
-
-```bash
-npm run test:communications
-npm run test:work-hub-tasks
-npm run test:work-hub-sync
-```
-
-`npm run test:functional` runs the wider functional regression selection.
-
-Formatting and lint use [Biome](https://biomejs.dev): `npm run format` formats the code, `npm run lint` lists findings and `npm run check` is what CI runs (formatting or lint errors fail the build). See the [repository structure](docs/architecture/REPOSITORY-STRUCTURE.md) for where code lives.
+`src/` holds the frontend (one folder per feature under `src/features/`), `server/` the Express API (see [server/README.md](server/README.md)), `database/` the schema, `tests/` the automated tests, `templates/` the document templates and `docs/` the setup guides. See [repository structure](docs/architecture/REPOSITORY-STRUCTURE.md) and the [documentation index](docs/README.md).

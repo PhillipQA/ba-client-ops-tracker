@@ -107,7 +107,7 @@ function requireText(input: unknown, field: string, max = 4000) {
   if (typeof input !== 'string' || input.trim().length > max) throw new IntegrationError(`${field} is invalid.`)
   return input.trim()
 }
-/** The database has no read_at column yet (schema-v32 not applied): reading and writing go on without it. */
+/** The database has no read_at column yet (a database from before the read_at column): reading and writing go on without it. */
 const missingReadColumn = (error: any) =>
   Boolean(error) && (error.code === '42703' || error.code === 'PGRST204' || /read_at/.test(String(error.message || '')))
 /** Unread counts cover received email and Discord messages only: not GitHub, GitLab or manual logs. */
@@ -167,13 +167,17 @@ export function registerCommunications(
           error:
             error instanceof IntegrationError
               ? error.message
-              : 'Communications are unavailable. Apply schema-v12-communications.sql and retry.',
+              : 'Communications are unavailable. Check the database connection; a new database needs database/schema.sql.',
         })
       }
     }
   const account = async (tenantId: string) => {
     const { data, error } = await db.from('gmail_accounts').select('*').eq('tenant_id', tenantId).maybeSingle()
-    if (error) throw new IntegrationError('Apply schema-v13-gmail-accounts.sql before configuring Gmail.', 503)
+    if (error)
+      throw new IntegrationError(
+        'Gmail settings cannot be saved. Check the database connection; a new database needs database/schema.sql.',
+        503,
+      )
     return data
   }
   const saveAccount = async (tenantId: string, patch: any) => {
@@ -654,7 +658,10 @@ export function registerCommunications(
         user = current(req)
       if (typeof req.body?.read !== 'boolean') throw new IntegrationError('Say whether the message is read.')
       if (!('read_at' in message))
-        throw new IntegrationError('Read and unread need schema-v32-communication-unread.sql. Apply it and retry.', 503)
+        throw new IntegrationError(
+          'Read and unread are unavailable. Check the database connection; a new database needs database/schema.sql.',
+          503,
+        )
       const readAt = req.body.read ? new Date().toISOString() : null
       let query = db
         .from('user_communications')
@@ -688,7 +695,10 @@ export function registerCommunications(
         .neq('status', 'Archived')
         .is('read_at', null)
       if (missingReadColumn(error))
-        throw new IntegrationError('Read and unread need schema-v32-communication-unread.sql. Apply it and retry.', 503)
+        throw new IntegrationError(
+          'Read and unread are unavailable. Check the database connection; a new database needs database/schema.sql.',
+          503,
+        )
       if (error) throw error
       res.json({ ok: true })
     }),
@@ -1008,7 +1018,7 @@ export function registerCommunications(
         .eq('user_id', user.id)
       if (error)
         throw new IntegrationError(
-          'Could not save Gmail label names. Apply schema-v14-gmail-label-catalog.sql and retry.',
+          'Could not save Gmail label names. Check the database connection; a new database needs database/schema.sql.',
           503,
         )
       res.json({ labels })
@@ -1097,7 +1107,7 @@ export function registerCommunications(
             .eq('user_id', user.id)
           if (error)
             throw new IntegrationError(
-              'Could not save Gmail progress. Apply schema-v16-functional-integrity.sql and retry.',
+              'Could not save Gmail progress. Check the database connection; a new database needs database/schema.sql.',
               503,
             )
         }

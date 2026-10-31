@@ -60,7 +60,7 @@ export function registerGitlab(
           error:
             e instanceof IntegrationError
               ? e.message
-              : 'GitLab storage is unavailable. Apply schema-v20-work-hub-gitlab.sql and retry.',
+              : 'GitLab storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
           ...(e instanceof GitlabError && e.retryAfterSeconds ? { retryAfterSeconds: e.retryAfterSeconds } : {}),
         })
       }
@@ -82,7 +82,11 @@ export function registerGitlab(
       .eq('tenant_id', u.organizationId)
       .eq('user_id', u.id)
       .maybeSingle()
-    if (result.error) throw new IntegrationError('Apply schema-v20-work-hub-gitlab.sql before connecting GitLab.', 503)
+    if (result.error)
+      throw new IntegrationError(
+        'GitLab cannot be connected yet. Check the database connection; a new database needs database/schema.sql.',
+        503,
+      )
     return result.data
   }
   const summary = (row: any) => {

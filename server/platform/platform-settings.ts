@@ -44,7 +44,7 @@ export function registerPlatformSettings(app: Express, d: any) {
       }
       res.json({
         version: APP_VERSION,
-        databaseProvider: process.env.DATABASE_PROVIDER === 'postgres' ? 'PostgreSQL' : 'Supabase',
+        databaseProvider: 'PostgreSQL',
         databaseConfigured: Boolean(d.db),
         encryptionReady,
         integrationsReady,

@@ -28,7 +28,7 @@ import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transpo
 import { securityHeaders } from './auth/security-headers'
 import { jsonBodies } from './auth/body-limits'
 import { followUpTimeZone, isProduction, port, projectRoot } from './core/config'
-import { supabaseAdmin } from './core/database'
+import { db } from './core/database'
 import {
   bootstrapPasswordUsable,
   requireAuth,
@@ -102,7 +102,7 @@ app.use(securityHeaders({ production: isProduction }))
 app.use('/api/auth', authRequestDiagnostics)
 
 const docHubDeps: Parameters<typeof createDocHubService>[0] = {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   organizationById,
@@ -124,7 +124,7 @@ registerInternalAdminRoutes(app)
 registerAssistantRoutes(app, { trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick) })
 
 registerBrdRoutes(app, {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   aiAgents,
@@ -132,7 +132,7 @@ registerBrdRoutes(app, {
 })
 
 registerFsdRoutes(app, {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   aiAgents,
@@ -143,7 +143,7 @@ registerTestCaseRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace
 registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, aiAgents, load: loadTenantState })
 // Connected Google Sheets read as the person who connected them, through the same Google sign-in as Gmail (registered below).
 const trackers = registerTrackerRoutes(app, {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   load: loadTenantState,
@@ -167,12 +167,12 @@ const trackers = registerTrackerRoutes(app, {
 })
 // A completed or reopened task updates the tracker rows linked to it, and their Sheet when the column comes from one.
 onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))
-registerEmailTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
-registerCustomReportRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
-registerTrackerTemplateRoutes(app, { db: supabaseAdmin, requireAuth, requireTenant: requireTenantWorkspace })
+registerEmailTemplateRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
+registerCustomReportRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
+registerTrackerTemplateRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
 
 registerSignoffRoutes(app, {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   templatePath: path.join(projectRoot, 'templates', 'signoff-template.docx'),
@@ -205,7 +205,7 @@ registerAccountUsers(app, {
   },
 })
 registerPlatformSettings(app, {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requirePlatformAdmin,
   organizationById,
@@ -217,7 +217,7 @@ registerPlatformSettings(app, {
 })
 registerDocHubRoutes(app, docHubDeps, docHubService)
 registerIntegrationRoutes(app, {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   organizationById,
@@ -227,7 +227,7 @@ registerIntegrationRoutes(app, {
 })
 registerAiAgentRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, organizationById, manager: aiAgents })
 registerGoogleCalendarRoutes(app, {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   requirePlatformAdmin,
@@ -237,7 +237,7 @@ registerGoogleCalendarRoutes(app, {
 })
 
 const communications = registerCommunications(app, {
-  db: supabaseAdmin,
+  db,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   sessionFromRequest,

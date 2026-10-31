@@ -2,7 +2,7 @@ import { Client as DiscordClient, GatewayIntentBits, Partials } from 'discord.js
 import type express from 'express'
 import type { Express } from 'express'
 import { moduleAllowed, requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
-import { supabaseAdmin } from '../core/database'
+import { db } from '../core/database'
 import { integrations } from '../core/services'
 import { organizationById } from '../core/tenant-state'
 
@@ -145,10 +145,10 @@ async function startTenantDiscord(organizationId: string) {
 let reconcilingDiscord = false
 
 export async function reconcileDiscord() {
-  if (!supabaseAdmin || reconcilingDiscord) return
+  if (!db || reconcilingDiscord) return
   reconcilingDiscord = true
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from('tenant_integrations')
       .select('tenant_id,updated_at')
       .eq('integration_type', 'discord')
@@ -167,7 +167,9 @@ export async function reconcileDiscord() {
         await reconnectDiscord(row.tenant_id).catch(() => undefined)
     }
   } catch {
-    console.warn('Tenant Discord connections unavailable. Check schema-v8 and encrypted integration configuration.')
+    console.warn(
+      'Tenant Discord connections unavailable. Check the database connection and the encrypted integration settings.',
+    )
   } finally {
     reconcilingDiscord = false
   }
@@ -187,7 +189,7 @@ export function registerDiscordRoutes(app: Express) {
       res.status(403).json({ error: 'Inbox or Task module access is required.' })
       return
     }
-    if (!supabaseAdmin) {
+    if (!db) {
       res.status(503).json({ configured: false, items: [], error: 'Database is not configured.' })
       return
     }

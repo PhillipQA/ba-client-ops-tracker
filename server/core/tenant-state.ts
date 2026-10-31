@@ -14,28 +14,24 @@ import { workspaceVersion } from '../services/workspace-version'
 import { type OrganizationInfo, type SessionUser, verifyPassword } from './auth'
 import { followUpTimeZone } from './config'
 import { ALL_MODULES, BXI_CORE_ORG_ID, defaultTaskSettings } from './constants'
-import { supabaseAdmin } from './database'
+import { db } from './database'
 
 export async function loadLegacyTrackerState() {
-  if (!supabaseAdmin) return { configured: false, data: null as any, updatedAt: undefined as string | undefined }
-  const { data, error } = await supabaseAdmin
-    .from('tracker_state')
-    .select('data, updated_at')
-    .eq('id', 'main')
-    .maybeSingle()
+  if (!db) return { configured: false, data: null as any, updatedAt: undefined as string | undefined }
+  const { data, error } = await db.from('tracker_state').select('data, updated_at').eq('id', 'main').maybeSingle()
   if (error) throw error
   return { configured: true, data: data?.data ?? null, updatedAt: data?.updated_at as string | undefined }
 }
 
 export async function multiTenantSchemaReady() {
-  if (!supabaseAdmin) return false
-  const { error } = await supabaseAdmin.from('organizations').select('id').limit(1)
+  if (!db) return false
+  const { error } = await db.from('organizations').select('id').limit(1)
   return !error
 }
 
 export async function platformAuthSchemaReady() {
-  if (!supabaseAdmin) return false
-  const { error } = await supabaseAdmin.from('platform_users').select('id').limit(1)
+  if (!db) return false
+  const { error } = await db.from('platform_users').select('id').limit(1)
   return !error
 }
 
@@ -52,8 +48,8 @@ function normalizeOrganization(row: any): OrganizationInfo {
 }
 
 export async function organizationById(id?: string | null) {
-  if (!supabaseAdmin || !id) return null
-  const { data, error } = await supabaseAdmin
+  if (!db || !id) return null
+  const { data, error } = await db
     .from('organizations')
     .select('id,name,slug,status,enabled_modules')
     .eq('id', id)
@@ -64,11 +60,11 @@ export async function organizationById(id?: string | null) {
 }
 
 export async function organizationByLoginKey(account: string) {
-  if (!supabaseAdmin) return null
+  if (!db) return null
   const raw = account.trim()
   const slug = cleanSlug(raw)
   if (slug) {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from('organizations')
       .select('id,name,slug,status,enabled_modules')
       .ilike('slug', slug)
@@ -76,7 +72,7 @@ export async function organizationByLoginKey(account: string) {
       .maybeSingle()
     if (!error && data) return normalizeOrganization(data)
   }
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db
     .from('organizations')
     .select('id,name,slug,status,enabled_modules')
     .ilike('name', raw)
@@ -90,10 +86,10 @@ export async function organizationByLoginKey(account: string) {
 const loadedRevisions = new WeakMap<object, string | null>()
 
 export async function loadTenantState(organizationId?: string | null) {
-  if (!supabaseAdmin) return { configured: false, data: null as any, updatedAt: undefined as string | undefined }
+  if (!db) return { configured: false, data: null as any, updatedAt: undefined as string | undefined }
   // A known tenant must never fall back to the original workspace after a DB error.
   if (organizationId) {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await db
       .from('tenant_state')
       .select('data, updated_at')
       .eq('organization_id', organizationId)
@@ -101,7 +97,7 @@ export async function loadTenantState(organizationId?: string | null) {
     if (error) throw error
     // Recover accounts missing from older/fresh snapshots without replacing operational data.
     // app_users is the authentication authority; passwords never come from the browser.
-    const { data: users, error: usersError } = await supabaseAdmin
+    const { data: users, error: usersError } = await db
       .from('app_users')
       .select('*')
       .eq('organization_id', organizationId)
@@ -143,8 +139,8 @@ function accountFromDatabase(row: any) {
 
 // The users table is the authority for passwords, so re-checking a password reads it from there.
 export async function verifyTenantUserPassword(user: SessionUser, plaintext: string) {
-  if (!supabaseAdmin || !user.organizationId || !plaintext) return false
-  const { data, error } = await supabaseAdmin
+  if (!db || !user.organizationId || !plaintext) return false
+  const { data, error } = await db
     .from('app_users')
     .select('password_hash,status')
     .eq('id', user.id)
@@ -179,10 +175,10 @@ export function sanitizedAccountRaw(account: any) {
 }
 
 export async function normalizedSchemaStatus(organizationId?: string): Promise<NormalizedSyncResult> {
-  if (!supabaseAdmin) return { ready: false, error: 'Database is not configured.' }
-  const { error } = await supabaseAdmin.from('data_migration_runs').select('id').limit(1)
+  if (!db) return { ready: false, error: 'Database is not configured.' }
+  const { error } = await db.from('data_migration_runs').select('id').limit(1)
   if (error) return { ready: false, error: error.message }
-  let query = supabaseAdmin
+  let query = db
     .from('data_migration_runs')
     .select('completed_at, counts')
     .eq('status', 'completed')
@@ -647,10 +643,10 @@ async function writeTenantState(
   before?: any,
   synchronize = true,
 ): Promise<NormalizedSyncResult> {
-  if (!supabaseAdmin) throw new TenantSaveError('Database is not configured.', 503)
+  if (!db) throw new TenantSaveError('Database is not configured.', 503)
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
   if (!before || !loadedRevisions.has(before)) throw new TenantSaveError('Reload the workspace before saving.', 409)
-  const { data, error } = await supabaseAdmin.rpc('save_tenant_state_v16', {
+  const { data, error } = await db.rpc('save_tenant_state_v16', {
     p_expected_updated_at: loadedRevisions.get(before),
     p_organization_id: organizationId,
     p_state: state,
@@ -662,7 +658,7 @@ async function writeTenantState(
   if (error) {
     if (error.code === 'PGRST202' || error.code === '42883')
       throw new TenantSaveError(
-        'Database update required: run database/migrations/schema-v16-functional-integrity.sql in the database, then retry.',
+        'The workspace save function is missing. Check the database connection; a new database needs database/schema.sql.',
         409,
       )
     const status =
@@ -734,8 +730,8 @@ export function cleanModules(value: unknown) {
 }
 
 export async function usernameExists(organizationId: string, username: string, excludeId?: string) {
-  if (!supabaseAdmin) return false
-  let query = supabaseAdmin
+  if (!db) return false
+  let query = db
     .from('app_users')
     .select('id')
     .eq('organization_id', organizationId)

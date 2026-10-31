@@ -58,7 +58,7 @@ export function registerEmailTemplateRoutes(app: Express, deps: Deps) {
   const missing = (error: any) => {
     if (error)
       throw new EmailError(
-        'Email templates and signatures need database/migrations/schema-v26-email-templates.sql. Apply it and try again.',
+        'Email templates and signatures are unavailable. Check the database connection; a new database needs database/schema.sql.',
         503,
       )
   }

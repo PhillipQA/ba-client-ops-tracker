@@ -91,4 +91,4 @@ Reference: the user's SO GO-Live - Roving-POS.docx, identity libfile_1f39e52463c
 - Session-only draft fields/attachments; generated files are downloaded, not stored as account records.
 - No AI service, local runner, new dependency, or database migration is needed.
 
-See UPGRADE-v0.6.7.md in the release package for installation, validation, and deployment checks.
+See the [README](../../README.md) for installation and deployment.

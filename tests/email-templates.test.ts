@@ -234,6 +234,6 @@ test('before the migration is applied, the routes say so instead of failing', as
   await serve(memoryDb(true), async ask => {
     const r = await ask('GET', '/api/email/templates')
     assert.equal(r.status, 503)
-    assert.match(r.body.error, /schema-v26/)
+    assert.match(r.body.error, /database\/schema\.sql/)
   })
 })

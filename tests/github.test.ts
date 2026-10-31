@@ -660,7 +660,7 @@ test('repository discovery supports pagination and unavailable storage gives mig
     f.setMissingTable(true)
     const result = await f.ask('/connection')
     assert.equal(result.status, 503)
-    assert.match(result.body.error, /schema-v19/)
+    assert.match(result.body.error, /database\/schema\.sql/)
   }))
 
 test('Work Hub exposes exactly Email, Discord, GitHub and Manual Logs with ticket filters', () => {

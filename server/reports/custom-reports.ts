@@ -68,7 +68,7 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
   const missing = (error: any) => {
     if (error)
       throw new ReportError(
-        'Custom reports need database/migrations/schema-v31-custom-reports.sql. Apply it and try again.',
+        'Custom reports are unavailable. Check the database connection; a new database needs database/schema.sql.',
         503,
         { needsUpgrade: true },
       )
@@ -104,7 +104,7 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
   const missingQueries = (error: any) => {
     if (error)
       throw new ReportError(
-        'Saved queries need database/migrations/schema-v33-data-explorer.sql. Apply it and try again. Queries still run without it.',
+        'Saved queries are unavailable (queries still run). Check the database connection; a new database needs database/schema.sql.',
         503,
       )
   }

@@ -2,7 +2,16 @@
 
 **Current application release: v1.5.0**
 
-Changes are listed newest first. For installation, use the [README](README.md). For database requirements and update commands, use the [upgrade guide](docs/setup/upgrade.md). Older patch instructions apply only to the versions they name.
+Changes are listed newest first. For installation, deployment and updates, use the [README](README.md). Older entries mention migration files, release notes, an upgrade guide and patch ZIPs that were removed in the Northflank cleanup below; they are still in the Git history.
+
+## Unreleased — Northflank only, one database schema
+
+**No database change for an existing installation.** The live database keeps everything it has; nothing needs to be run.
+
+- **One schema file.** [database/schema.sql](database/schema.sql) sets up a new, empty PostgreSQL database at schema version 35 in one step, as the app's own database user. It replaces `database/setup.sql` (which needed Supabase) and the 35 numbered migrations. It matches what the live Northflank database has, without the Supabase-only parts (row-level security policies, Supabase roles and their grants, the unused Supabase Auth helper and the pgcrypto extension). The starting BXI-Core account now includes Data explorer.
+- **Supabase removed.** The app connects only through `DATABASE_URL`. `DATABASE_PROVIDER`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are no longer read, and the `@supabase/supabase-js` package is gone. In the code the database client is now called `db`. Database error messages point to `database/schema.sql` instead of old migration files.
+- **Removed:** the patch ZIP updater (`npm run patch*`, `payload/`), the Supabase-to-Northflank move scripts and guide, the release-notes archive (`docs/releases/`) and the upgrade guide. Platform settings no longer shows patch commands.
+- **README rewritten** with quick installation and Northflank deployment steps. Google Cloud setup (APIs and scopes) is now in [docs/setup/google.md](docs/setup/google.md).
 
 ## v1.5.0 — Subtasks from emails
 Released October 27, 2026.
@@ -65,7 +74,7 @@ Released October 26, 2026.
 ## v1.1.0 — Rows marked done when their tasks are done, in the tracker and in the Sheet
 Released October 26, 2026.
 
-**Database migration schema v28 (optional) and one more Google scope for writing to Sheets.** See the [upgrade guide](docs/setup/upgrade.md).
+**Database migration schema v28 (optional) and one more Google scope for writing to Sheets.** See the upgrade guide.
 
 - **Done when its tasks are done.** Edit a Checkbox or Choice column and tick **When the linked tasks are done**. When every task and subtask linked to a row (the row's own task, or tasks linked to the row or its cells) is completed, the column is ticked, or set to the option you chose. It works wherever the task is completed: the task list, Tasks, the Action Center or Work Hub. One column per tracker.
 - **Reopened goes back.** If one of those tasks is reopened, the box is unticked, or the choice goes back to the option you picked (or empty). A value someone set by hand, such as "Blocked", is left alone.
@@ -122,7 +131,7 @@ Released October 24, 2026.
 ## v1.0.0 — The code, reorganised
 Released October 24, 2026.
 
-**No database migration and no new setting.** Nothing changes for users: every page looks and works as in v0.9.0. This release makes the code easier to read and change. Details in the [release notes](docs/releases/v1.0.0.md).
+**No database migration and no new setting.** Nothing changes for users: every page looks and works as in v0.9.0. This release makes the code easier to read and change. Details in the release notes.
 
 - **Browser code by feature.** `src/features/<area>` holds each part of the app (trackers, email, work hub, documents, tasks and so on), `src/app` the shell and its state, `src/shared` what several features use, `src/styles` the global styles.
 - **Smaller main files.** `App.tsx` went from about 2,000 lines to about 300: its state lives in one hook and each screen is its own component. `server/index.ts` went from about 2,500 lines to about 140: shared server code is in `server/core` and each group of routes has its own module.
@@ -133,7 +142,7 @@ Released October 24, 2026.
 ## v0.9.0 — Trackers that follow a Google Sheet, and reviewing new rows
 Released October 24, 2026.
 
-**Database migration:** apply [schema v27](database/migrations/schema-v27-tracker-sheets.sql). **Google:** enable the Google Sheets API and Google Drive API, and add the Sheets and Drive metadata read-only permissions, in the Google Cloud project used for Gmail (steps in the [upgrade guide](docs/setup/upgrade.md#database-requirements)).
+**Database migration:** apply schema v27. **Google:** enable the Google Sheets API and Google Drive API, and add the Sheets and Drive metadata read-only permissions, in the Google Cloud project used for Gmail (steps in the upgrade guide).
 
 - **New tracker from a Google Sheet.** In Trackers, click **From Google Sheet**. Search the Sheets you can open (your own, those shared with you, and shared drives) or paste a link, choose the tab, check what each column becomes, and choose the **key column** that names each row, such as a branch number. Each person allows Google Sheets once; the tracker can read Sheets but never changes them.
 - **It keeps up with the Sheet (Sheet → tracker).** Click **Sync now**, or leave the tracker open: it syncs every few minutes. New rows come in, changed cells update, and a row removed from the Sheet is kept in the tracker, crossed out, rather than deleted. Rows are matched by the key column, so sorting or inserting rows in the Sheet is safe. Columns from the Sheet have green headers and are changed in the Sheet; your own columns, tasks, subtasks and Calculated columns stay editable and are never overwritten.
@@ -144,7 +153,7 @@ Released October 24, 2026.
 ## v0.8.0 — Email signatures and templates
 Released October 24, 2026.
 
-**Database migration:** apply [schema v26](database/migrations/schema-v26-email-templates.sql) for signatures and templates. Until then, email works as before. No new Google permission.
+**Database migration:** apply schema v26 for signatures and templates. Until then, email works as before. No new Google permission.
 
 - **Your signature, everywhere.** The signature in New email is now saved to your account, so it follows you to any browser or computer, and each person has their own. A signature you had typed before is moved to your account the first time you open New email. It is added under the message of each new email and stays plain text.
 - **Email templates.** Ready-made subjects and messages for the emails you send to clients and teammates. In New email, type in **Template** to pick one: the subject and message fill in, your signature stays underneath, and you can still edit before sending.
@@ -173,7 +182,7 @@ No database migration and no new Google permission.
 ## v0.6.98 — Trackers: clients, task and subtask cells, calculations
 Released October 24, 2026.
 
-No new database migration and no new Google permission. Subtask cells use the task links table from [schema v25](database/migrations/schema-v25-tracker-task-links.sql) (v0.6.96); apply it if you have not.
+No new database migration and no new Google permission. Subtask cells use the task links table from schema v25 (v0.6.96); apply it if you have not.
 
 - **Several clients per tracker.** Choose one or more clients when you create or import a tracker, or later under **Tracker details**. The Trackers list shows them all and its client filter matches any of them.
 - **The first column holds the row's task.** Point at a row's first cell and click **+ Task** to pick an open task or create one. The title starts as the row's name; the client comes from the tracker (you choose when it has several) and the project defaults to the tracker's.
@@ -194,7 +203,7 @@ No database migration and no new Google permission.
 ## v0.6.96 — Trackers: move rows, change column type, task links
 Released October 23, 2026.
 
-**Optional database migration:** apply [schema v25](database/migrations/schema-v25-tracker-task-links.sql) to use task links. Everything else in this release works without it. No new Google permission.
+**Optional database migration:** apply schema v25 to use task links. Everything else in this release works without it. No new Google permission.
 
 - **Move rows.** Select one or more rows and use **Top**, **Move up**, **Move down** or **Bottom**, or drag a row by its number. The order is saved for everyone. Moving is available only while no sort, grouping, search or filter is active, because the order you see must be the saved order.
 - **Change a column's type.** In **Edit column…** choose a new type: Text, Long text, Number, Date, Link or Select. **Check the change** shows how many values convert and which would be cleared, with examples. Nothing is cleared until you tick the box and confirm, and saved views that sort or filter by the column are reset. Checkbox, Multi-select, Person, Secret and the columns that fill themselves cannot be converted.
@@ -256,7 +265,7 @@ One database migration (schema v24, for Trackers) and no new Google permission.
 
 A new **Trackers** page for sheets you shape yourself, for the things that never fitted a fixed screen: site rollouts, permit lists, defect logs, client ticket lists.
 
-**Needs database migration schema v24.** Apply it before using Trackers (see the [upgrade guide](docs/setup/upgrade.md#database-requirements)). Everything else works without it, and the Trackers page says so if it is missing.
+**Needs database migration schema v24.** Apply it before using Trackers (see the upgrade guide). Everything else works without it, and the Trackers page says so if it is missing.
 
 - **Your own columns and rows.** Start from a template (Site rollout, POS installation & BIR permits, Defect & enhancement log, Client ticket tracker) or a blank tracker, then add, rename, move and delete columns. Column types: text, long text, number, date, checkbox, select, multi-select, person, link, and the protected and connected types below. A column's type cannot be changed after it is made. Limits: 100 columns, 5,000 rows per tracker, 200 trackers per account.
 - **A fast grid.** Click or use the arrow keys to move, Enter or typing to edit, Tab to move right, Space to tick a checkbox, Delete to clear a cell, and a panel for each row. Long lists stay quick: only the rows on screen are drawn, and a tracker at the 5,000-row limit loaded, scrolled, searched and sorted smoothly in testing.
@@ -360,7 +369,7 @@ No database change.
 ## v0.6.87 — Save Gmail attachments to Google Drive task folders
 Released October 23, 2026.
 
-**Database migration required:** apply [schema v23](database/migrations/schema-v23-drive-attachments.sql) before connecting Google Drive. It runs on Supabase and on plain PostgreSQL (Northflank).
+**Database migration required:** apply schema v23 before connecting Google Drive. It runs on Supabase and on plain PostgreSQL (Northflank).
 
 ### Added
 
@@ -476,7 +485,7 @@ Released October 12, 2026.
 - Keep the message and task form open after saving. Retain client, project and assignee; clear title and description for the next task.
 - Prevent rapid duplicate clicks and preserve saved tasks if a subsequent refresh or message-badge update fails.
 
-**Database:** no new migration. [Full notes](docs/releases/v0.6.81.md).
+**Database:** no new migration. Full notes.
 
 ## v0.6.80 — Sign Off Document
 Released October 11, 2026.
@@ -486,7 +495,7 @@ Released October 11, 2026.
 - Edit retained narrative sections and add signatories beyond the initial two per side.
 - Keep separate drafts and attachments while switching forms.
 
-**Database:** schema v21 is needed for optional custom Go Live template management. Built-in generation uses the existing table. [Full notes](docs/releases/v0.6.80.md).
+**Database:** schema v21 is needed for optional custom Go Live template management. Built-in generation uses the existing table. Full notes.
 
 ## v0.6.79 — FSD missing-input guidance
 Released October 11, 2026.
@@ -496,7 +505,7 @@ Released October 11, 2026.
 - Show contributing, partially used, skipped, irrelevant and excluded sources.
 - Generate Anyway uses verified available content and retains TBD placeholders for unavailable information.
 
-**Database:** no new migration. [Full notes](docs/releases/v0.6.79.md).
+**Database:** no new migration. Full notes.
 
 ## v0.6.78 — Work Hub login and manual sync
 Merged October 9, 2026.
@@ -506,17 +515,17 @@ Merged October 9, 2026.
 - Remove timed/focus-driven Work Hub sync and automatic continuation.
 - Preserve saved per-user pages until the relevant source is refreshed.
 
-**Database:** no new migration for the sync change. [Full notes](docs/releases/v0.6.78.md). This supersedes the Work Hub polling described in v0.6.76/v0.6.77.
+**Database:** no new migration for the sync change. Full notes. This supersedes the Work Hub polling described in v0.6.76/v0.6.77.
 
 ## Earlier updates
 
 | Version | Main change | Database action |
 | --- | --- | --- |
-| [v0.6.77](docs/releases/v0.6.77.md) | Active-view refresh and reduced background reads | No new migration |
-| [v0.6.76](docs/releases/v0.6.76.md) | GitHub / GitLab provider selection | Schema v20 for GitLab; v19 if GitHub is not installed |
-| [v0.6.75](docs/releases/v0.6.75.md) | Personal GitHub Work Hub integration | Schema v19 |
-| [v0.6.74](docs/releases/v0.6.74.md) | FSD custom features and supporting screenshots | No new migration |
-| [v0.6.73](docs/releases/v0.6.73.md) | FSD readiness checklist and Generate Anyway | No new migration |
-| [v0.6.72](docs/releases/v0.6.72.md) | DocHub native signatory reminders | No new migration |
+| v0.6.77 | Active-view refresh and reduced background reads | No new migration |
+| v0.6.76 | GitHub / GitLab provider selection | Schema v20 for GitLab; v19 if GitHub is not installed |
+| v0.6.75 | Personal GitHub Work Hub integration | Schema v19 |
+| v0.6.74 | FSD custom features and supporting screenshots | No new migration |
+| v0.6.73 | FSD readiness checklist and Generate Anyway | No new migration |
+| v0.6.72 | DocHub native signatory reminders | No new migration |
 
-The [release archive](docs/releases/README.md) contains the older version notes and verification reports. SMTP reminder delivery introduced in v0.6.70 was superseded by DocHub-native reminders in v0.6.72; SMTP remains applicable to password recovery.
+The release archive contains the older version notes and verification reports. SMTP reminder delivery introduced in v0.6.70 was superseded by DocHub-native reminders in v0.6.72; SMTP remains applicable to password recovery.

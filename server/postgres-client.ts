@@ -264,13 +264,8 @@ export function createPostgresClient(connectionString: string, testPool?: Pick<p
     from(table: string) {
       return new Query(table)
     },
+    // Evidence files live in the tracker_evidence_files table, behind a small upload/download/remove API.
     storage: {
-      async listBuckets() {
-        return { data: [{ id: 'task-evidence', name: 'task-evidence' }], error: null }
-      },
-      async createBucket() {
-        return { data: null, error: null }
-      },
       from(bucket: string) {
         return {
           async upload(filePath: string, data: Buffer, options: { contentType?: string } = {}) {

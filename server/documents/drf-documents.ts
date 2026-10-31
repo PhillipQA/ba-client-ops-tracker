@@ -8,7 +8,7 @@ import { documentOutputName } from '../../src/features/documents/documentFilenam
 import { parseModelJson } from '../ai/suggestions'
 import { runTenantAi } from '../ai/tenant-ai'
 import { moduleAllowed, requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
-import { supabaseAdmin } from '../core/database'
+import { db } from '../core/database'
 import { aiAgents, type integrations } from '../core/services'
 import { tenantIdForUser } from '../core/tenant-state'
 import { aiProviderName, documentTemplateRow } from '../integrations/tenant-integrations'
@@ -254,7 +254,7 @@ async function sendDrfFailure(
   context: Record<string, any> = {},
 ) {
   const diagnosticId = await recordDrfError(
-    supabaseAdmin,
+    db,
     { tenantId: tenantIdForUser(user)!, userId: user.id },
     stage,
     'server',
@@ -275,7 +275,7 @@ export function registerDrfRoutes(app: Express) {
     if (!isDrfStage(req.body?.stage) || typeof req.body?.message !== 'string' || req.body.message.length > 2000)
       return void res.status(400).json({ error: 'A DRF error stage and short message are required.' })
     const diagnosticId = await recordDrfError(
-      supabaseAdmin,
+      db,
       { tenantId: tenantIdForUser(user)!, userId: user.id },
       req.body.stage,
       'browser',
@@ -284,7 +284,7 @@ export function registerDrfRoutes(app: Express) {
     )
     if (!diagnosticId)
       return void res.status(503).json({
-        error: 'DRF error could not be saved. Apply schema-v18-drf-error-logs.sql and check database connectivity.',
+        error: 'DRF error could not be saved. Check the database connection; a new database needs database/schema.sql.',
       })
     res.status(201).json({ diagnosticId })
   })
@@ -293,8 +293,8 @@ export function registerDrfRoutes(app: Express) {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     if (!documentAccessAllowed(user))
       return void res.status(403).json({ error: 'Document Creation access is required.' })
-    if (!supabaseAdmin) return void res.status(503).json({ error: 'Database is not configured.' })
-    const { data, error } = await supabaseAdmin
+    if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
+    const { data, error } = await db
       .from('drf_error_logs')
       .select('id,stage,source,message,error_code,context,created_at')
       .eq('tenant_id', tenantIdForUser(user)!)
@@ -302,9 +302,9 @@ export function registerDrfRoutes(app: Express) {
       .order('created_at', { ascending: false })
       .limit(20)
     if (error)
-      return void res
-        .status(503)
-        .json({ error: 'DRF logs are unavailable. Apply schema-v18-drf-error-logs.sql and retry.' })
+      return void res.status(503).json({
+        error: 'DRF logs are unavailable. Check the database connection; a new database needs database/schema.sql.',
+      })
     res.json({ items: data || [] })
   })
 
@@ -440,7 +440,7 @@ export function registerDrfRoutes(app: Express) {
 
     let templateType = ''
     try {
-      const templateRow = await documentTemplateRow(supabaseAdmin, tenantIdForUser(user)!, 'drf')
+      const templateRow = await documentTemplateRow(db, tenantIdForUser(user)!, 'drf')
       if (!templateRow?.is_enabled || !templateRow.content_base64)
         throw new Error('The DRF template is not configured. Add it in Settings → Templates.')
       const templateName = String(templateRow.name || 'drf-template.xlsx').slice(0, 180)

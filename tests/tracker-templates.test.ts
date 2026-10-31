@@ -240,7 +240,7 @@ test('tracker templates: private to their maker; Administrators share, change, h
     const result = await ask('GET', '/api/tracker-templates')
     assert.equal(result.status, 503)
     assert.equal(result.body.needsUpgrade, true)
-    assert.match(result.body.error, /schema-v34-tracker-templates/)
+    assert.match(result.body.error, /database\/schema\.sql/)
   })
 })
 

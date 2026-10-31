@@ -57,7 +57,7 @@ export function registerGithub(
           error:
             e instanceof IntegrationError
               ? e.message
-              : 'GitHub storage is unavailable. Apply schema-v19-work-hub-github.sql and retry.',
+              : 'GitHub storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
           ...(e instanceof GithubError && e.retryAfterSeconds ? { retryAfterSeconds: e.retryAfterSeconds } : {}),
         })
       }
@@ -79,7 +79,11 @@ export function registerGithub(
       .eq('tenant_id', u.organizationId)
       .eq('user_id', u.id)
       .maybeSingle()
-    if (result.error) throw new IntegrationError('Apply schema-v19-work-hub-github.sql before connecting GitHub.', 503)
+    if (result.error)
+      throw new IntegrationError(
+        'GitHub cannot be connected yet. Check the database connection; a new database needs database/schema.sql.',
+        503,
+      )
     return result.data
   }
   const summary = (row: any) => {

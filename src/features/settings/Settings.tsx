@@ -341,8 +341,8 @@ function AiAgentCard({ value, refresh }: { value: AiAgent; refresh: () => Promis
       )}
       {!value.schemaReady && (
         <p role="alert" className="settings-message">
-          Separate agent storage is not installed yet. Run supabase/schema-v11-ai-agent-manager.sql. Existing Legacy
-          Shared AI continues to work as fallback.
+          Separate agent storage is not available: check the database (a new database needs database/schema.sql).
+          Existing Legacy Shared AI continues to work as fallback.
         </p>
       )}
       {providerChanged && hasEffectiveCredential && !secret.trim() && (

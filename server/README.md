@@ -5,7 +5,7 @@ The Express backend is grouped by responsibility. Each group of routes lives in 
 - `index.ts` — creates the app, adds middleware and registers every route group, in order. Nothing else.
 - `core/` — what most routes share:
   - `env.ts` loads `.env.local` and `.env` before any other module reads `process.env`;
-  - `config.ts` (port, production mode, project root, time zone), `database.ts` (the Supabase or Postgres client), `constants.ts`, `services.ts` (integration settings and AI agents);
+  - `config.ts` (port, production mode, project root, time zone), `database.ts` (the PostgreSQL client, `db`), `constants.ts`, `services.ts` (integration settings and AI agents);
   - `auth.ts` — sessions, passwords, `requireAuth`, `requireTenantWorkspace`, `moduleAllowed`;
   - `tenant-state.ts` — loading, saving and normalising each organisation's workspace.
 - `auth/` — sign-in, sign-out and password-recovery routes, rate limits, HTTP auth transport, recovery email.

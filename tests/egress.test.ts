@@ -305,7 +305,7 @@ test('revision changes at tenant midnight so follow-ups catch up after idle time
   )
 })
 
-test('Supabase checks select metadata or notifications without downloading tenant_state data', async () => {
+test('database checks select metadata or notifications without downloading tenant_state data', async () => {
   const calls: any[] = []
   const db = {
     from(table: string) {

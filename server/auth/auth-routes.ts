@@ -26,7 +26,7 @@ import {
   internalAdminBootstrapPassword,
   PASSWORD_BOOTSTRAP_MARKER,
 } from '../core/constants'
-import { supabaseAdmin } from '../core/database'
+import { db } from '../core/database'
 import {
   loadLegacyTrackerState,
   multiTenantSchemaReady,
@@ -103,14 +103,14 @@ export function registerAuthRoutes(app: Express) {
 
       // The Internal Admin control plane is intentionally separate from tenant workspaces.
       if (accountKey === INTERNAL_ADMIN_ACCOUNT_KEY) {
-        if (!supabaseAdmin || !(await platformAuthSchemaReady())) {
+        if (!db || !(await platformAuthSchemaReady())) {
           res.status(409).json({
             error: 'Internal Admin authentication is not initialized. Run the latest account/security schema first.',
           })
           return
         }
 
-        const { data: platformAccount, error: platformError } = await supabaseAdmin
+        const { data: platformAccount, error: platformError } = await db
           .from('platform_users')
           .select(
             'id,account_key,username,password_hash,name,email,phone,status,must_change_password,last_login_at,deleted_at',
@@ -139,7 +139,7 @@ export function registerAuthRoutes(app: Express) {
             return
           }
           storedHash = await secureHashPassword(password)
-          const { error: bootstrapError } = await supabaseAdmin
+          const { error: bootstrapError } = await db
             .from('platform_users')
             .update({ password_hash: storedHash, must_change_password: true, updated_at: new Date().toISOString() })
             .eq('id', platformAccount.id)
@@ -149,7 +149,7 @@ export function registerAuthRoutes(app: Express) {
           return
         } else if (!isBcryptHash(storedHash)) {
           storedHash = await secureHashPassword(password)
-          const { error: upgradeError } = await supabaseAdmin
+          const { error: upgradeError } = await db
             .from('platform_users')
             .update({ password_hash: storedHash, updated_at: new Date().toISOString() })
             .eq('id', platformAccount.id)
@@ -157,7 +157,7 @@ export function registerAuthRoutes(app: Express) {
         }
 
         const loggedInAt = new Date().toISOString()
-        await supabaseAdmin
+        await db
           .from('platform_users')
           .update({ last_login_at: loggedInAt, updated_at: loggedInAt })
           .eq('id', platformAccount.id)
@@ -169,13 +169,13 @@ export function registerAuthRoutes(app: Express) {
         return
       }
 
-      if (supabaseAdmin && (await multiTenantSchemaReady())) {
+      if (db && (await multiTenantSchemaReady())) {
         const organization = await organizationByLoginKey(account)
         if (!organization || organization.status !== 'Active') {
           rejectInvalidLogin(req, res)
           return
         }
-        const { data: normalizedAccount, error: accountError } = await supabaseAdmin
+        const { data: normalizedAccount, error: accountError } = await db
           .from('app_users')
           .select(
             'id,organization_id,username,password_hash,name,email,phone,role,modules,status,created_on,last_login_at,deleted_at',
@@ -205,7 +205,7 @@ export function registerAuthRoutes(app: Express) {
             return
           }
           storedHash = await secureHashPassword(password)
-          const { error: bootstrapError } = await supabaseAdmin
+          const { error: bootstrapError } = await db
             .from('app_users')
             .update({ password_hash: storedHash, updated_at: new Date().toISOString() })
             .eq('id', normalizedAccount.id)
@@ -218,7 +218,7 @@ export function registerAuthRoutes(app: Express) {
           return
         } else if (!isBcryptHash(storedHash)) {
           storedHash = await secureHashPassword(password)
-          const { error: upgradeError } = await supabaseAdmin
+          const { error: upgradeError } = await db
             .from('app_users')
             .update({ password_hash: storedHash, updated_at: new Date().toISOString() })
             .eq('id', normalizedAccount.id)
@@ -229,7 +229,7 @@ export function registerAuthRoutes(app: Express) {
         }
 
         const loggedInAt = new Date().toISOString()
-        await supabaseAdmin
+        await db
           .from('app_users')
           .update({ last_login_at: loggedInAt, updated_at: loggedInAt })
           .eq('id', normalizedAccount.id)
@@ -298,10 +298,10 @@ export function registerAuthRoutes(app: Express) {
     if (!account || account.length > 200 || !username || username.length > 200 || !validRecoveryEmail(email)) {
       return void res.status(400).json({ error: 'Enter your account, user, and registered email address.' })
     }
-    if (!supabaseAdmin || !sendRecoveryEmail) return void res.status(503).json({ error: recoveryUnavailable })
+    if (!db || !sendRecoveryEmail) return void res.status(503).json({ error: recoveryUnavailable })
     // Respond before lookup/delivery so their timing cannot reveal registered accounts.
     res.json({ message: recoveryMessage })
-    const database = supabaseAdmin
+    const database = db
     const sendEmail = sendRecoveryEmail
     void (async () => {
       const token = randomBytes(32).toString('base64url')
@@ -327,7 +327,7 @@ export function registerAuthRoutes(app: Express) {
       const code = String((error as { code?: string })?.code || 'DELIVERY_ERROR')
         .replace(/[^A-Z0-9_]/gi, '')
         .slice(0, 40)
-      console.error(`Password recovery failed (${code}). Check SMTP settings and schema-v7-password-recovery.sql.`)
+      console.error(`Password recovery failed (${code}). Check SMTP settings and the database connection.`)
     })
   })
 
@@ -338,9 +338,9 @@ export function registerAuthRoutes(app: Express) {
       return void res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new link.' })
     if (password.length < 8 || password.length > 128)
       return void res.status(400).json({ error: 'Use a password between 8 and 128 characters.' })
-    if (!supabaseAdmin) return void res.status(503).json({ error: recoveryUnavailable })
+    if (!db) return void res.status(503).json({ error: recoveryUnavailable })
     try {
-      const { data, error } = await supabaseAdmin.rpc('redeem_password_reset_v7', {
+      const { data, error } = await db.rpc('redeem_password_reset_v7', {
         p_token_hash: passwordHash(token),
         p_password_hash: await secureHashPassword(password),
       })
@@ -360,9 +360,7 @@ export function registerAuthRoutes(app: Express) {
       res.setHeader('Set-Cookie', sessionCookie('', 0))
       res.json({ message: 'Your password has been reset. Sign in with your new password.' })
     } catch {
-      console.error(
-        'Password reset could not be completed. Check database availability and schema-v7-password-recovery.sql.',
-      )
+      console.error('Password reset could not be completed. Check database availability.')
       res.status(503).json({ error: recoveryUnavailable })
     }
   })
