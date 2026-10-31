@@ -26,6 +26,7 @@ import { registerCustomReportRoutes } from './reports/custom-reports'
 import { registerTrackerTemplateRoutes } from './trackers/tracker-templates'
 import { authRequestDiagnostics, configureHttpServer } from './auth/auth-transport'
 import { securityHeaders } from './auth/security-headers'
+import { jsonBodies } from './auth/body-limits'
 import { followUpTimeZone, isProduction, port, projectRoot } from './core/config'
 import { supabaseAdmin } from './core/database'
 import {
@@ -110,7 +111,8 @@ const docHubDeps: Parameters<typeof createDocHubService>[0] = {
 }
 const docHubService = createDocHubService(docHubDeps)
 registerDocHubWebhook(app, docHubDeps, docHubService)
-app.use(express.json({ limit: '24mb' }))
+// Large JSON bodies only for signed-in requests; sign-in and anonymous requests get a small limit (see body-limits).
+app.use(jsonBodies({ json: express.json, signedIn: req => Boolean(sessionFromRequest(req).user) }))
 
 registerAuthRoutes(app)
 

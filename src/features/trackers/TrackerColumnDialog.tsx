@@ -44,6 +44,8 @@ type Props = {
   onConvert?: (type: ColumnType, confirm: boolean, clearUnfit: boolean) => Promise<ConvertReport>
   /** The connected Sheet's name, when this tracker follows one. */
   sheetName?: string
+  /** False when only the tracker's owner or an Administrator may change who can reveal a Secret column. */
+  canManageSecrets?: boolean
 }
 
 const GROUPS: { id: ColumnGroup; label: string; about: string }[] = [
@@ -64,6 +66,7 @@ export default function TrackerColumnDialog({
   onDelete,
   onConvert,
   sheetName,
+  canManageSecrets = true,
 }: Props) {
   const adding = mode === 'add'
   const [type, setType] = useState<ColumnType>(column?.type || 'text')
@@ -537,7 +540,7 @@ export default function TrackerColumnDialog({
             </fieldset>
           )}
           {type === 'secret' && (
-            <fieldset className="trk-options">
+            <fieldset className="trk-options" disabled={!adding && !canManageSecrets}>
               <legend>Who can reveal it</legend>
               <label className="trk-radio">
                 <input
@@ -557,6 +560,9 @@ export default function TrackerColumnDialog({
                 />{' '}
                 Administrators only
               </label>
+              {!adding && !canManageSecrets && (
+                <p className="trk-muted-text">Only the tracker's owner or an Administrator can change this.</p>
+              )}
               <p className="trk-muted-text">
                 Values are encrypted before they are stored and never appear in exports, search, or filters. Each reveal
                 is logged with who and when.

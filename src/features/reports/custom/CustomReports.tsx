@@ -69,6 +69,7 @@ import {
   type Rec,
   type ReportData,
 } from './reportData'
+import { csvText } from '../../../shared/csv'
 import {
   emptyDefinition,
   freeSpot,
@@ -132,8 +133,8 @@ const PALETTE: { kind: WidgetKind; icon: ReactNode }[] = [
 ]
 
 function downloadCsv(name: string, rows: string[][]) {
-  const quote = (value: string) => `"${String(value ?? '').replace(/"/g, '""')}"`
-  const blob = new Blob([rows.map(row => row.map(quote).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
+  // Formula-safe: text such as an email subject starting with = stays text when the file is opened.
+  const blob = new Blob([csvText(rows)], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

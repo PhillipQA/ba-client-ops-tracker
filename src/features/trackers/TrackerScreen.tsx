@@ -2713,7 +2713,13 @@ export default function TrackerScreen(props: Props) {
           column={editingColumn}
           onClose={() => setColumnDialog(null)}
           onSave={draft => saveColumn(draft, editingColumn)}
-          onDelete={editingColumn ? () => deleteColumn(editingColumn) : undefined}
+          onDelete={
+            // Deleting a Secret column erases every stored value: only for the tracker's owner or an Administrator.
+            editingColumn && (editingColumn.type !== 'secret' || tracker.canManage)
+              ? () => deleteColumn(editingColumn)
+              : undefined
+          }
+          canManageSecrets={tracker.canManage}
           onConvert={
             editingColumn
               ? (type, confirm, clearUnfit) => convertColumn(editingColumn, type, confirm, clearUnfit)
