@@ -132,7 +132,7 @@ export function useExplorerData(props: ExplorerProps) {
   /** Loads what a query reads, then runs it. */
   const run = async (sql: string, params: Record<string, string>): Promise<SqlResult> => {
     // Table identifier parameters are resolved only against this user's visible table catalog.
-    if (/\\b(?:from|join)\\s+\\{\\{/i.test(sql)) await loadTrackers()
+    if (/(?:from|join)\s+\{\{/i.test(sql)) await loadTrackers()
     const known = explorerCatalog({
       trackers: state.current.trackers || [],
       clients: props.clients,
