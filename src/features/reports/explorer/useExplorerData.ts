@@ -15,7 +15,14 @@ import type {
 import { loadAllRows, trackerApi } from '../../trackers/trackerApi'
 import type { Tracker, TrackerRow } from '../../trackers/trackerModel'
 import { explorerCatalog, explorerTables, type ExplorerMessage, type TableInfo } from './explorerTables'
-import { referencedTables, resolveTableIdentifierParams, runQuery, SqlError, type SqlResult, type SqlTable } from './sqlEngine'
+import {
+  referencedTables,
+  resolveTableIdentifierParams,
+  runQuery,
+  SqlError,
+  type SqlResult,
+  type SqlTable,
+} from './sqlEngine'
 
 export type ExplorerProps = {
   clients: Client[]
