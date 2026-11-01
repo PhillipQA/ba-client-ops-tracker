@@ -1165,6 +1165,8 @@ export default function CustomReports(props: Props) {
           clients={props.clients}
           projects={props.projects}
           accounts={props.accounts}
+          tableNames={explorer.catalog.map(table => table.name)}
+          loadTrackers={explorer.loadTrackers}
           preview={widget => (
             <QueryWidgetCard
               widget={widget}
