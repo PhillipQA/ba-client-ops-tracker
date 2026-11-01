@@ -58,10 +58,6 @@ if (unformatted.length)
   console.log(
     `::warning title=Not formatted (run npx biome format --write)::${annotation(unformatted.slice(0, 50).join('\n'))}`,
   )
-
-for (const diagnostic of diagnostics.filter(d => d.category === 'format')) {
-  console.log(`::notice title=Formatting detail::${annotation(JSON.stringify(diagnostic))}`)
-}
 // Errors in full (message and raw location), so each can be fixed without running Biome locally.
 const errors = diagnostics.filter(d => d.severity === 'error' && d.category !== 'format')
 const text = d =>
