@@ -96,7 +96,7 @@ import { DataExplorer } from '../explorer/DataExplorer'
 import { QueryResultView, useQueryRun, type QueryRunner } from '../explorer/QueryResult'
 import { QueryWidgetEditor } from '../explorer/QueryWidgetEditor'
 import { reportQueryParams, type ReportFilterValues } from '../explorer/reportParams'
-import { parseQuery, type Expr } from '../explorer/sqlEngine'
+import { queryParams } from '../explorer/sqlEngine'
 import { resultCsv } from '../explorer/resultView'
 import { useExplorerData } from '../explorer/useExplorerData'
 import './customReports.css'
@@ -145,59 +145,10 @@ function downloadCsv(name: string, rows: string[][]) {
   URL.revokeObjectURL(url)
 }
 
-/** SQL widgets need explicit report-filter parameters in their WHERE/JOIN conditions. */
+/** SQL widgets need explicit report-filter parameters in their WHERE clause. */
 function queryFilterWarnings(sql: string, filters: ReportFilterValues): string[] {
-  const params = new Set<string>()
-  const collect = (expr?: Expr): void => {
-    if (!expr) return
-    switch (expr.type) {
-      case 'param':
-        params.add(expr.name)
-        break
-      case 'unary':
-        collect(expr.arg)
-        break
-      case 'binary':
-        collect(expr.left)
-        collect(expr.right)
-        break
-      case 'call':
-        expr.args.forEach(collect)
-        break
-      case 'case':
-        collect(expr.operand)
-        expr.whens.forEach(item => {
-          collect(item.when)
-          collect(item.then)
-        })
-        collect(expr.otherwise)
-        break
-      case 'in':
-        collect(expr.arg)
-        expr.list.forEach(collect)
-        break
-      case 'between':
-        collect(expr.arg)
-        collect(expr.low)
-        collect(expr.high)
-        break
-      case 'like':
-        collect(expr.arg)
-        collect(expr.pattern)
-        break
-      case 'isnull':
-        collect(expr.arg)
-        break
-    }
-  }
-  try {
-    const parsed = parseQuery(sql)
-    collect(parsed.where)
-    collect(parsed.having)
-    parsed.joins.forEach(join => collect(join.on))
-  } catch {
-    // The SQL runner will show the syntax error; do not mask it with a filter warning.
-  }
+  const where = /\\bwhere\\b([\\s\\S]*?)(?:\\bgroup\\s+by\\b|\\bhaving\\b|\\border\\s+by\\b|\\blimit\\b|;|$)/i.exec(sql)?.[1] || ''
+  const params = new Set(queryParams(where))
   const missing: string[] = []
   if (filters.range && (!params.has('from') || !params.has('to'))) missing.push('Dates')
   if (filters.client && !params.has('client')) missing.push('Client')
