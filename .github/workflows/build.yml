@@ -15,6 +15,10 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run build
+      - name: Show formatter diff
+        run: |
+          npx biome format --write src/features/reports/custom/CustomReports.tsx
+          git diff -- src/features/reports/custom/CustomReports.tsx
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check
         run: |
