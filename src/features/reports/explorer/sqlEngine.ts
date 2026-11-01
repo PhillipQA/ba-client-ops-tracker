@@ -516,6 +516,16 @@ export function queryParams(sql: string): string[] {
   return names
 }
 
+/** The parameter names used as table identifiers in FROM and JOIN clauses. */
+export function tableIdentifierParams(sql: string): string[] {
+  const names: string[] = []
+  for (const match of sql.matchAll(/\\b(?:from|join)\\s+\\{\\{\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\}\\}/gi)) {
+    const name = match[1].toLowerCase()
+    if (!names.includes(name)) names.push(name)
+  }
+  return names
+}
+
 /**
  * Resolves {{table_name}} only when it appears as a FROM/JOIN identifier.
  * Identifiers are selected from the caller's allow-list, never interpolated unchecked.
