@@ -4,6 +4,7 @@ import {
   queryParams,
   referencedTables,
   resolveTableIdentifierParams,
+  tableIdentifierParams,
   runQuery,
   SqlError,
   type SqlTable,
@@ -177,16 +178,22 @@ test('mistakes are explained, and nothing but SELECT runs', () => {
   assert.match(message('SELECT FOO(1)'), /not a function/)
 })
 
-
 test('table identifier parameters resolve only to allow-listed tables', () => {
   const sql = 'SELECT title FROM {{table_name}} WHERE status = {{status}}'
   const allowed = ['tracker_gingersnaps_new_site_rollout', 'tracker_mci_festival_mall']
+  assert.deepEqual(tableIdentifierParams(sql), ['table_name'])
+  assert.deepEqual(tableIdentifierParams('SELECT * FROM tasks t JOIN {{other_table}} o ON o.id = t.id'), ['other_table'])
   assert.equal(
     resolveTableIdentifierParams(sql, { table_name: allowed[0], status: 'Open' }, allowed),
     'SELECT title FROM tracker_gingersnaps_new_site_rollout WHERE status = {{status}}',
   )
   assert.throws(
-    () => resolveTableIdentifierParams(sql, { table_name: 'tasks; DROP TABLE tasks', status: 'Open' }, allowed),
+    () =>
+      resolveTableIdentifierParams(
+        sql,
+        { table_name: 'tasks; DROP TABLE tasks', status: 'Open' },
+        allowed,
+      ),
     /not an available table/,
   )
   assert.throws(
