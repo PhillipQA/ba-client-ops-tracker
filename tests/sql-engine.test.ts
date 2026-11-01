@@ -195,3 +195,49 @@ test('table identifier parameters resolve only to allow-listed tables', () => {
   )
   assert.throws(() => resolveTableIdentifierParams(sql, { status: 'Open' }, allowed), /Choose a table/)
 })
+
+test('UNION ALL appends SELECT branches and preserves duplicate rows', () => {
+  const result = run(`
+    SELECT 'Client Name' AS Field, COALESCE(MAX(name), 'TBA') AS Value
+    FROM clients
+    UNION ALL
+    SELECT 'Project Manager', 'Ma. Lourdes Angeles'
+    UNION ALL
+    SELECT 'Project Manager', 'Ma. Lourdes Angeles'
+    UNION ALL
+    SELECT 'Project ID', COALESCE(MAX(id), 'TBA')
+    FROM clients
+  `)
+  assert.deepEqual(result.columns, ['field', 'value'])
+  assert.deepEqual(result.rows, [
+    ['Client Name', 'Initech'],
+    ['Project Manager', 'Ma. Lourdes Angeles'],
+    ['Project Manager', 'Ma. Lourdes Angeles'],
+    ['Project ID', 'c3'],
+  ])
+})
+
+test('UNION ALL collects table references and parameters from every branch', () => {
+  const sql = `
+    SELECT 'Client Name' AS Field, MAX(name) AS Value
+    FROM {{table_name}}
+    UNION ALL
+    SELECT 'Project Manager', {{manager}}
+  `
+  assert.deepEqual(queryParams(sql), ['table_name', 'manager'])
+  assert.deepEqual(tableIdentifierParams(sql), ['table_name'])
+  const resolved = resolveTableIdentifierParams(sql, { table_name: 'clients' }, ['clients'])
+  assert.deepEqual(referencedTables(resolved), ['clients'])
+  assert.deepEqual(run(resolved, { manager: 'Ma. Lourdes Angeles' }).rows, [
+    ['Client Name', 'Initech'],
+    ['Project Manager', 'Ma. Lourdes Angeles'],
+  ])
+})
+
+test('UNION ALL requires every branch to return the same number of columns', () => {
+  assert.throws(() => run('SELECT 1 AS Field UNION ALL SELECT 2, 3'), /same number of columns/)
+})
+
+test('UNION without ALL is rejected with a helpful message', () => {
+  assert.throws(() => run("SELECT 'A' AS Field UNION SELECT 'B'"), /Only UNION ALL is supported/)
+})

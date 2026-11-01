@@ -1,7 +1,6 @@
 // Data explorer: a small, read-only SQL engine that runs in the browser over tables the person may already see.
-// It understands the SQL people use for reports: SELECT [DISTINCT] … FROM … [LEFT] JOIN … ON … WHERE … GROUP BY …
-// HAVING … ORDER BY … LIMIT … OFFSET, with COUNT/SUM/AVG/MIN/MAX, CASE, LIKE, IN, BETWEEN, IS NULL, text and date
-// functions, and {{parameters}}. There is nothing to write to, so nothing can be changed or deleted.
+// It understands read-only SELECT queries, including UNION ALL, joins, filters, grouping, ordering and limits,
+// with COUNT/SUM/AVG/MIN/MAX, CASE, LIKE, IN, BETWEEN, IS NULL, text/date functions, and {{parameters}}.
 
 export type SqlValue = string | number | boolean | null
 export type SqlRow = Record<string, SqlValue>
@@ -9,7 +8,7 @@ export type SqlColumnType = 'text' | 'number' | 'date' | 'bool'
 export type SqlTable = { name: string; columns: { name: string; type: SqlColumnType }[]; rows: SqlRow[] }
 export type SqlResult = { columns: string[]; rows: SqlValue[][]; truncated: boolean; ms: number }
 
-export const SQL_LIMITS = { resultRows: 5000, workRows: 250_000, ms: 5000, length: 20_000 } as const
+export const SQL_LIMITS = { resultRows: 5000, workRows: 250_000, ms: 5000, length: 20_000, unionBranches: 25 } as const
 
 export class SqlError extends Error {
   constructor(
@@ -67,6 +66,8 @@ const KEYWORDS = new Set([
   'nulls',
   'first',
   'last',
+  'union',
+  'all',
 ])
 
 export function tokenize(sql: string): Token[] {
@@ -183,6 +184,8 @@ export type Query = {
   orderBy: { expr: Expr; desc: boolean }[]
   limit?: number
   offset?: number
+  /** Additional SELECT branches appended with UNION ALL. */
+  unionAll?: Query[]
 }
 
 export const AGGREGATES = new Set(['count', 'sum', 'avg', 'min', 'max', 'string_agg', 'group_concat'])
@@ -236,6 +239,24 @@ class Parser {
   }
 
   query(): Query {
+    const query = this.select()
+    const branches: Query[] = []
+    while (this.maybeWord('union')) {
+      if (!this.maybeWord('all')) this.fail('Only UNION ALL is supported. Use UNION ALL to preserve duplicate rows.')
+      if (branches.length >= SQL_LIMITS.unionBranches - 1)
+        this.fail(`A UNION ALL query can contain at most ${SQL_LIMITS.unionBranches} SELECT statements.`)
+      branches.push(this.select())
+    }
+    this.maybeOp(';')
+    if (this.token.kind !== 'end') {
+      if (this.isWord('select')) this.fail('Run one SELECT at a time.')
+      this.fail('This part of the query is not understood.')
+    }
+    if (branches.length) query.unionAll = branches
+    return query
+  }
+
+  select(): Query {
     this.word('select')
     const distinct = this.maybeWord('distinct')
     const items: SelectItem[] = []
@@ -307,12 +328,6 @@ class Parser {
     }
     if (this.maybeWord('limit')) query.limit = this.count('LIMIT')
     if (this.maybeWord('offset')) query.offset = this.count('OFFSET')
-    this.maybeOp(';')
-    if (this.token.kind !== 'end') {
-      if (this.isWord('select')) this.fail('Run one SELECT at a time.')
-      if (this.isWord('union')) this.fail('UNION is not supported yet.')
-      this.fail('This part of the query is not understood.')
-    }
     return query
   }
   count(what: string) {
@@ -500,7 +515,15 @@ export function parseQuery(sql: string): Query {
 export function referencedTables(sql: string): string[] {
   try {
     const query = parseQuery(sql)
-    return [query.from, ...query.joins.map(join => join.source)].filter(Boolean).map(source => source!.table)
+    const names: string[] = []
+    const collect = (branch: Query) => {
+      for (const source of [branch.from, ...branch.joins.map(join => join.source)]) {
+        if (source && !names.includes(source.table)) names.push(source.table)
+      }
+      branch.unionAll?.forEach(collect)
+    }
+    collect(query)
+    return names
   } catch {
     return []
   }
@@ -656,16 +679,44 @@ export function runQuery(
     Object.entries(options.params || {}).map(([key, value]) => [key.toLowerCase(), value]),
   )
   const today = options.today || new Date().toISOString().slice(0, 10)
-  let work = 0
+  const budget = { work: 0, started, now }
   const tick = (count = 1) => {
-    work += count
-    if (work > SQL_LIMITS.workRows * 4) throw new SqlError('This query does too much work. Add a filter or a LIMIT.')
-    if (work % 2000 < count && now() - started > SQL_LIMITS.ms)
+    budget.work += count
+    if (budget.work > SQL_LIMITS.workRows * 4)
+      throw new SqlError('This query does too much work. Add a filter or a LIMIT.')
+    if (budget.work % 2000 < count && now() - started > SQL_LIMITS.ms)
       throw new SqlError(
         `This query took longer than ${SQL_LIMITS.ms / 1000} seconds and was stopped. Add a filter or a LIMIT.`,
       )
   }
+  const branches = [query, ...(query.unionAll || [])]
+  const results = branches.map(branch => runSelect(branch, tables, params, today, budget, tick))
+  const columns = results[0].columns
+  for (let index = 1; index < results.length; index++) {
+    if (results[index].columns.length !== columns.length)
+      throw new SqlError('Every SELECT in a UNION ALL must return the same number of columns.')
+  }
+  const combined = results.flatMap(result => result.rows)
+  const truncated = results.some(result => result.truncated) || combined.length > SQL_LIMITS.resultRows
+  return {
+    columns,
+    rows: combined.slice(0, SQL_LIMITS.resultRows),
+    truncated,
+    ms: Math.max(0, Math.round(now() - started)),
+  }
+}
 
+type QueryBudget = { work: number; started: number; now: () => number }
+
+function runSelect(
+  query: Query,
+  tables: Record<string, SqlTable | undefined>,
+  params: Record<string, string>,
+  today: string,
+  budget: QueryBudget,
+  tick: (count?: number) => void,
+): SqlResult {
+  const { now, started } = budget
   // Tables and the columns each alias offers.
   const sources = query.from ? [query.from, ...query.joins.map(join => join.source)] : []
   const scope: Scope = { aliases: [], columns: new Map() }
