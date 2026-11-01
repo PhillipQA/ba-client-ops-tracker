@@ -161,7 +161,7 @@ function trackerFieldType(column: TrackerColumn): FieldType | null {
 
 /** The tracker columns, when present and unambiguous, that represent the report's global filters. */
 export function trackerFilterFieldKeys(fields: Field[]): { client?: string; project?: string; user?: string } {
-  const normalize = (value: string) => value.toLowerCase().replace(/[_-]+/g, ' ').replace(/\\s+/g, ' ').trim()
+  const normalize = (value: string) => value.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
   const find = (names: string[]) => {
     const matches = fields.filter(field => names.includes(normalize(field.label)))
     return matches.length === 1 ? matches[0].key : undefined
