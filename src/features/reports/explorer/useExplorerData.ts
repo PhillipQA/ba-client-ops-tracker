@@ -145,7 +145,11 @@ export function useExplorerData(props: ExplorerProps) {
       clients: props.clients,
       messages: state.current.messages,
     })
-    const executableSql = resolveTableIdentifierParams(sql, params, known.map(table => table.name))
+    const executableSql = resolveTableIdentifierParams(
+      sql,
+      params,
+      known.map(table => table.name),
+    )
     const wanted = referencedTables(executableSql)
     for (const name of wanted) {
       const info = known.find(table => table.name === name)
