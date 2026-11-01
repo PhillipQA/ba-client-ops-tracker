@@ -110,8 +110,9 @@ export function QueryWidgetEditor({
                 ))}
               </div>
               <p className="crp-muted">
-                Left empty, {REPORT_PARAMS} take the report’s own filters, so people viewing the report can change them.
-                Other empty parameters mean NULL.
+                Left empty, {REPORT_PARAMS} take the report’s own filters. To filter rows, use these parameters in a
+                WHERE condition, for example: {'({{client}} IS NULL OR client = {{client}})'}. Other empty parameters
+                mean NULL.
               </p>
             </fieldset>
           )}

@@ -239,11 +239,13 @@ export function WidgetEditor({
     const next = fieldsFor(source, trackerId)
     const has = (key?: string) => Boolean(key && next.some(field => field.key === key))
     const firstDate = next.find(field => field.type === 'date')?.key
+    const dateField =
+      source === 'tasks' ? undefined : source === 'tracker' ? firstDate : has('date') ? 'date' : undefined
     setWidget(current => ({
       ...current,
       source,
       trackerId: source === 'tracker' ? trackerId : undefined,
-      dateField: source === 'tasks' || source === 'tracker' ? undefined : has('date') ? 'date' : undefined,
+      dateField,
       filters: current.filters.filter(filter => has(filter.field)),
       measure: has(current.measure.field) ? current.measure : { op: 'count' },
       groupBy: has(current.groupBy) ? current.groupBy : next.find(field => field.type === 'text')?.key,
@@ -355,7 +357,10 @@ export function WidgetEditor({
               {widget.source === 'tracker' && (
                 <Row
                   label="Tracker"
-                  hint="Report dates, client, project and person filters do not apply to tracker rows."
+                  hint={
+                    'Client, Project and Person filters use matching tracker columns. ' +
+                    'Choose a date field below to apply the report date range.'
+                  }
                 >
                   <select
                     value={widget.trackerId || ''}
@@ -372,8 +377,11 @@ export function WidgetEditor({
                   </select>
                 </Row>
               )}
-              {widget.source !== 'tracker' && (
-                <Row label="Report dates apply to">
+              {dates.length > 0 && (
+                <Row
+                  label="Report dates apply to"
+                  hint="Choose the date column this widget should use for the report's date range."
+                >
                   <FieldSelect
                     fields={dates}
                     value={widget.dateField}

@@ -14,6 +14,7 @@ import {
   rangeDates,
   sourceFields,
   sourceRecords,
+  unsupportedReportFilters,
   type ReportData,
 } from '../src/features/reports/custom/reportData'
 
@@ -241,4 +242,81 @@ test('weekly buckets fill the gaps between weeks', () => {
     ['2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19'],
   )
   assert.deepEqual(result.chart.series[0].values, [2, 0, 0, 1])
+})
+
+test('tracker widgets follow report client, project, person, and date filters when matching columns exist', () => {
+  const tracker = {
+    id: 'tr1',
+    name: 'Rollout',
+    columns: [
+      { id: 'client', name: 'Client', type: 'text' },
+      { id: 'project', name: 'Project', type: 'text' },
+      { id: 'person', name: 'Person', type: 'person' },
+      { id: 'go-live', name: 'Go Live Date', type: 'date' },
+      { id: 'status', name: 'Status', type: 'text' },
+    ],
+  } as any
+  const input = data({
+    projects: [
+      { id: 'p1', name: 'Rollout A' },
+      { id: 'p2', name: 'Rollout B' },
+    ] as any,
+    trackers: {
+      tr1: {
+        tracker,
+        rows: [
+          {
+            id: 'r1',
+            updatedAt: '2026-10-25T00:00:00.000Z',
+            cells: { client: 'Acme', project: 'Rollout A', person: 'u1', 'go-live': '2026-10-25', status: 'Ready' },
+          },
+          {
+            id: 'r2',
+            updatedAt: '2026-10-25T00:00:00.000Z',
+            cells: { client: 'Globex', project: 'Rollout B', person: 'u2', 'go-live': '2026-10-25', status: 'Pending' },
+          },
+          {
+            id: 'r3',
+            updatedAt: '2026-09-25T00:00:00.000Z',
+            cells: { client: 'Acme', project: 'Rollout A', person: 'u1', 'go-live': '2026-09-25', status: 'Pending' },
+          },
+        ],
+      },
+    } as any,
+  })
+  const records = sourceRecords('tracker', input, 'tr1')
+  const fields = sourceFields('tracker', tracker)
+  const widget = {
+    ...newWidget('metric', { x: 0, y: 0 }),
+    source: 'tracker' as const,
+    trackerId: 'tr1',
+    dateField: 'c.go-live',
+  }
+  const filters = {
+    range: 'custom' as const,
+    from: '2026-10-01',
+    to: '2026-10-31',
+    clientId: 'c1',
+    projectId: 'p1',
+    userId: 'u1',
+  }
+  const result = computeWidget(widget, records, fields, filters, '2026-10-29')
+  assert.equal(result.kind === 'metric' ? result.value : null, 1)
+  assert.deepEqual(unsupportedReportFilters(widget, filters, fields, '2026-10-29'), [])
+})
+
+test('tracker widgets explain report filters with no matching tracker columns', () => {
+  const tracker = {
+    id: 'tr2',
+    name: 'Status only',
+    columns: [{ id: 'status', name: 'Status', type: 'text' }],
+  } as any
+  const widget = { ...newWidget('metric', { x: 0, y: 0 }), source: 'tracker' as const, trackerId: 'tr2' }
+  const filters = { range: 'this_month' as const, clientId: 'c1', projectId: 'p1', userId: 'u1' }
+  assert.deepEqual(unsupportedReportFilters(widget, filters, sourceFields('tracker', tracker), '2026-10-29'), [
+    'Dates',
+    'Client',
+    'Project',
+    'Person',
+  ])
 })

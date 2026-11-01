@@ -64,6 +64,7 @@ import {
   SOURCES,
   sourceFields,
   sourceRecords,
+  unsupportedReportFilters,
   widgetCsv,
   type Field,
   type Rec,
@@ -95,6 +96,7 @@ import { DataExplorer } from '../explorer/DataExplorer'
 import { QueryResultView, useQueryRun, type QueryRunner } from '../explorer/QueryResult'
 import { QueryWidgetEditor } from '../explorer/QueryWidgetEditor'
 import { reportQueryParams, type ReportFilterValues } from '../explorer/reportParams'
+import { queryParams } from '../explorer/sqlEngine'
 import { resultCsv } from '../explorer/resultView'
 import { useExplorerData } from '../explorer/useExplorerData'
 import './customReports.css'
@@ -141,6 +143,19 @@ function downloadCsv(name: string, rows: string[][]) {
   link.download = `${name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'report'}.csv`
   link.click()
   URL.revokeObjectURL(url)
+}
+
+/** SQL widgets need explicit report-filter parameters in their WHERE clause. */
+function queryFilterWarnings(sql: string, filters: ReportFilterValues): string[] {
+  const whereMatch = /\bwhere\b([\s\S]*?)(?:\bgroup\s+by\b|\bhaving\b|\border\s+by\b|\blimit\b|;|$)/i.exec(sql)
+  const where = whereMatch?.[1] || ''
+  const params = new Set(queryParams(where))
+  const missing: string[] = []
+  if (filters.range && (!params.has('from') || !params.has('to'))) missing.push('Dates')
+  if (filters.client && !params.has('client')) missing.push('Client')
+  if (filters.project && !params.has('project')) missing.push('Project')
+  if (filters.person && !params.has('person') && !params.has('user')) missing.push('Person')
+  return missing
 }
 
 /** Trackers for the "Tracker rows" source: the list, and each tracker's rows once a widget needs them. */
@@ -1513,6 +1528,7 @@ function WidgetCard({
     () => (trackerProblem ? null : computeWidget(widget, records, fields, filters, today)),
     [settings, records, fields, filters, today, trackerProblem],
   )
+  const filterWarnings = unsupportedReportFilters(widget, filters, fields, today)
   const isText = widget.kind === 'heading' || widget.kind === 'note'
   const title = widget.title || (isText ? '' : WIDGET_LABELS[widget.kind])
   const source = SOURCES.find(item => item.id === widget.source)?.label
@@ -1560,6 +1576,12 @@ function WidgetCard({
         </div>
       )}
       <div className="crp-card-body" onDoubleClick={editing ? onEdit : undefined}>
+        {filterWarnings.length > 0 && (
+          <div className="crp-filter-warning" role="status">
+            Report filters not applied to this widget: {filterWarnings.join(', ')}. Choose a matching date field or add
+            matching Client, Project, or Person columns to the tracker.
+          </div>
+        )}
         <WidgetBody widget={widget} computed={computed} fields={fields} today={today} problem={trackerProblem} />
       </div>
     </>
@@ -1588,6 +1610,8 @@ function QueryWidgetCard({
   onDuplicate?: () => void
   onRemove?: () => void
 }) {
+  const sql = widget.query?.sql || ''
+  const filterWarnings = queryFilterWarnings(sql, filters)
   const query = widget.query ? { ...widget.query, params: reportQueryParams(widget.query, filters) } : undefined
   const { result, error, running } = useQueryRun(run, query, refresh)
   const title = widget.title || WIDGET_LABELS.query
@@ -1633,6 +1657,12 @@ function QueryWidgetCard({
         )}
       </div>
       <div className="crp-card-body dx-card-body" onDoubleClick={editing ? onEdit : undefined}>
+        {filterWarnings.length > 0 && (
+          <div className="crp-filter-warning" role="status">
+            This SQL query does not use report filter parameters for: {filterWarnings.join(', ')}. Add the corresponding
+            parameters to its WHERE clause.
+          </div>
+        )}
         {error ? (
           <div className="crp-empty dx-error">{error}</div>
         ) : result ? (

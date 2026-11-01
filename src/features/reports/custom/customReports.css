@@ -419,6 +419,16 @@
   font-size: 12.5px;
   text-align: right;
 }
+.crp-filter-warning {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--k-border);
+  border-radius: 8px;
+  background: var(--k-solid);
+  color: var(--k-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .crp-print-only {
   display: none;
 }

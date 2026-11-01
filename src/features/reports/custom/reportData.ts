@@ -159,6 +159,30 @@ function trackerFieldType(column: TrackerColumn): FieldType | null {
   }
 }
 
+/** The tracker columns, when present and unambiguous, that represent the report's global filters. */
+export function trackerFilterFieldKeys(fields: Field[]): { client?: string; project?: string; user?: string } {
+  const normalize = (value: string) => value.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const find = (names: string[]) => {
+    const matches = fields.filter(field => names.includes(normalize(field.label)))
+    return matches.length === 1 ? matches[0].key : undefined
+  }
+  return {
+    client: find(['client', 'client name', 'customer', 'customer name']),
+    project: find(['project', 'project name']),
+    user: find(['person', 'assigned to', 'assignee', 'assigned person', 'user', 'user name', 'owner', 'responsible']),
+  }
+}
+
+function entityIdForValue(value: Value, entities: { id: string; name: string }[]): string {
+  if (value === null || value === undefined) return ''
+  const target = String(value).trim().toLowerCase()
+  if (!target) return ''
+  const byId = entities.find(entity => entity.id.toLowerCase() === target)
+  if (byId) return byId.id
+  const byName = entities.filter(entity => entity.name.trim().toLowerCase() === target)
+  return byName.length === 1 ? byName[0].id : ''
+}
+
 /** The fields a source offers. Tracker rows offer the tracker's own columns (Secret columns never). */
 export function sourceFields(source: SourceId, tracker?: Tracker): Field[] {
   switch (source) {
@@ -184,12 +208,13 @@ export function sourceFields(source: SourceId, tracker?: Tracker): Field[] {
 }
 
 /** Whether the report's client, project and person filters apply to a source. */
-export const SOURCE_SCOPE: Record<SourceId, { client: boolean; user: boolean }> = {
-  tasks: { client: true, user: true },
-  time: { client: true, user: true },
-  activities: { client: true, user: false },
-  events: { client: true, user: true },
-  tracker: { client: false, user: false },
+export const SOURCE_SCOPE: Record<SourceId, { client: boolean; project: boolean; user: boolean }> = {
+  tasks: { client: true, project: true, user: true },
+  time: { client: true, project: true, user: true },
+  activities: { client: true, project: true, user: false },
+  events: { client: true, project: true, user: true },
+  // Tracker support is determined per tracker from its named columns.
+  tracker: { client: false, project: false, user: false },
 }
 
 const daysBetween = (start: string, end: string) => {
@@ -338,8 +363,15 @@ export function sourceRecords(source: SourceId, data: ReportData, trackerId = ''
       const loaded = data.trackers[trackerId]
       if (!loaded) return []
       const { tracker, rows } = loaded
+      const filterFields = trackerFilterFieldKeys(sourceFields('tracker', tracker))
       return rows.map(row => {
-        const record: Rec = { $id: row.id, $user: '', updated: (row.updatedAt || '').slice(0, 10) }
+        const record: Rec = {
+          $id: row.id,
+          $client: '',
+          $project: '',
+          $user: '',
+          updated: (row.updatedAt || '').slice(0, 10),
+        }
         for (const column of tracker.columns) {
           const type = trackerFieldType(column)
           if (!type) continue
@@ -383,6 +415,9 @@ export function sourceRecords(source: SourceId, data: ReportData, trackerId = ''
           }
           record[columnKey(column)] = out
         }
+        if (filterFields.client) record.$client = entityIdForValue(record[filterFields.client], data.clients)
+        if (filterFields.project) record.$project = entityIdForValue(record[filterFields.project], data.projects)
+        if (filterFields.user) record.$user = entityIdForValue(record[filterFields.user], data.accounts)
         return record
       })
     }
@@ -539,6 +574,31 @@ export function matches(record: Rec, filter: WidgetFilter, type: FieldType, toda
   }
 }
 
+function filterScope(source: SourceId, fields: Field[]) {
+  if (source !== 'tracker') return SOURCE_SCOPE[source]
+  const keys = trackerFilterFieldKeys(fields)
+  return { client: Boolean(keys.client), project: Boolean(keys.project), user: Boolean(keys.user) }
+}
+
+/** Report filters that cannot be applied to a widget because its source has no matching field. */
+export function unsupportedReportFilters(
+  widget: Widget,
+  filters: ReportFilters,
+  fields: Field[],
+  today: string,
+): string[] {
+  const unsupported: string[] = []
+  const scope = filterScope(widget.source, fields)
+  const types = new Map(fields.map(field => [field.key, field.type]))
+  if (rangeDates(filters, today) && (!widget.dateField || types.get(widget.dateField) !== 'date')) {
+    unsupported.push('Dates')
+  }
+  if (filters.clientId && !scope.client) unsupported.push('Client')
+  if (filters.projectId && !scope.project) unsupported.push('Project')
+  if (filters.userId && !scope.user) unsupported.push('Person')
+  return unsupported
+}
+
 /** The records a widget works on: its source, the report's filters, then its own filters. */
 export function widgetRecords(
   widget: Widget,
@@ -547,18 +607,19 @@ export function widgetRecords(
   filters: ReportFilters,
   today: string,
 ): Rec[] {
-  const range = widget.dateField ? rangeDates(filters, today) : null
-  const scope = SOURCE_SCOPE[widget.source]
   const types = new Map(fields.map(field => [field.key, field.type]))
+  const dateField = widget.dateField && types.get(widget.dateField) === 'date' ? widget.dateField : undefined
+  const range = dateField ? rangeDates(filters, today) : null
+  const scope = filterScope(widget.source, fields)
   const own = widget.filters.filter(filter => types.has(filter.field))
   return all.filter(record => {
-    if (range && widget.dateField) {
-      const value = record[widget.dateField]
+    if (range && dateField) {
+      const value = record[dateField]
       if (typeof value !== 'string' || !value || value.slice(0, 10) < range.from || value.slice(0, 10) > range.to)
         return false
     }
     if (scope.client && filters.clientId && record.$client !== filters.clientId) return false
-    if (scope.client && filters.projectId && record.$project !== filters.projectId) return false
+    if (scope.project && filters.projectId && record.$project !== filters.projectId) return false
     if (scope.user && filters.userId && record.$user !== filters.userId) return false
     return own.every(filter => matches(record, filter, types.get(filter.field) as FieldType, today))
   })
