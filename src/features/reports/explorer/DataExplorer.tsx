@@ -1,6 +1,6 @@
 // Data explorer: query the account's data with SQL (or the builder, which writes the SQL), see the result as a grid
 // or a chart, and save queries to reuse, share as templates, or put on reports. Everything runs in the browser.
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -188,6 +188,9 @@ export function DataExplorer({
   const opened = queries.find(item => item.id === openId) || null
   const names = queryParams(sql)
   const identifierParams = tableIdentifierParams(sql)
+  useEffect(() => {
+    if (identifierParams.length) void explorer.loadTrackers()
+  }, [identifierParams.length, explorer.loadTrackers])
 
   // --- Running ---
 
