@@ -147,7 +147,7 @@ function downloadCsv(name: string, rows: string[][]) {
 
 /** SQL widgets need explicit report-filter parameters in their WHERE clause. */
 function queryFilterWarnings(sql: string, filters: ReportFilterValues): string[] {
-  const where = /\\bwhere\\b([\\s\\S]*?)(?:\\bgroup\\s+by\\b|\\bhaving\\b|\\border\\s+by\\b|\\blimit\\b|;|$)/i.exec(sql)?.[1] || ''
+  const where = /\bwhere\b([\s\S]*?)(?:\bgroup\s+by\b|\bhaving\b|\border\s+by\b|\blimit\b|;|$)/i.exec(sql)?.[1] || ''
   const params = new Set(queryParams(where))
   const missing: string[] = []
   if (filters.range && (!params.has('from') || !params.has('to'))) missing.push('Dates')
