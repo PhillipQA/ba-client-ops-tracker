@@ -235,15 +235,9 @@ test('UNION ALL collects table references and parameters from every branch', () 
 })
 
 test('UNION ALL requires every branch to return the same number of columns', () => {
-  assert.throws(
-    () => run('SELECT 1 AS Field UNION ALL SELECT 2, 3'),
-    /same number of columns/,
-  )
+  assert.throws(() => run('SELECT 1 AS Field UNION ALL SELECT 2, 3'), /same number of columns/)
 })
 
 test('UNION without ALL is rejected with a helpful message', () => {
-  assert.throws(
-    () => run("SELECT 'A' AS Field UNION SELECT 'B'"),
-    /Only UNION ALL is supported/,
-  )
+  assert.throws(() => run("SELECT 'A' AS Field UNION SELECT 'B'"), /Only UNION ALL is supported/)
 })
