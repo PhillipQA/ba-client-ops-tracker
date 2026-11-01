@@ -111,7 +111,7 @@ export function useExplorerData(props: ExplorerProps) {
     [trackers, props.clients, messages],
   )
 
-  // The tables are built once per change of data, then shared by every query that runs on it (a report may hold several).
+  // Build the account tables once per data change and share them across queries.
   const built = useRef<{ from: unknown[]; tables: Record<string, SqlTable> } | null>(null)
   const tables = () => {
     const current = input()
