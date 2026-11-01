@@ -781,6 +781,8 @@ export function DataExplorer({
                 clients={clients}
                 projects={projects}
                 accounts={accounts}
+                tableNames={explorer.catalog.map(table => table.name)}
+                isTableIdentifier={new RegExp(`\\\\b(?:from|join)\\\\s+\\\\{\\\\{\\\\s*${name}\\\\s*\\\\}\\\\}`, 'i').test(sql)}
                 onChange={value => setParams(current => ({ ...current, [name]: value }))}
               />
             ))}
@@ -908,13 +910,15 @@ export function DataExplorer({
   )
 }
 
-/** A {{parameter}}'s box: dates get a date picker; client, project and person names a list to pick from. */
+/** A {{parameter}}'s box: table identifiers and common filters get validated dropdowns. */
 export function ParamInput({
   name,
   value,
   clients,
   projects,
   accounts,
+  tableNames = [],
+  isTableIdentifier = false,
   onChange,
 }: {
   name: string
@@ -922,9 +926,13 @@ export function ParamInput({
   clients: Client[]
   projects: Project[]
   accounts: UserAccount[]
+  tableNames?: string[]
+  isTableIdentifier?: boolean
   onChange: (value: string) => void
 }) {
-  const choices = /^client(_name)?$/.test(name)
+  const choices = isTableIdentifier
+    ? tableNames
+    : /^client(_name)?$/.test(name)
     ? clients.filter(client => !client.archived).map(client => client.name)
     : /^project(_name)?$/.test(name)
       ? projects.filter(project => !project.archived).map(project => project.name)
