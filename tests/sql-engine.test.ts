@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   queryParams,
   referencedTables,
+  resolveTableIdentifierParams,
   runQuery,
   SqlError,
   type SqlTable,
@@ -174,4 +175,22 @@ test('mistakes are explained, and nothing but SELECT runs', () => {
   assert.match(message('SELECT 1; SELECT 2'), /one SELECT/)
   assert.match(message("SELECT 'open"), /closing quote/)
   assert.match(message('SELECT FOO(1)'), /not a function/)
+})
+
+
+test('table identifier parameters resolve only to allow-listed tables', () => {
+  const sql = 'SELECT title FROM {{table_name}} WHERE status = {{status}}'
+  const allowed = ['tracker_gingersnaps_new_site_rollout', 'tracker_mci_festival_mall']
+  assert.equal(
+    resolveTableIdentifierParams(sql, { table_name: allowed[0], status: 'Open' }, allowed),
+    'SELECT title FROM tracker_gingersnaps_new_site_rollout WHERE status = {{status}}',
+  )
+  assert.throws(
+    () => resolveTableIdentifierParams(sql, { table_name: 'tasks; DROP TABLE tasks', status: 'Open' }, allowed),
+    /not an available table/,
+  )
+  assert.throws(
+    () => resolveTableIdentifierParams(sql, { status: 'Open' }, allowed),
+    /Choose a table/,
+  )
 })

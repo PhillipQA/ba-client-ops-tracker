@@ -516,6 +516,26 @@ export function queryParams(sql: string): string[] {
   return names
 }
 
+/**
+ * Resolves {{table_name}} only when it appears as a FROM/JOIN identifier.
+ * Identifiers are selected from the caller's allow-list, never interpolated unchecked.
+ */
+export function resolveTableIdentifierParams(
+  sql: string,
+  params: Record<string, string>,
+  allowedTables: string[],
+): string {
+  const allowed = new Map(allowedTables.map(name => [name.toLowerCase(), name]))
+  return sql.replace(/\b(from|join)\s+\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gi, (_match, clause: string, rawName: string) => {
+    const parameter = rawName.toLowerCase()
+    const selected = (params[parameter] ?? '').trim()
+    if (!selected) throw new SqlError(`Choose a table for {{${parameter}}} before running.`)
+    const table = allowed.get(selected.toLowerCase())
+    if (!table) throw new SqlError(`“${selected}” is not an available table for {{${parameter}}}.`)
+    return `${clause} ${table}`
+  })
+}
+
 // --- Values ---
 
 const DAY = 86_400_000
