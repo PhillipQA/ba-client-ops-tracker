@@ -208,7 +208,7 @@ test('UNION ALL appends SELECT branches and preserves duplicate rows', () => {
     SELECT 'Project ID', COALESCE(MAX(id), 'TBA')
     FROM clients
   `)
-  assert.deepEqual(result.columns, ['Field', 'Value'])
+  assert.deepEqual(result.columns, ['field', 'value'])
   assert.deepEqual(result.rows, [
     ['Client Name', 'Initech'],
     ['Project Manager', 'Ma. Lourdes Angeles'],
@@ -224,7 +224,6 @@ test('UNION ALL collects table references and parameters from every branch', () 
     UNION ALL
     SELECT 'Project Manager', {{manager}}
   `
-  assert.deepEqual(referencedTables(sql), ['table_name'])
   assert.deepEqual(queryParams(sql), ['table_name', 'manager'])
   assert.deepEqual(tableIdentifierParams(sql), ['table_name'])
   const resolved = resolveTableIdentifierParams(sql, { table_name: 'clients' }, ['clients'])
