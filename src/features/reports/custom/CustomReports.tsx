@@ -1707,9 +1707,8 @@ function QueryWidgetCard({
       <div className="crp-card-body dx-card-body" onDoubleClick={editing ? onEdit : undefined}>
         {filterWarnings.length > 0 && (
           <div className="crp-filter-warning" role="status">
-            Report filters not connected to this SQL query: {filterWarnings.join(', ')}. Add the corresponding{' '}
-            {'{{from}}'}, {'{{to}}'}, {'{{client}}'}, {'{{project}}'}, or
-            {'{{person}}'} parameters to its WHERE clause.
+            This SQL query does not use report filter parameters for: {filterWarnings.join(', ')}. Add the
+            corresponding parameters to its WHERE clause.
           </div>
         )}
         {error ? (
