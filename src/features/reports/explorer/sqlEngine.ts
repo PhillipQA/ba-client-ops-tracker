@@ -541,10 +541,10 @@ export function resolveTableIdentifierParams(
     (_match, clause: string, rawName: string) => {
       const parameter = rawName.toLowerCase()
       const selected = (params[parameter] ?? '').trim()
-      if (!selected) throw new SqlError(\`Choose a table for {{\${parameter}}} before running.\`)
+      if (!selected) throw new SqlError(`Choose a table for {{${parameter}}} before running.`)
       const table = allowed.get(selected.toLowerCase())
-      if (!table) throw new SqlError(\`“\${selected}” is not an available table for {{\${parameter}}}.\`)
-      return \`\${clause} \${table}\`
+      if (!table) throw new SqlError(`“${selected}” is not an available table for {{${parameter}}}.`)
+      return `${clause} ${table}`
     },
   )
 }
