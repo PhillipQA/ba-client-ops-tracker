@@ -933,8 +933,10 @@ export function ParamInput({
 }) {
   let choices: string[] | null = null
   if (isTableIdentifier) choices = tableNames
-  else if (/^client(_name)?$/.test(name)) choices = clients.filter(client => !client.archived).map(client => client.name)
-  else if (/^project(_name)?$/.test(name)) choices = projects.filter(project => !project.archived).map(project => project.name)
+  else if (/^client(_name)?$/.test(name))
+    choices = clients.filter(client => !client.archived).map(client => client.name)
+  else if (/^project(_name)?$/.test(name))
+    choices = projects.filter(project => !project.archived).map(project => project.name)
   else if (/^(user|assignee|person|owner)(_name)?$/.test(name))
     choices = accounts.filter(account => account.status === 'Active').map(account => account.name)
   const isDate = /(^|_)(date|from|to|start|end|since|until|day|week|month)($|_)/.test(name)
