@@ -365,7 +365,13 @@ export function sourceRecords(source: SourceId, data: ReportData, trackerId = ''
       const { tracker, rows } = loaded
       const filterFields = trackerFilterFieldKeys(sourceFields('tracker', tracker))
       return rows.map(row => {
-        const record: Rec = { $id: row.id, $client: '', $project: '', $user: '', updated: (row.updatedAt || '').slice(0, 10) }
+        const record: Rec = {
+          $id: row.id,
+          $client: '',
+          $project: '',
+          $user: '',
+          updated: (row.updatedAt || '').slice(0, 10),
+        }
         for (const column of tracker.columns) {
           const type = trackerFieldType(column)
           if (!type) continue
@@ -575,11 +581,18 @@ function filterScope(source: SourceId, fields: Field[]) {
 }
 
 /** Report filters that cannot be applied to a widget because its source has no matching field. */
-export function unsupportedReportFilters(widget: Widget, filters: ReportFilters, fields: Field[], today: string): string[] {
+export function unsupportedReportFilters(
+  widget: Widget,
+  filters: ReportFilters,
+  fields: Field[],
+  today: string,
+): string[] {
   const unsupported: string[] = []
   const scope = filterScope(widget.source, fields)
   const types = new Map(fields.map(field => [field.key, field.type]))
-  if (rangeDates(filters, today) && (!widget.dateField || types.get(widget.dateField) !== 'date')) unsupported.push('Dates')
+  if (rangeDates(filters, today) && (!widget.dateField || types.get(widget.dateField) !== 'date')) {
+    unsupported.push('Dates')
+  }
   if (filters.clientId && !scope.client) unsupported.push('Client')
   if (filters.projectId && !scope.project) unsupported.push('Project')
   if (filters.userId && !scope.user) unsupported.push('Person')
