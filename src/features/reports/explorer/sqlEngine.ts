@@ -526,7 +526,7 @@ export function resolveTableIdentifierParams(
   allowedTables: string[],
 ): string {
   const allowed = new Map(allowedTables.map(name => [name.toLowerCase(), name]))
-  return sql.replace(/\\b(from|join)\\s+\\{\\{\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\}\\}/gi, (_match, clause: string, rawName: string) => {
+  return sql.replace(/\b(from|join)\s+\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gi, (_match, clause: string, rawName: string) => {
     const parameter = rawName.toLowerCase()
     const selected = (params[parameter] ?? '').trim()
     if (!selected) throw new SqlError(`Choose a table for {{${parameter}}} before running.`)
