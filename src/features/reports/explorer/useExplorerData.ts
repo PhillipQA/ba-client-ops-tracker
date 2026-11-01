@@ -15,7 +15,14 @@ import type {
 import { loadAllRows, trackerApi } from '../../trackers/trackerApi'
 import type { Tracker, TrackerRow } from '../../trackers/trackerModel'
 import { explorerCatalog, explorerTables, type ExplorerMessage, type TableInfo } from './explorerTables'
-import { referencedTables, resolveTableIdentifierParams, runQuery, SqlError, type SqlResult, type SqlTable } from './sqlEngine'
+import {
+  referencedTables,
+  resolveTableIdentifierParams,
+  runQuery,
+  SqlError,
+  type SqlResult,
+  type SqlTable,
+} from './sqlEngine'
 
 export type ExplorerProps = {
   clients: Client[]
@@ -104,7 +111,7 @@ export function useExplorerData(props: ExplorerProps) {
     [trackers, props.clients, messages],
   )
 
-  // The tables are built once per change of data, then shared by every query that runs on it (a report may hold several).
+  // Build the account tables once per data change and share them across queries.
   const built = useRef<{ from: unknown[]; tables: Record<string, SqlTable> } | null>(null)
   const tables = () => {
     const current = input()
@@ -138,7 +145,11 @@ export function useExplorerData(props: ExplorerProps) {
       clients: props.clients,
       messages: state.current.messages,
     })
-    const executableSql = resolveTableIdentifierParams(sql, params, known.map(table => table.name))
+    const executableSql = resolveTableIdentifierParams(
+      sql,
+      params,
+      known.map(table => table.name),
+    )
     const wanted = referencedTables(executableSql)
     for (const name of wanted) {
       const info = known.find(table => table.name === name)

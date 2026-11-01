@@ -1,6 +1,6 @@
 // Data explorer: query the account's data with SQL (or the builder, which writes the SQL), see the result as a grid
 // or a chart, and save queries to reuse, share as templates, or put on reports. Everything runs in the browser.
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -43,7 +43,7 @@ import {
 } from './queryBuilder'
 import { QueryResultView } from './QueryResult'
 import { resultCsv } from './resultView'
-import { isKeyword, queryParams, SQL_FUNCTIONS, SqlError, type SqlResult } from './sqlEngine'
+import { isKeyword, queryParams, tableIdentifierParams, SQL_FUNCTIONS, SqlError, type SqlResult } from './sqlEngine'
 import type { TableInfo } from './explorerTables'
 import { csvText } from '../../../shared/csv'
 
@@ -187,6 +187,10 @@ export function DataExplorer({
   const editor = useRef<HTMLTextAreaElement>(null)
   const opened = queries.find(item => item.id === openId) || null
   const names = queryParams(sql)
+  const identifierParams = tableIdentifierParams(sql)
+  useEffect(() => {
+    if (identifierParams.length) void explorer.loadTrackers()
+  }, [identifierParams.length, explorer.loadTrackers])
 
   // --- Running ---
 
@@ -782,7 +786,7 @@ export function DataExplorer({
                 projects={projects}
                 accounts={accounts}
                 tableNames={explorer.catalog.map(table => table.name)}
-                isTableIdentifier={new RegExp('(?:from|join)\\s+\\{\\{\\s*' + name + '\\s*\\}\\}', 'i').test(sql)}
+                isTableIdentifier={identifierParams.includes(name)}
                 onChange={value => setParams(current => ({ ...current, [name]: value }))}
               />
             ))}
@@ -930,15 +934,14 @@ export function ParamInput({
   isTableIdentifier?: boolean
   onChange: (value: string) => void
 }) {
-  const choices = isTableIdentifier
-    ? tableNames
-    : /^client(_name)?$/.test(name)
-    ? clients.filter(client => !client.archived).map(client => client.name)
-    : /^project(_name)?$/.test(name)
-      ? projects.filter(project => !project.archived).map(project => project.name)
-      : /^(user|assignee|person|owner)(_name)?$/.test(name)
-        ? accounts.filter(account => account.status === 'Active').map(account => account.name)
-        : null
+  let choices: string[] | null = null
+  if (isTableIdentifier) choices = tableNames
+  else if (/^client(_name)?$/.test(name))
+    choices = clients.filter(client => !client.archived).map(client => client.name)
+  else if (/^project(_name)?$/.test(name))
+    choices = projects.filter(project => !project.archived).map(project => project.name)
+  else if (/^(user|assignee|person|owner)(_name)?$/.test(name))
+    choices = accounts.filter(account => account.status === 'Active').map(account => account.name)
   const isDate = /(^|_)(date|from|to|start|end|since|until|day|week|month)($|_)/.test(name)
   return (
     <label className="dx-param">

@@ -1,12 +1,12 @@
 // Custom reports: the settings of a SQL query widget. People with Data explorer can change the SQL; everyone who can
 // edit the report can change its title, its parameters and how the result is shown.
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Dialog } from '../../../shared/ui'
 import type { Client, Project, UserAccount } from '../../../shared/types'
 import { QUERY_VIEWS, type QueryView, type Widget } from '../custom/reportModel'
 import { ParamInput, VIEW_LABELS } from './DataExplorer'
 import { REPORT_PARAMS } from './reportParams'
-import { queryParams } from './sqlEngine'
+import { queryParams, tableIdentifierParams } from './sqlEngine'
 
 export function QueryWidgetEditor({
   widget: initial,
@@ -14,6 +14,8 @@ export function QueryWidgetEditor({
   clients,
   projects,
   accounts,
+  tableNames,
+  loadTrackers,
   preview,
   onSave,
   onClose,
@@ -23,6 +25,8 @@ export function QueryWidgetEditor({
   clients: Client[]
   projects: Project[]
   accounts: UserAccount[]
+  tableNames: string[]
+  loadTrackers: () => Promise<unknown>
   preview: (widget: Widget) => ReactNode
   onSave: (widget: Widget) => void
   onClose: () => void
@@ -32,6 +36,10 @@ export function QueryWidgetEditor({
   const setQuery = (patch: Partial<typeof query>) =>
     setWidget(current => ({ ...current, query: { ...query, ...patch } }))
   const names = queryParams(query.sql)
+  const hasTableIdentifier = tableIdentifierParams(query.sql).length > 0
+  useEffect(() => {
+    if (hasTableIdentifier) void loadTrackers()
+  }, [hasTableIdentifier, loadTrackers])
   return (
     <Dialog title={widget.title || 'SQL query'} eyebrow="Widget settings" onClose={onClose} size="wide">
       <div className="crp-editor">
@@ -95,6 +103,8 @@ export function QueryWidgetEditor({
                     clients={clients}
                     projects={projects}
                     accounts={accounts}
+                    tableNames={tableNames}
+                    isTableIdentifier={tableIdentifierParams(query.sql).includes(name)}
                     onChange={value => setQuery({ params: { ...query.params, [name]: value } })}
                   />
                 ))}
