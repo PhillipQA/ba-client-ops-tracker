@@ -287,7 +287,7 @@ test('tracker widgets follow report client, project, person, and date filters wh
   const records = sourceRecords('tracker', input, 'tr1')
   const fields = sourceFields('tracker', tracker)
   const widget = {
-    ...newWidget('metric'),
+    ...newWidget('metric', { x: 0, y: 0 }),
     source: 'tracker' as const,
     trackerId: 'tr1',
     dateField: 'c.go-live',
@@ -311,7 +311,7 @@ test('tracker widgets explain report filters with no matching tracker columns', 
     name: 'Status only',
     columns: [{ id: 'status', name: 'Status', type: 'text' }],
   } as any
-  const widget = { ...newWidget('metric'), source: 'tracker' as const, trackerId: 'tr2' }
+  const widget = { ...newWidget('metric', { x: 0, y: 0 }), source: 'tracker' as const, trackerId: 'tr2' }
   const filters = { range: 'this_month' as const, clientId: 'c1', projectId: 'p1', userId: 'u1' }
   assert.deepEqual(unsupportedReportFilters(widget, filters, sourceFields('tracker', tracker), '2026-10-29'), [
     'Dates',
