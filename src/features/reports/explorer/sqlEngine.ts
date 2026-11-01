@@ -519,7 +519,7 @@ export function queryParams(sql: string): string[] {
 /** The parameter names used as table identifiers in FROM and JOIN clauses. */
 export function tableIdentifierParams(sql: string): string[] {
   const names: string[] = []
-  for (const match of sql.matchAll(/\\b(?:from|join)\\s+\\{\\{\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\}\\}/gi)) {
+  for (const match of sql.matchAll(/\b(?:from|join)\s+\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gi)) {
     const name = match[1].toLowerCase()
     if (!names.includes(name)) names.push(name)
   }
@@ -536,14 +536,17 @@ export function resolveTableIdentifierParams(
   allowedTables: string[],
 ): string {
   const allowed = new Map(allowedTables.map(name => [name.toLowerCase(), name]))
-  return sql.replace(/\b(from|join)\s+\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gi, (_match, clause: string, rawName: string) => {
-    const parameter = rawName.toLowerCase()
-    const selected = (params[parameter] ?? '').trim()
-    if (!selected) throw new SqlError(`Choose a table for {{${parameter}}} before running.`)
-    const table = allowed.get(selected.toLowerCase())
-    if (!table) throw new SqlError(`“${selected}” is not an available table for {{${parameter}}}.`)
-    return `${clause} ${table}`
-  })
+  return sql.replace(
+    /\b(from|join)\s+\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gi,
+    (_match, clause: string, rawName: string) => {
+      const parameter = rawName.toLowerCase()
+      const selected = (params[parameter] ?? '').trim()
+      if (!selected) throw new SqlError(\`Choose a table for {{\${parameter}}} before running.\`)
+      const table = allowed.get(selected.toLowerCase())
+      if (!table) throw new SqlError(\`“\${selected}” is not an available table for {{\${parameter}}}.\`)
+      return \`\${clause} \${table}\`
+    },
+  )
 }
 
 // --- Values ---
