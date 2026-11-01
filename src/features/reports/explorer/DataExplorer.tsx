@@ -782,7 +782,7 @@ export function DataExplorer({
                 projects={projects}
                 accounts={accounts}
                 tableNames={explorer.catalog.map(table => table.name)}
-                isTableIdentifier={new RegExp(`\\\\b(?:from|join)\\\\s+\\\\{\\\\{\\\\s*${name}\\\\s*\\\\}\\\\}`, 'i').test(sql)}
+                isTableIdentifier={new RegExp(\`(?:from|join)\\s+\\{\\{\\s*\${name}\\s*\\}\\}\`, 'i').test(sql)}
                 onChange={value => setParams(current => ({ ...current, [name]: value }))}
               />
             ))}
