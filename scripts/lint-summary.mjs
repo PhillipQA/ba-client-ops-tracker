@@ -1,6 +1,9 @@
 // Summarises Biome's JSON report as GitHub annotations: counts per rule, then where each rule fires.
 // Usage: node scripts/lint-summary.mjs lint.json
-import { readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 let report = {}
 try {
@@ -58,6 +61,16 @@ if (unformatted.length)
   console.log(
     `::warning title=Not formatted (run npx biome format --write)::${annotation(unformatted.slice(0, 50).join('\n'))}`,
   )
+for (const file of unformatted) {
+  const formatted = execFileSync('npx', ['biome', 'format', file], { encoding: 'utf8' })
+  const temp = join(tmpdir(), `biome-format-${file.replace(/[^a-z0-9]+/gi, '-')}`)
+  writeFileSync(temp, formatted)
+  try {
+    console.log(`BIOME FORMAT DIFF FOR ${file}\\n` + execFileSync('diff', ['-u', file, temp], { encoding: 'utf8' }))
+  } catch (error) {
+    if (error.stdout) console.log(String(error.stdout))
+  }
+}
 // Errors in full (message and raw location), so each can be fixed without running Biome locally.
 const errors = diagnostics.filter(d => d.severity === 'error' && d.category !== 'format')
 const text = d =>
