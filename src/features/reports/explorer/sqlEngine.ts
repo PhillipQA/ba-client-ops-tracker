@@ -1,7 +1,6 @@
 // Data explorer: a small, read-only SQL engine that runs in the browser over tables the person may already see.
-// It understands the SQL people use for reports: SELECT [DISTINCT] … FROM … [LEFT] JOIN … ON … WHERE … GROUP BY …
-// HAVING … ORDER BY … LIMIT … OFFSET, with COUNT/SUM/AVG/MIN/MAX, CASE, LIKE, IN, BETWEEN, IS NULL, text and date
-// functions, and {{parameters}}. There is nothing to write to, so nothing can be changed or deleted.
+// It understands read-only SELECT queries, including UNION ALL, joins, filters, grouping, ordering and limits,
+// with COUNT/SUM/AVG/MIN/MAX, CASE, LIKE, IN, BETWEEN, IS NULL, text/date functions, and {{parameters}}.
 
 export type SqlValue = string | number | boolean | null
 export type SqlRow = Record<string, SqlValue>
@@ -9,7 +8,7 @@ export type SqlColumnType = 'text' | 'number' | 'date' | 'bool'
 export type SqlTable = { name: string; columns: { name: string; type: SqlColumnType }[]; rows: SqlRow[] }
 export type SqlResult = { columns: string[]; rows: SqlValue[][]; truncated: boolean; ms: number }
 
-export const SQL_LIMITS = { resultRows: 5000, workRows: 250_000, ms: 5000, length: 20_000 } as const
+export const SQL_LIMITS = { resultRows: 5000, workRows: 250_000, ms: 5000, length: 20_000, unionBranches: 25 } as const
 
 export class SqlError extends Error {
   constructor(
@@ -244,6 +243,8 @@ class Parser {
     const branches: Query[] = []
     while (this.maybeWord('union')) {
       if (!this.maybeWord('all')) this.fail('Only UNION ALL is supported. Use UNION ALL to preserve duplicate rows.')
+      if (branches.length >= SQL_LIMITS.unionBranches - 1)
+        this.fail(`A UNION ALL query can contain at most ${SQL_LIMITS.unionBranches} SELECT statements.`)
       branches.push(this.select())
     }
     this.maybeOp(';')
@@ -1298,7 +1299,6 @@ function runSelect(
     truncated,
     ms: Math.max(0, Math.round(now() - started)),
   }
-
 }
 
 /** Whether a word is part of SQL itself, so it cannot be a plain column name. */
