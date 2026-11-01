@@ -15,7 +15,7 @@ import type {
 import { loadAllRows, trackerApi } from '../../trackers/trackerApi'
 import type { Tracker, TrackerRow } from '../../trackers/trackerModel'
 import { explorerCatalog, explorerTables, type ExplorerMessage, type TableInfo } from './explorerTables'
-import { referencedTables, runQuery, SqlError, type SqlResult, type SqlTable } from './sqlEngine'
+import { referencedTables, resolveTableIdentifierParams, runQuery, SqlError, type SqlResult, type SqlTable } from './sqlEngine'
 
 export type ExplorerProps = {
   clients: Client[]
@@ -131,13 +131,15 @@ export function useExplorerData(props: ExplorerProps) {
 
   /** Loads what a query reads, then runs it. */
   const run = async (sql: string, params: Record<string, string>): Promise<SqlResult> => {
-    const wanted = referencedTables(sql)
-    if (wanted.some(name => name.startsWith('tracker_'))) await loadTrackers()
+    // Table identifier parameters are resolved only against this user's visible table catalog.
+    if (/\\b(?:from|join)\\s+\\{\\{/i.test(sql)) await loadTrackers()
     const known = explorerCatalog({
       trackers: state.current.trackers || [],
       clients: props.clients,
       messages: state.current.messages,
     })
+    const executableSql = resolveTableIdentifierParams(sql, params, known.map(table => table.name))
+    const wanted = referencedTables(executableSql)
     for (const name of wanted) {
       const info = known.find(table => table.name === name)
       if (!info?.load) continue
@@ -156,7 +158,7 @@ export function useExplorerData(props: ExplorerProps) {
         }
       }
     }
-    return runQuery(sql, tables(), { params, today })
+    return runQuery(executableSql, tables(), { params, today })
   }
 
   return { catalog, run, loadTrackers, today, trackersLoaded: trackers !== null }
