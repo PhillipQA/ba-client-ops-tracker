@@ -1578,8 +1578,8 @@ function WidgetCard({
       <div className="crp-card-body" onDoubleClick={editing ? onEdit : undefined}>
         {filterWarnings.length > 0 && (
           <div className="crp-filter-warning" role="status">
-            Report filters not applied to this widget: {filterWarnings.join(', ')}. Choose a matching date field or
-            add matching Client, Project, or Person columns to the tracker.
+            Report filters not applied to this widget: {filterWarnings.join(', ')}. Choose a matching date field or add
+            matching Client, Project, or Person columns to the tracker.
           </div>
         )}
         <WidgetBody widget={widget} computed={computed} fields={fields} today={today} problem={trackerProblem} />
