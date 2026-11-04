@@ -418,6 +418,17 @@
   border-color: #667eea;
   box-shadow: inset 0 0 0 1px #667eea;
 }
+.dochub-history-search {
+  flex: 1;
+  min-width: 160px;
+  max-width: 360px;
+  height: 34px;
+  padding: 4px 10px;
+  border: 1px solid var(--border, #d5d9df);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: inherit;
+}
 .dochub-history-toolbar label {
   display: flex;
   align-items: center;

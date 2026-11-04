@@ -1311,7 +1311,7 @@ export default function DocumentCreation({
           />
         </div>
       </div>
-      <DocHubHistory active={active} />
+      <DocHubHistory active={active} clients={clients} projects={projects} items={items} />
     </section>
   )
 }
