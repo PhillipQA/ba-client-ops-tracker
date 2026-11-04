@@ -2,7 +2,10 @@
 // Read-only: open them in Work Hub to reply, attach or archive.
 import { useEffect, useState, type ReactNode } from 'react'
 import { Mail } from 'lucide-react'
-import type { WorkItem } from '../../shared/types'
+import type { Client, Project, WorkItem } from '../../shared/types'
+import { SearchSelect } from '../../shared/ui/SearchSelect'
+import { useIsClosed } from '../tasks/openWork'
+import { taskChoices } from './documentDriveTargets'
 import { requestJson } from '../../shared/http'
 
 type LinkedEmail = { id: string; subject: string; sender: string; body: string; received_at: string }
@@ -10,16 +13,31 @@ type LinkedEmail = { id: string; subject: string; sender: string; body: string; 
 export function LinkedEmails({
   taskId,
   items,
+  clients,
+  projects,
+  onTaskChange,
+  disabled = false,
   children,
 }: {
   taskId: string
   items: WorkItem[]
+  clients: Client[]
+  projects: Project[]
+  /** Links the DRF to a task here, at the top: the same choice as DocHub's “Existing task or subtask”. */
+  onTaskChange: (taskId: string) => void
+  disabled?: boolean
   /** Shown above the emails (DRF creation: a missing-template warning). */
   children?: ReactNode
 }) {
   const [emails, setEmails] = useState<LinkedEmail[] | null>(null)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
+  const isClosed = useIsClosed()
+  // Open tasks and subtasks (the chosen one stays listed even once closed), searchable by name; the client follows.
+  const choices = taskChoices(
+    { items: items.filter(item => item.id === taskId || !isClosed(item.status)), clients, projects },
+    '',
+  )
   // The task and its subtasks: an email turned into a subtask still belongs to this DRF's work.
   const ids = [taskId, ...items.filter(item => item.parentTaskId === taskId).map(item => item.id)].slice(0, 50)
   const key = ids.join(',')
@@ -55,10 +73,19 @@ export function LinkedEmails({
         </div>
       </div>
       {children}
+      <label className="linked-emails-task">
+        <span>Task or subtask</span>
+        <SearchSelect
+          disabled={disabled}
+          value={taskId}
+          onChange={onTaskChange}
+          choices={[{ value: '', label: 'No task linked' }, ...choices]}
+          placeholder="Type a task or subtask"
+          empty="No open task or subtask matches"
+        />
+      </label>
       {!taskId ? (
-        <p className="linked-emails-empty">
-          Start the DRF from a task, or choose one under “Existing task or subtask” below, to see its email here.
-        </p>
+        <p className="linked-emails-empty">Choose the task this DRF is for to read its email here.</p>
       ) : error ? (
         <p role="alert">
           {error}{' '}

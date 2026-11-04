@@ -4118,6 +4118,12 @@ select option {
   opacity: 0.75;
   font-size: 0.9em;
 }
+.linked-emails-task {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9em;
+}
 .linked-email-body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
