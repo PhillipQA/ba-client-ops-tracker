@@ -4094,6 +4094,41 @@ select option {
   flex-direction: column;
   gap: 16px;
 }
+.linked-emails {
+  gap: 10px;
+}
+.linked-emails > summary,
+.linked-email > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.linked-emails > summary {
+  font-weight: 600;
+}
+.linked-email {
+  border-top: 1px solid currentColor;
+  border-top-color: color-mix(in srgb, currentColor 20%, transparent);
+  padding-top: 10px;
+}
+.linked-email > summary span,
+.linked-emails-empty {
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+.linked-email-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 22rem;
+  overflow: auto;
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  line-height: 1.6;
+}
 .document-section-title {
   display: flex;
   align-items: flex-start;

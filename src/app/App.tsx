@@ -535,6 +535,7 @@ function App() {
                 items={store.items}
                 launch={documentLaunch}
                 canGenerate={canWrite}
+                canUseInbox={hasModule('inbox')}
                 draftKey={`${authUser?.organizationId}:${authUser?.id}`}
                 active={pageActive && !selectedClient && !selectedProject && view === 'documents'}
               />

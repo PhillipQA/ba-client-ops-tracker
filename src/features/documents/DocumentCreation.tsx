@@ -9,6 +9,7 @@ import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
 import { PersonNameInput } from '../../shared/ui/PersonNameInput'
 import { knownPeople } from '../../shared/knownPeople'
 import { DocHubOptions, DocHubResult, DocHubHistory, useDocHubDraft } from './DocHubPanel'
+import { LinkedEmails } from './LinkedEmails'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { SIGNOFF_FORM_TYPES, SIGNOFF_TEMPLATE_KIND, type SignoffFormType, type SignoffTemplateKind } from './signoff'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -153,6 +154,7 @@ export default function DocumentCreation({
   items,
   launch,
   canGenerate,
+  canUseInbox = false,
   draftKey,
   active,
 }: {
@@ -162,6 +164,8 @@ export default function DocumentCreation({
   items: WorkItem[]
   launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }
   canGenerate: boolean
+  /** Work Hub: the DRF's task's emails can be read beside the form. */
+  canUseInbox?: boolean
   draftKey: string
   active: boolean
 }) {
@@ -710,6 +714,7 @@ export default function DocumentCreation({
         {flow === 'drf' && (
           <div className="document-drf-stack">
             <DocumentReset label="DRF" onReset={resetDrf} disabled={!canGenerate} />
+            {canUseInbox && <LinkedEmails taskId={docHub.options.taskId} items={items} />}
             <div className="document-workspace-grid document-source-grid">
               <div className="document-upload-panel">
                 <div className="document-section-title">

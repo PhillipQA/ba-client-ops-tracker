@@ -374,6 +374,38 @@ export function registerCommunications(
     guard,
     wrap(async (req, res) => {
       const user = current(req)
+      // The person's own emails linked to some tasks (DRF creation shows the task's email). Newest first, at most 20.
+      if (req.query.taskIds !== undefined) {
+        const ids = [
+          ...new Set(
+            String(req.query.taskIds)
+              .split(',')
+              .map(id => id.trim())
+              .filter(Boolean),
+          ),
+        ]
+        if (!ids.length || ids.length > 50 || ids.some(id => id.length > 128))
+          throw new IntegrationError('Choose up to 50 tasks.')
+        const linked = (query: any) =>
+          query
+            .eq('tenant_id', user.organizationId)
+            .eq('owner_user_id', user.id)
+            .order('received_at', { ascending: false })
+            .limit(20)
+        const [latest, any] = await Promise.all([
+          linked(db.from('user_communications').select('*').in('linked_task_id', ids)),
+          linked(db.from('user_communications').select('*').overlaps('linked_task_ids', ids)),
+        ])
+        if (latest.error) throw latest.error
+        const byId = new Map<string, any>()
+        // A database before linked_task_ids still answers by the latest linked task.
+        for (const row of [...(latest.data || []), ...(any.error ? [] : any.data || [])]) byId.set(row.id, row)
+        const items = [...byId.values()]
+          .sort((a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime())
+          .slice(0, 20)
+        res.json({ items })
+        return
+      }
       // Keep the old response for older clients while the new Hub uses bounded pages.
       const paginated = req.query.page !== undefined || req.query.pageSize !== undefined
       const page = Number(req.query.page ?? 1),
