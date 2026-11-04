@@ -1,5 +1,6 @@
 import { DocHubHistory } from '../documents/DocHubPanel'
-import { composeEmail, useEmailEnabled } from '../email/EmailComposer'
+import { useEmailEnabled } from '../email/EmailComposer'
+import { emailWorkFile } from '../email/replyAll'
 import RtmTaskLinks from '../requirements/RtmTaskLinks'
 import TaskEffort from './TaskEffort'
 import { type Store, defaultOpenTaskStatus, isTaskClosed } from '../../app/store'
@@ -787,6 +788,7 @@ export function evidenceDate(value: string) {
 /** Gmail attachments saved to the team Google Drive from Work Hub. Links only; the files live in Drive. */
 export function TaskDriveFiles({ item }: { item: WorkItem }) {
   const canEmail = useEmailEnabled()
+  const [emailing, setEmailing] = useState('')
   const files = (item.driveFiles || []).filter(
     file => file && file.id && file.name && /^https:\/\/drive\.google\.com\//.test(String(file.url || '')),
   )
@@ -827,16 +829,22 @@ export function TaskDriveFiles({ item }: { item: WorkItem }) {
                 <button
                   type="button"
                   className="secondary compact"
-                  title="Email this file from your Gmail, linked to this work"
-                  onClick={() =>
-                    composeEmail({
-                      taskIds: [item.id],
-                      driveFiles: [{ taskId: item.id, fileId: file.id, name: file.name, size: file.size || 0 }],
-                      subject: file.name.replace(/\.[^.]+$/, ''),
-                    })
-                  }
+                  title="Reply all on this work’s linked email with this file (a new email if none is linked)"
+                  disabled={emailing === file.id}
+                  onClick={async () => {
+                    setEmailing(file.id)
+                    try {
+                      await emailWorkFile({
+                        taskIds: [item.id],
+                        driveFiles: [{ taskId: item.id, fileId: file.id, name: file.name, size: file.size || 0 }],
+                        subject: file.name.replace(/\.[^.]+$/, ''),
+                      })
+                    } finally {
+                      setEmailing('')
+                    }
+                  }}
                 >
-                  Email
+                  {emailing === file.id ? 'Opening…' : 'Email'}
                 </button>
               )}
             </div>

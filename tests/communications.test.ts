@@ -1944,7 +1944,7 @@ test('unread email and Discord messages are counted, and read when opened', asyn
 })
 
 test('DRF creation lists only my own emails linked to the task or its subtasks', async () => {
-  const { app, records } = fixture(),
+  const { app, records, state } = fixture(),
     sample = records[0]
   records.splice(
     0,
@@ -1977,6 +1977,16 @@ test('DRF creation lists only my own emails linked to the task or its subtasks',
       ['latest', 'both', 'earlier'],
     )
     assert.deepEqual((await get('/api/communications?taskIds=nothing')).body.items, [])
+    // family=1 adds the parent task and the subtasks: a file on a subtask answers the task's email.
+    state.items = [{ id: 'task-1' }, { id: 'sub-1', parentTaskId: 'task-1' }, { id: 'other-task' }]
+    assert.deepEqual(
+      (await get('/api/communications?taskIds=sub-1&family=1')).body.items.map((item: any) => item.id),
+      ['latest', 'both', 'earlier'],
+    )
+    assert.deepEqual(
+      (await get('/api/communications?taskIds=sub-1')).body.items.map((item: any) => item.id),
+      ['earlier'],
+    )
     assert.equal((await get('/api/communications?taskIds=')).status, 400)
   } finally {
     server.close()
