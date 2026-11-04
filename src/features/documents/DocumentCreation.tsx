@@ -816,6 +816,7 @@ export default function DocumentCreation({
                   clients={clients}
                   projects={projects}
                   disabled={generating || docHub.busy}
+                  active={active}
                   onTaskChange={id =>
                     docHub.setOptions(o => ({
                       ...o,
