@@ -812,6 +812,7 @@ export default function DocumentCreation({
               {canUseInbox ? (
                 <LinkedEmails
                   taskId={docHub.options.taskId}
+                  clientId={docHub.options.clientId}
                   items={items}
                   clients={clients}
                   projects={projects}
@@ -823,6 +824,9 @@ export default function DocumentCreation({
                       taskId: id,
                       clientId: items.find(item => item.id === id)?.clientId || o.clientId,
                     }))
+                  }
+                  onClientChange={id =>
+                    docHub.setOptions(o => (o.clientId === id ? o : { ...o, clientId: id, taskId: '' }))
                   }
                 >
                   {!drfTemplate?.active && (
