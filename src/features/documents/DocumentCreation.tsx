@@ -23,7 +23,6 @@ import {
   Download,
   FileCog,
   FileText,
-  Inbox,
   Plus,
   ScanLine,
   Trash2,
@@ -714,7 +713,6 @@ export default function DocumentCreation({
         {flow === 'drf' && (
           <div className="document-drf-stack">
             <DocumentReset label="DRF" onReset={resetDrf} disabled={!canGenerate} />
-            {canUseInbox && <LinkedEmails taskId={docHub.options.taskId} items={items} />}
             <div className="document-workspace-grid document-source-grid">
               <div className="document-upload-panel">
                 <div className="document-section-title">
@@ -811,53 +809,54 @@ export default function DocumentCreation({
                 </button>
               </div>
 
-              <div className="document-upload-panel">
-                <div className="document-section-title">
-                  <FileCog size={18} />
-                  <div>
-                    <strong>2. Standard DRF Excel Template</strong>
-                    <span>Managed centrally in Settings → Templates · approved iRipple .xlsx template</span>
-                  </div>
-                </div>
-                {drfTemplate?.active ? (
-                  <div className="document-standard-template">
-                    <div className="document-standard-template-status">
-                      <CheckCircle2 size={18} />
+              {canUseInbox ? (
+                <LinkedEmails taskId={docHub.options.taskId} items={items}>
+                  {!drfTemplate?.active && (
+                    <div className="document-standard-template empty">
+                      <FileCog size={18} />
                       <div>
-                        <strong>Standard template active</strong>
+                        <strong>No DRF template configured</strong>
                         <span>
-                          {drfTemplate.name}
-                          {drfTemplate.updated_at
-                            ? ` · Updated ${new Date(drfTemplate.updated_at).toLocaleString()}`
-                            : ''}
+                          An account Administrator must add the DRF template under Settings → Templates before a DRF can
+                          be generated.
                         </span>
                       </div>
                     </div>
-                    <p>
-                      DRF Creation loads this account template automatically. To replace or remove it, use{' '}
-                      <strong>Settings → Templates</strong>.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="document-standard-template empty">
+                  )}
+                </LinkedEmails>
+              ) : (
+                <div className="document-upload-panel">
+                  <div className="document-section-title">
                     <FileCog size={18} />
                     <div>
-                      <strong>No DRF template configured</strong>
-                      <span>
-                        An account Administrator must add the DRF template under Settings → Templates before a DRF can
-                        be generated.
-                      </span>
+                      <strong>2. Standard DRF Excel Template</strong>
+                      <span>Managed centrally in Settings → Templates</span>
                     </div>
                   </div>
-                )}
-                <div className="document-info-note">
-                  <Inbox size={16} />
-                  <span>
-                    Template upload controls were removed from Document Creation. The generated DRF keeps the centrally
-                    managed template layout, formatting, logo, merged cells, and untouched iRipple-only columns.
-                  </span>
+                  {drfTemplate?.active ? (
+                    <div className="document-standard-template">
+                      <div className="document-standard-template-status">
+                        <CheckCircle2 size={18} />
+                        <div>
+                          <strong>Standard template active</strong>
+                          <span>{drfTemplate.name}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="document-standard-template empty">
+                      <FileCog size={18} />
+                      <div>
+                        <strong>No DRF template configured</strong>
+                        <span>
+                          An account Administrator must add the DRF template under Settings → Templates before a DRF can
+                          be generated.
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="document-drf-config-grid">

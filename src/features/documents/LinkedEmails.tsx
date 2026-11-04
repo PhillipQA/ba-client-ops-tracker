@@ -1,13 +1,22 @@
 // DRF creation: the Work Hub emails linked to the DRF's task (or its subtasks), to read while filling the form.
 // Read-only: open them in Work Hub to reply, attach or archive.
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Mail } from 'lucide-react'
 import type { WorkItem } from '../../shared/types'
 import { requestJson } from '../../shared/http'
 
 type LinkedEmail = { id: string; subject: string; sender: string; body: string; received_at: string }
 
-export function LinkedEmails({ taskId, items }: { taskId: string; items: WorkItem[] }) {
+export function LinkedEmails({
+  taskId,
+  items,
+  children,
+}: {
+  taskId: string
+  items: WorkItem[]
+  /** Shown above the emails (DRF creation: a missing-template warning). */
+  children?: ReactNode
+}) {
   const [emails, setEmails] = useState<LinkedEmail[] | null>(null)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
@@ -15,7 +24,11 @@ export function LinkedEmails({ taskId, items }: { taskId: string; items: WorkIte
   const ids = [taskId, ...items.filter(item => item.parentTaskId === taskId).map(item => item.id)].slice(0, 50)
   const key = ids.join(',')
   useEffect(() => {
-    if (!taskId) return
+    if (!taskId) {
+      setEmails(null)
+      setError('')
+      return
+    }
     const controller = new AbortController()
     setEmails(null)
     setError('')
@@ -31,15 +44,22 @@ export function LinkedEmails({ taskId, items }: { taskId: string; items: WorkIte
     return () => controller.abort()
   }, [key, retry])
 
-  if (!taskId) return null
   const count = emails?.length || 0
   return (
-    <details className="document-extraction-panel linked-emails">
-      <summary>
-        <Mail size={16} /> Linked email
-        {emails ? ` (${count})` : ''}
-      </summary>
-      {error ? (
+    <div className="document-upload-panel linked-emails">
+      <div className="document-section-title">
+        <Mail size={18} />
+        <div>
+          <strong>2. Linked email{emails ? ` (${count})` : ''}</strong>
+          <span>The task’s Work Hub email, to read while you fill in the DRF · read-only</span>
+        </div>
+      </div>
+      {children}
+      {!taskId ? (
+        <p className="linked-emails-empty">
+          Start the DRF from a task, or choose one under “Existing task or subtask” below, to see its email here.
+        </p>
+      ) : error ? (
         <p role="alert">
           {error}{' '}
           <button type="button" className="secondary" onClick={() => setRetry(value => value + 1)}>
@@ -63,6 +83,6 @@ export function LinkedEmails({ taskId, items }: { taskId: string; items: WorkIte
           </details>
         ))
       )}
-    </details>
+    </div>
   )
 }
