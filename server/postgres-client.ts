@@ -136,6 +136,11 @@ export function createPostgresClient(connectionString: string, testPool?: Pick<p
       this.conditions.push({ sql: `${identifier(column)} @> ?`, values: [values], jsonColumn: column })
       return this
     }
+    /** Array columns sharing any value with the list (PostgreSQL &&). */
+    overlaps(column: string, values: unknown[]) {
+      this.conditions.push({ sql: `${identifier(column)} && ?`, values: [values] })
+      return this
+    }
     or(expression: string) {
       const parts = expression.split(',').map(part => /^([a-z_][a-z0-9_]*)\.eq\.(true|false)$/i.exec(part))
       if (parts.some(part => !part)) throw new Error('Unsupported OR filter')

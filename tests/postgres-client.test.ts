@@ -49,6 +49,14 @@ test('PostgreSQL mode preserves SQL array containment for Gmail labels', async (
   assert.deepEqual(read.params, [['Inbox']])
 })
 
+test('PostgreSQL mode matches any of several linked tasks with array overlap', async () => {
+  const { client, queries } = fakeDatabase()
+  await client.from('user_communications').select('*').overlaps('linked_task_ids', ['t1', 't2'])
+  const read = queries.find(item => item.sql.startsWith('SELECT *'))!
+  assert.match(read.sql, /"linked_task_ids" && \$1/)
+  assert.deepEqual(read.params, [['t1', 't2']])
+})
+
 test('PostgreSQL mode passes workspace state as JSON to the atomic save function', async () => {
   const { client, queries } = fakeDatabase()
   await client.rpc('save_tenant_state_v16', { p_state: { items: [] }, p_reason: 'test' })

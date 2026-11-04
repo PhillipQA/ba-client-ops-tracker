@@ -74,6 +74,10 @@ function fixture(options: { failLink?: boolean } = {}) {
       this.conditions.push(x => values.includes(x[key]))
       return this
     }
+    overlaps(key: string, values: any[]) {
+      this.conditions.push(x => values.some(v => (x[key] || []).includes(v)))
+      return this
+    }
     order(key: string, options: { ascending: boolean }) {
       this.orders.push({ key, ascending: options.ascending })
       return this
@@ -1934,6 +1938,46 @@ test('unread email and Discord messages are counted, and read when opened', asyn
     // Someone else's message cannot be marked.
     const theirs = records.find(r => r.external_id === 'd2')
     assert.equal((await ask(`/api/communications/${theirs.id}/read`, 'PATCH', { read: true })).status, 404)
+  } finally {
+    server.close()
+  }
+})
+
+test('DRF creation lists only my own emails linked to the task or its subtasks', async () => {
+  const { app, records } = fixture(),
+    sample = records[0]
+  records.splice(
+    0,
+    records.length,
+    { ...sample, id: 'latest', linked_task_id: 'task-1', received_at: '2026-11-03T00:00:00Z' },
+    { ...sample, id: 'earlier', linked_task_ids: ['other', 'sub-1'], received_at: '2026-11-01T00:00:00Z' },
+    {
+      ...sample,
+      id: 'both',
+      linked_task_id: 'task-1',
+      linked_task_ids: ['task-1'],
+      received_at: '2026-11-02T00:00:00Z',
+    },
+    { ...sample, id: 'unlinked', received_at: '2026-11-04T00:00:00Z' },
+    { ...sample, id: 'not-mine', owner_user_id: 'user-b', linked_task_id: 'task-1' },
+    { ...sample, id: 'other-tenant', tenant_id: 'other-tenant', linked_task_id: 'task-1' },
+  )
+  const server = app.listen(0)
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('No test port')
+    const get = async (path: string) => {
+      const result = await fetch(`http://127.0.0.1:${address.port}${path}`)
+      return { status: result.status, body: await result.json() }
+    }
+    const linked = await get('/api/communications?taskIds=task-1,sub-1')
+    assert.equal(linked.status, 200)
+    assert.deepEqual(
+      linked.body.items.map((item: any) => item.id),
+      ['latest', 'both', 'earlier'],
+    )
+    assert.deepEqual((await get('/api/communications?taskIds=nothing')).body.items, [])
+    assert.equal((await get('/api/communications?taskIds=')).status, 400)
   } finally {
     server.close()
   }
