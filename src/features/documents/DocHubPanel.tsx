@@ -32,7 +32,8 @@ import {
 import './dochub.css'
 import { useDocumentOperation } from './useDocumentOperation'
 import { useDocumentDrive } from './documentDrive'
-import { composeEmail, useEmailEnabled } from '../email/EmailComposer'
+import { useEmailEnabled } from '../email/EmailComposer'
+import { emailWorkFile } from '../email/replyAll'
 import { usePageActive, useVisiblePolling } from '../../app/useVisiblePolling'
 import { useIsClosed } from '../tasks/openWork'
 import ClientSelect from '../../shared/ui/SearchSelect'
@@ -361,7 +362,8 @@ function DocHubCard({
   // The signed PDF can be emailed once it is saved on the linked task, because that is where the tracker finds it.
   const canEmail = useEmailEnabled() && doc.status === 'COMPLETED' && Boolean(doc.driveFile?.id && doc.taskId)
   const [driveBusy, setDriveBusy] = useState(false),
-    [driveError, setDriveError] = useState('')
+    [driveError, setDriveError] = useState(''),
+    [emailing, setEmailing] = useState(false)
   const saveToDrive = async () => {
     if (driveBusy) return
     setDriveBusy(true)
@@ -449,18 +451,24 @@ function DocHubCard({
           <button
             type="button"
             className="secondary"
-            title="Email the signed PDF from your Gmail, linked to this work"
-            onClick={() =>
-              composeEmail({
-                taskIds: [doc.taskId as string],
-                driveFiles: [
-                  { taskId: doc.taskId as string, fileId: doc.driveFile!.id, name: doc.driveFile!.name, size: 0 },
-                ],
-                subject: `Signed ${doc.title}`,
-              })
-            }
+            title="Reply all on this work’s linked email with the signed PDF (a new email if none is linked)"
+            disabled={emailing}
+            onClick={async () => {
+              setEmailing(true)
+              try {
+                await emailWorkFile({
+                  taskIds: [doc.taskId as string],
+                  driveFiles: [
+                    { taskId: doc.taskId as string, fileId: doc.driveFile!.id, name: doc.driveFile!.name, size: 0 },
+                  ],
+                  subject: `Signed ${doc.title}`,
+                })
+              } finally {
+                setEmailing(false)
+              }
+            }}
           >
-            <Mail size={15} /> Email signed PDF
+            <Mail size={15} /> {emailing ? 'Opening…' : 'Email signed PDF'}
           </button>
         )}
         {doc.status === 'COMPLETED' && !doc.driveFile && driveReady && (

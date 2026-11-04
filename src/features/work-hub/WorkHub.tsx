@@ -14,7 +14,7 @@ import type { Client, Project, TaskSettings, UserAccount, WorkItem } from '../..
 import { findCommunicationTaskDuplicate, findSubtaskDuplicate, subtaskParentProblem } from './communicationTasks'
 import { isTaskClosed } from '../../app/store'
 import { composeEmail, useEmailEnabled } from '../email/EmailComposer'
-import { extractAddress, quoteReply, replySubject } from '../email/emailCompose'
+import { replyAllPrefill } from '../email/replyAll'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { EmailTemplatesManager } from '../email/EmailTemplates'
 import { requestJson, type HttpMethod } from '../../shared/http'
@@ -675,34 +675,8 @@ export default function WorkHub({
         ]),
       ),
     ).filter(id => tasks.some(task => task.id === id))
-    // Like Reply all: the sender gets the reply and everyone else on the email is copied. Gmail is asked at this moment, so older saved emails work too.
-    let to = extractAddress(received.sender),
-      cc = '',
-      notice = ''
-    try {
-      const response = await fetch(`/api/communications/${encodeURIComponent(received.id)}/reply-recipients`, {
-        credentials: 'same-origin',
-      })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(String(result.error || ''))
-      if (Array.isArray(result.to) && result.to.length) {
-        to = result.to.join(', ')
-        cc = Array.isArray(result.cc) ? result.cc.join(', ') : ''
-      }
-    } catch {
-      notice =
-        'The other people on the original email could not be read from Gmail, so only the sender was added. Add anyone else to Cc yourself.'
-    }
-    composeEmail({
-      replyToId: received.id,
-      to,
-      cc,
-      autoCc: Boolean(cc),
-      notice,
-      subject: replySubject(received.subject),
-      message: quoteReply(received.sender, received.received_at, received.body),
-      taskIds: linked,
-    })
+    // Like Reply all: the sender gets the reply and everyone else on the email is copied.
+    composeEmail(await replyAllPrefill(received, linked))
     setReplying(false)
   }
   const pages = Math.max(1, Math.ceil(total / view.pageSize))

@@ -386,6 +386,19 @@ export function registerCommunications(
         ]
         if (!ids.length || ids.length > 50 || ids.some(id => id.length > 128))
           throw new IntegrationError('Choose up to 50 tasks.')
+        // family=1: also the parent task and the subtasks, so a file on a subtask can answer the task's email.
+        if (req.query.family === '1') {
+          const state = await deps.load(user.organizationId)
+          const all: any[] = Array.isArray(state?.data?.items) ? state.data.items : []
+          const asked = new Set(ids)
+          for (const item of all) {
+            const id = String(item?.id || ''),
+              parent = String(item?.parentTaskId || '')
+            if (asked.has(id) && parent) ids.push(parent)
+            if (parent && asked.has(parent)) ids.push(id)
+          }
+          ids.splice(0, ids.length, ...[...new Set(ids)].slice(0, 100))
+        }
         const linked = (query: any) =>
           query
             .eq('tenant_id', user.organizationId)
