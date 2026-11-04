@@ -942,9 +942,15 @@ export function ParamInput({
   const person = /^(user|assignee|person|owner)(_name|_id)?$/.exec(name)
   if (isTableIdentifier) choices = tableNames.map(table => ({ value: table, label: table }))
   else if (/^client(_name|_id)?$/.test(name))
-    choices = pick(clients.filter(client => !client.archived), name.endsWith('_id'))
+    choices = pick(
+      clients.filter(client => !client.archived),
+      name.endsWith('_id'),
+    )
   else if (/^project(_name|_id)?$/.test(name))
-    choices = pick(projects.filter(project => !project.archived), name.endsWith('_id'))
+    choices = pick(
+      projects.filter(project => !project.archived),
+      name.endsWith('_id'),
+    )
   else if (person)
     choices = pick(
       accounts.filter(account => account.status === 'Active'),

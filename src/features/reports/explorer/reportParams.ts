@@ -29,8 +29,7 @@ export function reportFilterFor(name: string): { filter: ReportFilterKey; byId: 
   // Ends of a date range: {{from}}, {{due_date_from}}, {{received_at_to}}. Not just any *_to ({{sent_to}}).
   const end = /^(.+)_(from|to)$/.exec(n)
   if (n === 'from' || n === 'to') return { filter: n, byId: false }
-  if (end && /(^|_)(date|day|at|on|updated)(_|$)/.test(end[1]))
-    return { filter: end[2] as 'from' | 'to', byId: false }
+  if (end && /(^|_)(date|day|at|on|updated)(_|$)/.test(end[1])) return { filter: end[2] as 'from' | 'to', byId: false }
   const match = /^(client|project|person|user|assignee|owner)(_name|_id)?$/.exec(n)
   if (!match) return null
   const filter = match[1] === 'client' ? 'client' : match[1] === 'project' ? 'project' : 'person'
