@@ -95,8 +95,7 @@ import { WidgetEditor } from './WidgetEditor'
 import { DataExplorer } from '../explorer/DataExplorer'
 import { QueryResultView, useQueryRun, type QueryRunner } from '../explorer/QueryResult'
 import { QueryWidgetEditor } from '../explorer/QueryWidgetEditor'
-import { reportQueryParams, type ReportFilterValues } from '../explorer/reportParams'
-import { queryParams } from '../explorer/sqlEngine'
+import { reportFiltersIgnored, reportQueryParams, type ReportFilterValues } from '../explorer/reportParams'
 import { resultCsv } from '../explorer/resultView'
 import { useExplorerData } from '../explorer/useExplorerData'
 import './customReports.css'
@@ -149,13 +148,7 @@ function downloadCsv(name: string, rows: string[][]) {
 function queryFilterWarnings(sql: string, filters: ReportFilterValues): string[] {
   const whereMatch = /\bwhere\b([\s\S]*?)(?:\bgroup\s+by\b|\bhaving\b|\border\s+by\b|\blimit\b|;|$)/i.exec(sql)
   const where = whereMatch?.[1] || ''
-  const params = new Set(queryParams(where))
-  const missing: string[] = []
-  if (filters.range && (!params.has('from') || !params.has('to'))) missing.push('Dates')
-  if (filters.client && !params.has('client')) missing.push('Client')
-  if (filters.project && !params.has('project')) missing.push('Project')
-  if (filters.person && !params.has('person') && !params.has('user')) missing.push('Person')
-  return missing
+  return reportFiltersIgnored(where, filters)
 }
 
 /** Trackers for the "Tracker rows" source: the list, and each tracker's rows once a widget needs them. */
@@ -703,6 +696,9 @@ export default function CustomReports(props: Props) {
     client: props.clients.find(client => client.id === filters.clientId)?.name || '',
     project: props.projects.find(project => project.id === filters.projectId)?.name || '',
     person: (filters.userId && props.accounts.find(account => account.id === filters.userId)?.name) || '',
+    clientId: filters.clientId || '',
+    projectId: filters.projectId || '',
+    personId: filters.userId || '',
   }
 
   return (
