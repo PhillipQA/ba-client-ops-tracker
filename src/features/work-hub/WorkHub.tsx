@@ -765,7 +765,7 @@ export default function WorkHub({
           >
             {hubSync.allRunning ? 'Refreshing…' : 'Refresh now'}
           </button>
-          <button className="secondary" onClick={() => setConfig(!config)}>
+          <button className="secondary" data-tour="workhub-integrations" onClick={() => setConfig(!config)}>
             My integration settings
           </button>
           {canEmail && (
