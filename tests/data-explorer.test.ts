@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { explorerCatalog, explorerTables, type ExplorerInput } from '../src/features/reports/explorer/explorerTables'
 import { builderSql, emptyBuilder, joinsFrom } from '../src/features/reports/explorer/queryBuilder'
-import { reportQueryParams } from '../src/features/reports/explorer/reportParams'
+import { paramsForReport, reportFiltersIgnored, reportQueryParams } from '../src/features/reports/explorer/reportParams'
 import { resultChart, resultCsv, resultNumber } from '../src/features/reports/explorer/resultView'
 import { queryParams, runQuery } from '../src/features/reports/explorer/sqlEngine'
 import { cleanDefinition } from '../src/features/reports/custom/reportModel'
@@ -239,4 +239,52 @@ test('a builder condition waiting for its value does not hide every row', () => 
   )
   assert.doesNotMatch(sql, /WHERE/)
   assert.equal(run(sql).rows.length, 2)
+})
+
+test('report filters fill the parameters "Ask each time" makes, by name or id', () => {
+  const sql =
+    'SELECT * FROM tasks WHERE ({{client_id}} IS NULL OR client_id = {{client_id}}) AND assignee = {{assignee}}' +
+    ' AND due_date >= {{due_date_from}} AND due_date <= {{due_date_to}} AND sent_to = {{sent_to}}'
+  const filters = {
+    range: { from: '2026-10-01', to: '2026-10-31' },
+    client: 'Acme',
+    project: '',
+    person: 'Ana',
+    clientId: 'c1',
+    projectId: '',
+    personId: 'u1',
+  }
+  assert.deepEqual(reportQueryParams({ sql, view: 'table', params: {} }, filters), {
+    client_id: 'c1',
+    assignee: 'Ana',
+    due_date_from: '2026-10-01',
+    due_date_to: '2026-10-31',
+    sent_to: '',
+  })
+  assert.deepEqual(reportFiltersIgnored(sql.split('WHERE')[1], { ...filters, project: 'Apollo' }), ['Project'])
+})
+
+test('adding a query to a report drops the values tried in the explorer for report-filled parameters', () => {
+  const query = {
+    sql: 'SELECT * FROM tasks WHERE client = {{client}} AND status = {{status}}',
+    view: 'table' as const,
+    params: { client: 'Globex', status: 'Open' },
+  }
+  assert.deepEqual(paramsForReport(query).params, { client: '', status: 'Open' })
+})
+
+test('the builder gives each end of a date range its own parameter', () => {
+  const builder = {
+    ...emptyBuilder('tasks'),
+    groupBy: [],
+    filters: [
+      { column: 'tasks.due_date', op: 'gte' as const, value: '', ask: true },
+      { column: 'tasks.due_date', op: 'lte' as const, value: '', ask: true },
+      { column: 'tasks.client_id', op: 'is' as const, value: '', ask: true },
+    ],
+  }
+  const sql = builderSql(builder, explorerCatalog({ trackers: [], clients: [], messages: null }))
+  assert.match(sql, /\{\{due_date_from\}\}/)
+  assert.match(sql, /\{\{due_date_to\}\}/)
+  assert.match(sql, /\{\{client_id\}\}/)
 })

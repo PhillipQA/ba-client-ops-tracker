@@ -97,11 +97,20 @@ const ref = (key: string) =>
     .split('.')
     .map(part => quoteName(part))
     .join('.')
-/** The parameter a filter asks for: clients.name asks for {{client}}, tasks.due_date for {{due_date}}. */
-const paramName = (key: string) => {
+/**
+ * The parameter a filter asks for: clients.name asks for {{client}}, tasks.client_id for {{client_id}}. A date asked
+ * as "on or after" / "on or before" gets {{due_date_from}} / {{due_date_to}}, so both ends of a range have their own
+ * value and follow a report's dates; other numbers get _min / _max.
+ */
+const paramName = (key: string, op: BuilderFilterOp, type: SqlColumnType) => {
   const [table, column = table] = key.split('.')
-  if (column === 'name' || column === 'id') return `${table.replace(/s$/, '')}${column === 'id' ? '_id' : ''}`
-  return column.replace(/[^a-z0-9_]+/g, '_')
+  const base =
+    column === 'name' || column === 'id'
+      ? `${table.replace(/s$/, '')}${column === 'id' ? '_id' : ''}`
+      : column.replace(/[^a-z0-9_]+/g, '_')
+  if (op === 'gte') return `${base}${type === 'date' ? '_from' : '_min'}`
+  if (op === 'lte') return `${base}${type === 'date' ? '_to' : '_max'}`
+  return base
 }
 
 /** The conditions that compare with a value. */
@@ -147,7 +156,9 @@ export function builderSql(builder: Builder, catalog: TableInfo[]): string {
     .filter(filter => filter.ask || !VALUED.includes(filter.op) || filter.value.trim() !== '')
     .map(filter => {
       const column = ref(filter.column)
-      const value = filter.ask ? `{{${paramName(filter.column)}}}` : literal(filter.column, filter.value)
+      const value = filter.ask
+        ? `{{${paramName(filter.column, filter.op, typeOf(filter.column))}}}`
+        : literal(filter.column, filter.value)
       const condition = test(filter, column, value)
       // A value asked for each time may be left empty: then the condition is skipped and every row counts.
       return filter.ask && VALUED.includes(filter.op) ? `(${value} IS NULL OR ${condition})` : condition

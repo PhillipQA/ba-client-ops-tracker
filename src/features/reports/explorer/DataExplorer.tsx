@@ -44,6 +44,7 @@ import {
 import { QueryResultView } from './QueryResult'
 import { resultCsv } from './resultView'
 import { isKeyword, queryParams, tableIdentifierParams, SQL_FUNCTIONS, SqlError, type SqlResult } from './sqlEngine'
+import { paramsForReport } from './reportParams'
 import type { TableInfo } from './explorerTables'
 import { csvText } from '../../../shared/csv'
 
@@ -882,7 +883,7 @@ export function DataExplorer({
           initialTitle={opened?.name || ''}
           onClose={() => setDialog(null)}
           onAdd={async (target, title, newName) => {
-            const query = current()
+            const query = paramsForReport(current())
             if (target) {
               const report = reports.find(item => item.id === target)
               if (!report) return
@@ -934,14 +935,27 @@ export function ParamInput({
   isTableIdentifier?: boolean
   onChange: (value: string) => void
 }) {
-  let choices: string[] | null = null
-  if (isTableIdentifier) choices = tableNames
-  else if (/^client(_name)?$/.test(name))
-    choices = clients.filter(client => !client.archived).map(client => client.name)
-  else if (/^project(_name)?$/.test(name))
-    choices = projects.filter(project => !project.archived).map(project => project.name)
-  else if (/^(user|assignee|person|owner)(_name)?$/.test(name))
-    choices = accounts.filter(account => account.status === 'Active').map(account => account.name)
+  let choices: { value: string; label: string }[] | null = null
+  // {{client}} takes the name, {{client_id}} the id: both are picked by name.
+  const pick = (list: { id: string; name: string }[], byId: boolean) =>
+    list.map(item => ({ value: byId ? item.id : item.name, label: item.name }))
+  const person = /^(user|assignee|person|owner)(_name|_id)?$/.exec(name)
+  if (isTableIdentifier) choices = tableNames.map(table => ({ value: table, label: table }))
+  else if (/^client(_name|_id)?$/.test(name))
+    choices = pick(
+      clients.filter(client => !client.archived),
+      name.endsWith('_id'),
+    )
+  else if (/^project(_name|_id)?$/.test(name))
+    choices = pick(
+      projects.filter(project => !project.archived),
+      name.endsWith('_id'),
+    )
+  else if (person)
+    choices = pick(
+      accounts.filter(account => account.status === 'Active'),
+      person[2] === '_id',
+    )
   const isDate = /(^|_)(date|from|to|start|end|since|until|day|week|month)($|_)/.test(name)
   return (
     <label className="dx-param">
@@ -950,8 +964,8 @@ export function ParamInput({
         <select value={value} onChange={event => onChange(event.target.value)}>
           <option value="">Choose…</option>
           {choices.map(choice => (
-            <option key={choice} value={choice}>
-              {choice}
+            <option key={choice.value} value={choice.value}>
+              {choice.label}
             </option>
           ))}
         </select>
@@ -1072,8 +1086,9 @@ function AddToReportDialog({
           <input value={title} maxLength={120} onChange={event => setTitle(event.target.value)} />
         </label>
         <p className="crp-muted">
-          The report keeps its own copy of the query and runs it each time it opens, with fresh data. Its parameters
-          keep the values you chose; change them in the widget’s settings.
+          The report keeps its own copy of the query and runs it each time it opens, with fresh data. Client, project,
+          person and date parameters follow the report’s filters; other parameters keep the values you chose. Change
+          them in the widget’s settings.
         </p>
         <div className="k-dialog-actions">
           <span className="crp-spacer" />
