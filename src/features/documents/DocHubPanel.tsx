@@ -784,11 +784,18 @@ export function DocHubHistory({
   taskId,
   canCreate = false,
   onComplete,
+  clients = [],
+  projects = [],
+  items = [],
 }: {
   active?: boolean
   taskId?: string
   canCreate?: boolean
   onComplete?: () => void
+  /** For searching the Archive by client, project or task name. */
+  clients?: Client[]
+  projects?: Project[]
+  items?: WorkItem[]
 }) {
   const [docs, setDocs] = useState<DocHubDocument[]>([]),
     [error, setError] = useState(''),
@@ -797,7 +804,8 @@ export function DocHubHistory({
     [selected, setSelected] = useState<DocHubDocument | null>(null)
   const [layout, setLayout] = useState<'row' | 'tile'>('row'),
     [pageSize, setPageSize] = useState<3 | 5 | 10>(5),
-    [page, setPage] = useState(1)
+    [page, setPage] = useState(1),
+    [search, setSearch] = useState('')
   const revision = useRef<string | undefined>(undefined)
   const suffix = taskId ? `?taskId=${encodeURIComponent(taskId)}` : ''
   const load = async (signal?: AbortSignal) => {
@@ -846,7 +854,22 @@ export function DocHubHistory({
   )
   const archivedDocs = docs.filter(d => isArchivedDocHubStatus(d.status)),
     activeDocs = docs.filter(d => !isArchivedDocHubStatus(d.status)),
-    visibleDocs = taskId ? docs : view === 'archive' ? archivedDocs : activeDocs
+    term = search.trim().toLowerCase(),
+    // Archive search: title, type, status, client, project, task, who made it, signers and the Drive file.
+    matches = (doc: DocHubDocument) =>
+      [
+        doc.title,
+        doc.kind,
+        doc.status,
+        doc.createdByName,
+        doc.driveFile?.name,
+        clients.find(client => client.id === doc.clientId)?.name,
+        projects.find(project => project.id === doc.projectId)?.name,
+        items.find(item => item.id === doc.taskId)?.title,
+        ...doc.signers.flatMap(signer => [signer.name, signer.email, signer.label]),
+      ].some(value => value?.toLowerCase().includes(term)),
+    archiveShown = term ? archivedDocs.filter(matches) : archivedDocs,
+    visibleDocs = taskId ? docs : view === 'archive' ? archiveShown : activeDocs
   const totalPages = Math.max(1, Math.ceil(visibleDocs.length / pageSize))
   useEffect(() => {
     setPage(current => Math.min(current, totalPages))
@@ -897,6 +920,19 @@ export function DocHubHistory({
             </button>
           </div>
           <div className="dochub-history-toolbar">
+            {view === 'archive' && (
+              <input
+                type="search"
+                className="dochub-history-search"
+                aria-label="Search archived documents"
+                placeholder="Search archive: title, client, task, signer…"
+                value={search}
+                onChange={event => {
+                  setSearch(event.target.value)
+                  setPage(1)
+                }}
+              />
+            )}
             <div className="dochub-layout-switch" role="group" aria-label="Document history layout">
               <button
                 type="button"
@@ -956,7 +992,9 @@ export function DocHubHistory({
           {taskId
             ? 'No documents linked yet.'
             : view === 'archive'
-              ? 'Archive is empty. Completed and voided documents will appear here for tracking.'
+              ? term
+                ? 'No archived document matches your search.'
+                : 'Archive is empty. Completed and voided documents will appear here for tracking.'
               : 'No active documents. New or in-route documents will appear here.'}
         </div>
       )}
