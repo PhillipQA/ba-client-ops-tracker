@@ -486,8 +486,9 @@ export default function WorkHub({
         setLoading(false)
       })
       .catch(e => {
-        if (active && e.name !== 'AbortError') {
-          setListError(e.message)
+        // Only this view's own cancel is silent; any other failure must end the spinner.
+        if (active && !controller.signal.aborted) {
+          setListError(e.name === 'AbortError' ? 'Loading was interrupted.' : e.message)
           setLoading(false)
           setItems([])
           setTotal(0)
@@ -518,8 +519,8 @@ export default function WorkHub({
         }
       })
       .catch(e => {
-        if (active && e.name !== 'AbortError') {
-          setThreadError(e.message)
+        if (active && !controller.signal.aborted) {
+          setThreadError(e.name === 'AbortError' ? 'Loading was interrupted.' : e.message)
           setThreadLoading(false)
         }
       })

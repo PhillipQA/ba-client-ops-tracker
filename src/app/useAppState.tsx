@@ -887,7 +887,23 @@ export function useAppState() {
       accounts.map(account => (account.id === result.user.id ? { ...account, ...result.user } : account)),
     )
     if (patch.newPassword) setAuthUser(await getAuthSession())
-    else setAuthUser(current => (current && current.id === result.user.id ? { ...current, ...result.user } : current))
+    // Take only the profile fields. The response's role and modules are the stored account's, not the session's
+    // (an Administrator gets every module the account has), so copying them hid pages such as Data explorer
+    // until the page was reloaded.
+    else
+      setAuthUser(current => {
+        if (!current || current.id !== result.user.id) return current
+        const { name, email, phone, theme, interfaceMode, clientThemes } = result.user
+        return {
+          ...current,
+          ...(name !== undefined && { name }),
+          ...(email !== undefined && { email }),
+          ...(phone !== undefined && { phone }),
+          ...(theme !== undefined && { theme }),
+          ...(interfaceMode !== undefined && { interfaceMode }),
+          ...(clientThemes !== undefined && { clientThemes }),
+        }
+      })
   }
 
   const updateOwnProfile = async (profile: {

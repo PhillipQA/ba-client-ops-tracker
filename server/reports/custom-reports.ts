@@ -65,13 +65,19 @@ export function registerCustomReportRoutes(app: Express, deps: Deps) {
     next()
   }
   const scope = [deps.requireAuth, deps.requireTenant, guard]
+  /** Only a missing table or column means the database needs schema.sql; anything else (a dropped connection, a
+   *  timeout) is a passing failure. Calling it an upgrade replaced the whole Reports page until a reload. */
+  const schemaMissing = (error: any) =>
+    error?.code === '42P01' || error?.code === '42703' || /does not exist/i.test(String(error?.message || ''))
   const missing = (error: any) => {
-    if (error)
+    if (!error) return
+    if (schemaMissing(error))
       throw new ReportError(
         'Custom reports are unavailable. Check the database connection; a new database needs database/schema.sql.',
         503,
         { needsUpgrade: true },
       )
+    throw new ReportError('Could not reach the database. Nothing was saved. Try again in a moment.', 503)
   }
   const route =
     (handler: (req: Request, res: Response) => Promise<void>): RequestHandler =>

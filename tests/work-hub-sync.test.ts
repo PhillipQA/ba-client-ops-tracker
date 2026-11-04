@@ -252,8 +252,29 @@ test('a stale read cannot overwrite a refreshed source cache', async () => {
   hub.invalidate('gmail')
   assert.deepEqual(await hub.read('gmail', '/page'), { value: 2 })
   release()
-  await assert.rejects(old, { name: 'AbortError' })
+  // The waiting view gets the refreshed page instead of a cancel it would ignore (and spin on).
+  assert.deepEqual(await old, { value: 2 })
   assert.deepEqual(await hub.read('gmail', '/page'), { value: 2 })
+  assert.equal(requests, 2)
+})
+
+test('opening an unread email: marking it read mid-load still delivers the thread', async () => {
+  let release!: () => void,
+    requests = 0
+  const gate = new Promise<void>(resolve => {
+    release = resolve
+  })
+  const hub = createWorkHubSync({
+    request: async () => {
+      const value = ++requests
+      if (value === 1) await gate
+      return json({ items: [{ id: 'm1', read: value > 1 }], total: 1 })
+    },
+  })
+  const thread = hub.read('gmail', '/api/communications/m1/thread?page=1', new AbortController().signal)
+  hub.invalidate('gmail') // markRead finishes before the thread request
+  release()
+  assert.deepEqual(await thread, { items: [{ id: 'm1', read: true }], total: 1 })
   assert.equal(requests, 2)
 })
 

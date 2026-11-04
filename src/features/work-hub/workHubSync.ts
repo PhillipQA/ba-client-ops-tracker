@@ -81,28 +81,38 @@ export function createWorkHubSync(options: { request?: Request; storage?: Storag
     for (const key of reads.keys()) if (key.startsWith(`${source}:`)) reads.delete(key)
   }
   const read = async <T = any>(source: WorkHubSource, url: string, signal?: AbortSignal): Promise<T> => {
-    if (signal?.aborted) throw new DOMException('Request cancelled.', 'AbortError')
-    const key = `${source}:${url}`,
-      epoch = generation,
-      version = versions.get(source) || 0
-    let pending = reads.get(key)
-    if (!pending) {
-      pending = cache.has(key) ? Promise.resolve(cache.get(key)) : ask(url)
-      reads.set(key, pending)
-      const current = pending
-      void pending
-        .then(result => {
-          if (epoch === generation && version === (versions.get(source) || 0)) cache.set(key, result)
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (reads.get(key) === current) reads.delete(key)
-        })
+    const key = `${source}:${url}`
+    // A source refreshed (marked read, sent, synced) while this read was waiting: read again rather than fail.
+    // Callers ignore AbortError, so failing here would leave their view stuck on "Loading…".
+    for (;;) {
+      if (signal?.aborted) throw new DOMException('Request cancelled.', 'AbortError')
+      const epoch = generation,
+        version = versions.get(source) || 0
+      let pending = reads.get(key)
+      if (!pending) {
+        pending = cache.has(key) ? Promise.resolve(cache.get(key)) : ask(url)
+        reads.set(key, pending)
+        const current = pending
+        void pending
+          .then(result => {
+            if (epoch === generation && version === (versions.get(source) || 0)) cache.set(key, result)
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (reads.get(key) === current) reads.delete(key)
+          })
+      }
+      let result: T
+      try {
+        result = await pending
+      } catch (error) {
+        if (!signal?.aborted && epoch === generation && version !== (versions.get(source) || 0)) continue
+        throw error
+      }
+      if (signal?.aborted || epoch !== generation) throw new DOMException('Request cancelled.', 'AbortError')
+      if (version !== (versions.get(source) || 0)) continue
+      return result
     }
-    const result = await pending
-    if (signal?.aborted || epoch !== generation || version !== (versions.get(source) || 0))
-      throw new DOMException('Request cancelled.', 'AbortError')
-    return result
   }
   const syncOne = (id: WorkHubIntegration, settings?: Promise<any>): Promise<void> => {
     if (!active) return Promise.resolve()

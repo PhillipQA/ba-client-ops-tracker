@@ -394,6 +394,7 @@ export default function CustomReports(props: Props) {
   }
   const update = async (item: ReportItem, patch: Parameters<typeof reportApi.update>[1]) => {
     setBusy(true)
+    setNotice('')
     try {
       const result = await reportApi.update(item.id, patch)
       replace(result.item)
@@ -412,6 +413,7 @@ export default function CustomReports(props: Props) {
   }
   const create = async (body: Parameters<typeof reportApi.create>[0]) => {
     setBusy(true)
+    setNotice('')
     try {
       const result = await reportApi.create(body)
       setItems(current => [...(current || []), result.item])
@@ -1249,6 +1251,7 @@ export default function CustomReports(props: Props) {
           templates={startable}
           initial={dialog.template}
           busy={busy}
+          error={notice}
           onClose={() => setDialog(null)}
           onCreate={async (body, template) => {
             const made = await create({ kind: 'report', ...body, definition: template })
@@ -1266,6 +1269,7 @@ export default function CustomReports(props: Props) {
         <NameDialog
           item={dialog.kind === 'rename' ? dialog.item : null}
           busy={busy}
+          error={notice}
           onClose={() => setDialog(null)}
           onSave={async (name, description, shared) => {
             const done =
@@ -1281,6 +1285,7 @@ export default function CustomReports(props: Props) {
           item={dialog.item}
           isAdmin={isAdmin}
           busy={busy}
+          error={notice}
           onClose={() => setDialog(null)}
           onSave={async (name, description, shared) => {
             const made = await create({
@@ -1680,6 +1685,7 @@ function NewReportDialog({
   templates,
   initial,
   busy,
+  error,
   onClose,
   onCreate,
 }: {
@@ -1688,6 +1694,8 @@ function NewReportDialog({
   /** The template chosen to start with. */
   initial?: string
   busy: boolean
+  /** Why the last attempt failed. Shown here: the page behind the dialog is covered. */
+  error?: string
   onClose: () => void
   onCreate: (
     body: { name: string; description: string; folderId: string; shared: boolean },
@@ -1726,6 +1734,7 @@ function NewReportDialog({
   return (
     <Dialog title="New report" onClose={onClose} busy={busy} size="medium">
       <form className="crp-dialog-body" onSubmit={submit}>
+        {error && <Notice kind="error">{error}</Notice>}
         <p className="crp-tree-label">Start from</p>
         <div className="crp-templates">
           {option(null)}
@@ -1779,12 +1788,14 @@ function SaveTemplateDialog({
   item,
   isAdmin,
   busy,
+  error,
   onClose,
   onSave,
 }: {
   item: ReportItem
   isAdmin: boolean
   busy: boolean
+  error?: string
   onClose: () => void
   onSave: (name: string, description: string, shared: boolean) => void
 }) {
@@ -1800,6 +1811,7 @@ function SaveTemplateDialog({
           if (name.trim()) onSave(name.trim(), description.trim(), isAdmin && shared)
         }}
       >
+        {error && <Notice kind="error">{error}</Notice>}
         <p className="crp-muted">
           The template keeps this report&apos;s widgets and filters. Reports started from it get their own copy.
         </p>
@@ -1841,12 +1853,14 @@ function SaveTemplateDialog({
 function NameDialog({
   item,
   busy,
+  error,
   onClose,
   onSave,
 }: {
   /** The report or folder to rename; none for a new folder. */
   item: ReportItem | null
   busy: boolean
+  error?: string
   onClose: () => void
   onSave: (name: string, description: string, shared: boolean) => void
 }) {
@@ -1863,6 +1877,7 @@ function NameDialog({
           if (name.trim()) onSave(name.trim(), description.trim(), shared)
         }}
       >
+        {error && <Notice kind="error">{error}</Notice>}
         <label className="crp-form-row">
           <span>Name</span>
           <input value={name} maxLength={120} autoFocus required onChange={event => setName(event.target.value)} />
