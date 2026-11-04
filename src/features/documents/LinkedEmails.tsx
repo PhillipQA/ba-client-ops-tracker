@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Mail, Maximize2, Minimize2, Minus, X } from 'lucide-react'
 import type { Client, Project, WorkItem } from '../../shared/types'
-import { SearchSelect } from '../../shared/ui/SearchSelect'
+import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { useIsClosed } from '../tasks/openWork'
 import { taskChoices } from './documentDriveTargets'
 import { requestJson } from '../../shared/http'
@@ -14,20 +14,26 @@ type LinkedEmail = { id: string; subject: string; sender: string; body: string; 
 
 export function LinkedEmails({
   taskId,
+  clientId,
   items,
   clients,
   projects,
   onTaskChange,
+  onClientChange,
   disabled = false,
   active = true,
   children,
 }: {
   taskId: string
+  /** The DRF's client: tasks are chosen within it. The same client as DocHub's “Link to client”. */
+  clientId: string
   items: WorkItem[]
   clients: Client[]
   projects: Project[]
   /** Links the DRF to a task here, at the top: the same choice as DocHub's “Existing task or subtask”. */
   onTaskChange: (taskId: string) => void
+  /** Choosing another client clears the task, as in DocHub. */
+  onClientChange: (clientId: string) => void
   disabled?: boolean
   /** The page is on screen: the dock shows only then. */
   active?: boolean
@@ -41,11 +47,14 @@ export function LinkedEmails({
   const [openId, setOpenId] = useState('')
   const [dock, setDock] = useState<'normal' | 'min' | 'max'>('normal')
   const isClosed = useIsClosed()
-  // Open tasks and subtasks (the chosen one stays listed even once closed), searchable by name; the client follows.
-  const choices = taskChoices(
-    { items: items.filter(item => item.id === taskId || !isClosed(item.status)), clients, projects },
-    '',
-  )
+  // The chosen client's open tasks, each followed by its subtasks (the chosen one stays listed even once closed).
+  // Nothing is listed before a client is chosen, so the list is never every task in the account.
+  const choices = clientId
+    ? taskChoices(
+        { items: items.filter(item => item.id === taskId || !isClosed(item.status)), clients, projects },
+        clientId,
+      )
+    : []
   // The task and its subtasks: an email turned into a subtask still belongs to this DRF's work.
   const ids = [taskId, ...items.filter(item => item.parentTaskId === taskId).map(item => item.id)].slice(0, 50)
   const key = ids.join(',')
@@ -143,19 +152,35 @@ export function LinkedEmails({
         </div>
       </div>
       {children}
-      <label className="linked-emails-task">
-        <span>Task or subtask</span>
-        <SearchSelect
-          disabled={disabled}
-          value={taskId}
-          onChange={onTaskChange}
-          choices={[{ value: '', label: 'No task linked' }, ...choices]}
-          placeholder="Type a task or subtask"
-          empty="No open task or subtask matches"
-        />
-      </label>
+      <div className="linked-emails-pickers">
+        <label className="linked-emails-task">
+          <span>Client</span>
+          <ClientSelect
+            clients={clients.filter(client => !client.archived || client.id === clientId)}
+            value={clientId}
+            onChange={onClientChange}
+            extra={[{ value: '', label: 'Choose a client' }]}
+            disabled={disabled}
+          />
+        </label>
+        <label className="linked-emails-task">
+          <span>Task or subtask</span>
+          <SearchSelect
+            disabled={disabled || !clientId}
+            value={taskId}
+            onChange={onTaskChange}
+            choices={[{ value: '', label: 'No task linked' }, ...choices]}
+            placeholder={clientId ? 'Type a task or subtask' : 'Choose a client first'}
+            empty="This client has no open task or subtask matching that"
+          />
+        </label>
+      </div>
       {!taskId ? (
-        <p className="linked-emails-empty">Choose the task this DRF is for to read its email here.</p>
+        <p className="linked-emails-empty">
+          {clientId
+            ? 'Choose the task this DRF is for to read its email.'
+            : 'Choose the client, then the task this DRF is for, to read its email.'}
+        </p>
       ) : error ? (
         <p role="alert">
           {error}{' '}
