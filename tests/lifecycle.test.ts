@@ -7,7 +7,7 @@ import {
   LifecycleError,
   type LifecycleStore,
 } from '../src/features/tasks/lifecycle'
-import { createWorkspaceGuard } from '../server/services/workspace-guard'
+import { createWorkspaceGuard, WorkspaceRaceError } from '../server/services/workspace-guard'
 
 const admin = { role: 'Administrator', modules: ['clients', 'projects', 'items', 'action'], accountType: 'tenant' }
 const contributor = { ...admin, role: 'Contributor' }
@@ -257,6 +257,8 @@ test('serialized commits prevent a concurrent task write from racing past archiv
   const result = await Promise.allSettled([save(archive), save(taskUpdate)])
   assert.equal(result[0].status, 'fulfilled')
   assert.equal(result[1].status, 'rejected')
+  // A race, not a lifecycle violation: the browser refetches, merges and retries (then the real check refuses it).
+  assert.ok((result[1] as PromiseRejectedResult).reason instanceof WorkspaceRaceError)
   assert.equal(saved.projects[0].archived, true)
   assert.equal(saved.items[0].status, 'Complete')
 })

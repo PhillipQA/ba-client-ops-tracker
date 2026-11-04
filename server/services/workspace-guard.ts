@@ -6,6 +6,14 @@ import {
   type LifecycleStore,
 } from '../../src/features/tasks/lifecycle'
 
+/**
+ * Something else saved the workspace while this save was being checked (another person, a background job). The
+ * browser can fetch the latest, merge its own changes onto it and try again, so this is not a real conflict.
+ */
+export class WorkspaceRaceError extends LifecycleError {
+  readonly raced = true
+}
+
 /** Serialize snapshot commits per tenant and recheck the authoritative state immediately before saving. */
 export function createWorkspaceGuard(
   load: (id: string) => Promise<LifecycleStore | null>,
@@ -27,7 +35,9 @@ export function createWorkspaceGuard(
       .then(async () => {
         const current = (await load(id)) || fallback()
         if (before && stableRecord(current) !== stableRecord(before))
-          throw new LifecycleError('This workspace changed while saving. Reload and retry; your change was not saved.')
+          throw new WorkspaceRaceError(
+            'This workspace changed while saving. Reload and retry; your change was not saved.',
+          )
         assertLifecycleMutation(current, next, actor)
         return write(current)
       })

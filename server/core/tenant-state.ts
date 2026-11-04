@@ -526,6 +526,8 @@ export class TenantSaveError extends Error {
   constructor(
     message: string,
     public status: number,
+    /** Another save got in first: fetching the latest and merging can succeed. */
+    public raced = false,
   ) {
     super(message)
   }
@@ -669,7 +671,7 @@ async function writeTenantState(
           : ['23505', '23514', '22023', '22007', '22008'].includes(error.code)
             ? 400
             : 500
-    throw new TenantSaveError(error.message || 'The tenant save was rolled back.', status)
+    throw new TenantSaveError(error.message || 'The tenant save was rolled back.', status, error.code === '40001')
   }
   return { ...data, version: workspaceVersion(state) } as NormalizedSyncResult
 }

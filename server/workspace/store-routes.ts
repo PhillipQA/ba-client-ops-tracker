@@ -5,6 +5,7 @@ import { assertLifecycleMutation, LifecycleError } from '../../src/features/task
 import { applySubtaskAssignmentInheritance } from '../../src/features/tasks/subtaskAssignment'
 import { normalizeAppTheme, normalizeClientThemes } from '../../src/features/settings/theme'
 import { preserveInterfaceModes } from '../accounts/preferences'
+import { WorkspaceRaceError } from '../services/workspace-guard'
 import {
   isBcryptHash,
   isLegacyDigest,
@@ -468,10 +469,15 @@ export function registerStoreRoutes(app: Express) {
 
       res.json({ configured: true, saved: true, updatedAt, version: saved.version })
     } catch (error) {
-      console.error('Database save failed:', error)
-      res
-        .status(error instanceof TenantSaveError || error instanceof LifecycleError ? error.status : 500)
-        .json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database save failed.' })
+      // Someone else saved in the moment between the version check and this commit. refreshRequired lets the browser
+      // fetch the latest, merge its own changes onto it and retry, instead of showing the Save conflict box.
+      const raced = error instanceof WorkspaceRaceError || (error instanceof TenantSaveError && error.raced)
+      if (!raced) console.error('Database save failed:', error)
+      res.status(error instanceof TenantSaveError || error instanceof LifecycleError ? error.status : 500).json({
+        configured: true,
+        ...(raced ? { refreshRequired: true } : {}),
+        error: error instanceof Error ? error.message : 'Cloud database save failed.',
+      })
     }
   })
 }
