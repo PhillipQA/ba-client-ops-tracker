@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { workspaceAutoRefreshAllowed } from './activePolling'
 import { workHubSync } from '../features/work-hub/workHubSync'
 import { badgeText, useUnreadCounts, useUnreadPolling } from '../features/work-hub/unreadCount'
@@ -9,9 +10,12 @@ import NotificationCenter from '../features/notifications/NotificationCenter'
 import RecordEditDialog from '../features/tasks/RecordEditDialog'
 import LifecycleControls from '../features/tasks/LifecycleControls'
 import { isArchived } from '../features/tasks/lifecycle'
+import AppTour from '../features/onboarding/AppTour'
+import { tourSteps, tourStorageKey, type TourView } from '../features/onboarding/tourSteps'
 import {
   Building2,
   CircleDot,
+  Compass,
   Pencil,
   Plus,
   RefreshCw,
@@ -155,6 +159,36 @@ function App() {
     .filter(Boolean)
     .join(', ')
 
+  // Guided tour: starts by itself at a person's first sign-in in this browser, and from Tour in the top bar.
+  const [tourOpen, setTourOpen] = useState(false)
+  const tourKey = tourStorageKey(currentUser?.organizationId, currentUser?.id)
+  const inWorkspace = Boolean(currentUser && currentUser.accountType !== 'platform')
+  useEffect(() => {
+    if (!inWorkspace) return setTourOpen(false)
+    let seen = true
+    try {
+      seen = localStorage.getItem(tourKey) === '1'
+    } catch {
+      /* No browser storage: no automatic tour; Tour still works. */
+    }
+    if (seen) return
+    const timer = window.setTimeout(() => setTourOpen(true), 800)
+    return () => window.clearTimeout(timer)
+  }, [tourKey, inWorkspace])
+  const closeTour = () => {
+    setTourOpen(false)
+    try {
+      localStorage.setItem(tourKey, '1')
+    } catch {
+      /* Shown again next time; nothing else depends on it. */
+    }
+  }
+  const tourNavigate = (next: TourView) => {
+    setView(next)
+    setSelectedClientId(null)
+    setSelectedProjectId(null)
+  }
+
   if (resetToken !== null)
     return (
       <ResetPassword
@@ -198,6 +232,7 @@ function App() {
             {visibleNavItems.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
+                data-tour={`nav-${id}`}
                 className={view === id ? 'nav-button active' : 'nav-button'}
                 aria-current={view === id ? 'page' : undefined}
                 {...railTip.bind(id === 'inbox' && unreadTotal > 0 ? `${label} · ${unreadTitle}` : label)}
@@ -228,6 +263,7 @@ function App() {
               <>
                 {canManageAccounts && (
                   <button
+                    data-tour="nav-users"
                     className={view === 'users' ? 'nav-button active' : 'nav-button'}
                     aria-current={view === 'users' ? 'page' : undefined}
                     {...railTip.bind('Users & Permissions')}
@@ -296,6 +332,7 @@ function App() {
               </div>
             ) : (
               <button
+                data-tour="profile"
                 className="session-card session-card-button"
                 type="button"
                 onClick={() => setProfileOpen(true)}
@@ -388,6 +425,7 @@ function App() {
                     void workHubSync.syncAll()
                   }}
                   title="Fetch the latest workspace and sync all connected Work Hub integrations"
+                  data-tour="refresh"
                 >
                   <RefreshCw size={16} />
                   {refreshingCloud || hubSyncing ? 'Refreshing…' : 'Refresh now'}
@@ -405,6 +443,17 @@ function App() {
                   onReadAll={handleReadAllNotifications}
                   onRefresh={() => void refreshNotifications()}
                 />
+              )}
+              {currentUser.accountType !== 'platform' && (
+                <button
+                  type="button"
+                  className="secondary"
+                  data-tour="tour"
+                  title="A short guided tour: what to set up first and where things are"
+                  onClick={() => setTourOpen(true)}
+                >
+                  <Compass size={16} /> Tour
+                </button>
               )}
               <span className="top-role-pill">
                 {view === 'internal-admin' && currentUser.accountType === 'platform'
@@ -424,6 +473,7 @@ function App() {
                 (hasModule('items') || hasModule('inbox')) && (
                   <button
                     className="primary"
+                    data-tour="add-task"
                     onClick={() => {
                       if (selectedClient) setTaskPreset({ clientId: selectedClient.id, type: 'Task' })
                       else if (selectedProject)
@@ -771,6 +821,17 @@ function App() {
               />
             ) : null
           })()}
+        {tourOpen && inWorkspace && (
+          <AppTour
+            steps={tourSteps({
+              isAdmin: canManageAccounts,
+              modules: currentUser.modules,
+              canWrite: currentUser.role !== 'Viewer',
+            })}
+            onNavigate={tourNavigate}
+            onClose={closeTour}
+          />
+        )}
         {profileOpen && currentUser.accountType !== 'platform' && (
           <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />
         )}

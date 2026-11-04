@@ -406,7 +406,11 @@ export default function GoogleCalendarPanel() {
   }
   const calendarId = (choice: CalendarChoice) => (choice.primary ? 'primary' : choice.id)
   return (
-    <section className="panel dashboard-panel calendar-card" aria-label="My private Google Calendar">
+    <section
+      className="panel dashboard-panel calendar-card"
+      aria-label="My private Google Calendar"
+      data-tour="calendar"
+    >
       <div className="panel-heading dashboard-panel-heading">
         <div>
           <h2>
