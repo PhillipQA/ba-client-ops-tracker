@@ -23,32 +23,14 @@ import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { applyTemplateBody, emailStore, signatureBlock, type EmailTemplate } from './emailStore'
 import { EmailTemplatesManager } from './EmailTemplates'
 import { useModalDialog } from '../../shared/ui/useModalDialog'
+import { COMPOSE_EVENT, type ComposePrefill } from './composeEvent'
 
 /**
  * Send an email from the tracker, from the person's own Gmail account.
  * Opened from anywhere with composeEmail(); the email is linked to the tasks or subtasks chosen here.
  */
-export type ComposePrefill = {
-  taskIds?: string[]
-  to?: string
-  cc?: string
-  bcc?: string
-  subject?: string
-  message?: string
-  driveFiles?: DriveRef[]
-  uploads?: Upload[]
-  replyToId?: string
-  /** A reply that copied the other people on the original email, so the composer can say so and offer to remove them. */
-  autoCc?: boolean
-  /** A short message shown above the form, for example when part of the prefill could not be filled in. */
-  notice?: string
-  /** An email taken back with Undo: closing it asks first, because it would otherwise be lost. */
-  restored?: boolean
-}
-const OPEN = 'email-compose'
-export function composeEmail(prefill: ComposePrefill = {}) {
-  window.dispatchEvent(new CustomEvent(OPEN, { detail: prefill }))
-}
+// Kept in composeEvent.ts (no styles or UI) so code and tests can open the composer without loading it.
+export { composeEmail, type ComposePrefill } from './composeEvent'
 
 // Buttons elsewhere in the app show only when this person can send. The host reports it here.
 let enabled = false
@@ -137,8 +119,8 @@ export function EmailComposerHost({
     if (!allowed) return
     const listen = (event: Event) =>
       setOpen({ prefill: (event as CustomEvent<ComposePrefill>).detail || {}, key: Date.now() })
-    window.addEventListener(OPEN, listen)
-    return () => window.removeEventListener(OPEN, listen)
+    window.addEventListener(COMPOSE_EVENT, listen)
+    return () => window.removeEventListener(COMPOSE_EVENT, listen)
   }, [allowed])
   const afterSent = useRef(onSent)
   afterSent.current = onSent

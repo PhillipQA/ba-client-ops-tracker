@@ -1,7 +1,7 @@
 // Reply all, shared by Work Hub and by the task's email buttons (DocHub signed PDFs, Drive files): when the work has a
 // linked email, a file is sent as a reply to everyone on that email, in its Gmail conversation, rather than as a new
 // email.
-import { composeEmail, type ComposePrefill } from './EmailComposer'
+import { composeEmail, type ComposePrefill } from './composeEvent'
 import { extractAddress, quoteReply, replySubject } from './emailCompose'
 
 export type ReplyableEmail = {
