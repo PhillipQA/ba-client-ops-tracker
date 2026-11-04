@@ -810,7 +810,21 @@ export default function DocumentCreation({
               </div>
 
               {canUseInbox ? (
-                <LinkedEmails taskId={docHub.options.taskId} items={items}>
+                <LinkedEmails
+                  taskId={docHub.options.taskId}
+                  items={items}
+                  clients={clients}
+                  projects={projects}
+                  disabled={generating || docHub.busy}
+                  active={active}
+                  onTaskChange={id =>
+                    docHub.setOptions(o => ({
+                      ...o,
+                      taskId: id,
+                      clientId: items.find(item => item.id === id)?.clientId || o.clientId,
+                    }))
+                  }
+                >
                   {!drfTemplate?.active && (
                     <div className="document-standard-template empty">
                       <FileCog size={18} />

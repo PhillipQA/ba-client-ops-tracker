@@ -4097,25 +4097,142 @@ select option {
 .linked-emails {
   gap: 10px;
 }
-.linked-emails > summary,
-.linked-email > summary {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.linked-emails > summary {
-  font-weight: 600;
-}
-.linked-email {
-  border-top: 1px solid currentColor;
-  border-top-color: color-mix(in srgb, currentColor 20%, transparent);
-  padding-top: 10px;
-}
-.linked-email > summary span,
 .linked-emails-empty {
   opacity: 0.75;
+  font-size: 0.9em;
+}
+.linked-email-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.linked-email-list button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border, #34363c);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.linked-email-list button.active {
+  border-color: var(--ui-accent, #60a5fa);
+}
+.linked-email-list button span {
+  opacity: 0.75;
+  font-size: 0.85em;
+}
+/* The open email: docked at the bottom right of the window, like a Gmail draft, and kept there while scrolling. */
+.linked-email-dock {
+  position: fixed;
+  right: 24px;
+  bottom: 0;
+  z-index: 70;
+  width: min(520px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 560px);
+  border: 1px solid var(--ui-border, #34363c);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--ui-surface, #1d1f23);
+  color: var(--ui-text, #e5e7eb);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+.linked-email-dock.is-max {
+  width: min(860px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+}
+.linked-email-dock.is-min {
+  width: min(340px, calc(100vw - 32px));
+}
+.linked-email-dock header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 12px 12px 0 0;
+  background: var(--ui-soft, #26292f);
+}
+.linked-email-dock header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.linked-email-dock header button:hover {
+  background: rgba(127, 127, 127, 0.18);
+}
+.linked-email-dock .linked-email-dock-title {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 8px;
+  font-weight: 600;
+}
+.linked-email-dock-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.linked-email-dock-nav {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8em;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+.linked-email-dock-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  padding: 10px 12px 12px;
+}
+.linked-email-dock-meta {
+  margin: 0 0 8px;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+.linked-email-dock .linked-email-body {
+  margin-top: 0;
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 640px) {
+  .linked-email-dock,
+  .linked-email-dock.is-max,
+  .linked-email-dock.is-min {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+@media print {
+  .linked-email-dock {
+    display: none;
+  }
+}
+.linked-emails-task {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   font-size: 0.9em;
 }
 .linked-email-body {
