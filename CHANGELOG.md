@@ -15,7 +15,7 @@ Released November 5, 2026.
 - **Linking an email to a task** can no longer lose a link when two are made at once, and old Discord captures (hidden from every browser) cannot be linked.
 - **Fewer Save conflict boxes.** When someone else saves at the same moment, your change is merged onto theirs and saved again; the box appears only when you both changed the same field.
 - **Pinned dependencies.** Packages that were installed as "latest" now have fixed versions, so a reinstall cannot jump to a new major version unnoticed.
-- **Tests that never ran now run.** The GitHub and Work Hub screen tests failed before their first test (stylesheets and JSX), and two theme tests still expected per-client themes to change the look. The automatic test run now shows why each failing test fails.
+- **Tests that never ran now run.** The GitHub and Work Hub screen tests failed before their first test (stylesheets and JSX), and two theme tests still expected per-client themes to change the look. The full suite (618 tests) now passes and blocks a merge when it does not; each failing test is shown with its error.
 
 ### Work Hub and email
 - **Link an email to an existing task or subtask** (not only create one), see what it is linked to, and unlink it. If the work is on a tracker you can open, you are told which one.
