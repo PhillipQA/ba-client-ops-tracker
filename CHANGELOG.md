@@ -1,10 +1,48 @@
 # Changelog
 
-**Current application release: v1.5.0**
+**Current application release: v1.5.1**
 
 Changes are listed newest first. For installation, deployment and updates, use the [README](README.md). Older entries mention migration files, release notes, an upgrade guide and patch ZIPs that were removed in the Northflank cleanup below; they are still in the Git history.
 
-## Unreleased — Northflank only, one database schema
+## v1.5.1 — Reports, Data explorer, project timelines, linked emails, and a security pass
+Released November 5, 2026.
+
+**No database migration.** An existing Northflank database keeps everything it has. A new database is set up with [database/schema.sql](database/schema.sql) (see *Northflank only* below).
+
+### Security and reliability (red-team pass)
+- **Signing out waits for your changes.** Edits still being saved finish first; if they cannot be saved, you are asked before they are lost. Before, signing out straight after an edit could drop it.
+- **Nothing left behind at a shared computer.** Signing out removes this browser's copy of the workspace and your AI BA Assistant conversations, so the next person cannot read them from the browser's storage. Unsaved edits kept after a save conflict stay, because they are the only copy.
+- **Linking an email to a task** can no longer lose a link when two are made at once, and old Discord captures (hidden from every browser) cannot be linked.
+- **Fewer Save conflict boxes.** When someone else saves at the same moment, your change is merged onto theirs and saved again; the box appears only when you both changed the same field.
+- **Pinned dependencies.** Packages that were installed as "latest" now have fixed versions, so a reinstall cannot jump to a new major version unnoticed.
+- **Tests that never ran now run.** The GitHub and Work Hub screen tests failed before their first test (stylesheets and JSX), and two theme tests still expected per-client themes to change the look. The automatic test run now shows why each failing test fails.
+
+### Work Hub and email
+- **Link an email to an existing task or subtask** (not only create one), see what it is linked to, and unlink it. If the work is on a tracker you can open, you are told which one.
+- **Reply all from a task.** *Email signed PDF* (DocHub) and *Email* on a task's Drive files answer the task's linked email, to everyone on it and in the same Gmail conversation, with the file attached. Without a linked email they start a new email as before.
+- **Unread count** on Work Hub in the menu.
+- Fixed: opening a new email could stay on *Loading…* until Work Hub was refreshed.
+
+### Document Creation
+- **The task's email beside the DRF.** Panel 2 shows the linked email: choose the client, then its task or subtask (DocHub signature preparation follows the same choice). The open email sits in a dock at the bottom of the window that stays in view while you scroll to the hardware details.
+- **Search the Document history Archive** by title, client, task, signer or file.
+
+### Reports and Data explorer
+- **Reports**: dashboards built from widgets (charts, tables, numbers, timelines), kept in folders, shared with the account, started from templates.
+- **Data explorer**: read-only SQL over your data (tasks, time, clients, projects, activity, trackers, Work Hub messages) with a query builder, saved queries and templates, table parameters, and UNION ALL.
+- **Queries on reports follow the report's filters**: client, project, person and dates fill the matching parameters (including `_id` and a date column's `_from` / `_to`), and adding a query to a report no longer pins the values you tried it with.
+- Fixed: report errors showing behind the dialog, a brief database hiccup locking the Reports page, and the Data explorer tab disappearing after a profile or theme change.
+
+### Trackers
+- **Project timeline** trackers with a Gantt view: phases and rows become tasks and subtasks, dates and done stay in step both ways, bars can be dragged, rows can be highlighted.
+- **The Gantt chart in the synced Google Sheet**, editable by clients, with the tracker following their edits; Sheets can be created from a tracker inside the client's Drive folder.
+- **Tracker templates**, site rollout steps as tasks, ticking a row closes its subtask, and the AI BA Assistant can read trackers.
+- Fixes for Sheet dropdowns and checkboxes, the timeline's size and resizing, and the task picker's client.
+
+### Getting started
+- **Guided tour** at first sign-in (and from **Tour** in the top bar): what Administrators set up first (integrations, templates, AI agents, users), connecting your own Gmail and calendar, and where daily work happens.
+
+### Northflank only, one database schema
 
 **No database change for an existing installation.** The live database keeps everything it has; nothing needs to be run.
 

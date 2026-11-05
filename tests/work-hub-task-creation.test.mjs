@@ -108,6 +108,9 @@ async function fixture({ tasks = [], serverDuplicate = false, refreshFails = fal
       const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value').set
       setter.call(element, value)
       element.dispatchEvent(new window.Event(element.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }))
+      // Type-to-search fields (Client) choose the typed name when the field is left, as a person tabbing on does.
+      if (element.getAttribute('role') === 'combobox')
+        element.dispatchEvent(new window.FocusEvent('focusout', { bubbles: true }))
     })
   }
   const createButton = () =>
