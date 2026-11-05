@@ -94,6 +94,25 @@ import { addDays, weekEndKey, weekStartKey } from '../shared/dates'
  * planner) and how it is saved, which screen is open, and the handlers the screens call. The App component and the
  * pages read it; nothing here renders.
  */
+/**
+ * What this browser keeps for a signed-in person: the workspace copy that makes the next start fast, and AI BA
+ * Assistant conversations. Removed at sign-out, so the next person at a shared computer cannot read them in the
+ * browser's storage. Unsaved edits kept after a save conflict stay: they are the only copy.
+ */
+function forgetBrowserCopies(user: { id?: string; organizationId?: string } | null) {
+  try {
+    localStorage.removeItem(organizationStorageKey(user?.organizationId))
+    const threadsKey = 'ba-client-ops-ai-threads-v1'
+    const threads = JSON.parse(localStorage.getItem(threadsKey) || '{}') as Record<string, unknown>
+    const mine = `${user?.id || ''}:`
+    const others = Object.fromEntries(Object.entries(threads).filter(([key]) => !key.startsWith(mine)))
+    if (Object.keys(others).length) localStorage.setItem(threadsKey, JSON.stringify(others))
+    else localStorage.removeItem(threadsKey)
+  } catch {
+    /* Storage unavailable: nothing was kept. */
+  }
+}
+
 export function useAppState() {
   const today = useBusinessDate()
   const [documentLaunch, setDocumentLaunch] = useState<{ taskId: string; flow: 'drf' | 'signoff'; nonce: number }>()
@@ -689,7 +708,25 @@ export function useAppState() {
     if (logoutBusy) return
     setLogoutBusy(true)
     try {
+      // Changes still being saved would be cut off by signing out (the save needs the session): wait for them, and
+      // ask before losing any that cannot be saved.
+      const saved = await Promise.race([
+        waitForCloudSaves().then(
+          () => true,
+          () => false,
+        ),
+        new Promise<boolean>(resolve => window.setTimeout(() => resolve(false), 10_000)),
+      ])
+      if (
+        !saved &&
+        !window.confirm(
+          'Your latest changes have not been saved yet. Sign out anyway? Changes that are not saved will be lost.',
+        )
+      )
+        return
+      const signedOut = authUser
       await logout()
+      forgetBrowserCopies(signedOut)
       void workHubSync.setSession(null)
       setAuthUser(null)
       setProfileOpen(false)
