@@ -338,8 +338,10 @@ export default function WorkHub({
     [projectId, setProjectId] = useState(''),
     [assignee, setAssignee] = useState(currentUser.id)
   /** Create a new task, or a subtask under an existing open task (which supplies the client and project). */
-  const [taskKind, setTaskKind] = useState<'task' | 'subtask'>('task'),
-    [parentId, setParentId] = useState('')
+  const [taskKind, setTaskKind] = useState<'task' | 'subtask' | 'link'>('task'),
+    [parentId, setParentId] = useState(''),
+    [linkId, setLinkId] = useState(''),
+    [linkNote, setLinkNote] = useState('')
   const [message, setMessage] = useState(''),
     [busy, setBusy] = useState(false)
   const hubSync = useWorkHubSync()
@@ -604,6 +606,46 @@ export default function WorkHub({
   const closed = (status: string) =>
     taskSettings ? isTaskClosed(status, taskSettings) : ['Resolved', 'Closed'].includes(status)
   const parentTask = taskKind === 'subtask' ? tasks.find(task => task.id === parentId) : undefined
+  /** The tasks and subtasks this email is linked to (made from it, or linked by hand). */
+  const linkedIds = (message?: Message | null) =>
+    message
+      ? [...new Set([...(message.linked_task_ids || []), ...(message.linked_task_id ? [message.linked_task_id] : [])])]
+      : []
+  const taskName = (id: string) => {
+    const task = tasks.find(item => item.id === id)
+    if (!task) return 'A task you cannot see'
+    const parent = task.parentTaskId ? tasks.find(item => item.id === task.parentTaskId) : undefined
+    return parent ? `${task.title} (under ${parent.title})` : task.title
+  }
+  /** Links the open email to an existing task or subtask, or removes a link. Warns when the work is on a tracker. */
+  const linkTask = (taskId: string, unlink = false) => {
+    if (!selected || busy || !taskId) return
+    const communication = selected
+    return act(async () => {
+      const result = await request(`/api/communications/${communication.id}/link-task`, 'POST', { taskId, unlink })
+      if (!alive.current) return
+      const update = (entry: Message) =>
+        entry.id === communication.id
+          ? { ...entry, linked_task_id: result.linkedTaskId || undefined, linked_task_ids: result.linkedTaskIds }
+          : entry
+      setSelected(previous => (previous ? update(previous) : previous))
+      setItems(current => current.map(update))
+      workHubSync.invalidate(communication.source === 'Gmail' ? 'gmail' : 'discord')
+      setLinkId('')
+      const trackers: { name: string }[] = Array.isArray(result.trackers) ? result.trackers : []
+      setLinkNote(
+        unlink
+          ? `Unlinked from “${taskName(taskId)}”.`
+          : `Linked to “${taskName(taskId)}”.${
+              trackers.length
+                ? ` Heads-up: this work is on the tracker${trackers.length === 1 ? '' : 's'} ${trackers
+                    .map(tracker => `“${tracker.name}”`)
+                    .join(', ')}.`
+                : ''
+            }`,
+      )
+    })
+  }
   const createTask = () => {
     if (!selected || busy || creatingTask.current) return
     if (taskKind === 'subtask') {
@@ -718,6 +760,8 @@ export default function WorkHub({
   const openMessage = (item: Message) => {
     if (busy) return
     setSelected(item)
+    setLinkNote('')
+    setLinkId('')
     setOpenCount(value => value + 1)
     setSelectedThread([])
     setThreadPage(1)
@@ -1151,7 +1195,7 @@ export default function WorkHub({
                         </span>
                       </span>
                       <span className="communication-card-footer">
-                        {item.linked_task_id && <span className="communication-task-badge">Task created</span>}
+                        {item.linked_task_id && <span className="communication-task-badge">Linked to a task</span>}
                         <span className="communication-open">
                           Open message <ChevronRight size={15} aria-hidden="true" />
                         </span>
@@ -1341,11 +1385,43 @@ export default function WorkHub({
           ) : null}
           {selected && currentUser.role !== 'Viewer' && (
             <div className="communication-task-form">
-              <h3>{taskKind === 'subtask' ? 'Add a subtask to a task' : 'Create a project task'}</h3>
+              <h3>
+                {taskKind === 'link'
+                  ? 'Link to an existing task or subtask'
+                  : taskKind === 'subtask'
+                    ? 'Add a subtask to a task'
+                    : 'Create a project task'}
+              </h3>
               <p>
-                Enter only the information User B should see. The email or Discord thread and sender are never copied
-                into the task.
+                {taskKind === 'link'
+                  ? 'Only your copy of the email is linked: nothing from the email is added to the task. Linked work shows the email on its DRF and replies to it.'
+                  : 'Enter only the information User B should see. The email or Discord thread and sender are never copied into the task.'}
               </p>
+              {linkedIds(selected).length > 0 && (
+                <div className="communication-links">
+                  <strong>Linked to</strong>
+                  <ul>
+                    {linkedIds(selected).map(id => (
+                      <li key={id}>
+                        <span>{taskName(id)}</span>
+                        <button
+                          type="button"
+                          className="secondary compact"
+                          disabled={busy}
+                          onClick={() => void linkTask(id, true)}
+                        >
+                          Unlink
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {linkNote && (
+                <p className="settings-message" role="status">
+                  {linkNote}
+                </p>
+              )}
               <div className="client-layout-switch" role="group" aria-label="Create a task or a subtask">
                 <button
                   type="button"
@@ -1363,110 +1439,171 @@ export default function WorkHub({
                 >
                   <span>Subtask of a task</span>
                 </button>
+                <button
+                  type="button"
+                  aria-pressed={taskKind === 'link'}
+                  disabled={busy}
+                  onClick={() => setTaskKind('link')}
+                >
+                  <span>Link to existing</span>
+                </button>
               </div>
-              <div className="communication-fields">
-                {taskKind === 'subtask' && (
+              {taskKind === 'link' && (
+                <div className="communication-fields">
                   <label>
-                    Under task
+                    Task or subtask
                     <SearchSelect
-                      value={parentId}
-                      onChange={setParentId}
+                      value={linkId}
+                      onChange={setLinkId}
                       disabled={busy}
-                      placeholder="Type a task name"
-                      empty="No open task matches"
+                      placeholder="Type a task or subtask, or its client"
+                      empty="No task or subtask matches"
                       choices={[
-                        { value: '', label: 'Choose a task' },
+                        { value: '', label: 'Choose a task or subtask' },
                         ...tasks
-                          .filter(
-                            task =>
-                              !task.parentTaskId &&
-                              !subtaskParentProblem(task, closed) &&
-                              clients.some(client => client.id === task.clientId && !client.archived) &&
-                              projects.some(project => project.id === task.projectId && !project.archived),
-                          )
-                          .map(task => ({
-                            value: task.id,
-                            label: task.title,
-                            hint: [
-                              clients.find(client => client.id === task.clientId)?.name,
-                              projects.find(project => project.id === task.projectId)?.name,
-                            ]
-                              .filter(Boolean)
-                              .join(' / '),
-                          })),
+                          .filter(task => !task.archived && !linkedIds(selected).includes(task.id))
+                          .map(task => {
+                            const parent = task.parentTaskId
+                              ? tasks.find(item => item.id === task.parentTaskId)
+                              : undefined
+                            return {
+                              value: task.id,
+                              label: task.title,
+                              hint: [
+                                parent ? `under ${parent.title}` : '',
+                                clients.find(client => client.id === task.clientId)?.name,
+                                projects.find(project => project.id === task.projectId)?.name,
+                                closed(task.status) ? task.status : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' / '),
+                            }
+                          }),
                       ]}
                     />
                   </label>
-                )}
-                <label>
-                  {taskKind === 'subtask' ? 'Subtask title' : 'Task title'}
-                  <input
-                    ref={taskTitleRef}
-                    disabled={busy}
-                    value={title}
-                    maxLength={200}
-                    onChange={e => setTitle(e.target.value)}
-                  />
-                </label>
-                {taskKind === 'task' && (
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy || !linkId}
+                    onClick={() => void linkTask(linkId)}
+                  >
+                    Link this email
+                  </button>
+                </div>
+              )}
+              {taskKind !== 'link' && (
+                <>
+                  <div className="communication-fields">
+                    {taskKind === 'subtask' && (
+                      <label>
+                        Under task
+                        <SearchSelect
+                          value={parentId}
+                          onChange={setParentId}
+                          disabled={busy}
+                          placeholder="Type a task name"
+                          empty="No open task matches"
+                          choices={[
+                            { value: '', label: 'Choose a task' },
+                            ...tasks
+                              .filter(
+                                task =>
+                                  !task.parentTaskId &&
+                                  !subtaskParentProblem(task, closed) &&
+                                  clients.some(client => client.id === task.clientId && !client.archived) &&
+                                  projects.some(project => project.id === task.projectId && !project.archived),
+                              )
+                              .map(task => ({
+                                value: task.id,
+                                label: task.title,
+                                hint: [
+                                  clients.find(client => client.id === task.clientId)?.name,
+                                  projects.find(project => project.id === task.projectId)?.name,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' / '),
+                              })),
+                          ]}
+                        />
+                      </label>
+                    )}
+                    <label>
+                      {taskKind === 'subtask' ? 'Subtask title' : 'Task title'}
+                      <input
+                        ref={taskTitleRef}
+                        disabled={busy}
+                        value={title}
+                        maxLength={200}
+                        onChange={e => setTitle(e.target.value)}
+                      />
+                    </label>
+                    {taskKind === 'task' && (
+                      <label>
+                        Client
+                        <ClientSelect
+                          clients={clients.filter(x => !x.archived)}
+                          value={clientId}
+                          onChange={value => setClientId(value)}
+                          extra={[{ value: '', label: 'Select client' }]}
+                          disabled={busy}
+                        />
+                      </label>
+                    )}
+                    {taskKind === 'task' && (
+                      <label>
+                        Project
+                        <select disabled={busy} value={projectId} onChange={e => setProjectId(e.target.value)}>
+                          <option value="">Select project</option>
+                          {projects
+                            .filter(x => !x.archived)
+                            .map(x => (
+                              <option key={x.id} value={x.id}>
+                                {x.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
+                    <label>
+                      Assign to
+                      <select disabled={busy} value={assignee} onChange={e => setAssignee(e.target.value)}>
+                        {accounts
+                          .filter(x => x.status !== 'Disabled' && x.role !== 'Viewer')
+                          .map(x => (
+                            <option key={x.id} value={x.id}>
+                              {x.name || x.username}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  </div>
                   <label>
-                    Client
-                    <ClientSelect
-                      clients={clients.filter(x => !x.archived)}
-                      value={clientId}
-                      onChange={value => setClientId(value)}
-                      extra={[{ value: '', label: 'Select client' }]}
+                    Shared task description
+                    <textarea
                       disabled={busy}
+                      value={description}
+                      maxLength={5000}
+                      onChange={e => setDescription(e.target.value)}
+                      placeholder="Write a summary for the assignee. The private message is not included."
                     />
                   </label>
-                )}
-                {taskKind === 'task' && (
-                  <label>
-                    Project
-                    <select disabled={busy} value={projectId} onChange={e => setProjectId(e.target.value)}>
-                      <option value="">Select project</option>
-                      {projects
-                        .filter(x => !x.archived)
-                        .map(x => (
-                          <option key={x.id} value={x.id}>
-                            {x.name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                )}
-                <label>
-                  Assign to
-                  <select disabled={busy} value={assignee} onChange={e => setAssignee(e.target.value)}>
-                    {accounts
-                      .filter(x => x.status !== 'Disabled' && x.role !== 'Viewer')
-                      .map(x => (
-                        <option key={x.id} value={x.id}>
-                          {x.name || x.username}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              </div>
-              <label>
-                Shared task description
-                <textarea
-                  disabled={busy}
-                  value={description}
-                  maxLength={5000}
-                  onChange={e => setDescription(e.target.value)}
-                  placeholder="Write a summary for the assignee. The private message is not included."
-                />
-              </label>
-              <button
-                className="primary"
-                disabled={
-                  busy || !title.trim() || !assignee || (taskKind === 'subtask' ? !parentId : !clientId || !projectId)
-                }
-                onClick={createTask}
-              >
-                {taskKind === 'subtask' ? 'Add subtask without sharing thread' : 'Create task without sharing thread'}
-              </button>
+                  <button
+                    className="primary"
+                    disabled={
+                      busy ||
+                      !title.trim() ||
+                      !assignee ||
+                      (taskKind === 'subtask' ? !parentId : !clientId || !projectId)
+                    }
+                    onClick={createTask}
+                  >
+                    {taskKind === 'subtask'
+                      ? 'Add subtask without sharing thread'
+                      : 'Create task without sharing thread'}
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>

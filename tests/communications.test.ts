@@ -22,6 +22,9 @@ function fixture(options: { failLink?: boolean } = {}) {
   ]
   const gmailAccounts: any[] = []
   const driveRows: any[] = []
+  const trackerRows: any[] = []
+  const trackerLinks: any[] = []
+  const trackers: any[] = []
   const users: any[] = [
     { id: 'user-a', role: 'Contributor', status: 'Active', modules: ['inbox', 'items'], organization_id: 'tenant' },
     { id: 'user-b', role: 'Contributor', status: 'Active', modules: ['inbox', 'items'], organization_id: 'tenant' },
@@ -133,7 +136,13 @@ function fixture(options: { failLink?: boolean } = {}) {
               ? gmailAccounts
               : this.table === 'tenant_drive_accounts'
                 ? driveRows
-                : users
+                : this.table === 'tenant_tracker_rows'
+                  ? trackerRows
+                  : this.table === 'tenant_tracker_task_links'
+                    ? trackerLinks
+                    : this.table === 'tenant_trackers'
+                      ? trackers
+                      : users
       if (this.action === 'insert') {
         const record = { id: crypto.randomUUID(), ...this.value }
         rows.push(record)
@@ -203,7 +212,20 @@ function fixture(options: { failLink?: boolean } = {}) {
     },
     openStatus: () => 'Open',
   })
-  return { app, records, users, gmailAccounts, driveRows, prefs, hub, state, getSaved: () => saved }
+  return {
+    app,
+    records,
+    users,
+    gmailAccounts,
+    driveRows,
+    prefs,
+    hub,
+    state,
+    trackerRows,
+    trackerLinks,
+    trackers,
+    getSaved: () => saved,
+  }
 }
 
 test('private communications reject cross-user reads and task conversion', async () => {
@@ -1988,6 +2010,52 @@ test('DRF creation lists only my own emails linked to the task or its subtasks',
       ['earlier'],
     )
     assert.equal((await get('/api/communications?taskIds=')).status, 400)
+  } finally {
+    server.close()
+  }
+})
+
+test('an email links to an existing task or subtask, unlinks, and names the trackers the work is on', async () => {
+  const { app, records, state, trackerRows, trackerLinks, trackers } = fixture()
+  state.items = [
+    { id: 'task-1', title: 'POS registration', clientId: 'client' },
+    { id: 'sub-1', title: 'Register terminal', parentTaskId: 'task-1' },
+    { id: 'gone', title: 'Old', archived: true },
+  ]
+  trackerRows.push({ tenant_id: 'tenant', tracker_id: 'tr-1', task_id: 'task-1' })
+  trackerLinks.push({ tenant_id: 'tenant', tracker_id: 'tr-2', task_id: 'sub-1' })
+  trackers.push(
+    { tenant_id: 'tenant', id: 'tr-1', name: 'POS rollout', private: false, created_by: 'user-b' },
+    { tenant_id: 'tenant', id: 'tr-2', name: 'Bob private', private: true, created_by: 'user-b' },
+  )
+  const id = records[0].id
+  const server = app.listen(0)
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('No test port')
+    const post = async (body: any, user = 'user-a') => {
+      const result = await fetch(`http://127.0.0.1:${address.port}/api/communications/${id}/link-task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-test-user': user },
+        body: JSON.stringify(body),
+      })
+      return { status: result.status, body: await result.json() }
+    }
+    // A subtask: its parent's tracker is named; another person's private tracker is not.
+    const linked = await post({ taskId: 'sub-1' })
+    assert.equal(linked.status, 200)
+    assert.deepEqual(linked.body.linkedTaskIds, ['sub-1'])
+    assert.deepEqual(linked.body.trackers, [{ id: 'tr-1', name: 'POS rollout' }])
+    assert.equal(records[0].linked_task_id, 'sub-1')
+    const second = await post({ taskId: 'task-1' })
+    assert.deepEqual(second.body.linkedTaskIds, ['sub-1', 'task-1'])
+    const unlinked = await post({ taskId: 'task-1', unlink: true })
+    assert.deepEqual(unlinked.body.linkedTaskIds, ['sub-1'])
+    assert.equal(records[0].linked_task_id, 'sub-1')
+    assert.equal((await post({ taskId: 'gone' })).status, 404)
+    assert.equal((await post({ taskId: 'missing' })).status, 404)
+    // Only the email's owner can link it.
+    assert.equal((await post({ taskId: 'task-1' }, 'user-b')).status, 404)
   } finally {
     server.close()
   }

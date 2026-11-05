@@ -748,6 +748,75 @@ export function registerCommunications(
       res.json({ ok: true })
     }),
   )
+  /** Trackers the person can open that have this work on a row (the row's task, or a task made from a cell). */
+  const trackersFor = async (user: any, taskIds: string[]) => {
+    try {
+      const [rows, links] = await Promise.all([
+        db.from('tenant_tracker_rows').select('tracker_id').eq('tenant_id', user.organizationId).in('task_id', taskIds),
+        db
+          .from('tenant_tracker_task_links')
+          .select('tracker_id')
+          .eq('tenant_id', user.organizationId)
+          .in('task_id', taskIds),
+      ])
+      const ids = [...new Set([...(rows.data || []), ...(links.data || [])].map((row: any) => String(row.tracker_id)))]
+      if (!ids.length) return []
+      const trackers = await db
+        .from('tenant_trackers')
+        .select('id,name,private,created_by,archived_at')
+        .eq('tenant_id', user.organizationId)
+        .in('id', ids)
+      return (trackers.data || [])
+        .filter((row: any) => !row.archived_at && (!row.private || row.created_by === user.id))
+        .map((row: any) => ({ id: String(row.id), name: String(row.name || 'Tracker') }))
+    } catch {
+      // Trackers are only a heads-up: linking still works without them.
+      return []
+    }
+  }
+  /**
+   * Links one of your emails to an existing task or subtask (or removes the link). Only your own copy of the email
+   * changes: the task gets nothing from the email, as with Create task. The answer names the trackers the work is on.
+   */
+  app.post(
+    '/api/communications/:id/link-task',
+    ...auth,
+    guard,
+    wrap(async (req, res) => {
+      const user = current(req)
+      if (!user.modules?.includes('items') && !user.modules?.includes('inbox') && user.role !== 'Administrator')
+        throw new IntegrationError('Task access is required.', 403)
+      const communication = await own(req, req.params.id)
+      const taskId = requireText(req.body?.taskId, 'Task', 100)
+      const unlink = req.body?.unlink === true
+      const stateResult = await deps.load(user.organizationId)
+      const items: any[] = Array.isArray(stateResult?.data?.items) ? stateResult.data.items : []
+      const task = items.find(item => String(item?.id) === taskId)
+      if (!unlink && (!task || task.archived)) throw new IntegrationError('That task or subtask was not found.', 404)
+      const existing = [
+        ...new Set([
+          ...(Array.isArray(communication.linked_task_ids) ? communication.linked_task_ids : []),
+          ...(communication.linked_task_id ? [communication.linked_task_id] : []),
+        ]),
+      ].map(String)
+      const ids = unlink ? existing.filter(id => id !== taskId) : [...existing.filter(id => id !== taskId), taskId]
+      // The badge keeps the latest link; the full list is what Drive filing, DRF and replies read.
+      const latest = ids.at(-1) || null
+      const { error } = await db
+        .from('user_communications')
+        .update({ linked_task_id: latest, linked_task_ids: ids.slice(-200) })
+        .eq('id', communication.id)
+        .eq('tenant_id', user.organizationId)
+        .eq('owner_user_id', user.id)
+      if (error) throw error
+      const parent = task?.parentTaskId ? String(task.parentTaskId) : ''
+      res.json({
+        linkedTaskId: latest,
+        linkedTaskIds: ids,
+        trackers: unlink ? [] : await trackersFor(user, parent ? [taskId, parent] : [taskId]),
+      })
+    }),
+  )
   app.post(
     '/api/communications/:id/create-task',
     ...auth,
