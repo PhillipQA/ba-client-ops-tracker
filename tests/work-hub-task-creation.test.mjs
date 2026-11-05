@@ -158,7 +158,8 @@ test('Gmail task creation stays open and creates a second task with the same con
     assert.equal(f.field('Task title').value, '')
     assert.equal(f.field('Shared task description').value, '')
     for (const [label, value] of [
-      ['Client', 'client'],
+      // The Client field shows the client's name.
+      ['Client', 'Client'],
       ['Project', 'project'],
       ['Assign to', 'user-b'],
     ])
