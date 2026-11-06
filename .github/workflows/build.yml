@@ -38,8 +38,7 @@ jobs:
       # Deploy caching: index.html revalidates, missing assets 404 instead of returning HTML.
       - name: Static site caching tests
         run: npm run test:static-site
-      # The whole suite had not been run automatically before this job existed, and some older tests may be
-      # out of date. Failures are reported but do not block the build. Remove continue-on-error once it is green.
+      # The whole suite must pass. Each failing test is annotated on the run page with its error.
       - name: Full test suite
         run: |
           set +e
@@ -48,4 +47,3 @@ jobs:
           tail -n 40 test-output.txt
           node scripts/test-summary.mjs test-output.txt
           exit $status
-        continue-on-error: true

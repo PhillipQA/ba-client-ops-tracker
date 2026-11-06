@@ -9,6 +9,15 @@ for (const [key, value] of Object.entries({
   document: dom.window.document,
   localStorage: dom.window.localStorage,
   HTMLElement: dom.window.HTMLElement,
+  Element: dom.window.Element,
+  Node: dom.window.Node,
+  HTMLInputElement: dom.window.HTMLInputElement,
+  HTMLTextAreaElement: dom.window.HTMLTextAreaElement,
+  HTMLSelectElement: dom.window.HTMLSelectElement,
+  MouseEvent: dom.window.MouseEvent,
+  KeyboardEvent: dom.window.KeyboardEvent,
+  FocusEvent: dom.window.FocusEvent,
+  getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
   requestAnimationFrame: callback => setTimeout(callback, 0),
   cancelAnimationFrame: clearTimeout,
   IS_REACT_ACT_ENVIRONMENT: true,
@@ -99,6 +108,9 @@ async function fixture({ tasks = [], serverDuplicate = false, refreshFails = fal
       const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value').set
       setter.call(element, value)
       element.dispatchEvent(new window.Event(element.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }))
+      // Type-to-search fields (Client) choose the typed name when the field is left, as a person tabbing on does.
+      if (element.getAttribute('role') === 'combobox')
+        element.dispatchEvent(new window.FocusEvent('focusout', { bubbles: true }))
     })
   }
   const createButton = () =>
@@ -146,7 +158,8 @@ test('Gmail task creation stays open and creates a second task with the same con
     assert.equal(f.field('Task title').value, '')
     assert.equal(f.field('Shared task description').value, '')
     for (const [label, value] of [
-      ['Client', 'client'],
+      // The Client field shows the client's name.
+      ['Client', 'Client'],
       ['Project', 'project'],
       ['Assign to', 'user-b'],
     ])

@@ -786,34 +786,40 @@ export function registerCommunications(
       const user = current(req)
       if (!user.modules?.includes('items') && !user.modules?.includes('inbox') && user.role !== 'Administrator')
         throw new IntegrationError('Task access is required.', 403)
-      const communication = await own(req, req.params.id)
       const taskId = requireText(req.body?.taskId, 'Task', 100)
       const unlink = req.body?.unlink === true
-      const stateResult = await deps.load(user.organizationId)
-      const items: any[] = Array.isArray(stateResult?.data?.items) ? stateResult.data.items : []
-      const task = items.find(item => String(item?.id) === taskId)
-      if (!unlink && (!task || task.archived)) throw new IntegrationError('That task or subtask was not found.', 404)
-      const existing = [
-        ...new Set([
-          ...(Array.isArray(communication.linked_task_ids) ? communication.linked_task_ids : []),
-          ...(communication.linked_task_id ? [communication.linked_task_id] : []),
-        ]),
-      ].map(String)
-      const ids = unlink ? existing.filter(id => id !== taskId) : [...existing.filter(id => id !== taskId), taskId]
-      // The badge keeps the latest link; the full list is what Drive filing, DRF and replies read.
-      const latest = ids.at(-1) || null
-      const { error } = await db
-        .from('user_communications')
-        .update({ linked_task_id: latest, linked_task_ids: ids.slice(-200) })
-        .eq('id', communication.id)
-        .eq('tenant_id', user.organizationId)
-        .eq('owner_user_id', user.id)
-      if (error) throw error
-      const parent = task?.parentTaskId ? String(task.parentTaskId) : ''
-      res.json({
-        linkedTaskId: latest,
-        linkedTaskIds: ids,
-        trackers: unlink ? [] : await trackersFor(user, parent ? [taskId, parent] : [taskId]),
+      // In order with Create task and other links on this account, so two at once cannot lose one of them.
+      await createTaskInOrder(user.organizationId, async () => {
+        const communication = await own(req, req.params.id)
+        const stateResult = await deps.load(user.organizationId)
+        const items: any[] = Array.isArray(stateResult?.data?.items) ? stateResult.data.items : []
+        // Old Discord captures are kept away from every browser (see sanitizeStateForClient): not linkable either.
+        const task = items.find(
+          item => String(item?.id) === taskId && !(item?.source === 'Discord' && item?.externalSourceId),
+        )
+        if (!unlink && (!task || task.archived)) throw new IntegrationError('That task or subtask was not found.', 404)
+        const existing = [
+          ...new Set([
+            ...(Array.isArray(communication.linked_task_ids) ? communication.linked_task_ids : []),
+            ...(communication.linked_task_id ? [communication.linked_task_id] : []),
+          ]),
+        ].map(String)
+        const ids = unlink ? existing.filter(id => id !== taskId) : [...existing.filter(id => id !== taskId), taskId]
+        // The badge keeps the latest link; the full list is what Drive filing, DRF and replies read.
+        const latest = ids.at(-1) || null
+        const { error } = await db
+          .from('user_communications')
+          .update({ linked_task_id: latest, linked_task_ids: ids.slice(-200) })
+          .eq('id', communication.id)
+          .eq('tenant_id', user.organizationId)
+          .eq('owner_user_id', user.id)
+        if (error) throw error
+        const parent = task?.parentTaskId ? String(task.parentTaskId) : ''
+        res.json({
+          linkedTaskId: latest,
+          linkedTaskIds: ids,
+          trackers: unlink ? [] : await trackersFor(user, parent ? [taskId, parent] : [taskId]),
+        })
       })
     }),
   )

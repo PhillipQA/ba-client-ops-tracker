@@ -2021,6 +2021,9 @@ test('an email links to an existing task or subtask, unlinks, and names the trac
     { id: 'task-1', title: 'POS registration', clientId: 'client' },
     { id: 'sub-1', title: 'Register terminal', parentTaskId: 'task-1' },
     { id: 'gone', title: 'Old', archived: true },
+    { id: 'legacy', title: 'Captured', source: 'Discord', externalSourceId: 'd-1' },
+    { id: 'task-2', title: 'Second' },
+    { id: 'task-3', title: 'Third' },
   ]
   trackerRows.push({ tenant_id: 'tenant', tracker_id: 'tr-1', task_id: 'task-1' })
   trackerLinks.push({ tenant_id: 'tenant', tracker_id: 'tr-2', task_id: 'sub-1' })
@@ -2054,6 +2057,11 @@ test('an email links to an existing task or subtask, unlinks, and names the trac
     assert.equal(records[0].linked_task_id, 'sub-1')
     assert.equal((await post({ taskId: 'gone' })).status, 404)
     assert.equal((await post({ taskId: 'missing' })).status, 404)
+    // Old Discord captures never reach a browser, so they cannot be linked either.
+    assert.equal((await post({ taskId: 'legacy' })).status, 404)
+    // Two links at the same moment are both kept.
+    await Promise.all([post({ taskId: 'task-2' }), post({ taskId: 'task-3' })])
+    assert.deepEqual([...records[0].linked_task_ids].sort(), ['sub-1', 'task-2', 'task-3'])
     // Only the email's owner can link it.
     assert.equal((await post({ taskId: 'task-1' }, 'user-b')).status, 404)
   } finally {

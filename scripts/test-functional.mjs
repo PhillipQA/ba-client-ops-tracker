@@ -50,28 +50,28 @@ const files = [
   'tests/subtask-assignment.test.ts',
 ]
 const commands = [
-  ['--import', 'tsx', '--test', '--test-name-pattern=' + pattern, ...files],
-  ['--import', 'tsx', '--test', 'tests/functional-integrity.test.ts'],
+  ['--import', './tests/support/setup.mjs', '--test', '--test-name-pattern=' + pattern, ...files],
+  ['--import', './tests/support/setup.mjs', '--test', 'tests/functional-integrity.test.ts'],
   [
     '--import',
-    'tsx',
+    './tests/support/setup.mjs',
     '--test',
     'tests/fsd-source-analysis.test.ts',
     'tests/fsd-available.test.ts',
     'tests/fsd-custom-features.test.ts',
   ],
-  ['--import', 'tsx', '--test', 'tests/github.test.ts', 'tests/gitlab.test.ts'],
+  ['--import', './tests/support/setup.mjs', '--test', 'tests/github.test.ts', 'tests/gitlab.test.ts'],
   [
     '--import',
-    'tsx',
+    './tests/support/setup.mjs',
     '--test',
     '--test-name-pattern=Gmail functional sync|one Gmail message creates|task duplicates ignore|task duplicate validation|concurrent task submissions|invalid task fields',
     'tests/communications.test.ts',
   ],
-  ['--import', 'tsx', '--test', 'tests/work-hub-task-creation.test.mjs'],
-  ['--import', 'tsx', '--test', 'tests/egress.test.ts'],
-  ['--import', 'tsx', '--test', '--test-name-pattern=DocHub egress', 'tests/dochub.test.ts'],
-  ['--import', 'tsx', 'tests/functional-routes.ts'],
+  ['--import', './tests/support/setup.mjs', '--test', 'tests/work-hub-task-creation.test.mjs'],
+  ['--import', './tests/support/setup.mjs', '--test', 'tests/egress.test.ts'],
+  ['--import', './tests/support/setup.mjs', '--test', '--test-name-pattern=DocHub egress', 'tests/dochub.test.ts'],
+  ['--import', './tests/support/setup.mjs', 'tests/functional-routes.ts'],
 ]
 for (const args of commands) {
   const result = spawnSync(process.execPath, args, { stdio: 'inherit' })

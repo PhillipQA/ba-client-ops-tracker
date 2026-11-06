@@ -181,9 +181,11 @@ test('Viewer personal and client themes persist independently by tenant/user/cli
       200,
     )
     const saved = JSON.parse(JSON.stringify(states.a.accounts[1]))
+    // The client theme is stored with the account; the app shows the personal theme everywhere (see the
+    // normalization test below), so it does not change what this client's pages look like.
+    assert.deepEqual(saved.clientThemes, { 'client-a': 'busy-city' })
     assert.equal(themeForContext(saved), 'dark-geek')
-    assert.equal(themeForContext(saved, 'client-a'), 'busy-city')
-    assert.equal(themeForContext(saved, 'another-client'), 'dark-geek')
+    assert.equal(themeForContext(saved, 'client-a'), 'dark-geek')
     assert.deepEqual(states.b, original.b)
     assert.deepEqual(states.a.accounts[0], original.a.accounts[0])
     assert.deepEqual(states.a.items, original.a.items)
@@ -273,13 +275,8 @@ test('personal interface modes persist for every role without changing backgroun
       // Explicit null clears the previously selected mode in cached clients too.
       assert.equal(reset.data.user.interfaceMode, null)
       assert.equal(sessions[userId].interfaceMode, null)
-      assert.equal(
-        themeForContext(
-          states.a.accounts.find((a: any) => a.id === userId),
-          'client-a',
-        ),
-        'busy-city',
-      )
+      // Changing the interface mode keeps the stored client theme.
+      assert.deepEqual(states.a.accounts.find((a: any) => a.id === userId).clientThemes, { 'client-a': 'busy-city' })
     }
   }))
 

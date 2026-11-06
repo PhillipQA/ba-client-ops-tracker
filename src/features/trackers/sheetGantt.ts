@@ -366,7 +366,7 @@ export function ganttSheetRequests(input: {
   if ('error' in layout) return layout
   const left = layout.left
   const col = (key: Left['key']) => left.findIndex(item => item.key === key)
-  const L = (key: Left['key']) => columnLetter(col(key))
+  const letterOf = (key: Left['key']) => columnLetter(col(key))
   const values = ganttRows(layout, input.grid)
 
   const first = HEAD_ROWS + 1 // the first task row, 1-based
@@ -523,11 +523,11 @@ export function ganttSheetRequests(input: {
   // Rules, written for the top-left cell of their range; references shift like any cell reference.
   const C = columnLetter(chart)
   const day = `${C}$5`
-  const M = `$${L('snap')}${first}`
-  const S = `$${L('start')}${first}`
-  const E = col('end') >= 0 ? `IF(ISNUMBER($${L('end')}${first}),$${L('end')}${first},${S})` : S
-  const P = col('progress') >= 0 ? `$${L('progress')}${first}` : ''
-  const T = col('status') >= 0 ? `$${L('status')}${first}` : ''
+  const M = `$${letterOf('snap')}${first}`
+  const S = `$${letterOf('start')}${first}`
+  const E = col('end') >= 0 ? `IF(ISNUMBER($${letterOf('end')}${first}),$${letterOf('end')}${first},${S})` : S
+  const P = col('progress') >= 0 ? `$${letterOf('progress')}${first}` : ''
+  const T = col('status') >= 0 ? `$${letterOf('status')}${first}` : ''
   const doneWord = T ? `OR(${T}="Done",${T}="Completed",${T}="Complete")` : 'FALSE'
   // % done as a fraction; a Done status counts as finished.
   const pct = P ? `IF(${doneWord},1,IF(ISNUMBER(${P}),${P},0))` : `IF(${doneWord},1,0)`
