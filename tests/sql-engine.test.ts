@@ -357,3 +357,34 @@ test('window functions', () => {
   assert.throws(() => rows('SELECT title FROM t WHERE ROW_NUMBER() OVER () = 1'), /go in SELECT or ORDER BY/)
   assert.throws(() => rows('SELECT ROW_NUMBER() FROM t'), /needs OVER/)
 })
+
+test('a simple query says which row and column each cell came from, so a report can edit it', () => {
+  const sourceTables: Record<string, SqlTable> = {
+    tracker_sites: {
+      name: 'tracker_sites',
+      columns: [
+        { name: 'row_id', type: 'text' },
+        { name: 'branch', type: 'text' },
+        { name: 'remarks', type: 'text' },
+      ],
+      rows: [
+        { row_id: 'r1', branch: 'Makati', remarks: null },
+        { row_id: 'r2', branch: 'Cebu', remarks: 'Waiting' },
+      ],
+    },
+  }
+  const result = runQuery(
+    "SELECT branch, COALESCE(remarks, '') AS remarks, 'x' AS Fixed FROM tracker_sites ORDER BY branch",
+    sourceTables,
+  )
+  assert.deepEqual(result.source, {
+    table: 'tracker_sites',
+    rowIds: ['r2', 'r1'],
+    columns: ['branch', 'remarks', null],
+  })
+  assert.equal(runQuery('SELECT branch, COUNT(*) FROM tracker_sites GROUP BY branch', sourceTables).source, undefined)
+  assert.equal(
+    runQuery('SELECT branch FROM tracker_sites UNION ALL SELECT branch FROM tracker_sites', sourceTables).source,
+    undefined,
+  )
+})
