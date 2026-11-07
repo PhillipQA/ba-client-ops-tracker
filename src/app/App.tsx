@@ -456,40 +456,6 @@ function App() {
                   <Compass size={16} /> Tour
                 </button>
               )}
-              <span className="top-role-pill">
-                {view === 'internal-admin' && currentUser.accountType === 'platform'
-                  ? 'Platform Admin'
-                  : currentUser.role}
-              </span>
-              {view !== 'internal-admin' && canWrite && hasModule('clients') && (
-                <button className="secondary" onClick={() => setModal('client')}>
-                  <Users size={17} /> Add client
-                </button>
-              )}
-              {view !== 'internal-admin' &&
-                canWrite &&
-                !isArchived(selectedClient || undefined) &&
-                !isArchived(selectedProject || undefined) &&
-                !isArchived(store.clients.find(client => client.id === selectedProjectClientId)) &&
-                (hasModule('items') || hasModule('inbox')) && (
-                  <button
-                    className="primary"
-                    data-tour="add-task"
-                    onClick={() => {
-                      if (selectedClient) setTaskPreset({ clientId: selectedClient.id, type: 'Task' })
-                      else if (selectedProject)
-                        setTaskPreset({
-                          clientId: selectedProjectClientId || undefined,
-                          projectId: selectedProject.id,
-                          type: 'Task',
-                        })
-                      else setTaskPreset(null)
-                      setModal('item')
-                    }}
-                  >
-                    <Plus size={18} /> Add task
-                  </button>
-                )}
             </div>
           </header>
 
