@@ -98,6 +98,7 @@ import { QueryWidgetEditor } from '../explorer/QueryWidgetEditor'
 import { reportFiltersIgnored, reportQueryParams, type ReportFilterValues } from '../explorer/reportParams'
 import { resultCsv } from '../explorer/resultView'
 import { useExplorerData } from '../explorer/useExplorerData'
+import { ShareImage } from './ShareImage'
 import './customReports.css'
 import '../explorer/dataExplorer.css'
 
@@ -531,6 +532,7 @@ export default function CustomReports(props: Props) {
 
   // --- Printing: only the report is printed ---
 
+  const printArea = useRef<HTMLDivElement>(null)
   const print = () => {
     document.body.classList.add('crp-printing')
     const done = () => {
@@ -851,7 +853,7 @@ export default function CustomReports(props: Props) {
           </div>
         )}
         {report && (
-          <div className="crp-print-area">
+          <div className="crp-print-area" ref={printArea}>
             <header className="crp-head">
               <div className="crp-title">
                 <h2>{report.name}</h2>
@@ -927,6 +929,7 @@ export default function CustomReports(props: Props) {
                     <button type="button" className="crp-btn" onClick={print}>
                       <Printer size={14} /> PDF / Print
                     </button>
+                    <ShareImage target={printArea} name={report.name} today={explorer.today} />
                     {canChange && !isTemplate && (
                       <button type="button" className="crp-btn" disabled={busy} onClick={() => copy(report)}>
                         <Copy size={14} /> Make a copy
