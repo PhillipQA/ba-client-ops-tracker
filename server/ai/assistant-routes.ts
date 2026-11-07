@@ -22,8 +22,9 @@ export function registerAssistantRoutes(
 ) {
   app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res) => {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
-    const accountManager = (user as { accountManager?: boolean }).accountManager === true
-    if ((user.role === 'Viewer' && !accountManager) || !moduleAllowed(user, 'ai')) {
+    // A Viewer by job role (an Account Manager, say) may still ask questions.
+    const askAi = (user as { askAi?: boolean }).askAi === true
+    if ((user.role === 'Viewer' && !askAi) || !moduleAllowed(user, 'ai')) {
       res.status(403).json({ error: 'Your account does not have access to the AI BA Assistant.' })
       return
     }

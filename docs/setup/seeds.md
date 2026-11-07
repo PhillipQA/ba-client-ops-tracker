@@ -24,12 +24,19 @@ Settings › **Access**. Visibility is off by default, so connecting Seeds chang
 Administrator turns it on. Until someone connects their Seeds, the assignments entered in Settings › Access (if any)
 apply to them; with none, they see an empty workspace and are asked to connect.
 
-| Role in Seeds | Sees | Can change | Pages |
-|---|---|---|---|
-| Business Analyst (BA) | Assigned clients or projects and all work under them | Yes | As their account allows |
-| Project Manager (PM) | Projects they manage, including their BAs' work | Yes; also confirms Seeds matches | As their account allows |
-| Account Manager (AM) | What they are assigned | No (Viewer) | Action Center, Reports, AI BA Assistant, My Themes |
-| Administrator (app role) | Nothing of clients unless assigned | Settings and Users | All their modules |
+Which pages each person gets comes from their **job roles** (Settings › Roles): picked in Users & Permissions, and
+from Seeds per client or project. Each role lists the titles Seeds uses for it; titles no role claims are listed in
+Settings › Integrations › Seeds. **Administrators see and change everything**, assigned or not.
+
+| Starting role | Sees | Changes |
+|---|---|---|
+| Business Analyst | Everything except Settings and Users | Everything it sees |
+| Project Manager | Action Center, Seeds, Work Hub, Trackers, Requirements, Reports, AI | Not requirements or reports |
+| Product Owner | Action Center, Seeds, Requirements, Documents, Reports, AI | Requirements, documents |
+| Developer | Action Center, Tasks, Work Hub, Requirements, AI | Not requirements |
+| Quality Assurance | Action Center, Tasks, Requirements, Documents, Trackers, AI | Not requirements |
+| Support | Action Center, Tasks, Work Hub, AI | Everything it sees |
+| Account Manager | Action Center, Reports, AI | Nothing (read-only) |
 
 Roles add up per project. A project assignment does not open the rest of its client: the client shows by name only.
 

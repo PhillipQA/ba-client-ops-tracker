@@ -85,6 +85,8 @@ export interface SeedsUserSync {
   /** Why their last sync failed. Their last good assignments stay in force meanwhile. */
   lastError?: string
   counts?: SeedsCounts
+  /** Role titles Seeds used that no job role claims yet (add them in Settings › Roles). */
+  unknownRoles?: string[]
 }
 
 export interface SeedsState {
@@ -118,6 +120,9 @@ function userSync(raw: any): SeedsUserSync {
     ...(raw?.lastSuccessAt ? { lastSuccessAt: text(raw.lastSuccessAt) } : {}),
     ...(raw?.lastError ? { lastError: text(raw.lastError) } : {}),
     ...(raw?.counts && typeof raw.counts === 'object' ? { counts: raw.counts as SeedsCounts } : {}),
+    ...(Array.isArray(raw?.unknownRoles) && raw.unknownRoles.length
+      ? { unknownRoles: raw.unknownRoles.map(text).slice(0, 20) }
+      : {}),
   }
 }
 

@@ -9,6 +9,13 @@ Not released yet.
 
 **Database migration before people connect Seeds:** run [database/migrations/schema-v36-seeds.sql](database/migrations/schema-v36-seeds.sql) once on the existing Northflank database (it adds the table for each person's Seeds key). Everything else works without it. A new database gets it from [database/schema.sql](database/schema.sql), now version 36.
 
+### Job roles
+- **Administrators see and change everything**, including every client, whatever per-person visibility says.
+- **Settings › Roles:** job roles say which pages a person sees and which they can change. Starting set: Business Analyst, Project Manager, Product Owner, Developer, Quality Assurance, Support and Account Manager; each can be edited, and Administrators can add their own (for example, Business Owner). A role that changes nothing is read-only (it can still ask the AI BA Assistant).
+- **Users & Permissions:** pick each person's job roles. People without a job role keep the modules picked for them, as before.
+- **Seeds roles:** Seeds titles map to job roles (each role lists the titles Seeds uses, such as *Tester* or *Software Engineer*). Titles no role claims are shown in Settings › Integrations › Seeds instead of being guessed. Roles add up per client or project.
+- The server enforces it: changing clients, projects, tasks, the Action Center or requirements needs a role that may change them.
+
 ### Workflow per account
 - **Settings › Workflow** for each account's Administrator: task statuses, waiting-on options, visible task columns, and the names shown for priorities and client health. Internal Admin uses the same editor.
 - **Renaming a status** now carries over to every task that uses it, archived ones included. A status still in use is removed by choosing where its tasks move. Statuses can be reordered.

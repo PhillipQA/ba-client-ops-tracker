@@ -25,6 +25,7 @@ export type AccessSetup = {
   /** People whose own Seeds sync decides their access (their hand-entered assignments are set aside). */
   seedsUsers: string[]
   assignments: Assignment[]
+  roles: { id: string; name: string }[]
   users: { id: string; name: string; role: string; status: string }[]
   clients: { id: string; name: string; archived?: boolean; seedsId?: string }[]
   projects: {

@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { archivedWorkReason, isArchived, stableRecord } from '../../src/features/tasks/lifecycle'
 import { type Assignment, workspaceAccess } from '../../src/shared/access'
+import { roleForSeedsTitle } from '../../src/shared/roles'
 import {
   CLOSE_MATCH,
   matchKey,
@@ -267,19 +268,26 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     snapshot.me?.id || snapshot.people.find(person => email && person.email.trim().toLowerCase() === email)?.id || ''
   const someoneNamed = snapshot.assignments.some(assignment => assignment.personId)
   const seen = new Set<string>()
+  const unknownRoles = new Set<string>()
   const mine: Assignment[] = []
   for (const source of snapshot.assignments) {
     if (someoneNamed && source.personId !== me) continue
     const projectId = source.projectId ? projectBySeeds.get(source.projectId)?.id : undefined
     const clientId = !source.projectId && source.clientId ? clientBySeeds.get(source.clientId)?.id : undefined
     if (!projectId && !clientId) continue
-    const id = `seeds:${options.userId}:${source.role}:${projectId || clientId}`
+    // Seeds titles map to job roles (Settings › Roles); a title no role claims is reported, not guessed.
+    const role = roleForSeedsTitle(state, source.role)
+    if (!role) {
+      unknownRoles.add(source.role)
+      continue
+    }
+    const id = `seeds:${options.userId}:${role}:${projectId || clientId}`
     if (seen.has(id)) continue
     seen.add(id)
     mine.push({
       id,
       userId: options.userId,
-      role: source.role,
+      role,
       ...(projectId ? { projectId } : { clientId }),
       source: 'seeds',
     })
@@ -312,7 +320,13 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
       ...seeds,
       users: {
         ...seeds.users,
-        [options.userId]: { connected: true, lastAttemptAt: options.now, lastSuccessAt: options.now, counts },
+        [options.userId]: {
+          connected: true,
+          lastAttemptAt: options.now,
+          lastSuccessAt: options.now,
+          counts,
+          ...(unknownRoles.size ? { unknownRoles: [...unknownRoles].slice(0, 20) } : {}),
+        },
       },
       pendingMatches,
     },

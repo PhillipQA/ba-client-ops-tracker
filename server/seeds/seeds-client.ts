@@ -7,7 +7,7 @@
  * `{ data: [...] }` with an optional `next` link; field names are read leniently (camelCase or snake_case) so the
  * mapping can be confirmed against Seeds' API documentation without touching the sync.
  */
-import { SEEDS_ROLES, type SeedsRole } from '../../src/shared/access'
+import type { SeedsRole } from '../../src/shared/access'
 import type { SeedsSnapshot } from '../../src/shared/seeds'
 
 export interface SeedsSource {
@@ -39,15 +39,10 @@ const archived = (record: any) =>
   record?.isArchived === true ||
   ['archived', 'inactive', 'closed'].includes(text(record?.status).toLowerCase())
 
+/** The role title as Seeds gives it; the sync maps it to a job role (Settings › Roles › Seeds titles). */
 export function seedsRole(value: unknown): SeedsRole | null {
-  const raw = text(value)
-    .toUpperCase()
-    .replace(/[^A-Z]/g, '')
-  if (SEEDS_ROLES.includes(raw as SeedsRole)) return raw as SeedsRole
-  if (raw.includes('BUSINESSANALYST') || raw === 'ANALYST') return 'BA'
-  if (raw.includes('PROJECTMANAGER') || raw === 'MANAGER') return 'PM'
-  if (raw.includes('ACCOUNTMANAGER') || raw === 'ACCOUNT') return 'AM'
-  return null
+  const title = text(value).slice(0, 60)
+  return title || null
 }
 
 const person = (record: any) => ({

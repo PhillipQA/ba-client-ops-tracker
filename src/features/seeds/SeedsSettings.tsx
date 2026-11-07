@@ -4,7 +4,7 @@
  */
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { SEEDS_ROLE_LABELS, SEEDS_ROLES, type SeedsRole } from '../../shared/access'
+import type { SeedsRole } from '../../shared/access'
 import {
   type AccessSetup,
   type AssignmentInput,
@@ -122,6 +122,9 @@ export function SeedsConnectionCard() {
                         ? `synced ${new Date(person.lastSuccessAt).toLocaleString()}`
                         : 'not synced yet'}
                       {person.lastError ? ` · ${person.lastError}` : ''}
+                      {person.unknownRoles?.length
+                        ? ` · Seeds titles with no role yet: ${person.unknownRoles.join(', ')} (add them in Settings › Roles)`
+                        : ''}
                     </small>
                   </div>
                 </li>
@@ -173,6 +176,7 @@ export function AccessSettings() {
         <p>{message || 'Loading access…'}</p>
       </div>
     )
+  const roleName = (id: string) => setup.roles.find(role => role.id === id)?.name || id
   const users = new Map<string, AccessSetup['users'][number]>(setup.users.map(user => [user.id, user]))
   const clients = new Map<string, AccessSetup['clients'][number]>(setup.clients.map(client => [client.id, client]))
   const projects = new Map<string, AccessSetup['projects'][number]>(
@@ -260,7 +264,7 @@ export function AccessSettings() {
               {shown.map(assignment => (
                 <tr key={assignment.id}>
                   <td>{users.get(assignment.userId)?.name || 'Former user'}</td>
-                  <td>{SEEDS_ROLE_LABELS[assignment.role]}</td>
+                  <td>{roleName(assignment.role)}</td>
                   <td>{where(assignment)}</td>
                   <td>{assignment.source === 'seeds' ? 'Seeds' : 'Entered here'}</td>
                   {assignment.source === 'manual' ? (
@@ -308,9 +312,9 @@ export function AccessSettings() {
               value={draft.role}
               onChange={event => setDraft({ ...draft, role: event.target.value as SeedsRole })}
             >
-              {SEEDS_ROLES.map(role => (
+              {setup.roles.map(({ id: role }) => (
                 <option key={role} value={role}>
-                  {SEEDS_ROLE_LABELS[role]}
+                  {roleName(role)}
                 </option>
               ))}
             </select>

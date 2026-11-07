@@ -6,6 +6,7 @@ import { GmailAccountSettings } from '../integrations/GmailAccountSettings'
 import { DriveAccountSettings } from '../integrations/DriveAccountSettings'
 import { AccessSettings, SeedsConnectionCard } from '../seeds/SeedsSettings'
 import { AccountWorkflow } from './WorkflowEditor'
+import { RolesSettings } from './RolesSettings'
 import type { SignoffTemplateKind } from '../documents/signoff'
 
 export async function settingsRequest(url: string, method = 'GET', data?: unknown) {
@@ -680,8 +681,8 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
   const [data, setData] = useState<any>(null),
     [error, setError] = useState('')
   const isAdmin = currentUser.role === 'Administrator'
-  const [activeTab, setActiveTab] = useState<'templates' | 'agents' | 'integrations' | 'workflow' | 'access'>(() =>
-    new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'integrations' : 'templates',
+  const [activeTab, setActiveTab] = useState<'templates' | 'agents' | 'integrations' | 'workflow' | 'roles' | 'access'>(
+    () => (new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'integrations' : 'templates'),
   )
   const tabs = isAdmin
     ? [
@@ -689,6 +690,7 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
         { id: 'agents' as const, label: 'AI Agents' },
         { id: 'integrations' as const, label: 'Integrations' },
         { id: 'workflow' as const, label: 'Workflow' },
+        { id: 'roles' as const, label: 'Roles' },
         { id: 'access' as const, label: 'Access' },
       ]
     : []
@@ -810,6 +812,16 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
             {activeTab === 'workflow' && (
               <AccountWorkflow key={`workflow:${currentUser.organizationId}`} request={settingsRequest} />
             )}
+          </div>
+          <div
+            className="settings-tab-content"
+            id="settings-section-roles"
+            role="tabpanel"
+            aria-labelledby="settings-tab-roles"
+            hidden={activeTab !== 'roles'}
+            tabIndex={0}
+          >
+            {activeTab === 'roles' && <RolesSettings request={settingsRequest} />}
           </div>
           <div
             className="settings-tab-content"

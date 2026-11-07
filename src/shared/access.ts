@@ -1,21 +1,19 @@
 /**
  * Who sees which client data.
  *
- * Seeds (or, until Seeds is connected, the assignments an Administrator enters by hand) decides what each person can
- * see. App roles (Administrator, Contributor, Viewer) still decide what they can do. When per-person visibility is
- * off, everyone sees the whole workspace, as before.
+ * Seeds (or, until Seeds is connected, the assignments an Administrator enters by hand) decides which clients and
+ * projects each person sees; their job roles (shared/roles.ts) decide which pages they get and what they can change.
+ * Administrators see and change everything. When per-person visibility is off, everyone sees the whole workspace.
  *
  * Pure functions shared by the server (filtering reads, merging saves, guarding task APIs) and the browser (badges,
  * read-only fields). Workspace records are read loosely (`any`) because stored workspaces can be older than the types.
  */
 
-export type SeedsRole = 'BA' | 'PM' | 'AM'
-export const SEEDS_ROLES: SeedsRole[] = ['BA', 'PM', 'AM']
-export const SEEDS_ROLE_LABELS: Record<SeedsRole, string> = {
-  BA: 'Business Analyst',
-  PM: 'Project Manager',
-  AM: 'Account Manager',
-}
+import { accessForRoles, jobRoles, ROLE_MODULES, roleCanChange } from './roles'
+import type { AppModule } from './types'
+
+/** A job role id (shared/roles.ts): BA, PM, PO, DEV, QA, SUPPORT, AM, or one an Administrator added. */
+export type SeedsRole = string
 
 export type AssignmentSource = 'manual' | 'seeds'
 
@@ -43,24 +41,27 @@ export interface ClientAccess {
   seedsConnected: boolean
   /** True when this person's access comes from their own Seeds sync. */
   assignmentsFromSeeds: boolean
+  /** Roles from this person's assignments (per client or project). */
   roles: SeedsRole[]
-  /** Tagged only as Account Manager: a Viewer limited to Action Center, Reports and AI BA Assistant. */
-  accountManagerOnly: boolean
+  /** All of this person's job roles (picked in Users & Permissions, plus their assignments' roles). */
+  jobRoles: string[]
+  /** Pages and editable pages from those roles; absent for Administrators and people without a job role. */
+  modules?: AppModule[]
+  editModules?: AppModule[]
   assignments: Assignment[]
   /** Client and project ids this person can change. Absent when everything is visible. */
   writableClientIds?: string[]
   writableProjectIds?: string[]
 }
 
-/** Pages an Account Manager keeps. My Themes is part of the profile menu and stays for everyone. */
-export const ACCOUNT_MANAGER_MODULES = ['action', 'reports', 'explorer', 'ai']
-
 const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 const text = (value: unknown) => (typeof value === 'string' ? value : value == null ? '' : String(value))
 
 export function normalizeAssignment(value: any): Assignment | null {
   const userId = text(value?.userId).trim()
-  const role = SEEDS_ROLES.includes(value?.role) ? (value.role as SeedsRole) : null
+  const role = /^[A-Z0-9_-]{1,20}$/.test(text(value?.role).trim().toUpperCase())
+    ? text(value.role).trim().toUpperCase()
+    : null
   const clientId = text(value?.clientId).trim()
   const projectId = text(value?.projectId).trim()
   if (!userId || !role || (!clientId && !projectId)) return null
@@ -110,31 +111,50 @@ export function activeAssignments(state: any, userId: string): Assignment[] {
   )
 }
 
+/** Roles from this person's assignments, in the order of the account's role list. */
 export function rolesFor(state: any, userId: string): SeedsRole[] {
   const roles = new Set(activeAssignments(state, userId).map(a => a.role))
-  return SEEDS_ROLES.filter(role => roles.has(role))
+  return jobRoles(state)
+    .map(role => role.id)
+    .filter(id => roles.has(id))
 }
 
-/** True only when visibility is on and every assignment this person has is Account Manager. */
-export function isAccountManagerOnly(state: any, userId: string) {
-  if (!workspaceAccess(state).strictVisibility) return false
-  const roles = rolesFor(state, userId)
-  return roles.length > 0 && roles.every(role => role === 'AM')
+export function isAdministrator(state: any, userId: string) {
+  return list(state?.accounts).some(account => text(account?.id) === userId && account?.role === 'Administrator')
 }
 
-/** The session as the app should treat it: Account Managers become Viewers of four pages. */
+/** Every job role this person has: picked for them in Users & Permissions, and from their assignments. */
+export function personRoles(state: any, userId: string): string[] {
+  const account = list(state?.accounts).find(candidate => text(candidate?.id) === userId)
+  const picked = list(account?.jobRoles).map(text)
+  const wanted = new Set([...picked, ...activeAssignments(state, userId).map(a => a.role)])
+  return jobRoles(state)
+    .map(role => role.id)
+    .filter(id => wanted.has(id))
+}
+
+/**
+ * The session as the app should treat it. Administrators see and change everything. Anyone with a job role gets the
+ * pages of their roles; if those roles change nothing, they are a Viewer (who may still ask the AI BA Assistant).
+ * Without a job role, a person keeps the modules picked for them by hand.
+ */
 export function effectiveAccount<
   T extends { id: string; role: string; modules: string[]; organizationModules?: string[] },
 >(user: T, state: any): T {
-  // Administrators keep their setup role, so nobody can be locked out of Settings by an assignment.
-  if (user.role === 'Administrator' || !isAccountManagerOnly(state, user.id)) return user
-  const allowed = user.organizationModules?.length ? user.organizationModules : ACCOUNT_MANAGER_MODULES
+  if (user.role === 'Administrator') return user
+  const access = accessForRoles(state, personRoles(state, user.id))
+  if (!access) return user
+  const allowed: string[] = user.organizationModules?.length ? user.organizationModules : ROLE_MODULES
+  const modules = access.modules.filter(module => allowed.includes(module))
+  const editModules = access.edit.filter(module => modules.includes(module))
   return {
     ...user,
-    role: 'Viewer',
-    modules: ACCOUNT_MANAGER_MODULES.filter(module => allowed.includes(module)),
-    /** Viewers cannot use the AI BA Assistant; Account Managers can (read-only questions). */
-    accountManager: true,
+    role: editModules.length ? (user.role === 'Viewer' ? 'Viewer' : 'Contributor') : 'Viewer',
+    modules,
+    editModules,
+    jobRoles: access.roles,
+    /** A Viewer by role may still ask the AI BA Assistant about their clients. */
+    askAi: modules.includes('ai'),
   } as T
 }
 
@@ -158,7 +178,8 @@ export interface Scope {
 export function scopeFor(state: any, userId: string): Scope {
   const empty = () => new Set<string>()
   const scope: Scope = {
-    all: !workspaceAccess(state).strictVisibility,
+    // Administrators see and change everything, assigned or not.
+    all: !workspaceAccess(state).strictVisibility || isAdministrator(state, userId),
     userId,
     fullClients: empty(),
     fullProjects: empty(),
@@ -172,7 +193,7 @@ export function scopeFor(state: any, userId: string): Scope {
   if (scope.all) return scope
 
   for (const assignment of activeAssignments(state, userId)) {
-    const write = assignment.role !== 'AM'
+    const write = roleCanChange(state, assignment.role)
     if (assignment.projectId) {
       scope.fullProjects.add(assignment.projectId)
       if (write) scope.writeProjects.add(assignment.projectId)
@@ -487,7 +508,13 @@ export function clientAccessFor(state: any, user: { id: string; role?: string })
     seedsConnected: state?.seeds?.connected === true,
     assignmentsFromSeeds: fromSeeds,
     roles: rolesFor(state, user.id),
-    accountManagerOnly: user.role !== 'Administrator' && isAccountManagerOnly(state, user.id),
+    jobRoles: personRoles(state, user.id),
+    ...(user.role === 'Administrator'
+      ? {}
+      : (() => {
+          const roles = accessForRoles(state, personRoles(state, user.id))
+          return roles ? { modules: roles.modules, editModules: roles.edit } : {}
+        })()),
     assignments: active,
     ...(scope.all ? {} : { writableClientIds: [...scope.writeClients], writableProjectIds: [...scope.writeProjects] }),
   }
