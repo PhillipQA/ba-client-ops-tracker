@@ -522,7 +522,7 @@ function App() {
                 key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`}
                 store={store}
                 canEdit={canWrite}
-                canLink={canWrite && hasModule('items')}
+                canLink={canWrite && canWriteTasks && hasModule('items')}
                 canOverride={currentUser?.role === 'Administrator'}
                 context={rtmContext}
                 onSave={saveRtms}
@@ -682,7 +682,7 @@ function App() {
             )}
           </main>
 
-          {modal && canWrite && (
+          {modal && (canWrite || ((modal === 'item' || modal === 'taskEdit') && canWriteTasks)) && (
             <Modal
               title={
                 modal === 'item'

@@ -14,7 +14,7 @@ Not released yet.
 - **Settings › Roles:** job roles say which pages a person sees and which they can change. Starting set: Business Analyst, Project Manager, Product Owner, Developer, Quality Assurance, Support and Account Manager; each can be edited, and Administrators can add their own (for example, Business Owner). A role that changes nothing is read-only (it can still ask the AI BA Assistant).
 - **Users & Permissions:** pick each person's job roles. People without a job role keep the modules picked for them, as before.
 - **Seeds roles:** Seeds titles map to job roles (each role lists the titles Seeds uses, such as *Tester* or *Software Engineer*). Titles no role claims are shown in Settings › Integrations › Seeds instead of being guessed. Roles add up per client or project.
-- The server enforces it: changing clients, projects, tasks, the Action Center or requirements needs a role that may change them.
+- Pages a role only reads hide their edit controls (new, edit, archive, link), while tasks stay editable from any page for roles that may change tasks. The server enforces the same: clients, projects, tasks, Action Center, requirements, trackers and Document Creation need a role that may change them.
 
 ### Workflow per account
 - **Settings › Workflow** for each account's Administrator: task statuses, waiting-on options, visible task columns, and the names shown for priorities and client health. Internal Admin uses the same editor.

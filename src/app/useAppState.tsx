@@ -1,4 +1,4 @@
-import { type ClientLayout, type View, labels, navItems, priorityRank, SEEDS_PAGES } from './navigation'
+import { type ClientLayout, type View, labels, navItems, PAGE_MODULES, priorityRank, SEEDS_PAGES } from './navigation'
 import { atRoute, pathForRoute, routeFromLocation } from './routes'
 import { businessDateKey, useBusinessDate } from '../shared/businessDate'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
@@ -772,12 +772,25 @@ export function useAppState() {
         lastLoginAt: authUser.lastLoginAt,
       }
     : null
-  const canWrite = Boolean(currentUser && currentUser.role !== 'Viewer' && !lifecycleSaving)
+  // Whether this person may change things on the page they are on: a job role can see a page without changing it.
+  const canEditModule = (module: AppModule) => !roleEdit || roleEdit.includes(module)
+  const pageModule: AppModule | null = selectedClientId
+    ? 'clients'
+    : selectedProjectId
+      ? 'projects'
+      : (PAGE_MODULES as Record<string, AppModule | undefined>)[view] || null
+  const canWrite = Boolean(
+    currentUser && currentUser.role !== 'Viewer' && !lifecycleSaving && (!pageModule || canEditModule(pageModule)),
+  )
   const canManageAccounts = currentUser?.role === 'Administrator' && currentUser.accountType !== 'platform'
   const hasModule = (module: AppModule) => Boolean(currentUser && currentUser.modules.includes(module))
-  const canEditModule = (module: AppModule) => !roleEdit || roleEdit.includes(module)
-  const canWriteTasks =
-    canWrite && ((hasModule('items') && canEditModule('items')) || (hasModule('inbox') && canEditModule('inbox')))
+  // Tasks open from many pages, so this follows the task rights, not the page.
+  const canWriteTasks = Boolean(
+    currentUser &&
+      currentUser.role !== 'Viewer' &&
+      !lifecycleSaving &&
+      ((hasModule('items') && canEditModule('items')) || (hasModule('inbox') && canEditModule('inbox'))),
+  )
   // Account Managers are Viewers who may still ask the AI BA Assistant about their clients.
   // A Viewer by job role (an Account Manager, say) may still ask the AI BA Assistant.
   const canUseAI = Boolean(currentUser && (currentUser.role !== 'Viewer' || roleViewer) && hasModule('ai'))
