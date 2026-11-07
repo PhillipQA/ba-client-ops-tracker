@@ -9,6 +9,10 @@ Not released yet.
 
 **Database migration before people connect Seeds:** run [database/migrations/schema-v36-seeds.sql](database/migrations/schema-v36-seeds.sql) once on the existing Northflank database (it adds the table for each person's Seeds key). Everything else works without it. A new database gets it from [database/schema.sql](database/schema.sql), now version 36.
 
+### Share a report as an image
+- **Share as image** on every custom report: **Copy image** (paste into Gmail, Teams or Viber), **Download PNG**, or **Email with the image** (opens the app's email composer with the picture attached; needs Gmail connected in Work Hub).
+- The picture is what you see now, drawn in your browser (cards, numbers, tables and charts, without the buttons); nothing is uploaded to make it.
+
 ### Data Explorer SQL, Metabase style
 - **UNION ALL fixed:** ORDER BY and LIMIT after the last SELECT now sort and cut the whole result (they used to apply to the last SELECT only). SELECTs can be wrapped in parentheses.
 - **New:** `UNION` (removes duplicates), `INTERSECT`, `EXCEPT`; `WITH` (common table expressions, with optional column names); queries inside `FROM`, `IN (SELECT …)`, `EXISTS (SELECT …)` and as a value.

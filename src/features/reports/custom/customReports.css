@@ -1256,3 +1256,40 @@
     outline: 0;
   }
 }
+
+/* Share as image */
+.crp-share {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.crp-share-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+.crp-share-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.crp-share-menu button:hover {
+  background: var(--ui-surface-hover, rgba(127, 127, 127, 0.12));
+}
+.crp-share-note {
+  font-size: 0.8rem;
+}
