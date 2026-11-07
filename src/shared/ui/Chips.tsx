@@ -1,6 +1,38 @@
-import type { Client, ItemType, Priority, TaskSettings, WaitingOn, WorkItem } from '../types'
+import type { Client, ItemType, Priority, TaskSettings, WaitingOn, WorkflowLabels, WorkItem } from '../types'
 import { waitingOnTone } from '../../features/tasks/waitingOn'
+import { HEALTHS, healthLabel, PRIORITIES, priorityLabel } from '../../features/tasks/workflow'
 import { CheckCircle2 } from 'lucide-react'
+import { createContext, useContext } from 'react'
+
+/** The account's own names for priorities and client health (Settings › Workflow). */
+export const WorkflowLabelsContext = createContext<WorkflowLabels | undefined>(undefined)
+
+/** Priority choices for a select, shown with the account's names; the stored values stay the same. */
+export function PriorityOptions() {
+  const labels = useContext(WorkflowLabelsContext)
+  return (
+    <>
+      {PRIORITIES.map(value => (
+        <option key={value} value={value}>
+          {priorityLabel(value, labels)}
+        </option>
+      ))}
+    </>
+  )
+}
+
+export function HealthOptions() {
+  const labels = useContext(WorkflowLabelsContext)
+  return (
+    <>
+      {HEALTHS.map(value => (
+        <option key={value} value={value}>
+          {healthLabel(value, labels)}
+        </option>
+      ))}
+    </>
+  )
+}
 
 export function Empty({ text }: { text: string }) {
   return (
@@ -16,7 +48,8 @@ export function TypeChip({ value }: { value: ItemType }) {
 }
 
 export function PriorityChip({ value }: { value: Priority }) {
-  return <span className={`chip priority-${value.toLowerCase()}`}>{value}</span>
+  const labels = useContext(WorkflowLabelsContext)
+  return <span className={`chip priority-${value.toLowerCase()}`}>{priorityLabel(value, labels)}</span>
 }
 
 export function InquirySourceBadge({ source, isNew = false }: { source: WorkItem['source']; isNew?: boolean }) {
@@ -37,5 +70,6 @@ export function StatusChip({ value }: { value: string }) {
 }
 
 export function HealthChip({ value }: { value: Client['health'] }) {
-  return <span className={`chip health-${value.toLowerCase().replace(' ', '-')}`}>{value}</span>
+  const labels = useContext(WorkflowLabelsContext)
+  return <span className={`chip health-${value.toLowerCase().replace(' ', '-')}`}>{healthLabel(value, labels)}</span>
 }

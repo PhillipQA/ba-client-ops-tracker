@@ -5,6 +5,7 @@ import { badgeText, useUnreadCounts, useUnreadPolling } from '../features/work-h
 import RequirementsTraceability from '../features/requirements/RequirementsTraceability'
 import Trackers from '../features/trackers/Trackers'
 import { ClosedStatusContext } from '../features/tasks/openWork'
+import { WorkflowLabelsContext } from '../shared/ui/Chips'
 import { EmailComposerHost } from '../features/email/EmailComposer'
 import NotificationCenter from '../features/notifications/NotificationCenter'
 import RecordEditDialog from '../features/tasks/RecordEditDialog'
@@ -208,617 +209,621 @@ function App() {
 
   return (
     <ClosedStatusContext.Provider value={closedStatus}>
-      <div
-        className={`app-shell ui-refresh theme-${currentTheme}${navCollapsed ? ' nav-collapsed' : ''}`}
-        data-theme={currentTheme}
-        data-interface-mode={normalizeInterfaceMode(currentUser.interfaceMode) || undefined}
-      >
-        <aside className="sidebar" aria-label="Main menu">
-          <div className="brand">
-            <img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" />
-            <img className="brand-icon" src="/ba-app-icon.png" alt="" />
-            <button
-              type="button"
-              className="sidebar-toggle"
-              aria-label={navCollapsed ? 'Expand menu' : 'Collapse menu'}
-              aria-expanded={!navCollapsed}
-              aria-controls="app-menu"
-              onClick={toggleNav}
-              {...railTip.bind('Expand menu')}
-            >
-              {navCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-            </button>
-          </div>
-          <nav id="app-menu">
-            {sidebarItems(visibleNavItems).map(({ id, label, icon: Icon, seeds }) => (
+      <WorkflowLabelsContext.Provider value={store.taskSettings.labels}>
+        <div
+          className={`app-shell ui-refresh theme-${currentTheme}${navCollapsed ? ' nav-collapsed' : ''}`}
+          data-theme={currentTheme}
+          data-interface-mode={normalizeInterfaceMode(currentUser.interfaceMode) || undefined}
+        >
+          <aside className="sidebar" aria-label="Main menu">
+            <div className="brand">
+              <img className="brand-logo" src="/client-ops-logo.png" alt="Client Ops Tracker" />
+              <img className="brand-icon" src="/ba-app-icon.png" alt="" />
               <button
-                key={id}
-                data-tour={seeds ? 'nav-seeds' : `nav-${id}`}
-                className={(seeds ? isSeedsView(view) : view === id) ? 'nav-button active' : 'nav-button'}
-                aria-current={(seeds ? isSeedsView(view) : view === id) ? 'page' : undefined}
-                {...railTip.bind(id === 'inbox' && unreadTotal > 0 ? `${label} · ${unreadTitle}` : label)}
-                onClick={event => {
-                  // Ctrl/⌘-click or Shift-click opens the page in a new tab, as a link would.
-                  if (opensElsewhere(event)) return void window.open(VIEW_PATHS[id], '_blank', 'noopener')
-                  setView(id)
-                  if (id === 'requirements') setRtmContext({})
-                  setSelectedClientId(null)
-                  setSelectedProjectId(null)
-                }}
-                onAuxClick={event => {
-                  if (event.button !== 1) return
-                  event.preventDefault()
-                  window.open(VIEW_PATHS[id], '_blank', 'noopener')
-                }}
+                type="button"
+                className="sidebar-toggle"
+                aria-label={navCollapsed ? 'Expand menu' : 'Collapse menu'}
+                aria-expanded={!navCollapsed}
+                aria-controls="app-menu"
+                onClick={toggleNav}
+                {...railTip.bind('Expand menu')}
               >
-                <Icon size={18} />
-                <span>{label}</span>
-                {id === 'inbox' && unreadTotal > 0 && (
-                  <b className="nav-unread" title={unreadTitle} aria-label={unreadTitle}>
-                    {badgeText(unreadTotal)}
-                  </b>
-                )}
+                {navCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
               </button>
-            ))}
-            {currentUser.accountType !== 'platform' && (
-              <>
-                {canManageAccounts && (
+            </div>
+            <nav id="app-menu">
+              {sidebarItems(visibleNavItems).map(({ id, label, icon: Icon, seeds }) => (
+                <button
+                  key={id}
+                  data-tour={seeds ? 'nav-seeds' : `nav-${id}`}
+                  className={(seeds ? isSeedsView(view) : view === id) ? 'nav-button active' : 'nav-button'}
+                  aria-current={(seeds ? isSeedsView(view) : view === id) ? 'page' : undefined}
+                  {...railTip.bind(id === 'inbox' && unreadTotal > 0 ? `${label} · ${unreadTitle}` : label)}
+                  onClick={event => {
+                    // Ctrl/⌘-click or Shift-click opens the page in a new tab, as a link would.
+                    if (opensElsewhere(event)) return void window.open(VIEW_PATHS[id], '_blank', 'noopener')
+                    setView(id)
+                    if (id === 'requirements') setRtmContext({})
+                    setSelectedClientId(null)
+                    setSelectedProjectId(null)
+                  }}
+                  onAuxClick={event => {
+                    if (event.button !== 1) return
+                    event.preventDefault()
+                    window.open(VIEW_PATHS[id], '_blank', 'noopener')
+                  }}
+                >
+                  <Icon size={18} />
+                  <span>{label}</span>
+                  {id === 'inbox' && unreadTotal > 0 && (
+                    <b className="nav-unread" title={unreadTitle} aria-label={unreadTitle}>
+                      {badgeText(unreadTotal)}
+                    </b>
+                  )}
+                </button>
+              ))}
+              {currentUser.accountType !== 'platform' && (
+                <>
+                  {canManageAccounts && (
+                    <button
+                      data-tour="nav-users"
+                      className={view === 'users' ? 'nav-button active' : 'nav-button'}
+                      aria-current={view === 'users' ? 'page' : undefined}
+                      {...railTip.bind('Users & Permissions')}
+                      onClick={() => {
+                        setView('users')
+                        setSelectedClientId(null)
+                        setSelectedProjectId(null)
+                      }}
+                    >
+                      <Users size={18} />
+                      <span>Users &amp; Permissions</span>
+                    </button>
+                  )}
                   <button
-                    data-tour="nav-users"
-                    className={view === 'users' ? 'nav-button active' : 'nav-button'}
-                    aria-current={view === 'users' ? 'page' : undefined}
-                    {...railTip.bind('Users & Permissions')}
+                    className={view === 'themes' ? 'nav-button active' : 'nav-button'}
+                    aria-current={view === 'themes' ? 'page' : undefined}
+                    {...railTip.bind('My Themes')}
                     onClick={() => {
-                      setView('users')
+                      setView('themes')
                       setSelectedClientId(null)
                       setSelectedProjectId(null)
                     }}
                   >
-                    <Users size={18} />
-                    <span>Users &amp; Permissions</span>
+                    <Sparkles size={18} />
+                    <span>My Themes</span>
                   </button>
-                )}
+                </>
+              )}
+            </nav>
+            {currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && (
+              <div className="platform-admin-nav">
                 <button
-                  className={view === 'themes' ? 'nav-button active' : 'nav-button'}
-                  aria-current={view === 'themes' ? 'page' : undefined}
-                  {...railTip.bind('My Themes')}
+                  className={view === 'internal-admin' ? 'nav-button active' : 'nav-button'}
+                  aria-current={view === 'internal-admin' ? 'page' : undefined}
+                  {...railTip.bind('BXI-Core Admin')}
                   onClick={() => {
-                    setView('themes')
+                    setView('internal-admin')
                     setSelectedClientId(null)
                     setSelectedProjectId(null)
                   }}
                 >
-                  <Sparkles size={18} />
-                  <span>My Themes</span>
+                  <ShieldCheck size={18} />
+                  <span>BXI-Core Admin</span>
                 </button>
-              </>
-            )}
-          </nav>
-          {currentUser.isPlatformAdmin && currentUser.accountType === 'platform' && (
-            <div className="platform-admin-nav">
-              <button
-                className={view === 'internal-admin' ? 'nav-button active' : 'nav-button'}
-                aria-current={view === 'internal-admin' ? 'page' : undefined}
-                {...railTip.bind('BXI-Core Admin')}
-                onClick={() => {
-                  setView('internal-admin')
-                  setSelectedClientId(null)
-                  setSelectedProjectId(null)
-                }}
-              >
-                <ShieldCheck size={18} />
-                <span>BXI-Core Admin</span>
-              </button>
-            </div>
-          )}
-          <div className="sidebar-footer">
-            {currentUser.organizationName && (
-              <div className="workspace-chip" {...railTip.bind(currentUser.organizationName)}>
-                <Building2 size={14} />
-                <span>{currentUser.organizationName}</span>
               </div>
             )}
-            {currentUser.accountType === 'platform' ? (
-              <div
-                className="session-card platform-session-card"
-                {...railTip.bind(`${currentUser.name} · Platform Admin`)}
-              >
-                <div className="session-avatar">
-                  <ShieldCheck size={17} />
+            <div className="sidebar-footer">
+              {currentUser.organizationName && (
+                <div className="workspace-chip" {...railTip.bind(currentUser.organizationName)}>
+                  <Building2 size={14} />
+                  <span>{currentUser.organizationName}</span>
                 </div>
-                <div>
-                  <strong>{currentUser.name}</strong>
-                  <span>internal_admin · Platform Admin</span>
-                </div>
-              </div>
-            ) : (
-              <button
-                data-tour="profile"
-                className="session-card session-card-button"
-                type="button"
-                onClick={() => setProfileOpen(true)}
-                title={navCollapsed ? undefined : 'Edit your profile'}
-                {...railTip.bind(`${currentUser.name} · ${currentUser.role} · My profile`)}
-              >
-                <div className="session-avatar">
-                  <UserRound size={17} />
-                </div>
-                <div>
-                  <strong>{currentUser.name}</strong>
-                  <span>{currentUser.role} · My profile</span>
-                </div>
-                <Pencil size={14} />
-              </button>
-            )}
-            <button
-              className="nav-button signout-button"
-              type="button"
-              disabled={logoutBusy}
-              {...railTip.bind('Sign out')}
-              onClick={() => void handleLogout()}
-            >
-              <LogOut size={18} />
-              <span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span>
-            </button>
-            <div
-              className={`local-note storage-${cloudStatus}`}
-              title={navCollapsed ? undefined : lastCloudSync ? `Last cloud sync: ${lastCloudSync}` : undefined}
-              {...railTip.bind(lastCloudSync ? `${cloudMessage} · last sync ${lastCloudSync}` : cloudMessage)}
-            >
-              <CircleDot size={12} /> <span>{cloudMessage}</span>
-            </div>
-          </div>
-        </aside>
-        {railTip.tip}
-
-        <main>
-          {saveConflict && (
-            <div className="panel" role="alert">
-              <strong>Save conflict — your edits are kept locally.</strong>
-              <p>{saveConflict}</p>
-              <p>
-                Download your pending workspace copy and reload, then reapply your edits to the current records. Open
-                editors stay open for reference; reopen them before saving.
-              </p>
-              <button className="secondary" disabled={recoveringCloud} onClick={() => void recoverCloud()}>
-                {recoveringCloud ? 'Reloading…' : 'Download edits and reload latest'}
-              </button>
-            </div>
-          )}
-          <header className="topbar">
-            <div>
-              <p className="eyebrow">
-                {currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}
-              </p>
-              <div className="record-title-line">
-                <h1>{selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}</h1>
-                {canWrite &&
-                  ((selectedClient && hasModule('clients')) || (selectedProject && hasModule('projects'))) && (
-                    <button
-                      className="secondary record-title-edit"
-                      onClick={() =>
-                        setEditingRecord(
-                          selectedProject
-                            ? { kind: 'projects', id: selectedProject.id }
-                            : { kind: 'clients', id: selectedClient!.id },
-                        )
-                      }
-                    >
-                      <Pencil size={16} />
-                      {selectedProject ? 'Edit project' : 'Edit client'}
-                    </button>
-                  )}
-              </div>
-            </div>
-            <div className="top-actions">
-              {currentUser.accountType !== 'platform' && (
-                <button
-                  className="secondary"
-                  disabled={
-                    refreshingCloud ||
-                    hubSyncing ||
-                    cloudStatus === 'checking' ||
-                    cloudStatus === 'saving' ||
-                    Boolean(saveConflict)
-                  }
-                  onClick={() => {
-                    void refreshWorkspace(true)
-                    void workHubSync.syncAll()
-                  }}
-                  title="Fetch the latest workspace and sync all connected Work Hub integrations"
-                  data-tour="refresh"
+              )}
+              {currentUser.accountType === 'platform' ? (
+                <div
+                  className="session-card platform-session-card"
+                  {...railTip.bind(`${currentUser.name} · Platform Admin`)}
                 >
-                  <RefreshCw size={16} />
-                  {refreshingCloud || hubSyncing ? 'Refreshing…' : 'Refresh now'}
-                </button>
-              )}
-              {currentUser.accountType !== 'platform' && (
-                <NotificationCenter
-                  notifications={store.notifications}
-                  clients={store.clients}
-                  projects={store.projects}
-                  isAdmin={currentUser.role === 'Administrator'}
-                  busy={notificationBusy}
-                  onOpen={openNotification}
-                  onAction={handleNotificationAction}
-                  onReadAll={handleReadAllNotifications}
-                  onRefresh={() => void refreshNotifications()}
-                />
-              )}
-              {currentUser.accountType !== 'platform' && (
-                <button
-                  type="button"
-                  className="secondary"
-                  data-tour="tour"
-                  title="A short guided tour: what to set up first and where things are"
-                  onClick={() => setTourOpen(true)}
-                >
-                  <Compass size={16} /> Tour
-                </button>
-              )}
-            </div>
-          </header>
-
-          {!visibleNavItems.length &&
-            view !== 'themes' &&
-            view !== 'users' &&
-            currentUser.accountType !== 'platform' && (
-              <section className="page-stack">
-                <div className="panel no-access-panel">
-                  <LockKeyhole size={24} />
+                  <div className="session-avatar">
+                    <ShieldCheck size={17} />
+                  </div>
                   <div>
-                    <h2>No modules assigned</h2>
-                    <p>
-                      Your account is active, but an Administrator has not assigned any modules yet. You can still open
-                      My profile or sign out.
-                    </p>
+                    <strong>{currentUser.name}</strong>
+                    <span>internal_admin · Platform Admin</span>
                   </div>
                 </div>
-              </section>
+              ) : (
+                <button
+                  data-tour="profile"
+                  className="session-card session-card-button"
+                  type="button"
+                  onClick={() => setProfileOpen(true)}
+                  title={navCollapsed ? undefined : 'Edit your profile'}
+                  {...railTip.bind(`${currentUser.name} · ${currentUser.role} · My profile`)}
+                >
+                  <div className="session-avatar">
+                    <UserRound size={17} />
+                  </div>
+                  <div>
+                    <strong>{currentUser.name}</strong>
+                    <span>{currentUser.role} · My profile</span>
+                  </div>
+                  <Pencil size={14} />
+                </button>
+              )}
+              <button
+                className="nav-button signout-button"
+                type="button"
+                disabled={logoutBusy}
+                {...railTip.bind('Sign out')}
+                onClick={() => void handleLogout()}
+              >
+                <LogOut size={18} />
+                <span>{logoutBusy ? 'Signing out…' : 'Sign out'}</span>
+              </button>
+              <div
+                className={`local-note storage-${cloudStatus}`}
+                title={navCollapsed ? undefined : lastCloudSync ? `Last cloud sync: ${lastCloudSync}` : undefined}
+                {...railTip.bind(lastCloudSync ? `${cloudMessage} · last sync ${lastCloudSync}` : cloudMessage)}
+              >
+                <CircleDot size={12} /> <span>{cloudMessage}</span>
+              </div>
+            </div>
+          </aside>
+          {railTip.tip}
+
+          <main>
+            {saveConflict && (
+              <div className="panel" role="alert">
+                <strong>Save conflict — your edits are kept locally.</strong>
+                <p>{saveConflict}</p>
+                <p>
+                  Download your pending workspace copy and reload, then reapply your edits to the current records. Open
+                  editors stay open for reference; reopen them before saving.
+                </p>
+                <button className="secondary" disabled={recoveringCloud} onClick={() => void recoverCloud()}>
+                  {recoveringCloud ? 'Reloading…' : 'Download edits and reload latest'}
+                </button>
+              </div>
+            )}
+            <header className="topbar">
+              <div>
+                <p className="eyebrow">
+                  {currentUser.accountType === 'platform' ? 'BXI-CORE PLATFORM' : 'BA CLIENT OPERATIONS'}
+                </p>
+                <div className="record-title-line">
+                  <h1>
+                    {selectedProject ? selectedProject.name : selectedClient ? selectedClient.name : labels[view]}
+                  </h1>
+                  {canWrite &&
+                    ((selectedClient && hasModule('clients')) || (selectedProject && hasModule('projects'))) && (
+                      <button
+                        className="secondary record-title-edit"
+                        onClick={() =>
+                          setEditingRecord(
+                            selectedProject
+                              ? { kind: 'projects', id: selectedProject.id }
+                              : { kind: 'clients', id: selectedClient!.id },
+                          )
+                        }
+                      >
+                        <Pencil size={16} />
+                        {selectedProject ? 'Edit project' : 'Edit client'}
+                      </button>
+                    )}
+                </div>
+              </div>
+              <div className="top-actions">
+                {currentUser.accountType !== 'platform' && (
+                  <button
+                    className="secondary"
+                    disabled={
+                      refreshingCloud ||
+                      hubSyncing ||
+                      cloudStatus === 'checking' ||
+                      cloudStatus === 'saving' ||
+                      Boolean(saveConflict)
+                    }
+                    onClick={() => {
+                      void refreshWorkspace(true)
+                      void workHubSync.syncAll()
+                    }}
+                    title="Fetch the latest workspace and sync all connected Work Hub integrations"
+                    data-tour="refresh"
+                  >
+                    <RefreshCw size={16} />
+                    {refreshingCloud || hubSyncing ? 'Refreshing…' : 'Refresh now'}
+                  </button>
+                )}
+                {currentUser.accountType !== 'platform' && (
+                  <NotificationCenter
+                    notifications={store.notifications}
+                    clients={store.clients}
+                    projects={store.projects}
+                    isAdmin={currentUser.role === 'Administrator'}
+                    busy={notificationBusy}
+                    onOpen={openNotification}
+                    onAction={handleNotificationAction}
+                    onReadAll={handleReadAllNotifications}
+                    onRefresh={() => void refreshNotifications()}
+                  />
+                )}
+                {currentUser.accountType !== 'platform' && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    data-tour="tour"
+                    title="A short guided tour: what to set up first and where things are"
+                    onClick={() => setTourOpen(true)}
+                  >
+                    <Compass size={16} /> Tour
+                  </button>
+                )}
+              </div>
+            </header>
+
+            {!visibleNavItems.length &&
+              view !== 'themes' &&
+              view !== 'users' &&
+              currentUser.accountType !== 'platform' && (
+                <section className="page-stack">
+                  <div className="panel no-access-panel">
+                    <LockKeyhole size={24} />
+                    <div>
+                      <h2>No modules assigned</h2>
+                      <p>
+                        Your account is active, but an Administrator has not assigned any modules yet. You can still
+                        open My profile or sign out.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+            {!selectedClient &&
+              !selectedProject &&
+              view === 'internal-admin' &&
+              currentUser.isPlatformAdmin &&
+              currentUser.accountType === 'platform' && (
+                <InternalAdmin
+                  mustChangePassword={Boolean(authUser.mustChangePassword)}
+                  recoveryEmail={authUser.email}
+                  onRecoveryEmailChange={email => setAuthUser({ ...authUser, email })}
+                />
+              )}
+
+            {!selectedClient && !selectedProject && view === 'action' && hasModule('action') && (
+              <ActionCenterPage app={appState} currentUser={currentUser} />
             )}
 
-          {!selectedClient &&
-            !selectedProject &&
-            view === 'internal-admin' &&
-            currentUser.isPlatformAdmin &&
-            currentUser.accountType === 'platform' && (
-              <InternalAdmin
-                mustChangePassword={Boolean(authUser.mustChangePassword)}
-                recoveryEmail={authUser.email}
-                onRecoveryEmailChange={email => setAuthUser({ ...authUser, email })}
+            {!selectedClient && !selectedProject && isSeedsView(view) && <SeedsTabs app={appState} />}
+
+            {!selectedClient && !selectedProject && view === 'seeds' && <SeedsSyncPage app={appState} />}
+
+            {!selectedClient && !selectedProject && view === 'clients' && hasModule('clients') && (
+              <ClientsPage app={appState} />
+            )}
+
+            {!selectedClient && !selectedProject && view === 'projects' && hasModule('projects') && (
+              <ProjectsPage app={appState} />
+            )}
+
+            {!selectedClient && !selectedProject && view === 'inbox' && hasModule('inbox') && (
+              <InboxPage app={appState} currentUser={currentUser} />
+            )}
+
+            {!selectedClient && !selectedProject && view === 'items' && hasModule('items') && (
+              <TasksPage app={appState} />
+            )}
+
+            {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && (
+              <RequirementsTraceability
+                key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`}
+                store={store}
+                canEdit={canWrite}
+                canLink={canWrite && hasModule('items')}
+                canOverride={currentUser?.role === 'Administrator'}
+                context={rtmContext}
+                onSave={saveRtms}
+                onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
               />
             )}
-
-          {!selectedClient && !selectedProject && view === 'action' && hasModule('action') && (
-            <ActionCenterPage app={appState} currentUser={currentUser} />
-          )}
-
-          {!selectedClient && !selectedProject && isSeedsView(view) && <SeedsTabs app={appState} />}
-
-          {!selectedClient && !selectedProject && view === 'seeds' && <SeedsSyncPage app={appState} />}
-
-          {!selectedClient && !selectedProject && view === 'clients' && hasModule('clients') && (
-            <ClientsPage app={appState} />
-          )}
-
-          {!selectedClient && !selectedProject && view === 'projects' && hasModule('projects') && (
-            <ProjectsPage app={appState} />
-          )}
-
-          {!selectedClient && !selectedProject && view === 'inbox' && hasModule('inbox') && (
-            <InboxPage app={appState} currentUser={currentUser} />
-          )}
-
-          {!selectedClient && !selectedProject && view === 'items' && hasModule('items') && (
-            <TasksPage app={appState} />
-          )}
-
-          {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && (
-            <RequirementsTraceability
-              key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`}
-              store={store}
-              canEdit={canWrite}
-              canLink={canWrite && hasModule('items')}
-              canOverride={currentUser?.role === 'Administrator'}
-              context={rtmContext}
-              onSave={saveRtms}
-              onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
-            />
-          )}
-          {!selectedClient && !selectedProject && view === 'trackers' && hasModule('trackers') && (
-            <Trackers
-              key={`${authUser?.organizationId}:${authUser?.id}`}
-              isAdmin={currentUser?.role === 'Administrator'}
-              canCreate={canWrite}
-              items={store.items}
-              clients={store.clients}
-              projects={store.projects}
-              accounts={store.accounts}
-              today={today}
-              onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
-              isTaskClosed={status => isTaskClosed(status, store.taskSettings)}
-              onCreateTasks={canWriteTasks && hasModule('items') ? createTrackerTasks : undefined}
-              onUpdateTasks={canWriteTasks && hasModule('items') ? updateTrackerTasks : undefined}
-              onTasksChanged={() => refreshWorkspace(false)}
-              currentUserId={currentUser?.id}
-            />
-          )}
-          {hasModule('documents') && (
-            <div
-              className="document-retained"
-              hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}
-            >
-              <DocumentCreation
+            {!selectedClient && !selectedProject && view === 'trackers' && hasModule('trackers') && (
+              <Trackers
                 key={`${authUser?.organizationId}:${authUser?.id}`}
+                isAdmin={currentUser?.role === 'Administrator'}
+                canCreate={canWrite}
+                items={store.items}
                 clients={store.clients}
                 projects={store.projects}
                 accounts={store.accounts}
-                items={store.items}
-                launch={documentLaunch}
-                canGenerate={canWrite}
-                canUseInbox={hasModule('inbox')}
-                draftKey={`${authUser?.organizationId}:${authUser?.id}`}
-                active={pageActive && !selectedClient && !selectedProject && view === 'documents'}
-              />
-            </div>
-          )}
-
-          {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && (
-            <CustomReports
-              canUseTrackers={hasModule('trackers')}
-              canExplore={hasModule('explorer')}
-              canUseInbox={hasModule('inbox')}
-              clients={store.clients}
-              projects={store.projects}
-              items={store.items}
-              planner={store.planner}
-              taskSettings={store.taskSettings}
-              accounts={store.accounts}
-              workEvents={store.workEvents}
-              currentUser={currentUser}
-            />
-          )}
-
-          {!selectedClient && !selectedProject && view === 'users' && canManageAccounts && (
-            <AccountUsers currentUser={currentUser} onChanged={acceptAccountUsers} />
-          )}
-          {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && (
-            <ThemePreferences user={currentUser} onSave={saveOwnPreferences} />
-          )}
-
-          {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && (
-            <Settings key={`${currentUser.organizationId}:${currentUser.id}`} currentUser={currentUser} />
-          )}
-
-          {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
-            <AiPage app={appState} currentUser={currentUser} />
-          )}
-
-          {selectedClient && (
-            <ClientDetail
-              onOpenRtms={hasModule('requirements') ? () => openRtms(selectedClient.id) : undefined}
-              controls={
-                <LifecycleControls
-                  key={selectedClient.id}
-                  kind="clients"
-                  record={selectedClient}
-                  store={store}
-                  canEdit={canWrite && hasModule('clients') && !selectedClient.accessLimited}
-                  onSave={record => saveLifecycleRecord('clients', record)}
-                />
-              }
-              client={selectedClient}
-              store={store}
-              onBack={() => setSelectedClientId(null)}
-              onOpenProject={(projectId, clientId) => {
-                setSelectedClientId(null)
-                setSelectedProjectClientId(clientId)
-                setSelectedProjectId(projectId)
-              }}
-              onAddTask={clientId => {
-                setTaskPreset({ clientId, type: 'Task' })
-                setModal('item')
-              }}
-              onAskAI={(clientId, projectId = '') => {
-                setAiClientId(clientId)
-                setAiProjectId(projectId)
-                setAiPrompt('')
-                setSelectedClientId(null)
-                setView('ai')
-              }}
-              canUseAI={canUseAI}
-              canWrite={canWriteTasks}
-            />
-          )}
-
-          {selectedProject && (
-            <ProjectDetail
-              onOpenRtms={
-                hasModule('requirements')
-                  ? () => openRtms(selectedProjectClientId || undefined, selectedProject.id)
-                  : undefined
-              }
-              controls={
-                <LifecycleControls
-                  key={selectedProject.id}
-                  kind="projects"
-                  record={selectedProject}
-                  store={store}
-                  canEdit={canWrite && hasModule('projects') && !selectedProject.accessLimited}
-                  onSave={record => saveLifecycleRecord('projects', record)}
-                />
-              }
-              project={selectedProject}
-              clientContextId={selectedProjectClientId}
-              store={store}
-              setStore={persist}
-              onBack={() => {
-                const clientId = selectedProjectClientId
-                setSelectedProjectId(null)
-                setSelectedProjectClientId(null)
-                if (clientId) setSelectedClientId(clientId)
-              }}
-              onAddTask={() => {
-                setTaskPreset({
-                  clientId: selectedProjectClientId || undefined,
-                  projectId: selectedProject.id,
-                  type: 'Task',
-                })
-                setModal('item')
-              }}
-              onCreateSubtask={openSubtaskCreator}
-              onReorderSubtasks={reorderSubtasks}
-              onStatusChange={updateTaskStatus}
-              onResolve={resolveItem}
-              onEditTask={openTaskEditor}
-              onDeleteTask={deleteTask}
-              canWrite={canWrite}
-              canEditTasks={canWriteTasks}
-            />
-          )}
-        </main>
-
-        {modal && canWrite && (
-          <Modal
-            title={
-              modal === 'item'
-                ? taskPreset?.parentTaskId
-                  ? 'Add subtask'
-                  : taskPreset?.type === 'Inquiry'
-                    ? 'Capture inquiry'
-                    : 'Add task'
-                : modal === 'taskEdit'
-                  ? 'Edit task'
-                  : modal === 'client'
-                    ? 'Add client'
-                    : modal === 'project'
-                      ? 'Add project'
-                      : editingActivity
-                        ? 'Edit activity'
-                        : 'Add activity'
-            }
-            closeDisabled={modal === 'taskEdit' && taskEditSaving}
-            onClose={() => {
-              setModal(null)
-              setEditingActivityId(null)
-              setEditingTaskId(null)
-              setTaskPreset(null)
-            }}
-          >
-            {modal === 'item' && (
-              <TaskForm
-                canLinkRtm={hasModule('requirements') && hasModule('items')}
-                store={store}
-                preset={taskPreset}
-                onSubmit={item => {
-                  const parent = item.parentTaskId
-                    ? store.items.find(candidate => candidate.id === item.parentTaskId)
-                    : undefined
-                  persist({
-                    ...store,
-                    items: [item, ...store.items],
-                    activity: [
-                      {
-                        id: crypto.randomUUID(),
-                        clientId: item.clientId,
-                        projectId: item.projectId,
-                        date: item.dateRaised,
-                        text: parent
-                          ? `Created subtask under ${parent.title}: ${item.title}`
-                          : `Created ${item.type.toLowerCase()} task: ${item.title}`,
-                      },
-                      ...store.activity,
-                    ],
-                  })
-                  setModal(null)
-                  setTaskPreset(null)
-                }}
-              />
-            )}
-            {modal === 'taskEdit' && editingTask && (
-              <TaskEditForm
-                autoRefreshDocuments={workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)}
-                canLinkRtm={hasModule('requirements') && hasModule('items')}
-                store={store}
-                item={editingTask}
-                onSubmit={saveTaskEdit}
-                onDelete={deleteTask}
-                onEvidenceMutation={applyEvidenceMutation}
-                onCommentMutation={applyCommentMutation}
-                onTimeEntryMutation={applyTimeEntryMutation}
-                currentUser={currentUser}
                 today={today}
+                onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
+                isTaskClosed={status => isTaskClosed(status, store.taskSettings)}
+                onCreateTasks={canWriteTasks && hasModule('items') ? createTrackerTasks : undefined}
+                onUpdateTasks={canWriteTasks && hasModule('items') ? updateTrackerTasks : undefined}
+                onTasksChanged={() => refreshWorkspace(false)}
+                currentUserId={currentUser?.id}
               />
             )}
-            {modal === 'client' && (
-              <ClientForm
-                onSubmit={client => {
-                  persist({ ...store, clients: [...store.clients, client] })
-                  setModal(null)
-                }}
-              />
+            {hasModule('documents') && (
+              <div
+                className="document-retained"
+                hidden={Boolean(selectedClient || selectedProject || view !== 'documents')}
+              >
+                <DocumentCreation
+                  key={`${authUser?.organizationId}:${authUser?.id}`}
+                  clients={store.clients}
+                  projects={store.projects}
+                  accounts={store.accounts}
+                  items={store.items}
+                  launch={documentLaunch}
+                  canGenerate={canWrite}
+                  canUseInbox={hasModule('inbox')}
+                  draftKey={`${authUser?.organizationId}:${authUser?.id}`}
+                  active={pageActive && !selectedClient && !selectedProject && view === 'documents'}
+                />
+              </div>
             )}
-            {modal === 'project' && (
-              <ProjectForm
-                onSubmit={project => {
-                  persist({ ...store, projects: [...store.projects, project] })
-                  setModal(null)
-                }}
-              />
-            )}
-            {modal === 'activity' && (
-              <ActivityForm
+
+            {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && (
+              <CustomReports
+                canUseTrackers={hasModule('trackers')}
+                canExplore={hasModule('explorer')}
+                canUseInbox={hasModule('inbox')}
                 clients={store.clients}
                 projects={store.projects}
-                initial={editingActivity}
-                onSubmit={saveActivity}
+                items={store.items}
+                planner={store.planner}
+                taskSettings={store.taskSettings}
+                accounts={store.accounts}
+                workEvents={store.workEvents}
+                currentUser={currentUser}
               />
             )}
-          </Modal>
-        )}
-        {editingRecord &&
-          currentUser.role !== 'Viewer' &&
-          hasModule(editingRecord.kind) &&
-          (() => {
-            const record = store[editingRecord.kind].find(row => row.id === editingRecord.id)
-            return record ? (
-              <RecordEditDialog
-                key={`${editingRecord.kind}:${record.id}`}
-                kind={editingRecord.kind}
-                record={record}
-                canRenameClient={currentUser.role === 'Administrator'}
-                onClose={() => setEditingRecord(null)}
-                onSave={updated => saveLifecycleRecord(editingRecord.kind, updated)}
+
+            {!selectedClient && !selectedProject && view === 'users' && canManageAccounts && (
+              <AccountUsers currentUser={currentUser} onChanged={acceptAccountUsers} />
+            )}
+            {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && (
+              <ThemePreferences user={currentUser} onSave={saveOwnPreferences} />
+            )}
+
+            {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && (
+              <Settings key={`${currentUser.organizationId}:${currentUser.id}`} currentUser={currentUser} />
+            )}
+
+            {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
+              <AiPage app={appState} currentUser={currentUser} />
+            )}
+
+            {selectedClient && (
+              <ClientDetail
+                onOpenRtms={hasModule('requirements') ? () => openRtms(selectedClient.id) : undefined}
+                controls={
+                  <LifecycleControls
+                    key={selectedClient.id}
+                    kind="clients"
+                    record={selectedClient}
+                    store={store}
+                    canEdit={canWrite && hasModule('clients') && !selectedClient.accessLimited}
+                    onSave={record => saveLifecycleRecord('clients', record)}
+                  />
+                }
+                client={selectedClient}
+                store={store}
+                onBack={() => setSelectedClientId(null)}
+                onOpenProject={(projectId, clientId) => {
+                  setSelectedClientId(null)
+                  setSelectedProjectClientId(clientId)
+                  setSelectedProjectId(projectId)
+                }}
+                onAddTask={clientId => {
+                  setTaskPreset({ clientId, type: 'Task' })
+                  setModal('item')
+                }}
+                onAskAI={(clientId, projectId = '') => {
+                  setAiClientId(clientId)
+                  setAiProjectId(projectId)
+                  setAiPrompt('')
+                  setSelectedClientId(null)
+                  setView('ai')
+                }}
+                canUseAI={canUseAI}
+                canWrite={canWriteTasks}
               />
-            ) : null
-          })()}
-        {tourOpen && inWorkspace && (
-          <AppTour
-            steps={tourSteps({
-              isAdmin: canManageAccounts,
-              modules: currentUser.modules,
-              canWrite: currentUser.role !== 'Viewer',
-            })}
-            onNavigate={tourNavigate}
-            onClose={closeTour}
+            )}
+
+            {selectedProject && (
+              <ProjectDetail
+                onOpenRtms={
+                  hasModule('requirements')
+                    ? () => openRtms(selectedProjectClientId || undefined, selectedProject.id)
+                    : undefined
+                }
+                controls={
+                  <LifecycleControls
+                    key={selectedProject.id}
+                    kind="projects"
+                    record={selectedProject}
+                    store={store}
+                    canEdit={canWrite && hasModule('projects') && !selectedProject.accessLimited}
+                    onSave={record => saveLifecycleRecord('projects', record)}
+                  />
+                }
+                project={selectedProject}
+                clientContextId={selectedProjectClientId}
+                store={store}
+                setStore={persist}
+                onBack={() => {
+                  const clientId = selectedProjectClientId
+                  setSelectedProjectId(null)
+                  setSelectedProjectClientId(null)
+                  if (clientId) setSelectedClientId(clientId)
+                }}
+                onAddTask={() => {
+                  setTaskPreset({
+                    clientId: selectedProjectClientId || undefined,
+                    projectId: selectedProject.id,
+                    type: 'Task',
+                  })
+                  setModal('item')
+                }}
+                onCreateSubtask={openSubtaskCreator}
+                onReorderSubtasks={reorderSubtasks}
+                onStatusChange={updateTaskStatus}
+                onResolve={resolveItem}
+                onEditTask={openTaskEditor}
+                onDeleteTask={deleteTask}
+                canWrite={canWrite}
+                canEditTasks={canWriteTasks}
+              />
+            )}
+          </main>
+
+          {modal && canWrite && (
+            <Modal
+              title={
+                modal === 'item'
+                  ? taskPreset?.parentTaskId
+                    ? 'Add subtask'
+                    : taskPreset?.type === 'Inquiry'
+                      ? 'Capture inquiry'
+                      : 'Add task'
+                  : modal === 'taskEdit'
+                    ? 'Edit task'
+                    : modal === 'client'
+                      ? 'Add client'
+                      : modal === 'project'
+                        ? 'Add project'
+                        : editingActivity
+                          ? 'Edit activity'
+                          : 'Add activity'
+              }
+              closeDisabled={modal === 'taskEdit' && taskEditSaving}
+              onClose={() => {
+                setModal(null)
+                setEditingActivityId(null)
+                setEditingTaskId(null)
+                setTaskPreset(null)
+              }}
+            >
+              {modal === 'item' && (
+                <TaskForm
+                  canLinkRtm={hasModule('requirements') && hasModule('items')}
+                  store={store}
+                  preset={taskPreset}
+                  onSubmit={item => {
+                    const parent = item.parentTaskId
+                      ? store.items.find(candidate => candidate.id === item.parentTaskId)
+                      : undefined
+                    persist({
+                      ...store,
+                      items: [item, ...store.items],
+                      activity: [
+                        {
+                          id: crypto.randomUUID(),
+                          clientId: item.clientId,
+                          projectId: item.projectId,
+                          date: item.dateRaised,
+                          text: parent
+                            ? `Created subtask under ${parent.title}: ${item.title}`
+                            : `Created ${item.type.toLowerCase()} task: ${item.title}`,
+                        },
+                        ...store.activity,
+                      ],
+                    })
+                    setModal(null)
+                    setTaskPreset(null)
+                  }}
+                />
+              )}
+              {modal === 'taskEdit' && editingTask && (
+                <TaskEditForm
+                  autoRefreshDocuments={workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId)}
+                  canLinkRtm={hasModule('requirements') && hasModule('items')}
+                  store={store}
+                  item={editingTask}
+                  onSubmit={saveTaskEdit}
+                  onDelete={deleteTask}
+                  onEvidenceMutation={applyEvidenceMutation}
+                  onCommentMutation={applyCommentMutation}
+                  onTimeEntryMutation={applyTimeEntryMutation}
+                  currentUser={currentUser}
+                  today={today}
+                />
+              )}
+              {modal === 'client' && (
+                <ClientForm
+                  onSubmit={client => {
+                    persist({ ...store, clients: [...store.clients, client] })
+                    setModal(null)
+                  }}
+                />
+              )}
+              {modal === 'project' && (
+                <ProjectForm
+                  onSubmit={project => {
+                    persist({ ...store, projects: [...store.projects, project] })
+                    setModal(null)
+                  }}
+                />
+              )}
+              {modal === 'activity' && (
+                <ActivityForm
+                  clients={store.clients}
+                  projects={store.projects}
+                  initial={editingActivity}
+                  onSubmit={saveActivity}
+                />
+              )}
+            </Modal>
+          )}
+          {editingRecord &&
+            currentUser.role !== 'Viewer' &&
+            hasModule(editingRecord.kind) &&
+            (() => {
+              const record = store[editingRecord.kind].find(row => row.id === editingRecord.id)
+              return record ? (
+                <RecordEditDialog
+                  key={`${editingRecord.kind}:${record.id}`}
+                  kind={editingRecord.kind}
+                  record={record}
+                  canRenameClient={currentUser.role === 'Administrator'}
+                  onClose={() => setEditingRecord(null)}
+                  onSave={updated => saveLifecycleRecord(editingRecord.kind, updated)}
+                />
+              ) : null
+            })()}
+          {tourOpen && inWorkspace && (
+            <AppTour
+              steps={tourSteps({
+                isAdmin: canManageAccounts,
+                modules: currentUser.modules,
+                canWrite: currentUser.role !== 'Viewer',
+              })}
+              onNavigate={tourNavigate}
+              onClose={closeTour}
+            />
+          )}
+          {profileOpen && currentUser.accountType !== 'platform' && (
+            <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />
+          )}
+          <EmailComposerHost
+            enabled={hasModule('inbox') && currentUser.role !== 'Viewer'}
+            items={store.items}
+            clients={store.clients}
+            projects={store.projects}
+            accounts={store.accounts}
+            currentUser={currentUser}
+            onSent={async () => {
+              const result = await loadCloudStore<Store>()
+              if (result.data) setStore(normalizeStore(result.data, seedStore()))
+            }}
           />
-        )}
-        {profileOpen && currentUser.accountType !== 'platform' && (
-          <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />
-        )}
-        <EmailComposerHost
-          enabled={hasModule('inbox') && currentUser.role !== 'Viewer'}
-          items={store.items}
-          clients={store.clients}
-          projects={store.projects}
-          accounts={store.accounts}
-          currentUser={currentUser}
-          onSent={async () => {
-            const result = await loadCloudStore<Store>()
-            if (result.data) setStore(normalizeStore(result.data, seedStore()))
-          }}
-        />
-      </div>
+        </div>
+      </WorkflowLabelsContext.Provider>
     </ClosedStatusContext.Provider>
   )
 }

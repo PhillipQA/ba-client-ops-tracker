@@ -8517,3 +8517,37 @@ select option {
   background: rgba(9, 11, 15, 0.72);
   border-color: var(--theme-border);
 }
+
+/* Settings › Workflow */
+.workflow-editor .task-status-row input:not([type="checkbox"]) {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.workflow-editor .task-status-row small {
+  color: var(--ui-muted);
+  white-space: nowrap;
+}
+.workflow-move {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ui-warning-soft);
+}
+.workflow-labels {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.workflow-labels label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.workflow-editor .task-status-row {
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+}

@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import type { Client, Project } from '../../shared/types'
 import { isArchived } from './lifecycle'
 import { useModalDialog } from '../../shared/ui/useModalDialog'
+import { HealthOptions } from '../../shared/ui/Chips'
 
 type Props = {
   kind: 'clients' | 'projects'
@@ -144,9 +145,7 @@ export default function RecordEditDialog({ kind, record, canRenameClient, onClos
             <label>
               Health
               <select name="health" defaultValue={(record as Client).health}>
-                <option>Good</option>
-                <option>Watch</option>
-                <option>At Risk</option>
+                <HealthOptions />
               </select>
             </label>
           )}

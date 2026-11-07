@@ -5,6 +5,7 @@ import { CalendarAccountSettings } from '../integrations/GoogleCalendarPanel'
 import { GmailAccountSettings } from '../integrations/GmailAccountSettings'
 import { DriveAccountSettings } from '../integrations/DriveAccountSettings'
 import { AccessSettings, SeedsConnectionCard } from '../seeds/SeedsSettings'
+import { AccountWorkflow } from './WorkflowEditor'
 import type { SignoffTemplateKind } from '../documents/signoff'
 
 export async function settingsRequest(url: string, method = 'GET', data?: unknown) {
@@ -679,7 +680,7 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
   const [data, setData] = useState<any>(null),
     [error, setError] = useState('')
   const isAdmin = currentUser.role === 'Administrator'
-  const [activeTab, setActiveTab] = useState<'templates' | 'agents' | 'integrations' | 'access'>(() =>
+  const [activeTab, setActiveTab] = useState<'templates' | 'agents' | 'integrations' | 'workflow' | 'access'>(() =>
     new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'integrations' : 'templates',
   )
   const tabs = isAdmin
@@ -687,6 +688,7 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
         { id: 'templates' as const, label: 'Templates' },
         { id: 'agents' as const, label: 'AI Agents' },
         { id: 'integrations' as const, label: 'Integrations' },
+        { id: 'workflow' as const, label: 'Workflow' },
         { id: 'access' as const, label: 'Access' },
       ]
     : []
@@ -796,6 +798,18 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
             <GmailAccountSettings key={`gmail:${currentUser.organizationId}`} />
             <DriveAccountSettings key={`drive:${currentUser.organizationId}`} />
             <SeedsConnectionCard key={`seeds:${currentUser.organizationId}`} />
+          </div>
+          <div
+            className="settings-tab-content"
+            id="settings-section-workflow"
+            role="tabpanel"
+            aria-labelledby="settings-tab-workflow"
+            hidden={activeTab !== 'workflow'}
+            tabIndex={0}
+          >
+            {activeTab === 'workflow' && (
+              <AccountWorkflow key={`workflow:${currentUser.organizationId}`} request={settingsRequest} />
+            )}
           </div>
           <div
             className="settings-tab-content"

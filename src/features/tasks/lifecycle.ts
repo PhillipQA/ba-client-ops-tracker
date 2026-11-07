@@ -1,5 +1,5 @@
 import type { Client, Project, WorkItem, PlannerActivity, ActivityLog, TaskSettings } from '../../shared/types'
-import { isWaitingOnDone } from './waitingOn'
+import { isWaitingOnDone, waitingOnOptions } from './waitingOn'
 export type LifecycleStore = {
   clients: Client[]
   projects: Project[]
@@ -98,6 +98,27 @@ export function archivedWorkReason(
       return `Reopen task “${(target as WorkItem).title}” before changing its work.`
   }
   return ''
+}
+
+/**
+ * True when a task changed only because the account's workflow changed: its status or waiting-on name now points
+ * at the renamed (or, for a removed status, the replacement) entry, and it is exactly as done as before.
+ */
+function relabeledOnly(current: LifecycleStore, next: LifecycleStore, old: WorkItem, row: WorkItem) {
+  if (stableRecord(current.taskSettings) === stableRecord(next.taskSettings)) return false
+  const rest = (item: WorkItem) => stableRecord({ ...item, status: undefined, waitingOn: undefined })
+  if (rest(old) !== rest(row)) return false
+  const statusId = (store: LifecycleStore, label: string) =>
+    store.taskSettings?.statuses?.find(status => status.label === label)?.id
+  const statusFollows =
+    old.status === row.status ||
+    statusId(current, old.status) === statusId(next, row.status) ||
+    statusId(next, old.status) === undefined
+  const waitingId = (store: LifecycleStore, label: unknown) =>
+    waitingOnOptions(store.taskSettings).find(option => option.label === label)?.id
+  const waitingFollows =
+    old.waitingOn === row.waitingOn || waitingId(current, old.waitingOn) === waitingId(next, row.waitingOn)
+  return statusFollows && waitingFollows && isWorkDone(old, current.taskSettings) === isWorkDone(row, next.taskSettings)
 }
 
 /**
@@ -224,6 +245,8 @@ export function assertLifecycleMutation(current: LifecycleStore, next: Lifecycle
         const strip = (item: any) => ({ ...item, comments: undefined, docHubDocuments: undefined })
         if (stableRecord(strip(old)) === stableRecord(strip(row))) continue
       }
+      // An account renaming or merging statuses relabels tasks, archived ones included; that is not a task change.
+      if (key === 'items' && old && row && relabeledOnly(current, next, old as WorkItem, row as WorkItem)) continue
       const reason = (old && archivedWorkReason(current, old)) || (row && archivedWorkReason(next, row))
       if (reason) throw new LifecycleError(reason)
       if (key === 'items') assertTaskLifecycle(current, next, old as WorkItem | undefined, row as WorkItem | undefined)

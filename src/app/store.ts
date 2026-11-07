@@ -28,6 +28,7 @@ import type {
   WorkItem,
 } from '../shared/types'
 import { waitingOnOptions } from '../features/tasks/waitingOn'
+import { cleanLabels } from '../features/tasks/workflow'
 import type { ClientAccess } from '../shared/access'
 import type { SeedsStatus } from '../shared/seeds'
 
@@ -142,7 +143,13 @@ export function normalizeTaskSettings(value: Partial<TaskSettings> | undefined):
     const dueIndex = visibleColumns.indexOf('dueDate')
     visibleColumns.splice(dueIndex >= 0 ? dueIndex : visibleColumns.length, 0, 'startDate')
   }
-  return { statuses: safeStatuses, visibleColumns: [...new Set(visibleColumns)], waitingOn: waitingOnOptions(value) }
+  const labels = cleanLabels(value?.labels)
+  return {
+    statuses: safeStatuses,
+    visibleColumns: [...new Set(visibleColumns)],
+    waitingOn: waitingOnOptions(value),
+    ...(Object.keys(labels).length ? { labels } : {}),
+  }
 }
 
 export function isTaskClosed(status: string, settings: TaskSettings) {

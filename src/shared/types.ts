@@ -49,6 +49,13 @@ export interface TaskSettings {
   visibleColumns: TaskColumnKey[]
   /** Optional for workspaces saved before v0.6.83; read through waitingOnOptions(). */
   waitingOn?: WaitingOnDefinition[]
+  /** The account's own names for priorities and client health (features/tasks/workflow.ts). */
+  labels?: WorkflowLabels
+}
+
+export interface WorkflowLabels {
+  priority?: Partial<Record<Priority, string>>
+  health?: Partial<Record<'Good' | 'Watch' | 'At Risk', string>>
 }
 
 export interface Client {

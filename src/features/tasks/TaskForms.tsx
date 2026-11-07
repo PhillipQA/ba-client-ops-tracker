@@ -3,6 +3,7 @@ import { useEmailEnabled } from '../email/EmailComposer'
 import { emailWorkFile } from '../email/replyAll'
 import RtmTaskLinks from '../requirements/RtmTaskLinks'
 import TaskEffort from './TaskEffort'
+import { PriorityOptions } from '../../shared/ui/Chips'
 import { type Store, defaultOpenTaskStatus, isTaskClosed } from '../../app/store'
 import { businessDateKey } from '../../shared/businessDate'
 import { normalizeEstimate } from './effort'
@@ -240,10 +241,7 @@ export function TaskForm({
       <label>
         Priority
         <select name="priority" defaultValue="Medium">
-          <option>Low</option>
-          <option>Medium</option>
-          <option>High</option>
-          <option>Urgent</option>
+          <PriorityOptions />
         </select>
       </label>
       <label>
@@ -504,10 +502,7 @@ export function TaskEditForm({
       <label>
         Priority
         <select name="priority" defaultValue={item.priority}>
-          <option>Low</option>
-          <option>Medium</option>
-          <option>High</option>
-          <option>Urgent</option>
+          <PriorityOptions />
         </select>
       </label>
       <label>

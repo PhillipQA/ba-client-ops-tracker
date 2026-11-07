@@ -5,6 +5,7 @@ import { boardColumns, type BoardGroup } from './taskBoardModel'
 import { isWaitingOnDone, openWaitingOnOptions, waitingOnTone } from './waitingOn'
 import type { Client, Project, TaskSettings, UserAccount, WaitingOn, WorkItem } from '../../shared/types'
 import './effort.css'
+import { PriorityChip } from '../../shared/ui/Chips'
 
 type Props = {
   items: WorkItem[]
@@ -171,7 +172,7 @@ export default function TaskBoard({
                       onClick={onOpen ? () => onOpen(item.id) : undefined}
                     >
                       <div className="board-card-chips">
-                        <span className={`chip priority-${item.priority.toLowerCase()}`}>{item.priority}</span>
+                        <PriorityChip value={item.priority} />
                         {group === 'status' ? (
                           <span className={`chip waiting-${waitingOnTone(item.waitingOn, taskSettings)}`}>
                             Waiting: {item.waitingOn}

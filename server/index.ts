@@ -24,6 +24,7 @@ import { reconcileNotifications } from './services/notification-engine'
 import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
 import { registerCommunications } from './integrations/communications'
 import { registerSeedsRoutes } from './seeds/seeds-routes'
+import { registerWorkflowRoutes } from './workspace/workflow-routes'
 import { WorkspaceRaceError } from './services/workspace-guard'
 import { registerTrackerRoutes } from './trackers/trackers'
 import { trackerTaskUpdater } from './trackers/tracker-task-updates'
@@ -176,6 +177,13 @@ const trackers = registerTrackerRoutes(app, {
 onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))
 registerEmailTemplateRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
 registerCustomReportRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
+registerWorkflowRoutes(app, {
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  load: loadTenantState,
+  commit: commitTenantState,
+  defaults: defaultTaskSettings,
+})
 registerSeedsRoutes(app, {
   db,
   requireAuth,
