@@ -301,11 +301,13 @@ export function registerStoreRoutes(app: Express) {
         if (error instanceof AccessDenied) return void res.status(403).json({ configured: true, error: error.message })
         throw error
       }
-      const { access: _sentAccess, seeds: _sentSeeds, ...edited } = next
+      const { access: _sentAccess, seeds: _sentSeeds, jobRoles: _sentRoles, ...edited } = next
       next = keepSeedsFields(current, {
         ...edited,
         ...(current.access !== undefined ? { access: current.access } : {}),
         ...(current.seeds !== undefined ? { seeds: current.seeds } : {}),
+        // Job roles change only in Settings › Roles.
+        ...(current.jobRoles !== undefined ? { jobRoles: current.jobRoles } : {}),
       })
 
       // The browser may add default display columns while loading old tenant
@@ -419,6 +421,9 @@ export function registerStoreRoutes(app: Express) {
             .json({ configured: true, error: 'Viewer accounts are read-only except for their own profile.' })
       }
 
+      // Job roles say which pages a person may change (shared/roles.ts); without one, the pages they see.
+      const editModules: string[] | undefined = (user as any).editModules
+      const canChange = (module: string) => (editModules ? editModules.includes(module) : moduleAllowed(user, module))
       if (user.role === 'Contributor') {
         if (accountsChanged && !selfOnlyAccounts)
           return void res
@@ -428,18 +433,16 @@ export function registerStoreRoutes(app: Express) {
           return void res
             .status(403)
             .json({ configured: true, error: 'Only Administrators can change task configuration.' })
-        if (stable(current.clients ?? []) !== stable(next.clients ?? []) && !moduleAllowed(user, 'clients'))
+        if (stable(current.clients ?? []) !== stable(next.clients ?? []) && !canChange('clients'))
           return void res.status(403).json({ configured: true, error: 'Client module access is required.' })
-        if (stable(current.projects ?? []) !== stable(next.projects ?? []) && !moduleAllowed(user, 'projects'))
+        if (stable(current.projects ?? []) !== stable(next.projects ?? []) && !canChange('projects'))
           return void res.status(403).json({ configured: true, error: 'Project module access is required.' })
-        if (
-          stable(current.items ?? []) !== stable(next.items ?? []) &&
-          !moduleAllowed(user, 'items') &&
-          !moduleAllowed(user, 'inbox')
-        )
+        if (stable(current.items ?? []) !== stable(next.items ?? []) && !canChange('items') && !canChange('inbox'))
           return void res.status(403).json({ configured: true, error: 'Task module access is required.' })
-        if (stable(current.planner ?? []) !== stable(next.planner ?? []) && !moduleAllowed(user, 'action'))
+        if (stable(current.planner ?? []) !== stable(next.planner ?? []) && !canChange('action'))
           return void res.status(403).json({ configured: true, error: 'Action Center access is required.' })
+        if (editModules && stable(current.rtms ?? []) !== stable(next.rtms ?? []) && !canChange('requirements'))
+          return void res.status(403).json({ configured: true, error: 'Your role cannot change requirements.' })
       }
 
       if (accountsChanged && user.role === 'Administrator') {

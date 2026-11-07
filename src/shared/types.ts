@@ -281,6 +281,8 @@ export interface UserAccount {
   phone: string
   role: UserRole
   modules: AppModule[]
+  /** Job roles (shared/roles.ts) picked in Users & Permissions; Seeds adds more per client or project. */
+  jobRoles?: string[]
   status: 'Active' | 'Disabled'
   createdAt: string
   theme?: AppTheme

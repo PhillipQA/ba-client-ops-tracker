@@ -12,6 +12,7 @@
  */
 import type { Express, NextFunction, Request, Response } from 'express'
 import { normalizeAssignment, rolesFor, workspaceAccess } from '../../src/shared/access'
+import { jobRoles } from '../../src/shared/roles'
 import { defaultWaitingOn } from '../../src/features/tasks/waitingOn'
 import { seedsState, seedsStatusFor, type SeedsSnapshot } from '../../src/shared/seeds'
 import { cleanSeedsBaseUrl, httpSeedsSource, SeedsError, type SeedsSource } from './seeds-client'
@@ -231,6 +232,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
           .filter(([, sync]) => sync.lastSuccessAt)
           .map(([userId]) => userId),
         assignments: access.assignments,
+        roles: jobRoles(state).map(role => ({ id: role.id, name: role.name })),
         users: list(state.accounts).map(account => ({
           id: String(account.id),
           name: String(account.name || account.username || 'User'),
@@ -281,10 +283,12 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
           )
           const clients = new Set(list(state.clients).map(c => String(c.id)))
           const projects = new Set(list(state.projects).map(p => String(p.id)))
+          const roleIds = new Set(jobRoles(state).map(role => role.id))
           const manual = body.assignments.map((raw: any) => {
             const assignment = normalizeAssignment({ ...raw, id: '', source: 'manual' })
             if (
               !assignment ||
+              !roleIds.has(assignment.role) ||
               !users.has(assignment.userId) ||
               (assignment.projectId ? !projects.has(assignment.projectId) : !clients.has(String(assignment.clientId)))
             )

@@ -6,6 +6,7 @@ import { cleanSeedsBaseUrl, httpSeedsSource, parseSeedsSnapshot, seedsRole } fro
 import { registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
 import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
+import { roleForSeedsTitle } from '../src/shared/roles'
 
 const options = {
   now: '2026-11-07T08:00:00.000Z',
@@ -236,11 +237,38 @@ test('a personal key that names its owner picks only their assignments', () => {
   )
 })
 
+test('Seeds titles map to job roles; unknown titles are reported, not guessed', () => {
+  const { state } = planSeedsSync(
+    existing(),
+    snapshot({
+      assignments: [
+        { personId: 'sp-bea', role: 'QA Engineer', projectId: 's-portal' },
+        { personId: 'sp-bea', role: 'Scrum Wizard', clientId: 's-new' },
+      ],
+    }),
+    options,
+  )
+  assert.deepEqual(
+    activeAssignments(state, 'u-bea').map(a => a.role),
+    ['QA'],
+  )
+  assert.deepEqual(state.seeds.users['u-bea'].unknownRoles, ['Scrum Wizard'])
+})
+
 test('Seeds answers are read leniently', () => {
-  assert.equal(seedsRole('Business Analyst'), 'BA')
-  assert.equal(seedsRole('project_manager'), 'PM')
-  assert.equal(seedsRole('am'), 'AM')
-  assert.equal(seedsRole('Developer'), null)
+  assert.equal(seedsRole('  Business Analyst '), 'Business Analyst')
+  assert.equal(seedsRole(''), null)
+  assert.equal(roleForSeedsTitle({}, 'business_analyst'), 'BA')
+  assert.equal(roleForSeedsTitle({}, 'Project Manager'), 'PM')
+  assert.equal(roleForSeedsTitle({}, 'am'), 'AM')
+  assert.equal(roleForSeedsTitle({}, 'Software Engineer'), 'DEV')
+  assert.equal(roleForSeedsTitle({}, 'Tester'), 'QA')
+  assert.equal(roleForSeedsTitle({}, 'Product Owner'), 'PO')
+  assert.equal(roleForSeedsTitle({}, 'Janitor'), null)
+  const custom = {
+    jobRoles: [{ id: 'BO', name: 'Business Owner', modules: ['action'], edit: [], seedsTitles: ['Sponsor'] }],
+  }
+  assert.equal(roleForSeedsTitle(custom, 'sponsor'), 'BO')
   const parsed = parseSeedsSnapshot({
     people: [
       { person_id: 7, full_name: 'Bea', email_address: 'bea@co' },
@@ -254,14 +282,14 @@ test('Seeds answers are read leniently', () => {
     ],
     assignments: [
       { user_id: 7, role: 'Business Analyst', project_id: 2 },
-      { user_id: 7, role: 'Developer', project_id: 2 },
+      { user_id: 7, project_id: 2 },
     ],
   })
   assert.deepEqual(parsed.people, [{ id: '7', name: 'Bea', email: 'bea@co' }])
   assert.deepEqual(parsed.clients, [{ id: '1', name: 'Acme', archived: true }])
   assert.deepEqual(parsed.projects, [{ id: '2', clientId: '1', name: 'Portal', contractNumber: 'CN-1' }])
   assert.deepEqual(parsed.tasks, [{ id: '3', projectId: '2', name: 'UAT' }])
-  assert.deepEqual(parsed.assignments, [{ personId: '7', role: 'BA', projectId: '2' }])
+  assert.deepEqual(parsed.assignments, [{ personId: '7', role: 'Business Analyst', projectId: '2' }])
 })
 
 test('the Seeds address must be public https', () => {

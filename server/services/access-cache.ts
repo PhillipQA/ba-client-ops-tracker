@@ -1,12 +1,14 @@
 /**
- * The access part of each workspace, kept in memory so every request can treat an Account Manager as a Viewer
- * of four pages without reading the whole workspace. Refreshed whenever a workspace is loaded or saved
+ * The access part of each workspace (assignments, job roles), kept in memory so every request gets each person's
+ * pages and rights from their job roles without reading the whole workspace. Refreshed whenever a workspace is loaded or saved
  * (core/tenant-state.ts); sessions live in this process too, so the two always agree.
  */
 import { effectiveAccount } from '../../src/shared/access'
 
 type AccessSnapshot = {
   access: unknown
+  jobRoles: unknown
+  accounts: { id: unknown; role: unknown; jobRoles: unknown }[]
   seeds?: { connected?: unknown; users: Record<string, { lastSuccessAt?: unknown }> }
 }
 const snapshots = new Map<string, AccessSnapshot>()
@@ -15,6 +17,13 @@ export function rememberAccess(organizationId: string | null | undefined, state:
   if (!organizationId || !state || typeof state !== 'object') return
   snapshots.set(String(organizationId), {
     access: state.access,
+    // Job roles decide each person's pages (shared/roles.ts).
+    jobRoles: state.jobRoles,
+    accounts: (Array.isArray(state.accounts) ? state.accounts : []).map((account: any) => ({
+      id: account?.id,
+      role: account?.role,
+      jobRoles: account?.jobRoles,
+    })),
     // Whose Seeds sync has succeeded decides whose Seeds assignments count (see shared/access.ts).
     seeds: state.seeds
       ? {

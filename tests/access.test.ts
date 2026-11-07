@@ -4,7 +4,6 @@ import {
   AccessDenied,
   creatorAssignments,
   effectiveAccount,
-  isAccountManagerOnly,
   mergeScopedSave,
   scopedState,
   scopeFor,
@@ -130,10 +129,8 @@ test('a PM on one project sees its work; its client shows by name only', () => {
 
 test('nothing of a hidden client leaves the server, whatever the field', () => {
   const state = workspace()
-  for (const userId of ['ba', 'am', 'admin']) {
-    const sent = JSON.stringify(
-      sanitizeStateForClient(state, { id: userId, role: userId === 'admin' ? 'Administrator' : 'Contributor' }),
-    )
+  for (const userId of ['ba', 'am']) {
+    const sent = JSON.stringify(sanitizeStateForClient(state, { id: userId, role: 'Contributor' }))
     for (const secret of ['Bolt', 'b@client.example', 'Bolt secret notes', 'Bolt confidential task', 'Bolt summary'])
       assert.ok(!sent.includes(secret), `${userId} received “${secret}”`)
   }
@@ -154,13 +151,15 @@ test('the browser hears only its own assignments', () => {
   assert.deepEqual(ba.access.roles, ['BA'])
 })
 
-test('an Administrator with no assignments sees no client data: there is no back door', () => {
+test('Administrators see and change everything, assigned or not', () => {
   const state = workspace()
-  const view = scopedState(state, scopeFor(state, 'admin'))
-  assert.deepEqual(view.clients, [])
-  assert.deepEqual(view.projects, [])
-  assert.deepEqual(view.items, [])
-  assert.equal(visibleTask(state, { id: 'admin' }, 't1'), undefined)
+  const scope = scopeFor(state, 'admin')
+  assert.equal(scope.all, true)
+  assert.ok(visibleTask(state, { id: 'admin' }, 't4', 'write'))
+  assert.equal(
+    effectiveAccount({ id: 'admin', role: 'Administrator', modules: ['settings'] }, state).role,
+    'Administrator',
+  )
 })
 
 test('your own unfiled work stays yours; subtasks follow their task', () => {
@@ -181,29 +180,52 @@ test('an Account Manager sees their clients read-only, as a Viewer of four pages
   const state = workspace()
   assert.ok(visibleTask(state, { id: 'am' }, 't1'))
   assert.equal(visibleTask(state, { id: 'am' }, 't1', 'write'), undefined)
-  assert.equal(isAccountManagerOnly(state, 'am'), true)
-  const account = effectiveAccount(
+  const account: any = effectiveAccount(
     { id: 'am', role: 'Contributor', modules: ['action', 'clients', 'items', 'reports', 'ai', 'settings'] },
     state,
   )
   assert.equal(account.role, 'Viewer')
   assert.deepEqual(account.modules, ['action', 'reports', 'explorer', 'ai'])
-  // An Administrator tagged as AM keeps Settings, so visibility can always be turned off again.
-  assert.equal(
-    effectiveAccount({ id: 'am', role: 'Administrator', modules: ['settings'] }, state).role,
-    'Administrator',
-  )
-  // Roles add up: an AM who is also a BA somewhere keeps their own role.
+  assert.equal(account.askAi, true, 'may still ask the AI BA Assistant')
+  // Roles add up: an AM who is also a BA somewhere can change their BA work.
   const both = workspace({
     assignments: [
       { id: 'y1', userId: 'am', role: 'AM', clientId: 'A', source: 'manual' },
       { id: 'y2', userId: 'am', role: 'BA', projectId: 'P3', source: 'manual' },
     ],
   })
-  assert.equal(isAccountManagerOnly(both, 'am'), false)
   assert.equal(effectiveAccount({ id: 'am', role: 'Contributor', modules: ['items'] }, both).role, 'Contributor')
   assert.ok(visibleTask(both, { id: 'am' }, 't4', 'write'))
   assert.equal(visibleTask(both, { id: 'am' }, 't1', 'write'), undefined)
+})
+
+test('job roles give pages and rights; picked roles and Seeds roles add up', () => {
+  const state: any = workspace({ assignments: [] })
+  state.accounts = state.accounts.map((a: any) => (a.id === 'pm' ? { ...a, jobRoles: ['QA'] } : a))
+  const qa: any = effectiveAccount({ id: 'pm', role: 'Contributor', modules: ['settings'] }, state)
+  assert.deepEqual(qa.modules, ['action', 'items', 'requirements', 'documents', 'trackers', 'ai'])
+  assert.ok(!qa.editModules.includes('requirements'), 'QA reads requirements')
+  assert.equal(qa.role, 'Contributor')
+  // No job role: the hand-picked modules stay, as before.
+  const plain = effectiveAccount({ id: 'ba', role: 'Contributor', modules: ['items'] }, state)
+  assert.deepEqual(plain.modules, ['items'])
+  // A Seeds assignment as PO adds the PO pages.
+  const withPo: any = {
+    ...state,
+    access: { ...state.access, assignments: [{ id: 'p', userId: 'pm', role: 'PO', clientId: 'A', source: 'manual' }] },
+  }
+  const both: any = effectiveAccount({ id: 'pm', role: 'Contributor', modules: [] }, withPo)
+  assert.deepEqual(both.jobRoles, ['PO', 'QA'])
+  assert.ok(both.modules.includes('reports') && both.modules.includes('trackers'))
+  // The account's limits still apply.
+  const limited: any = effectiveAccount(
+    { id: 'pm', role: 'Contributor', modules: [], organizationModules: ['action', 'items'] },
+    state,
+  )
+  assert.deepEqual(limited.modules, ['action', 'items'])
+  // An account's own edits to a role count.
+  const edited = { ...state, jobRoles: [{ id: 'QA', name: 'QA', modules: ['items'], edit: [], seedsTitles: [] }] }
+  assert.equal(effectiveAccount({ id: 'pm', role: 'Contributor', modules: [] }, edited).role, 'Viewer')
 })
 
 test('a save from a partial view keeps everything else exactly where it was', () => {

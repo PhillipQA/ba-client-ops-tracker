@@ -67,6 +67,20 @@ export const navItems: { id: PageModule; label: string; icon: typeof LayoutDashb
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ]
 
+/** The module whose edit right decides whether a page shows its edit controls (job roles, shared/roles.ts). */
+export const PAGE_MODULES: Partial<Record<View, AppModule>> = {
+  action: 'action',
+  clients: 'clients',
+  projects: 'projects',
+  items: 'items',
+  inbox: 'inbox',
+  documents: 'documents',
+  requirements: 'requirements',
+  trackers: 'trackers',
+  reports: 'reports',
+  ai: 'ai',
+}
+
 /** Pages that live inside Seeds: one sidebar entry, with tabs across the top. */
 export const SEEDS_PAGES: PageModule[] = ['clients', 'projects', 'items']
 export const isSeedsView = (view: View) => view === 'seeds' || (SEEDS_PAGES as View[]).includes(view)

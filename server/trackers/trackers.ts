@@ -133,12 +133,15 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const who = (req: Request) => (req as any).authUser as User
   const key = () => deps.key ?? encryptionKey()
 
+  // Viewers, and job roles that see trackers but may not change them (shared/roles.ts), only read.
+  const readOnly = (user: any) =>
+    user?.role === 'Viewer' || (Array.isArray(user?.editModules) && !user.editModules.includes('trackers'))
   const guard: RequestHandler = (req, res, next) => {
     const user = (req as any).authUser
     if (!db) return void res.status(503).json({ error: 'Database is not configured.' })
     if (!user?.organizationId || user.accountType === 'platform' || !user.modules?.includes('trackers'))
       return void res.status(403).json({ error: 'Trackers access is required.' })
-    if (req.method !== 'GET' && user.role === 'Viewer')
+    if (req.method !== 'GET' && readOnly(user))
       return void res.status(403).json({ error: 'Your role can view trackers but not change them.' })
     res.setHeader('Cache-Control', 'no-store')
     next()
@@ -226,7 +229,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     archived: Boolean(row.archived_at),
-    canEdit: user.role !== 'Viewer',
+    canEdit: !readOnly(user),
     canManage: manageable(user, row),
   })
   const columnsOf = (row: any): TrackerColumn[] => (Array.isArray(row.columns) ? row.columns : [])
@@ -1987,7 +1990,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         tenant = user.organizationId,
         id = idParam(req)
       const tracker = await trackerRow(tenant, id, user)
-      if (user.role === 'Viewer') throw new TrackerError('Viewers cannot make a Google Sheet from a tracker.', 403)
+      if (readOnly(user)) throw new TrackerError('Viewers cannot make a Google Sheet from a tracker.', 403)
       if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it first.', 409)
       if (await sourceRow(tenant, id))
         throw new TrackerError(
@@ -2200,7 +2203,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         tenant = user.organizationId,
         id = idParam(req)
       const tracker = await trackerRow(tenant, id, user)
-      if (user.role === 'Viewer') throw new TrackerError('Viewers cannot change the Google Sheet.', 403)
+      if (readOnly(user)) throw new TrackerError('Viewers cannot change the Google Sheet.', 403)
       if (!sheetHasGantt(tracker.template))
         throw new TrackerError(
           'Only trackers made from the Project timeline template have a Gantt chart in their Sheet.',
@@ -2963,7 +2966,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         tenant = user.organizationId,
         id = idParam(req)
       const tracker = await trackerRow(tenant, id, user)
-      if (user.role === 'Viewer') throw new TrackerError('Viewers cannot highlight rows.', 403)
+      if (readOnly(user)) throw new TrackerError('Viewers cannot highlight rows.', 403)
       if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to highlight rows.', 409)
       const ids = Array.isArray(req.body?.ids) ? [...new Set<string>(req.body.ids.map(String))] : []
       if (!ids.length || ids.length > TRACKER_LIMITS.importBatch || ids.some(value => !UUID.test(value)))

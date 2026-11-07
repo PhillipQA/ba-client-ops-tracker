@@ -1,5 +1,4 @@
-import { type ClientLayout, type View, labels, navItems, priorityRank, SEEDS_PAGES } from './navigation'
-import { ACCOUNT_MANAGER_MODULES } from '../shared/access'
+import { type ClientLayout, type View, labels, navItems, PAGE_MODULES, priorityRank, SEEDS_PAGES } from './navigation'
 import { atRoute, pathForRoute, routeFromLocation } from './routes'
 import { businessDateKey, useBusinessDate } from '../shared/businessDate'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
@@ -748,14 +747,19 @@ export function useAppState() {
   const accountCurrentUser = authUser
     ? store.accounts.find(account => account.id === authUser.id && account.status === 'Active')
     : null
-  // Tagged only as Account Manager while per-person visibility is on: a Viewer of Action Center, Reports and AI.
-  const accountManagerOnly = Boolean(store.access?.accountManagerOnly)
+  // Job roles (Settings › Roles) decide a non-Administrator's pages and what they can change; the server applies the
+  // same rule to every request. Without a job role, the modules picked for them by hand stay.
+  const roleModules = authUser?.role === 'Administrator' ? undefined : store.access?.modules
+  const roleEdit = authUser?.role === 'Administrator' ? undefined : store.access?.editModules
+  const roleViewer = Boolean(roleModules && roleEdit && !roleEdit.length)
   const currentUser: UserAccount | null = authUser
     ? {
         ...(accountCurrentUser ?? { ...authUser, passwordHash: '', createdAt: today }),
-        role: accountManagerOnly ? 'Viewer' : authUser.role,
-        modules: accountManagerOnly
-          ? authUser.modules.filter(module => ACCOUNT_MANAGER_MODULES.includes(module))
+        role: roleViewer ? 'Viewer' : authUser.role,
+        modules: roleModules
+          ? authUser.organizationModules?.length
+            ? roleModules.filter(module => authUser.organizationModules?.includes(module))
+            : roleModules
           : authUser.modules,
         organizationId: authUser.organizationId,
         organizationName: authUser.organizationName,
@@ -768,12 +772,28 @@ export function useAppState() {
         lastLoginAt: authUser.lastLoginAt,
       }
     : null
-  const canWrite = Boolean(currentUser && currentUser.role !== 'Viewer' && !lifecycleSaving)
+  // Whether this person may change things on the page they are on: a job role can see a page without changing it.
+  const canEditModule = (module: AppModule) => !roleEdit || roleEdit.includes(module)
+  const pageModule: AppModule | null = selectedClientId
+    ? 'clients'
+    : selectedProjectId
+      ? 'projects'
+      : (PAGE_MODULES as Record<string, AppModule | undefined>)[view] || null
+  const canWrite = Boolean(
+    currentUser && currentUser.role !== 'Viewer' && !lifecycleSaving && (!pageModule || canEditModule(pageModule)),
+  )
   const canManageAccounts = currentUser?.role === 'Administrator' && currentUser.accountType !== 'platform'
   const hasModule = (module: AppModule) => Boolean(currentUser && currentUser.modules.includes(module))
-  const canWriteTasks = canWrite && (hasModule('items') || hasModule('inbox'))
+  // Tasks open from many pages, so this follows the task rights, not the page.
+  const canWriteTasks = Boolean(
+    currentUser &&
+      currentUser.role !== 'Viewer' &&
+      !lifecycleSaving &&
+      ((hasModule('items') && canEditModule('items')) || (hasModule('inbox') && canEditModule('inbox'))),
+  )
   // Account Managers are Viewers who may still ask the AI BA Assistant about their clients.
-  const canUseAI = Boolean(currentUser && (currentUser.role !== 'Viewer' || accountManagerOnly) && hasModule('ai'))
+  // A Viewer by job role (an Account Manager, say) may still ask the AI BA Assistant.
+  const canUseAI = Boolean(currentUser && (currentUser.role !== 'Viewer' || roleViewer) && hasModule('ai'))
   const visibleNavItems = currentUser
     ? navItems.filter(item => hasModule(item.id) && (item.id !== 'ai' || canUseAI))
     : []

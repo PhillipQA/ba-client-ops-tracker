@@ -1011,7 +1011,9 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
   }
   const write = (req: Request) => {
     const u = (req as any).authUser
-    if (u.role === 'Viewer' || !u.modules?.includes('documents'))
+    // A job role may see Document Creation without changing it (shared/roles.ts).
+    const editable = !Array.isArray(u.editModules) || u.editModules.includes('documents')
+    if (u.role === 'Viewer' || !u.modules?.includes('documents') || !editable)
       throw new DocHubError('Document Creation write access is required.', 403)
     return u
   }

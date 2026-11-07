@@ -3,6 +3,7 @@ import { MODULE_DEFINITIONS, defaultModulesForRole } from './access'
 import { settingsRequest } from '../settings/Settings'
 import { waitForCloudSaves } from '../../app/cloudStore'
 import type { AppModule, UserAccount, UserRole } from '../../shared/types'
+import type { JobRole } from '../../shared/roles'
 
 export default function AccountUsers({
   currentUser,
@@ -17,11 +18,17 @@ export default function AccountUsers({
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [jobRoles, setJobRoles] = useState<JobRole[]>([])
   const load = async () => {
     await waitForCloudSaves()
     const result = await settingsRequest('/api/account/users')
     setUsers(result.users)
     setEnabled(result.enabledModules)
+    setJobRoles(
+      await settingsRequest('/api/account/roles')
+        .then(roles => roles.roles)
+        .catch(() => []),
+    )
     setLoaded(true)
     onChanged(result.users)
   }
@@ -110,6 +117,7 @@ export default function AccountUsers({
           user={editing === 'new' ? undefined : editing}
           ownId={currentUser.id}
           enabled={enabled}
+          jobRoles={jobRoles}
           busy={busy}
           onSave={save}
           onCancel={() => setEditing(null)}
@@ -144,7 +152,16 @@ export default function AccountUsers({
                     </div>
                     <small>{user.email}</small>
                   </td>
-                  <td>{user.role}</td>
+                  <td>
+                    {user.role}
+                    {user.role !== 'Administrator' && user.jobRoles?.length ? (
+                      <div>
+                        <small>
+                          {user.jobRoles.map(id => jobRoles.find(jobRole => jobRole.id === id)?.name || id).join(', ')}
+                        </small>
+                      </div>
+                    ) : null}
+                  </td>
                   <td>{user.status}</td>
                   <td>
                     {user.role === 'Administrator'
@@ -180,6 +197,7 @@ function UserForm({
   user,
   ownId,
   enabled,
+  jobRoles,
   busy,
   onSave,
   onCancel,
@@ -187,11 +205,13 @@ function UserForm({
   user?: UserAccount
   ownId: string
   enabled: AppModule[]
+  jobRoles: JobRole[]
   busy: boolean
   onSave: (body: unknown) => Promise<void>
   onCancel: () => void
 }) {
   const [role, setRole] = useState<UserRole>(user?.role || 'Contributor')
+  const [picked, setPicked] = useState<string[]>(user?.jobRoles || [])
   const [modules, setModules] = useState<AppModule[]>(
     (user?.modules || defaultModulesForRole('Contributor')).filter(m => enabled.includes(m)),
   )
@@ -205,6 +225,7 @@ function UserForm({
       role,
       status: user?.id === ownId ? 'Active' : form.get('status'),
       modules: role === 'Administrator' ? enabled : modules,
+      jobRoles: role === 'Administrator' ? [] : picked,
       ...(!user ? { username: form.get('username'), password: form.get('password') } : {}),
     })
   }
@@ -268,8 +289,42 @@ function UserForm({
             </select>
           </label>
         </div>
+        {role !== 'Administrator' && jobRoles.length > 0 && (
+          <>
+            <h3>Job roles</h3>
+            <p>
+              Job roles give this person their pages (Settings › Roles). Roles from Seeds are added per client or
+              project. With a job role, the module choices below are not used.
+            </p>
+            <div className="module-check-grid">
+              {jobRoles.map(jobRole => (
+                <label className="module-check" key={jobRole.id}>
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(jobRole.id)}
+                    onChange={() =>
+                      setPicked(previous =>
+                        previous.includes(jobRole.id)
+                          ? previous.filter(id => id !== jobRole.id)
+                          : [...previous, jobRole.id],
+                      )
+                    }
+                  />
+                  <div>
+                    <b>{jobRole.name}</b>
+                    <small>{jobRole.edit.length ? 'Can change' : 'Read-only'}</small>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
         <h3>Module access</h3>
-        <p>Only modules enabled for this account are available. Role restrictions still apply.</p>
+        <p>
+          {role === 'Administrator'
+            ? 'Administrators see and change everything.'
+            : 'For people without a job role. Only modules enabled for this account are available.'}
+        </p>
         <div className="module-check-grid">
           {MODULE_DEFINITIONS.filter(m => enabled.includes(m.id)).map(m => (
             <label className="module-check" key={m.id}>

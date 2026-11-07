@@ -1,5 +1,6 @@
 import type { Express, Request, RequestHandler } from 'express'
 import { randomUUID } from 'node:crypto'
+import { jobRoles } from '../../src/shared/roles'
 import { normalizeAppTheme, THEME_IDS } from '../../src/features/settings/theme'
 import { normalizeInterfaceMode } from '../../src/features/settings/appearance'
 
@@ -37,6 +38,7 @@ export function publicAccount(account: any) {
         'phone',
         'role',
         'modules',
+        'jobRoles',
         'status',
         'createdAt',
         'theme',
@@ -127,7 +129,7 @@ export function registerAccountUsers(app: Express, deps: Dependencies) {
       throw new AccountError('Enter a valid email address.')
     return next
   }
-  const access = (body: any, base: any, organization: any) => {
+  const access = (body: any, base: any, organization: any, state: any) => {
     const role = body.role ?? base.role
     const status = body.status ?? base.status
     if (!roles.includes(role) || !['Active', 'Disabled'].includes(status))
@@ -135,11 +137,17 @@ export function registerAccountUsers(app: Express, deps: Dependencies) {
     const modules = body.modules ?? base.modules
     if (!Array.isArray(modules) || modules.some((m: any) => !organization.enabledModules.includes(m)))
       throw new AccountError('Only modules enabled for this account can be assigned.')
+    // Job roles (Settings › Roles) give the pages; Administrators have everything anyway.
+    const picked = body.jobRoles ?? base.jobRoles ?? []
+    const known = new Set(jobRoles(state).map(jobRole => jobRole.id))
+    if (!Array.isArray(picked) || picked.length > 10 || picked.some((id: unknown) => !known.has(String(id))))
+      throw new AccountError('Choose job roles from Settings › Roles.')
     return {
       ...fields(body, base),
       role,
       status,
       modules: role === 'Administrator' ? [...organization.enabledModules] : [...new Set(modules)],
+      jobRoles: role === 'Administrator' ? [] : [...new Set(picked.map(String))],
     }
   }
   app.get(
@@ -177,6 +185,7 @@ export function registerAccountUsers(app: Express, deps: Dependencies) {
           clientThemes: {},
         },
         organization,
+        state,
       )
       account.passwordHash = await deps.hashPassword(body.password)
       return save(organization, state, account, user)
@@ -188,7 +197,7 @@ export function registerAccountUsers(app: Express, deps: Dependencies) {
     route(true, async (req, user, organization, state) => {
       const existing = state.accounts.find((a: any) => a.id === req.params.userId)
       if (!existing) throw new AccountError('User was not found in this account.', 404)
-      const account = access(req.body || {}, existing, organization)
+      const account = access(req.body || {}, existing, organization, state)
       const losesAdmin = account.role !== 'Administrator' || account.status !== 'Active'
       if (existing.id === user.id && losesAdmin)
         throw new AccountError('You cannot disable or demote your own signed-in user.')
