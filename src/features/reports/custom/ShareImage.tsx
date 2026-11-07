@@ -35,9 +35,16 @@ export function ShareImage({
   }, [open])
 
   const picture = async () => {
-    if (!target.current) throw new Error('Open the report first.')
-    const canvas = await snapshotElement(target.current, { skip: '.no-print', maxWidth: 1600 })
-    return canvasBlob(canvas)
+    const area = target.current
+    if (!area) throw new Error('Open the report first.')
+    // Grow every widget to show all its rows (no scroll bars), take the picture, then put the page back.
+    area.classList.add('crp-expanded')
+    try {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      return await canvasBlob(await snapshotElement(area, { skip: '.no-print', maxWidth: 1600 }))
+    } finally {
+      area.classList.remove('crp-expanded')
+    }
   }
   const act = async (label: string, action: () => Promise<string>) => {
     setBusy(true)
