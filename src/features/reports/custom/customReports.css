@@ -1293,3 +1293,17 @@
 .crp-share-note {
   font-size: 0.8rem;
 }
+
+/* The whole report, nothing scrolled away: used for PDF / Print and Share as image. Widgets grow to fit. */
+:is(.crp-expanded, body.crp-printing .crp-print-area) .crp-canvas {
+  grid-auto-rows: minmax(30px, auto) !important;
+}
+:is(.crp-expanded, body.crp-printing .crp-print-area) .crp-cell {
+  height: auto !important;
+}
+:is(.crp-expanded, body.crp-printing .crp-print-area)
+  :is(.crp-note, .crp-bars, .crp-pie, .crp-table-wrap, .crp-gantt-body) {
+  flex: none !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
