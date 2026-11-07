@@ -16,10 +16,14 @@ export default function RecordEditDialog({ kind, record, canRenameClient, onClos
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const client = kind === 'clients',
-    archived = isArchived(record)
+    archived = isArchived(record),
+    // A name that comes from Seeds changes in Seeds.
+    fromSeeds = Boolean((record as { seedsId?: string }).seedsId),
+    nameLocked = fromSeeds || (client && !canRenameClient),
+    limited = Boolean((record as { accessLimited?: boolean }).accessLimited)
   useModalDialog(dialog, element => {
     const firstInput = element.querySelector<HTMLInputElement>(
-      client && !canRenameClient ? '[name=contact]' : '[name=name]',
+      nameLocked ? (client ? '[name=contact]' : '[name=status]') : '[name=name]',
     )
     firstInput?.focus()
     firstInput?.select()
@@ -30,7 +34,7 @@ export default function RecordEditDialog({ kind, record, canRenameClient, onClos
     const form = new FormData(event.currentTarget)
     const common = {
       ...record,
-      name: client && !canRenameClient ? record.name : String(form.get('name') || '').trim(),
+      name: nameLocked ? record.name : String(form.get('name') || '').trim(),
       status: String(form.get('status') || record.status),
     }
     const next = client
@@ -72,7 +76,13 @@ export default function RecordEditDialog({ kind, record, canRenameClient, onClos
         </button>
       </header>
       <form onSubmit={event => void submit(event)} className="record-editor-form">
-        <fieldset className="form-grid record-editor-fields" disabled={busy}>
+        {limited && (
+          <p className="settings-message" role="note">
+            You see this {client ? 'client' : 'project'} because you are assigned to some of its work. Only people
+            assigned to the whole {client ? 'client' : 'project'} can change it.
+          </p>
+        )}
+        <fieldset className="form-grid record-editor-fields" disabled={busy || limited}>
           <label className="span-2 record-name-field">
             {client ? 'Client name' : 'Project name'}
             <input
@@ -80,11 +90,22 @@ export default function RecordEditDialog({ kind, record, canRenameClient, onClos
               defaultValue={record.name}
               required
               maxLength={200}
-              readOnly={client && !canRenameClient}
-              autoFocus={!client || canRenameClient}
+              readOnly={nameLocked}
+              autoFocus={!nameLocked}
             />
-            {client && !canRenameClient && (
-              <small>Only an Administrator can change the client name. You can edit the details below.</small>
+            {fromSeeds ? (
+              <small>
+                This name comes from Seeds
+                {(record as { contractNumber?: string }).contractNumber
+                  ? ` (contract ${(record as { contractNumber?: string }).contractNumber})`
+                  : ''}
+                . Rename it in Seeds; the next sync updates it here.
+              </small>
+            ) : (
+              client &&
+              !canRenameClient && (
+                <small>Only an Administrator can change the client name. You can edit the details below.</small>
+              )
             )}
           </label>
           {client ? (
@@ -147,7 +168,7 @@ export default function RecordEditDialog({ kind, record, canRenameClient, onClos
           <button className="secondary" type="button" disabled={busy} onClick={onClose}>
             Cancel
           </button>
-          <button className="primary" type="submit" disabled={busy}>
+          <button className="primary" type="submit" disabled={busy || limited}>
             {busy ? 'Saving…' : 'Save changes'}
           </button>
         </footer>

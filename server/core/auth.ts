@@ -1,4 +1,5 @@
 // Sessions, passwords and the sign-in checks every route uses.
+import { withAccess } from '../services/access-cache'
 import bcrypt from 'bcryptjs'
 import type express from 'express'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -165,7 +166,9 @@ function parseCookies(header = '') {
 
 export function sessionFromRequest(req: express.Request) {
   const token = parseCookies(req.headers.cookie || '').ba_session
-  return token ? { token, user: sessions.get(token) ?? null } : { token: '', user: null }
+  const user = token ? (sessions.get(token) ?? null) : null
+  // Account Managers are Viewers of four pages while per-person visibility is on (see services/access-cache.ts).
+  return token ? { token, user: user ? withAccess(user) : null } : { token: '', user: null }
 }
 
 export function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {

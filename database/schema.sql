@@ -1,4 +1,4 @@
--- BA Client Ops Tracker: database schema (version 35)
+-- BA Client Ops Tracker: database schema (version 36)
 --
 -- Creates every table, constraint, index and function the app needs on an empty PostgreSQL 14+ database, plus the
 -- two starting sign-ins. Run it once, as the same database user the app connects with (DATABASE_URL):
@@ -727,7 +727,7 @@ CREATE TABLE public.tenant_integrations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT tenant_integrations_connection_status_check CHECK ((connection_status = ANY (ARRAY['untested'::text, 'verified'::text, 'failed'::text]))),
-    CONSTRAINT tenant_integrations_integration_type_check CHECK ((integration_type = ANY (ARRAY['discord'::text, 'openai'::text]))),
+    CONSTRAINT tenant_integrations_integration_type_check CHECK ((integration_type = ANY (ARRAY['discord'::text, 'openai'::text, 'seeds'::text]))),
     CONSTRAINT tenant_integrations_secret_suffix_check CHECK ((length(secret_suffix) = 4))
 );
 
@@ -1488,4 +1488,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 35 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 36 as schema_version;

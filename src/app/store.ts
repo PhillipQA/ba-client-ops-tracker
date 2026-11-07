@@ -28,6 +28,8 @@ import type {
   WorkItem,
 } from '../shared/types'
 import { waitingOnOptions } from '../features/tasks/waitingOn'
+import type { ClientAccess } from '../shared/access'
+import type { SeedsStatus } from '../shared/seeds'
 
 export const STORE_SCHEMA_VERSION = 6
 export const STORAGE_KEY = 'ba-client-ops-tracker-v2'
@@ -45,6 +47,8 @@ export type Store = {
   notifications: AppNotification[]
   accounts: UserAccount[]
   taskSettings: TaskSettings
+  access?: ClientAccess
+  seeds?: SeedsStatus
 }
 
 export const organizationStorageKey = (organizationId?: string) =>
@@ -277,6 +281,9 @@ export const normalizeStore = (value: unknown, fallback: Store = seedStore()): S
     notifications,
     accounts,
     taskSettings,
+    // Server-owned: what this person's access is and how Seeds is doing. Saves never change them.
+    ...(parsed.access && typeof parsed.access === 'object' ? { access: parsed.access } : {}),
+    ...(parsed.seeds && typeof parsed.seeds === 'object' ? { seeds: parsed.seeds } : {}),
   }
 }
 

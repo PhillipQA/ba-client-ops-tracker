@@ -1,8 +1,28 @@
 # Changelog
 
-**Current application release: v1.5.1**
+**Current application release: v1.6.0**
 
 Changes are listed newest first. For installation, deployment and updates, use the [README](README.md). Older entries mention migration files, release notes, an upgrade guide and patch ZIPs that were removed in the Northflank cleanup below; they are still in the Git history.
+
+## v1.6.0 — Seeds: per-person visibility and Seeds sync
+Not released yet.
+
+**Database migration before connecting Seeds:** run [database/migrations/schema-v36-seeds.sql](database/migrations/schema-v36-seeds.sql) once on the existing Northflank database (it only lets Seeds be saved as an account integration). Everything else works without it. A new database gets it from [database/schema.sql](database/schema.sql), now version 36.
+
+### Who sees what (phase 1)
+- **Per-person visibility** (Settings › Access), **off by default**. When on, each person sees only the clients and projects they are assigned to, with all the work under them: tasks, subtasks, activity, calendar entries, traceability matrices, trackers, DocHub documents, Drive files, emails linked to tasks and what the AI BA Assistant knows. Everything else never leaves the server.
+- **Roles from assignments:** Business Analyst and Project Manager can work on their clients and projects; **Account Manager** sees theirs read-only and becomes a Viewer of Action Center, Reports and AI BA Assistant. Roles add up per project. **Administrators** set things up but see no client data unless they are assigned too (they always keep Settings, so visibility can be turned off again).
+- **Assignments** are entered in Settings › Access until Seeds is connected; then they come from Seeds and are locked here.
+- A client someone is assigned to only through one project shows by name only. New clients and projects you create stay visible to you.
+- Saves from a partial view never touch what you cannot see. Adding work to a client you cannot change, or moving work there, is refused with a message instead of being dropped.
+
+### Seeds (phase 2)
+- **Settings › Integrations › Seeds:** the Seeds API address and key. **Saving the key turns Seeds on**: it syncs straight away and every 30 minutes after. Read only; nothing is written to Seeds.
+- **Seeds page** in the menu, replacing Clients, Projects and Tasks: tabs for Clients, Projects, Tasks and **Sync**.
+- Seeds clients, projects (with contract numbers and their client) and tasks link to records here by Seeds id, then by exact name; renames follow. A close name (for example *Bolt Logistic* vs *Bolt Logistics*) is listed under **Confirm these matches** for an Administrator or Project Manager instead of being guessed. Tasks under Seeds projects that Seeds does not list are shown as **Not in Seeds** and keep working.
+- People are matched by email; Seeds people without an account are listed for the Administrator.
+- If Seeds cannot be reached, the last synced access stays in force and the Seeds page says so.
+- Names that come from Seeds are read-only here and Seeds-linked clients, projects and tasks cannot be deleted here.
 
 ## v1.5.1 — Reports, Data explorer, project timelines, linked emails, and a security pass
 Released November 5, 2026.

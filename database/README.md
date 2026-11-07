@@ -2,7 +2,7 @@
 
 The app uses **PostgreSQL** (on Northflank in production), reached through `DATABASE_URL`.
 
-- [`schema.sql`](schema.sql) creates everything the app needs on an **empty** database, at schema version **35**, plus the two starting sign-ins. It contains no data and no passwords.
+- [`schema.sql`](schema.sql) creates everything the app needs on an **empty** database, at schema version **36**, plus the two starting sign-ins. It contains no data and no passwords.
 
 ## Set up a new database
 
@@ -12,7 +12,7 @@ Run `schema.sql` once, as the same database user the app connects with, so that 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql
 ```
 
-It should end with `BA Client Ops Tracker database ready | 35`. No `psql`? Open the file in DBeaver (or any SQL client) connected to the database and run the whole script.
+It should end with `BA Client Ops Tracker database ready | 36`. No `psql`? Open the file in DBeaver (or any SQL client) connected to the database and run the whole script.
 
 `schema.sql` stops without changing anything if the app's tables already exist, so running it against the live database by mistake is harmless. **Never run it to "reset" a database**: it does not copy, keep or remove data.
 

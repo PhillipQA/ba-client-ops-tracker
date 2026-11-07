@@ -3,6 +3,7 @@ import type { Express, Request, Response, NextFunction } from 'express'
 import { decryptSecret, encryptSecret, IntegrationError } from './tenant-integrations'
 import { archivedWorkReason, LifecycleError } from '../../src/features/tasks/lifecycle'
 import { attachmentContentType } from './gmail-content'
+import { visibleTask, visibleTaskIds } from '../services/visibility'
 
 /**
  * One shared Google Drive per account. An account administrator connects it with
@@ -532,9 +533,15 @@ export function registerDrive(app: Express, deps: Deps) {
     }
   }
   /** Bytes of a file the tracker saved on a task. Only files listed on that task can be fetched; nothing is stored. */
-  const taskFile = async (tenantId: string, taskId: string, fileId: string, maxBytes: number) => {
+  const taskFile = async (
+    tenantId: string,
+    taskId: string,
+    fileId: string,
+    maxBytes: number,
+    user?: { id: string },
+  ) => {
     const state = (await deps.load(tenantId)).data
-    const task = (state?.items || []).find((item: any) => item.id === taskId)
+    const task = user ? visibleTask(state, user, taskId) : (state?.items || []).find((item: any) => item.id === taskId)
     const entry = (Array.isArray(task?.driveFiles) ? task.driveFiles : []).find((file: any) => file.id === fileId)
     if (!entry) throw new IntegrationError('This file is not saved on that task.', 404)
     const { row, config } = await liveConnection(tenantId)
@@ -792,7 +799,11 @@ export function registerDrive(app: Express, deps: Deps) {
         message = await deps.own(req, String(req.params.id)),
         state = (await deps.load(user.organizationId)).data
       if (!state) throw new IntegrationError('Workspace data is unavailable.', 503)
-      res.json({ targets: driveTargets(state, await threadTaskIds(message, user.organizationId, user.id)) })
+      const visible = visibleTaskIds(state, user)
+      const taskIds = (await threadTaskIds(message, user.organizationId, user.id)).filter(
+        id => !visible || visible.has(id),
+      )
+      res.json({ targets: driveTargets(state, taskIds) })
     }),
   )
   app.post(
@@ -811,7 +822,10 @@ export function registerDrive(app: Express, deps: Deps) {
       await deps.inOrder(tenantId, async () => {
         const before = (await deps.load(tenantId)).data
         if (!before) throw new IntegrationError('Workspace data is unavailable.', 503)
-        if (!driveTargets(before, await threadTaskIds(message, tenantId, user.id)).some(target => target.id === taskId))
+        if (
+          !visibleTask(before, user, taskId, 'write') ||
+          !driveTargets(before, await threadTaskIds(message, tenantId, user.id)).some(target => target.id === taskId)
+        )
           throw new IntegrationError('Choose an active task or subtask created from this email.', 404)
         await liveConnection(tenantId)
         const download = await deps.attachment(req, message, index)
@@ -880,7 +894,7 @@ export function registerDrive(app: Express, deps: Deps) {
         taskId = String(req.query.taskId || ''),
         fileId = String(req.query.fileId || '')
       const maxBytes = Math.min(Number(req.query.maxBytes) || MAX_DOCUMENT_BYTES, MAX_DOCUMENT_BYTES)
-      const file = await taskFile(tenantId, taskId, fileId, maxBytes)
+      const file = await taskFile(tenantId, taskId, fileId, maxBytes, current(req))
       res.setHeader('Content-Type', file.mimeType)
       res.setHeader('Content-Length', String(file.bytes.length))
       res.setHeader('X-Content-Type-Options', 'nosniff')
@@ -910,7 +924,7 @@ export function registerDrive(app: Express, deps: Deps) {
         throw new IntegrationError('This does not look like a valid document.')
       await deps.inOrder(tenantId, async () => {
         const before = (await deps.load(tenantId)).data
-        const task = (before?.items || []).find((item: any) => item.id === taskId)
+        const task = visibleTask(before, current(req), taskId, 'write')
         if (!task) throw new IntegrationError('Select an existing task or subtask.', 404)
         const reason = archivedWorkReason(before, task)
         if (reason) throw new IntegrationError(reason, 409)

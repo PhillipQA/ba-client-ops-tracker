@@ -25,6 +25,7 @@ export const VIEW_PATHS: Record<View, string> = {
   'internal-admin': '/internal-admin',
   users: '/users',
   themes: '/themes',
+  seeds: '/seeds',
 }
 
 export type Route = {

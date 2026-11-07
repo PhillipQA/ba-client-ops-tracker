@@ -138,12 +138,12 @@ export function tourSteps(context: TourContext): TourStep[] {
       target: '[data-tour="nav-action"]',
       view: 'action',
     },
-    has('clients') && {
-      id: 'clients',
+    (has('clients') || has('projects') || has('items')) && {
+      id: 'seeds',
       section: 'Daily work',
-      title: 'Clients and projects',
-      body: 'Every task, email, document and tracker belongs to a client, and optionally a project. Add your clients first.',
-      target: '[data-tour="nav-clients"]',
+      title: 'Seeds: clients, projects and tasks',
+      body: 'Every task, email, document and tracker belongs to a client and project. Once Seeds is connected they come from Seeds, with contract numbers; the tabs at the top switch between Clients, Projects, Tasks and Sync.',
+      target: '[data-tour="nav-seeds"]',
     },
     context.canWrite &&
       (has('items') || has('inbox')) && {

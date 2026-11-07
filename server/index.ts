@@ -11,13 +11,20 @@ import path from 'node:path'
 import { registerStaticSite } from './platform/static-site'
 import { requirePlatformAdmin } from './platform/platform-auth'
 import { registerPlatformSettings } from './platform/platform-settings'
-import { registerIntegrationRoutes } from './integrations/tenant-integrations'
+import {
+  decryptSecret,
+  encryptionKey,
+  encryptSecret,
+  registerIntegrationRoutes,
+} from './integrations/tenant-integrations'
 import { registerAiAgentRoutes } from './ai/ai-agent-manager'
 import { createServer as createViteServer } from 'vite'
 import { dateKeyInTimeZone } from './services/follow-up-rollover'
 import { reconcileNotifications } from './services/notification-engine'
 import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
 import { registerCommunications } from './integrations/communications'
+import { registerSeedsRoutes } from './seeds/seeds-routes'
+import { WorkspaceRaceError } from './services/workspace-guard'
 import { registerTrackerRoutes } from './trackers/trackers'
 import { trackerTaskUpdater } from './trackers/tracker-task-updates'
 import { LifecycleError } from '../src/features/tasks/lifecycle'
@@ -169,6 +176,28 @@ const trackers = registerTrackerRoutes(app, {
 onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))
 registerEmailTemplateRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
 registerCustomReportRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
+registerSeedsRoutes(app, {
+  db,
+  requireAuth,
+  requireTenant: requireTenantWorkspace,
+  load: loadTenantState,
+  commit: commitTenantState,
+  raced: error => error instanceof WorkspaceRaceError || (error instanceof TenantSaveError && error.raced),
+  openStatus: openTaskStatus,
+  today: () => dateKeyInTimeZone(new Date(), followUpTimeZone),
+  secrets: {
+    encrypt: (secret, organizationId) => encryptSecret(secret, organizationId, 'seeds'),
+    decrypt: (value, organizationId) => decryptSecret(value, organizationId, 'seeds'),
+    ready: () => {
+      try {
+        encryptionKey()
+        return true
+      } catch {
+        return false
+      }
+    },
+  },
+}).start()
 registerTrackerTemplateRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
 
 registerSignoffRoutes(app, {

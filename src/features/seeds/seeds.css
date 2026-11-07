@@ -1,0 +1,164 @@
+/* Seeds page: tabs over Clients, Projects, Tasks and Sync. */
+.seeds-tabs-wrap {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.seeds-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--ui-border);
+}
+.seeds-tabs-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  font-weight: 700;
+  color: var(--ui-success);
+}
+.seeds-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ui-muted);
+  padding: 8px 12px;
+  font-weight: 600;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.seeds-tab:hover {
+  color: var(--ui-text);
+}
+.seeds-tab.active {
+  color: var(--ui-text);
+  border-bottom-color: var(--ui-primary);
+}
+.seeds-tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--ui-warning-soft);
+  color: var(--ui-warning);
+  font-size: 0.75rem;
+  line-height: 18px;
+  text-align: center;
+}
+.seeds-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ui-warning-soft);
+  color: var(--ui-text);
+}
+.seeds-counts {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.seeds-counts dt {
+  color: var(--ui-muted);
+  font-size: 0.8rem;
+}
+.seeds-counts dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.seeds-access-line {
+  color: var(--ui-muted);
+}
+.seeds-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.seeds-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+.seeds-list li small {
+  color: var(--ui-muted);
+  margin-right: 4px;
+}
+.seeds-arrow {
+  color: var(--ui-muted);
+  margin: 0 6px;
+}
+.seeds-row-actions {
+  display: flex;
+  gap: 6px;
+}
+.seeds-all-good {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-success);
+}
+.seeds-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--ui-success-soft);
+  color: var(--ui-success);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.role-badge.ok {
+  background: var(--ui-success-soft);
+  color: var(--ui-success);
+}
+.role-badge.warn {
+  background: var(--ui-warning-soft);
+  color: var(--ui-warning);
+}
+.access-assignments {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+.access-assignments th,
+.access-assignments td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ui-border);
+}
+.access-add {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: end;
+  margin-top: 10px;
+}
+.access-add label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.access-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}

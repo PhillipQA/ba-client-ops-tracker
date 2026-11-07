@@ -16,6 +16,7 @@ import {
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { reconcileNotifications } from '../services/notification-engine'
 import { addTimeEntry, removeTimeEntry } from '../services/time-entries'
+import { visibleTask } from '../services/visibility'
 
 const TASK_EVIDENCE_BUCKET = 'task-evidence'
 
@@ -148,7 +149,7 @@ async function mutateTimeEntries(
     const current = state.data && typeof state.data === 'object' ? state.data : null
     if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
     const items = Array.isArray(current.items) ? current.items : []
-    const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+    const task = visibleTask(current, user, taskId, 'write')
     if (!task || (task.source === 'Discord' && task.externalSourceId))
       return void res.status(404).json({ error: 'Task or Subtask was not found.' })
     const locked = archivedWorkReason(current, task)
@@ -185,7 +186,7 @@ export function registerTaskRoutes(app: Express) {
       const current = state.data && typeof state.data === 'object' ? state.data : null
       if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
       const items = Array.isArray(current.items) ? current.items : []
-      const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+      const task = visibleTask(current, user, taskId, 'write')
       if (!task) return void res.status(404).json({ error: 'Task or Subtask was not found.' })
       const locked = archivedWorkReason(current, task)
       if (locked) return void res.status(409).json({ error: locked })
@@ -274,7 +275,7 @@ export function registerTaskRoutes(app: Express) {
       const current = state.data && typeof state.data === 'object' ? state.data : null
       if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
       const items = Array.isArray(current.items) ? current.items : []
-      const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+      const task = visibleTask(current, user, taskId, 'write')
       if (!task) return void res.status(404).json({ error: 'Subtask was not found.' })
       const locked = archivedWorkReason(current, task)
       if (locked) return void res.status(409).json({ error: locked })
@@ -351,7 +352,7 @@ export function registerTaskRoutes(app: Express) {
       const current = state.data && typeof state.data === 'object' ? state.data : null
       if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
       const items = Array.isArray(current.items) ? current.items : []
-      const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+      const task = visibleTask(current, user, taskId, 'write')
       if (!task || !task.parentTaskId) return void res.status(404).json({ error: 'Subtask was not found.' })
       const locked = archivedWorkReason(current, task)
       if (locked) return void res.status(409).json({ error: locked })
@@ -407,8 +408,7 @@ export function registerTaskRoutes(app: Express) {
       const taskId = String(req.params.taskId || '')
       const evidenceId = String(req.params.evidenceId || '')
       const state = await loadTenantState(tenantIdForUser(user))
-      const items = Array.isArray(state.data?.items) ? state.data.items : []
-      const task = items.find((candidate: any) => String(candidate?.id || '') === taskId)
+      const task = visibleTask(state.data, user, taskId)
       if (!task || !task.parentTaskId) return void res.status(404).json({ error: 'Subtask was not found.' })
       const evidence = (Array.isArray(task.evidence) ? task.evidence : []).find(
         (entry: any) => String(entry?.id || '') === evidenceId,

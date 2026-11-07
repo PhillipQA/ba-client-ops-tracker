@@ -6,6 +6,7 @@ import { followUpTimeZone } from '../core/config'
 import { aiAgents, type integrations } from '../core/services'
 import { emptyTenantData, ensureTenantFollowUpsCurrent, tenantIdForUser } from '../core/tenant-state'
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
+import { scopedState, scopeFor } from '../../src/shared/access'
 import { buildAssistantContext } from './assistant-context'
 import { addTrackers, type TrackerReader } from './assistant-trackers'
 import { parseModelJson, sanitizeSuggestions } from './suggestions'
@@ -21,7 +22,8 @@ export function registerAssistantRoutes(
 ) {
   app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res) => {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
-    if (user.role === 'Viewer' || !moduleAllowed(user, 'ai')) {
+    const accountManager = (user as { accountManager?: boolean }).accountManager === true
+    if ((user.role === 'Viewer' && !accountManager) || !moduleAllowed(user, 'ai')) {
       res.status(403).json({ error: 'Your account does not have access to the AI BA Assistant.' })
       return
     }
@@ -53,7 +55,9 @@ export function registerAssistantRoutes(
     let waitingOnLabels = openWaitingOnOptions(undefined).map(option => option.label)
     let taskSettings: unknown
     try {
-      const state = (await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))).data || emptyTenantData()
+      const stored = (await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))).data || emptyTenantData()
+      // The assistant knows only what this person may see.
+      const state = scopedState(stored, scopeFor(stored, user.id))
       taskSettings = state.taskSettings
       waitingOnLabels = openWaitingOnOptions(state.taskSettings).map(option => option.label)
       context = buildAssistantContext(state, user, requestedContext, message, today, followUpTimeZone, module =>

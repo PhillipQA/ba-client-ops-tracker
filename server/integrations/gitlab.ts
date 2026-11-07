@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { GITHUB_QA_STATUSES, type GithubRepository } from '../../src/features/integrations/github-model'
+import { canCreateWork, visibleTask } from '../services/visibility'
 import { linkedTaskSchedule } from './linked-task-fields'
 import { encryptSecret, decryptSecret, encryptionKey, IntegrationError } from './tenant-integrations'
 import {
@@ -576,7 +577,11 @@ export function registerGitlab(
           taskId = text(req.body?.taskId || '', 'task', 100),
           state = (await deps.load(u.organizationId)).data
         if (!state) throw new IntegrationError('Workspace data is unavailable.', 503)
-        if (taskId && !state.items?.some((item: any) => item.id === taskId && item.type === 'Task' && !item.archived))
+        if (
+          taskId &&
+          (!state.items?.some((item: any) => item.id === taskId && item.type === 'Task' && !item.archived) ||
+            !visibleTask(state, u, taskId, 'write'))
+        )
           throw new IntegrationError('Select an existing task or subtask in this workspace.', 404)
         res.json({ ticket: await writeTicket(u, row, ticket.id, { linked_task_id: taskId || null }) })
       }),
@@ -606,6 +611,8 @@ export function registerGitlab(
           !state.projects?.some((p: any) => p.id === projectId && !p.archived)
         )
           throw new IntegrationError('Enter a task title and select an active client and project.')
+        if (!canCreateWork(state, u, { clientId, projectId }))
+          throw new IntegrationError('You don’t have access to that client or project.', 403)
         const account = state.accounts?.find(
           (a: any) => a.id === assignee && a.status !== 'Disabled' && ['Administrator', 'Contributor'].includes(a.role),
         )
