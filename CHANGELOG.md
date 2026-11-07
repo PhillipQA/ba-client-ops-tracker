@@ -9,6 +9,12 @@ Not released yet.
 
 **Database migration before people connect Seeds:** run [database/migrations/schema-v36-seeds.sql](database/migrations/schema-v36-seeds.sql) once on the existing Northflank database (it adds the table for each person's Seeds key). Everything else works without it. A new database gets it from [database/schema.sql](database/schema.sql), now version 36.
 
+### Workflow per account
+- **Settings › Workflow** for each account's Administrator: task statuses, waiting-on options, visible task columns, and the names shown for priorities and client health. Internal Admin uses the same editor.
+- **Renaming a status** now carries over to every task that uses it, archived ones included. A status still in use is removed by choosing where its tasks move. Statuses can be reordered.
+- Archived work stays done: a status archived tasks use cannot be switched to not-done, and their tasks cannot move to an open status.
+- Priority and health names change only what people see (for example *Urgent* → *P1*); sorting and colours stay.
+
 ### Who sees what (phase 1)
 - **Per-person visibility** (Settings › Access), **off by default**. When on, each person sees only the clients and projects they are assigned to, with all the work under them: tasks, subtasks, activity, calendar entries, traceability matrices, trackers, DocHub documents, Drive files, emails linked to tasks and what the AI BA Assistant knows. Everything else never leaves the server.
 - **Roles from assignments:** Business Analyst and Project Manager can work on their clients and projects; **Account Manager** sees theirs read-only and becomes a Viewer of Action Center, Reports and AI BA Assistant. Roles add up per project. **Administrators** set things up but see no client data unless they are assigned too (they always keep Settings, so visibility can be turned off again).

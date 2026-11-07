@@ -1,6 +1,6 @@
 import type { Express } from 'express'
 import { APP_VERSION } from '../../src/shared/version'
-import { applyWaitingOnRenames, planWaitingOnUpdate, waitingOnOptions } from '../../src/features/tasks/waitingOn'
+import { saveWorkflow, workflowView } from '../workspace/workflow-routes'
 import { encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
 
 export function registerPlatformSettings(app: Express, d: any) {
@@ -59,83 +59,28 @@ export function registerPlatformSettings(app: Express, d: any) {
     wrap(async (req: any, res: any) => {
       const org = await organization(req),
         state = await d.loadTenantState(org.id)
-      const taskSettings = state.data?.taskSettings || d.defaultTaskSettings
-      res.json({
-        taskSettings: { ...taskSettings, waitingOn: waitingOnOptions(taskSettings) },
-        sync: await d.normalizedSchemaStatus(org.id),
-      })
+      res.json({ ...workflowView(state.data, d.defaultTaskSettings), sync: await d.normalizedSchemaStatus(org.id) })
     }),
   )
   app.put(
     '/api/internal-admin/organizations/:id/task-settings',
     ...scope,
     wrap(async (req: any, res: any) => {
-      const org = await organization(req),
-        state = await d.loadTenantState(org.id)
-      if (!state.data) throw new IntegrationError('This account has no saved workspace yet.')
-      const input = req.body
-      const columns = [
-        'status',
-        'client',
-        'project',
-        'type',
-        'waitingOn',
-        'priority',
-        'owner',
-        'dueDate',
-        'followUpDate',
-      ]
-      if (
-        !Array.isArray(input?.statuses) ||
-        !input.statuses.length ||
-        input.statuses.length > 60 ||
-        !Array.isArray(input.visibleColumns)
-      )
-        throw new IntegrationError('Provide statuses and visible columns.')
-      const statuses = input.statuses.map((s: any) => ({
-        id: String(s.id || '').slice(0, 100),
-        label: String(s.label || '')
-          .trim()
-          .slice(0, 80),
-        closed: Boolean(s.closed),
-      }))
-      if (
-        statuses.some((s: any) => !s.id || !s.label) ||
-        new Set(statuses.map((s: any) => s.id)).size !== statuses.length ||
-        new Set(statuses.map((s: any) => s.label.toLowerCase())).size !== statuses.length ||
-        statuses.every((s: any) => s.closed)
-      )
-        throw new IntegrationError('Use unique status IDs and labels, with at least one open status.')
-      const labels = new Set(statuses.map((s: any) => s.label))
-      if ((state.data.items || []).some((item: any) => !labels.has(item.status)))
-        throw new IntegrationError('A status used by existing tasks cannot be removed or renamed.')
-      if (input.visibleColumns.some((c: any) => !columns.includes(c)))
-        throw new IntegrationError('Unknown task column.')
-      const items = Array.isArray(state.data.items) ? state.data.items : []
-      // Older admin clients omit waitingOn; keep the account's current options.
-      const waiting = planWaitingOnUpdate(
-        input.waitingOn === undefined ? waitingOnOptions(state.data.taskSettings) : input.waitingOn,
-        state.data.taskSettings,
-        items,
-      )
-      if (!waiting.ok) throw new IntegrationError(waiting.error)
-      const taskSettings = {
-        statuses,
-        visibleColumns: [...new Set(['status', ...input.visibleColumns])],
-        waitingOn: waiting.update.options,
+      const org = await organization(req)
+      try {
+        res.json(
+          await saveWorkflow(
+            { load: d.loadTenantState, commit: d.commitTenantState, defaults: d.defaultTaskSettings } as any,
+            org.id,
+            req.body,
+            req.authUser,
+            'platform-task-settings',
+          ),
+        )
+      } catch (error: any) {
+        if (error?.status) throw new IntegrationError(error.message, error.status)
+        throw error
       }
-      await d.commitTenantState(
-        org.id,
-        { ...state.data, items: applyWaitingOnRenames(items, waiting.update.renamed), taskSettings },
-        req.authUser,
-        'platform-task-settings',
-        state.data,
-      )
-      res.json({
-        ok: true,
-        taskSettings,
-        renamedTasks: items.filter((item: any) => waiting.update.renamed.has(String(item?.waitingOn ?? ''))).length,
-      })
     }),
   )
   app.post(
