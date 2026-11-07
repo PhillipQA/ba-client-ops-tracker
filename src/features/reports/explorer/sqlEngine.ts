@@ -9,7 +9,12 @@ export type SqlValue = string | number | boolean | null
 export type SqlRow = Record<string, SqlValue>
 export type SqlColumnType = 'text' | 'number' | 'date' | 'bool'
 export type SqlTable = { name: string; columns: { name: string; type: SqlColumnType }[]; rows: SqlRow[] }
-export type SqlResult = { columns: string[]; rows: SqlValue[][]; truncated: boolean; ms: number }
+/**
+ * Where a simple query's rows came from (one table, no joins, grouping or DISTINCT): each row's row_id in that table
+ * and, per result column, the table column it shows (also through COALESCE/IFNULL). Lets a report edit a cell.
+ */
+export type ResultSource = { table: string; rowIds: (string | null)[]; columns: (string | null)[] }
+export type SqlResult = { columns: string[]; rows: SqlValue[][]; truncated: boolean; ms: number; source?: ResultSource }
 
 export const SQL_LIMITS = { resultRows: 5000, workRows: 250_000, ms: 5000, length: 20_000, unionBranches: 25 } as const
 
@@ -922,11 +927,15 @@ export function runQuery(
   }
   const env: Env = { params, today, budget, tick }
   const result = runStatement(query, tables, env)
+  const simple = !query.ctes.length && query.body.kind === 'select' && result.source
   return {
     columns: result.columns,
     rows: result.rows.slice(0, SQL_LIMITS.resultRows),
     truncated: result.truncated || result.rows.length > SQL_LIMITS.resultRows,
     ms: Math.max(0, Math.round(now() - started)),
+    ...(simple && result.source
+      ? { source: { ...result.source, rowIds: result.source.rowIds.slice(0, SQL_LIMITS.resultRows) } }
+      : {}),
   }
 }
 
@@ -1590,7 +1599,7 @@ function runSelect(query: Query, tables: Record<string, SqlTable | undefined>, e
     query.groupBy.length > 0 ||
     outs.some(out => isAggregate(out.expr)) ||
     Boolean(query.having && isAggregate(query.having))
-  type Line = { values: SqlValue[]; keys: SqlValue[] }
+  type Line = { values: SqlValue[]; keys: SqlValue[]; rowId?: string | null }
   let lines: Line[] = []
   const contexts: Context[] = []
   const orderValue = (expr: Expr, context: Context, values: SqlValue[]): SqlValue => {
@@ -1652,9 +1661,16 @@ function runSelect(query: Query, tables: Record<string, SqlTable | undefined>, e
       collect(outputAliases.get(item.expr.name)!)
   })
   for (const window of windows) windowValues.set(window, computeWindow(window, contexts, evaluate, tick))
+  // One table, row by row: remember each row's row_id, so a report can edit the cell it came from.
+  const traceable = Boolean(query.from && !query.from.subquery && !query.joins.length && !grouped && !query.distinct)
   for (const context of contexts) {
     const values = outs.map(out => evaluate(out.expr, context))
-    lines.push({ values, keys: query.orderBy.map(item => orderValue(item.expr, context, values)) })
+    const id = traceable ? context.row[query.from!.alias]?.row_id : undefined
+    lines.push({
+      values,
+      keys: query.orderBy.map(item => orderValue(item.expr, context, values)),
+      ...(traceable ? { rowId: typeof id === 'string' ? id : null } : {}),
+    })
   }
   if (query.distinct) {
     const seen = new Set<string>()
@@ -1685,7 +1701,21 @@ function runSelect(query: Query, tables: Record<string, SqlTable | undefined>, e
   const picked = lines.slice(start, end)
   // Results inside a larger query keep every row; the final result is cut to SQL_LIMITS.resultRows in runQuery.
   const truncated = picked.length > SQL_LIMITS.workRows
+  const shownColumn = (expr: Expr): string | null => {
+    if (expr.type === 'column') return !expr.table || expr.table === query.from?.alias ? expr.name : null
+    if (expr.type === 'call' && ['coalesce', 'ifnull'].includes(expr.name) && expr.args[0])
+      return shownColumn(expr.args[0])
+    return null
+  }
+  const source: ResultSource | undefined = traceable
+    ? {
+        table: query.from!.table,
+        rowIds: picked.slice(0, SQL_LIMITS.workRows).map(line => line.rowId ?? null),
+        columns: outs.map(out => shownColumn(out.expr)),
+      }
+    : undefined
   return {
+    ...(source ? { source } : {}),
     columns: outs.map(out => out.name),
     rows: picked
       .slice(0, SQL_LIMITS.workRows)

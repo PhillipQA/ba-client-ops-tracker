@@ -14,7 +14,13 @@ import type {
 } from '../../../shared/types'
 import { loadAllRows, trackerApi } from '../../trackers/trackerApi'
 import type { Tracker, TrackerRow } from '../../trackers/trackerModel'
-import { explorerCatalog, explorerTables, type ExplorerMessage, type TableInfo } from './explorerTables'
+import {
+  explorerCatalog,
+  explorerTables,
+  type ExplorerMessage,
+  type TableInfo,
+  trackerCellTarget,
+} from './explorerTables'
 import {
   referencedTables,
   resolveTableIdentifierParams,
@@ -22,6 +28,7 @@ import {
   SqlError,
   type SqlResult,
   type SqlTable,
+  type SqlValue,
 } from './sqlEngine'
 
 export type ExplorerProps = {
@@ -172,5 +179,36 @@ export function useExplorerData(props: ExplorerProps) {
     return runQuery(executableSql, tables(), { params, today })
   }
 
-  return { catalog, run, loadTrackers, today, trackersLoaded: trackers !== null }
+  /** Whether a report may edit this column of this table in place (tracker text, number and date columns). */
+  const canEditCell = (table: string, column: string) =>
+    Boolean(trackerCellTarget({ trackers: state.current.trackers || [], clients: props.clients }, table, column))
+
+  /** Saves one cell typed in a report back to its tracker row. Returns the value as saved. */
+  const saveCell = async (table: string, rowId: string, column: string, text: string): Promise<SqlValue> => {
+    const target = trackerCellTarget({ trackers: state.current.trackers || [], clients: props.clients }, table, column)
+    if (!target) throw new Error('This column cannot be edited here.')
+    const loaded = state.current.trackerRows[target.trackerId]
+    const row = loaded?.rows.find(candidate => candidate.id === rowId)
+    if (!loaded || !row) throw new Error('That row is no longer in the tracker. Refresh the report.')
+    const trimmed = text.trim()
+    let value: SqlValue = trimmed || null
+    if (target.type === 'number' && trimmed) {
+      const number = Number(trimmed.replace(/,/g, ''))
+      if (!Number.isFinite(number)) throw new Error('Enter a number.')
+      value = number
+    }
+    if (target.type === 'date' && trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed))
+      throw new Error('Enter a date as YYYY-MM-DD.')
+    const result = await trackerApi.updateRow(target.trackerId, rowId, {
+      version: row.version,
+      cells: { [target.columnId]: value as any },
+    })
+    const rows = loaded.rows.map(candidate => (candidate.id === rowId ? result.row : candidate))
+    const next = { ...state.current.trackerRows, [target.trackerId]: { ...loaded, rows } }
+    state.current.trackerRows = next
+    setTrackerRows(next)
+    return value
+  }
+
+  return { catalog, run, loadTrackers, today, trackersLoaded: trackers !== null, canEditCell, saveCell }
 }

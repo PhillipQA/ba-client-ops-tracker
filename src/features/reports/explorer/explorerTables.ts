@@ -232,6 +232,23 @@ function trackerTables(trackers: Tracker[], clients: Client[]) {
   })
 }
 
+/** Column types a report may edit in place (plain values, not choices, people, links or formulas). */
+const EDITABLE_TYPES = new Set(['text', 'longtext', 'number', 'date'])
+
+/** The tracker cell behind a column of a tracker table, if a report may edit it in place. */
+export function trackerCellTarget(
+  input: Pick<ExplorerInput, 'trackers' | 'clients'>,
+  table: string,
+  column: string,
+): { trackerId: string; columnId: string; type: 'text' | 'longtext' | 'number' | 'date' } | null {
+  const found = trackerTables(input.trackers, input.clients).find(candidate => candidate.name === table)
+  if (!found?.tracker.canEdit || found.tracker.archived) return null
+  const key = found.columns.find(candidate => candidate.name === column)?.key
+  const trackerColumn = found.tracker.columns.find(candidate => `c.${candidate.id}` === key)
+  if (!trackerColumn || !EDITABLE_TYPES.has(trackerColumn.type)) return null
+  return { trackerId: found.tracker.id, columnId: trackerColumn.id, type: trackerColumn.type as any }
+}
+
 /** The tables, their columns and what they hold, for the sidebar, the builder and autocomplete. */
 export function explorerCatalog(input: Pick<ExplorerInput, 'trackers' | 'clients' | 'messages'>): TableInfo[] {
   const catalog: TableInfo[] = [

@@ -15,7 +15,76 @@ const show = (value: SqlValue) => {
   return value
 }
 
-export function QueryResultView({ result, view, today }: { result: SqlResult; view: QueryView; today: string }) {
+/** Cells a report lets people type into: their tracker row is saved when they press Enter or leave the cell. */
+export type ResultEditing = {
+  columns: boolean[]
+  save: (rowIndex: number, columnIndex: number, text: string) => Promise<void>
+}
+
+function EditableCell({ value, onSave }: { value: SqlValue; onSave: (text: string) => Promise<void> }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState('')
+  const start = () => {
+    setText(value === null ? '' : String(value))
+    setProblem('')
+    setEditing(true)
+  }
+  const finish = async () => {
+    if (busy) return
+    if (text === (value === null ? '' : String(value))) return setEditing(false)
+    setBusy(true)
+    try {
+      await onSave(text)
+      setEditing(false)
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : 'Not saved. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (!editing)
+    return (
+      <button type="button" className="dx-edit-cell" title="Type to change it in the tracker" onClick={start}>
+        {show(value) || <span className="dx-edit-empty">Add…</span>}
+      </button>
+    )
+  return (
+    <span className="dx-edit-box">
+      <input
+        // biome-ignore lint/a11y/noAutofocus: the person just chose this cell to type in
+        autoFocus
+        aria-label="Edit cell"
+        value={text}
+        disabled={busy}
+        onChange={event => setText(event.target.value)}
+        onBlur={() => void finish()}
+        onKeyDown={event => {
+          if (event.key === 'Enter') void finish()
+          if (event.key === 'Escape') setEditing(false)
+        }}
+      />
+      {problem && (
+        <small className="dx-edit-problem" role="alert">
+          {problem}
+        </small>
+      )}
+    </span>
+  )
+}
+
+export function QueryResultView({
+  result,
+  view,
+  today,
+  edit,
+}: {
+  result: SqlResult
+  view: QueryView
+  today: string
+  edit?: ResultEditing
+}) {
   if (view === 'number') {
     const { value, label } = resultNumber(result)
     return (
@@ -68,8 +137,13 @@ export function QueryResultView({ result, view, today }: { result: SqlResult; vi
         <thead>
           <tr>
             {result.columns.map((column, index) => (
-              <th key={column} className={numeric[index] ? 'num' : ''}>
+              <th
+                key={column}
+                className={numeric[index] ? 'num' : ''}
+                title={edit?.columns[index] ? 'You can type in this column; it saves to the tracker.' : undefined}
+              >
                 {column}
+                {edit?.columns[index] ? ' ✎' : ''}
               </th>
             ))}
           </tr>
@@ -80,7 +154,11 @@ export function QueryResultView({ result, view, today }: { result: SqlResult; vi
             <tr key={rowIndex}>
               {row.map((value, index) => (
                 <td key={result.columns[index]} className={numeric[index] ? 'num' : value === null ? 'dx-null' : ''}>
-                  {show(value)}
+                  {edit?.columns[index] ? (
+                    <EditableCell value={value} onSave={text => edit.save(rowIndex, index, text)} />
+                  ) : (
+                    show(value)
+                  )}
                 </td>
               ))}
             </tr>

@@ -368,3 +368,36 @@ textarea.dx-sql[readonly] {
     display: none;
   }
 }
+
+/* Report tables: cells people can type into (saved to the tracker) */
+.dx-edit-cell {
+  width: 100%;
+  min-height: 24px;
+  padding: 2px 4px;
+  border: 0;
+  border-bottom: 1px dashed var(--k-border, var(--ui-border));
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: text;
+}
+.dx-edit-cell:hover {
+  background: var(--k-soft, rgba(127, 127, 127, 0.08));
+}
+.dx-edit-empty {
+  color: var(--k-muted, var(--ui-muted));
+}
+.dx-edit-box {
+  display: grid;
+  gap: 2px;
+}
+.dx-edit-box input {
+  width: 100%;
+  min-width: 120px;
+  font: inherit;
+}
+.dx-edit-problem {
+  color: var(--ui-danger, #c0392b);
+}

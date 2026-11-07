@@ -97,6 +97,7 @@ import { QueryResultView, useQueryRun, type QueryRunner } from '../explorer/Quer
 import { QueryWidgetEditor } from '../explorer/QueryWidgetEditor'
 import { reportFiltersIgnored, reportQueryParams, type ReportFilterValues } from '../explorer/reportParams'
 import { resultCsv } from '../explorer/resultView'
+import type { SqlValue } from '../explorer/sqlEngine'
 import { useExplorerData } from '../explorer/useExplorerData'
 import { ShareImage } from './ShareImage'
 import './customReports.css'
@@ -1139,6 +1140,8 @@ export default function CustomReports(props: Props) {
                         editing={editing}
                         today={today}
                         run={explorer.run}
+                        canEditCell={explorer.canEditCell}
+                        saveCell={explorer.saveCell}
                         refresh={data}
                         filters={filterValues}
                         onEdit={() => setEditingWidget(widget)}
@@ -1189,6 +1192,8 @@ export default function CustomReports(props: Props) {
               editing={false}
               today={today}
               run={explorer.run}
+              canEditCell={explorer.canEditCell}
+              saveCell={explorer.saveCell}
               refresh={data}
               filters={filterValues}
             />
@@ -1598,6 +1603,8 @@ function QueryWidgetCard({
   editing,
   today,
   run,
+  canEditCell,
+  saveCell,
   refresh,
   filters,
   onEdit,
@@ -1608,6 +1615,8 @@ function QueryWidgetCard({
   editing: boolean
   today: string
   run: QueryRunner
+  canEditCell?: (table: string, column: string) => boolean
+  saveCell?: (table: string, rowId: string, column: string, text: string) => Promise<SqlValue>
   refresh: unknown
   filters: ReportFilterValues
   onEdit?: () => void
@@ -1617,8 +1626,38 @@ function QueryWidgetCard({
   const sql = widget.query?.sql || ''
   const filterWarnings = queryFilterWarnings(sql, filters)
   const query = widget.query ? { ...widget.query, params: reportQueryParams(widget.query, filters) } : undefined
-  const { result, error, running } = useQueryRun(run, query, refresh)
+  const { result: ran, error, running } = useQueryRun(run, query, refresh)
   const title = widget.title || WIDGET_LABELS.query
+  // Values typed into the table since it last ran, shown until the next run brings them back from the tracker.
+  const [typed, setTyped] = useState<Record<string, SqlValue>>({})
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new run replaces what was typed
+  useEffect(() => setTyped({}), [ran])
+  const source = ran?.source
+  const result =
+    ran && source && Object.keys(typed).length
+      ? {
+          ...ran,
+          rows: ran.rows.map((row, rowIndex) =>
+            row.map((value, index) => {
+              const key = `${source.rowIds[rowIndex]}:${index}`
+              return key in typed ? typed[key] : value
+            }),
+          ),
+        }
+      : ran
+  const edit =
+    !editing && source && canEditCell && saveCell
+      ? {
+          columns: source.columns.map(column => Boolean(column && canEditCell(source.table, column))),
+          save: async (rowIndex: number, index: number, text: string) => {
+            const rowId = source.rowIds[rowIndex]
+            const column = source.columns[index]
+            if (!rowId || !column) throw new Error('This cell cannot be edited.')
+            const value = await saveCell(source.table, rowId, column, text)
+            setTyped(current => ({ ...current, [`${rowId}:${index}`]: value }))
+          },
+        }
+      : undefined
   return (
     <>
       <div className="crp-card-head">
@@ -1670,7 +1709,7 @@ function QueryWidgetCard({
         {error ? (
           <div className="crp-empty dx-error">{error}</div>
         ) : result ? (
-          <QueryResultView result={result} view={widget.query?.view || 'table'} today={today} />
+          <QueryResultView result={result} view={widget.query?.view || 'table'} today={today} edit={edit} />
         ) : (
           <div className="crp-empty">{running ? 'Running the query…' : ''}</div>
         )}
