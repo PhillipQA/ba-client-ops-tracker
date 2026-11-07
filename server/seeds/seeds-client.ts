@@ -1,8 +1,9 @@
 /**
  * Reading Seeds over HTTP. Read only: this app never writes to Seeds in this phase.
  *
- * The base URL and API key come from Settings › Integrations › Seeds. Each list is read from `<base>/<resource>`
- * (people, clients, projects, tasks, assignments) with `Authorization: Bearer <key>`. Responses may be a bare list or
+ * The base URL comes from Settings › Integrations › Seeds; each person's own API key from the Seeds page. Each list is
+ * read from `<base>/<resource>` (clients, projects, tasks, assignments, and if Seeds has them, people and `me`, who
+ * the key belongs to) with `Authorization: Bearer <key>`. Responses may be a bare list or
  * `{ data: [...] }` with an optional `next` link; field names are read leniently (camelCase or snake_case) so the
  * mapping can be confirmed against Seeds' API documentation without touching the sync.
  */
@@ -49,15 +50,18 @@ export function seedsRole(value: unknown): SeedsRole | null {
   return null
 }
 
+const person = (record: any) => ({
+  id: text(pick(record, 'id', 'person_id', 'personId', 'user_id', 'userId')),
+  name: text(pick(record, 'name', 'full_name', 'fullName', 'display_name')),
+  email: text(pick(record, 'email', 'email_address', 'emailAddress', 'work_email')),
+})
+
+type Lists = 'people' | 'clients' | 'projects' | 'tasks' | 'assignments'
+
 /** Turns Seeds' raw lists into the snapshot the sync reads. Records without an id or name are skipped. */
-export function parseSeedsSnapshot(raw: Record<keyof SeedsSnapshot, any[]>): SeedsSnapshot {
-  const people = raw.people
-    .map(record => ({
-      id: text(pick(record, 'id', 'person_id', 'personId', 'user_id', 'userId')),
-      name: text(pick(record, 'name', 'full_name', 'fullName', 'display_name')),
-      email: text(pick(record, 'email', 'email_address', 'emailAddress', 'work_email')),
-    }))
-    .filter(person => person.id && person.email)
+export function parseSeedsSnapshot(raw: Record<Lists, any[]> & { me?: any }): SeedsSnapshot {
+  const me = raw.me ? person(raw.me?.data ?? raw.me?.user ?? raw.me) : undefined
+  const people = raw.people.map(person).filter(entry => entry.id && entry.email)
   const clients = raw.clients
     .map(record => ({
       id: text(pick(record, 'id', 'client_id', 'clientId')),
@@ -99,7 +103,7 @@ export function parseSeedsSnapshot(raw: Record<keyof SeedsSnapshot, any[]>): See
     .filter((assignment): assignment is SeedsSnapshot['assignments'][number] =>
       Boolean(assignment.personId && assignment.role && (assignment.projectId || assignment.clientId)),
     )
-  return { people, clients, projects, tasks, assignments }
+  return { ...(me?.id ? { me } : {}), people, clients, projects, tasks, assignments }
 }
 
 /** Only public https addresses: the server calls this URL, so it must not reach the server's own network. */
@@ -132,26 +136,31 @@ export function httpSeedsSource(
   timeoutMs = 20000,
 ): SeedsSource {
   const base = cleanSeedsBaseUrl(baseUrl)
-  async function readAll(resource: keyof SeedsSnapshot) {
+  async function get(url: string, resource: string, optional: boolean) {
+    let response: Response
+    try {
+      response = await request(url, {
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+        redirect: 'error',
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+    } catch {
+      throw new SeedsError('Seeds could not be reached. Your last synced access stays in place.')
+    }
+    if (response.status === 401 || response.status === 403)
+      throw new SeedsError('Seeds did not accept your API key. Check it on the Seeds page › Sync.', 400)
+    if (optional && response.status === 404) return null
+    if (!response.ok) throw new SeedsError(`Seeds answered ${response.status} for ${resource}. Try again later.`)
+    return response.json().catch(() => {
+      throw new SeedsError(`Seeds sent something other than JSON for ${resource}.`)
+    })
+  }
+  async function readAll(resource: Lists, optional = false) {
     const records: any[] = []
     let url: string | null = `${base}/${resource}`
     for (let page = 0; url && page < MAX_PAGES; page++) {
-      let response: Response
-      try {
-        response = await request(url, {
-          headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-          redirect: 'error',
-          signal: AbortSignal.timeout(timeoutMs),
-        })
-      } catch {
-        throw new SeedsError('Seeds could not be reached. The last synced assignments stay in place.')
-      }
-      if (response.status === 401 || response.status === 403)
-        throw new SeedsError('Seeds did not accept the API key. Check it in Settings › Integrations › Seeds.', 400)
-      if (!response.ok) throw new SeedsError(`Seeds answered ${response.status} for ${resource}. Try again later.`)
-      const body: any = await response.json().catch(() => {
-        throw new SeedsError(`Seeds sent something other than JSON for ${resource}.`)
-      })
+      const body: any = await get(url, resource, optional)
+      if (body === null) return records
       const rows = Array.isArray(body)
         ? body
         : Array.isArray(body?.data)
@@ -170,14 +179,15 @@ export function httpSeedsSource(
   }
   return {
     async snapshot() {
-      const [people, clients, projects, tasks, assignments] = await Promise.all([
-        readAll('people'),
+      const [me, people, clients, projects, tasks, assignments] = await Promise.all([
+        get(`${base}/me`, 'me', true),
+        readAll('people', true),
         readAll('clients'),
         readAll('projects'),
         readAll('tasks'),
         readAll('assignments'),
       ])
-      return parseSeedsSnapshot({ people, clients, projects, tasks, assignments })
+      return parseSeedsSnapshot({ me, people, clients, projects, tasks, assignments })
     },
   }
 }

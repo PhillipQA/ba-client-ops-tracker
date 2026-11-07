@@ -5,8 +5,15 @@ import { assertLifecycleMutation, LifecycleError } from '../../src/features/task
 import { applySubtaskAssignmentInheritance } from '../../src/features/tasks/subtaskAssignment'
 import { normalizeAppTheme, normalizeClientThemes } from '../../src/features/settings/theme'
 import { preserveInterfaceModes } from '../accounts/preferences'
-import { AccessDenied, creatorAssignments, mergeScopedSave, scopeFor, workspaceAccess } from '../../src/shared/access'
-import { keepSeedsFields, seedsState } from '../../src/shared/seeds'
+import {
+  AccessDenied,
+  assignmentsFromSeeds,
+  creatorAssignments,
+  mergeScopedSave,
+  scopeFor,
+  workspaceAccess,
+} from '../../src/shared/access'
+import { keepSeedsFields } from '../../src/shared/seeds'
 import { WorkspaceRaceError } from '../services/workspace-guard'
 import {
   isBcryptHash,
@@ -289,7 +296,7 @@ export function registerStoreRoutes(app: Express) {
       // workspace: records it cannot see or change stay as stored. Access and Seeds data belong to the server.
       const scope = scopeFor(current, user.id)
       try {
-        next = mergeScopedSave(current, next, scope, { seedsConnected: seedsState(current).connected })
+        next = mergeScopedSave(current, next, scope, { seedsConnected: assignmentsFromSeeds(current, user.id) })
       } catch (error) {
         if (error instanceof AccessDenied) return void res.status(403).json({ configured: true, error: error.message })
         throw error

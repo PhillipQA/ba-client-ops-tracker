@@ -42,6 +42,9 @@ export interface SeedsAssignment {
   projectId?: string
 }
 export interface SeedsSnapshot {
+  /** Who the API key belongs to, when Seeds says. */
+  me?: SeedsPerson
+  /** May be empty: a personal key need not list other people. */
   people: SeedsPerson[]
   clients: SeedsClient[]
   projects: SeedsProject[]
@@ -73,47 +76,62 @@ export interface SeedsCounts {
   renamed: number
 }
 
-export interface SeedsState {
-  /** An Administrator saved a Seeds API key. Sync runs on its own from then on. */
+/** One person's own Seeds sync. */
+export interface SeedsUserSync {
+  /** This person has saved their Seeds API key. */
   connected: boolean
   lastAttemptAt?: string
   lastSuccessAt?: string
-  /** Why the last sync failed. The last good assignments stay in force meanwhile. */
+  /** Why their last sync failed. Their last good assignments stay in force meanwhile. */
   lastError?: string
   counts?: SeedsCounts
+}
+
+export interface SeedsState {
+  /** An Administrator turned Seeds on and gave its API address. Each person then connects their own key. */
+  connected: boolean
+  baseUrl?: string
+  users: Record<string, SeedsUserSync>
   pendingMatches: SeedsMatch[]
   /** Seeds ids whose suggested match was turned down; the next sync adds them as new records. */
   rejected: string[]
-  /** Seeds people with no account here (matched by email). */
-  unmatchedPeople: { id: string; name: string; email: string }[]
 }
 
-/** What the browser is told. Matches and unmatched people only go to those who can act on them. */
+/** What the browser is told: the person's own sync, and matches only for those who can act on them. */
 export interface SeedsStatus {
   connected: boolean
-  lastAttemptAt?: string
-  lastSuccessAt?: string
-  lastError?: string
-  counts?: SeedsCounts
+  baseUrl?: string
+  mine: SeedsUserSync
   canReview: boolean
   pendingMatches: SeedsMatch[]
-  unmatchedPeople: { id: string; name: string; email: string }[]
+  /** Administrators: who has connected Seeds and how their last sync went. */
+  people?: (SeedsUserSync & { userId: string })[]
 }
 
 const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 const text = (value: unknown) => (value == null ? '' : String(value))
 
+function userSync(raw: any): SeedsUserSync {
+  return {
+    connected: raw?.connected === true,
+    ...(raw?.lastAttemptAt ? { lastAttemptAt: text(raw.lastAttemptAt) } : {}),
+    ...(raw?.lastSuccessAt ? { lastSuccessAt: text(raw.lastSuccessAt) } : {}),
+    ...(raw?.lastError ? { lastError: text(raw.lastError) } : {}),
+    ...(raw?.counts && typeof raw.counts === 'object' ? { counts: raw.counts as SeedsCounts } : {}),
+  }
+}
+
 export function seedsState(state: any): SeedsState {
   const raw = state?.seeds && typeof state.seeds === 'object' ? state.seeds : {}
+  const users: Record<string, SeedsUserSync> = {}
+  if (raw.users && typeof raw.users === 'object')
+    for (const [userId, value] of Object.entries(raw.users)) users[userId] = userSync(value)
   return {
     connected: raw.connected === true,
-    ...(raw.lastAttemptAt ? { lastAttemptAt: text(raw.lastAttemptAt) } : {}),
-    ...(raw.lastSuccessAt ? { lastSuccessAt: text(raw.lastSuccessAt) } : {}),
-    ...(raw.lastError ? { lastError: text(raw.lastError) } : {}),
-    ...(raw.counts && typeof raw.counts === 'object' ? { counts: raw.counts as SeedsCounts } : {}),
+    ...(raw.baseUrl ? { baseUrl: text(raw.baseUrl) } : {}),
+    users,
     pendingMatches: list(raw.pendingMatches).filter(match => match?.id && match.seedsId && match.appId),
     rejected: list(raw.rejected).map(text).filter(Boolean),
-    unmatchedPeople: list(raw.unmatchedPeople).filter(person => person?.id),
   }
 }
 
@@ -122,8 +140,7 @@ export function seedsStatusFor(state: any, user: { id: string; role?: string }):
   const seeds = seedsState(state)
   const administrator = user.role === 'Administrator'
   const scope = scopeFor(state, user.id)
-  const manager = rolesFor(state, user.id).includes('PM')
-  const canReview = administrator || manager
+  const canReview = administrator || rolesFor(state, user.id).includes('PM')
   const sees = (match: SeedsMatch) =>
     administrator ||
     scope.all ||
@@ -134,13 +151,11 @@ export function seedsStatusFor(state: any, user: { id: string; role?: string }):
         : scope.visibleItems.has(match.appId))
   return {
     connected: seeds.connected,
-    ...(seeds.lastAttemptAt ? { lastAttemptAt: seeds.lastAttemptAt } : {}),
-    ...(seeds.lastSuccessAt ? { lastSuccessAt: seeds.lastSuccessAt } : {}),
-    ...(seeds.lastError ? { lastError: seeds.lastError } : {}),
-    ...(seeds.counts ? { counts: seeds.counts } : {}),
+    ...(seeds.baseUrl ? { baseUrl: seeds.baseUrl } : {}),
+    mine: seeds.users[user.id] || { connected: false },
     canReview,
     pendingMatches: canReview ? seeds.pendingMatches.filter(sees) : [],
-    unmatchedPeople: administrator ? seeds.unmatchedPeople : [],
+    ...(administrator ? { people: Object.entries(seeds.users).map(([userId, sync]) => ({ userId, ...sync })) } : {}),
   }
 }
 

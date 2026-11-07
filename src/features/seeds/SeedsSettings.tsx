@@ -1,6 +1,6 @@
 /**
- * Administrators: the Seeds connection (Settings › Integrations) and who sees what (Settings › Access).
- * Saving a Seeds API key is what turns Seeds on; it syncs straight away and every 30 minutes after.
+ * Administrators: Seeds for the account (Settings › Integrations) and who sees what (Settings › Access).
+ * Each person connects Seeds with their own API key on the Seeds page › Sync.
  */
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -9,26 +9,24 @@ import {
   type AccessSetup,
   type AssignmentInput,
   loadAccessSetup,
-  loadSeedsConnection,
-  removeSeedsConnection,
-  type SeedsConnection,
+  loadSeedsAccount,
+  type SeedsAccount,
   saveAccessSetup,
-  saveSeedsConnection,
-  syncSeeds,
+  saveSeedsAccount,
+  turnOffSeeds,
 } from './seedsApi'
 import './seeds.css'
 
 const failure = (error: unknown) => (error instanceof Error ? error.message : 'Request failed.')
 
-export function SeedsConnectionCard({ onChanged }: { onChanged?: () => void }) {
-  const [connection, setConnection] = useState<SeedsConnection | null>(null)
+export function SeedsConnectionCard() {
+  const [account, setAccount] = useState<SeedsAccount | null>(null)
   const [baseUrl, setBaseUrl] = useState('')
-  const [apiKey, setApiKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const load = async () => {
-    const next = await loadSeedsConnection()
-    setConnection(next)
+    const next = await loadSeedsAccount()
+    setAccount(next)
     setBaseUrl(current => current || next.baseUrl)
   }
   useEffect(() => {
@@ -40,40 +38,28 @@ export function SeedsConnectionCard({ onChanged }: { onChanged?: () => void }) {
     try {
       setMessage(await action())
       await load()
-      onChanged?.()
     } catch (error) {
       setMessage(failure(error))
     } finally {
       setBusy(false)
     }
   }
-  const status = connection?.status
+  const people = account?.people || []
   return (
     <section className="panel account-integration-card">
       <div className="panel-heading">
         <div>
           <h2>Seeds</h2>
           <p>
-            Clients, projects (with contract numbers), tasks and who is assigned to them come from Seeds. Saving the API
-            key turns Seeds on.
+            Turn Seeds on and give its API address. Each person then connects with their own Seeds API key on the Seeds
+            page › Sync, and sees only what Seeds shows them.
           </p>
         </div>
-        <span
-          className={connection?.configured ? (status?.lastError ? 'role-badge warn' : 'role-badge ok') : 'role-badge'}
-        >
-          {connection?.configured ? (status?.lastError ? 'Needs attention' : 'Connected') : 'Not connected'}
-        </span>
+        <span className={account?.connected ? 'role-badge ok' : 'role-badge'}>{account?.connected ? 'On' : 'Off'}</span>
       </div>
-      {connection?.configured && (
-        <p>
-          Saved key: <b>{connection.maskedKey}</b> · Last sync:{' '}
-          {status?.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleString() : 'not yet'}
-          {status?.lastError ? ` · ${status.lastError}` : ''}
-        </p>
-      )}
-      {connection && !connection.encryptionReady && (
+      {account && !account.encryptionReady && (
         <p role="alert" className="settings-message">
-          Integration storage needs setup by Internal Admin before a Seeds key can be saved.
+          Credential storage needs setup by Internal Admin before people can save their Seeds keys.
         </p>
       )}
       <div className="integration-form">
@@ -87,66 +73,65 @@ export function SeedsConnectionCard({ onChanged }: { onChanged?: () => void }) {
             autoComplete="off"
           />
         </label>
-        <label>
-          {connection?.configured ? 'Replace API key (leave blank to keep it)' : 'Seeds API key'}
-          <input
-            type="password"
-            value={apiKey}
-            onChange={event => setApiKey(event.target.value)}
-            autoComplete="new-password"
-          />
-        </label>
       </div>
       <div className="integration-actions">
         <button
           type="button"
           className="primary"
-          disabled={busy || !baseUrl.trim() || (!apiKey.trim() && !connection?.configured)}
+          disabled={busy || !baseUrl.trim()}
           onClick={() =>
             void act(async () => {
-              const result = await saveSeedsConnection(baseUrl.trim(), apiKey.trim())
-              setApiKey('')
-              return result.sync.ok
-                ? `Seeds is connected and synced.${result.sync.pending ? ` ${result.sync.pending} match${result.sync.pending === 1 ? '' : 'es'} to confirm on the Seeds page.` : ''}`
-                : `Saved, but the first sync failed: ${result.sync.error}`
+              await saveSeedsAccount(baseUrl.trim())
+              return 'Seeds is on. People can now connect their own Seeds key on the Seeds page › Sync.'
             })
           }
         >
-          {connection?.configured ? 'Save' : 'Connect Seeds'}
+          {account?.connected ? 'Save address' : 'Turn on Seeds'}
         </button>
-        {connection?.configured && (
-          <>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={() =>
-                void act(async () => {
-                  const result = await syncSeeds()
-                  return result.ok ? 'Synced.' : result.error || 'Seeds could not be read.'
-                })
-              }
-            >
-              Sync now
-            </button>
-            <button
-              type="button"
-              className="secondary danger"
-              disabled={busy}
-              onClick={() => {
-                if (!window.confirm('Disconnect Seeds? Hand-entered assignments count again until it is reconnected.'))
-                  return
-                void act(async () => {
-                  await removeSeedsConnection()
-                  return 'Seeds disconnected.'
-                })
-              }}
-            >
-              Disconnect
-            </button>
-          </>
+        {account?.connected && (
+          <button
+            type="button"
+            className="secondary danger"
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm('Turn Seeds off? Hand-entered assignments count again until it is turned back on.'))
+                return
+              void act(async () => {
+                await turnOffSeeds()
+                return 'Seeds is off.'
+              })
+            }}
+          >
+            Turn off
+          </button>
         )}
       </div>
+      {account?.connected && (
+        <>
+          <h3>Who has connected</h3>
+          {people.length ? (
+            <ul className="seeds-list">
+              {people.map(person => (
+                <li key={person.userId}>
+                  <div>
+                    <strong>{person.name}</strong>
+                    <small>
+                      {' '}
+                      ·{' '}
+                      {person.lastSuccessAt
+                        ? `synced ${new Date(person.lastSuccessAt).toLocaleString()}`
+                        : 'not synced yet'}
+                      {person.lastError ? ` · ${person.lastError}` : ''}
+                    </small>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>Nobody yet.</p>
+          )}
+        </>
+      )}
       {message && (
         <p role="status" className="settings-message">
           {message}
@@ -193,7 +178,9 @@ export function AccessSettings() {
   const projects = new Map<string, AccessSetup['projects'][number]>(
     setup.projects.map(project => [project.id, project]),
   )
-  const shown = setup.assignments.filter(a => a.source === (setup.assignmentsFromSeeds ? 'seeds' : 'manual'))
+  // In force per person: from their own Seeds sync once they have one, otherwise the ones entered here.
+  const fromSeeds = new Set(setup.seedsConnected ? setup.seedsUsers : [])
+  const shown = setup.assignments.filter(a => a.source === (fromSeeds.has(a.userId) ? 'seeds' : 'manual'))
   const manualAssignments = setup.assignments.filter(a => a.source === 'manual')
   const toInput = ({ userId, role, clientId, projectId }: AssignmentInput): AssignmentInput => ({
     userId,
@@ -201,7 +188,6 @@ export function AccessSettings() {
     ...(projectId ? { projectId } : { clientId }),
   })
   const manual = manualAssignments.map(toInput)
-  const locked = setup.assignmentsFromSeeds
   const where = (a: { clientId?: string; projectId?: string }) =>
     a.projectId
       ? `${projects.get(a.projectId)?.name || 'Project'}${projects.get(a.projectId)?.clientId ? ` · ${clients.get(String(projects.get(a.projectId)?.clientId))?.name || ''}` : ''}`
@@ -253,11 +239,9 @@ export function AccessSettings() {
           <div>
             <h2>Assignments</h2>
             <p>
-              {locked
-                ? 'These come from Seeds and change there. They refresh on every sync.'
-                : setup.seedsConnected
-                  ? 'Seeds is connected; its assignments replace these after the first successful sync.'
-                  : 'Until Seeds is connected, enter who works on which client or project here. Roles add up: someone can be PM on one project and BA on another.'}
+              {setup.seedsConnected
+                ? 'People who have connected their own Seeds get their access from Seeds (it changes there). For everyone else, enter it here.'
+                : 'Until Seeds is on, enter who works on which client or project here. Roles add up: someone can be PM on one project and BA on another.'}
             </p>
           </div>
         </div>
@@ -268,7 +252,8 @@ export function AccessSettings() {
                 <th>Person</th>
                 <th>Role</th>
                 <th>Client or project</th>
-                {!locked && <th aria-label="Remove" />}
+                <th>From</th>
+                <th aria-label="Remove" />
               </tr>
             </thead>
             <tbody>
@@ -277,7 +262,8 @@ export function AccessSettings() {
                   <td>{users.get(assignment.userId)?.name || 'Former user'}</td>
                   <td>{SEEDS_ROLE_LABELS[assignment.role]}</td>
                   <td>{where(assignment)}</td>
-                  {!locked && (
+                  <td>{assignment.source === 'seeds' ? 'Seeds' : 'Entered here'}</td>
+                  {assignment.source === 'manual' ? (
                     <td>
                       <button
                         type="button"
@@ -294,6 +280,8 @@ export function AccessSettings() {
                         <Trash2 size={16} />
                       </button>
                     </td>
+                  ) : (
+                    <td />
                   )}
                 </tr>
               ))}
@@ -302,77 +290,75 @@ export function AccessSettings() {
         ) : (
           <p>No assignments yet.</p>
         )}
-        {!locked && (
-          <div className="access-add">
-            <label>
-              Person
-              <select value={draft.userId} onChange={event => setDraft({ ...draft, userId: event.target.value })}>
-                <option value="">Choose…</option>
-                {active.map(user => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Role
-              <select
-                value={draft.role}
-                onChange={event => setDraft({ ...draft, role: event.target.value as SeedsRole })}
-              >
-                {SEEDS_ROLES.map(role => (
-                  <option key={role} value={role}>
-                    {SEEDS_ROLE_LABELS[role]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Client or project
-              <select value={draft.target} onChange={event => setDraft({ ...draft, target: event.target.value })}>
-                <option value="">Choose…</option>
-                <optgroup label="Whole client">
-                  {setup.clients
-                    .filter(client => !client.archived)
-                    .map(client => (
-                      <option key={client.id} value={`client:${client.id}`}>
-                        {client.name}
-                      </option>
-                    ))}
-                </optgroup>
-                <optgroup label="One project">
-                  {setup.projects
-                    .filter(project => !project.archived)
-                    .map(project => (
-                      <option key={project.id} value={`project:${project.id}`}>
-                        {project.name}
-                        {project.contractNumber ? ` (${project.contractNumber})` : ''}
-                      </option>
-                    ))}
-                </optgroup>
-              </select>
-            </label>
-            <button
-              type="button"
-              className="primary"
-              disabled={busy || !draft.userId || !draft.target}
-              onClick={() => {
-                const [kind, id] = draft.target.split(/:(.*)/s)
-                const next: AssignmentInput = {
-                  userId: draft.userId,
-                  role: draft.role,
-                  ...(kind === 'project' ? { projectId: id } : { clientId: id }),
-                }
-                void save({ assignments: [...manual, next] }, 'Assignment added.').then(() =>
-                  setDraft({ ...draft, target: '' }),
-                )
-              }}
+        <div className="access-add">
+          <label>
+            Person
+            <select value={draft.userId} onChange={event => setDraft({ ...draft, userId: event.target.value })}>
+              <option value="">Choose…</option>
+              {active.map(user => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Role
+            <select
+              value={draft.role}
+              onChange={event => setDraft({ ...draft, role: event.target.value as SeedsRole })}
             >
-              <Plus size={16} /> Assign
-            </button>
-          </div>
-        )}
+              {SEEDS_ROLES.map(role => (
+                <option key={role} value={role}>
+                  {SEEDS_ROLE_LABELS[role]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Client or project
+            <select value={draft.target} onChange={event => setDraft({ ...draft, target: event.target.value })}>
+              <option value="">Choose…</option>
+              <optgroup label="Whole client">
+                {setup.clients
+                  .filter(client => !client.archived)
+                  .map(client => (
+                    <option key={client.id} value={`client:${client.id}`}>
+                      {client.name}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="One project">
+                {setup.projects
+                  .filter(project => !project.archived)
+                  .map(project => (
+                    <option key={project.id} value={`project:${project.id}`}>
+                      {project.name}
+                      {project.contractNumber ? ` (${project.contractNumber})` : ''}
+                    </option>
+                  ))}
+              </optgroup>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !draft.userId || !draft.target}
+            onClick={() => {
+              const [kind, id] = draft.target.split(/:(.*)/s)
+              const next: AssignmentInput = {
+                userId: draft.userId,
+                role: draft.role,
+                ...(kind === 'project' ? { projectId: id } : { clientId: id }),
+              }
+              void save({ assignments: [...manual, next] }, 'Assignment added.').then(() =>
+                setDraft({ ...draft, target: '' }),
+              )
+            }}
+          >
+            <Plus size={16} /> Assign
+          </button>
+        </div>
         {message && (
           <p role="status" className="settings-message">
             {message}

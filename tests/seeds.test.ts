@@ -7,7 +7,13 @@ import { registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
 import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
 
-const options = { now: '2026-11-07T08:00:00.000Z', today: '2026-11-07', openStatus: 'Open', waitingOn: 'Internal' }
+const options = {
+  now: '2026-11-07T08:00:00.000Z',
+  today: '2026-11-07',
+  openStatus: 'Open',
+  waitingOn: 'Internal',
+  userId: 'u-bea',
+}
 let counter = 0
 const sequential = () => `new-${++counter}`
 
@@ -40,6 +46,8 @@ function existing() {
       assignments: [{ id: 'm1', userId: 'u-bea', role: 'BA', clientId: 'c-bolt', source: 'manual' }],
     },
     taskSettings: { statuses: [] },
+    // An Administrator has turned Seeds on (the route tests start with it off).
+    seeds: { connected: true, baseUrl: 'https://seeds.example.com/api' },
   }
 }
 
@@ -112,24 +120,18 @@ test('a first sync links what exists, adds what is new and holds close names for
   assert.equal(state.items.find((i: any) => i.id === 't-local').seedsId, undefined, 'work not in Seeds keeps working')
   assert.equal(state.items.find((i: any) => i.id === 't-sub').seedsId, undefined, 'subtasks stay in this app')
 
+  // Only Bea's own assignments, although Seeds also listed her colleagues'.
   assert.deepEqual(
-    activeAssignments(state).map(a => [a.userId, a.role, a.projectId || a.clientId]),
-    [
-      ['u-bea', 'BA', 'p-portal'],
-      ['u-pao', 'PM', state.clients.find((c: any) => c.seedsId === 's-new').id],
-    ],
+    activeAssignments(state, 'u-bea').map(a => [a.userId, a.role, a.projectId || a.clientId]),
+    [['u-bea', 'BA', 'p-portal']],
   )
+  assert.deepEqual(activeAssignments(state, 'u-pao'), [], 'Paolo has not connected his Seeds')
   assert.equal(
     state.access.assignments.some((a: any) => a.id === 'm1'),
     true,
     'hand-entered ones are kept, unused',
   )
-  assert.deepEqual(
-    state.seeds.unmatchedPeople.map((p: any) => p.email),
-    ['xavier@company.com'],
-  )
-  assert.equal(state.seeds.connected, true)
-  assert.equal(state.seeds.lastSuccessAt, options.now)
+  assert.equal(state.seeds.users['u-bea'].lastSuccessAt, options.now)
   assert.equal(counts.created, 4, 'Nimbus, Core Banking, Internal and Documentation')
 })
 
@@ -205,13 +207,33 @@ test('confirming a match links it; turning it down adds a new record next time',
 })
 
 test('only reviewers see matches, and only matches on records they can see', () => {
-  const state = planSeedsSync(existing(), snapshot(), { ...options, id: sequential }).state
+  const bea = planSeedsSync(existing(), snapshot(), { ...options, id: sequential }).state
+  const state = planSeedsSync(bea, snapshot(), { ...options, userId: 'u-pao', id: sequential }).state
   assert.equal(seedsStatusFor(state, { id: 'admin', role: 'Administrator' }).pendingMatches.length, 1)
   assert.equal(seedsStatusFor(state, { id: 'u-bea', role: 'Contributor' }).canReview, false)
   const pm = seedsStatusFor(state, { id: 'u-pao', role: 'Contributor' })
-  assert.equal(pm.canReview, true)
+  assert.equal(pm.canReview, true, 'Paolo is PM in his own Seeds')
   assert.deepEqual(pm.pendingMatches, [], 'Paolo manages Nimbus, not Bolt')
-  assert.deepEqual(seedsStatusFor(state, { id: 'u-pao', role: 'Contributor' }).unmatchedPeople, [])
+  assert.equal(pm.people, undefined, 'only Administrators see who has connected')
+  assert.equal(seedsStatusFor(state, { id: 'admin', role: 'Administrator' }).people?.length, 2)
+})
+
+test('a personal key that names its owner picks only their assignments', () => {
+  const { state } = planSeedsSync(existing(), snapshot({ me: { id: 'sp-pao', name: 'Paolo', email: 'p@x' } }), {
+    ...options,
+    userId: 'u-pao',
+  })
+  assert.deepEqual(
+    activeAssignments(state, 'u-pao').map(a => a.role),
+    ['PM'],
+  )
+  const anonymous = snapshot({ people: [], assignments: [{ personId: '', role: 'BA', projectId: 's-portal' }] })
+  const own = planSeedsSync(existing(), anonymous, options).state
+  assert.deepEqual(
+    activeAssignments(own, 'u-bea').map(a => a.role),
+    ['BA'],
+    'without person ids, everything the key returns is the owner’s',
+  )
 })
 
 test('Seeds answers are read leniently', () => {
@@ -267,6 +289,7 @@ test('the HTTP reader sends the key, follows pages and stops at other hosts', as
     'https://seeds.example.com/api/projects': { projects: [] },
     'https://seeds.example.com/api/tasks': [],
     'https://seeds.example.com/api/assignments': [],
+    'https://seeds.example.com/api/me': { data: { id: 1, name: 'Bea', email: 'bea@co' } },
   }
   const fetcher = (async (url: string, init: any) => {
     calls.push({ url, auth: init.headers.Authorization })
@@ -278,7 +301,13 @@ test('the HTTP reader sends the key, follows pages and stops at other hosts', as
     result.people.map(p => p.name),
     ['Bea', 'Paolo'],
   )
+  assert.equal(result.me?.id, '1')
   assert.ok(calls.every(call => call.auth === 'Bearer secret-key'))
+  delete pages['https://seeds.example.com/api/me']
+  delete pages['https://seeds.example.com/api/people?page=2']
+  pages['https://seeds.example.com/api/people'] = undefined
+  const minimal = await httpSeedsSource('https://seeds.example.com/api', 'secret-key', fetcher).snapshot()
+  assert.deepEqual([minimal.me, minimal.people], [undefined, []], 'people and me are optional')
 
   pages['https://seeds.example.com/api/people'] = { data: [], next: 'https://elsewhere.example.com/steal' }
   await assert.rejects(httpSeedsSource('https://seeds.example.com/api', 'k', fetcher).snapshot(), /another address/)
@@ -320,9 +349,7 @@ function fakeDb() {
     }
     run() {
       if (this.action === 'upsert') {
-        const at = rows.findIndex(
-          r => r.tenant_id === this.payload.tenant_id && r.integration_type === this.payload.integration_type,
-        )
+        const at = rows.findIndex(r => r.tenant_id === this.payload.tenant_id && r.user_id === this.payload.user_id)
         if (at >= 0) rows[at] = this.payload
         else rows.push(this.payload)
         return { data: null, error: null }
@@ -382,7 +409,7 @@ function fakeApp() {
 }
 
 function setup(source: () => Promise<SeedsSnapshot>) {
-  let stored: any = existing()
+  let stored: any = { ...existing(), seeds: undefined }
   const db = fakeDb()
   const app = fakeApp()
   const pass = (_req: any, _res: any, next: () => void) => next()
@@ -397,79 +424,117 @@ function setup(source: () => Promise<SeedsSnapshot>) {
     raced: () => false,
     openStatus: () => 'Open',
     today: () => '2026-11-07',
-    secrets: { encrypt: secret => `enc:${secret}`, decrypt: value => value.slice(4), ready: () => true },
+    secrets: {
+      encrypt: (secret, owner) => `enc:${owner}:${secret}`,
+      decrypt: (value, owner) => value.replace(`enc:${owner}:`, ''),
+      ready: () => true,
+    },
     source: (baseUrl, apiKey) => {
       assert.equal(baseUrl, 'https://seeds.example.com/api')
-      assert.equal(apiKey, 'seeds-api-key-123')
-      return { snapshot: source }
+      return { snapshot: () => source(apiKey) }
     },
   })
   return { app, db, state: () => stored }
 }
 const admin = { id: 'admin', role: 'Administrator', modules: ['settings'], organizationId: 'org' }
 const bea = { id: 'u-bea', role: 'Contributor', modules: ['items'], organizationId: 'org' }
+const pao = { id: 'u-pao', role: 'Contributor', modules: ['items'], organizationId: 'org' }
+/** Each person's key reads their own Seeds: Seeds names its owner. */
+const personal = (apiKey: string) =>
+  snapshot({
+    me:
+      apiKey === 'bea-key-123456'
+        ? { id: 'sp-bea', name: 'Bea', email: 'bea@company.com' }
+        : { id: 'sp-pao', name: 'Paolo', email: 'paolo@company.com' },
+  })
+const turnOn = (app: any) => app.ask('PUT', '/api/account/seeds', admin, { baseUrl: 'https://seeds.example.com/api' })
 
-test('saving the Seeds key turns Seeds on and syncs straight away', async () => {
-  const { app, db, state } = setup(async () => snapshot())
-  const denied = await app.ask('PUT', '/api/account/seeds', bea, {
-    baseUrl: 'https://seeds.example.com/api',
-    apiKey: 'x',
-  })
+test('an Administrator turns Seeds on; each person connects their own key and gets their own access', async () => {
+  const { app, db, state } = setup(async key => personal(key))
+  const denied = await app.ask('PUT', '/api/account/seeds', bea, { baseUrl: 'https://seeds.example.com/api' })
   assert.equal(denied.status, 403)
-  const saved = await app.ask('PUT', '/api/account/seeds', admin, {
-    baseUrl: 'https://seeds.example.com/api',
-    apiKey: 'seeds-api-key-123',
-  })
+  const early = await app.ask('PUT', '/api/me/seeds', bea, { apiKey: 'bea-key-123456' })
+  assert.equal(early.status, 409, 'not before Seeds is on')
+  assert.equal((await turnOn(app)).status, 200)
+  assert.equal(state().seeds.baseUrl, 'https://seeds.example.com/api')
+
+  const saved = await app.ask('PUT', '/api/me/seeds', bea, { apiKey: 'bea-key-123456' })
   assert.equal(saved.status, 200, JSON.stringify(saved.body))
   assert.equal(saved.body.sync.ok, true)
-  assert.equal(db.rows[0].encrypted_secret, 'enc:seeds-api-key-123')
-  assert.equal(db.rows[0].connection_status, 'verified')
-  assert.equal(state().seeds.connected, true)
-  assert.ok(activeAssignments(state()).some(a => a.userId === 'u-bea' && a.source === 'seeds'))
-  const shown = await app.ask('GET', '/api/account/seeds', admin)
-  assert.equal(shown.body.maskedKey, '••••••••-123')
-  assert.ok(!JSON.stringify(shown.body).includes('seeds-api-key-123'), 'the key never comes back')
+  assert.deepEqual(
+    db.rows.map((row: any) => [row.user_id, row.encrypted_key, row.connection_status]),
+    [['u-bea', 'enc:org:u-bea:bea-key-123456', 'verified']],
+  )
+  assert.deepEqual(
+    activeAssignments(state(), 'u-bea').map(a => a.role),
+    ['BA'],
+  )
+  assert.deepEqual(activeAssignments(state(), 'u-pao'), [], 'Paolo has not connected yet')
+  const mine = await app.ask('GET', '/api/me/seeds', bea)
+  assert.equal(mine.body.maskedKey, '••••••••3456')
+  assert.ok(!JSON.stringify(mine.body).includes('bea-key-123456'), 'the key never comes back')
 
-  // Hand-entered assignments are locked while Seeds decides.
-  const locked = await app.ask('PUT', '/api/access', admin, { assignments: [] })
-  assert.equal(locked.status, 409)
-  const toggled = await app.ask('PUT', '/api/access', admin, { strictVisibility: false })
-  assert.equal(toggled.status, 200)
-  assert.equal(state().access.strictVisibility, false)
+  await app.ask('PUT', '/api/me/seeds', pao, { apiKey: 'pao-key-123456' })
+  assert.deepEqual(
+    activeAssignments(state(), 'u-pao').map(a => a.role),
+    ['PM'],
+  )
+  assert.deepEqual(
+    activeAssignments(state(), 'u-bea').map(a => a.role),
+    ['BA'],
+    'one person’s sync leaves the others’ access alone',
+  )
+  const overview = await app.ask('GET', '/api/account/seeds', admin)
+  assert.deepEqual(overview.body.people.map((p: any) => p.name).sort(), ['Bea', 'Paolo'])
 
+  // Disconnecting takes that person's Seeds access with the key.
+  assert.equal((await app.ask('DELETE', '/api/me/seeds', bea)).status, 200)
+  assert.deepEqual(
+    activeAssignments(state(), 'u-bea').map(a => a.id),
+    ['m1'],
+    'back to hand-entered',
+  )
+  assert.deepEqual(
+    db.rows.map((row: any) => row.user_id),
+    ['u-pao'],
+  )
   const off = await app.ask('DELETE', '/api/account/seeds', admin)
   assert.equal(off.status, 200)
-  assert.equal(state().seeds.connected, false)
-  assert.equal(db.rows.length, 0)
+  assert.deepEqual(activeAssignments(state(), 'u-pao'), [], 'Seeds off: hand-entered access counts (none for Paolo)')
 })
 
-test('when Seeds is down the last synced assignments stay and the error shows', async () => {
+test('when Seeds is down your last synced access stays and the error shows', async () => {
   let down = false
-  const { app, state } = setup(async () => {
+  const { app, state } = setup(async key => {
     if (down) throw new Error('ECONNREFUSED')
-    return snapshot()
+    return personal(key)
   })
-  await app.ask('PUT', '/api/account/seeds', admin, {
-    baseUrl: 'https://seeds.example.com/api',
-    apiKey: 'seeds-api-key-123',
-  })
-  const before = activeAssignments(state())
+  await turnOn(app)
+  await app.ask('PUT', '/api/me/seeds', bea, { apiKey: 'bea-key-123456' })
+  const before = activeAssignments(state(), 'u-bea')
   down = true
-  const result = await app.ask('POST', '/api/seeds/sync', admin)
+  const result = await app.ask('POST', '/api/seeds/sync', bea)
   assert.equal(result.body.ok, false)
-  assert.deepEqual(activeAssignments(state()), before)
-  assert.ok(state().seeds.lastError)
-  assert.equal((await app.ask('POST', '/api/seeds/sync', bea)).status, 403, 'BAs do not run syncs')
+  assert.deepEqual(activeAssignments(state(), 'u-bea'), before)
+  assert.ok(state().seeds.users['u-bea'].lastError)
+  assert.equal((await app.ask('POST', '/api/seeds/sync', pao)).status, 409, 'Paolo has no key yet')
 })
 
-test('a Project Manager confirms a match they can see', async () => {
-  const { app, state } = setup(async () => snapshot())
-  await app.ask('PUT', '/api/account/seeds', admin, {
-    baseUrl: 'https://seeds.example.com/api',
-    apiKey: 'seeds-api-key-123',
-  })
-  const pm = { id: 'u-pao', role: 'Contributor', modules: ['items'], organizationId: 'org' }
-  assert.equal((await app.ask('POST', '/api/seeds/matches/client:s-bolt', pm, { decision: 'confirm' })).status, 404)
+test('a reviewer confirms a match they can see', async () => {
+  const { app, state } = setup(async key => personal(key))
+  await turnOn(app)
+  await app.ask('PUT', '/api/me/seeds', bea, { apiKey: 'bea-key-123456' })
+  await app.ask('PUT', '/api/me/seeds', pao, { apiKey: 'pao-key-123456' })
+  assert.equal(
+    (await app.ask('POST', '/api/seeds/matches/client:s-bolt', bea, { decision: 'confirm' })).status,
+    403,
+    'BAs do not confirm matches',
+  )
+  assert.equal(
+    (await app.ask('POST', '/api/seeds/matches/client:s-bolt', pao, { decision: 'confirm' })).status,
+    404,
+    'Paolo cannot see Bolt',
+  )
   const done = await app.ask('POST', '/api/seeds/matches/client:s-bolt', admin, { decision: 'confirm' })
   assert.equal(done.status, 200, JSON.stringify(done.body))
   assert.equal(state().clients.find((c: any) => c.id === 'c-bolt').seedsId, 's-bolt')
@@ -477,7 +542,7 @@ test('a Project Manager confirms a match they can see', async () => {
 })
 
 test('hand-entered assignments: Administrators only, names only, checked', async () => {
-  const { app, state } = setup(async () => snapshot())
+  const { app, state } = setup(async key => personal(key))
   assert.equal((await app.ask('GET', '/api/access', bea)).status, 403)
   const listed = await app.ask('GET', '/api/access', admin)
   assert.deepEqual(Object.keys(listed.body.clients[0]).sort(), ['id', 'name'])

@@ -41,7 +41,7 @@ export interface WorkspaceAccess {
 export interface ClientAccess {
   strictVisibility: boolean
   seedsConnected: boolean
-  /** True when assignments come from Seeds, so hand-entered ones are locked. */
+  /** True when this person's access comes from their own Seeds sync. */
   assignmentsFromSeeds: boolean
   roles: SeedsRole[]
   /** Tagged only as Account Manager: a Viewer limited to Action Center, Reports and AI BA Assistant. */
@@ -94,22 +94,24 @@ export function workspaceAccess(state: any): WorkspaceAccess {
   }
 }
 
-/** Seeds owns assignments once it is connected and has synced at least once. Until then the hand-entered ones count. */
-export function assignmentsFromSeeds(state: any) {
-  return state?.seeds?.connected === true && Boolean(state?.seeds?.lastSuccessAt)
+/**
+ * Each person connects Seeds with their own API key. Once Seeds is on for the account and that person's own sync has
+ * succeeded, Seeds decides their access; until then their hand-entered assignments (if any) count.
+ */
+export function assignmentsFromSeeds(state: any, userId: string) {
+  return state?.seeds?.connected === true && Boolean(state?.seeds?.users?.[userId]?.lastSuccessAt)
 }
 
-export function activeAssignments(state: any): Assignment[] {
-  const source: AssignmentSource = assignmentsFromSeeds(state) ? 'seeds' : 'manual'
-  return workspaceAccess(state).assignments.filter(assignment => assignment.source === source)
+/** The assignments in force for one person. */
+export function activeAssignments(state: any, userId: string): Assignment[] {
+  const source: AssignmentSource = assignmentsFromSeeds(state, userId) ? 'seeds' : 'manual'
+  return workspaceAccess(state).assignments.filter(
+    assignment => assignment.userId === userId && assignment.source === source,
+  )
 }
 
 export function rolesFor(state: any, userId: string): SeedsRole[] {
-  const roles = new Set(
-    activeAssignments(state)
-      .filter(a => a.userId === userId)
-      .map(a => a.role),
-  )
+  const roles = new Set(activeAssignments(state, userId).map(a => a.role))
   return SEEDS_ROLES.filter(role => roles.has(role))
 }
 
@@ -169,8 +171,7 @@ export function scopeFor(state: any, userId: string): Scope {
   }
   if (scope.all) return scope
 
-  for (const assignment of activeAssignments(state)) {
-    if (assignment.userId !== userId) continue
+  for (const assignment of activeAssignments(state, userId)) {
     const write = assignment.role !== 'AM'
     if (assignment.projectId) {
       scope.fullProjects.add(assignment.projectId)
@@ -478,16 +479,16 @@ export function creatorAssignments(current: any, saved: any, userId: string): As
 
 export function clientAccessFor(state: any, user: { id: string; role?: string }): ClientAccess {
   const access = workspaceAccess(state)
-  const fromSeeds = assignmentsFromSeeds(state)
+  const fromSeeds = assignmentsFromSeeds(state, user.id)
   const scope = scopeFor(state, user.id)
-  const active = activeAssignments(state)
+  const active = activeAssignments(state, user.id)
   return {
     strictVisibility: access.strictVisibility,
     seedsConnected: state?.seeds?.connected === true,
     assignmentsFromSeeds: fromSeeds,
     roles: rolesFor(state, user.id),
     accountManagerOnly: user.role !== 'Administrator' && isAccountManagerOnly(state, user.id),
-    assignments: active.filter(assignment => assignment.userId === user.id),
+    assignments: active,
     ...(scope.all ? {} : { writableClientIds: [...scope.writeClients], writableProjectIds: [...scope.writeProjects] }),
   }
 }

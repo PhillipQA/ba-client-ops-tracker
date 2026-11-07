@@ -317,10 +317,10 @@ test('once Seeds has synced, only its assignments count', () => {
         { id: 's', userId: 'ba', role: 'BA', clientId: 'B', source: 'seeds' },
       ],
     }),
-    seeds: { connected: true, lastSuccessAt: '2026-11-07T00:00:00Z' },
+    seeds: { connected: true, users: { ba: { connected: true, lastSuccessAt: '2026-11-07T00:00:00Z' } } },
   }
   assert.deepEqual(ids(scopedState(state, scopeFor(state, 'ba')).clients), ['B'])
-  const offline = { ...state, seeds: { connected: false, lastSuccessAt: '2026-11-07T00:00:00Z' } }
+  const offline = { ...state, seeds: { ...state.seeds, connected: false } }
   assert.deepEqual(ids(scopedState(offline, scopeFor(offline, 'ba')).clients), ['A'])
 })
 

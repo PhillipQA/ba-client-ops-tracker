@@ -5,14 +5,28 @@
  */
 import { effectiveAccount } from '../../src/shared/access'
 
-type AccessSnapshot = { access: unknown; seeds?: { connected?: unknown; lastSuccessAt?: unknown } }
+type AccessSnapshot = {
+  access: unknown
+  seeds?: { connected?: unknown; users: Record<string, { lastSuccessAt?: unknown }> }
+}
 const snapshots = new Map<string, AccessSnapshot>()
 
 export function rememberAccess(organizationId: string | null | undefined, state: any) {
   if (!organizationId || !state || typeof state !== 'object') return
   snapshots.set(String(organizationId), {
     access: state.access,
-    seeds: state.seeds ? { connected: state.seeds.connected, lastSuccessAt: state.seeds.lastSuccessAt } : undefined,
+    // Whose Seeds sync has succeeded decides whose Seeds assignments count (see shared/access.ts).
+    seeds: state.seeds
+      ? {
+          connected: state.seeds.connected,
+          users: Object.fromEntries(
+            Object.entries(state.seeds.users || {}).map(([userId, sync]: [string, any]) => [
+              userId,
+              { lastSuccessAt: sync?.lastSuccessAt },
+            ]),
+          ),
+        }
+      : undefined,
   })
 }
 

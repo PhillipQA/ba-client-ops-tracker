@@ -83,7 +83,7 @@ export function encryptSecret(
     | 'gitlab-token'
     | 'drive-refresh'
     | 'tracker-secret'
-    | 'seeds',
+    | 'seeds-token',
   key = encryptionKey(),
 ) {
   const iv = randomBytes(12)
@@ -105,7 +105,7 @@ export function decryptSecret(
     | 'gitlab-token'
     | 'drive-refresh'
     | 'tracker-secret'
-    | 'seeds',
+    | 'seeds-token',
   key = encryptionKey(),
 ) {
   try {
