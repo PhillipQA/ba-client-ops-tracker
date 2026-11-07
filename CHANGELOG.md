@@ -9,6 +9,12 @@ Not released yet.
 
 **Database migration before people connect Seeds:** run [database/migrations/schema-v36-seeds.sql](database/migrations/schema-v36-seeds.sql) once on the existing Northflank database (it adds the table for each person's Seeds key). Everything else works without it. A new database gets it from [database/schema.sql](database/schema.sql), now version 36.
 
+### Data Explorer SQL, Metabase style
+- **UNION ALL fixed:** ORDER BY and LIMIT after the last SELECT now sort and cut the whole result (they used to apply to the last SELECT only). SELECTs can be wrapped in parentheses.
+- **New:** `UNION` (removes duplicates), `INTERSECT`, `EXCEPT`; `WITH` (common table expressions, with optional column names); queries inside `FROM`, `IN (SELECT …)`, `EXISTS (SELECT …)` and as a value.
+- **Window functions:** `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()`, `NTILE()`, `LAG()`, `LEAD()`, `FIRST_VALUE()`, `LAST_VALUE()`, and running or partition totals with `SUM/COUNT/AVG/MIN/MAX(…) OVER (PARTITION BY … ORDER BY …)`, also over grouped results (`SUM(COUNT(*)) OVER ()`).
+- Still read-only, in the browser, over the tables the person may see. Queries inside another query cannot use the outer query's columns yet (use a JOIN or WITH).
+
 ### Job roles
 - **Administrators see and change everything**, including every client, whatever per-person visibility says.
 - **Settings › Roles:** job roles say which pages a person sees and which they can change. Starting set: Business Analyst, Project Manager, Product Owner, Developer, Quality Assurance, Support and Account Manager; each can be edited, and Administrators can add their own (for example, Business Owner). A role that changes nothing is read-only (it can still ask the AI BA Assistant).

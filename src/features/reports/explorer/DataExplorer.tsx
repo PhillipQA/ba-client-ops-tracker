@@ -77,6 +77,7 @@ const FILTER_OPS: { value: BuilderFilterOp; label: string; needsValue: boolean }
   { value: 'false', label: 'is no', needsValue: false },
 ]
 const SQL_WORDS = [
+  'WITH',
   'SELECT',
   'FROM',
   'WHERE',
@@ -86,6 +87,13 @@ const SQL_WORDS = [
   'LIMIT',
   'LEFT JOIN',
   'JOIN',
+  'UNION ALL',
+  'UNION',
+  'INTERSECT',
+  'EXCEPT',
+  'EXISTS',
+  'OVER',
+  'PARTITION BY',
   'ON',
   'AND',
   'OR',
@@ -846,10 +854,12 @@ export function DataExplorer({
           )}
         </div>
         <p className="crp-muted dx-help">
-          <Database size={13} /> Read-only SQL: SELECT with JOIN / LEFT JOIN, WHERE, GROUP BY, HAVING, ORDER BY, LIMIT;
-          COUNT, SUM, AVG, MIN, MAX, CASE, LIKE, IN, BETWEEN, IS NULL; dates with WEEK_START(), MONTH_START(),
-          DAYS_BETWEEN(), DATE_ADD(), CURRENT_DATE. Text comparisons ignore case. Write {'{{name}}'} to ask for a value
-          each time.
+          <Database size={13} /> Read-only SQL, Metabase style: WITH, subqueries (in FROM, IN, EXISTS, or as a value),
+          UNION / UNION ALL / INTERSECT / EXCEPT with ORDER BY and LIMIT over the whole result, JOIN / LEFT JOIN, WHERE,
+          GROUP BY, HAVING; COUNT, SUM, AVG, MIN, MAX, CASE, LIKE, IN, BETWEEN, IS NULL; window functions ROW_NUMBER(),
+          RANK(), DENSE_RANK(), NTILE(), LAG(), LEAD(), FIRST_VALUE(), LAST_VALUE() and running SUM/COUNT/AVG … OVER
+          (PARTITION BY … ORDER BY …); dates with WEEK_START(), MONTH_START(), DAYS_BETWEEN(), DATE_ADD(), CURRENT_DATE.
+          Text comparisons ignore case. Write {'{{name}}'} to ask for a value each time.
         </p>
       </div>
 
