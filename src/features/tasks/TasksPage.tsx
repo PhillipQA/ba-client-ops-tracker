@@ -2,7 +2,7 @@ import type { AppState } from '../../app/useAppState'
 import { FilterBar, TaskTable } from './TaskTable'
 import { waitingOnOptions } from './waitingOn'
 import ClientSelect from '../../shared/ui/SearchSelect'
-import { Archive, Columns3, Table2 } from 'lucide-react'
+import { Archive, Columns3, Plus, Table2 } from 'lucide-react'
 import TaskBoard from './TaskBoard'
 
 /** Tasks screen. It reads the app state; see app/useAppState. */
@@ -15,6 +15,7 @@ export function TasksPage({ app }: { app: AppState }) {
     taskArchiveView,
     boardGroup,
     boardShowSubtasks,
+    canWrite,
     canWriteTasks,
     chooseTaskView,
     deleteTask,
@@ -24,10 +25,12 @@ export function TasksPage({ app }: { app: AppState }) {
     query,
     reorderSubtasks,
     resolveItem,
+    setModal,
     setQuery,
     setTaskClientFilter,
     setTaskDateFilter,
     setTaskProjectFilter,
+    setTaskPreset,
     setTaskStatusFilter,
     setWaitingFilter,
     store,
@@ -56,6 +59,19 @@ export function TasksPage({ app }: { app: AppState }) {
           <span className="count-pill">
             {filteredTasks.length} shown · {store.items.length} total
           </span>
+          {canWrite && taskArchiveView !== 'archived' && (
+            <button
+              type="button"
+              className="primary"
+              data-tour="add-task"
+              onClick={() => {
+                setTaskPreset(null)
+                setModal('item')
+              }}
+            >
+              <Plus size={18} /> New task
+            </button>
+          )}
           <div className="client-layout-switch" role="group" aria-label="Active or archived tasks">
             <button
               type="button"

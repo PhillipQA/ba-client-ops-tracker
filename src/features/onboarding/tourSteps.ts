@@ -150,8 +150,7 @@ export function tourSteps(context: TourContext): TourStep[] {
         id: 'add-task',
         section: 'Daily work',
         title: 'Add tasks from anywhere',
-        body: 'Add a task or subtask here, or turn an email into one from Work Hub. Open a task to log time, attach files, email from it and see its documents.',
-        target: '[data-tour="add-task"]',
+        body: 'Add a task with New task on Seeds › Tasks, or from a client or project, or turn an email into one from Work Hub. Open a task to log time, attach files, email from it and see its documents.',
       },
     has('documents') && {
       id: 'documents',
