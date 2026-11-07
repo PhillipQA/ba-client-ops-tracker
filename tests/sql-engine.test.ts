@@ -238,6 +238,122 @@ test('UNION ALL requires every branch to return the same number of columns', () 
   assert.throws(() => run('SELECT 1 AS Field UNION ALL SELECT 2, 3'), /same number of columns/)
 })
 
-test('UNION without ALL is rejected with a helpful message', () => {
-  assert.throws(() => run("SELECT 'A' AS Field UNION SELECT 'B'"), /Only UNION ALL is supported/)
+test('UNION removes duplicates; UNION ALL keeps them', () => {
+  assert.deepEqual(run("SELECT 'A' AS Field UNION SELECT 'B' UNION SELECT 'A'").rows, [['A'], ['B']])
+  assert.deepEqual(run("SELECT 'A' AS Field UNION ALL SELECT 'A'").rows, [['A'], ['A']])
+})
+
+const mini: Record<string, SqlTable> = {
+  t: {
+    name: 't',
+    columns: [
+      { name: 'id', type: 'text' },
+      { name: 'title', type: 'text' },
+      { name: 'status', type: 'text' },
+      { name: 'client', type: 'text' },
+      { name: 'hours', type: 'number' },
+    ],
+    rows: [
+      { id: '1', title: 'A', status: 'Open', client: 'X', hours: 2 },
+      { id: '2', title: 'B', status: 'Closed', client: 'Y', hours: 3 },
+      { id: '3', title: 'C', status: 'Open', client: 'X', hours: 5 },
+    ],
+  },
+  c: {
+    name: 'c',
+    columns: [
+      { name: 'id', type: 'text' },
+      { name: 'name', type: 'text' },
+    ],
+    rows: [
+      { id: 'X', name: 'Acme' },
+      { id: 'Y', name: 'Bolt' },
+    ],
+  },
+}
+const rows = (sql: string) => runQuery(sql, mini, { today: '2025-11-14' }).rows
+
+test('ORDER BY and LIMIT after a UNION apply to the whole result', () => {
+  assert.deepEqual(rows('SELECT title AS name FROM t UNION ALL SELECT name FROM c ORDER BY name'), [
+    ['A'],
+    ['Acme'],
+    ['B'],
+    ['Bolt'],
+    ['C'],
+  ])
+  assert.deepEqual(rows('SELECT title FROM t UNION ALL SELECT name FROM c LIMIT 2'), [['A'], ['B']])
+  assert.deepEqual(rows('(SELECT title FROM t) UNION ALL (SELECT name FROM c) ORDER BY 1 DESC LIMIT 2'), [
+    ['C'],
+    ['Bolt'],
+  ])
+  assert.throws(() => rows('SELECT title FROM t ORDER BY title UNION ALL SELECT name FROM c'), /after the last SELECT/)
+  assert.throws(() => rows('SELECT title, id FROM t UNION ALL SELECT name FROM c'), /same number of columns/)
+})
+
+test('INTERSECT and EXCEPT', () => {
+  assert.deepEqual(rows('SELECT client FROM t INTERSECT SELECT id FROM c'), [['X'], ['Y']])
+  assert.deepEqual(rows("SELECT id FROM c EXCEPT SELECT client FROM t WHERE status = 'Closed'"), [['X']])
+})
+
+test('WITH and queries inside FROM, IN, EXISTS and as values', () => {
+  assert.deepEqual(
+    rows(
+      "WITH open AS (SELECT * FROM t WHERE status = 'Open') SELECT c.name, COUNT(*) AS n FROM open o JOIN c ON c.id = o.client GROUP BY c.name",
+    ),
+    [['Acme', 2]],
+  )
+  assert.deepEqual(rows("WITH a (label) AS (SELECT title FROM t) SELECT label FROM a WHERE label > 'A'"), [
+    ['B'],
+    ['C'],
+  ])
+  assert.deepEqual(rows("SELECT * FROM (SELECT title FROM t UNION ALL SELECT name FROM c) x WHERE title LIKE 'A%'"), [
+    ['A'],
+    ['Acme'],
+  ])
+  assert.deepEqual(rows("SELECT title FROM t WHERE client IN (SELECT id FROM c WHERE name = 'Acme')"), [['A'], ['C']])
+  assert.deepEqual(rows("SELECT title FROM t WHERE client NOT IN (SELECT id FROM c WHERE name = 'Acme')"), [['B']])
+  assert.deepEqual(rows('SELECT name FROM c WHERE NOT EXISTS (SELECT 1 FROM t)'), [])
+  assert.deepEqual(rows('SELECT title, (SELECT COUNT(*) FROM c) AS clients FROM t LIMIT 1'), [['A', 2]])
+  assert.throws(() => rows('SELECT (SELECT name FROM c) FROM t'), /more than one row/)
+  assert.throws(
+    () => rows('SELECT title FROM t x WHERE EXISTS (SELECT 1 FROM c WHERE c.id = x.client)'),
+    /outer query's columns/,
+  )
+  assert.deepEqual(referencedTables('WITH a AS (SELECT * FROM t) SELECT * FROM a WHERE x IN (SELECT id FROM c)'), [
+    't',
+    'c',
+  ])
+})
+
+test('window functions', () => {
+  assert.deepEqual(
+    rows(
+      'SELECT title, ROW_NUMBER() OVER (PARTITION BY client ORDER BY hours DESC) AS rn, SUM(hours) OVER (ORDER BY id) AS running, RANK() OVER (ORDER BY status) r, DENSE_RANK() OVER (ORDER BY status) d FROM t ORDER BY id',
+    ),
+    [
+      ['A', 2, 2, 2, 2],
+      ['B', 1, 5, 1, 1],
+      ['C', 1, 10, 2, 2],
+    ],
+  )
+  assert.deepEqual(
+    rows('SELECT status, COUNT(*) n, SUM(COUNT(*)) OVER () AS total FROM t GROUP BY status ORDER BY status'),
+    [
+      ['Closed', 1, 3],
+      ['Open', 2, 3],
+    ],
+  )
+  assert.deepEqual(rows('SELECT LAG(hours) OVER (ORDER BY id) p, LEAD(hours, 1, 0) OVER (ORDER BY id) n FROM t'), [
+    [null, 3],
+    [2, 5],
+    [3, 0],
+  ])
+  assert.deepEqual(
+    rows(
+      'WITH r AS (SELECT title, ROW_NUMBER() OVER (ORDER BY hours DESC) rn FROM t) SELECT title FROM r WHERE rn = 1',
+    ),
+    [['C']],
+  )
+  assert.throws(() => rows('SELECT title FROM t WHERE ROW_NUMBER() OVER () = 1'), /go in SELECT or ORDER BY/)
+  assert.throws(() => rows('SELECT ROW_NUMBER() FROM t'), /needs OVER/)
 })

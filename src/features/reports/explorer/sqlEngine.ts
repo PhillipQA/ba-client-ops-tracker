@@ -1,6 +1,9 @@
 // Data explorer: a small, read-only SQL engine that runs in the browser over tables the person may already see.
-// It understands read-only SELECT queries, including UNION ALL, joins, filters, grouping, ordering and limits,
-// with COUNT/SUM/AVG/MIN/MAX, CASE, LIKE, IN, BETWEEN, IS NULL, text/date functions, and {{parameters}}.
+// It understands read-only SELECT queries in the style of Metabase's native questions: WITH (common table
+// expressions), subqueries in FROM, IN, EXISTS and as values, UNION / UNION ALL / INTERSECT / EXCEPT with ORDER BY
+// and LIMIT over the whole result, joins, filters, grouping, window functions (ROW_NUMBER, RANK, DENSE_RANK, NTILE,
+// LAG, LEAD, FIRST_VALUE, LAST_VALUE, and running SUM/COUNT/AVG/MIN/MAX … OVER (PARTITION BY … ORDER BY …)),
+// CASE, LIKE, BETWEEN, IS NULL, text/date functions, and {{parameters}}.
 
 export type SqlValue = string | number | boolean | null
 export type SqlRow = Record<string, SqlValue>
@@ -68,6 +71,13 @@ const KEYWORDS = new Set([
   'last',
   'union',
   'all',
+  'intersect',
+  'except',
+  'with',
+  'exists',
+  'over',
+  'partition',
+  'recursive',
 ])
 
 export function tokenize(sql: string): Token[] {
@@ -170,9 +180,26 @@ export type Expr =
   | { type: 'between'; arg: Expr; low: Expr; high: Expr; not: boolean }
   | { type: 'like'; arg: Expr; pattern: Expr; not: boolean }
   | { type: 'isnull'; arg: Expr; not: boolean }
+  | { type: 'subquery'; mode: 'scalar' | 'exists' | 'in'; statement: Statement; arg?: Expr; not: boolean; at: number }
+  | { type: 'window'; call: Expr & { type: 'call' }; partition: Expr[]; order: OrderItem[]; at: number }
+
+type OrderItem = { expr: Expr; desc: boolean }
+export type SetOp = 'union' | 'union all' | 'intersect' | 'except'
+type SetNode =
+  | { kind: 'select'; query: Query }
+  | { kind: 'set'; op: SetOp; left: SetNode; right: SetNode }
+  | { kind: 'nested'; statement: Statement }
+/** A whole query: WITH parts, the SELECTs joined by UNION and friends, and ORDER BY / LIMIT over the result. */
+export type Statement = {
+  ctes: { name: string; columns?: string[]; body: Statement; at: number }[]
+  body: SetNode
+  orderBy: OrderItem[]
+  limit?: number
+  offset?: number
+}
 
 type SelectItem = { star: true; table?: string } | { star: false; expr: Expr; alias?: string; text: string }
-type Source = { table: string; alias: string; at: number }
+type Source = { table: string; alias: string; at: number; subquery?: Statement }
 export type Query = {
   distinct: boolean
   items: SelectItem[]
@@ -181,14 +208,30 @@ export type Query = {
   where?: Expr
   groupBy: Expr[]
   having?: Expr
-  orderBy: { expr: Expr; desc: boolean }[]
+  orderBy: OrderItem[]
   limit?: number
   offset?: number
-  /** Additional SELECT branches appended with UNION ALL. */
-  unionAll?: Query[]
 }
 
 export const AGGREGATES = new Set(['count', 'sum', 'avg', 'min', 'max', 'string_agg', 'group_concat'])
+/** Functions that only work with OVER (…). SUM, COUNT, AVG, MIN and MAX work both ways. */
+export const WINDOW_FUNCTIONS = new Set([
+  'row_number',
+  'rank',
+  'dense_rank',
+  'ntile',
+  'lag',
+  'lead',
+  'first_value',
+  'last_value',
+])
+const WINDOW_AGGREGATES = new Set(['count', 'sum', 'avg', 'min', 'max'])
+
+const rightmost = (node: SetNode): SetNode => (node.kind === 'set' ? rightmost(node.right) : node)
+const branchCount = (node: SetNode): number =>
+  node.kind === 'set' ? branchCount(node.left) + branchCount(node.right) : 1
+const hasOrderOrLimit = (query: Query) =>
+  query.orderBy.length > 0 || query.limit !== undefined || query.offset !== undefined
 
 class Parser {
   index = 0
@@ -238,22 +281,117 @@ class Parser {
     return token.value
   }
 
-  query(): Query {
-    const query = this.select()
-    const branches: Query[] = []
-    while (this.maybeWord('union')) {
-      if (!this.maybeWord('all')) this.fail('Only UNION ALL is supported. Use UNION ALL to preserve duplicate rows.')
-      if (branches.length >= SQL_LIMITS.unionBranches - 1)
-        this.fail(`A UNION ALL query can contain at most ${SQL_LIMITS.unionBranches} SELECT statements.`)
-      branches.push(this.select())
-    }
+  parse(): Statement {
+    const statement = this.statement()
     this.maybeOp(';')
     if (this.token.kind !== 'end') {
-      if (this.isWord('select')) this.fail('Run one SELECT at a time.')
+      if (this.isWord('select')) this.fail('Run one SELECT at a time, or join them with UNION ALL.')
       this.fail('This part of the query is not understood.')
     }
-    if (branches.length) query.unionAll = branches
-    return query
+    return statement
+  }
+
+  statement(): Statement {
+    const ctes: Statement['ctes'] = []
+    if (this.maybeWord('with')) {
+      if (this.isWord('recursive')) this.fail('WITH RECURSIVE is not supported.')
+      do {
+        const at = this.token.at
+        const name = this.name('a name for the WITH query')
+        let columns: string[] | undefined
+        if (this.maybeOp('(')) {
+          columns = []
+          do columns.push(this.name('a column name'))
+          while (this.maybeOp(','))
+          this.op(')')
+        }
+        this.word('as')
+        this.op('(')
+        const body = this.statement()
+        this.op(')')
+        if (ctes.some(cte => cte.name === name)) this.fail(`${name} is defined twice in WITH.`)
+        ctes.push({ name, columns, body, at })
+      } while (this.maybeOp(','))
+    }
+    const body = this.setExpr()
+    const statement: Statement = { ctes, body, orderBy: [] }
+    // ORDER BY and LIMIT after the last SELECT of a UNION sort and cut the whole result, as in every database.
+    const last = rightmost(body)
+    if (body.kind === 'set' && last.kind === 'select' && hasOrderOrLimit(last.query)) {
+      statement.orderBy = last.query.orderBy
+      statement.limit = last.query.limit
+      statement.offset = last.query.offset
+      last.query.orderBy = []
+      delete last.query.limit
+      delete last.query.offset
+    }
+    if (this.maybeWord('order')) {
+      this.word('by')
+      statement.orderBy = this.orderList()
+    }
+    if (this.maybeWord('limit')) statement.limit = this.count('LIMIT')
+    if (this.maybeWord('offset')) statement.offset = this.count('OFFSET')
+    return statement
+  }
+  setExpr(): SetNode {
+    let left = this.intersectExpr()
+    for (;;) {
+      let op: SetOp | null = null
+      if (this.maybeWord('union')) op = this.maybeWord('all') ? 'union all' : (this.maybeWord('distinct'), 'union')
+      else if (this.maybeWord('except')) {
+        this.maybeWord('distinct')
+        op = 'except'
+      }
+      if (!op) return left
+      left = this.joinSets(op, left, this.intersectExpr())
+    }
+  }
+  intersectExpr(): SetNode {
+    let left = this.setTerm()
+    while (this.maybeWord('intersect')) {
+      this.maybeWord('distinct')
+      left = this.joinSets('intersect', left, this.setTerm())
+    }
+    return left
+  }
+  joinSets(op: SetOp, left: SetNode, right: SetNode): SetNode {
+    const before = rightmost(left)
+    if (before.kind === 'select' && hasOrderOrLimit(before.query))
+      this.fail('Put ORDER BY and LIMIT after the last SELECT, or wrap that SELECT in parentheses.')
+    const node: SetNode = { kind: 'set', op, left, right }
+    if (branchCount(node) > SQL_LIMITS.unionBranches)
+      this.fail(`A query can combine at most ${SQL_LIMITS.unionBranches} SELECT statements.`)
+    return node
+  }
+  setTerm(): SetNode {
+    if (this.isOp('(') && (this.isWord('select', 1) || this.isWord('with', 1))) {
+      this.index++
+      const statement = this.statement()
+      this.op(')')
+      return { kind: 'nested', statement }
+    }
+    return { kind: 'select', query: this.select() }
+  }
+  orderList(): OrderItem[] {
+    const items: OrderItem[] = []
+    do {
+      const expr = this.expr()
+      let desc = false
+      if (this.maybeWord('desc')) desc = true
+      else this.maybeWord('asc')
+      if (this.maybeWord('nulls')) {
+        if (!this.maybeWord('first')) this.word('last')
+      }
+      items.push({ expr, desc })
+    } while (this.maybeOp(','))
+    return items
+  }
+  /** ( SELECT … ) inside an expression. */
+  subquery(): Statement {
+    if (!this.isWord('select') && !this.isWord('with')) this.fail('Expected a SELECT here.')
+    const statement = this.statement()
+    this.op(')')
+    return statement
   }
 
   select(): Query {
@@ -315,16 +453,7 @@ class Parser {
     if (this.maybeWord('having')) query.having = this.expr()
     if (this.maybeWord('order')) {
       this.word('by')
-      do {
-        const expr = this.expr()
-        let desc = false
-        if (this.maybeWord('desc')) desc = true
-        else this.maybeWord('asc')
-        if (this.maybeWord('nulls')) {
-          if (!this.maybeWord('first')) this.word('last')
-        }
-        query.orderBy.push({ expr, desc })
-      } while (this.maybeOp(','))
+      query.orderBy = this.orderList()
     }
     if (this.maybeWord('limit')) query.limit = this.count('LIMIT')
     if (this.maybeWord('offset')) query.offset = this.count('OFFSET')
@@ -339,7 +468,14 @@ class Parser {
   }
   source(): Source {
     const at = this.token.at
-    if (this.isOp('(')) this.fail('Queries inside FROM are not supported yet.')
+    if (this.maybeOp('(')) {
+      const subquery = this.subquery()
+      this.maybeWord('as')
+      if (this.token.kind !== 'name' || (!this.token.quoted && KEYWORDS.has(this.token.value)))
+        this.fail('Give the query inside FROM a name, like ( SELECT … ) AS t.')
+      const alias = this.name('a name for the query')
+      return { table: alias, alias, at, subquery }
+    }
     const table = this.name('a table name')
     let alias = table
     if (this.maybeWord('as')) alias = this.name('a table alias')
@@ -381,7 +517,15 @@ class Parser {
     if (not) this.index++
     if (this.maybeWord('in')) {
       this.op('(')
-      if (this.isWord('select')) this.fail('Queries inside IN (…) are not supported yet.')
+      if (this.isWord('select') || this.isWord('with'))
+        return {
+          type: 'subquery',
+          mode: 'in',
+          arg: left,
+          statement: this.subquery(),
+          not,
+          at: left.type === 'column' ? left.at : -1,
+        }
       const list: Expr[] = []
       do list.push(this.concat())
       while (this.maybeOp(','))
@@ -435,7 +579,8 @@ class Parser {
       return { type: 'param', name: token.value }
     }
     if (this.maybeOp('(')) {
-      if (this.isWord('select')) this.fail('Queries inside other queries are not supported yet.')
+      if (this.isWord('select') || this.isWord('with'))
+        return { type: 'subquery', mode: 'scalar', statement: this.subquery(), not: false, at: token.at }
       const inner = this.expr()
       this.op(')')
       return inner
@@ -448,6 +593,10 @@ class Parser {
       if (token.value === 'current_date')
         return this.skip({ type: 'call', name: 'today', args: [], star: false, distinct: false, at: token.at })
       if (token.value === 'case') return this.caseExpr()
+      if (token.value === 'exists' && this.tokens[this.index + 1]?.value === '(') {
+        this.index += 2
+        return { type: 'subquery', mode: 'exists', statement: this.subquery(), not: false, at: token.at }
+      }
       if (KEYWORDS.has(token.value)) this.fail(`${token.value.toUpperCase()} is not expected here.`)
     }
     this.index++
@@ -468,6 +617,22 @@ class Parser {
         while (this.maybeOp(','))
       }
       this.op(')')
+      if (this.maybeWord('over')) {
+        this.op('(')
+        const partition: Expr[] = []
+        if (this.maybeWord('partition')) {
+          this.word('by')
+          do partition.push(this.expr())
+          while (this.maybeOp(','))
+        }
+        let order: OrderItem[] = []
+        if (this.maybeWord('order')) {
+          this.word('by')
+          order = this.orderList()
+        }
+        this.op(')')
+        return { type: 'window', call, partition, order, at: token.at }
+      }
       return call
     }
     if (this.maybeOp('.')) {
@@ -496,7 +661,7 @@ class Parser {
   }
 }
 
-export function parseQuery(sql: string): Query {
+export function parseQuery(sql: string): Statement {
   if (sql.length > SQL_LIMITS.length) throw new SqlError(`A query can be at most ${SQL_LIMITS.length} characters.`)
   const tokens = tokenize(sql)
   if (tokens[0].kind === 'end') throw new SqlError('Write a SELECT query to run.')
@@ -506,23 +671,89 @@ export function parseQuery(sql: string): Query {
     ['insert', 'update', 'delete', 'drop', 'alter', 'create', 'truncate', 'grant'].includes(first.value)
   )
     throw new SqlError('Only SELECT queries can be run here: the explorer is read-only.', first.at)
-  if (first.kind === 'name' && first.value === 'with')
-    throw new SqlError('WITH is not supported yet. Start with SELECT.', first.at)
-  return new Parser(tokens, sql).query()
+  return new Parser(tokens, sql).parse()
 }
 
-/** The tables a query reads, so they can be loaded before it runs. */
+/** The direct parts of an expression, and the queries inside it. */
+function exprParts(expr: Expr): { exprs: Expr[]; statements: Statement[] } {
+  switch (expr.type) {
+    case 'unary':
+      return { exprs: [expr.arg], statements: [] }
+    case 'binary':
+      return { exprs: [expr.left, expr.right], statements: [] }
+    case 'call':
+      return { exprs: expr.args, statements: [] }
+    case 'case':
+      return {
+        exprs: [
+          ...(expr.operand ? [expr.operand] : []),
+          ...expr.whens.flatMap(item => [item.when, item.then]),
+          ...(expr.otherwise ? [expr.otherwise] : []),
+        ],
+        statements: [],
+      }
+    case 'in':
+      return { exprs: [expr.arg, ...expr.list], statements: [] }
+    case 'between':
+      return { exprs: [expr.arg, expr.low, expr.high], statements: [] }
+    case 'like':
+      return { exprs: [expr.arg, expr.pattern], statements: [] }
+    case 'isnull':
+      return { exprs: [expr.arg], statements: [] }
+    case 'subquery':
+      return { exprs: expr.arg ? [expr.arg] : [], statements: [expr.statement] }
+    case 'window':
+      return { exprs: [expr.call, ...expr.partition, ...expr.order.map(item => item.expr)], statements: [] }
+    default:
+      return { exprs: [], statements: [] }
+  }
+}
+const someExpr = (expr: Expr, test: (node: Expr) => boolean): boolean =>
+  test(expr) || exprParts(expr).exprs.some(part => someExpr(part, test))
+
+/** The tables a query reads, so they can be loaded before it runs. Names from WITH are not tables. */
 export function referencedTables(sql: string): string[] {
   try {
-    const query = parseQuery(sql)
     const names: string[] = []
-    const collect = (branch: Query) => {
-      for (const source of [branch.from, ...branch.joins.map(join => join.source)]) {
-        if (source && !names.includes(source.table)) names.push(source.table)
-      }
-      branch.unionAll?.forEach(collect)
+    const visitExpr = (expr: Expr, local: Set<string>) => {
+      const parts = exprParts(expr)
+      parts.exprs.forEach(part => visitExpr(part, local))
+      parts.statements.forEach(statement => visitStatement(statement, local))
     }
-    collect(query)
+    const visitQuery = (query: Query, local: Set<string>) => {
+      for (const source of [query.from, ...query.joins.map(join => join.source)]) {
+        if (!source) continue
+        if (source.subquery) visitStatement(source.subquery, local)
+        else if (!local.has(source.table) && !names.includes(source.table)) names.push(source.table)
+      }
+      const exprs = [
+        ...query.items.flatMap(item => (item.star ? [] : [item.expr])),
+        ...query.joins.map(join => join.on),
+        ...(query.where ? [query.where] : []),
+        ...query.groupBy,
+        ...(query.having ? [query.having] : []),
+        ...query.orderBy.map(item => item.expr),
+      ]
+      exprs.forEach(expr => visitExpr(expr, local))
+    }
+    const visitNode = (node: SetNode, local: Set<string>) => {
+      if (node.kind === 'select') visitQuery(node.query, local)
+      else if (node.kind === 'nested') visitStatement(node.statement, local)
+      else {
+        visitNode(node.left, local)
+        visitNode(node.right, local)
+      }
+    }
+    const visitStatement = (statement: Statement, outer: Set<string>) => {
+      const local = new Set(outer)
+      for (const cte of statement.ctes) {
+        visitStatement(cte.body, local)
+        local.add(cte.name)
+      }
+      visitNode(statement.body, local)
+      statement.orderBy.forEach(item => visitExpr(item.expr, local))
+    }
+    visitStatement(parseQuery(sql), new Set())
     return names
   } catch {
     return []
@@ -631,7 +862,7 @@ function likeToRegex(pattern: string) {
 // --- Running ---
 
 type Bound = Record<string, SqlRow | null>
-type Context = { row: Bound; group?: Bound[] }
+type Context = { row: Bound; group?: Bound[]; index?: number }
 type Scope = { aliases: string[]; columns: Map<string, Set<string>> }
 
 const SCALAR = new Set([
@@ -663,7 +894,7 @@ const SCALAR = new Set([
   'days_between',
   'date_add',
 ])
-export const SQL_FUNCTIONS = [...AGGREGATES, ...SCALAR].filter(
+export const SQL_FUNCTIONS = [...AGGREGATES, ...SCALAR, ...WINDOW_FUNCTIONS].filter(
   name => !['group_concat', 'substring', 'ceiling', 'now'].includes(name),
 )
 
@@ -689,40 +920,117 @@ export function runQuery(
         `This query took longer than ${SQL_LIMITS.ms / 1000} seconds and was stopped. Add a filter or a LIMIT.`,
       )
   }
-  const branches = [query, ...(query.unionAll || [])]
-  const results = branches.map(branch => runSelect(branch, tables, params, today, budget, tick))
-  const columns = results[0].columns
-  for (let index = 1; index < results.length; index++) {
-    if (results[index].columns.length !== columns.length)
-      throw new SqlError('Every SELECT in a UNION ALL must return the same number of columns.')
-  }
-  const combined = results.flatMap(result => result.rows)
-  const truncated = results.some(result => result.truncated) || combined.length > SQL_LIMITS.resultRows
+  const env: Env = { params, today, budget, tick }
+  const result = runStatement(query, tables, env)
   return {
-    columns,
-    rows: combined.slice(0, SQL_LIMITS.resultRows),
-    truncated,
+    columns: result.columns,
+    rows: result.rows.slice(0, SQL_LIMITS.resultRows),
+    truncated: result.truncated || result.rows.length > SQL_LIMITS.resultRows,
     ms: Math.max(0, Math.round(now() - started)),
   }
 }
 
+type Env = {
+  params: Record<string, string>
+  today: string
+  budget: QueryBudget
+  tick: (count?: number) => void
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
+/** A result made into a table, so later parts of the query can read it like any other. */
+function toTable(name: string, result: SqlResult, names?: string[]): SqlTable {
+  if (names && names.length !== result.columns.length)
+    throw new SqlError(`${name} names ${names.length} columns but its query returns ${result.columns.length}.`)
+  const columns = (names || result.columns).map((column, index) => {
+    const sample = result.rows.find(row => row[index] !== null)?.[index]
+    const type: SqlColumnType =
+      typeof sample === 'number'
+        ? 'number'
+        : typeof sample === 'boolean'
+          ? 'bool'
+          : typeof sample === 'string' && ISO_DATE.test(sample)
+            ? 'date'
+            : 'text'
+    return { name: column, type }
+  })
+  return {
+    name,
+    columns,
+    rows: result.rows.map(row => Object.fromEntries(columns.map((column, index) => [column.name, row[index] ?? null]))),
+  }
+}
+
+/** Runs WITH parts, then the SELECTs and how they combine, then ORDER BY / LIMIT over the whole result. */
+function runStatement(statement: Statement, base: Record<string, SqlTable | undefined>, env: Env): SqlResult {
+  const tables = { ...base }
+  for (const cte of statement.ctes)
+    tables[cte.name] = toTable(cte.name, runStatement(cte.body, tables, env), cte.columns)
+  let result = runNode(statement.body, tables, env)
+  if (statement.orderBy.length || statement.limit !== undefined || statement.offset !== undefined) {
+    const name = '__result'
+    result = runSelect(
+      {
+        distinct: false,
+        items: [{ star: true }],
+        from: { table: name, alias: name, at: -1 },
+        joins: [],
+        groupBy: [],
+        orderBy: statement.orderBy,
+        limit: statement.limit,
+        offset: statement.offset,
+      },
+      { ...tables, [name]: toTable(name, result) },
+      env,
+    )
+  }
+  return result
+}
+
+function runNode(node: SetNode, tables: Record<string, SqlTable | undefined>, env: Env): SqlResult {
+  if (node.kind === 'select') return runSelect(node.query, tables, env)
+  if (node.kind === 'nested') return runStatement(node.statement, tables, env)
+  const left = runNode(node.left, tables, env)
+  const right = runNode(node.right, tables, env)
+  if (left.columns.length !== right.columns.length)
+    throw new SqlError(
+      `Every SELECT in a ${node.op.toUpperCase()} must return the same number of columns (${left.columns.length} and ${right.columns.length}).`,
+    )
+  env.tick(left.rows.length + right.rows.length)
+  const key = (row: SqlValue[]) => JSON.stringify(row)
+  const distinct = (rows: SqlValue[][]) => {
+    const seen = new Set<string>()
+    return rows.filter(row => {
+      const id = key(row)
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+  }
+  let rows: SqlValue[][]
+  if (node.op === 'union all') rows = [...left.rows, ...right.rows]
+  else if (node.op === 'union') rows = distinct([...left.rows, ...right.rows])
+  else {
+    const other = new Set(right.rows.map(key))
+    rows = distinct(left.rows).filter(row => other.has(key(row)) === (node.op === 'intersect'))
+  }
+  if (rows.length > SQL_LIMITS.workRows) throw new SqlError('This query does too much work. Add a filter or a LIMIT.')
+  return { columns: left.columns, rows, truncated: left.truncated || right.truncated, ms: 0 }
+}
+
 type QueryBudget = { work: number; started: number; now: () => number }
 
-function runSelect(
-  query: Query,
-  tables: Record<string, SqlTable | undefined>,
-  params: Record<string, string>,
-  today: string,
-  budget: QueryBudget,
-  tick: (count?: number) => void,
-): SqlResult {
+function runSelect(query: Query, tables: Record<string, SqlTable | undefined>, env: Env): SqlResult {
+  const { params, today, budget, tick } = env
   const { now, started } = budget
   // Tables and the columns each alias offers.
   const sources = query.from ? [query.from, ...query.joins.map(join => join.source)] : []
   const scope: Scope = { aliases: [], columns: new Map() }
   const data = new Map<string, SqlTable>()
   for (const source of sources) {
-    const table = tables[source.table]
+    const table = source.subquery
+      ? toTable(source.alias, runStatement(source.subquery, tables, env))
+      : tables[source.table]
     if (!table) throw new SqlError(`There is no table called ${source.table}.`, source.at)
     if (scope.columns.has(source.alias))
       throw new SqlError(`${source.alias} is used twice. Give one of them another alias.`, source.at)
@@ -770,10 +1078,13 @@ function runSelect(
         return isAggregate(expr.arg) || isAggregate(expr.pattern)
       case 'isnull':
         return isAggregate(expr.arg)
+      case 'subquery':
+        return Boolean(expr.arg && isAggregate(expr.arg))
       default:
         return false
     }
   }
+  const isWindow = (expr: Expr) => someExpr(expr, node => node.type === 'window')
   const check = (expr: Expr, aliasesAllowed: boolean) => {
     // Resolves every column now, so a typo is reported before any row is read.
     const walk = (node: Expr) => {
@@ -789,6 +1100,11 @@ function runSelect(
           resolve(node)
           return
         case 'call':
+          if (WINDOW_FUNCTIONS.has(node.name))
+            throw new SqlError(
+              `${node.name.toUpperCase()}() needs OVER (…), like ${node.name.toUpperCase()}() OVER (ORDER BY …).`,
+              node.at,
+            )
           if (!AGGREGATES.has(node.name) && !SCALAR.has(node.name))
             throw new SqlError(`${node.name.toUpperCase()}() is not a function here.`, node.at)
           if (node.star && node.name !== 'count') throw new SqlError(`Only COUNT(*) takes *.`, node.at)
@@ -828,12 +1144,33 @@ function runSelect(
         case 'param':
           if (!(node.name in params)) throw new SqlError(`Fill in {{${node.name}}} before running.`)
           return
+        case 'subquery':
+          // The inner query is checked when it runs; it cannot use this query's columns.
+          if (node.arg) walk(node.arg)
+          return
+        case 'window': {
+          const name = node.call.name
+          if (!WINDOW_FUNCTIONS.has(name) && !WINDOW_AGGREGATES.has(name))
+            throw new SqlError(`${name.toUpperCase()}() cannot be used with OVER (…).`, node.at)
+          if (node.call.star && name !== 'count') throw new SqlError(`Only COUNT(*) takes *.`, node.at)
+          if (['lag', 'lead', 'first_value', 'last_value', 'ntile'].includes(name) && !node.call.args.length)
+            throw new SqlError(`${name.toUpperCase()}() needs a value, like ${name.toUpperCase()}(column).`, node.at)
+          node.call.args.forEach(walk)
+          node.partition.forEach(walk)
+          node.order.forEach(item => walk(item.expr))
+          return
+        }
         default:
           return
       }
     }
     walk(expr)
   }
+  for (const where of [query.where, query.having, ...query.groupBy, ...query.joins.map(join => join.on)])
+    if (where && isWindow(where))
+      throw new SqlError(
+        'Window functions like ROW_NUMBER() OVER (…) go in SELECT or ORDER BY. Filter on them from an outer query or WITH.',
+      )
   for (const item of query.items) if (!item.star) check(item.expr, false)
   for (const join of query.joins) check(join.on, false)
   if (query.where) {
@@ -964,8 +1301,45 @@ function runSelect(
       }
       case 'call':
         return call(expr, context)
+      case 'subquery': {
+        const result = subqueryResult(expr)
+        if (expr.mode === 'exists') return expr.not ? !result.rows.length : result.rows.length > 0
+        if (result.columns.length !== 1)
+          throw new SqlError('A query used as a value or in IN (…) must return exactly one column.', expr.at)
+        if (expr.mode === 'scalar') {
+          if (result.rows.length > 1)
+            throw new SqlError('A query used as a value returned more than one row. Add a filter or LIMIT 1.', expr.at)
+          return result.rows[0]?.[0] ?? null
+        }
+        const value = evaluate(expr.arg!, context)
+        if (value === null) return null
+        const hit = result.rows.some(row => compare(value, row[0]) === 0)
+        return expr.not ? !hit : hit
+      }
+      case 'window':
+        return windowValues.get(expr)?.[context.index ?? -1] ?? null
     }
   }
+  // Queries inside expressions run once; they cannot refer to this query's rows (no correlated subqueries).
+  const subqueryResults = new Map<Expr, SqlResult>()
+  const subqueryResult = (expr: Expr & { type: 'subquery' }) => {
+    let result = subqueryResults.get(expr)
+    if (!result) {
+      try {
+        result = runStatement(expr.statement, tables, env)
+      } catch (error) {
+        if (error instanceof SqlError && /There is no (column|table or alias) called/.test(error.message))
+          throw new SqlError(
+            `${error.message} A query inside another one cannot use the outer query's columns; use a JOIN or WITH instead.`,
+            error.position,
+          )
+        throw error
+      }
+      subqueryResults.set(expr, result)
+    }
+    return result
+  }
+  const windowValues = new Map<Expr, SqlValue[]>()
   const call = (expr: Expr & { type: 'call' }, context: Context): SqlValue => {
     if (AGGREGATES.has(expr.name)) {
       const rows = context.group
@@ -1218,6 +1592,7 @@ function runSelect(
     Boolean(query.having && isAggregate(query.having))
   type Line = { values: SqlValue[]; keys: SqlValue[] }
   let lines: Line[] = []
+  const contexts: Context[] = []
   const orderValue = (expr: Expr, context: Context, values: SqlValue[]): SqlValue => {
     if (expr.type === 'literal' && typeof expr.value === 'number' && Number.isInteger(expr.value)) {
       if (expr.value < 1 || expr.value > outs.length)
@@ -1253,15 +1628,33 @@ function runSelect(
         const keep = evaluate(query.having, context)
         if (keep === null || !truthy(keep)) continue
       }
-      const values = outs.map(out => evaluate(out.expr, context))
-      lines.push({ values, keys: query.orderBy.map(item => orderValue(item.expr, context, values)) })
+      contexts.push(context)
     }
   } else {
     for (const row of rows) {
       tick()
-      const values = outs.map(out => evaluate(out.expr, { row }))
-      lines.push({ values, keys: query.orderBy.map(item => orderValue(item.expr, { row }, values)) })
+      contexts.push({ row })
     }
+  }
+  // Window functions see the rows (or groups) after WHERE, GROUP BY and HAVING, before ORDER BY and LIMIT.
+  contexts.forEach((context, index) => {
+    context.index = index
+  })
+  const windows: (Expr & { type: 'window' })[] = []
+  const collect = (expr: Expr) => {
+    if (expr.type === 'window' && !windows.includes(expr)) windows.push(expr)
+    exprParts(expr).exprs.forEach(collect)
+  }
+  outs.forEach(out => collect(out.expr))
+  query.orderBy.forEach(item => {
+    collect(item.expr)
+    if (item.expr.type === 'column' && !item.expr.table && outputAliases.has(item.expr.name))
+      collect(outputAliases.get(item.expr.name)!)
+  })
+  for (const window of windows) windowValues.set(window, computeWindow(window, contexts, evaluate, tick))
+  for (const context of contexts) {
+    const values = outs.map(out => evaluate(out.expr, context))
+    lines.push({ values, keys: query.orderBy.map(item => orderValue(item.expr, context, values)) })
   }
   if (query.distinct) {
     const seen = new Set<string>()
@@ -1290,15 +1683,140 @@ function runSelect(
   const start = query.offset || 0
   const end = query.limit === undefined ? lines.length : start + query.limit
   const picked = lines.slice(start, end)
-  const truncated = picked.length > SQL_LIMITS.resultRows
+  // Results inside a larger query keep every row; the final result is cut to SQL_LIMITS.resultRows in runQuery.
+  const truncated = picked.length > SQL_LIMITS.workRows
   return {
     columns: outs.map(out => out.name),
     rows: picked
-      .slice(0, SQL_LIMITS.resultRows)
+      .slice(0, SQL_LIMITS.workRows)
       .map(line => line.values.map(value => (typeof value === 'number' ? Math.round(value * 1e9) / 1e9 : value))),
     truncated,
     ms: Math.max(0, Math.round(now() - started)),
   }
+}
+
+/** Compares two ORDER BY keys: empty values last, each part ascending or descending. */
+function compareKeys(a: SqlValue[], b: SqlValue[], order: OrderItem[]) {
+  for (let index = 0; index < order.length; index++) {
+    const x = a[index],
+      y = b[index]
+    if (x === null || y === null) {
+      if (x !== y) return x === null ? 1 : -1
+      continue
+    }
+    const result = sortCompare(x, y)
+    if (result) return order[index].desc ? -result : result
+  }
+  return 0
+}
+
+/** One window function's value for every row (or group), in the same order as the rows. */
+function computeWindow(
+  node: Expr & { type: 'window' },
+  contexts: Context[],
+  evaluate: (expr: Expr, context: Context) => SqlValue,
+  tick: (count?: number) => void,
+): SqlValue[] {
+  const values: SqlValue[] = new Array(contexts.length).fill(null)
+  const partitions = new Map<string, number[]>()
+  contexts.forEach((context, index) => {
+    tick()
+    const key = JSON.stringify(node.partition.map(expr => evaluate(expr, context)))
+    const list = partitions.get(key)
+    if (list) list.push(index)
+    else partitions.set(key, [index])
+  })
+  const name = node.call.name
+  const arg = (index: number, at = 0) => (node.call.args[at] ? evaluate(node.call.args[at], contexts[index]) : null)
+  for (const members of partitions.values()) {
+    const keys = new Map(members.map(index => [index, node.order.map(item => evaluate(item.expr, contexts[index]))]))
+    const sorted = node.order.length
+      ? [...members].sort((a, b) => compareKeys(keys.get(a)!, keys.get(b)!, node.order) || a - b)
+      : members
+    const peers = (a: number, b: number) =>
+      !node.order.length || compareKeys(keys.get(a)!, keys.get(b)!, node.order) === 0
+    // With ORDER BY, the frame runs from the first row to the current row and its ties; without, the whole partition.
+    const frameEnd = (position: number) => {
+      let end = position
+      if (!node.order.length) return sorted.length - 1
+      while (end + 1 < sorted.length && peers(sorted[end + 1], sorted[position])) end++
+      return end
+    }
+    tick(sorted.length)
+    if (name === 'row_number') sorted.forEach((index, position) => (values[index] = position + 1))
+    else if (name === 'rank' || name === 'dense_rank') {
+      let rank = 0
+      let dense = 0
+      sorted.forEach((index, position) => {
+        if (position === 0 || !peers(sorted[position - 1], index)) {
+          rank = position + 1
+          dense++
+        }
+        values[index] = name === 'rank' ? rank : dense
+      })
+    } else if (name === 'ntile') {
+      const buckets = Math.max(1, Math.floor(numeric(arg(sorted[0] ?? 0)) || 1))
+      sorted.forEach((index, position) => (values[index] = Math.floor((position * buckets) / sorted.length) + 1))
+    } else if (name === 'lag' || name === 'lead') {
+      sorted.forEach((index, position) => {
+        const step = node.call.args[1] ? Math.floor(numeric(arg(index, 1)) ?? 1) : 1
+        const target = position + (name === 'lag' ? -step : step)
+        values[index] =
+          target >= 0 && target < sorted.length ? arg(sorted[target]) : node.call.args[2] ? arg(index, 2) : null
+      })
+    } else if (name === 'first_value') sorted.forEach(index => (values[index] = arg(sorted[0])))
+    else if (name === 'last_value')
+      sorted.forEach((index, position) => (values[index] = arg(sorted[frameEnd(position)])))
+    else {
+      // SUM, COUNT, AVG, MIN, MAX over the frame: running totals with ORDER BY, partition totals without.
+      let position = 0
+      const seen = new Set<string>()
+      let count = 0
+      let sum = 0
+      let numbers = 0
+      let best: SqlValue = null
+      while (position < sorted.length) {
+        const end = frameEnd(position)
+        for (let at = position; at <= end; at++) {
+          const index = sorted[at]
+          if (node.call.star) {
+            count++
+            continue
+          }
+          const value = arg(index)
+          if (value === null) continue
+          if (node.call.distinct) {
+            const id = JSON.stringify(value)
+            if (seen.has(id)) continue
+            seen.add(id)
+          }
+          count++
+          const number = numeric(value)
+          if (number !== null) {
+            sum += number
+            numbers++
+          }
+          const order = best === null ? null : compare(value, best)
+          if (best === null || (order !== null && (name === 'min' ? order < 0 : order > 0))) best = value
+        }
+        const result =
+          name === 'count'
+            ? count
+            : name === 'sum'
+              ? numbers
+                ? sum
+                : null
+              : name === 'avg'
+                ? numbers
+                  ? sum / numbers
+                  : null
+                : best
+        for (let at = position; at <= end; at++) values[sorted[at]] = result
+        position = end + 1
+      }
+    }
+  }
+  return values
 }
 
 /** Whether a word is part of SQL itself, so it cannot be a plain column name. */
