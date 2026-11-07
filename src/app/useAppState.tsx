@@ -1,4 +1,5 @@
-import { type ClientLayout, type View, labels, navItems, priorityRank } from './navigation'
+import { type ClientLayout, type View, labels, navItems, priorityRank, SEEDS_PAGES } from './navigation'
+import { ACCOUNT_MANAGER_MODULES } from '../shared/access'
 import { atRoute, pathForRoute, routeFromLocation } from './routes'
 import { businessDateKey, useBusinessDate } from '../shared/businessDate'
 import { usePageActive, useVisiblePolling } from './useVisiblePolling'
@@ -747,11 +748,15 @@ export function useAppState() {
   const accountCurrentUser = authUser
     ? store.accounts.find(account => account.id === authUser.id && account.status === 'Active')
     : null
+  // Tagged only as Account Manager while per-person visibility is on: a Viewer of Action Center, Reports and AI.
+  const accountManagerOnly = Boolean(store.access?.accountManagerOnly)
   const currentUser: UserAccount | null = authUser
     ? {
         ...(accountCurrentUser ?? { ...authUser, passwordHash: '', createdAt: today }),
-        role: authUser.role,
-        modules: authUser.modules,
+        role: accountManagerOnly ? 'Viewer' : authUser.role,
+        modules: accountManagerOnly
+          ? authUser.modules.filter(module => ACCOUNT_MANAGER_MODULES.includes(module))
+          : authUser.modules,
         organizationId: authUser.organizationId,
         organizationName: authUser.organizationName,
         organizationSlug: authUser.organizationSlug,
@@ -767,7 +772,8 @@ export function useAppState() {
   const canManageAccounts = currentUser?.role === 'Administrator' && currentUser.accountType !== 'platform'
   const hasModule = (module: AppModule) => Boolean(currentUser && currentUser.modules.includes(module))
   const canWriteTasks = canWrite && (hasModule('items') || hasModule('inbox'))
-  const canUseAI = Boolean(currentUser && currentUser.role !== 'Viewer' && hasModule('ai'))
+  // Account Managers are Viewers who may still ask the AI BA Assistant about their clients.
+  const canUseAI = Boolean(currentUser && (currentUser.role !== 'Viewer' || accountManagerOnly) && hasModule('ai'))
   const visibleNavItems = currentUser
     ? navItems.filter(item => hasModule(item.id) && (item.id !== 'ai' || canUseAI))
     : []
@@ -882,6 +888,7 @@ export function useAppState() {
       return
     }
     if (view === 'themes' || (view === 'users' && canManageAccounts)) return
+    if (view === 'seeds' && visibleNavItems.some(item => SEEDS_PAGES.includes(item.id))) return
     if (!visibleNavItems.length) {
       redirectingRoute.current = true
       setView('themes')

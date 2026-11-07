@@ -1,4 +1,5 @@
 import type { Express, RequestHandler } from 'express'
+import { scopeFor } from '../../src/shared/access'
 import rateLimit from 'express-rate-limit'
 import type { createAiAgentManager } from '../ai/ai-agent-manager'
 import { runTenantAi } from '../ai/tenant-ai'
@@ -70,7 +71,13 @@ export function registerRtmAiRoutes(app: Express, deps: Deps) {
       if (typeof req.body.matrixId !== 'string' || req.body.matrixId.length > 100)
         throw new IntegrationError('Select an RTM.')
       const { data } = await deps.load((req as any).authUser.organizationId)
-      const matrix = data?.rtms?.find(m => m.id === req.body.matrixId)
+      const scope = scopeFor(data, (req as any).authUser.id)
+      // With per-person visibility on, only matrices on this person's own clients and projects can be previewed.
+      const matrix = data?.rtms?.find(
+        m =>
+          m.id === req.body.matrixId &&
+          (scope.all || scope.writeClients.has(m.clientId) || scope.writeProjects.has(m.projectId)),
+      )
       if (!data || !matrix)
         throw new IntegrationError('This RTM was not found in your account. Save it before generating a preview.', 404)
       if (matrix.status === 'Archived' || archivedWorkReason(data, matrix))

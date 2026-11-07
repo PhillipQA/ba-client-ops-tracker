@@ -27,8 +27,10 @@ import {
   PASSWORD_BOOTSTRAP_MARKER,
 } from '../core/constants'
 import { db } from '../core/database'
+import { withAccess } from '../services/access-cache'
 import {
   loadLegacyTrackerState,
+  loadTenantState,
   multiTenantSchemaReady,
   organizationByLoginKey,
   platformAuthSchemaReady,
@@ -239,8 +241,10 @@ export function registerAuthRoutes(app: Express) {
         )
         const token = sessions.create(user)
         clearLoginFailures(req)
+        // Read the workspace's access once so an Account Manager signs in straight to their four pages.
+        await loadTenantState(organization.id).catch(() => undefined)
         res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
-        res.json({ user, cloudConfigured: true, multiTenant: true })
+        res.json({ user: withAccess(user), cloudConfigured: true, multiTenant: true })
         return
       }
 

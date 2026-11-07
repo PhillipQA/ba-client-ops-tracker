@@ -1,4 +1,5 @@
 import type { AppState } from '../../app/useAppState'
+import { SeedsBadge } from '../seeds/SeedsPage'
 import { Pencil, Plus } from 'lucide-react'
 import { isArchived } from '../tasks/lifecycle'
 import { Empty, StatusChip } from '../../shared/ui/Chips'
@@ -69,13 +70,15 @@ export function ProjectsPage({ app }: { app: AppState }) {
                     projectArchiveFilter === 'all' || isArchived(project) === (projectArchiveFilter === 'archived'),
                 )
                 .map(project => {
-                  const clientIds = [
-                    ...new Set(
-                      store.items
-                        .filter(item => item.projectId === project.id && item.clientId)
-                        .map(item => item.clientId as string),
-                    ),
-                  ]
+                  const clientIds = project.clientId
+                    ? [project.clientId]
+                    : [
+                        ...new Set(
+                          store.items
+                            .filter(item => item.projectId === project.id && item.clientId)
+                            .map(item => item.clientId as string),
+                        ),
+                      ]
                   const clientLabel = clientIds.length
                     ? clientIds.map(id => clientName(id)).join(', ')
                     : 'No client tasks yet'
@@ -90,7 +93,9 @@ export function ProjectsPage({ app }: { app: AppState }) {
                             setSelectedProjectId(project.id)
                           }}
                         >
-                          <strong>{project.name}</strong>
+                          <strong>
+                            {project.name} <SeedsBadge record={project} />
+                          </strong>
                           <small>{project.summary || 'Open project dashboard'}</small>
                         </button>
                       </td>

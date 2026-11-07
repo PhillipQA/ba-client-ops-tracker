@@ -5,6 +5,8 @@ import { assertLifecycleMutation, LifecycleError } from '../../src/features/task
 import { applySubtaskAssignmentInheritance } from '../../src/features/tasks/subtaskAssignment'
 import { normalizeAppTheme, normalizeClientThemes } from '../../src/features/settings/theme'
 import { preserveInterfaceModes } from '../accounts/preferences'
+import { AccessDenied, creatorAssignments, mergeScopedSave, scopeFor, workspaceAccess } from '../../src/shared/access'
+import { keepSeedsFields, seedsState } from '../../src/shared/seeds'
 import { WorkspaceRaceError } from '../services/workspace-guard'
 import {
   isBcryptHash,
@@ -283,6 +285,22 @@ export function registerStoreRoutes(app: Express) {
         })
       }
 
+      // With per-person visibility on, the browser holds only part of the workspace. Lay its save onto the whole
+      // workspace: records it cannot see or change stay as stored. Access and Seeds data belong to the server.
+      const scope = scopeFor(current, user.id)
+      try {
+        next = mergeScopedSave(current, next, scope, { seedsConnected: seedsState(current).connected })
+      } catch (error) {
+        if (error instanceof AccessDenied) return void res.status(403).json({ configured: true, error: error.message })
+        throw error
+      }
+      const { access: _sentAccess, seeds: _sentSeeds, ...edited } = next
+      next = keepSeedsFields(current, {
+        ...edited,
+        ...(current.access !== undefined ? { access: current.access } : {}),
+        ...(current.seeds !== undefined ? { seeds: current.seeds } : {}),
+      })
+
       // The browser may add default display columns while loading old tenant
       // data. Ordinary workspace saves cannot edit platform-managed settings.
       next = preserveTaskSettings(current, { ...next, schemaVersion: Math.max(6, Number(next.schemaVersion || 0)) })
@@ -445,6 +463,15 @@ export function registerStoreRoutes(app: Express) {
                 .json({ configured: true, error: `Username ${account.username} is already used in this workspace.` })
           }
         }
+      }
+
+      // Someone who sees only their own clients keeps seeing the clients and projects they create.
+      if (!scope.all) {
+        const access = workspaceAccess(current)
+        const created = creatorAssignments(current, next, user.id).filter(
+          assignment => !access.assignments.some(existing => existing.id === assignment.id),
+        )
+        if (created.length) next = { ...next, access: { ...access, assignments: [...access.assignments, ...created] } }
       }
 
       assertLifecycleMutation(current, next, user)

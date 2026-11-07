@@ -24,6 +24,7 @@ import {
   subtaskParentProblem,
 } from '../../src/features/work-hub/communicationTasks'
 import { isWorkDone } from '../../src/features/tasks/lifecycle'
+import { canCreateWork, visibleTask, visibleTaskIds } from '../services/visibility'
 import { defaultWaitingOn } from '../../src/features/tasks/waitingOn'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
@@ -386,10 +387,16 @@ export function registerCommunications(
         ]
         if (!ids.length || ids.length > 50 || ids.some(id => id.length > 128))
           throw new IntegrationError('Choose up to 50 tasks.')
+        const state = await deps.load(user.organizationId)
+        // With per-person visibility on, tasks outside this person's clients and projects are not asked about.
+        const visible = visibleTaskIds(state?.data, user)
+        if (visible) ids.splice(0, ids.length, ...ids.filter(id => visible.has(id)))
+        if (!ids.length) return void res.json({ items: [] })
         // family=1: also the parent task and the subtasks, so a file on a subtask can answer the task's email.
         if (req.query.family === '1') {
-          const state = await deps.load(user.organizationId)
-          const all: any[] = Array.isArray(state?.data?.items) ? state.data.items : []
+          const all: any[] = (Array.isArray(state?.data?.items) ? state.data.items : []).filter(
+            (item: any) => !visible || visible.has(String(item?.id || '')),
+          )
           const asked = new Set(ids)
           for (const item of all) {
             const id = String(item?.id || ''),
@@ -795,7 +802,10 @@ export function registerCommunications(
         const items: any[] = Array.isArray(stateResult?.data?.items) ? stateResult.data.items : []
         // Old Discord captures are kept away from every browser (see sanitizeStateForClient): not linkable either.
         const task = items.find(
-          item => String(item?.id) === taskId && !(item?.source === 'Discord' && item?.externalSourceId),
+          item =>
+            String(item?.id) === taskId &&
+            !(item?.source === 'Discord' && item?.externalSourceId) &&
+            visibleTask(stateResult.data, user, taskId, 'write'),
         )
         if (!unlink && (!task || task.archived)) throw new IntegrationError('That task or subtask was not found.', 404)
         const existing = [
@@ -858,6 +868,8 @@ export function registerCommunications(
               ? `“${parent.title}” has no active client and project, so a subtask cannot be added to it here.`
               : 'Select an active client and project.',
           )
+        if (!canCreateWork(state, user, { clientId, projectId, parentTaskId }))
+          throw new IntegrationError('You don’t have access to that client or project.', 403)
         const assignee = requireText(req.body?.assignedToUserId, 'Assignee', 100)
         const account = (state.accounts || []).find(
           (x: any) => x.id === assignee && x.status !== 'Disabled' && ['Administrator', 'Contributor'].includes(x.role),

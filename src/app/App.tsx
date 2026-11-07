@@ -48,7 +48,8 @@ import { ActivityForm } from '../features/action-center/ActionCenterParts'
 import { ClientDetail, ClientForm, ProjectDetail, ProjectForm } from '../features/clients/ClientViews'
 import { TaskEditForm, TaskForm } from '../features/tasks/TaskForms'
 import { useAppState } from './useAppState'
-import { labels } from './navigation'
+import { isSeedsView, labels, sidebarItems } from './navigation'
+import { SeedsSyncPage, SeedsTabs } from '../features/seeds/SeedsPage'
 import { VIEW_PATHS, opensElsewhere } from './routes'
 import { ActionCenterPage } from '../features/action-center/ActionCenterPage'
 import { ClientsPage } from '../features/clients/ClientsPage'
@@ -229,12 +230,12 @@ function App() {
             </button>
           </div>
           <nav id="app-menu">
-            {visibleNavItems.map(({ id, label, icon: Icon }) => (
+            {sidebarItems(visibleNavItems).map(({ id, label, icon: Icon, seeds }) => (
               <button
                 key={id}
-                data-tour={`nav-${id}`}
-                className={view === id ? 'nav-button active' : 'nav-button'}
-                aria-current={view === id ? 'page' : undefined}
+                data-tour={seeds ? 'nav-seeds' : `nav-${id}`}
+                className={(seeds ? isSeedsView(view) : view === id) ? 'nav-button active' : 'nav-button'}
+                aria-current={(seeds ? isSeedsView(view) : view === id) ? 'page' : undefined}
                 {...railTip.bind(id === 'inbox' && unreadTotal > 0 ? `${label} · ${unreadTitle}` : label)}
                 onClick={event => {
                   // Ctrl/⌘-click or Shift-click opens the page in a new tab, as a link would.
@@ -526,6 +527,10 @@ function App() {
             <ActionCenterPage app={appState} currentUser={currentUser} />
           )}
 
+          {!selectedClient && !selectedProject && isSeedsView(view) && <SeedsTabs app={appState} />}
+
+          {!selectedClient && !selectedProject && view === 'seeds' && <SeedsSyncPage app={appState} />}
+
           {!selectedClient && !selectedProject && view === 'clients' && hasModule('clients') && (
             <ClientsPage app={appState} />
           )}
@@ -632,7 +637,7 @@ function App() {
                   kind="clients"
                   record={selectedClient}
                   store={store}
-                  canEdit={canWrite && hasModule('clients')}
+                  canEdit={canWrite && hasModule('clients') && !selectedClient.accessLimited}
                   onSave={record => saveLifecycleRecord('clients', record)}
                 />
               }
@@ -673,7 +678,7 @@ function App() {
                   kind="projects"
                   record={selectedProject}
                   store={store}
-                  canEdit={canWrite && hasModule('projects')}
+                  canEdit={canWrite && hasModule('projects') && !selectedProject.accessLimited}
                   onSave={record => saveLifecycleRecord('projects', record)}
                 />
               }

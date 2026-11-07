@@ -15,6 +15,8 @@ import {
 } from './dochub-api'
 import { archivedWorkReason, workContext, LifecycleError } from '../../src/features/tasks/lifecycle'
 import type { DriveFiler } from './google-drive'
+import { scopeFor } from '../../src/shared/access'
+import { canCreateWork, visibleTask, visibleTaskIds } from '../services/visibility'
 type Deps = {
   db: any
   requireAuth: RequestHandler
@@ -733,8 +735,10 @@ export function createDocHubService(deps: Deps) {
         return
       }
       const current = (await deps.load(tenant)).data
-      const task = clean.taskId ? (current?.items || []).find((i: any) => i.id === clean.taskId) : undefined
+      const task = clean.taskId ? visibleTask(current, user, String(clean.taskId), 'write') : undefined
       if (clean.taskId && !task) throw new DocHubError('Select an existing task or subtask in this account.', 404)
+      if (!task && clean.clientId && !canCreateWork(current, user, { clientId: clean.clientId }))
+        throw new DocHubError('You don’t have access to that client.', 403)
       if (task) {
         if (!user.modules?.some((m: string) => ['items', 'action', 'clients', 'projects'].includes(m)))
           throw new DocHubError('Task access is required to link this document.', 403)
@@ -980,6 +984,31 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
   const scope = [deps.requireAuth, deps.requireTenant, guard(), limiter],
     admins = [deps.requireAuth, deps.requireTenant, guard(true), limiter]
   const tenant = (req: Request) => (req as any).authUser.organizationId as string
+  // Per-person visibility: a document belongs to its task, else to its client, else to whoever prepared it.
+  const documentFilter = (state: any, user: any) => {
+    const visible = visibleTaskIds(state, user)
+    if (!visible) return () => true
+    const clients = scopeFor(state, user.id).fullClients
+    return (doc: any) =>
+      doc?.taskId
+        ? visible.has(String(doc.taskId))
+        : doc?.clientId
+          ? clients.has(String(doc.clientId))
+          : String(doc?.createdBy || '') === String(user.id)
+  }
+  const visibleDocument: RequestHandler = async (req, res, next) => {
+    try {
+      const state = (await deps.load(tenant(req))).data
+      const doc = await service.load(tenant(req), String(req.params.id))
+      if (!documentFilter(state, (req as any).authUser)(doc))
+        return void res.status(404).json({ error: 'Document not found.' })
+      next()
+    } catch (e) {
+      res
+        .status(e instanceof DocHubError ? e.status : 503)
+        .json({ error: e instanceof DocHubError ? e.message : 'DocHub is unavailable. Retry shortly.' })
+    }
+  }
   const write = (req: Request) => {
     const u = (req as any).authUser
     if (u.role === 'Viewer' || !u.modules?.includes('documents'))
@@ -1139,6 +1168,8 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
     wrap(async (req, res) => {
       const id = tenant(req),
         result = await service.list(id, String(req.query.taskId || '') || undefined)
+      const shown = documentFilter((await deps.load(id)).data, (req as any).authUser)
+      result.documents = result.documents.filter(shown)
       let names = new Map<string, string>()
       if (result.documents.some((doc: any) => doc.createdBy && !doc.createdByName)) {
         const users = await deps.db.from('app_users').select('id,name,username').eq('organization_id', id)
@@ -1172,6 +1203,7 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
   app.post(
     '/api/dochub/documents/:id/refresh',
     ...scope,
+    visibleDocument,
     wrap(async (req, res) => {
       res.json({ document: publicDocument(await service.refresh(tenant(req), String(req.params.id))) })
     }),
@@ -1179,6 +1211,7 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
   app.post(
     '/api/dochub/documents/:id/signers/:signerId/notify',
     ...scope,
+    visibleDocument,
     notificationLimiter,
     wrap(async (req, res) => {
       const actor = write(req)
@@ -1191,6 +1224,7 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
   app.post(
     '/api/dochub/documents/:id/recover',
     ...scope,
+    visibleDocument,
     wrap(async (req, res) => {
       write(req)
       const id = tenant(req),
@@ -1215,6 +1249,7 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
   app.get(
     '/api/dochub/documents/:id/pdf',
     ...scope,
+    visibleDocument,
     wrap(async (req, res) => {
       const doc = await service.load(tenant(req), String(req.params.id))
       const { buffer, fileName } = await service.signedPdf(tenant(req), doc)
@@ -1228,6 +1263,7 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
   app.post(
     '/api/dochub/documents/:id/drive',
     ...scope,
+    visibleDocument,
     wrap(async (req, res) => {
       write(req)
       res.json({ document: publicDocument(await service.saveToDrive(tenant(req), String(req.params.id))) })

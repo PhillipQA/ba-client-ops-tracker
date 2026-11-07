@@ -1,4 +1,5 @@
 // Loading and saving each organisation's workspace.
+import { rememberAccess } from '../services/access-cache'
 import { normalizeInterfaceMode } from '../../src/features/settings/appearance'
 import { LifecycleError } from '../../src/features/tasks/lifecycle'
 import { assertRtmMutation, reconcileRtm } from '../../src/features/requirements/rtm'
@@ -109,6 +110,7 @@ export async function loadTenantState(organizationId?: string | null) {
     const recovered = (users || []).filter((user: any) => !knownIds.has(String(user.id))).map(accountFromDatabase)
     const recoveredState = { ...snapshot, accounts: [...accounts, ...recovered] }
     loadedRevisions.set(recoveredState, data?.updated_at || null)
+    rememberAccess(organizationId, recoveredState)
     return { configured: true, data: recoveredState, updatedAt: data?.updated_at as string | undefined }
   }
   return loadLegacyTrackerState()
@@ -577,6 +579,7 @@ export async function commitTenantState(
     assertRtmMutation(current, state, actor)
     const reconciled = reconcileRtm(current, state, actor)
     const saved = await writeTenantState(organizationId, reconciled, actor, reason, current, synchronize)
+    rememberAccess(organizationId, reconciled)
     announceCommit(organizationId, current, reconciled, actor)
     return saved
   })

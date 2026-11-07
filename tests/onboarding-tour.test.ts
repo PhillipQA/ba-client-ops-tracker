@@ -12,15 +12,16 @@ test('Administrators set up the account first, then their own Gmail and calendar
   for (const id of ['admin-settings', 'admin-integrations', 'admin-templates', 'admin-agents', 'admin-users'])
     assert.ok(steps.indexOf(id) < steps.indexOf('gmail'), id)
   assert.ok(steps.indexOf('gmail') < steps.indexOf('action'))
-  assert.ok(steps.indexOf('calendar') < steps.indexOf('clients'))
+  assert.ok(steps.indexOf('calendar') < steps.indexOf('seeds'))
 })
 
 test('others see only their own setup and the pages they can open', () => {
   const steps = ids(tourSteps({ isAdmin: false, modules: ['inbox', 'items'], canWrite: true }))
   assert.ok(!steps.some(id => id.startsWith('admin-')))
   assert.ok(steps.includes('gmail'))
-  for (const id of ['calendar', 'action', 'documents', 'trackers', 'reports', 'clients'])
-    assert.ok(!steps.includes(id), id)
+  for (const id of ['calendar', 'action', 'documents', 'trackers', 'reports']) assert.ok(!steps.includes(id), id)
+  // Tasks live inside Seeds, so the Seeds step shows for anyone with Tasks.
+  assert.ok(steps.includes('seeds'))
   assert.ok(steps.includes('add-task'))
 })
 

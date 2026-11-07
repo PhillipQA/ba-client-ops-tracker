@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { visibleTaskIds } from '../services/visibility'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { IntegrationError } from './tenant-integrations'
 import { LifecycleError } from '../../src/features/tasks/lifecycle'
@@ -276,7 +277,9 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
     const state = (await deps.load(tenantId)).data
     if (!state) throw new SendError('Workspace data is unavailable.', 503)
     const items: any[] = Array.isArray(state.items) ? state.items : []
-    const tasks = taskIds.map(id => items.find(item => item?.id === id))
+    // With per-person visibility on, only tasks this person can see can be emailed from.
+    const visible = visibleTaskIds(state, user)
+    const tasks = taskIds.map(id => items.find(item => item?.id === id && (!visible || visible.has(id))))
     if (tasks.some(task => !task))
       throw new SendError('A linked task or subtask no longer exists. Choose it again.', 404)
 
@@ -328,7 +331,7 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
     for (const ref of driveRefs) {
       if (seenDrive.has(ref.fileId)) continue
       seenDrive.add(ref.fileId)
-      const owner = items.find(item => item?.id === ref.taskId)
+      const owner = items.find(item => item?.id === ref.taskId && (!visible || visible.has(ref.taskId)))
       const listed = (Array.isArray(owner?.driveFiles) ? owner.driveFiles : []).find(
         (file: any) => file.id === ref.fileId,
       )

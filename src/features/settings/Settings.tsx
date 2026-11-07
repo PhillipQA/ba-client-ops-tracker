@@ -4,6 +4,7 @@ import { DocHubSettings } from '../documents/DocHubPanel'
 import { CalendarAccountSettings } from '../integrations/GoogleCalendarPanel'
 import { GmailAccountSettings } from '../integrations/GmailAccountSettings'
 import { DriveAccountSettings } from '../integrations/DriveAccountSettings'
+import { AccessSettings, SeedsConnectionCard } from '../seeds/SeedsSettings'
 import type { SignoffTemplateKind } from '../documents/signoff'
 
 export async function settingsRequest(url: string, method = 'GET', data?: unknown) {
@@ -678,7 +679,7 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
   const [data, setData] = useState<any>(null),
     [error, setError] = useState('')
   const isAdmin = currentUser.role === 'Administrator'
-  const [activeTab, setActiveTab] = useState<'templates' | 'agents' | 'integrations'>(() =>
+  const [activeTab, setActiveTab] = useState<'templates' | 'agents' | 'integrations' | 'access'>(() =>
     new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'integrations' : 'templates',
   )
   const tabs = isAdmin
@@ -686,6 +687,7 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
         { id: 'templates' as const, label: 'Templates' },
         { id: 'agents' as const, label: 'AI Agents' },
         { id: 'integrations' as const, label: 'Integrations' },
+        { id: 'access' as const, label: 'Access' },
       ]
     : []
   const load = async () => {
@@ -793,6 +795,17 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
             <CalendarAccountSettings key={currentUser.organizationId} />
             <GmailAccountSettings key={`gmail:${currentUser.organizationId}`} />
             <DriveAccountSettings key={`drive:${currentUser.organizationId}`} />
+            <SeedsConnectionCard key={`seeds:${currentUser.organizationId}`} />
+          </div>
+          <div
+            className="settings-tab-content"
+            id="settings-section-access"
+            role="tabpanel"
+            aria-labelledby="settings-tab-access"
+            hidden={activeTab !== 'access'}
+            tabIndex={0}
+          >
+            {activeTab === 'access' && <AccessSettings key={`access:${currentUser.organizationId}`} />}
           </div>
         </>
       ) : (

@@ -2,6 +2,7 @@ import type { AppState } from '../../app/useAppState'
 import { ChevronRight, Clock3, LayoutGrid, List, Pencil, Plus, Search, Table2, Users } from 'lucide-react'
 import { StatusChip } from '../../shared/ui/Chips'
 import { isArchived } from '../tasks/lifecycle'
+import { SeedsBadge } from '../seeds/SeedsPage'
 import { niceDate } from '../../shared/dates'
 
 /** Clients screen. It reads the app state; see app/useAppState. */
@@ -121,7 +122,9 @@ export function ClientsPage({ app }: { app: AppState }) {
                 <tr key={client.id}>
                   <td>
                     <button type="button" className="table-link" onClick={() => setSelectedClientId(client.id)}>
-                      <strong>{client.name}</strong>
+                      <strong>
+                        {client.name} <SeedsBadge record={client} />
+                      </strong>
                     </button>
                   </td>
                   <td>
@@ -170,7 +173,9 @@ export function ClientsPage({ app }: { app: AppState }) {
                   <ChevronRight size={18} />
                 </div>
                 <div className="client-identity">
-                  <h3>{client.name}</h3>
+                  <h3>
+                    {client.name} <SeedsBadge record={client} />
+                  </h3>
                   <p>
                     {client.contact} · {client.email}
                   </p>

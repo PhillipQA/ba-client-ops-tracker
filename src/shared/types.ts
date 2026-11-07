@@ -61,6 +61,11 @@ export interface Client {
   status: 'Active' | 'Closing' | 'Closed'
   health: 'Good' | 'Watch' | 'At Risk'
   notes: string
+  /** Linked to this Seeds client; the name follows Seeds. */
+  seedsId?: string
+  seedsArchived?: boolean
+  /** Shown by name only: this person is assigned to some of its work, not to the client. */
+  accessLimited?: boolean
 }
 
 export interface Project {
@@ -71,6 +76,12 @@ export interface Project {
   status: 'Discovery' | 'Active' | 'UAT' | 'Closing' | 'Closed'
   targetDate: string
   summary: string
+  /** The client this project belongs to (from Seeds). Older projects take their client from their tasks. */
+  clientId?: string
+  seedsId?: string
+  contractNumber?: string
+  seedsArchived?: boolean
+  accessLimited?: boolean
 }
 
 export interface TaskEvidence {
@@ -149,6 +160,9 @@ export interface WorkItem {
   /** Closed and put away: hidden from Tasks until reopened. Only top-level tasks; their subtasks go with them. */
   archived?: boolean
   archivedAt?: string
+  /** A parent task that is this Seeds task; the title follows Seeds. */
+  seedsId?: string
+  seedsArchived?: boolean
 }
 
 export type WorkActivityAction =

@@ -1,0 +1,349 @@
+/**
+ * One Seeds sync, as a pure change to the workspace: link or add clients, projects and parent tasks, follow renames,
+ * and replace the Seeds assignments. Records are matched by Seeds id first, then by exact name; a close name is held
+ * for someone to confirm instead of guessing. Nothing here deletes: work that is not in Seeds keeps working.
+ */
+import { randomUUID } from 'node:crypto'
+import { archivedWorkReason, isArchived, stableRecord } from '../../src/features/tasks/lifecycle'
+import { type Assignment, workspaceAccess } from '../../src/shared/access'
+import {
+  CLOSE_MATCH,
+  matchKey,
+  nameSimilarity,
+  type SeedsCounts,
+  type SeedsMatch,
+  type SeedsSnapshot,
+  seedsState,
+} from '../../src/shared/seeds'
+
+type Options = {
+  now: string
+  today: string
+  /** Status and waiting-on labels new parent tasks start with. */
+  openStatus: string
+  waitingOn: string
+  id?: () => string
+}
+
+const text = (value: unknown) => (value == null ? '' : String(value))
+const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
+
+/** Seeds saves as the system, with the rights a sync needs (rename clients, add projects and tasks). */
+export const SEEDS_ACTOR = {
+  id: 'system:seeds',
+  name: 'Seeds sync',
+  username: 'seeds',
+  role: 'Administrator',
+  modules: ['clients', 'projects', 'items'],
+  accountType: 'tenant',
+  status: 'Active',
+}
+
+/**
+ * Makes a sync's changes pass the workspace's own rules: a changed client or project gets its next record version,
+ * and work under anything archived is left exactly as it was (archived work is read-only until reopened).
+ */
+function settle(before: any, after: any) {
+  const bumped = (key: 'clients' | 'projects') => {
+    const old = new Map(list(before?.[key]).map(record => [text(record?.id), record]))
+    return list(after[key]).map(record => {
+      const previous = old.get(text(record?.id))
+      if (!previous) return record
+      const same =
+        stableRecord({ ...previous, lifecycleVersion: undefined }) ===
+        stableRecord({ ...record, lifecycleVersion: undefined })
+      return same ? previous : { ...record, lifecycleVersion: (Number(previous.lifecycleVersion) || 0) + 1 }
+    })
+  }
+  const draft = { ...after, clients: bumped('clients'), projects: bumped('projects') }
+  const old = new Map(list(before?.items).map(item => [text(item?.id), item]))
+  const items = list(after.items)
+    .map(item => {
+      const previous = old.get(text(item?.id))
+      if (previous && stableRecord(previous) === stableRecord(item)) return previous
+      const blocked =
+        (previous && (isArchived(previous) || archivedWorkReason(before, previous))) || archivedWorkReason(draft, item)
+      return blocked ? previous : item
+    })
+    .filter(Boolean)
+  return { ...draft, items }
+}
+
+/** The best unlinked record for a Seeds name: exact, close (to confirm), or none. */
+function bestMatch(name: string, candidates: any[], field: 'name' | 'title') {
+  const key = matchKey(name)
+  const exact = candidates.find(candidate => key && matchKey(candidate[field]) === key)
+  if (exact) return { exact }
+  let close: any
+  let score = CLOSE_MATCH
+  for (const candidate of candidates) {
+    const similarity = nameSimilarity(name, candidate[field])
+    if (similarity >= score) {
+      score = similarity
+      close = candidate
+    }
+  }
+  return close ? { close } : {}
+}
+
+export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Options) {
+  const makeId = options.id || randomUUID
+  const seeds = seedsState(state)
+  const rejected = new Set(seeds.rejected)
+  const counts: SeedsCounts = {
+    people: snapshot.people.length,
+    clients: snapshot.clients.length,
+    projects: snapshot.projects.length,
+    tasks: snapshot.tasks.length,
+    assignments: 0,
+    created: 0,
+    linked: 0,
+    renamed: 0,
+  }
+  const pending: SeedsMatch[] = []
+  const hold = (kind: SeedsMatch['kind'], seedsId: string, seedsName: string, app: any, extra = {}) =>
+    pending.push({
+      id: `${kind}:${seedsId}`,
+      kind,
+      seedsId,
+      seedsName,
+      appId: text(app.id),
+      appName: text(app.name ?? app.title),
+      ...extra,
+    })
+
+  // Clients
+  const clients = list(state?.clients).map(client => ({ ...client }))
+  const clientBySeeds = new Map<string, any>()
+  for (const client of clients) if (client.seedsId) clientBySeeds.set(text(client.seedsId), client)
+  for (const source of snapshot.clients) {
+    let client = clientBySeeds.get(source.id)
+    if (!client) {
+      const free = clients.filter(candidate => !candidate.seedsId)
+      const found = bestMatch(source.name, free, 'name')
+      if (found.exact) {
+        client = found.exact
+        client.seedsId = source.id
+        counts.linked++
+      } else if (found.close && !rejected.has(source.id)) {
+        hold('client', source.id, source.name, found.close)
+        continue
+      } else {
+        client = {
+          id: makeId(),
+          name: source.name,
+          contact: '',
+          email: '',
+          status: 'Active',
+          health: 'Good',
+          notes: '',
+          seedsId: source.id,
+        }
+        clients.push(client)
+        counts.created++
+      }
+      clientBySeeds.set(source.id, client)
+    }
+    if (client.name !== source.name) {
+      client.name = source.name
+      counts.renamed++
+    }
+    if (source.archived) client.seedsArchived = true
+    else delete client.seedsArchived
+  }
+
+  // Projects, under their Seeds client. A project whose client is waiting for a confirmation waits too.
+  const projects = list(state?.projects).map(project => ({ ...project }))
+  const projectBySeeds = new Map<string, any>()
+  for (const project of projects) if (project.seedsId) projectBySeeds.set(text(project.seedsId), project)
+  for (const source of snapshot.projects) {
+    const client = source.clientId ? clientBySeeds.get(source.clientId) : undefined
+    if (source.clientId && !client) continue
+    let project = projectBySeeds.get(source.id)
+    if (!project) {
+      const free = projects.filter(
+        candidate => !candidate.seedsId && (!candidate.clientId || candidate.clientId === client?.id),
+      )
+      const contract = matchKey(source.contractNumber)
+      const byContract =
+        contract.length >= 4 ? free.find(candidate => matchKey(candidate.name).includes(contract)) : undefined
+      const found = byContract ? { exact: byContract } : bestMatch(source.name, free, 'name')
+      if (found.exact) {
+        project = found.exact
+        project.seedsId = source.id
+        counts.linked++
+      } else if (found.close && !rejected.has(source.id)) {
+        hold('project', source.id, source.name, found.close, { contractNumber: source.contractNumber })
+        continue
+      } else {
+        project = {
+          id: makeId(),
+          name: source.name,
+          status: 'Active',
+          targetDate: '',
+          summary: '',
+          seedsId: source.id,
+        }
+        projects.push(project)
+        counts.created++
+      }
+      projectBySeeds.set(source.id, project)
+    }
+    if (project.name !== source.name) {
+      project.name = source.name
+      counts.renamed++
+    }
+    if (client) project.clientId = client.id
+    else delete project.clientId
+    if (source.contractNumber) project.contractNumber = source.contractNumber
+    else delete project.contractNumber
+    if (source.archived) project.seedsArchived = true
+    else delete project.seedsArchived
+  }
+
+  // Seeds tasks are this app's parent tasks. Subtasks stay here.
+  const items = list(state?.items).map(item => ({ ...item }))
+  const taskBySeeds = new Map<string, any>()
+  for (const item of items) if (item.seedsId && !item.parentTaskId) taskBySeeds.set(text(item.seedsId), item)
+  for (const source of snapshot.tasks) {
+    const project = projectBySeeds.get(source.projectId)
+    if (!project) continue
+    let task = taskBySeeds.get(source.id)
+    if (!task) {
+      const free = items.filter(
+        candidate =>
+          !candidate.seedsId &&
+          !candidate.parentTaskId &&
+          candidate.projectId === project.id &&
+          !(candidate.source === 'Discord' && candidate.externalSourceId),
+      )
+      const found = bestMatch(source.name, free, 'title')
+      if (found.exact) {
+        task = found.exact
+        task.seedsId = source.id
+        counts.linked++
+      } else if (found.close && !rejected.has(source.id)) {
+        hold('task', source.id, source.name, found.close)
+        continue
+      } else {
+        task = {
+          id: makeId(),
+          clientId: project.clientId || undefined,
+          projectId: project.id,
+          title: source.name,
+          type: 'Task',
+          priority: 'Medium',
+          status: options.openStatus,
+          waitingOn: options.waitingOn,
+          owner: '',
+          dateRaised: options.today,
+          followUpDate: '',
+          description: '',
+          resolution: '',
+          source: 'Other',
+          seedsId: source.id,
+        }
+        if (!task.clientId) delete task.clientId
+        items.push(task)
+        counts.created++
+      }
+      taskBySeeds.set(source.id, task)
+    }
+    if (task.title !== source.name) {
+      task.title = source.name
+      counts.renamed++
+    }
+    if (source.archived) task.seedsArchived = true
+    else delete task.seedsArchived
+  }
+
+  // People are matched by email; assignments follow them onto the linked clients and projects.
+  const accounts = list(state?.accounts)
+  const accountByEmail = new Map<string, any>()
+  for (const account of accounts)
+    if (account?.email && account.status !== 'Disabled')
+      accountByEmail.set(text(account.email).trim().toLowerCase(), account)
+  const userBySeeds = new Map<string, string>()
+  const unmatchedPeople: { id: string; name: string; email: string }[] = []
+  for (const person of snapshot.people) {
+    const account = accountByEmail.get(person.email.trim().toLowerCase())
+    if (account) userBySeeds.set(person.id, text(account.id))
+    else unmatchedPeople.push({ id: person.id, name: person.name, email: person.email })
+  }
+  const seen = new Set<string>()
+  const fromSeeds: Assignment[] = []
+  for (const source of snapshot.assignments) {
+    const userId = userBySeeds.get(source.personId)
+    if (!userId) continue
+    const projectId = source.projectId ? projectBySeeds.get(source.projectId)?.id : undefined
+    const clientId = !source.projectId && source.clientId ? clientBySeeds.get(source.clientId)?.id : undefined
+    if (!projectId && !clientId) continue
+    const id = `seeds:${userId}:${source.role}:${projectId || clientId}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    fromSeeds.push({
+      id,
+      userId,
+      role: source.role,
+      ...(projectId ? { projectId } : { clientId }),
+      source: 'seeds',
+    })
+  }
+  counts.assignments = fromSeeds.length
+
+  const access = workspaceAccess(state)
+  const { lastError: _lastError, ...settled } = seeds
+  const next = settle(state, {
+    ...state,
+    clients,
+    projects,
+    items,
+    access: {
+      ...access,
+      assignments: [...access.assignments.filter(assignment => assignment.source !== 'seeds'), ...fromSeeds],
+    },
+    seeds: {
+      ...settled,
+      connected: true,
+      lastAttemptAt: options.now,
+      lastSuccessAt: options.now,
+      counts,
+      pendingMatches: pending,
+      unmatchedPeople,
+    },
+  })
+  return { state: next, counts, pending }
+}
+
+/** Confirm (link) or turn down (add as new on the next sync) one held match. */
+export function decideSeedsMatch(state: any, matchId: string, decision: 'confirm' | 'reject') {
+  const seeds = seedsState(state)
+  const match = seeds.pendingMatches.find(candidate => candidate.id === matchId)
+  if (!match) return null
+  const key = match.kind === 'client' ? 'clients' : match.kind === 'project' ? 'projects' : 'items'
+  const linkedAlready = list(state?.[key]).some(record => text(record?.seedsId) === match.seedsId)
+  const records =
+    decision === 'confirm' && !linkedAlready
+      ? list(state?.[key]).map(record =>
+          text(record?.id) === match.appId && !record.seedsId
+            ? {
+                ...record,
+                seedsId: match.seedsId,
+                ...(key === 'items' ? { title: match.seedsName } : { name: match.seedsName }),
+              }
+            : record,
+        )
+      : list(state?.[key])
+  return {
+    match,
+    state: settle(state, {
+      ...state,
+      [key]: records,
+      seeds: {
+        ...seeds,
+        pendingMatches: seeds.pendingMatches.filter(candidate => candidate.id !== matchId),
+        rejected: decision === 'reject' ? [...new Set([...seeds.rejected, match.seedsId])] : seeds.rejected,
+      },
+    }),
+  }
+}

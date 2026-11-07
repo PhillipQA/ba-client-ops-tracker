@@ -38,6 +38,7 @@ import {
   tabRange,
 } from '../../src/features/trackers/trackerSync'
 import { cleanTimelineSettings } from '../../src/features/trackers/timelineModel'
+import { scopeFor } from '../../src/shared/access'
 import { sheetFormatRequests, sheetFromTracker } from '../../src/features/trackers/sheetFromTracker'
 import {
   GANTT_TAB,
@@ -178,11 +179,23 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   }
   const manageable = (user: User, row: any) => user.role === 'Administrator' || row.created_by === user.id
 
+  /** With per-person visibility on, a tracker shows only to people who see all of its clients (or its project). */
+  function trackerVisibleIn(state: any, user: User) {
+    const scope = scopeFor(state, user.id)
+    if (scope.all) return () => true
+    return (row: any) => {
+      const clients = splitClientIds(row.client_id)
+      if (clients.length) return clients.every(clientId => scope.fullClients.has(clientId))
+      if (row.project_id) return scope.fullProjects.has(String(row.project_id))
+      return row.created_by === user.id
+    }
+  }
   async function trackerRow(tenant: string, id: string, user: User) {
     const r = await db.from('tenant_trackers').select('*').eq('tenant_id', tenant).eq('id', id).maybeSingle()
     check(r.error)
     // A private tracker does not exist for anyone but its creator.
     if (!r.data || (r.data.private && r.data.created_by !== user.id)) throw new TrackerError('Tracker not found.', 404)
+    if (!trackerVisibleIn(await workspace(tenant), user)(r.data)) throw new TrackerError('Tracker not found.', 404)
     return r.data
   }
   async function rowCount(tenant: string, trackerId: string) {
@@ -283,10 +296,16 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     await db.from('tenant_trackers').update({ updated_at: now() }).eq('tenant_id', tenant).eq('id', trackerId)
   }
 
-  function validateLinks(state: any, body: { clientId?: unknown; clientIds?: unknown; projectId?: unknown }) {
+  function validateLinks(
+    state: any,
+    body: { clientId?: unknown; clientIds?: unknown; projectId?: unknown },
+    user: User,
+  ) {
+    const scope = scopeFor(state, user.id)
     const pick = (value: unknown, list: any[], label: string) => {
       const id = String(value ?? '').trim()
-      if (id && !(list || []).some((item: any) => item.id === id))
+      const open = label === 'client' ? scope.writeClients : scope.writeProjects
+      if (id && (!(list || []).some((item: any) => item.id === id) || (!scope.all && !open.has(id))))
         throw new TrackerError(`That ${label} was not found in your account.`)
       return id
     }
@@ -2355,7 +2374,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .order('updated_at', { ascending: false })
         .limit(TRACKER_LIMITS.trackers + 100)
       check(r.error)
-      const visible = (r.data || []).filter((row: any) => !row.private || row.created_by === user.id)
+      const shown = trackerVisibleIn(await workspace(tenant), user)
+      const visible = (r.data || []).filter((row: any) => (!row.private || row.created_by === user.id) && shown(row))
       const counts = await Promise.all(visible.map((row: any) => rowCount(tenant, row.id)))
       res.json({
         trackers: visible.map((row: any, index: number) => trackerOut(row, user, counts[index])),
@@ -2374,7 +2394,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const name = cleanName(body.name, 'tracker name', TRACKER_LIMITS.nameLength)
       const columns = normalizeColumns(body.columns ?? [{ name: 'Name', type: 'text' }])
       const state = await workspace(tenant)
-      const links = validateLinks(state, body)
+      const links = validateLinks(state, body, user)
       const existing = await db
         .from('tenant_trackers')
         .select('id', { count: 'exact', head: true })
@@ -2480,7 +2500,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .eq('tenant_id', tenant)
         .limit(TRACKER_LIMITS.trackers + 100)
       check(r.error)
-      const visible = (r.data || []).filter((row: any) => !row.private || row.created_by === user.id)
+      const shown = trackerVisibleIn(await workspace(tenant), user)
+      const visible = (r.data || []).filter((row: any) => (!row.private || row.created_by === user.id) && shown(row))
       res.json({ links: await linksOut(tenant, visible) })
     }),
   )
@@ -2697,7 +2718,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         patch: Record<string, unknown> = {}
       if (body.name !== undefined) patch.name = cleanName(body.name, 'tracker name', TRACKER_LIMITS.nameLength)
       if (body.clientId !== undefined || body.clientIds !== undefined || body.projectId !== undefined) {
-        const links = validateLinks(await workspace(tenant), body)
+        const links = validateLinks(await workspace(tenant), body, user)
         if (links.clientId !== undefined) patch.client_id = links.clientId
         if (links.projectId !== undefined) patch.project_id = links.projectId
       }
@@ -3493,8 +3514,9 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       .order('updated_at', { ascending: false })
       .limit(TRACKER_LIMITS.trackers + 100)
     check(r.error)
+    const shown = trackerVisibleIn(await workspace(tenant), user as User)
     const visible = (r.data || []).filter(
-      (row: any) => !row.archived_at && (!row.private || row.created_by === user.id),
+      (row: any) => !row.archived_at && (!row.private || row.created_by === user.id) && shown(row),
     )
     // Row counts are left at 0 here: only the trackers that are read get their rows, and so their count.
     const trackers: Tracker[] = visible.map((row: any) => trackerOut(row, user as User, 0))

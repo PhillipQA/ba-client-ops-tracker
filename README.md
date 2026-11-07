@@ -1,6 +1,6 @@
 # BA Client Ops Tracker
 
-**Version 1.5.1** · [Changelog](CHANGELOG.md)
+**Version 1.6.0** · [Changelog](CHANGELOG.md)
 
 A workspace for business analysts: clients, projects, tasks and follow-ups, Work Hub (Gmail, Discord, GitHub, GitLab), document creation (BRD, FSD, DRF, sign-offs), requirements traceability, trackers that can follow a Google Sheet, reports, and an AI BA assistant.
 
