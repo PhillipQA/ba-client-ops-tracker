@@ -186,8 +186,8 @@ registerSeedsRoutes(app, {
   openStatus: openTaskStatus,
   today: () => dateKeyInTimeZone(new Date(), followUpTimeZone),
   secrets: {
-    encrypt: (secret, organizationId) => encryptSecret(secret, organizationId, 'seeds'),
-    decrypt: (value, organizationId) => decryptSecret(value, organizationId, 'seeds'),
+    encrypt: (secret, owner) => encryptSecret(secret, owner, 'seeds-token'),
+    decrypt: (value, owner) => decryptSecret(value, owner, 'seeds-token'),
     ready: () => {
       try {
         encryptionKey()

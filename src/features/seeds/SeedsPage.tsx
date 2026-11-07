@@ -7,7 +7,7 @@ import { useState } from 'react'
 import type { AppState } from '../../app/useAppState'
 import type { View } from '../../app/navigation'
 import type { SeedsMatch } from '../../shared/seeds'
-import { decideMatch, syncSeeds } from './seedsApi'
+import { decideMatch, removeMySeeds, saveMySeedsKey, syncSeeds } from './seedsApi'
 import './seeds.css'
 
 export const SEEDS_TABS: { id: Extract<View, 'clients' | 'projects' | 'items' | 'seeds'>; label: string }[] = [
@@ -51,10 +51,10 @@ export function SeedsTabs({ app }: { app: AppState }) {
           </button>
         ))}
       </div>
-      {seeds?.connected && seeds.lastError && (
+      {seeds?.connected && seeds.mine?.lastError && (
         <p className="seeds-banner" role="status">
-          <AlertTriangle size={16} aria-hidden="true" /> Seeds could not be read ({seeds.lastError}) Showing access from
-          the last sync, {when(seeds.lastSuccessAt)}.
+          <AlertTriangle size={16} aria-hidden="true" /> Your Seeds could not be read ({seeds.mine.lastError}) Showing
+          your access from the last sync, {when(seeds.mine.lastSuccessAt)}.
         </p>
       )}
     </div>
@@ -75,7 +75,7 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
       const result = await action()
       setMessage(
         result.ok
-          ? `Synced.${result.pending ? ` ${result.pending} match${result.pending === 1 ? '' : 'es'} to confirm.` : ''}`
+          ? `${label === 'disconnect' ? 'Disconnected.' : 'Synced.'}${result.pending ? ` ${result.pending} match${result.pending === 1 ? '' : 'es'} to confirm.` : ''}`
           : result.error || 'Seeds could not be read.',
       )
       await app.refreshWorkspace(true)
@@ -92,27 +92,31 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
     item =>
       !item.parentTaskId && !item.seedsId && item.projectId && seedsProjects.has(item.projectId) && !item.archived,
   )
-  const counts = seeds?.counts
+  const mine = seeds?.mine
+  const counts = mine?.counts
+  const [apiKey, setApiKey] = useState('')
 
   return (
     <section className="page-stack seeds-page">
       <div className="panel seeds-status">
         <div className="panel-heading">
           <div>
-            <h2>Seeds sync</h2>
+            <h2>Your Seeds</h2>
             <p>
-              {seeds?.connected
-                ? `Last synced ${when(seeds.lastSuccessAt)}. Syncs on its own every 30 minutes.`
-                : 'Seeds is not connected yet. An Administrator adds the Seeds API key in Settings › Integrations, and sync starts on its own.'}
+              {!seeds?.connected
+                ? 'Seeds is not turned on for this account yet. An Administrator turns it on in Settings › Integrations.'
+                : mine?.connected
+                  ? `Last synced ${when(mine.lastSuccessAt)}. Syncs on its own every 30 minutes. You see what Seeds shows you.`
+                  : 'Paste your personal Seeds API key (from your Seeds profile). You will see the clients and projects Seeds tags to you.'}
             </p>
           </div>
-          <span className={seeds?.connected ? (seeds.lastError ? 'role-badge warn' : 'role-badge ok') : 'role-badge'}>
-            {seeds?.connected ? (seeds.lastError ? 'Needs attention' : 'Connected') : 'Not connected'}
+          <span className={mine?.connected ? (mine.lastError ? 'role-badge warn' : 'role-badge ok') : 'role-badge'}>
+            {mine?.connected ? (mine.lastError ? 'Needs attention' : 'Connected') : 'Not connected'}
           </span>
         </div>
         {counts && (
           <dl className="seeds-counts">
-            {(['clients', 'projects', 'tasks', 'people', 'assignments'] as const).map(key => (
+            {(['clients', 'projects', 'tasks', 'assignments'] as const).map(key => (
               <div key={key}>
                 <dt>{key[0].toUpperCase() + key.slice(1)}</dt>
                 <dd>{counts[key]}</dd>
@@ -125,17 +129,62 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
             ? `Per-person visibility is on. ${access.roles.length ? `You are ${access.roles.join(', ')} on ${access.assignments.length} client${access.assignments.length === 1 ? '' : 's'} or project${access.assignments.length === 1 ? '' : 's'}.` : 'You have no assignments yet, so client work stays hidden.'}`
             : 'Per-person visibility is off: everyone in this account sees all clients.'}
         </p>
-        {seeds?.connected && seeds.canReview && (
-          <div className="integration-actions">
-            <button
-              type="button"
-              className="primary"
-              disabled={Boolean(busy)}
-              onClick={() => void run('sync', syncSeeds)}
-            >
-              <RefreshCw size={16} className={busy === 'sync' ? 'spin' : undefined} /> Sync now
-            </button>
-          </div>
+        {seeds?.connected && (
+          <>
+            <div className="integration-form">
+              <label>
+                {mine?.connected ? 'Replace your Seeds API key' : 'Your Seeds API key'}
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={event => setApiKey(event.target.value)}
+                  autoComplete="new-password"
+                />
+              </label>
+            </div>
+            <div className="integration-actions">
+              <button
+                type="button"
+                className="primary"
+                disabled={Boolean(busy) || !apiKey.trim()}
+                onClick={() =>
+                  void run('connect', async () => {
+                    const result = await saveMySeedsKey(apiKey.trim())
+                    setApiKey('')
+                    return result.sync
+                  })
+                }
+              >
+                {mine?.connected ? 'Save key' : 'Connect Seeds'}
+              </button>
+              {mine?.connected && (
+                <>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={Boolean(busy)}
+                    onClick={() => void run('sync', syncSeeds)}
+                  >
+                    <RefreshCw size={16} className={busy === 'sync' ? 'spin' : undefined} /> Sync now
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary danger"
+                    disabled={Boolean(busy)}
+                    onClick={() => {
+                      if (!window.confirm('Disconnect your Seeds? Your access from Seeds goes with it.')) return
+                      void run('disconnect', async () => {
+                        await removeMySeeds()
+                        return { ok: true }
+                      })
+                    }}
+                  >
+                    Disconnect
+                  </button>
+                </>
+              )}
+            </div>
+          </>
         )}
         {message && (
           <p role="status" className="settings-message">
@@ -206,26 +255,7 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
         </div>
       )}
 
-      {Boolean(seeds?.unmatchedPeople?.length) && (
-        <div className="panel">
-          <h2>People in Seeds without an account here</h2>
-          <p>
-            Seeds people are matched to users by email. Add these people in Users &amp; Permissions to give them access.
-          </p>
-          <ul className="seeds-list">
-            {seeds?.unmatchedPeople.map(person => (
-              <li key={person.id}>
-                <div>
-                  <strong>{person.name || person.email}</strong>
-                  <small> · {person.email}</small>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {seeds?.connected && !seeds.lastError && !seeds.pendingMatches?.length && !notInSeeds.length && (
+      {mine?.lastSuccessAt && !mine.lastError && !seeds?.pendingMatches?.length && !notInSeeds.length && (
         <p className="seeds-all-good">
           <CheckCircle2 size={16} aria-hidden="true" /> Everything here matches Seeds.
         </p>

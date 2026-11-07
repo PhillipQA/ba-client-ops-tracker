@@ -22,6 +22,8 @@ type Options = {
   /** Status and waiting-on labels new parent tasks start with. */
   openStatus: string
   waitingOn: string
+  /** Whose Seeds key this sync used. */
+  userId: string
   id?: () => string
 }
 
@@ -257,42 +259,41 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     else delete task.seedsArchived
   }
 
-  // People are matched by email; assignments follow them onto the linked clients and projects.
-  const accounts = list(state?.accounts)
-  const accountByEmail = new Map<string, any>()
-  for (const account of accounts)
-    if (account?.email && account.status !== 'Disabled')
-      accountByEmail.set(text(account.email).trim().toLowerCase(), account)
-  const userBySeeds = new Map<string, string>()
-  const unmatchedPeople: { id: string; name: string; email: string }[] = []
-  for (const person of snapshot.people) {
-    const account = accountByEmail.get(person.email.trim().toLowerCase())
-    if (account) userBySeeds.set(person.id, text(account.id))
-    else unmatchedPeople.push({ id: person.id, name: person.name, email: person.email })
-  }
+  // This person's own assignments: Seeds answers with their key, so they are theirs. When Seeds also lists other
+  // people (a PM sees their team), only the ones for this person count, found by Seeds id or by email.
+  const account = list(state?.accounts).find(candidate => text(candidate?.id) === options.userId)
+  const email = text(account?.email).trim().toLowerCase()
+  const me =
+    snapshot.me?.id || snapshot.people.find(person => email && person.email.trim().toLowerCase() === email)?.id || ''
+  const someoneNamed = snapshot.assignments.some(assignment => assignment.personId)
   const seen = new Set<string>()
-  const fromSeeds: Assignment[] = []
+  const mine: Assignment[] = []
   for (const source of snapshot.assignments) {
-    const userId = userBySeeds.get(source.personId)
-    if (!userId) continue
+    if (someoneNamed && source.personId !== me) continue
     const projectId = source.projectId ? projectBySeeds.get(source.projectId)?.id : undefined
     const clientId = !source.projectId && source.clientId ? clientBySeeds.get(source.clientId)?.id : undefined
     if (!projectId && !clientId) continue
-    const id = `seeds:${userId}:${source.role}:${projectId || clientId}`
+    const id = `seeds:${options.userId}:${source.role}:${projectId || clientId}`
     if (seen.has(id)) continue
     seen.add(id)
-    fromSeeds.push({
+    mine.push({
       id,
-      userId,
+      userId: options.userId,
       role: source.role,
       ...(projectId ? { projectId } : { clientId }),
       source: 'seeds',
     })
   }
-  counts.assignments = fromSeeds.length
+  counts.assignments = mine.length
+
+  // Matches this sync found replace the ones it found last time; others' stay. Linked ones drop out.
+  const linkedNow = new Set([...clients, ...projects, ...items].map(record => text(record?.seedsId)).filter(Boolean))
+  const seenSeeds = new Set([...snapshot.clients, ...snapshot.projects, ...snapshot.tasks].map(record => record.id))
+  const pendingMatches = [...seeds.pendingMatches.filter(match => !seenSeeds.has(match.seedsId)), ...pending].filter(
+    match => !linkedNow.has(match.seedsId),
+  )
 
   const access = workspaceAccess(state)
-  const { lastError: _lastError, ...settled } = seeds
   const next = settle(state, {
     ...state,
     clients,
@@ -300,16 +301,20 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     items,
     access: {
       ...access,
-      assignments: [...access.assignments.filter(assignment => assignment.source !== 'seeds'), ...fromSeeds],
+      assignments: [
+        ...access.assignments.filter(
+          assignment => !(assignment.source === 'seeds' && assignment.userId === options.userId),
+        ),
+        ...mine,
+      ],
     },
     seeds: {
-      ...settled,
-      connected: true,
-      lastAttemptAt: options.now,
-      lastSuccessAt: options.now,
-      counts,
-      pendingMatches: pending,
-      unmatchedPeople,
+      ...seeds,
+      users: {
+        ...seeds.users,
+        [options.userId]: { connected: true, lastAttemptAt: options.now, lastSuccessAt: options.now, counts },
+      },
+      pendingMatches,
     },
   })
   return { state: next, counts, pending }
