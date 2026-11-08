@@ -110,11 +110,14 @@ export interface SeedsState {
   pendingMatches: SeedsMatch[]
   /** Seeds ids whose suggested match was turned down; the next sync adds them as new records. */
   rejected: string[]
+  /** When Seeds was first turned on: everything that existed then moved to Before Seeds. */
+  cutoverAt?: string
 }
 
 /** What the browser is told: the person's own sync, and matches only for those who can act on them. */
 export interface SeedsStatus {
   connected: boolean
+  cutoverAt?: string
   /** When the account last synced, and why it failed if it did. */
   sync: Pick<SeedsAccountSync, 'lastAttemptAt' | 'lastSuccessAt' | 'lastError'>
   mine: SeedsUserSync
@@ -162,8 +165,32 @@ export function seedsState(state: any): SeedsState {
     users,
     pendingMatches: list(raw.pendingMatches).filter(match => match?.id && match.seedsId && match.appId),
     rejected: list(raw.rejected).map(text).filter(Boolean),
+    ...(raw.cutoverAt ? { cutoverAt: text(raw.cutoverAt) } : {}),
   }
 }
+
+/**
+ * Seeds becomes the source of truth: every client and project not from Seeds moves to Before Seeds. Their tasks,
+ * subtasks, trackers and documents go with them (they belong to the client or project). Nothing is deleted; Before
+ * Seeds stays open to everyone and editable. Done once, when Seeds is first turned on.
+ */
+export function moveToBeforeSeeds(state: any, now: string) {
+  const seeds = seedsState(state)
+  if (seeds.cutoverAt) return state
+  const move = (record: any) =>
+    record?.seedsId || record?.beforeSeeds
+      ? record
+      : { ...record, beforeSeeds: true, lifecycleVersion: (Number(record?.lifecycleVersion) || 0) + 1 }
+  return {
+    ...state,
+    clients: list(state?.clients).map(move),
+    projects: list(state?.projects).map(move),
+    seeds: { ...seeds, cutoverAt: now },
+  }
+}
+
+/** A client or project from before Seeds (see moveToBeforeSeeds). */
+export const isBeforeSeeds = (record: any) => record?.beforeSeeds === true
 
 /** Administrators and Project Managers review matches; each sees only matches on records they can see. */
 export function seedsStatusFor(state: any, user: { id: string; role?: string }): SeedsStatus {
@@ -181,6 +208,7 @@ export function seedsStatusFor(state: any, user: { id: string; role?: string }):
         : scope.visibleItems.has(match.appId))
   return {
     connected: seeds.connected,
+    ...(seeds.cutoverAt ? { cutoverAt: seeds.cutoverAt } : {}),
     sync: {
       ...(seeds.sync.lastAttemptAt ? { lastAttemptAt: seeds.sync.lastAttemptAt } : {}),
       ...(seeds.sync.lastSuccessAt ? { lastSuccessAt: seeds.sync.lastSuccessAt } : {}),
@@ -199,7 +227,7 @@ const SEEDS_FIELDS: Record<'clients' | 'projects' | 'items', string[]> = {
   projects: ['seedsId', 'name', 'contractNumber', 'clientId', 'seedsArchived', 'seedsTasks'],
   items: ['seedsId', 'title', 'seedsArchived'],
 }
-const LINK_FIELDS = ['seedsId', 'contractNumber', 'seedsArchived', 'seedsTasks']
+const LINK_FIELDS = ['seedsId', 'contractNumber', 'seedsArchived', 'seedsTasks', 'beforeSeeds']
 
 export function keepSeedsFields(current: any, next: any) {
   const result = { ...next }
@@ -214,10 +242,14 @@ export function keepSeedsFields(current: any, next: any) {
       if (old?.seedsId) {
         const owned: Record<string, unknown> = {}
         for (const field of SEEDS_FIELDS[key]) if (old[field] !== undefined) owned[field] = old[field]
-        return { ...record, ...owned }
+        const linked = { ...record, ...owned }
+        for (const field of LINK_FIELDS) if (old[field] === undefined) delete linked[field]
+        return linked
       }
-      if (!LINK_FIELDS.some(field => record?.[field] !== undefined)) return record
-      const copy = { ...record }
+      // Before Seeds is set by the server only, and stays.
+      const kept = old?.beforeSeeds ? { ...record, beforeSeeds: true } : record
+      if (!LINK_FIELDS.some(field => kept?.[field] !== undefined)) return kept
+      const copy = { ...kept }
       for (const field of LINK_FIELDS) if (old?.[field] === undefined) delete copy[field]
       return copy
     })

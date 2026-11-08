@@ -82,12 +82,18 @@ export function SeedsConnectionCard() {
             type="button"
             className="primary"
             disabled={busy || !account?.tokenReady}
-            onClick={() =>
+            onClick={() => {
+              if (
+                !window.confirm(
+                  'Turn on Seeds? Seeds becomes the source of truth: every client and project that exists now moves to the Before Seeds folder (still there, still editable, open to everyone), and new clients and projects come only from Seeds.',
+                )
+              )
+                return
               void act(async () => {
                 const result = await turnOnSeeds()
-                return `Seeds is on. ${synced(result.sync)}`
+                return `Seeds is on. Existing clients and projects are in Before Seeds. ${synced(result.sync)}`
               })
-            }
+            }}
           >
             Turn on Seeds
           </button>

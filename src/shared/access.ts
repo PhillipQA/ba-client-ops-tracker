@@ -203,6 +203,18 @@ export function scopeFor(state: any, userId: string): Scope {
     }
   }
 
+  // Before Seeds (what existed when Seeds was turned on) is open to everyone, and editable.
+  for (const client of list(state?.clients))
+    if (client?.beforeSeeds === true) {
+      scope.fullClients.add(text(client.id))
+      scope.writeClients.add(text(client.id))
+    }
+  for (const project of list(state?.projects))
+    if (project?.beforeSeeds === true) {
+      scope.fullProjects.add(text(project.id))
+      scope.writeProjects.add(text(project.id))
+    }
+
   const items = list(state?.items)
   // Older projects have no client of their own; their client is whoever their tasks belong to. Such a project opens
   // only when every one of its clients is open to this person, so a shared project never shows another client's work.

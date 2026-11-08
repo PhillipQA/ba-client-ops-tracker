@@ -71,6 +71,8 @@ export interface Client {
   /** Linked to this Seeds client; the name follows Seeds. */
   seedsId?: string
   seedsArchived?: boolean
+  /** Existed before Seeds was turned on: kept in the Before Seeds folder, still editable. */
+  beforeSeeds?: boolean
   /** Shown by name only: this person is assigned to some of its work, not to the client. */
   accessLimited?: boolean
 }
@@ -88,7 +90,9 @@ export interface Project {
   seedsId?: string
   contractNumber?: string
   seedsArchived?: boolean
-  /** This project's Seeds tasks (Go Live, Meetings…), from the sync: what its subtasks can pick. */
+  /** Existed before Seeds was turned on: kept in the Before Seeds folder, still editable. */
+  beforeSeeds?: boolean
+  /** This project's Seeds tasks (Go Live, Meetings…), from the sync: what its tasks and subtasks link to. */
   seedsTasks?: { id: string; name: string; archived?: boolean }[]
   accessLimited?: boolean
 }
@@ -172,7 +176,7 @@ export interface WorkItem {
   /** A parent task that is this Seeds task; the title follows Seeds. */
   seedsId?: string
   seedsArchived?: boolean
-  /** Subtasks: the Seeds task (from the project's list) this work counts toward. */
+  /** The Seeds task (from the project's list) this work counts toward. A subtask without one follows its parent. */
   seedsTaskId?: string
 }
 
