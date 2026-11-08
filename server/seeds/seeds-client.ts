@@ -5,9 +5,13 @@
  * server's environment (SEEDS_API_TOKEN) and goes out as `Authorization: Bearer <token>`. The address is
  * SEEDS_API_URL, by default https://seeds.iripple.com/api/v1. One read covers the whole account:
  *
- *   GET /users, /clients, /projects        cursor-paged lists (`limit`, `cursor` → `nextCursor`)
+ *   GET /users, /parents, /projects        cursor-paged lists (`limit`, `cursor` → `nextCursor`)
+ *   GET /clients                           only to find a project's parent when the project names a client instead
  *   GET /projects/{id}/members             who works on each project, and as what
  *   GET /projects/{id}/tasks               only for projects someone in this app works on
+ *
+ * A Seeds **parent** (Think Library, Inc.) is this app's client. A Seeds project (named after a store or a title) is
+ * this app's project. Seeds tasks (Go Live, Meetings…) are subtask-level activities: a pick-list on subtasks.
  *
  * Every answer is `{ data }`; Seeds does not publish the record fields, so names are read leniently (camelCase or
  * snake_case) and the field names seen are reported back so the mapping can be checked after the first sync.
@@ -16,7 +20,7 @@ import type { SeedsSnapshot } from '../../src/shared/seeds'
 
 export const DEFAULT_SEEDS_URL = 'https://seeds.iripple.com/api/v1'
 
-export type SeedsFields = Partial<Record<'users' | 'clients' | 'projects' | 'members' | 'tasks', string[]>>
+export type SeedsFields = Partial<Record<'users' | 'parents' | 'clients' | 'projects' | 'members' | 'tasks', string[]>>
 
 export interface SeedsSource {
   /** Everything one account sync needs. Tasks are read only for projects where someone in `emails` is a member. */
@@ -79,14 +83,24 @@ export const parseSeeds = {
       pick(record, 'position', 'jobTitle', 'job_title', 'title', 'designation', 'role', 'role.name', 'roleName'),
     ),
   }),
-  client: (record: any) => ({
-    id: text(pick(record, 'id', 'clientId', 'client_id')),
-    name: text(pick(record, 'name', 'clientName', 'client_name', 'companyName', 'company_name')),
+  /** A Seeds parent: the customer company, which is this app's client. */
+  parent: (record: any) => ({
+    id: text(pick(record, 'id', 'parentId', 'parent_id')),
+    name: text(
+      pick(record, 'name', 'parentName', 'parent_name', 'companyName', 'company_name', 'clientName', 'client_name'),
+    ),
     ...(archived(record) ? { archived: true } : {}),
   }),
+  /** A Seeds client, read only for the parent it belongs to. */
+  client: (record: any) => ({
+    id: text(pick(record, 'id', 'clientId', 'client_id')),
+    parentId: text(pick(record, 'parentId', 'parent_id', 'parent.id')),
+  }),
+  /** `clientId` here is the Seeds parent (this app's client); `seedsClientId` is Seeds' own client, if any. */
   project: (record: any) => ({
     id: text(pick(record, 'id', 'projectId', 'project_id')),
-    clientId: text(pick(record, 'clientId', 'client_id', 'client.id')),
+    clientId: text(pick(record, 'parentId', 'parent_id', 'parent.id')),
+    seedsClientId: text(pick(record, 'clientId', 'client_id', 'client.id')),
     name: text(pick(record, 'name', 'projectName', 'project_name', 'title')),
     contractNumber: text(
       pick(
@@ -227,6 +241,16 @@ export function httpSeedsSource(
     }
   }
 
+  /** A list the token may not be allowed to read: none instead of an error. */
+  async function readAllIfAllowed(path: string, what: string) {
+    try {
+      return await readAll(path, what)
+    } catch (error) {
+      if (error instanceof SeedsError && /not allowed|answered 404/.test(error.message)) return []
+      throw error
+    }
+  }
+
   async function readAll(path: string, what: string) {
     const records: any[] = []
     let cursor = ''
@@ -250,16 +274,27 @@ export function httpSeedsSource(
 
   return {
     async read(emails) {
-      const [rawUsers, rawClients, rawProjects] = await Promise.all([
+      const [rawUsers, rawParents, rawProjects] = await Promise.all([
         readAll('/users', 'users'),
-        readAll('/clients', 'clients'),
+        readAll('/parents', 'parents'),
         readAll('/projects', 'projects'),
       ])
       const people = rawUsers.map(parseSeeds.person).filter(person => person.id)
       const emailById = new Map(people.map(person => [person.id, person.email]))
       const titleById = new Map(people.map(person => [person.id, person.title]))
-      const projects = rawProjects.map(parseSeeds.project).filter(project => project.id && project.name)
-      const clients = rawClients.map(parseSeeds.client).filter(client => client.id && client.name)
+      const parsed = rawProjects.map(parseSeeds.project).filter(project => project.id && project.name)
+      // Projects that name a Seeds client but not its parent: look the parent up through /clients.
+      const rawClients = parsed.some(project => !project.clientId && project.seedsClientId)
+        ? await readAllIfAllowed('/clients', 'clients')
+        : []
+      const parentOfClient = new Map(
+        rawClients.map(parseSeeds.client).map(client => [client.id, client.parentId] as const),
+      )
+      const projects = parsed.map(({ seedsClientId, ...project }) => ({
+        ...project,
+        clientId: project.clientId || parentOfClient.get(seedsClientId) || '',
+      }))
+      const clients = rawParents.map(parseSeeds.parent).filter(client => client.id && client.name)
 
       const rawMembers: any[] = []
       const membersByProject = await inBatches(
@@ -298,7 +333,8 @@ export function httpSeedsSource(
         snapshot: { people, clients, projects, tasks, assignments },
         fields: {
           users: fieldNames(rawUsers),
-          clients: fieldNames(rawClients),
+          parents: fieldNames(rawParents),
+          ...(rawClients.length ? { clients: fieldNames(rawClients) } : {}),
           projects: fieldNames(rawProjects),
           members: fieldNames(rawMembers),
           tasks: fieldNames(rawTasks),

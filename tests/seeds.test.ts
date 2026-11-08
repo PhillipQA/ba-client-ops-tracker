@@ -111,15 +111,12 @@ test('a first sync links what exists, adds what is new and holds close names for
   const internal = state.projects.find((p: any) => p.seedsId === 's-internal')
   assert.equal(internal.clientId, undefined, 'internal projects have no client')
 
-  const uat = state.items.find((i: any) => i.id === 't-uat')
-  assert.equal(uat.seedsId, 's-uat')
-  const docs = state.items.find((i: any) => i.seedsId === 's-docs')
-  assert.deepEqual(
-    [docs.projectId, docs.clientId, docs.status, docs.parentTaskId],
-    ['p-portal', 'c-acme', 'Open', undefined],
-  )
-  assert.equal(state.items.find((i: any) => i.id === 't-local').seedsId, undefined, 'work not in Seeds keeps working')
-  assert.equal(state.items.find((i: any) => i.id === 't-sub').seedsId, undefined, 'subtasks stay in this app')
+  // Seeds tasks are a pick-list on the project for subtasks; no tasks are created or linked.
+  assert.deepEqual(portal.seedsTasks, [
+    { id: 's-docs', name: 'Documentation' },
+    { id: 's-uat', name: 'UAT Support' },
+  ])
+  assert.deepEqual(state.items, existing().items, 'tasks and subtasks stay as they are')
 
   // Only Bea's own assignments, although Seeds also listed her colleagues'.
   assert.deepEqual(
@@ -133,7 +130,7 @@ test('a first sync links what exists, adds what is new and holds close names for
     'hand-entered ones are kept, unused',
   )
   assert.equal(state.seeds.users['u-bea'].lastSuccessAt, options.now)
-  assert.equal(counts.created, 4, 'Nimbus, Core Banking, Internal and Documentation')
+  assert.equal(counts.created, 3, 'Nimbus, Core Banking and Internal')
 })
 
 test('a second sync changes nothing; renames and archiving follow by Seeds id', () => {
@@ -177,7 +174,11 @@ test('a sync passes the workspace rules: versions move on, archived work is left
     undefined,
     'untouched records keep theirs',
   )
-  assert.ok(!state.items.some((i: any) => i.seedsId === 's-late'), 'no new work under an archived project')
+  assert.equal(
+    state.projects.find((p: any) => p.id === 'p-old').seedsTasks,
+    undefined,
+    'archived projects are left alone',
+  )
   const confirmed = decideSeedsMatch(state, 'client:s-bolt', 'confirm')
   assert.doesNotThrow(() => assertLifecycleMutation(state, confirmed?.state, SEEDS_ACTOR as any))
 })
@@ -284,14 +285,14 @@ test('Seeds answers are read leniently', () => {
     email: 'bea@co',
     title: '',
   })
-  assert.deepEqual(parseSeeds.client({ client_id: 1, client_name: 'Acme', status: 'Archived' }), {
+  assert.deepEqual(parseSeeds.parent({ parent_id: 1, parent_name: 'Think Library, Inc.', status: 'Archived' }), {
     id: '1',
-    name: 'Acme',
+    name: 'Think Library, Inc.',
     archived: true,
   })
   assert.deepEqual(
-    parseSeeds.project({ id: 2, client: { id: 1 }, projectName: 'Portal', contract: { contractNumber: 'CN-1' } }),
-    { id: '2', clientId: '1', name: 'Portal', contractNumber: 'CN-1' },
+    parseSeeds.project({ id: 2, parent: { id: 1 }, projectName: 'Portal', contract: { contractNumber: 'CN-1' } }),
+    { id: '2', clientId: '1', seedsClientId: '', name: 'Portal', contractNumber: 'CN-1' },
   )
   assert.deepEqual(parseSeeds.task({ taskId: 3, name: 'UAT', isActive: false }, '2'), {
     id: '3',
@@ -325,10 +326,11 @@ function fakeSeeds(overrides: Record<string, any> = {}) {
   const answers: Record<string, any> = {
     '/users?limit=100': { data: [{ id: 1, name: 'Bea', email: 'Bea@Company.com' }], nextCursor: 'c2' },
     '/users?limit=100&cursor=c2': { data: [{ id: 2, name: 'Paolo', email: 'paolo@company.com', position: 'PM' }] },
-    '/clients?limit=100': { data: [{ id: 10, name: 'Acme' }] },
+    '/parents?limit=100': { data: [{ id: 5, name: 'Think Library, Inc.' }] },
+    '/clients?limit=100': { data: [{ id: 10, parentId: 5 }] },
     '/projects?limit=100': {
       data: [
-        { id: 20, clientId: 10, name: 'Portal', contractNumber: 'CN-1' },
+        { id: 20, parentId: 5, name: 'Curated Meeple OPC', contractNumber: 'CN-1' },
         { id: 21, clientId: 10, name: 'Nobody here' },
       ],
     },
@@ -366,13 +368,22 @@ test('the HTTP reader sends the token, follows cursors and reads only the projec
     { personId: '2', email: 'paolo@company.com', role: 'PM', projectId: '20' },
   ])
   assert.deepEqual(read.tasks, [{ id: '30', projectId: '20', name: 'UAT' }])
+  assert.deepEqual(read.clients, [{ id: '5', name: 'Think Library, Inc.' }], 'Seeds parents are the clients')
+  assert.deepEqual(
+    read.projects.map(p => [p.id, p.clientId]),
+    [
+      ['20', '5'],
+      ['21', '5'],
+    ],
+    'a project naming a Seeds client gets that client’s parent',
+  )
   assert.ok(!calls.some(call => call.url.endsWith('/projects/21/tasks')), 'no tasks for projects nobody here is on')
   assert.deepEqual(fields.members, ['userId', 'role'])
 
-  const denied = fakeSeeds({ '/clients?limit=100': { status: 403, error: { code: 'forbidden', message: 'No grant' } } })
+  const denied = fakeSeeds({ '/parents?limit=100': { status: 403, error: { code: 'forbidden', message: 'No grant' } } })
   await assert.rejects(
     httpSeedsSource('t', undefined, denied.fetcher).read(new Set()),
-    /not allowed to read clients.*No grant/,
+    /not allowed to read parents.*No grant/,
   )
   const odd = fakeSeeds({ '/projects?limit=100': { data: { what: 1 } } })
   await assert.rejects(httpSeedsSource('t', undefined, odd.fetcher).read(new Set()), /unexpected answer for projects/)

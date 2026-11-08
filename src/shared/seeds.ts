@@ -1,10 +1,10 @@
 /**
  * Seeds, the company's time and client tracker, as this app sees it.
  *
- *   Seeds client            → Client   (seedsId; name follows Seeds)
+ *   Seeds parent            → Client   (seedsId; name follows Seeds)
  *   Seeds project + contract → Project (seedsId, contractNumber, clientId; name follows Seeds)
- *   Seeds task              → parent Task (seedsId; title follows Seeds)
- *   Seeds assignment        → who sees which client or project (see access.ts)
+ *   Seeds tasks             → the project's seedsTasks, a pick-list on subtasks (seedsTaskId)
+ *   Seeds project member    → who sees which project (see access.ts)
  *
  * Subtasks, emails, trackers, documents and time stay in this app. Records keep their own ids; Seeds ids only link
  * them, so renames follow and nothing is matched twice.
@@ -196,10 +196,10 @@ export function seedsStatusFor(state: any, user: { id: string; role?: string }):
 /** Fields Seeds owns on each kind of record. The browser cannot change them, add them or drop a linked record. */
 const SEEDS_FIELDS: Record<'clients' | 'projects' | 'items', string[]> = {
   clients: ['seedsId', 'name', 'seedsArchived'],
-  projects: ['seedsId', 'name', 'contractNumber', 'clientId', 'seedsArchived'],
+  projects: ['seedsId', 'name', 'contractNumber', 'clientId', 'seedsArchived', 'seedsTasks'],
   items: ['seedsId', 'title', 'seedsArchived'],
 }
-const LINK_FIELDS = ['seedsId', 'contractNumber', 'seedsArchived']
+const LINK_FIELDS = ['seedsId', 'contractNumber', 'seedsArchived', 'seedsTasks']
 
 export function keepSeedsFields(current: any, next: any) {
   const result = { ...next }
