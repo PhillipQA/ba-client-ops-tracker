@@ -1,11 +1,13 @@
 # Changelog
 
-**Current application release: v1.6.0**
+**Current application release: v2.0**
+
+From v2.0, each pull request merged into main is a build: v2.0 · B01, B02… The *Build number* workflow raises it after each merge ([src/shared/version.ts](src/shared/version.ts)). A new version (v2.1, v3.0) is set by hand in that file.
 
 Changes are listed newest first. For installation, deployment and updates, use the [README](README.md). Older entries mention migration files, release notes, an upgrade guide and patch ZIPs that were removed in the Northflank cleanup below; they are still in the Git history.
 
-## v1.6.0 — Seeds: per-person visibility and Seeds sync
-Not released yet.
+## v2.0 — Seeds: source of truth, Before Seeds, time to Seeds
+Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
