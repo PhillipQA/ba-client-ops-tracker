@@ -18,18 +18,30 @@ const state = (connected = true) => ({
     { id: 'p-before', beforeSeeds: true },
   ],
   items: [
-    { id: 't-tagged', projectId: 'p-seeds', seedsTaskId: 'st-golive' },
-    { id: 't-untagged', projectId: 'p-seeds' },
-    { id: 't-old', projectId: 'p-before' },
+    { id: 't-go', title: 'Go-live prep', projectId: 'p-seeds', seedsTaskId: 'st-golive' },
+    { id: 's-printers', title: 'Check printers', projectId: 'p-seeds', parentTaskId: 't-go' },
+    {
+      id: 's-call',
+      title: 'Cutover call with store',
+      projectId: 'p-seeds',
+      parentTaskId: 't-go',
+      seedsTaskId: 'st-meet',
+    },
+    { id: 't-untagged', title: 'Loose task', projectId: 'p-seeds' },
+    { id: 't-old', title: 'Old task', projectId: 'p-before' },
   ],
 })
 const actor = { id: 'u1', name: 'Bea' }
 const at = new Date('2026-11-09T01:00:00Z')
+const task = (s: ReturnType<typeof state>, id: string) => s.items.find(item => item.id === id) as any
+const log = (s: ReturnType<typeof state>, id: string, input: any) =>
+  addTimeEntry(task(s, id), input, actor, at, 'e1', seedsTimeRule(s, task(s, id)))
 
-test('while Seeds is off, time is logged as before', () => {
-  assert.equal(seedsTimeRule(state(false), { projectId: 'p-seeds' }), null)
+test('while Seeds is off, time is logged as before, on tasks and subtasks', () => {
+  const s = state(false)
+  assert.equal(seedsTimeRule(s, task(s, 's-printers')), null)
   const result = addTimeEntry(
-    { id: 't' },
+    task(s, 's-printers'),
     { date: '2026-11-08', hours: 1, category: 'Analysis', note: '' },
     actor,
     at,
@@ -38,64 +50,59 @@ test('while Seeds is off, time is logged as before', () => {
   assert.equal(result.ok, true)
 })
 
-test('once Seeds is on, only work tagged with a Seeds task (or under a tagged task) takes time', () => {
+test('once Seeds is on, time is logged on the task; a subtask points there', () => {
   const s = state()
-  assert.deepEqual(seedsTimeRule(s, s.items[0]), {
-    tasks: [
-      { id: 'st-golive', name: 'GO LIVE' },
-      { id: 'st-meet', name: 'MEETINGS' },
-    ],
-    taggedTaskId: 'st-golive',
-  })
-  assert.equal(seedsTimeRule(s, { projectId: 'p-seeds', parentTaskId: 't-tagged' })?.taggedTaskId, 'st-golive')
-  assert.equal(
-    seedsTimeRule(s, { projectId: 'p-seeds', parentTaskId: 't-tagged', seedsTaskId: 'st-meet' })?.taggedTaskId,
-    'st-meet',
-  )
-
-  const untagged = addTimeEntry(
-    s.items[1],
-    { date: '2026-11-08', hours: 1 },
-    actor,
-    at,
-    'e1',
-    seedsTimeRule(s, s.items[1]),
-  )
-  assert.equal(untagged.ok, false)
+  const sub = log(s, 's-printers', { date: '2026-11-08', hours: 1, note: 'x' })
+  assert.equal(sub.ok, false)
+  assert.match((sub as any).error, /Log time on the task/)
+  assert.equal(seedsTimeRule(s, task(s, 's-printers'))?.logOnTaskId, 't-go')
+  assert.equal(log(s, 't-old', { date: '2026-11-08', hours: 1, note: 'x' }).ok, false, 'no Seeds tasks before Seeds')
+  const untagged = log(s, 't-untagged', { date: '2026-11-08', hours: 1, note: 'x' })
   assert.match((untagged as any).error, /Tag a Seeds task/)
-  const before = addTimeEntry(
-    s.items[2],
-    { date: '2026-11-08', hours: 1 },
-    actor,
-    at,
-    'e1',
-    seedsTimeRule(s, s.items[2]),
-  )
-  assert.equal(before.ok, false, 'Before Seeds work has no Seeds tasks, so no time once Seeds is on')
 })
 
-test('a Seeds time entry: date, 15-minute duration, Seeds task (default the tag), remarks up to 120', () => {
+test('an entry for a subtask takes its title as remarks, and its Seeds task tag first', () => {
   const s = state()
-  const rule = seedsTimeRule(s, s.items[0])
-  const ok = addTimeEntry(s.items[0], { date: '2026-11-08', hours: 1.75, note: 'Cutover call' }, actor, at, 'e1', rule)
-  assert.ok(ok.ok)
+  const printers = log(s, 't-go', { date: '2026-11-08', hours: 1.75, subtaskId: 's-printers', note: 'ignored' })
+  assert.ok(printers.ok)
   assert.deepEqual(
-    [ok.value.entry.hours, ok.value.entry.seedsTaskId, ok.value.entry.note, ok.value.entry.category],
-    [1.75, 'st-golive', 'Cutover call', 'Other'],
+    [
+      printers.value.entry.note,
+      printers.value.entry.subtaskId,
+      printers.value.entry.seedsTaskId,
+      printers.value.entry.hours,
+    ],
+    ['Check printers', 's-printers', 'st-golive', 1.75],
+    'no date in the remarks; the task’s Seeds task when the subtask has none',
   )
-  const other = validateTimeEntryInput({ date: '2026-11-08', hours: 0.5, seedsTaskId: 'st-meet' }, rule)
-  assert.ok(
-    other.ok && other.value.seedsTaskId === 'st-meet',
-    'each entry can count toward another of the project’s Seeds tasks',
-  )
-  // Several entries on different dates add up on the same task.
-  const second = addTimeEntry(ok.value.task, { date: '2026-11-09', hours: 2 }, actor, at, 'e2', rule)
-  assert.ok(second.ok && second.value.task.timeEntries.length === 2)
-
-  assert.match((validateTimeEntryInput({ date: '2026-11-08', hours: 1.1 }, rule) as any).error, /15-minute/)
-  assert.match((validateTimeEntryInput({ date: '2026-11-08', hours: 0 }, rule) as any).error, /15 minutes/)
+  const call = log(s, 't-go', { date: '2026-11-09', hours: 0.5, subtaskId: 's-call' })
+  assert.ok(call.ok && call.value.entry.seedsTaskId === 'st-meet', 'the subtask’s own Seeds task wins')
+  const chosen = log(s, 't-go', { date: '2026-11-09', hours: 0.5, subtaskId: 's-call', seedsTaskId: 'st-golive' })
+  assert.ok(chosen.ok && chosen.value.entry.seedsTaskId === 'st-golive', 'or the one chosen for the entry')
+  const long = {
+    ...state(),
+    items: [...state().items, { id: 's-long', title: 'y'.repeat(200), projectId: 'p-seeds', parentTaskId: 't-go' }],
+  }
+  const trimmed = log(long, 't-go', { date: '2026-11-09', hours: 0.25, subtaskId: 's-long' })
+  assert.ok(trimmed.ok && trimmed.value.entry.note.length === 120)
   assert.match(
-    (validateTimeEntryInput({ date: '2026-11-08', hours: 1, seedsTaskId: 'st-old' }, rule) as any).error,
+    (log(s, 't-go', { date: '2026-11-09', hours: 1, subtaskId: 't-untagged' }) as any).error,
+    /not under this task/,
+  )
+})
+
+test('without a subtask the remarks are typed and required; Seeds rules on duration and length', () => {
+  const s = state()
+  const rule = seedsTimeRule(s, task(s, 't-go'))
+  assert.match((validateTimeEntryInput({ date: '2026-11-08', hours: 1 }, rule) as any).error, /remarks/)
+  const ok = log(s, 't-go', { date: '2026-11-08', hours: 2, note: 'Store visit' })
+  assert.ok(ok.ok && ok.value.entry.note === 'Store visit' && ok.value.entry.category === 'Other')
+  const second = addTimeEntry(ok.value.task, { date: '2026-11-10', hours: 1, note: 'Follow-up' }, actor, at, 'e2', rule)
+  assert.ok(second.ok && second.value.task.timeEntries.length === 2, 'many entries, any dates')
+  assert.match((validateTimeEntryInput({ date: '2026-11-08', hours: 1.1, note: 'a' }, rule) as any).error, /15-minute/)
+  assert.match((validateTimeEntryInput({ date: '2026-11-08', hours: 0, note: 'a' }, rule) as any).error, /15 minutes/)
+  assert.match(
+    (validateTimeEntryInput({ date: '2026-11-08', hours: 1, note: 'a', seedsTaskId: 'st-old' }, rule) as any).error,
     /Seeds task/,
   )
   assert.match(

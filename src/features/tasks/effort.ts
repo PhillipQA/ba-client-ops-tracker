@@ -29,6 +29,8 @@ export interface TimeEntry {
   createdAt: string
   /** Once Seeds is on: the Seeds task this time counts toward, so it can be sent to Seeds. */
   seedsTaskId?: string
+  /** Once Seeds is on, time is logged on the task; this is the subtask it was for (its title is the remarks). */
+  subtaskId?: string
 }
 
 export interface TimeEntryInput {
@@ -37,36 +39,59 @@ export interface TimeEntryInput {
   category: EffortCategory
   note: string
   seedsTaskId?: string
+  subtaskId?: string
 }
 
 /** Seeds limits a time entry's remarks to 120 characters. */
 export const MAX_SEEDS_REMARKS_LENGTH = 120
 
 /**
- * Once Seeds is on, time is logged only on work tagged with a Seeds task: its own, or its parent task's for a
- * subtask. Each entry carries a Seeds task from its project's list (by default the tagged one).
+ * Once Seeds is on, time is logged on the **task**, never on a subtask. An entry may name one of the task's subtasks:
+ * the subtask's title becomes its remarks (Seeds requires remarks, up to 120 characters). Without a subtask, the
+ * remarks are typed. Each entry counts toward a Seeds task from the project's list: the one chosen, else the
+ * subtask's tag, else the task's tag; without any, no time can be logged.
  */
 export type SeedsTimeRule = {
   /** The Seeds tasks an entry may count toward (its project's list). */
   tasks: { id: string; name: string }[]
-  /** The tag on the work (or its parent): without one, no time can be logged. */
+  /** The task's own Seeds task tag. */
   taggedTaskId?: string
+  /** Set for a subtask: its time is logged on this task instead. */
+  logOnTaskId?: string
+  /** The task's subtasks an entry can be for. */
+  subtasks: { id: string; title: string; seedsTaskId?: string }[]
 }
 
 /** The time rule for one task or subtask, or null when Seeds is off (time is logged as before). */
 export function seedsTimeRule(
   state: { seeds?: { connected?: boolean } | null; projects?: any[]; items?: any[] },
-  item: { projectId?: string; parentTaskId?: string; seedsTaskId?: string },
+  item: { id?: string; projectId?: string; parentTaskId?: string; seedsTaskId?: string },
 ): SeedsTimeRule | null {
   if (state?.seeds?.connected !== true) return null
   const project = (state.projects || []).find(candidate => candidate?.id === item?.projectId)
   const tasks: { id: string; name: string }[] = (Array.isArray(project?.seedsTasks) ? project.seedsTasks : [])
     .filter((task: any) => task?.id && !task.archived)
     .map((task: any) => ({ id: String(task.id), name: String(task.name || task.id) }))
-  const parent = item?.parentTaskId ? (state.items || []).find(candidate => candidate?.id === item.parentTaskId) : null
-  const tagged = item?.seedsTaskId || parent?.seedsTaskId
-  return { tasks, ...(tagged && tasks.some(task => task.id === tagged) ? { taggedTaskId: tagged } : {}) }
+  const known = (id?: string) => (id && tasks.some(task => task.id === id) ? id : undefined)
+  if (item?.parentTaskId) return { tasks, logOnTaskId: String(item.parentTaskId), subtasks: [] }
+  const subtasks = (state.items || [])
+    .filter(candidate => candidate?.parentTaskId && candidate.parentTaskId === item?.id)
+    .map(candidate => ({
+      id: String(candidate.id),
+      title: String(candidate.title || ''),
+      ...(known(candidate.seedsTaskId) ? { seedsTaskId: candidate.seedsTaskId } : {}),
+    }))
+  const tagged = known(item?.seedsTaskId)
+  return { tasks, subtasks, ...(tagged ? { taggedTaskId: tagged } : {}) }
 }
+
+/** The Seeds task an entry counts toward by default: the subtask's tag, else the task's. */
+export function defaultSeedsTask(rule: SeedsTimeRule, subtaskId?: string) {
+  return rule.subtasks.find(subtask => subtask.id === subtaskId)?.seedsTaskId || rule.taggedTaskId || ''
+}
+
+/** Remarks for an entry for a subtask: its title, within Seeds' 120 characters. */
+export const subtaskRemarks = (title: string) => title.trim().slice(0, MAX_SEEDS_REMARKS_LENGTH)
 
 interface EffortItem {
   id: string
@@ -241,8 +266,8 @@ function validateSeedsEntry(
   body: Record<string, unknown>,
   seeds: SeedsTimeRule,
 ): { ok: true; value: TimeEntryInput } | { ok: false; error: string } {
-  if (!seeds.taggedTaskId)
-    return { ok: false, error: 'Tag a Seeds task on this task (or its parent task) before logging time.' }
+  if (seeds.logOnTaskId)
+    return { ok: false, error: 'Log time on the task, and choose this subtask there: its title becomes the remarks.' }
   if (!isDateKey(body.date)) return { ok: false, error: 'Choose a valid date for the time entry.' }
   const rawHours = typeof body.hours === 'string' ? Number(body.hours) : body.hours
   if (typeof rawHours !== 'number' || !Number.isFinite(rawHours)) return { ok: false, error: 'Choose the duration.' }
@@ -250,11 +275,18 @@ function validateSeedsEntry(
   const hours = roundToQuarter(rawHours)
   if (hours < 0.25) return { ok: false, error: 'Log at least 15 minutes.' }
   if (hours > MAX_ENTRY_HOURS) return { ok: false, error: `A single entry cannot exceed ${MAX_ENTRY_HOURS} hours.` }
-  const seedsTaskId = typeof body.seedsTaskId === 'string' && body.seedsTaskId ? body.seedsTaskId : seeds.taggedTaskId
+  const subtaskId = typeof body.subtaskId === 'string' && body.subtaskId ? body.subtaskId : undefined
+  const subtask = subtaskId ? seeds.subtasks.find(candidate => candidate.id === subtaskId) : undefined
+  if (subtaskId && !subtask) return { ok: false, error: 'That subtask is not under this task.' }
+  const seedsTaskId =
+    typeof body.seedsTaskId === 'string' && body.seedsTaskId ? body.seedsTaskId : defaultSeedsTask(seeds, subtaskId)
+  if (!seedsTaskId) return { ok: false, error: 'Tag a Seeds task on this task (or the subtask) before logging time.' }
   if (!seeds.tasks.some(task => task.id === seedsTaskId)) return { ok: false, error: 'Choose a Seeds task.' }
-  const note = typeof body.note === 'string' ? body.note.trim() : ''
+  // Seeds requires remarks: the subtask's title, or what was typed.
+  const note = subtask ? subtaskRemarks(subtask.title) : typeof body.note === 'string' ? body.note.trim() : ''
+  if (!note) return { ok: false, error: 'Enter the remarks, or choose a subtask (its title becomes the remarks).' }
   if (note.length > MAX_SEEDS_REMARKS_LENGTH)
     return { ok: false, error: `Remarks must be ${MAX_SEEDS_REMARKS_LENGTH} characters or fewer.` }
   const category = isEffortCategory(body.category) ? body.category : 'Other'
-  return { ok: true, value: { date: body.date, hours, category, note, seedsTaskId } }
+  return { ok: true, value: { date: body.date, hours, category, note, seedsTaskId, ...(subtask ? { subtaskId } : {}) } }
 }

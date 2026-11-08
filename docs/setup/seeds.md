@@ -51,10 +51,19 @@ No database migration is needed.
 
 ## Time logs
 
-Once Seeds is on, time is logged only on a task or subtask tagged with a **Seeds task** (its own, or its parent task's
-for a subtask). Before Seeds work has no Seeds tasks, so new time goes on Seeds work. Each entry matches the Seeds
-form: task date, duration (hrs + mins, 15-minute steps), Seeds task (defaults to the tag) and remarks (up to 120
-characters). Add as many entries as needed, on any dates. Sending them to Seeds is a later step.
+Once Seeds is on, time is logged **on the task**, never on a subtask. Each entry matches the Seeds form:
+
+| Field | Here |
+|---|---|
+| Task date | any date up to today; as many entries as needed |
+| Duration | hrs + mins, 15-minute steps |
+| Subtask | optional: one of the task's subtasks |
+| Seeds task | the subtask's tag, else the task's; any of the project's Seeds tasks can be chosen |
+| Remarks | required, up to 120 characters: **the subtask's title** when one is chosen (no date added), otherwise typed |
+
+A task with no Seeds task tag (and no tagged subtask chosen) cannot take time. Before Seeds projects have no Seeds
+tasks, so new time goes on Seeds work. A subtask lists the time logged for it on its task. Sending entries to Seeds is
+a later step.
 
 ## What a sync does
 

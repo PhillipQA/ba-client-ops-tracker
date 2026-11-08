@@ -4,8 +4,10 @@ import {
   canRemoveTimeEntry,
   EFFORT_CATEGORIES,
   effortSummary,
+  defaultSeedsTask,
   formatHours,
   MAX_SEEDS_REMARKS_LENGTH,
+  subtaskRemarks,
   type SeedsTimeRule,
   validateTimeEntryInput,
   type EffortCategory,
@@ -42,19 +44,29 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
-  // Once Seeds is on: the entry is a Seeds time entry (duration in hrs + mins, Seeds task, remarks).
-  const target = [item, ...subtasks].find(candidate => candidate.id === targetId) || item
-  const rule = seedsRule ? seedsRule(target) : null
+  // Once Seeds is on: time is logged on the task as Seeds time entries (duration in hrs + mins, Seeds task, remarks).
+  // An entry can be for one of the task's subtasks; its title becomes the remarks.
+  const rule = seedsRule ? seedsRule(item) : null
   const [durationHours, setDurationHours] = useState('0')
   const [durationMinutes, setDurationMinutes] = useState('0')
+  const [subtaskId, setSubtaskId] = useState('')
   const [chosenSeedsTask, setChosenSeedsTask] = useState('')
-  const seedsTaskId = chosenSeedsTask || rule?.taggedTaskId || ''
-  const seedsTasks = seedsRule?.(item)?.tasks || []
+  const seedsTaskId = chosenSeedsTask || (rule ? defaultSeedsTask(rule, subtaskId) : '')
+  const forSubtask = rule?.subtasks.find(subtask => subtask.id === subtaskId)
+  const remarks = forSubtask ? subtaskRemarks(forSubtask.title) : note
+  const parentTask = item.parentTaskId ? allItems.find(candidate => candidate.id === item.parentTaskId) : undefined
+  const seedsTasks = rule?.tasks || []
   const seedsTaskLabel = (id: string) => `Seeds: ${seedsTasks.find(task => task.id === id)?.name || 'task'}`
   const duration = Number(durationHours) + Number(durationMinutes) / 60
 
+  // A subtask also lists the time logged on its task for it (once Seeds is on, time is logged on the task).
+  const parentOf = item.parentTaskId ? allItems.find(candidate => candidate.id === item.parentTaskId) : undefined
+  const forThisSubtask = (parentOf?.timeEntries || [])
+    .filter(entry => entry.subtaskId === item.id)
+    .map(entry => ({ entry, owner: parentOf as WorkItem }))
   const entries: { entry: TimeEntry; owner: WorkItem }[] = [item, ...subtasks]
     .flatMap(owner => (owner.timeEntries || []).map(entry => ({ entry, owner })))
+    .concat(forThisSubtask)
     .sort((a, b) => b.entry.date.localeCompare(a.entry.date) || b.entry.createdAt.localeCompare(a.entry.createdAt))
 
   const addQuick = (amount: number) => setHours(current => String(Math.min(24, (Number(current) || 0) + amount)))
@@ -65,7 +77,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const save = async () => {
     if (busy) return
     const checked = rule
-      ? validateTimeEntryInput({ date, hours: duration, note, seedsTaskId }, rule)
+      ? validateTimeEntryInput({ date, hours: duration, note, seedsTaskId, subtaskId }, rule)
       : validateTimeEntryInput({ date, hours: Number(hours), category, note })
     if (!checked.ok) {
       setMessage({ text: checked.error, ok: false })
@@ -74,7 +86,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
     setBusy(true)
     setMessage(null)
     try {
-      onMutation(await addTimeEntry(targetId, checked.value))
+      onMutation(await addTimeEntry(rule ? item.id : targetId, checked.value))
       setHours('')
       setDurationHours('0')
       setDurationMinutes('0')
@@ -193,20 +205,21 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
         </div>
       )}
 
-      {canLog && rule && (
+      {canLog && rule?.logOnTaskId && (
+        <p className="effort-message" role="status">
+          Time is logged on the task{parentTask ? ` “${parentTask.title}”` : ''}: open it, log time and choose this
+          subtask. Its title becomes the remarks.
+        </p>
+      )}
+      {canLog && rule && !rule.logOnTaskId && (
         <div className="effort-log" onKeyDown={blockEnter}>
           <div className="effort-log-head">
             <strong>Log time</strong>
           </div>
-          {!rule.taggedTaskId ? (
-            <>
-              {subtasks.length > 0 && <div className="effort-log-grid">{logAgainstField}</div>}
-              <p className="effort-message" role="status">
-                {rule.tasks.length
-                  ? `Tag a Seeds task on ${target.id === item.id ? 'this task' : 'this subtask or its task'} (the Seeds task field above), save, then log time here.`
-                  : 'Time is logged only on work under a Seeds project, tagged with a Seeds task.'}
-              </p>
-            </>
+          {!rule.tasks.length ? (
+            <p className="effort-message" role="status">
+              Time is logged only on tasks under a Seeds project, tagged with a Seeds task.
+            </p>
           ) : (
             <>
               <div className="effort-log-grid">
@@ -241,9 +254,29 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                     </select>
                   </span>
                 </label>
+                {rule.subtasks.length > 0 && (
+                  <label>
+                    Subtask
+                    <select
+                      value={subtaskId}
+                      onChange={event => {
+                        setSubtaskId(event.target.value)
+                        setChosenSeedsTask('')
+                      }}
+                    >
+                      <option value="">None (type the remarks)</option>
+                      {rule.subtasks.map(subtask => (
+                        <option key={subtask.id} value={subtask.id}>
+                          {subtask.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label>
                   Seeds task
                   <select value={seedsTaskId} onChange={event => setChosenSeedsTask(event.target.value)}>
+                    {!seedsTaskId && <option value="">Choose the Seeds task</option>}
                     {rule.tasks.map(task => (
                       <option key={task.id} value={task.id}>
                         {task.name}
@@ -251,18 +284,19 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                     ))}
                   </select>
                 </label>
-                {logAgainstField}
               </div>
               <label className="effort-note">
-                Remarks (max {MAX_SEEDS_REMARKS_LENGTH} characters)
+                Remarks (required, max {MAX_SEEDS_REMARKS_LENGTH} characters)
                 <textarea
-                  value={note}
+                  value={remarks}
                   maxLength={MAX_SEEDS_REMARKS_LENGTH}
                   rows={2}
+                  readOnly={Boolean(forSubtask)}
                   onChange={event => setNote(event.target.value)}
                 />
                 <small className="effort-count">
-                  {note.length}/{MAX_SEEDS_REMARKS_LENGTH}
+                  {forSubtask ? 'From the subtask’s title · ' : ''}
+                  {remarks.length}/{MAX_SEEDS_REMARKS_LENGTH}
                 </small>
               </label>
               <div className="effort-log-actions">
@@ -274,7 +308,12 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                     {message.text}
                   </span>
                 )}
-                <button type="button" className="primary" disabled={busy || duration <= 0} onClick={() => void save()}>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={busy || duration <= 0 || !remarks.trim() || !seedsTaskId}
+                  onClick={() => void save()}
+                >
                   {busy ? 'Saving…' : 'Save entry'}
                 </button>
               </div>
@@ -356,6 +395,9 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                 </strong>
                 <small>
                   {entry.userName} · {entry.seedsTaskId ? seedsTaskLabel(entry.seedsTaskId) : entry.category}
+                  {entry.subtaskId && owner.id === item.id
+                    ? ` · Subtask: ${subtasks.find(subtask => subtask.id === entry.subtaskId)?.title || 'removed'}`
+                    : ''}
                   {owner.id !== item.id ? ` · Subtask: ${owner.title}` : ''}
                 </small>
               </div>

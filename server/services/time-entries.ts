@@ -35,12 +35,6 @@ export function addTimeEntry(
   /** Once Seeds is on (see seedsTimeRule): only work tagged with a Seeds task takes time. */
   seeds: SeedsTimeRule | null = null,
 ): Result<{ task: any; entry: TimeEntry }> {
-  if (seeds && !seeds.taggedTaskId)
-    return {
-      ok: false,
-      status: 409,
-      error: 'Tag a Seeds task on this task (or its parent task) before logging time.',
-    }
   const checked = validateTimeEntryInput(input, seeds)
   if (!checked.ok) return { ok: false, status: 400, error: checked.error }
   const existing: TimeEntry[] = Array.isArray(task?.timeEntries) ? task.timeEntries : []
