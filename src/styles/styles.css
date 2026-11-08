@@ -8608,3 +8608,78 @@ select option {
   text-align: center;
   width: 80px;
 }
+
+/* Task editor: every section folds; Schedule, Effort and DocHub start open (see Fold in TaskForms). */
+.task-fold {
+  border: 1px solid var(--theme-border, rgba(127, 127, 127, 0.3));
+  border-radius: 12px;
+}
+
+.task-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.task-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-fold > summary small {
+  margin-left: auto;
+  overflow: hidden;
+  max-width: 60%;
+  opacity: 0.75;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-fold-chevron {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.task-fold[open] > summary .task-fold-chevron {
+  transform: rotate(90deg);
+}
+
+.task-fold[open] > summary {
+  border-bottom: 1px solid var(--theme-border, rgba(127, 127, 127, 0.3));
+}
+
+.task-fold-body {
+  padding: 12px 14px 14px;
+}
+
+/* The fold's title is the section's heading: hide the repeated one inside. */
+.task-fold-body > fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.task-fold-body > fieldset > legend,
+.task-fold-body .effort-heading > div > strong,
+.task-fold-body .subtask-comment-heading > div > strong,
+.task-fold-body .subtask-evidence-heading > div > strong {
+  display: none;
+}
+
+.task-fold-body > .effort-panel,
+.task-fold-body > .subtask-comment-trail,
+.task-fold-body > .subtask-evidence-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-fold-chevron {
+    transition: none;
+  }
+}
