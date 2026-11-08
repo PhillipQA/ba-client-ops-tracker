@@ -86,12 +86,6 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
     }
   }
 
-  // Parent tasks under a Seeds project that Seeds does not have: they keep working, marked so a PM can sort them.
-  const seedsProjects = new Set(store.projects.filter(project => project.seedsId).map(project => project.id))
-  const notInSeeds = store.items.filter(
-    item =>
-      !item.parentTaskId && !item.seedsId && item.projectId && seedsProjects.has(item.projectId) && !item.archived,
-  )
   const mine = seeds?.mine
   const counts = mine?.counts
   const lastError = seeds?.sync?.lastError
@@ -118,7 +112,7 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
         </div>
         {counts && (
           <dl className="seeds-counts">
-            {(['clients', 'projects', 'tasks', 'assignments'] as const).map(key => (
+            {(['clients', 'projects', 'assignments'] as const).map(key => (
               <div key={key}>
                 <dt>{key[0].toUpperCase() + key.slice(1)}</dt>
                 <dd>{counts[key]}</dd>
@@ -189,30 +183,7 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
         </div>
       )}
 
-      {notInSeeds.length > 0 && (
-        <div className="panel">
-          <h2>Not in Seeds</h2>
-          <p>
-            Tasks under Seeds projects that Seeds does not list. They keep working; add them in Seeds (or rename them to
-            match) so time rolls up to the right Seeds task.
-          </p>
-          <ul className="seeds-list">
-            {notInSeeds.slice(0, 50).map(item => (
-              <li key={item.id}>
-                <div>
-                  <strong>{item.title}</strong>
-                  <small> · {app.projectName(item.projectId)}</small>
-                </div>
-                <button type="button" className="secondary" onClick={() => app.openTaskEditor(item.id)}>
-                  Open
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {mine?.lastSuccessAt && !lastError && !seeds?.pendingMatches?.length && !notInSeeds.length && (
+      {mine?.lastSuccessAt && !lastError && !seeds?.pendingMatches?.length && (
         <p className="seeds-all-good">
           <CheckCircle2 size={16} aria-hidden="true" /> Everything here matches Seeds.
         </p>

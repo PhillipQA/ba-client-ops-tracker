@@ -57,6 +57,27 @@ export function WorkScheduleFields({
   )
 }
 
+/** Subtasks under a Seeds project: which Seeds task (Go Live, Meetings…) the work counts toward. */
+function SeedsTaskField({ store, projectId, value }: { store: Store; projectId?: string; value?: string }) {
+  const tasks = store.projects.find(project => project.id === projectId)?.seedsTasks || []
+  if (!tasks.length && !value) return null
+  const shown = tasks.filter(task => !task.archived || task.id === value)
+  return (
+    <label>
+      Seeds task
+      <select name="seedsTaskId" defaultValue={value || ''}>
+        <option value="">-</option>
+        {shown.map(task => (
+          <option key={task.id} value={task.id}>
+            {task.name}
+          </option>
+        ))}
+        {value && !tasks.some(task => task.id === value) && <option value={value}>No longer in Seeds</option>}
+      </select>
+    </label>
+  )
+}
+
 export function TaskForm({
   canLinkRtm,
   store,
@@ -110,6 +131,7 @@ export function TaskForm({
       rtmLinks,
       qaResult: String(form.get('qaResult') || 'Not Run') as WorkItem['qaResult'],
       parentTaskId: parent?.id,
+      seedsTaskId: (parent && String(form.get('seedsTaskId') || '')) || undefined,
       subtaskOrder: parent
         ? Math.max(
             -1,
@@ -252,6 +274,7 @@ export function TaskForm({
           ))}
         </select>
       </label>
+      {parent && <SeedsTaskField store={store} projectId={parent.projectId} />}
       {parent ? (
         <label>
           Assigned to
@@ -420,6 +443,7 @@ export function TaskEditForm({
       followUpDate: String(form.get('followUpDate') || ''),
       source: form.get('source') as WorkItem['source'],
       description: String(form.get('description') || ''),
+      seedsTaskId: (parent && String(form.get('seedsTaskId') || '')) || undefined,
     }
     setSaveError('')
     setSaving(true)
@@ -514,6 +538,7 @@ export function TaskEditForm({
           {item.waitingOn && !findWaitingOn(item.waitingOn, store.taskSettings) && <option>{item.waitingOn}</option>}
         </select>
       </label>
+      {parent && <SeedsTaskField store={store} projectId={item.projectId} value={item.seedsTaskId} />}
       <label>
         Assigned to
         <select

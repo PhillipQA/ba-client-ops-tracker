@@ -1,14 +1,25 @@
 # Seeds
 
-Seeds is the company's time and client tracker. This app reads its clients, projects, tasks and project members through
-the Seeds Open API ([reference](../seeds-api.md)). Everyone is matched to Seeds by their **email**, and sees the clients
+Seeds is the company's time and client tracker. This app reads its parents, projects, tasks and project members through
+the Seeds Open API ([reference](../seeds-api.md)).
+
+| Seeds | Example | Here |
+|---|---|---|
+| Parent | Think Library, Inc. | **Client** |
+| Project | CURATED MEEPLE OPC (a store or a title) | **Project**, with its contract number |
+| Task | Go Live, POS Reset, Meetings | A **Seeds task** pick-list on subtasks of that project |
+
+Parent tasks have no Seeds equivalent; they stay this app's own. Everyone is matched to Seeds by their **email**, and sees the clients
 and projects Seeds lists them on as a project member. This app keeps the subtasks, emails, trackers, documents and time.
 
 ## Setting it up
 
-1. **Get an application token.** Ask a SEEDS Admin for one with these read permissions: `core.users.read`,
-   `customers.clients.read`, `projects.projects.read`, `projects.members.read`, `projects.tasks.read`. Seeds gives one
+1. **Get an application token.** Ask a SEEDS Admin for one with the read permissions below. Seeds gives one
    token per app, not one per person.
+   - Required: `core.users.read`, `customers.parents.read`, `projects.projects.read`, `projects.members.read`,
+     `projects.tasks.read`.
+   - Also ask for `customers.clients.read`: it is used only when a Seeds project names a Seeds client instead of its
+     parent.
 2. **Put it on the server.** In Northflank, add a secret environment variable `SEEDS_API_TOKEN` with the token, then
    redeploy. Never paste it into the app, chat, Git, logs or screenshots. `SEEDS_API_URL` is optional (default
    `https://seeds.iripple.com/api/v1`).
@@ -21,13 +32,15 @@ No database migration is needed.
 
 ## What a sync does
 
-1. Reads `/users`, `/clients` and `/projects` (100 per page, following `nextCursor`).
+1. Reads `/users`, `/parents` and `/projects` (100 per page, following `nextCursor`); `/clients` too if a project names
+   a Seeds client but not its parent.
 2. Reads `/projects/{id}/members` for every open project, and keeps the projects where someone in this app (active, with
    an email) is a member.
 3. Reads `/projects/{id}/tasks` for those projects only.
-4. For each person: links or adds their clients, projects (with contract numbers) and parent tasks, by Seeds id, then
-   exact name; close names wait on the Seeds page for an Administrator or PM to confirm. Their Seeds assignments are
-   replaced with their project memberships.
+4. For each person: links or adds their clients (Seeds parents) and projects (with contract numbers), by Seeds id, then
+   exact name; close names wait on the Seeds page for an Administrator or PM to confirm. Each project keeps its Seeds
+   tasks, and a subtask's **Seeds task** dropdown picks from them. Their Seeds assignments are replaced with their
+   project memberships.
 
 A member's role on the project becomes their job role through the titles in Settings › Roles. With no role on the
 membership, their Seeds job title is used, then `Member`. Titles no role claims are listed in Settings › Integrations ›

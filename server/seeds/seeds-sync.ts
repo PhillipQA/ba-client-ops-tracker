@@ -1,6 +1,6 @@
 /**
- * One Seeds sync, as a pure change to the workspace: link or add clients, projects and parent tasks, follow renames,
- * and replace the Seeds assignments. Records are matched by Seeds id first, then by exact name; a close name is held
+ * One Seeds sync, as a pure change to the workspace: link or add clients (Seeds parents) and projects, follow renames,
+ * keep each project's Seeds tasks as a pick-list for subtasks, and replace the Seeds assignments. Records are matched by Seeds id first, then by exact name; a close name is held
  * for someone to confirm instead of guessing. Nothing here deletes: work that is not in Seeds keeps working.
  */
 import { randomUUID } from 'node:crypto'
@@ -204,60 +204,19 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     else delete project.seedsArchived
   }
 
-  // Seeds tasks are this app's parent tasks. Subtasks stay here.
-  const items = list(state?.items).map(item => ({ ...item }))
-  const taskBySeeds = new Map<string, any>()
-  for (const item of items) if (item.seedsId && !item.parentTaskId) taskBySeeds.set(text(item.seedsId), item)
-  for (const source of snapshot.tasks) {
-    const project = projectBySeeds.get(source.projectId)
-    if (!project) continue
-    let task = taskBySeeds.get(source.id)
-    if (!task) {
-      const free = items.filter(
-        candidate =>
-          !candidate.seedsId &&
-          !candidate.parentTaskId &&
-          candidate.projectId === project.id &&
-          !(candidate.source === 'Discord' && candidate.externalSourceId),
-      )
-      const found = bestMatch(source.name, free, 'title')
-      if (found.exact) {
-        task = found.exact
-        task.seedsId = source.id
-        counts.linked++
-      } else if (found.close && !rejected.has(source.id)) {
-        hold('task', source.id, source.name, found.close)
-        continue
-      } else {
-        task = {
-          id: makeId(),
-          clientId: project.clientId || undefined,
-          projectId: project.id,
-          title: source.name,
-          type: 'Task',
-          priority: 'Medium',
-          status: options.openStatus,
-          waitingOn: options.waitingOn,
-          owner: '',
-          dateRaised: options.today,
-          followUpDate: '',
-          description: '',
-          resolution: '',
-          source: 'Other',
-          seedsId: source.id,
-        }
-        if (!task.clientId) delete task.clientId
-        items.push(task)
-        counts.created++
-      }
-      taskBySeeds.set(source.id, task)
-    }
-    if (task.title !== source.name) {
-      task.title = source.name
-      counts.renamed++
-    }
-    if (source.archived) task.seedsArchived = true
-    else delete task.seedsArchived
+  // Seeds tasks (Go Live, Meetings…) sit at subtask level: they are not created here. Each project keeps its list, and
+  // subtasks pick one, so time can go to the right Seeds task later.
+  const items = list(state?.items)
+  const tasksByProject = new Map<string, { id: string; name: string; archived?: boolean }[]>()
+  for (const task of snapshot.tasks) {
+    const tasks = tasksByProject.get(task.projectId) || []
+    tasks.push({ id: task.id, name: task.name, ...(task.archived ? { archived: true } : {}) })
+    tasksByProject.set(task.projectId, tasks)
+  }
+  for (const [seedsId, tasks] of tasksByProject) {
+    const project = projectBySeeds.get(seedsId)
+    if (!project || project.archived) continue
+    project.seedsTasks = tasks.sort((a, b) => a.name.localeCompare(b.name))
   }
 
   // This person's own assignments: Seeds project members matched to them by email. A snapshot may hold other people's

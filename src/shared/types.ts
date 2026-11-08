@@ -88,6 +88,8 @@ export interface Project {
   seedsId?: string
   contractNumber?: string
   seedsArchived?: boolean
+  /** This project's Seeds tasks (Go Live, Meetings…), from the sync: what its subtasks can pick. */
+  seedsTasks?: { id: string; name: string; archived?: boolean }[]
   accessLimited?: boolean
 }
 
@@ -170,6 +172,8 @@ export interface WorkItem {
   /** A parent task that is this Seeds task; the title follows Seeds. */
   seedsId?: string
   seedsArchived?: boolean
+  /** Subtasks: the Seeds task (from the project's list) this work counts toward. */
+  seedsTaskId?: string
 }
 
 export type WorkActivityAction =

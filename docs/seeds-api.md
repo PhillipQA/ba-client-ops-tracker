@@ -94,7 +94,7 @@ All paths are under `/api/v1`. All list/get calls are `GET`.
 
 ## What this app needs (read only)
 
-To ask Seeds Admin for: `core.users.read`, `customers.clients.read`, `projects.projects.read`, `projects.members.read`, `projects.tasks.read`. Setup steps: [setup/seeds.md](setup/seeds.md).
+To ask Seeds Admin for: `core.users.read`, `customers.parents.read`, `projects.projects.read`, `projects.members.read`, `projects.tasks.read`, and `customers.clients.read` (used only when a project names a Seeds client instead of its parent). Setup steps: [setup/seeds.md](setup/seeds.md).
 
 ## Still unknown
 

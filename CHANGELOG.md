@@ -45,10 +45,12 @@ Not released yet.
 
 ### Seeds (phase 2)
 - **Built on the Seeds Open API** ([reference](docs/seeds-api.md)). Seeds gives one application token per app, so the server holds it (`SEEDS_API_TOKEN`); nobody pastes a key. Read only; nothing is written to Seeds.
-- **Everyone is matched to Seeds by email.** The projects Seeds lists a person on as a member decide what they see; their role on the project (or their Seeds job title) becomes their job role. Only projects someone here works on, with their clients and tasks, come in.
+- **Everyone is matched to Seeds by email.** The projects Seeds lists a person on as a member decide what they see; their role on the project (or their Seeds job title) becomes their job role. Only projects someone here works on, with their clients, come in.
+- **A Seeds parent is a client here** (for example *Think Library, Inc.*); a Seeds project (named after a store or a title) is a project.
+- **Seeds tasks are subtask-level** (Go Live, POS Reset, Meetings…): nothing is created from them. A subtask under a Seeds project gets a **Seeds task** dropdown with that project's Seeds tasks, ready for sending time to Seeds later.
 - An Administrator turns Seeds on in **Settings › Integrations › Seeds**. It syncs straight away and every 30 minutes; anyone can choose **Sync now**. The card shows who Seeds found, who it did not (check their email), Seeds roles no job role claims yet, and the field names Seeds sent.
 - **Seeds page** in the menu, replacing Clients, Projects and Tasks: tabs for Clients, Projects, Tasks and **Sync**.
-- Seeds clients, projects (with contract numbers and their client) and tasks link to records here by Seeds id, then by exact name; renames follow. A close name (for example *Bolt Logistic* vs *Bolt Logistics*) is listed under **Confirm these matches** for an Administrator or Project Manager instead of being guessed. Tasks under Seeds projects that Seeds does not list are shown as **Not in Seeds** and keep working.
+- Seeds parents and projects (with contract numbers and their client) link to records here by Seeds id, then by exact name; renames follow. A close name (for example *Bolt Logistic* vs *Bolt Logistics*) is listed under **Confirm these matches** for an Administrator or Project Manager instead of being guessed.
 - People Seeds does not list keep their hand-entered assignments (if any).
 - If Seeds cannot be reached, the last synced access stays in force and the Seeds page says so.
 - Names that come from Seeds are read-only here, and Seeds-linked clients, projects and tasks cannot be deleted here.
