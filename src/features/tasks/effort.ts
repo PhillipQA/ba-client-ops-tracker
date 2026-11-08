@@ -60,7 +60,7 @@ export function seedsTimeRule(
 ): SeedsTimeRule | null {
   if (state?.seeds?.connected !== true) return null
   const project = (state.projects || []).find(candidate => candidate?.id === item?.projectId)
-  const tasks = (Array.isArray(project?.seedsTasks) ? project.seedsTasks : [])
+  const tasks: { id: string; name: string }[] = (Array.isArray(project?.seedsTasks) ? project.seedsTasks : [])
     .filter((task: any) => task?.id && !task.archived)
     .map((task: any) => ({ id: String(task.id), name: String(task.name || task.id) }))
   const parent = item?.parentTaskId ? (state.items || []).find(candidate => candidate?.id === item.parentTaskId) : null
