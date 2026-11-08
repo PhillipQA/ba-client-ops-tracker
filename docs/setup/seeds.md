@@ -21,7 +21,14 @@ folder, with all their tasks, subtasks, trackers, documents and emails. Nothing 
 - shows on Clients and Projects under **Folder › Before Seeds** (records carry a *Before Seeds* badge);
 - gets no new clients or projects (those come from Seeds), but new tasks under its projects are fine.
 
-Linking Before Seeds work to Seeds projects (trackers first) is phase 2. Everyone is matched to Seeds by their **email**, and sees the clients
+**Trackers bridge the two.** A tracker keeps its Before Seeds client, and its rows keep their tasks. To move a tracker's
+work onto Seeds:
+
+1. Tracker details › **Project** › pick one under *From Seeds*. The tracker now also follows that project's client.
+2. On a row, open its task cell › **Create a new task** › **Where: Seeds** (the default), the Seeds project and, if
+   you like, the Seeds task. Or select rows › **Create tasks** to do many at once.
+3. A row on a Before Seeds task switches to the new Seeds task; the old task stays in Before Seeds with its history.
+   Subtasks made in the row's other cells go under the new task. Everyone is matched to Seeds by their **email**, and sees the clients
 and projects Seeds lists them on as a project member. This app keeps the subtasks, emails, trackers, documents and time.
 
 ## Setting it up

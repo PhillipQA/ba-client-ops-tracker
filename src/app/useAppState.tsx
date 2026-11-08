@@ -1715,6 +1715,7 @@ export function useAppState() {
         resolution: '',
         source: 'Internal',
         qaResult: 'Not Run',
+        ...(draft.seedsTaskId ? { seedsTaskId: draft.seedsTaskId } : {}),
       })
     })
     const created = new Map(made.map(item => [item.id, item]))

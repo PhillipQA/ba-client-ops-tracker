@@ -20,11 +20,21 @@ export type TaskDraft = {
   dueDate?: string
   description?: string
   assignedToUserId?: string
+  /** Under a Seeds project: the Seeds task (Go Live, Meetings…) this task counts toward. */
+  seedsTaskId?: string
+}
+export type WorkProject = {
+  id: string
+  name: string
+  clientId?: string
+  seedsId?: string
+  beforeSeeds?: boolean
+  seedsTasks?: { id: string; name: string; archived?: boolean }[]
 }
 export type WorkTools = {
   items: WorkItem[]
   clients: { id: string; name: string }[]
-  projects: { id: string; name: string }[]
+  projects: WorkProject[]
   /** True when a status counts as closed or resolved in this account's task settings. */
   isClosed: (status: string) => boolean
   /** Present when this person may create tasks. Resolves once the workspace is saved, with the new items in order. */
@@ -36,15 +46,75 @@ export const trackerClients = (tracker: Tracker) =>
   tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : []
 const doneTone = (closed: boolean) => (closed ? ('green' as const) : ('gray' as const))
 
-/** Client and project for a new task: the tracker's clients first (picked automatically when there is one). */
+/** Seeds projects (once Seeds is on, new work goes there by default), and whether there are any. */
+export const seedsProjects = (projects: WorkProject[]) => projects.filter(project => project.seedsId)
+const isSeedsProject = (projects: WorkProject[], id?: string) =>
+  Boolean(id) && projects.some(project => project.id === id && project.seedsId)
+
+/**
+ * Client and project for a new task. Once Seeds is on, new tasks go to a Seeds project by default (its client is the
+ * Seeds parent, filled in), with an optional Seeds task; Before Seeds is still there to choose. Otherwise: the
+ * tracker's clients first (picked automatically when there is one), and any project.
+ */
 function useTaskContext(tracker: Tracker, tools: WorkTools) {
+  const fromSeeds = seedsProjects(tools.projects)
+  const [target, setTarget] = useState<'seeds' | 'before'>(fromSeeds.length ? 'seeds' : 'before')
   const own = trackerClients(tracker).filter(id => tools.clients.some(client => client.id === id))
   const choices = own.length ? tools.clients.filter(client => own.includes(client.id)) : tools.clients
   const [clientId, setClientId] = useState(own.length === 1 ? own[0] : '')
   const [projectId, setProjectId] = useState(
     tracker.projectId && tools.projects.some(project => project.id === tracker.projectId) ? tracker.projectId : '',
   )
-  const fields = (
+  // The tracker's own Seeds project when it has one.
+  const [seedsProjectId, setSeedsProjectId] = useState(
+    isSeedsProject(tools.projects, tracker.projectId) ? tracker.projectId : '',
+  )
+  const [seedsTaskId, setSeedsTaskId] = useState('')
+  const seedsProject = fromSeeds.find(project => project.id === seedsProjectId)
+  const seedsClient = tools.clients.find(client => client.id === seedsProject?.clientId)
+  const seedsTasks = (seedsProject?.seedsTasks || []).filter(task => !task.archived)
+  const oldProjects = tools.projects.filter(project => !project.seedsId)
+
+  const seedsFields = (
+    <>
+      <label className="trk-field-block">
+        Seeds project
+        <select
+          value={seedsProjectId}
+          onChange={event => {
+            setSeedsProjectId(event.target.value)
+            setSeedsTaskId('')
+          }}
+          required
+        >
+          <option value="">Choose the Seeds project</option>
+          {fromSeeds.map(project => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="trk-field-block">
+        Client
+        <input value={seedsProject ? seedsClient?.name || 'No client in Seeds' : ''} readOnly disabled />
+      </label>
+      {seedsTasks.length > 0 && (
+        <label className="trk-field-block">
+          Seeds task
+          <select value={seedsTaskId} onChange={event => setSeedsTaskId(event.target.value)}>
+            <option value="">-</option>
+            {seedsTasks.map(task => (
+              <option key={task.id} value={task.id}>
+                {task.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </>
+  )
+  const beforeFields = (
     <>
       <label className="trk-field-block">
         Client
@@ -65,7 +135,7 @@ function useTaskContext(tracker: Tracker, tools: WorkTools) {
         Project
         <select value={projectId} onChange={event => setProjectId(event.target.value)}>
           <option value="">No project</option>
-          {tools.projects.map(project => (
+          {(fromSeeds.length ? oldProjects : tools.projects).map(project => (
             <option key={project.id} value={project.id}>
               {project.name}
             </option>
@@ -74,7 +144,53 @@ function useTaskContext(tracker: Tracker, tools: WorkTools) {
       </label>
     </>
   )
-  return { clientId, projectId, fields, ready: Boolean(clientId) }
+  const fields = fromSeeds.length ? (
+    <>
+      <div className="trk-field-block">
+        Where
+        <span className="trk-segmented" role="group" aria-label="Where the task goes">
+          <button
+            type="button"
+            className={target === 'seeds' ? 'on' : undefined}
+            aria-pressed={target === 'seeds'}
+            onClick={() => setTarget('seeds')}
+          >
+            Seeds
+          </button>
+          <button
+            type="button"
+            className={target === 'before' ? 'on' : undefined}
+            aria-pressed={target === 'before'}
+            onClick={() => setTarget('before')}
+          >
+            Before Seeds
+          </button>
+        </span>
+      </div>
+      {target === 'seeds' ? seedsFields : beforeFields}
+    </>
+  ) : (
+    beforeFields
+  )
+  if (target === 'seeds' && fromSeeds.length)
+    return {
+      target,
+      clientId: seedsProject?.clientId || '',
+      projectId: seedsProjectId,
+      seedsTaskId: seedsTaskId || undefined,
+      fields,
+      ready: Boolean(seedsProject?.clientId),
+      problem: seedsProject ? 'This Seeds project has no client in Seeds.' : 'Choose the Seeds project.',
+    }
+  return {
+    target,
+    clientId,
+    projectId,
+    seedsTaskId: undefined,
+    fields,
+    ready: Boolean(clientId),
+    problem: 'Choose the client for this task.',
+  }
 }
 
 type PickerProps = {
@@ -116,7 +232,11 @@ export function TrackerWorkPicker(props: PickerProps) {
     // A tracker with clients only offers their tasks; one without a client offers every task.
     const pool =
       mode === 'task'
-        ? tools.items.filter(item => !item.parentTaskId && (!own.length || own.includes(item.clientId || '')))
+        ? tools.items.filter(
+            item =>
+              !item.parentTaskId &&
+              (!own.length || own.includes(item.clientId || '') || isSeedsProject(tools.projects, item.projectId)),
+          )
         : tools.items.filter(item => item.parentTaskId && item.parentTaskId === row.taskId)
     const rank = (item: WorkItem) => (tracker.projectId && item.projectId !== tracker.projectId ? 1 : 0)
     return pool
@@ -147,8 +267,10 @@ export function TrackerWorkPicker(props: PickerProps) {
       const name = title.trim()
       if (!name) throw new Error(mode === 'task' ? 'Enter a title for the task.' : 'Enter a title for the subtask.')
       if (mode === 'task') {
-        if (!context.ready) throw new Error('Choose the client for this task.')
-        const [made] = await tools.onCreate([{ title: name, clientId: context.clientId, projectId: context.projectId }])
+        if (!context.ready) throw new Error(context.problem)
+        const [made] = await tools.onCreate([
+          { title: name, clientId: context.clientId, projectId: context.projectId, seedsTaskId: context.seedsTaskId },
+        ])
         await props.onPickTask(made.id)
       } else {
         if (!task) throw new Error('Pick the row’s task first.')
@@ -361,17 +483,27 @@ export function TrackerBulkTasks({
   const context = useTaskContext(tracker, tools)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const todo = rows.filter(row => !row.taskId)
+  // Into Seeds: rows on a Before Seeds task switch to the new Seeds task (the old one stays in Before Seeds).
+  const taskOf = (row: TrackerRow) => tools.items.find(item => item.id === row.taskId)
+  const switching = (row: TrackerRow) =>
+    context.target === 'seeds' && Boolean(row.taskId) && !isSeedsProject(tools.projects, taskOf(row)?.projectId)
+  const todo = rows.filter(row => !row.taskId || switching(row))
+  const switches = todo.filter(switching).length
   const named = todo.filter(row => titleOf(row) !== 'Untitled row')
   const skipped = rows.length - named.length
   const submit = async () => {
     if (!tools.onCreate || !named.length) return
-    if (!context.ready) return setError('Choose the client for these tasks.')
+    if (!context.ready) return setError(context.problem)
     setBusy(true)
     setError('')
     try {
       const made = await tools.onCreate(
-        named.map(row => ({ title: titleOf(row), clientId: context.clientId, projectId: context.projectId })),
+        named.map(row => ({
+          title: titleOf(row),
+          clientId: context.clientId,
+          projectId: context.projectId,
+          seedsTaskId: context.seedsTaskId,
+        })),
       )
       await onDone(named.map((row, at) => ({ rowId: row.id, taskId: made[at].id })))
       onClose()
@@ -388,6 +520,13 @@ export function TrackerBulkTasks({
             <>
               This creates <strong>{plural(named.length, 'task')}</strong>, one per row, titled from the row’s first
               column, and links each row to its task.
+              {switches > 0 && (
+                <>
+                  {' '}
+                  {plural(switches, 'row')} {switches === 1 ? 'is' : 'are'} on a Before Seeds task and will switch to
+                  the new Seeds task; the old task stays in Before Seeds.
+                </>
+              )}
             </>
           ) : (
             'Every chosen row already has a task or has no name in its first column.'

@@ -874,6 +874,7 @@ export default function TrackerScreen(props: Props) {
         items: itemsRef.current,
         currentUserId: props.currentUserId || '',
         onCreateTasks: create,
+        projects: props.projects,
       })
       if (result.error) say('error', result.error)
       takeLinked(result.rows)

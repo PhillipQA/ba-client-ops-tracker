@@ -6,7 +6,7 @@ import TrackerClientPicker from './TrackerClientPicker'
 type Props = {
   tracker: Tracker
   clients: { id: string; name: string }[]
-  projects: { id: string; name: string }[]
+  projects: { id: string; name: string; clientId?: string; seedsId?: string }[]
   onClose: () => void
   onSave: (body: { name: string; clientIds: string[]; projectId: string }) => Promise<void>
 }
@@ -18,6 +18,8 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, onClo
     tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : [],
   )
   const [projectId, setProjectId] = useState(tracker.projectId)
+  const fromSeeds = projects.filter(project => project.seedsId)
+  const before = projects.filter(project => !project.seedsId)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const submit = async (event: FormEvent) => {
@@ -50,18 +52,53 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, onClo
         <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
         <label className="trk-field-block">
           Project
-          <select value={projectId} onChange={event => setProjectId(event.target.value)}>
+          <select
+            value={projectId}
+            onChange={event => {
+              const next = event.target.value
+              setProjectId(next)
+              // A Seeds project brings its client (the Seeds parent); the tracker's other clients stay, so rows keep
+              // their Before Seeds tasks while new ones go to Seeds.
+              const client = projects.find(project => project.id === next && project.seedsId)?.clientId
+              if (client && !clientIds.includes(client)) setClientIds([...clientIds, client])
+            }}
+          >
             <option value="">None</option>
             {projectId && !projects.some(project => project.id === projectId) && (
               <option value={projectId}>Unknown project</option>
             )}
-            {projects.map(project => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
+            {fromSeeds.length > 0 ? (
+              <>
+                <optgroup label="From Seeds">
+                  {fromSeeds.map(project => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Before Seeds">
+                  {before.map(project => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </>
+            ) : (
+              projects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))
+            )}
           </select>
         </label>
+        {fromSeeds.length > 0 && (
+          <p className="trk-muted-text">
+            Pick a Seeds project to link this tracker to Seeds. Rows keep their Before Seeds tasks; new tasks made here
+            go to the Seeds project.
+          </p>
+        )}
         {error && (
           <p className="trk-field-error" role="alert">
             {error}
