@@ -1,5 +1,5 @@
 import { ForgotPassword } from '../features/accounts/PasswordRecovery'
-import { APP_VERSION } from '../shared/version'
+import { APP_LABEL } from '../shared/version'
 import { ArrowRight, Building2, Eye, EyeOff, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 
@@ -59,7 +59,7 @@ export function LoginScreen({
         <img src="/login-hero.webp" alt="" />
       </aside>
       <main className="auth-login-panel">
-        <div className="auth-version">v{APP_VERSION}</div>
+        <div className="auth-version">v{APP_LABEL}</div>
         <div className="auth-card account-login-card auth-card-modern">
           <div className="auth-brand auth-brand-modern">
             <img className="auth-app-icon" src="/ba-app-icon.png" alt="" />

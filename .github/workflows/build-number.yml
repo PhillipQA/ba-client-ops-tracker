@@ -1,0 +1,64 @@
+name: Build number
+
+# After each pull request is merged into main, raise APP_BUILD in src/shared/version.ts by one (v2.0 → v2.0 · B01 →
+# B02…). A pull request that changes src/shared/version.ts itself sets the version by hand and is not counted. The
+# bump is its own small commit on main, marked [skip ci] so it does not run the Build workflow again.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: build-number
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip pull requests that set the version themselves
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate --jq '.[].filename' \
+            | grep -qx 'src/shared/version.ts'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.skip != 'true'
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Raise the build number and push
+        if: steps.check.outputs.skip != 'true'
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3; do
+            git pull --rebase --quiet origin main
+            build=$(sed -nE 's/^export const APP_BUILD = ([0-9]+)$/\1/p' src/shared/version.ts)
+            [ -n "$build" ] || { echo 'APP_BUILD not found in src/shared/version.ts'; exit 1; }
+            next=$((build + 1))
+            sed -i -E "s/^export const APP_BUILD = [0-9]+$/export const APP_BUILD = $next/" src/shared/version.ts
+            label=$(printf 'B%02d' "$next")
+            git commit --quiet -am "Build $label (#$PR) [skip ci]"
+            if git push --quiet origin HEAD:main; then
+              echo "Now $label"
+              exit 0
+            fi
+            git reset --quiet --hard origin/main
+          done
+          echo 'Could not push the build number.'
+          exit 1

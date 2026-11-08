@@ -58,6 +58,8 @@ export function removeTimeEntry(task: any, entryId: string, actor: Actor): Resul
   const existing: TimeEntry[] = Array.isArray(task?.timeEntries) ? task.timeEntries : []
   const entry = existing.find(candidate => String(candidate?.id || '') === entryId)
   if (!entry) return { ok: false, status: 404, error: 'Time entry was not found.' }
+  if (entry.seedsEntryId)
+    return { ok: false, status: 409, error: 'This time is already in Seeds. Change or remove it in Seeds.' }
   if (!canRemoveTimeEntry(entry, actor))
     return { ok: false, status: 403, error: 'Only the person who logged this time or an Administrator can remove it.' }
   return {

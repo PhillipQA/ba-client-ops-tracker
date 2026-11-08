@@ -191,6 +191,7 @@ registerSeedsRoutes(app, {
   today: () => dateKeyInTimeZone(new Date(), followUpTimeZone),
   token: () => (process.env.SEEDS_API_TOKEN || '').trim(),
   apiUrl: () => (process.env.SEEDS_API_URL || '').trim() || DEFAULT_SEEDS_URL,
+  googleClientId: () => (process.env.SEEDS_GOOGLE_CLIENT_ID || '').trim(),
 }).start()
 registerTrackerTemplateRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
 

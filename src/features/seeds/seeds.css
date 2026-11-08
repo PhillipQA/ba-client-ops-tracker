@@ -184,3 +184,25 @@
   background: var(--surface-muted, #f2f4f7);
   color: var(--muted, #667085);
 }
+
+.seeds-send {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.seeds-send-ok {
+  color: #067647;
+}
+
+.seeds-send-error {
+  color: #b42318;
+}
+
+.seeds-google-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+  margin: 12px 0;
+}

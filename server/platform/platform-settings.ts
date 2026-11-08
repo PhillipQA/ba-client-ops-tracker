@@ -1,5 +1,5 @@
 import type { Express } from 'express'
-import { APP_VERSION } from '../../src/shared/version'
+import { APP_LABEL } from '../../src/shared/version'
 import { saveWorkflow, workflowView } from '../workspace/workflow-routes'
 import { encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
 
@@ -43,7 +43,7 @@ export function registerPlatformSettings(app: Express, d: any) {
         health = data || []
       }
       res.json({
-        version: APP_VERSION,
+        version: APP_LABEL,
         databaseProvider: 'PostgreSQL',
         databaseConfigured: Boolean(d.db),
         encryptionReady,

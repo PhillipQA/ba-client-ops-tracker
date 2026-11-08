@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Server } from 'node:http'
 import type { Request, Response, NextFunction } from 'express'
-import { APP_VERSION } from '../../src/shared/version'
+import { APP_RELEASE } from '../../src/shared/version'
 
 // Render recommends longer timeouts when its proxy reuses Node connections.
 // Keep the header timeout above the idle timeout; request limits stay unchanged.
@@ -21,12 +21,12 @@ export function authRequestDiagnostics(req: Request, res: Response, next: NextFu
   const action = req.path === '/login' ? 'login' : 'logout'
   const startedAt = Date.now()
   res.setHeader('X-Auth-Request-Id', requestId)
-  res.setHeader('X-Auth-App-Version', APP_VERSION)
+  res.setHeader('X-Auth-App-Version', APP_RELEASE)
   const record = (event: string, status?: number) => {
     // Deliberately log no bodies, cookies, credentials, usernames, or IPs.
     console.info(
       '[auth]',
-      JSON.stringify({ event, requestId, action, version: APP_VERSION, status, durationMs: Date.now() - startedAt }),
+      JSON.stringify({ event, requestId, action, version: APP_RELEASE, status, durationMs: Date.now() - startedAt }),
     )
   }
   record('started')

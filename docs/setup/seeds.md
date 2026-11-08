@@ -67,6 +67,28 @@ A task with no Seeds task tag (and no tagged subtask chosen) cannot take time. B
 tasks, so new time goes on Seeds work. A subtask lists the time logged for it on its task. Sending entries to Seeds is
 a later step.
 
+## Sending time to Seeds
+
+Seeds records a time entry as the **Google account that sends it**, so each person sends their own time, signed in
+with Google as the same email as here.
+
+**Set up once:**
+
+1. Ask the SEEDS Admin to add **`workforce.time_entries.create`** to the app's token (and `workforce.time_entries.read`
+   if you want it later).
+2. In Google Cloud, create an OAuth client ID of type **Web application**, with **Authorized JavaScript origins** =
+   this app's address (for example `https://batracker.phillipqa.com`). No secret is needed.
+3. Give that client ID to the SEEDS Admin to register for the app's writes.
+4. In Northflank, add the variable `SEEDS_GOOGLE_CLIENT_ID` with that client ID, then redeploy.
+
+**Sending:** a task's time list shows each entry as *Not sent* or *In Seeds*. **Send to Seeds** on the task (your
+entries there) or **Send my time** on the Seeds page (all of yours) asks you to sign in with Google the first time
+in an hour, then sends. Each entry goes with a key made from its id, so sending again never doubles it in Seeds. An
+entry Seeds turns down shows *Not sent: retry* with Seeds' reason. An entry in Seeds is changed or removed in Seeds.
+
+Each entry is sent as: task date, the Seeds project, minutes, the Seeds task, the parent (client), the project's
+product when Seeds names one, and the remarks.
+
 ## What a sync does
 
 1. Reads `/users`, `/parents` and `/projects` (100 per page, following `nextCursor`); `/clients` too if a project names
@@ -122,7 +144,3 @@ record disappears from Seeds: work that is not in Seeds keeps working.
 Settings › Integrations › Seeds › **Turn off**. Hand-entered assignments count again; the Seeds links on records stay,
 so turning it back on picks up where it left off.
 
-## Later: time logs to Seeds
-
-Writing time entries to Seeds (`POST /time-entries`) needs a separate write permission and each person's Google
-sign-in (a Google ID token for an OAuth client ID registered with Seeds Admin). Not built yet.

@@ -8,6 +8,7 @@ import type { AppState } from '../../app/useAppState'
 import type { View } from '../../app/navigation'
 import type { SeedsMatch } from '../../shared/seeds'
 import { decideMatch, syncSeeds } from './seedsApi'
+import { SendToSeedsButton } from './SendToSeeds'
 import './seeds.css'
 
 export const SEEDS_TABS: { id: Extract<View, 'clients' | 'projects' | 'items' | 'seeds'>; label: string }[] = [
@@ -92,6 +93,26 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
 
   return (
     <section className="page-stack seeds-page">
+      {seeds?.connected && (
+        <div className="panel seeds-status">
+          <div className="panel-heading">
+            <div>
+              <h2>Your time for Seeds</h2>
+              <p>
+                Time you logged on Seeds tasks goes to Seeds when you send it, signed in with your Google account. Each
+                entry is sent once; sending again never doubles it.
+              </p>
+            </div>
+            <SendToSeedsButton
+              className="primary"
+              label="Send my time"
+              onSent={result => {
+                for (const updated of result.items) app.applyTimeEntryMutation({ item: updated } as any)
+              }}
+            />
+          </div>
+        </div>
+      )}
       <div className="panel seeds-status">
         <div className="panel-heading">
           <div>

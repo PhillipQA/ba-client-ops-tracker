@@ -5,7 +5,7 @@ import DocumentProcessingPanel from './DocumentProcessingPanel'
 import { useDocumentOperation } from './useDocumentOperation'
 import { isFsdImageFile, readFsdSource } from './fsd-sources'
 import type { Project } from '../../shared/types'
-import { APP_VERSION } from '../../shared/version'
+import { APP_LABEL } from '../../shared/version'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { announceGeneratedDocument } from './documentDrive'
 import {
@@ -315,7 +315,7 @@ export default function BrdCreation({
             : providerError || 'Configure and enable the Document Agent in Account Settings.'}
         </span>
         <span>
-          {saveError ? 'Draft held in this page' : 'Draft retained in this browser tab'} · App v{APP_VERSION}
+          {saveError ? 'Draft held in this page' : 'Draft retained in this browser tab'} · App v{APP_LABEL}
         </span>
       </div>
       {saveError && <p className="fsd-warning">{saveError}</p>}

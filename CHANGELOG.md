@@ -1,11 +1,13 @@
 # Changelog
 
-**Current application release: v1.6.0**
+**Current application release: v2.0**
+
+From v2.0, each pull request merged into main is a build: v2.0 · B01, B02… The *Build number* workflow raises it after each merge ([src/shared/version.ts](src/shared/version.ts)). A new version (v2.1, v3.0) is set by hand in that file.
 
 Changes are listed newest first. For installation, deployment and updates, use the [README](README.md). Older entries mention migration files, release notes, an upgrade guide and patch ZIPs that were removed in the Northflank cleanup below; they are still in the Git history.
 
-## v1.6.0 — Seeds: per-person visibility and Seeds sync
-Not released yet.
+## v2.0 — Seeds: source of truth, Before Seeds, time to Seeds
+Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
@@ -42,6 +44,12 @@ Not released yet.
 - **Assignments** can be entered in Settings › Access. Once a person connects their own Seeds, Seeds decides their access instead.
 - A client someone is assigned to only through one project shows by name only. New clients and projects you create stay visible to you.
 - Saves from a partial view never touch what you cannot see. Adding work to a client you cannot change, or moving work there, is refused with a message instead of being dropped.
+
+### Send time to Seeds
+- **Your time goes to Seeds.** A task's time list marks each entry *Not sent* or *In Seeds*. **Send to Seeds** on the task, or **Send my time** on the Seeds page, signs you in with Google (once an hour) and sends your entries. Seeds records them as you, so only your own entries are sent, and only with a Google sign-in for the same email as here.
+- Each entry is sent once: a key made from its id means sending again never doubles it in Seeds. An entry Seeds turns down keeps Seeds' reason and can be sent again. An entry in Seeds is changed or removed in Seeds, not here.
+- Entries carry the Seeds project, task, parent (client), the project's product (read from Seeds when it names one), minutes and remarks.
+- Setup: `workforce.time_entries.create` on the Seeds token, and a Google OAuth client ID registered with SEEDS Admin in `SEEDS_GOOGLE_CLIENT_ID` ([docs/setup/seeds.md](docs/setup/seeds.md)).
 
 ### Seeds (phase 2)
 - **Built on the Seeds Open API** ([reference](docs/seeds-api.md)). Seeds gives one application token per app, so the server holds it (`SEEDS_API_TOKEN`); nobody pastes a key. Read only; nothing is written to Seeds.

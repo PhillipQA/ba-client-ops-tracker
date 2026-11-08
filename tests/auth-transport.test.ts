@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import express from 'express'
 import { authRequestDiagnostics, configureHttpServer } from '../server/auth/auth-transport'
 import { getAuthSession, login, logout } from '../src/features/accounts/auth'
-import { APP_VERSION } from '../src/shared/version'
+import { APP_RELEASE } from '../src/shared/version'
 
 const originalFetch = globalThis.fetch
 
@@ -42,7 +42,7 @@ test('auth logs correlate responses without recording credentials, cookies, or i
     await result.text()
     assert.equal(result.headers.get('x-auth-request-id'), requestId)
     assert.equal(result.headers.get('cache-control'), 'no-store')
-    assert.equal(result.headers.get('x-auth-app-version'), APP_VERSION)
+    assert.equal(result.headers.get('x-auth-app-version'), APP_RELEASE)
     assert.deepEqual(
       records.map(r => r.event),
       ['started', 'completed'],

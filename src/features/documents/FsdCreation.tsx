@@ -23,7 +23,7 @@ import {
 } from './fsd-model'
 import { isFsdImageFile, readFsdSource } from './fsd-sources'
 import FsdSourceReview, { sourceReviewLabel } from './FsdSourceReview'
-import { APP_VERSION } from '../../shared/version'
+import { APP_LABEL } from '../../shared/version'
 import './fsd.css'
 import DocumentProcessingPanel from './DocumentProcessingPanel'
 import FsdCoverage from './FsdCoverage'
@@ -588,7 +588,7 @@ export default function FsdCreation({
             : providerError || 'Configure and enable the Document Agent in Account Settings.'}
         </span>
         <span>
-          {saveError ? 'Draft held in this page' : 'Draft retained in this browser tab'} · App v{APP_VERSION}
+          {saveError ? 'Draft held in this page' : 'Draft retained in this browser tab'} · App v{APP_LABEL}
         </span>
       </div>
       {presetSaveError && (
