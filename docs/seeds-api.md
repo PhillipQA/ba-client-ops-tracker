@@ -1,6 +1,6 @@
 # Seeds Open API — reference
 
-Source: the Seeds API documentation page (`https://seeds.iripple.com/employee/api-documentation`, behind iRipple Google sign-in), copied 2026-11-08. Seeds marks this as an **experimental SEEDS v2 feature**. The page also links a machine-readable **OpenAPI 3.1 JSON** contract (signed-in only); field names and response shapes come from there and are not yet captured here.
+Source: the Seeds API documentation page (`https://seeds.iripple.com/employee/api-documentation`, behind iRipple Google sign-in), copied 2026-11-08. Seeds marks this as an **experimental SEEDS v2 feature**. The page also links a machine-readable **OpenAPI 3.1 JSON** contract (signed-in only); its details are folded in below.
 
 ## Connecting
 
@@ -16,7 +16,24 @@ Source: the Seeds API documentation page (`https://seeds.iripple.com/employee/ap
   4. Seeds checks the token signature, issuer, expiry, audience, verified Google-hosted email, active employee record and stable Google identity, then applies its normal rules.
   - Google ID tokens are short-lived proof of who is acting; they do not replace the application token.
 - **Retries:** send a unique `Idempotency-Key` header on every create or cancel. Reuse the same key when retrying the same request.
-- **Errors:** check the HTTP status and the structured error body. Requests are rate-limited and audited.
+- **Errors:** check the HTTP status and the structured error body. Requests are rate-limited (429) and audited.
+
+## Shapes (from the OpenAPI contract)
+
+- **Every success** is `{ "data": … }`. The contract does not describe the records inside `data`, so their field names are not published.
+- **Every error** is `{ "error": { "code", "message", "requestId"?, "details"? } }`, with status 400, 401, 403, 404, 409 or 429.
+- **Lists are cursor-paged:** `?limit=` (1–100, default 50) and `?cursor=` (the opaque `nextCursor` from the previous answer). Applies to `/users`, `/clients`, `/parents`, `/projects`, `/prospects`, `/proposals`, `/contracts`, `/service-agreements`, `/project-templates`. Sub-lists such as `/projects/{id}/members` take no paging.
+- **Ids** in paths are integers ≥ 1.
+- **Workforce reads** take `subjectUserId` or `subjectEmail` (the employee); `/time-entries` also needs `fromDate` and `toDate` (YYYY-MM-DD).
+- **`Idempotency-Key`** is required on every create and cancel (8–191 characters, kept 24 hours).
+
+Write bodies:
+
+| Body | Required | Optional |
+|---|---|---|
+| Time entry | `postDate` (date), `projectId`, `minuteslogged` (multiple of 15, at least 15) | `taskId`, `parentId`, `clientId`, `productId`, `remarks` |
+| Leave request | `postDate`, `leaveTypeId`, `minuteslogged` (240 or 480), `remarks` | |
+| Overtime request | `postDate`, `projectId`, `minuteslogged` (≥ 1), `remarks` (1–120 chars) | `taskId`, `parentId`, `productId` |
 
 ## Operations
 
@@ -37,8 +54,7 @@ All paths are under `/api/v1`. All list/get calls are `GET`.
 | `/prospects`, `/prospects/{prospectId}` | Prospects | `sales.prospects.read` |
 | `/prospects/{prospectId}/contacts` | Prospect contacts | `sales.contacts.read` |
 | `/proposals`, `/proposals/{proposalId}` | Proposals | `sales.proposals.read` |
-
-The PDF copy cut a row or two at a page break here (prospect interactions).
+| `/prospects/{prospectId}/interactions` | Prospect interactions | `sales.interactions.read` |
 
 ### Customers & contracts (read only)
 | Endpoint | What | Permission |
@@ -58,8 +74,7 @@ The PDF copy cut a row or two at a page break here (prospect interactions).
 | `/projects/{projectId}/members` | Members of a project | `projects.members.read` |
 | `/projects/{projectId}/milestones` | Milestones of a project | `projects.milestones.read` |
 | `/project-templates`, `/project-templates/{templateId}` | Project templates | `projects.templates.read` |
-
-The section also mentions statistics; that row fell on a PDF page break.
+| `/projects/{projectId}/statistics` | Project delivery statistics | `projects.statistics.read` |
 
 ### Workforce self-service (employee-scoped)
 | Method | Endpoint | What | Permission | Google sign-in |
@@ -75,12 +90,13 @@ The section also mentions statistics; that row fell on a PDF page break.
 | GET | `/overtime-requests`, `/overtime-requests/{entryId}` | Overtime requests | `workforce.overtime.read` | |
 | POST | `/overtime-requests` | Create overtime request | `workforce.overtime.create` | required |
 | PATCH | `/overtime-requests/{entryId}` | Update overtime request | `workforce.overtime.update` | required |
+| POST | `/overtime-requests/{entryId}/cancel` | Cancel overtime request | `workforce.overtime.cancel` | required |
 
 ## What this app needs (read only)
 
-To ask Seeds Admin for: `core.users.read`, `customers.parents.read`, `customers.clients.read`, `projects.projects.read`, `projects.tasks.read`, `projects.members.read`.
+To ask Seeds Admin for: `core.users.read`, `customers.clients.read`, `projects.projects.read`, `projects.members.read`, `projects.tasks.read`. Setup steps: [setup/seeds.md](setup/seeds.md).
 
 ## Still unknown
 
-- Field names, paging and error shape: get them from the OpenAPI JSON link at the bottom of the docs page.
+- The record fields (Seeds does not publish them). The app reads them leniently and, after a sync, shows the field names Seeds sent in Settings › Integrations › Seeds.
 - Whether `/users` includes email and job title, and whether `/projects/{id}/members` includes each member's role on the project.

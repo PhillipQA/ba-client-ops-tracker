@@ -23,7 +23,7 @@ type Options = {
   /** Status and waiting-on labels new parent tasks start with. */
   openStatus: string
   waitingOn: string
-  /** Whose Seeds key this sync used. */
+  /** Whose part of the account sync this is. */
   userId: string
   id?: () => string
 }
@@ -260,18 +260,15 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     else delete task.seedsArchived
   }
 
-  // This person's own assignments: Seeds answers with their key, so they are theirs. When Seeds also lists other
-  // people (a PM sees their team), only the ones for this person count, found by Seeds id or by email.
+  // This person's own assignments: Seeds project members matched to them by email. A snapshot may hold other people's
+  // too; only the ones with this person's email count.
   const account = list(state?.accounts).find(candidate => text(candidate?.id) === options.userId)
   const email = text(account?.email).trim().toLowerCase()
-  const me =
-    snapshot.me?.id || snapshot.people.find(person => email && person.email.trim().toLowerCase() === email)?.id || ''
-  const someoneNamed = snapshot.assignments.some(assignment => assignment.personId)
   const seen = new Set<string>()
   const unknownRoles = new Set<string>()
   const mine: Assignment[] = []
   for (const source of snapshot.assignments) {
-    if (someoneNamed && source.personId !== me) continue
+    if (!email || text(source.email).trim().toLowerCase() !== email) continue
     const projectId = source.projectId ? projectBySeeds.get(source.projectId)?.id : undefined
     const clientId = !source.projectId && source.clientId ? clientBySeeds.get(source.clientId)?.id : undefined
     if (!projectId && !clientId) continue

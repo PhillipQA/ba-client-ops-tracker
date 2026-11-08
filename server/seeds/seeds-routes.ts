@@ -2,20 +2,21 @@
  * Per-person visibility settings and Seeds.
  *
  *   GET/PUT /api/access               Administrators: the visibility switch and hand-entered assignments
- *   GET/PUT/DELETE /api/account/seeds Administrators: turn Seeds on for the account and give its API address
- *   GET/PUT/DELETE /api/me/seeds      Everyone: their own Seeds API key. Saving it syncs straight away.
- *   POST /api/seeds/sync              Everyone connected: sync their own Seeds now
+ *   GET/PUT/DELETE /api/account/seeds Administrators: turn Seeds on (it syncs straight away) or off
+ *   POST /api/seeds/sync              Anyone signed in: sync the account with Seeds now
  *   POST /api/seeds/matches/:id       Administrators and Project Managers: confirm or turn down a close match
  *
- * Each person's Seeds key reads only what Seeds shows that person, so Seeds itself decides their access. Every
- * connected person syncs on their own every 30 minutes. If Seeds cannot be reached, their last synced access stays.
+ * Seeds gives this app one application token (docs/seeds-api.md); the server keeps it in SEEDS_API_TOKEN. One sync
+ * reads the whole account: each person here is matched to Seeds by email, and the projects Seeds lists them on as a
+ * member decide what they see. Only projects someone here works on come in. The account syncs every 30 minutes; if
+ * Seeds cannot be reached, the last synced access stays.
  */
 import type { Express, NextFunction, Request, Response } from 'express'
 import { normalizeAssignment, rolesFor, workspaceAccess } from '../../src/shared/access'
 import { jobRoles } from '../../src/shared/roles'
 import { defaultWaitingOn } from '../../src/features/tasks/waitingOn'
-import { seedsState, seedsStatusFor, type SeedsSnapshot } from '../../src/shared/seeds'
-import { cleanSeedsBaseUrl, httpSeedsSource, SeedsError, type SeedsSource } from './seeds-client'
+import { type SeedsCounts, type SeedsSnapshot, seedsState, seedsStatusFor } from '../../src/shared/seeds'
+import { httpSeedsSource, SeedsError, type SeedsFields, type SeedsSource } from './seeds-client'
 import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from './seeds-sync'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
@@ -30,41 +31,100 @@ export interface SeedsDeps {
   raced: (error: unknown) => boolean
   openStatus: (state: any) => string
   today: () => string
-  /** Credential encryption (integrations/tenant-integrations.ts), bound to one person in one account. */
-  secrets: {
-    encrypt: (secret: string, owner: string) => string
-    decrypt: (value: string, owner: string) => string
-    ready: () => boolean
-  }
+  /** The Seeds application token (SEEDS_API_TOKEN); empty when the server has none. */
+  token: () => string
+  /** The Seeds API address (SEEDS_API_URL, or the default). */
+  apiUrl: () => string
   /** Replaced in tests by a fake Seeds. */
-  source?: (baseUrl: string, apiKey: string) => SeedsSource
+  source?: (token: string, apiUrl: string) => SeedsSource
 }
 
 const SYNC_EVERY_MS = 30 * 60_000
 const MAX_ASSIGNMENTS = 5000
-const TABLE = 'user_seeds_connections'
-const owner = (organizationId: string, userId: string) => `${organizationId}:${userId}`
+const text = (value: unknown) => (value == null ? '' : String(value))
+const emailOf = (account: any) => text(account?.email).trim().toLowerCase()
+const active = (state: any) =>
+  (Array.isArray(state?.accounts) ? state.accounts : []).filter(
+    (account: any) => account && account.status !== 'Disabled' && emailOf(account),
+  )
+
+/** The part of the account's snapshot that is one person's: their projects, those projects' clients and tasks. */
+export function personalSnapshot(snapshot: SeedsSnapshot, email: string): SeedsSnapshot {
+  const assignments = snapshot.assignments.filter(assignment => assignment.email === email)
+  const projectIds = new Set(assignments.map(assignment => assignment.projectId).filter(Boolean))
+  const projects = snapshot.projects.filter(project => projectIds.has(project.id))
+  const clientIds = new Set(projects.map(project => project.clientId).filter(Boolean))
+  return {
+    people: [],
+    clients: snapshot.clients.filter(client => clientIds.has(client.id)),
+    projects,
+    tasks: snapshot.tasks.filter(task => projectIds.has(task.projectId)),
+    assignments,
+  }
+}
+
+/** One account sync as a pure change: every active person with an email gets their part. */
+export function planAccountSync(
+  state: any,
+  snapshot: SeedsSnapshot,
+  fields: SeedsFields,
+  options: { now: string; today: string; openStatus: string; waitingOn: string; id?: () => string },
+) {
+  let next = state
+  let matched = 0
+  let unmatched = 0
+  let pending = 0
+  const total: SeedsCounts = {
+    people: snapshot.people.length,
+    clients: 0,
+    projects: 0,
+    tasks: 0,
+    assignments: 0,
+    created: 0,
+    linked: 0,
+    renamed: 0,
+  }
+  for (const account of active(state)) {
+    const userId = text(account.id)
+    const mine = personalSnapshot(snapshot, emailOf(account))
+    if (!mine.assignments.length) {
+      // Not on any Seeds project: their hand-entered assignments (if any) count instead.
+      unmatched++
+      const seeds = seedsState(next)
+      const access = workspaceAccess(next)
+      next = {
+        ...next,
+        access: {
+          ...access,
+          assignments: access.assignments.filter(a => !(a.source === 'seeds' && a.userId === userId)),
+        },
+        seeds: { ...seeds, users: { ...seeds.users, [userId]: { connected: false, lastAttemptAt: options.now } } },
+      }
+      continue
+    }
+    matched++
+    const result = planSeedsSync(next, mine, { ...options, userId })
+    next = result.state
+    pending += result.pending.length
+    for (const key of ['assignments', 'created', 'linked', 'renamed'] as const) total[key] += result.counts[key]
+  }
+  const projects = new Set(snapshot.assignments.map(a => a.projectId).filter(Boolean))
+  total.projects = projects.size
+  total.clients = new Set(snapshot.projects.filter(p => projects.has(p.id) && p.clientId).map(p => p.clientId)).size
+  total.tasks = snapshot.tasks.length
+  const seeds = seedsState(next)
+  next = {
+    ...next,
+    seeds: {
+      ...seeds,
+      sync: { lastAttemptAt: options.now, lastSuccessAt: options.now, matched, unmatched, fields },
+    },
+  }
+  return { state: next, counts: total, pending }
+}
 
 export function createSeedsService(deps: SeedsDeps) {
   const running = new Map<string, Promise<any>>()
-  const unavailable = (error: any) =>
-    new SeedsError(
-      error?.code === '42P01'
-        ? 'This database needs database/migrations/schema-v36-seeds.sql before Seeds can be connected.'
-        : 'Seeds settings could not be read. Check the database connection.',
-      503,
-    )
-
-  async function connection(organizationId: string, userId: string) {
-    const { data, error } = await deps.db
-      .from(TABLE)
-      .select('*')
-      .eq('tenant_id', organizationId)
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (error) throw unavailable(error)
-    return data
-  }
 
   /** Load, change and save the workspace, starting again if someone else saved in between. */
   async function update(organizationId: string, actor: any, reason: string, change: (state: any) => any) {
@@ -82,114 +142,70 @@ export function createSeedsService(deps: SeedsDeps) {
     }
   }
 
-  const withUser = (state: any, userId: string, change: (sync: any) => any) => {
-    const seeds = seedsState(state)
-    return { ...state, seeds: { ...seeds, users: { ...seeds.users, [userId]: change(seeds.users[userId] || {}) } } }
-  }
-
-  async function syncNow(organizationId: string, userId: string) {
-    const row = await connection(organizationId, userId)
-    if (!row) throw new SeedsError('Connect your Seeds first: paste your personal Seeds API key.', 409)
+  async function syncNow(organizationId: string) {
     const before = (await deps.load(organizationId)).data || {}
-    const seeds = seedsState(before)
-    if (!seeds.connected || !seeds.baseUrl)
+    if (!seedsState(before).connected)
       throw new SeedsError('Seeds is not turned on for this account yet. Ask an Administrator.', 409)
-    const account = (before.accounts || []).find((candidate: any) => String(candidate?.id) === userId)
-    if (!account || account.status === 'Disabled') return { ok: false, error: 'This account is not active.' }
-    const source = (deps.source || httpSeedsSource)(
-      seeds.baseUrl,
-      deps.secrets.decrypt(row.encrypted_key, owner(organizationId, userId)),
-    )
+    const token = deps.token()
+    if (!token) throw new SeedsError('The server has no Seeds token yet (SEEDS_API_TOKEN). Ask Internal Admin.', 503)
     const now = new Date().toISOString()
-    const mark = async (status: 'verified' | 'failed') =>
-      await deps.db
-        .from(TABLE)
-        .update({ connection_status: status, ...(status === 'verified' ? { last_synced_at: now } : {}) })
-        .eq('tenant_id', organizationId)
-        .eq('user_id', userId)
-    let snapshot: SeedsSnapshot
+    const emails = new Set<string>(active(before).map(emailOf))
+    let read: Awaited<ReturnType<SeedsSource['read']>>
     try {
-      snapshot = await source.snapshot()
+      read = await (deps.source || httpSeedsSource)(token, deps.apiUrl()).read(emails)
     } catch (error) {
       const message = error instanceof SeedsError ? error.message : 'Seeds could not be read.'
-      await mark('failed').catch(() => undefined)
-      await update(organizationId, SEEDS_ACTOR, 'seeds-sync-failed', state =>
-        withUser(state, userId, sync => ({ ...sync, connected: true, lastAttemptAt: now, lastError: message })),
-      )
+      if (!(error instanceof SeedsError)) console.error('Seeds read failed:', error)
+      await update(organizationId, SEEDS_ACTOR, 'seeds-sync-failed', state => {
+        const seeds = seedsState(state)
+        return { ...state, seeds: { ...seeds, sync: { ...seeds.sync, lastAttemptAt: now, lastError: message } } }
+      })
       return { ok: false, error: message }
     }
-    let result: ReturnType<typeof planSeedsSync> | undefined
+    let result: ReturnType<typeof planAccountSync> | undefined
     await update(organizationId, SEEDS_ACTOR, 'seeds-sync', state => {
-      result = planSeedsSync(state, snapshot, {
+      result = planAccountSync(state, read.snapshot, read.fields, {
         now,
         today: deps.today(),
         openStatus: deps.openStatus(state),
         waitingOn: defaultWaitingOn(state.taskSettings),
-        userId,
       })
       return result.state
     })
-    await mark('verified').catch(() => undefined)
-    return { ok: true, counts: result?.counts, pending: result?.pending.length || 0 }
+    return {
+      ok: true,
+      counts: result?.counts,
+      pending: result?.pending || 0,
+      matched: seedsState(result?.state).sync.matched || 0,
+      unmatched: seedsState(result?.state).sync.unmatched || 0,
+    }
   }
 
-  /** One sync per person at a time; a second request waits for the running one. */
-  function sync(organizationId: string, userId: string) {
-    const key = owner(organizationId, userId)
-    const existing = running.get(key)
+  /** One sync per account at a time; a second request waits for the running one. */
+  function sync(organizationId: string) {
+    const existing = running.get(organizationId)
     if (existing) return existing
-    const job = syncNow(organizationId, userId).finally(() => running.delete(key))
-    running.set(key, job)
+    const job = syncNow(organizationId).finally(() => running.delete(organizationId))
+    running.set(organizationId, job)
     return job
   }
 
-  async function connectPerson(organizationId: string, userId: string, apiKey: unknown) {
-    const key = typeof apiKey === 'string' ? apiKey.trim() : ''
-    if (key.length < 8 || key.length > 4096 || /\s/.test(key))
-      throw new SeedsError('Paste your personal Seeds API key.', 400)
-    const { error } = await deps.db.from(TABLE).upsert(
-      {
-        tenant_id: organizationId,
-        user_id: userId,
-        encrypted_key: deps.secrets.encrypt(key, owner(organizationId, userId)),
-        key_suffix: key.slice(-4),
-        connection_status: 'untested',
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'tenant_id,user_id' },
-    )
-    if (error) throw unavailable(error)
-  }
-
-  async function disconnectPerson(organizationId: string, userId: string) {
-    const { error } = await deps.db.from(TABLE).delete().eq('tenant_id', organizationId).eq('user_id', userId)
-    if (error) throw unavailable(error)
-    // Their Seeds access goes with the key; hand-entered assignments (if any) count again.
-    await update(organizationId, SEEDS_ACTOR, 'seeds-disconnect', state => {
-      const seeds = seedsState(state)
-      const { [userId]: _removed, ...users } = seeds.users
-      const access = workspaceAccess(state)
-      return {
-        ...state,
-        access: {
-          ...access,
-          assignments: access.assignments.filter(a => !(a.source === 'seeds' && a.userId === userId)),
-        },
-        seeds: { ...seeds, users },
-      }
-    })
-  }
-
   async function syncAll() {
-    const { data, error } = await deps.db.from(TABLE).select('tenant_id,user_id')
+    if (!deps.token()) return
+    const { data, error } = await deps.db.from('organizations').select('id').is('deleted_at', null)
     if (error) return
-    for (const row of data || [])
-      await sync(String(row.tenant_id), String(row.user_id)).catch(failure =>
-        console.error('Seeds sync failed:', failure instanceof Error ? failure.message : failure),
-      )
+    for (const row of data || []) {
+      const organizationId = text(row.id)
+      try {
+        const state = (await deps.load(organizationId)).data || {}
+        if (seedsState(state).connected) await sync(organizationId)
+      } catch (failure) {
+        console.error('Seeds sync failed:', failure instanceof Error ? failure.message : failure)
+      }
+    }
   }
 
-  return { connection, connectPerson, disconnectPerson, sync, syncAll, update }
+  return { sync, syncAll, update }
 }
 
 export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
@@ -332,11 +348,13 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
       requireAdministrator(user)
       const state = (await deps.load(user.organizationId)).data || {}
       const names = new Map(list(state.accounts).map(a => [String(a.id), String(a.name || a.username || 'User')]))
+      const seeds = seedsState(state)
       const status = seedsStatusFor(state, user)
       res.json({
-        connected: status.connected,
-        baseUrl: status.baseUrl || '',
-        encryptionReady: deps.secrets.ready(),
+        connected: seeds.connected,
+        tokenReady: Boolean(deps.token()),
+        apiUrl: deps.apiUrl(),
+        sync: seeds.sync,
         people: (status.people || []).map(person => ({ ...person, name: names.get(person.userId) || 'Former user' })),
       })
     }),
@@ -348,12 +366,14 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
     wrap(async (req, res) => {
       const user = who(req)
       requireAdministrator(user)
-      const baseUrl = cleanSeedsBaseUrl(req.body?.baseUrl)
+      if (!deps.token())
+        throw new SeedsError('The server has no Seeds token yet (SEEDS_API_TOKEN). Ask Internal Admin.', 503)
       await service.update(user.organizationId, user, 'seeds-enable', state => ({
         ...state,
-        seeds: { ...seedsState(state), connected: true, baseUrl },
+        seeds: { ...seedsState(state), connected: true },
       }))
-      res.json({ ok: true, connected: true, baseUrl })
+      // Turning it on is the first sync.
+      res.json({ ok: true, connected: true, sync: await service.sync(user.organizationId) })
     }),
   )
 
@@ -363,57 +383,11 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
     wrap(async (req, res) => {
       const user = who(req)
       requireAdministrator(user)
-      // People's keys stay, so turning Seeds back on picks up where it was; meanwhile hand-entered access counts.
+      // Synced records stay linked; meanwhile hand-entered access counts.
       await service.update(user.organizationId, user, 'seeds-disable', state => ({
         ...state,
         seeds: { ...seedsState(state), connected: false },
       }))
-      res.json({ ok: true })
-    }),
-  )
-
-  app.get(
-    '/api/me/seeds',
-    ...auth,
-    wrap(async (req, res) => {
-      const user = who(req)
-      const [row, state] = await Promise.all([
-        service.connection(user.organizationId, user.id),
-        deps.load(user.organizationId),
-      ])
-      const status = seedsStatusFor(state.data || {}, user)
-      res.json({
-        available: status.connected,
-        configured: Boolean(row),
-        maskedKey: row ? `••••••••${row.key_suffix}` : '',
-        connectionStatus: row?.connection_status || 'not_configured',
-        mine: status.mine,
-      })
-    }),
-  )
-
-  app.put(
-    '/api/me/seeds',
-    ...auth,
-    wrap(async (req, res) => {
-      const user = who(req)
-      const state = (await deps.load(user.organizationId)).data || {}
-      if (!seedsState(state).connected)
-        throw new SeedsError('Seeds is not turned on for this account yet. Ask an Administrator.', 409)
-      if (!deps.secrets.ready())
-        throw new SeedsError('Credential storage is not set up on the server. Ask Internal Admin.', 503)
-      await service.connectPerson(user.organizationId, user.id, req.body?.apiKey)
-      // Saving your key is what connects you: sync straight away.
-      res.json({ saved: true, sync: await service.sync(user.organizationId, user.id) })
-    }),
-  )
-
-  app.delete(
-    '/api/me/seeds',
-    ...auth,
-    wrap(async (req, res) => {
-      const user = who(req)
-      await service.disconnectPerson(user.organizationId, user.id)
       res.json({ ok: true })
     }),
   )
@@ -423,7 +397,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
     ...auth,
     wrap(async (req, res) => {
       const user = who(req)
-      res.json(await service.sync(user.organizationId, user.id))
+      res.json(await service.sync(user.organizationId))
     }),
   )
 
@@ -446,15 +420,14 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         'seeds-match',
         current => decideSeedsMatch(current, matchId, decision)?.state,
       )
-      // A rejected match becomes a new record on the next sync; run it now if this person is connected.
-      const connected = await service.connection(user.organizationId, user.id)
-      res.json(connected ? await service.sync(user.organizationId, user.id) : { ok: true })
+      // A rejected match becomes a new record on the next sync; run it now.
+      res.json(deps.token() ? await service.sync(user.organizationId) : { ok: true })
     }),
   )
 
   return {
     service,
-    /** Syncs every connected person every 30 minutes. */
+    /** Syncs every account with Seeds turned on every 30 minutes. */
     start() {
       const timer = setInterval(() => void service.syncAll(), SYNC_EVERY_MS)
       timer.unref()

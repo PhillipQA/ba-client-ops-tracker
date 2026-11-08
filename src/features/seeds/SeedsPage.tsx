@@ -7,7 +7,7 @@ import { useState } from 'react'
 import type { AppState } from '../../app/useAppState'
 import type { View } from '../../app/navigation'
 import type { SeedsMatch } from '../../shared/seeds'
-import { decideMatch, removeMySeeds, saveMySeedsKey, syncSeeds } from './seedsApi'
+import { decideMatch, syncSeeds } from './seedsApi'
 import './seeds.css'
 
 export const SEEDS_TABS: { id: Extract<View, 'clients' | 'projects' | 'items' | 'seeds'>; label: string }[] = [
@@ -51,10 +51,10 @@ export function SeedsTabs({ app }: { app: AppState }) {
           </button>
         ))}
       </div>
-      {seeds?.connected && seeds.mine?.lastError && (
+      {seeds?.connected && seeds.sync?.lastError && (
         <p className="seeds-banner" role="status">
-          <AlertTriangle size={16} aria-hidden="true" /> Your Seeds could not be read ({seeds.mine.lastError}) Showing
-          your access from the last sync, {when(seeds.mine.lastSuccessAt)}.
+          <AlertTriangle size={16} aria-hidden="true" /> Seeds could not be read ({seeds.sync.lastError}) Showing access
+          from the last sync, {when(seeds.sync.lastSuccessAt)}.
         </p>
       )}
     </div>
@@ -75,7 +75,7 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
       const result = await action()
       setMessage(
         result.ok
-          ? `${label === 'disconnect' ? 'Disconnected.' : 'Synced.'}${result.pending ? ` ${result.pending} match${result.pending === 1 ? '' : 'es'} to confirm.` : ''}`
+          ? `Synced.${result.pending ? ` ${result.pending} match${result.pending === 1 ? '' : 'es'} to confirm.` : ''}`
           : result.error || 'Seeds could not be read.',
       )
       await app.refreshWorkspace(true)
@@ -94,7 +94,7 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
   )
   const mine = seeds?.mine
   const counts = mine?.counts
-  const [apiKey, setApiKey] = useState('')
+  const lastError = seeds?.sync?.lastError
 
   return (
     <section className="page-stack seeds-page">
@@ -106,12 +106,14 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
               {!seeds?.connected
                 ? 'Seeds is not turned on for this account yet. An Administrator turns it on in Settings › Integrations.'
                 : mine?.connected
-                  ? `Last synced ${when(mine.lastSuccessAt)}. Syncs on its own every 30 minutes. You see what Seeds shows you.`
-                  : 'Paste your personal Seeds API key (from your Seeds profile). You will see the clients and projects Seeds tags to you.'}
+                  ? `Seeds lists you on its projects. Last synced ${when(seeds.sync?.lastSuccessAt)}; syncs on its own every 30 minutes.`
+                  : seeds.sync?.lastSuccessAt
+                    ? 'Seeds did not find you on any project. Your email here must be the same as in Seeds; ask your PM to add you to the project in Seeds.'
+                    : 'Seeds has not synced yet.'}
             </p>
           </div>
-          <span className={mine?.connected ? (mine.lastError ? 'role-badge warn' : 'role-badge ok') : 'role-badge'}>
-            {mine?.connected ? (mine.lastError ? 'Needs attention' : 'Connected') : 'Not connected'}
+          <span className={mine?.connected ? (lastError ? 'role-badge warn' : 'role-badge ok') : 'role-badge'}>
+            {mine?.connected ? (lastError ? 'Needs attention' : 'Found in Seeds') : 'Not found'}
           </span>
         </div>
         {counts && (
@@ -130,61 +132,16 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
             : 'Per-person visibility is off: everyone in this account sees all clients.'}
         </p>
         {seeds?.connected && (
-          <>
-            <div className="integration-form">
-              <label>
-                {mine?.connected ? 'Replace your Seeds API key' : 'Your Seeds API key'}
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={event => setApiKey(event.target.value)}
-                  autoComplete="new-password"
-                />
-              </label>
-            </div>
-            <div className="integration-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={Boolean(busy) || !apiKey.trim()}
-                onClick={() =>
-                  void run('connect', async () => {
-                    const result = await saveMySeedsKey(apiKey.trim())
-                    setApiKey('')
-                    return result.sync
-                  })
-                }
-              >
-                {mine?.connected ? 'Save key' : 'Connect Seeds'}
-              </button>
-              {mine?.connected && (
-                <>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={Boolean(busy)}
-                    onClick={() => void run('sync', syncSeeds)}
-                  >
-                    <RefreshCw size={16} className={busy === 'sync' ? 'spin' : undefined} /> Sync now
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary danger"
-                    disabled={Boolean(busy)}
-                    onClick={() => {
-                      if (!window.confirm('Disconnect your Seeds? Your access from Seeds goes with it.')) return
-                      void run('disconnect', async () => {
-                        await removeMySeeds()
-                        return { ok: true }
-                      })
-                    }}
-                  >
-                    Disconnect
-                  </button>
-                </>
-              )}
-            </div>
-          </>
+          <div className="integration-actions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={Boolean(busy)}
+              onClick={() => void run('sync', syncSeeds)}
+            >
+              <RefreshCw size={16} className={busy === 'sync' ? 'spin' : undefined} /> Sync now
+            </button>
+          </div>
         )}
         {message && (
           <p role="status" className="settings-message">
@@ -255,7 +212,7 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
         </div>
       )}
 
-      {mine?.lastSuccessAt && !mine.lastError && !seeds?.pendingMatches?.length && !notInSeeds.length && (
+      {mine?.lastSuccessAt && !lastError && !seeds?.pendingMatches?.length && !notInSeeds.length && (
         <p className="seeds-all-good">
           <CheckCircle2 size={16} aria-hidden="true" /> Everything here matches Seeds.
         </p>

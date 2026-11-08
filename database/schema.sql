@@ -1,4 +1,4 @@
--- BA Client Ops Tracker: database schema (version 36)
+-- BA Client Ops Tracker: database schema (version 35)
 --
 -- Creates every table, constraint, index and function the app needs on an empty PostgreSQL 14+ database, plus the
 -- two starting sign-ins. Run it once, as the same database user the app connects with (DATABASE_URL):
@@ -939,16 +939,6 @@ CREATE TABLE public.user_email_signatures (
     CONSTRAINT user_email_signatures_signature_check CHECK ((length(signature) <= 2000))
 );
 
-CREATE TABLE public.user_seeds_connections (
-    tenant_id uuid NOT NULL,
-    user_id text NOT NULL,
-    encrypted_key text NOT NULL,
-    key_suffix text NOT NULL,
-    connection_status text DEFAULT 'untested'::text NOT NULL,
-    last_synced_at timestamp with time zone,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE public.user_github_connections (
     tenant_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -1184,9 +1174,6 @@ ALTER TABLE ONLY public.user_communications
 
 ALTER TABLE ONLY public.user_email_signatures
     ADD CONSTRAINT user_email_signatures_pkey PRIMARY KEY (tenant_id, user_id);
-
-ALTER TABLE ONLY public.user_seeds_connections
-    ADD CONSTRAINT user_seeds_connections_pkey PRIMARY KEY (tenant_id, user_id);
 
 ALTER TABLE ONLY public.user_github_connections
     ADD CONSTRAINT user_github_connections_pkey PRIMARY KEY (tenant_id, user_id);
@@ -1450,12 +1437,6 @@ ALTER TABLE ONLY public.user_communications
 ALTER TABLE ONLY public.user_email_signatures
     ADD CONSTRAINT user_email_signatures_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.user_seeds_connections
-    ADD CONSTRAINT user_seeds_connections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.user_seeds_connections
-    ADD CONSTRAINT user_seeds_connections_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_users(id) ON DELETE CASCADE;
-
 ALTER TABLE ONLY public.user_github_connections
     ADD CONSTRAINT user_github_connections_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
@@ -1507,4 +1488,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 36 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 35 as schema_version;

@@ -7,7 +7,7 @@ Changes are listed newest first. For installation, deployment and updates, use t
 ## v1.6.0 — Seeds: per-person visibility and Seeds sync
 Not released yet.
 
-**Database migration before people connect Seeds:** run [database/migrations/schema-v36-seeds.sql](database/migrations/schema-v36-seeds.sql) once on the existing Northflank database (it adds the table for each person's Seeds key). Everything else works without it. A new database gets it from [database/schema.sql](database/schema.sql), now version 36.
+**No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
 ### Type into report tables
 - In a custom report, a table that comes from one tracker can be typed into: tap a cell in a column marked ✎, type, and press Enter. It saves to that row in the tracker.
@@ -44,12 +44,13 @@ Not released yet.
 - Saves from a partial view never touch what you cannot see. Adding work to a client you cannot change, or moving work there, is refused with a message instead of being dropped.
 
 ### Seeds (phase 2)
-- **Each person connects their own Seeds** with their personal Seeds API key (Seeds page › Sync). Their sync reads only what Seeds shows them, so Seeds itself decides what they see. It syncs straight away and every 30 minutes after. Read only; nothing is written to Seeds.
-- An Administrator turns Seeds on and gives its API address in **Settings › Integrations › Seeds**, and sees who has connected and how their last sync went.
+- **Built on the Seeds Open API** ([reference](docs/seeds-api.md)). Seeds gives one application token per app, so the server holds it (`SEEDS_API_TOKEN`); nobody pastes a key. Read only; nothing is written to Seeds.
+- **Everyone is matched to Seeds by email.** The projects Seeds lists a person on as a member decide what they see; their role on the project (or their Seeds job title) becomes their job role. Only projects someone here works on, with their clients and tasks, come in.
+- An Administrator turns Seeds on in **Settings › Integrations › Seeds**. It syncs straight away and every 30 minutes; anyone can choose **Sync now**. The card shows who Seeds found, who it did not (check their email), Seeds roles no job role claims yet, and the field names Seeds sent.
 - **Seeds page** in the menu, replacing Clients, Projects and Tasks: tabs for Clients, Projects, Tasks and **Sync**.
 - Seeds clients, projects (with contract numbers and their client) and tasks link to records here by Seeds id, then by exact name; renames follow. A close name (for example *Bolt Logistic* vs *Bolt Logistics*) is listed under **Confirm these matches** for an Administrator or Project Manager instead of being guessed. Tasks under Seeds projects that Seeds does not list are shown as **Not in Seeds** and keep working.
-- Until a person connects, their hand-entered assignments (if any) count. Disconnecting removes their Seeds access with the key.
-- If Seeds cannot be reached, that person's last synced access stays in force and the Seeds page says so.
+- People Seeds does not list keep their hand-entered assignments (if any).
+- If Seeds cannot be reached, the last synced access stays in force and the Seeds page says so.
 - Names that come from Seeds are read-only here, and Seeds-linked clients, projects and tasks cannot be deleted here.
 
 ## v1.5.1 — Reports, Data explorer, project timelines, linked emails, and a security pass

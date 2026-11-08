@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { activeAssignments, scopedState, scopeFor } from '../src/shared/access'
 import { matchKey, nameSimilarity, seedsStatusFor, type SeedsSnapshot } from '../src/shared/seeds'
-import { cleanSeedsBaseUrl, httpSeedsSource, parseSeedsSnapshot, seedsRole } from '../server/seeds/seeds-client'
-import { registerSeedsRoutes } from '../server/seeds/seeds-routes'
+import { cleanSeedsBaseUrl, httpSeedsSource, parseSeeds } from '../server/seeds/seeds-client'
+import { personalSnapshot, registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
 import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
 import { roleForSeedsTitle } from '../src/shared/roles'
@@ -48,7 +48,7 @@ function existing() {
     },
     taskSettings: { statuses: [] },
     // An Administrator has turned Seeds on (the route tests start with it off).
-    seeds: { connected: true, baseUrl: 'https://seeds.example.com/api' },
+    seeds: { connected: true },
   }
 }
 
@@ -74,9 +74,9 @@ function snapshot(overrides: Partial<SeedsSnapshot> = {}): SeedsSnapshot {
       { id: 's-docs', projectId: 's-portal', name: 'Documentation' },
     ],
     assignments: [
-      { personId: 'sp-bea', role: 'BA', projectId: 's-portal' },
-      { personId: 'sp-pao', role: 'PM', clientId: 's-new' },
-      { personId: 'sp-x', role: 'BA', projectId: 's-core' },
+      { personId: 'sp-bea', email: 'bea@company.com', role: 'BA', projectId: 's-portal' },
+      { personId: 'sp-pao', email: 'paolo@company.com', role: 'PM', clientId: 's-new' },
+      { personId: 'sp-x', email: 'xavier@company.com', role: 'BA', projectId: 's-core' },
     ],
     ...overrides,
   }
@@ -219,22 +219,33 @@ test('only reviewers see matches, and only matches on records they can see', () 
   assert.equal(seedsStatusFor(state, { id: 'admin', role: 'Administrator' }).people?.length, 2)
 })
 
-test('a personal key that names its owner picks only their assignments', () => {
-  const { state } = planSeedsSync(existing(), snapshot({ me: { id: 'sp-pao', name: 'Paolo', email: 'p@x' } }), {
-    ...options,
-    userId: 'u-pao',
-  })
+test('only assignments with the person’s email count, whatever its case', () => {
+  const { state } = planSeedsSync(existing(), snapshot(), { ...options, userId: 'u-pao' })
   assert.deepEqual(
     activeAssignments(state, 'u-pao').map(a => a.role),
     ['PM'],
   )
-  const anonymous = snapshot({ people: [], assignments: [{ personId: '', role: 'BA', projectId: 's-portal' }] })
-  const own = planSeedsSync(existing(), anonymous, options).state
+  const bea = planSeedsSync(existing(), snapshot(), options).state
   assert.deepEqual(
-    activeAssignments(own, 'u-bea').map(a => a.role),
+    activeAssignments(bea, 'u-bea').map(a => a.role),
     ['BA'],
-    'without person ids, everything the key returns is the owner’s',
+    'Bea@Company.com here is bea@company.com in Seeds',
   )
+  const nobody = snapshot({ assignments: [{ personId: 'sp-bea', role: 'BA', projectId: 's-portal' }] })
+  assert.deepEqual(
+    activeAssignments(planSeedsSync(existing(), nobody, options).state, 'u-bea'),
+    [],
+    'no email, no assignment',
+  )
+})
+
+test('one person’s part of the account snapshot is their projects, those clients and those tasks', () => {
+  const mine = personalSnapshot(snapshot(), 'bea@company.com')
+  assert.deepEqual(
+    [mine.projects.map(p => p.id), mine.clients.map(c => c.id), mine.tasks.map(t => t.id)],
+    [['s-portal'], ['s-acme'], ['s-uat', 's-docs']],
+  )
+  assert.deepEqual(personalSnapshot(snapshot(), 'nobody@company.com').projects, [])
 })
 
 test('Seeds titles map to job roles; unknown titles are reported, not guessed', () => {
@@ -242,8 +253,8 @@ test('Seeds titles map to job roles; unknown titles are reported, not guessed', 
     existing(),
     snapshot({
       assignments: [
-        { personId: 'sp-bea', role: 'QA Engineer', projectId: 's-portal' },
-        { personId: 'sp-bea', role: 'Scrum Wizard', clientId: 's-new' },
+        { personId: 'sp-bea', email: 'bea@company.com', role: 'QA Engineer', projectId: 's-portal' },
+        { personId: 'sp-bea', email: 'bea@company.com', role: 'Scrum Wizard', clientId: 's-new' },
       ],
     }),
     options,
@@ -256,8 +267,6 @@ test('Seeds titles map to job roles; unknown titles are reported, not guessed', 
 })
 
 test('Seeds answers are read leniently', () => {
-  assert.equal(seedsRole('  Business Analyst '), 'Business Analyst')
-  assert.equal(seedsRole(''), null)
   assert.equal(roleForSeedsTitle({}, 'business_analyst'), 'BA')
   assert.equal(roleForSeedsTitle({}, 'Project Manager'), 'PM')
   assert.equal(roleForSeedsTitle({}, 'am'), 'AM')
@@ -269,31 +278,36 @@ test('Seeds answers are read leniently', () => {
     jobRoles: [{ id: 'BO', name: 'Business Owner', modules: ['action'], edit: [], seedsTitles: ['Sponsor'] }],
   }
   assert.equal(roleForSeedsTitle(custom, 'sponsor'), 'BO')
-  const parsed = parseSeedsSnapshot({
-    people: [
-      { person_id: 7, full_name: 'Bea', email_address: 'bea@co' },
-      { id: 8, name: 'No email' },
-    ],
-    clients: [{ client_id: 1, client_name: 'Acme', status: 'Archived' }],
-    projects: [{ project_id: 2, client: { id: 1 }, project_name: 'Portal', contract_no: 'CN-1' }],
-    tasks: [
-      { task_id: 3, project_id: 2, title: 'UAT' },
-      { task_id: 4, title: 'No project' },
-    ],
-    assignments: [
-      { user_id: 7, role: 'Business Analyst', project_id: 2 },
-      { user_id: 7, project_id: 2 },
-    ],
+  assert.deepEqual(parseSeeds.person({ userId: 7, firstName: 'Bea', lastName: 'Cruz', email: 'Bea@Co' }), {
+    id: '7',
+    name: 'Bea Cruz',
+    email: 'bea@co',
+    title: '',
   })
-  assert.deepEqual(parsed.people, [{ id: '7', name: 'Bea', email: 'bea@co' }])
-  assert.deepEqual(parsed.clients, [{ id: '1', name: 'Acme', archived: true }])
-  assert.deepEqual(parsed.projects, [{ id: '2', clientId: '1', name: 'Portal', contractNumber: 'CN-1' }])
-  assert.deepEqual(parsed.tasks, [{ id: '3', projectId: '2', name: 'UAT' }])
-  assert.deepEqual(parsed.assignments, [{ personId: '7', role: 'Business Analyst', projectId: '2' }])
+  assert.deepEqual(parseSeeds.client({ client_id: 1, client_name: 'Acme', status: 'Archived' }), {
+    id: '1',
+    name: 'Acme',
+    archived: true,
+  })
+  assert.deepEqual(
+    parseSeeds.project({ id: 2, client: { id: 1 }, projectName: 'Portal', contract: { contractNumber: 'CN-1' } }),
+    { id: '2', clientId: '1', name: 'Portal', contractNumber: 'CN-1' },
+  )
+  assert.deepEqual(parseSeeds.task({ taskId: 3, name: 'UAT', isActive: false }, '2'), {
+    id: '3',
+    projectId: '2',
+    name: 'UAT',
+    archived: true,
+  })
+  assert.deepEqual(parseSeeds.member({ id: 90, userId: 7, role: { name: 'Business Analyst' } }), {
+    personId: '7',
+    email: '',
+    role: 'Business Analyst',
+  })
 })
 
 test('the Seeds address must be public https', () => {
-  assert.equal(cleanSeedsBaseUrl('https://seeds.example.com/api/v1/'), 'https://seeds.example.com/api/v1')
+  assert.equal(cleanSeedsBaseUrl('https://seeds.iripple.com/api/v1/'), 'https://seeds.iripple.com/api/v1')
   for (const bad of [
     'http://seeds.example.com',
     'https://localhost/api',
@@ -305,103 +319,66 @@ test('the Seeds address must be public https', () => {
     assert.throws(() => cleanSeedsBaseUrl(bad), /https/, bad)
 })
 
-test('the HTTP reader sends the key, follows pages and stops at other hosts', async () => {
+/** A fake Seeds Open API: `{ data }` answers, cursor paging, members and tasks per project. */
+function fakeSeeds(overrides: Record<string, any> = {}) {
   const calls: { url: string; auth: string }[] = []
-  const pages: Record<string, any> = {
-    'https://seeds.example.com/api/people': {
-      data: [{ id: 1, name: 'Bea', email: 'bea@co' }],
-      next: '/api/people?page=2',
+  const answers: Record<string, any> = {
+    '/users?limit=100': { data: [{ id: 1, name: 'Bea', email: 'Bea@Company.com' }], nextCursor: 'c2' },
+    '/users?limit=100&cursor=c2': { data: [{ id: 2, name: 'Paolo', email: 'paolo@company.com', position: 'PM' }] },
+    '/clients?limit=100': { data: [{ id: 10, name: 'Acme' }] },
+    '/projects?limit=100': {
+      data: [
+        { id: 20, clientId: 10, name: 'Portal', contractNumber: 'CN-1' },
+        { id: 21, clientId: 10, name: 'Nobody here' },
+      ],
     },
-    'https://seeds.example.com/api/people?page=2': { data: [{ id: 2, name: 'Paolo', email: 'paolo@co' }] },
-    'https://seeds.example.com/api/clients': [{ id: 1, name: 'Acme' }],
-    'https://seeds.example.com/api/projects': { projects: [] },
-    'https://seeds.example.com/api/tasks': [],
-    'https://seeds.example.com/api/assignments': [],
-    'https://seeds.example.com/api/me': { data: { id: 1, name: 'Bea', email: 'bea@co' } },
+    '/projects/20/members': { data: [{ userId: 1, role: 'Business Analyst' }, { userId: 2 }] },
+    '/projects/21/members': { data: [{ userId: 99, role: 'BA' }] },
+    '/projects/20/tasks': { data: [{ id: 30, name: 'UAT' }] },
+    ...overrides,
   }
   const fetcher = (async (url: string, init: any) => {
     calls.push({ url, auth: init.headers.Authorization })
-    const body = pages[url]
-    return { ok: Boolean(body), status: body ? 200 : 404, json: async () => body } as any
+    const path = url.replace('https://seeds.iripple.com/api/v1', '')
+    const body = answers[path]
+    return {
+      ok: body !== undefined && !body?.error,
+      status: body === undefined ? 404 : body?.status || 200,
+      headers: new Headers(),
+      json: async () => body ?? { error: { code: 'not_found', message: 'Not found' } },
+    } as any
   }) as any
-  const result = await httpSeedsSource('https://seeds.example.com/api', 'secret-key', fetcher).snapshot()
+  return { calls, fetcher }
+}
+
+test('the HTTP reader sends the token, follows cursors and reads only the projects people here are on', async () => {
+  const { calls, fetcher } = fakeSeeds()
+  const { snapshot: read, fields } = await httpSeedsSource('secret-token', undefined, fetcher).read(
+    new Set(['bea@company.com', 'paolo@company.com']),
+  )
+  assert.ok(calls.every(call => call.auth === 'Bearer secret-token'))
   assert.deepEqual(
-    result.people.map(p => p.name),
+    read.people.map(p => p.name),
     ['Bea', 'Paolo'],
   )
-  assert.equal(result.me?.id, '1')
-  assert.ok(calls.every(call => call.auth === 'Bearer secret-key'))
-  delete pages['https://seeds.example.com/api/me']
-  delete pages['https://seeds.example.com/api/people?page=2']
-  pages['https://seeds.example.com/api/people'] = undefined
-  const minimal = await httpSeedsSource('https://seeds.example.com/api', 'secret-key', fetcher).snapshot()
-  assert.deepEqual([minimal.me, minimal.people], [undefined, []], 'people and me are optional')
+  assert.deepEqual(read.assignments, [
+    { personId: '1', email: 'bea@company.com', role: 'Business Analyst', projectId: '20' },
+    { personId: '2', email: 'paolo@company.com', role: 'PM', projectId: '20' },
+  ])
+  assert.deepEqual(read.tasks, [{ id: '30', projectId: '20', name: 'UAT' }])
+  assert.ok(!calls.some(call => call.url.endsWith('/projects/21/tasks')), 'no tasks for projects nobody here is on')
+  assert.deepEqual(fields.members, ['userId', 'role'])
 
-  pages['https://seeds.example.com/api/people'] = { data: [], next: 'https://elsewhere.example.com/steal' }
-  await assert.rejects(httpSeedsSource('https://seeds.example.com/api', 'k', fetcher).snapshot(), /another address/)
-  const denied = (async () => ({ ok: false, status: 401, json: async () => ({}) })) as any
-  await assert.rejects(httpSeedsSource('https://seeds.example.com/api', 'k', denied).snapshot(), /API key/)
+  const denied = fakeSeeds({ '/clients?limit=100': { status: 403, error: { code: 'forbidden', message: 'No grant' } } })
+  await assert.rejects(
+    httpSeedsSource('t', undefined, denied.fetcher).read(new Set()),
+    /not allowed to read clients.*No grant/,
+  )
+  const odd = fakeSeeds({ '/projects?limit=100': { data: { what: 1 } } })
+  await assert.rejects(httpSeedsSource('t', undefined, odd.fetcher).read(new Set()), /unexpected answer for projects/)
 })
 
 // ---- Routes, with a fake Seeds and an in-memory workspace ----
-
-function fakeDb() {
-  const rows: any[] = []
-  class Query {
-    filters: [string, unknown][] = []
-    action: 'select' | 'update' | 'delete' | 'upsert' = 'select'
-    payload: any
-    select() {
-      return this
-    }
-    eq(column: string, value: unknown) {
-      this.filters.push([column, value])
-      return this
-    }
-    update(payload: any) {
-      this.action = 'update'
-      this.payload = payload
-      return this
-    }
-    delete() {
-      this.action = 'delete'
-      return this
-    }
-    upsert(payload: any) {
-      this.action = 'upsert'
-      this.payload = payload
-      return this
-    }
-    matches(row: any) {
-      return this.filters.every(([column, value]) => row[column] === value)
-    }
-    run() {
-      if (this.action === 'upsert') {
-        const at = rows.findIndex(r => r.tenant_id === this.payload.tenant_id && r.user_id === this.payload.user_id)
-        if (at >= 0) rows[at] = this.payload
-        else rows.push(this.payload)
-        return { data: null, error: null }
-      }
-      if (this.action === 'update') {
-        for (const row of rows) if (this.matches(row)) Object.assign(row, this.payload)
-        return { data: null, error: null }
-      }
-      if (this.action === 'delete') {
-        for (let at = rows.length - 1; at >= 0; at--) if (this.matches(rows[at])) rows.splice(at, 1)
-        return { data: null, error: null }
-      }
-      return { data: rows.filter(row => this.matches(row)), error: null }
-    }
-    maybeSingle() {
-      const result = this.run()
-      return Promise.resolve({ data: (result.data as any[])?.[0] || null, error: null })
-    }
-    then(resolve: any, reject: any) {
-      return Promise.resolve(this.run()).then(resolve, reject)
-    }
-  }
-  return { rows, from: () => new Query() }
-}
 
 function fakeApp() {
   const routes: { method: string; path: string; handlers: any[] }[] = []
@@ -436,13 +413,23 @@ function fakeApp() {
   return app
 }
 
-function setup(source: () => Promise<SeedsSnapshot>) {
+/** What Seeds holds for the route tests: Bea is a BA on the portal, Paolo the PM on core banking. */
+const account = () =>
+  snapshot({
+    assignments: [
+      { personId: 'sp-bea', email: 'bea@company.com', role: 'BA', projectId: 's-portal' },
+      { personId: 'sp-pao', email: 'paolo@company.com', role: 'PM', projectId: 's-core' },
+      { personId: 'sp-x', email: 'xavier@company.com', role: 'BA', projectId: 's-core' },
+    ],
+  })
+
+function setup(source: () => Promise<SeedsSnapshot> = async () => account(), token = 'app-token') {
   let stored: any = { ...existing(), seeds: undefined }
-  const db = fakeDb()
   const app = fakeApp()
   const pass = (_req: any, _res: any, next: () => void) => next()
+  const asked: Set<string>[] = []
   registerSeedsRoutes(app, {
-    db,
+    db: { from: () => ({ select: () => ({ is: async () => ({ data: [{ id: 'org' }], error: null }) }) }) },
     requireAuth: pass,
     requireTenant: pass,
     load: async () => ({ data: stored }),
@@ -452,125 +439,120 @@ function setup(source: () => Promise<SeedsSnapshot>) {
     raced: () => false,
     openStatus: () => 'Open',
     today: () => '2026-11-07',
-    secrets: {
-      encrypt: (secret, owner) => `enc:${owner}:${secret}`,
-      decrypt: (value, owner) => value.replace(`enc:${owner}:`, ''),
-      ready: () => true,
-    },
-    source: (baseUrl, apiKey) => {
-      assert.equal(baseUrl, 'https://seeds.example.com/api')
-      return { snapshot: () => source(apiKey) }
+    token: () => token,
+    apiUrl: () => 'https://seeds.iripple.com/api/v1',
+    source: (given, url) => {
+      assert.equal(given, 'app-token')
+      assert.equal(url, 'https://seeds.iripple.com/api/v1')
+      return {
+        read: async emails => {
+          asked.push(emails)
+          return { snapshot: await source(), fields: { users: ['id', 'email'] } }
+        },
+      }
     },
   })
-  return { app, db, state: () => stored }
+  return { app, asked, state: () => stored }
 }
 const admin = { id: 'admin', role: 'Administrator', modules: ['settings'], organizationId: 'org' }
 const bea = { id: 'u-bea', role: 'Contributor', modules: ['items'], organizationId: 'org' }
 const pao = { id: 'u-pao', role: 'Contributor', modules: ['items'], organizationId: 'org' }
-/** Each person's key reads their own Seeds: Seeds names its owner. */
-const personal = (apiKey: string) =>
-  snapshot({
-    me:
-      apiKey === 'bea-key-123456'
-        ? { id: 'sp-bea', name: 'Bea', email: 'bea@company.com' }
-        : { id: 'sp-pao', name: 'Paolo', email: 'paolo@company.com' },
-  })
-const turnOn = (app: any) => app.ask('PUT', '/api/account/seeds', admin, { baseUrl: 'https://seeds.example.com/api' })
+const turnOn = (app: any) => app.ask('PUT', '/api/account/seeds', admin, {})
 
-test('an Administrator turns Seeds on; each person connects their own key and gets their own access', async () => {
-  const { app, db, state } = setup(async key => personal(key))
-  const denied = await app.ask('PUT', '/api/account/seeds', bea, { baseUrl: 'https://seeds.example.com/api' })
-  assert.equal(denied.status, 403)
-  const early = await app.ask('PUT', '/api/me/seeds', bea, { apiKey: 'bea-key-123456' })
-  assert.equal(early.status, 409, 'not before Seeds is on')
-  assert.equal((await turnOn(app)).status, 200)
-  assert.equal(state().seeds.baseUrl, 'https://seeds.example.com/api')
-
-  const saved = await app.ask('PUT', '/api/me/seeds', bea, { apiKey: 'bea-key-123456' })
-  assert.equal(saved.status, 200, JSON.stringify(saved.body))
-  assert.equal(saved.body.sync.ok, true)
-  assert.deepEqual(
-    db.rows.map((row: any) => [row.user_id, row.encrypted_key, row.connection_status]),
-    [['u-bea', 'enc:org:u-bea:bea-key-123456', 'verified']],
-  )
+test('an Administrator turns Seeds on; one sync matches everyone by email', async () => {
+  const { app, asked, state } = setup()
+  assert.equal((await app.ask('PUT', '/api/account/seeds', bea, {})).status, 403)
+  assert.equal((await app.ask('POST', '/api/seeds/sync', bea)).status, 409, 'not before Seeds is on')
+  const on = await turnOn(app)
+  assert.equal(on.status, 200, JSON.stringify(on.body))
+  assert.equal(on.body.sync.ok, true)
+  assert.deepEqual([on.body.sync.matched, on.body.sync.unmatched], [2, 0])
+  assert.deepEqual([...asked[0]].sort(), ['bea@company.com', 'paolo@company.com'])
   assert.deepEqual(
     activeAssignments(state(), 'u-bea').map(a => a.role),
     ['BA'],
   )
-  assert.deepEqual(activeAssignments(state(), 'u-pao'), [], 'Paolo has not connected yet')
-  const mine = await app.ask('GET', '/api/me/seeds', bea)
-  assert.equal(mine.body.maskedKey, '••••••••3456')
-  assert.ok(!JSON.stringify(mine.body).includes('bea-key-123456'), 'the key never comes back')
-
-  await app.ask('PUT', '/api/me/seeds', pao, { apiKey: 'pao-key-123456' })
   assert.deepEqual(
     activeAssignments(state(), 'u-pao').map(a => a.role),
     ['PM'],
   )
-  assert.deepEqual(
-    activeAssignments(state(), 'u-bea').map(a => a.role),
-    ['BA'],
-    'one person’s sync leaves the others’ access alone',
-  )
+  assert.ok(!state().projects.some((p: any) => p.seedsId === 's-internal'), 'projects nobody here is on stay out')
   const overview = await app.ask('GET', '/api/account/seeds', admin)
-  assert.deepEqual(overview.body.people.map((p: any) => p.name).sort(), ['Bea', 'Paolo'])
+  assert.equal(overview.body.tokenReady, true)
+  assert.deepEqual(overview.body.sync.fields, { users: ['id', 'email'] })
+  assert.ok(!JSON.stringify(overview.body).includes('app-token'), 'the token never goes to the browser')
+  assert.deepEqual(
+    overview.body.people
+      .filter((p: any) => p.connected)
+      .map((p: any) => p.name)
+      .sort(),
+    ['Bea', 'Paolo'],
+  )
 
-  // Disconnecting takes that person's Seeds access with the key.
-  assert.equal((await app.ask('DELETE', '/api/me/seeds', bea)).status, 200)
-  assert.deepEqual(
-    activeAssignments(state(), 'u-bea').map(a => a.id),
-    ['m1'],
-    'back to hand-entered',
-  )
-  assert.deepEqual(
-    db.rows.map((row: any) => row.user_id),
-    ['u-pao'],
-  )
   const off = await app.ask('DELETE', '/api/account/seeds', admin)
   assert.equal(off.status, 200)
   assert.deepEqual(activeAssignments(state(), 'u-pao'), [], 'Seeds off: hand-entered access counts (none for Paolo)')
 })
 
-test('when Seeds is down your last synced access stays and the error shows', async () => {
+test('someone Seeds does not list keeps their hand-entered access', async () => {
+  const { app, state } = setup(async () => snapshot({ assignments: [] }))
+  const on = await turnOn(app)
+  assert.deepEqual([on.body.sync.matched, on.body.sync.unmatched], [0, 2])
+  assert.deepEqual(
+    activeAssignments(state(), 'u-bea').map(a => a.id),
+    ['m1'],
+  )
+})
+
+test('without a server token Seeds cannot be turned on', async () => {
+  const { app } = setup(undefined, '')
+  const on = await turnOn(app)
+  assert.equal(on.status, 503)
+  assert.match(on.body.error, /SEEDS_API_TOKEN/)
+})
+
+test('when Seeds is down the last synced access stays and the error shows', async () => {
   let down = false
-  const { app, state } = setup(async key => {
+  const { app, state } = setup(async () => {
     if (down) throw new Error('ECONNREFUSED')
-    return personal(key)
+    return account()
   })
   await turnOn(app)
-  await app.ask('PUT', '/api/me/seeds', bea, { apiKey: 'bea-key-123456' })
   const before = activeAssignments(state(), 'u-bea')
   down = true
   const result = await app.ask('POST', '/api/seeds/sync', bea)
   assert.equal(result.body.ok, false)
   assert.deepEqual(activeAssignments(state(), 'u-bea'), before)
-  assert.ok(state().seeds.users['u-bea'].lastError)
-  assert.equal((await app.ask('POST', '/api/seeds/sync', pao)).status, 409, 'Paolo has no key yet')
+  assert.ok(state().seeds.sync.lastError)
+  assert.ok(state().seeds.sync.lastSuccessAt, 'the last good sync is still known')
 })
 
-test('a reviewer confirms a match they can see', async () => {
-  const { app, state } = setup(async key => personal(key))
+test('a reviewer confirms a match', async () => {
+  const { app, state } = setup(async () =>
+    snapshot({
+      projects: [...snapshot().projects, { id: 's-ship', clientId: 's-bolt', name: 'Shipping', contractNumber: '' }],
+      assignments: [
+        { personId: 'sp-bea', email: 'bea@company.com', role: 'BA', projectId: 's-portal' },
+        { personId: 'sp-pao', email: 'paolo@company.com', role: 'PM', projectId: 's-ship' },
+      ],
+    }),
+  )
   await turnOn(app)
-  await app.ask('PUT', '/api/me/seeds', bea, { apiKey: 'bea-key-123456' })
-  await app.ask('PUT', '/api/me/seeds', pao, { apiKey: 'pao-key-123456' })
+  const match = state().seeds.pendingMatches.find((m: any) => m.id === 'client:s-bolt')
+  assert.ok(match, JSON.stringify(state().seeds.pendingMatches))
   assert.equal(
     (await app.ask('POST', '/api/seeds/matches/client:s-bolt', bea, { decision: 'confirm' })).status,
     403,
     'BAs do not confirm matches',
   )
-  assert.equal(
-    (await app.ask('POST', '/api/seeds/matches/client:s-bolt', pao, { decision: 'confirm' })).status,
-    404,
-    'Paolo cannot see Bolt',
-  )
   const done = await app.ask('POST', '/api/seeds/matches/client:s-bolt', admin, { decision: 'confirm' })
   assert.equal(done.status, 200, JSON.stringify(done.body))
   assert.equal(state().clients.find((c: any) => c.id === 'c-bolt').seedsId, 's-bolt')
-  assert.deepEqual(state().seeds.pendingMatches, [])
+  assert.ok(!state().seeds.pendingMatches.some((m: any) => m.id === 'client:s-bolt'))
 })
 
 test('hand-entered assignments: Administrators only, names only, checked', async () => {
-  const { app, state } = setup(async key => personal(key))
+  const { app, state } = setup()
   assert.equal((await app.ask('GET', '/api/access', bea)).status, 403)
   const listed = await app.ask('GET', '/api/access', admin)
   assert.deepEqual(Object.keys(listed.body.clients[0]).sort(), ['id', 'name'])
