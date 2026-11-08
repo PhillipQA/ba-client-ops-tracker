@@ -72,8 +72,8 @@ test('an entry for a subtask takes its title as remarks, and its Seeds task tag 
       printers.value.entry.seedsTaskId,
       printers.value.entry.hours,
     ],
-    ['Check printers', 's-printers', 'st-golive', 1.75],
-    'no date in the remarks; the task’s Seeds task when the subtask has none',
+    ['Check printers – Go-live prep', 's-printers', 'st-golive', 1.75],
+    'subtask – task, no date; the task’s Seeds task when the subtask has none',
   )
   const call = log(s, 't-go', { date: '2026-11-09', hours: 0.5, subtaskId: 's-call' })
   assert.ok(call.ok && call.value.entry.seedsTaskId === 'st-meet', 'the subtask’s own Seeds task wins')

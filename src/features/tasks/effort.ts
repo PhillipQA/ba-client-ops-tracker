@@ -47,7 +47,8 @@ export const MAX_SEEDS_REMARKS_LENGTH = 120
 
 /**
  * Once Seeds is on, time is logged on the **task**, never on a subtask. An entry may name one of the task's subtasks:
- * the subtask's title becomes its remarks (Seeds requires remarks, up to 120 characters). Without a subtask, the
+ * its remarks are then "subtask – task" ("Go Live – Makati T1"), so entries for same-named steps of different sites
+ * stay apart in Seeds (Seeds requires remarks, up to 120 characters). Without a subtask, the
  * remarks are typed. Each entry counts toward a Seeds task from the project's list: the one chosen, else the
  * subtask's tag, else the task's tag; without any, no time can be logged.
  */
@@ -60,12 +61,14 @@ export type SeedsTimeRule = {
   logOnTaskId?: string
   /** The task's subtasks an entry can be for. */
   subtasks: { id: string; title: string; seedsTaskId?: string }[]
+  /** The task's title, for an entry's remarks. */
+  taskTitle?: string
 }
 
 /** The time rule for one task or subtask, or null when Seeds is off (time is logged as before). */
 export function seedsTimeRule(
   state: { seeds?: { connected?: boolean } | null; projects?: any[]; items?: any[] },
-  item: { id?: string; projectId?: string; parentTaskId?: string; seedsTaskId?: string },
+  item: { id?: string; title?: string; projectId?: string; parentTaskId?: string; seedsTaskId?: string },
 ): SeedsTimeRule | null {
   if (state?.seeds?.connected !== true) return null
   const project = (state.projects || []).find(candidate => candidate?.id === item?.projectId)
@@ -82,7 +85,12 @@ export function seedsTimeRule(
       ...(known(candidate.seedsTaskId) ? { seedsTaskId: candidate.seedsTaskId } : {}),
     }))
   const tagged = known(item?.seedsTaskId)
-  return { tasks, subtasks, ...(tagged ? { taggedTaskId: tagged } : {}) }
+  return {
+    tasks,
+    subtasks,
+    ...(item?.title ? { taskTitle: String(item.title) } : {}),
+    ...(tagged ? { taggedTaskId: tagged } : {}),
+  }
 }
 
 /** The Seeds task an entry counts toward by default: the subtask's tag, else the task's. */
@@ -90,8 +98,9 @@ export function defaultSeedsTask(rule: SeedsTimeRule, subtaskId?: string) {
   return rule.subtasks.find(subtask => subtask.id === subtaskId)?.seedsTaskId || rule.taggedTaskId || ''
 }
 
-/** Remarks for an entry for a subtask: its title, within Seeds' 120 characters. */
-export const subtaskRemarks = (title: string) => title.trim().slice(0, MAX_SEEDS_REMARKS_LENGTH)
+/** Remarks for an entry for a subtask: "subtask – task", within Seeds' 120 characters (no date). */
+export const subtaskRemarks = (subtask: string, task = '') =>
+  [subtask.trim(), task.trim()].filter(Boolean).join(' – ').slice(0, MAX_SEEDS_REMARKS_LENGTH).trim()
 
 interface EffortItem {
   id: string
@@ -283,7 +292,11 @@ function validateSeedsEntry(
   if (!seedsTaskId) return { ok: false, error: 'Tag a Seeds task on this task (or the subtask) before logging time.' }
   if (!seeds.tasks.some(task => task.id === seedsTaskId)) return { ok: false, error: 'Choose a Seeds task.' }
   // Seeds requires remarks: the subtask's title, or what was typed.
-  const note = subtask ? subtaskRemarks(subtask.title) : typeof body.note === 'string' ? body.note.trim() : ''
+  const note = subtask
+    ? subtaskRemarks(subtask.title, seeds.taskTitle)
+    : typeof body.note === 'string'
+      ? body.note.trim()
+      : ''
   if (!note) return { ok: false, error: 'Enter the remarks, or choose a subtask (its title becomes the remarks).' }
   if (note.length > MAX_SEEDS_REMARKS_LENGTH)
     return { ok: false, error: `Remarks must be ${MAX_SEEDS_REMARKS_LENGTH} characters or fewer.` }

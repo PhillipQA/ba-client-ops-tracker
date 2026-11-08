@@ -61,7 +61,7 @@ Once Seeds is on, time is logged **on the task**, never on a subtask. Each entry
 | Duration | hrs + mins, 15-minute steps |
 | Subtask | optional: one of the task's subtasks |
 | Seeds task | the subtask's tag, else the task's; any of the project's Seeds tasks can be chosen |
-| Remarks | required, up to 120 characters: **the subtask's title** when one is chosen (no date added), otherwise typed |
+| Remarks | required, up to 120 characters: **subtask – task** when a subtask is chosen (for example *Go Live – Makati T1*; no date), otherwise typed |
 
 A task with no Seeds task tag (and no tagged subtask chosen) cannot take time. Before Seeds projects have no Seeds
 tasks, so new time goes on Seeds work. A subtask lists the time logged for it on its task. Sending entries to Seeds is

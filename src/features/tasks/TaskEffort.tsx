@@ -53,7 +53,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [chosenSeedsTask, setChosenSeedsTask] = useState('')
   const seedsTaskId = chosenSeedsTask || (rule ? defaultSeedsTask(rule, subtaskId) : '')
   const forSubtask = rule?.subtasks.find(subtask => subtask.id === subtaskId)
-  const remarks = forSubtask ? subtaskRemarks(forSubtask.title) : note
+  const remarks = forSubtask ? subtaskRemarks(forSubtask.title, item.title) : note
   const parentTask = item.parentTaskId ? allItems.find(candidate => candidate.id === item.parentTaskId) : undefined
   const seedsTasks = rule?.tasks || []
   const seedsTaskLabel = (id: string) => `Seeds: ${seedsTasks.find(task => task.id === id)?.name || 'task'}`
@@ -208,7 +208,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
       {canLog && rule?.logOnTaskId && (
         <p className="effort-message" role="status">
           Time is logged on the task{parentTask ? ` “${parentTask.title}”` : ''}: open it, log time and choose this
-          subtask. Its title becomes the remarks.
+          subtask. The remarks become “subtask – task”.
         </p>
       )}
       {canLog && rule && !rule.logOnTaskId && (
@@ -295,7 +295,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                   onChange={event => setNote(event.target.value)}
                 />
                 <small className="effort-count">
-                  {forSubtask ? 'From the subtask’s title · ' : ''}
+                  {forSubtask ? 'Subtask – task · ' : ''}
                   {remarks.length}/{MAX_SEEDS_REMARKS_LENGTH}
                 </small>
               </label>
