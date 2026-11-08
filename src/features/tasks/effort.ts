@@ -27,6 +27,8 @@ export interface TimeEntry {
   userId: string
   userName: string
   createdAt: string
+  /** Once Seeds is on: the Seeds task this time counts toward, so it can be sent to Seeds. */
+  seedsTaskId?: string
 }
 
 export interface TimeEntryInput {
@@ -34,6 +36,36 @@ export interface TimeEntryInput {
   hours: number
   category: EffortCategory
   note: string
+  seedsTaskId?: string
+}
+
+/** Seeds limits a time entry's remarks to 120 characters. */
+export const MAX_SEEDS_REMARKS_LENGTH = 120
+
+/**
+ * Once Seeds is on, time is logged only on work tagged with a Seeds task: its own, or its parent task's for a
+ * subtask. Each entry carries a Seeds task from its project's list (by default the tagged one).
+ */
+export type SeedsTimeRule = {
+  /** The Seeds tasks an entry may count toward (its project's list). */
+  tasks: { id: string; name: string }[]
+  /** The tag on the work (or its parent): without one, no time can be logged. */
+  taggedTaskId?: string
+}
+
+/** The time rule for one task or subtask, or null when Seeds is off (time is logged as before). */
+export function seedsTimeRule(
+  state: { seeds?: { connected?: boolean } | null; projects?: any[]; items?: any[] },
+  item: { projectId?: string; parentTaskId?: string; seedsTaskId?: string },
+): SeedsTimeRule | null {
+  if (state?.seeds?.connected !== true) return null
+  const project = (state.projects || []).find(candidate => candidate?.id === item?.projectId)
+  const tasks = (Array.isArray(project?.seedsTasks) ? project.seedsTasks : [])
+    .filter((task: any) => task?.id && !task.archived)
+    .map((task: any) => ({ id: String(task.id), name: String(task.name || task.id) }))
+  const parent = item?.parentTaskId ? (state.items || []).find(candidate => candidate?.id === item.parentTaskId) : null
+  const tagged = item?.seedsTaskId || parent?.seedsTaskId
+  return { tasks, ...(tagged && tasks.some(task => task.id === tagged) ? { taggedTaskId: tagged } : {}) }
 }
 
 interface EffortItem {
@@ -63,8 +95,10 @@ export function isEffortCategory(value: unknown): value is EffortCategory {
 
 export function validateTimeEntryInput(
   input: unknown,
+  seeds: SeedsTimeRule | null = null,
 ): { ok: true; value: TimeEntryInput } | { ok: false; error: string } {
   const body = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
+  if (seeds) return validateSeedsEntry(body, seeds)
   if (!isDateKey(body.date)) return { ok: false, error: 'Choose a valid date for the time entry.' }
   const rawHours = typeof body.hours === 'string' ? Number(body.hours) : body.hours
   if (typeof rawHours !== 'number' || !Number.isFinite(rawHours))
@@ -200,4 +234,27 @@ export function effortRows<T extends EffortItem & { clientId?: string; projectId
 /** Whether the person may remove an entry: its author, or an Administrator. */
 export function canRemoveTimeEntry(entry: Pick<TimeEntry, 'userId'>, user: { id: string; role?: string }) {
   return user.role === 'Administrator' || entry.userId === user.id
+}
+
+/** A time entry once Seeds is on: date, duration (15-minute steps), Seeds task and remarks, as in Seeds. */
+function validateSeedsEntry(
+  body: Record<string, unknown>,
+  seeds: SeedsTimeRule,
+): { ok: true; value: TimeEntryInput } | { ok: false; error: string } {
+  if (!seeds.taggedTaskId)
+    return { ok: false, error: 'Tag a Seeds task on this task (or its parent task) before logging time.' }
+  if (!isDateKey(body.date)) return { ok: false, error: 'Choose a valid date for the time entry.' }
+  const rawHours = typeof body.hours === 'string' ? Number(body.hours) : body.hours
+  if (typeof rawHours !== 'number' || !Number.isFinite(rawHours)) return { ok: false, error: 'Choose the duration.' }
+  if (Math.round(rawHours * 4) !== rawHours * 4) return { ok: false, error: 'Durations go in 15-minute steps.' }
+  const hours = roundToQuarter(rawHours)
+  if (hours < 0.25) return { ok: false, error: 'Log at least 15 minutes.' }
+  if (hours > MAX_ENTRY_HOURS) return { ok: false, error: `A single entry cannot exceed ${MAX_ENTRY_HOURS} hours.` }
+  const seedsTaskId = typeof body.seedsTaskId === 'string' && body.seedsTaskId ? body.seedsTaskId : seeds.taggedTaskId
+  if (!seeds.tasks.some(task => task.id === seedsTaskId)) return { ok: false, error: 'Choose a Seeds task.' }
+  const note = typeof body.note === 'string' ? body.note.trim() : ''
+  if (note.length > MAX_SEEDS_REMARKS_LENGTH)
+    return { ok: false, error: `Remarks must be ${MAX_SEEDS_REMARKS_LENGTH} characters or fewer.` }
+  const category = isEffortCategory(body.category) ? body.category : 'Other'
+  return { ok: true, value: { date: body.date, hours, category, note, seedsTaskId } }
 }

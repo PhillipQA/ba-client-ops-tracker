@@ -562,3 +562,18 @@
   white-space: nowrap;
   border: 0;
 }
+
+.effort-duration {
+  display: flex;
+  gap: 6px;
+}
+
+.effort-duration select {
+  flex: 1;
+}
+
+.effort-count {
+  display: block;
+  text-align: right;
+  color: var(--muted, #667085);
+}

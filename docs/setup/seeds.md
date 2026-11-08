@@ -49,6 +49,13 @@ and projects Seeds lists them on as a project member. This app keeps the subtask
 
 No database migration is needed.
 
+## Time logs
+
+Once Seeds is on, time is logged only on a task or subtask tagged with a **Seeds task** (its own, or its parent task's
+for a subtask). Before Seeds work has no Seeds tasks, so new time goes on Seeds work. Each entry matches the Seeds
+form: task date, duration (hrs + mins, 15-minute steps), Seeds task (defaults to the tag) and remarks (up to 120
+characters). Add as many entries as needed, on any dates. Sending them to Seeds is a later step.
+
 ## What a sync does
 
 1. Reads `/users`, `/parents` and `/projects` (100 per page, following `nextCursor`); `/clients` too if a project names

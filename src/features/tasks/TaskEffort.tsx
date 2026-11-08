@@ -5,6 +5,8 @@ import {
   EFFORT_CATEGORIES,
   effortSummary,
   formatHours,
+  MAX_SEEDS_REMARKS_LENGTH,
+  type SeedsTimeRule,
   validateTimeEntryInput,
   type EffortCategory,
   type TimeEntry,
@@ -20,6 +22,8 @@ type Props = {
   canLog: boolean
   today: string
   onMutation: (result: TimeEntryMutationResult) => void
+  /** Once Seeds is on: the time rule for a task or subtask (see seedsTimeRule); null while Seeds is off. */
+  seedsRule?: (target: WorkItem) => SeedsTimeRule | null
 }
 
 function niceEntryDate(date: string) {
@@ -28,7 +32,7 @@ function niceEntryDate(date: string) {
 }
 
 /** Effort section of the task editor. It sits inside the task form, so its controls never submit that form. */
-export default function TaskEffort({ item, allItems, currentUser, canLog, today, onMutation }: Props) {
+export default function TaskEffort({ item, allItems, currentUser, canLog, today, onMutation, seedsRule }: Props) {
   const subtasks = item.parentTaskId ? [] : allItems.filter(candidate => candidate.parentTaskId === item.id)
   const summary = effortSummary(item, allItems)
   const [date, setDate] = useState(today)
@@ -38,6 +42,16 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
+  // Once Seeds is on: the entry is a Seeds time entry (duration in hrs + mins, Seeds task, remarks).
+  const target = [item, ...subtasks].find(candidate => candidate.id === targetId) || item
+  const rule = seedsRule ? seedsRule(target) : null
+  const [durationHours, setDurationHours] = useState('0')
+  const [durationMinutes, setDurationMinutes] = useState('0')
+  const [chosenSeedsTask, setChosenSeedsTask] = useState('')
+  const seedsTaskId = chosenSeedsTask || rule?.taggedTaskId || ''
+  const seedsTasks = seedsRule?.(item)?.tasks || []
+  const seedsTaskLabel = (id: string) => `Seeds: ${seedsTasks.find(task => task.id === id)?.name || 'task'}`
+  const duration = Number(durationHours) + Number(durationMinutes) / 60
 
   const entries: { entry: TimeEntry; owner: WorkItem }[] = [item, ...subtasks]
     .flatMap(owner => (owner.timeEntries || []).map(entry => ({ entry, owner })))
@@ -50,7 +64,9 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
 
   const save = async () => {
     if (busy) return
-    const checked = validateTimeEntryInput({ date, hours: Number(hours), category, note })
+    const checked = rule
+      ? validateTimeEntryInput({ date, hours: duration, note, seedsTaskId }, rule)
+      : validateTimeEntryInput({ date, hours: Number(hours), category, note })
     if (!checked.ok) {
       setMessage({ text: checked.error, ok: false })
       return
@@ -60,6 +76,8 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
     try {
       onMutation(await addTimeEntry(targetId, checked.value))
       setHours('')
+      setDurationHours('0')
+      setDurationMinutes('0')
       setNote('')
       setMessage({ text: `${formatHours(checked.value.hours)} logged.`, ok: true })
     } catch (error) {
@@ -82,6 +100,26 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
       setBusy(false)
     }
   }
+
+  const logAgainstField = subtasks.length > 0 && (
+    <label>
+      Log against
+      <select
+        value={targetId}
+        onChange={event => {
+          setTargetId(event.target.value)
+          setChosenSeedsTask('')
+        }}
+      >
+        <option value={item.id}>This task</option>
+        {subtasks.map(subtask => (
+          <option key={subtask.id} value={subtask.id}>
+            Subtask: {subtask.title}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
 
   const within = summary.estimate ? Math.min(summary.logged, summary.estimate) : summary.logged
   const scale = Math.max(summary.logged, summary.estimate || 0) || 1
@@ -155,7 +193,96 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
         </div>
       )}
 
-      {canLog && (
+      {canLog && rule && (
+        <div className="effort-log" onKeyDown={blockEnter}>
+          <div className="effort-log-head">
+            <strong>Log time</strong>
+          </div>
+          {!rule.taggedTaskId ? (
+            <>
+              {subtasks.length > 0 && <div className="effort-log-grid">{logAgainstField}</div>}
+              <p className="effort-message" role="status">
+                {rule.tasks.length
+                  ? `Tag a Seeds task on ${target.id === item.id ? 'this task' : 'this subtask or its task'} (the Seeds task field above), save, then log time here.`
+                  : 'Time is logged only on work under a Seeds project, tagged with a Seeds task.'}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="effort-log-grid">
+                <label>
+                  Task date
+                  <input type="date" value={date} max={today} onChange={event => setDate(event.target.value)} />
+                </label>
+                <label>
+                  Duration
+                  <span className="effort-duration">
+                    <select
+                      value={durationHours}
+                      onChange={event => setDurationHours(event.target.value)}
+                      aria-label="Hours"
+                    >
+                      {Array.from({ length: 25 }, (_, hour) => (
+                        <option key={hour} value={hour}>
+                          {hour} hrs
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={durationMinutes}
+                      onChange={event => setDurationMinutes(event.target.value)}
+                      aria-label="Minutes"
+                    >
+                      {[0, 15, 30, 45].map(minutes => (
+                        <option key={minutes} value={minutes}>
+                          {String(minutes).padStart(2, '0')} mins
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </label>
+                <label>
+                  Seeds task
+                  <select value={seedsTaskId} onChange={event => setChosenSeedsTask(event.target.value)}>
+                    {rule.tasks.map(task => (
+                      <option key={task.id} value={task.id}>
+                        {task.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {logAgainstField}
+              </div>
+              <label className="effort-note">
+                Remarks (max {MAX_SEEDS_REMARKS_LENGTH} characters)
+                <textarea
+                  value={note}
+                  maxLength={MAX_SEEDS_REMARKS_LENGTH}
+                  rows={2}
+                  onChange={event => setNote(event.target.value)}
+                />
+                <small className="effort-count">
+                  {note.length}/{MAX_SEEDS_REMARKS_LENGTH}
+                </small>
+              </label>
+              <div className="effort-log-actions">
+                {message && (
+                  <span
+                    className={`effort-message${message.ok ? ' success' : ''}`}
+                    role={message.ok ? 'status' : 'alert'}
+                  >
+                    {message.text}
+                  </span>
+                )}
+                <button type="button" className="primary" disabled={busy || duration <= 0} onClick={() => void save()}>
+                  {busy ? 'Saving…' : 'Save entry'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {canLog && !rule && (
         <div className="effort-log" onKeyDown={blockEnter}>
           <div className="effort-log-head">
             <strong>Log time</strong>
@@ -193,19 +320,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                 ))}
               </select>
             </label>
-            {subtasks.length > 0 && (
-              <label>
-                Log against
-                <select value={targetId} onChange={event => setTargetId(event.target.value)}>
-                  <option value={item.id}>This task</option>
-                  {subtasks.map(subtask => (
-                    <option key={subtask.id} value={subtask.id}>
-                      Subtask: {subtask.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            {logAgainstField}
           </div>
           <label className="effort-note">
             Note (optional)
@@ -236,9 +351,11 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
             <li key={entry.id}>
               <time dateTime={entry.date}>{niceEntryDate(entry.date)}</time>
               <div>
-                <strong>{entry.note || entry.category}</strong>
+                <strong>
+                  {entry.note || (entry.seedsTaskId ? seedsTaskLabel(entry.seedsTaskId) : entry.category)}
+                </strong>
                 <small>
-                  {entry.userName} · {entry.category}
+                  {entry.userName} · {entry.seedsTaskId ? seedsTaskLabel(entry.seedsTaskId) : entry.category}
                   {owner.id !== item.id ? ` · Subtask: ${owner.title}` : ''}
                 </small>
               </div>

@@ -6,7 +6,7 @@ import TaskEffort from './TaskEffort'
 import { PriorityOptions } from '../../shared/ui/Chips'
 import { type Store, defaultOpenTaskStatus, isTaskClosed } from '../../app/store'
 import { businessDateKey } from '../../shared/businessDate'
-import { normalizeEstimate } from './effort'
+import { normalizeEstimate, seedsTimeRule } from './effort'
 import { isArchived } from './lifecycle'
 import type { RtmLink } from '../requirements/rtm'
 import ClientSelect from '../../shared/ui/SearchSelect'
@@ -659,6 +659,7 @@ export function TaskEditForm({
         canLog={currentUser.role !== 'Viewer'}
         today={today}
         onMutation={onTimeEntryMutation}
+        seedsRule={target => seedsTimeRule(store, target)}
       />
       <WorkCommentTrail item={item} onMutation={onCommentMutation} />
       {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}

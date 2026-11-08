@@ -16,6 +16,7 @@ import {
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { reconcileNotifications } from '../services/notification-engine'
 import { addTimeEntry, removeTimeEntry } from '../services/time-entries'
+import { seedsTimeRule } from '../../src/features/tasks/effort'
 import { visibleTask } from '../services/visibility'
 
 const TASK_EVIDENCE_BUCKET = 'task-evidence'
@@ -137,7 +138,11 @@ async function saveCommentState(current: any, next: any, actor: SessionUser, eve
 async function mutateTimeEntries(
   req: express.Request,
   res: express.Response,
-  mutate: (task: any, user: SessionUser) => ReturnType<typeof addTimeEntry> | ReturnType<typeof removeTimeEntry>,
+  mutate: (
+    task: any,
+    user: SessionUser,
+    state: any,
+  ) => ReturnType<typeof addTimeEntry> | ReturnType<typeof removeTimeEntry>,
 ) {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceWriteAllowed(user))
@@ -154,7 +159,7 @@ async function mutateTimeEntries(
       return void res.status(404).json({ error: 'Task or Subtask was not found.' })
     const locked = archivedWorkReason(current, task)
     if (locked) return void res.status(409).json({ error: locked })
-    const result = mutate(task, user)
+    const result = mutate(task, user, current)
     if (!result.ok) return void res.status(result.status).json({ error: result.error })
     const next = {
       ...current,
@@ -242,7 +247,9 @@ export function registerTaskRoutes(app: Express) {
   })
 
   app.post('/api/tasks/:taskId/time-entries', requireAuth, requireTenantWorkspace, (req, res) =>
-    mutateTimeEntries(req, res, (task, user) => addTimeEntry(task, req.body, user, new Date(), randomUUID())),
+    mutateTimeEntries(req, res, (task, user, state) =>
+      addTimeEntry(task, req.body, user, new Date(), randomUUID(), seedsTimeRule(state, task)),
+    ),
   )
 
   app.delete('/api/tasks/:taskId/time-entries/:entryId', requireAuth, requireTenantWorkspace, (req, res) =>
