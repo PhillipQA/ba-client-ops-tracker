@@ -6,7 +6,7 @@ import TaskEffort from './TaskEffort'
 import { PriorityOptions } from '../../shared/ui/Chips'
 import { type Store, defaultOpenTaskStatus, isTaskClosed } from '../../app/store'
 import { businessDateKey } from '../../shared/businessDate'
-import { normalizeEstimate, seedsTimeRule } from './effort'
+import { effortSummary, formatHours, normalizeEstimate, seedsTimeRule } from './effort'
 import { isArchived } from './lifecycle'
 import type { RtmLink } from '../requirements/rtm'
 import ClientSelect from '../../shared/ui/SearchSelect'
@@ -21,8 +21,17 @@ import {
 import type { TimeEntryMutationResult } from './timeEntries'
 import type { ItemType, Priority, TaskEvidence, WaitingOn, WorkItem } from '../../shared/types'
 import { defaultWaitingOn, findWaitingOn, isWaitingOnDone, waitingOnOptions } from './waitingOn'
-import { CircleDot, HardDrive, LockKeyhole, MessageSquareText, Paperclip, Trash2, Upload } from 'lucide-react'
-import { type ClipboardEvent, type FormEvent, useEffect, useRef, useState } from 'react'
+import {
+  ChevronRight,
+  CircleDot,
+  HardDrive,
+  LockKeyhole,
+  MessageSquareText,
+  Paperclip,
+  Trash2,
+  Upload,
+} from 'lucide-react'
+import { type ClipboardEvent, type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 
 export function WorkScheduleFields({
   itemKind,
@@ -366,6 +375,57 @@ export function TaskForm({
   )
 }
 
+/**
+ * A section of the task editor that folds away. Schedule, Effort and DocHub (when it has documents) start open;
+ * the rest start folded. Each section remembers, on this device, whether it was last left open or folded. Fields
+ * inside a folded section still save with the form.
+ */
+function Fold({
+  id,
+  title,
+  meta,
+  defaultOpen = false,
+  children,
+}: {
+  id: string
+  title: string
+  meta?: string
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  const key = `taskEdit.fold.${id}`
+  const [open, setOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem(key)
+      return saved === null ? defaultOpen : saved === '1'
+    } catch {
+      return defaultOpen
+    }
+  })
+  return (
+    <details
+      className="task-fold span-2"
+      open={open}
+      onToggle={event => {
+        const next = (event.currentTarget as HTMLDetailsElement).open
+        setOpen(next)
+        try {
+          localStorage.setItem(key, next ? '1' : '0')
+        } catch {
+          // Storage can be unavailable; the section still folds for this visit.
+        }
+      }}
+    >
+      <summary>
+        <ChevronRight size={16} className="task-fold-chevron" aria-hidden="true" />
+        <strong>{title}</strong>
+        {meta && <small>{meta}</small>}
+      </summary>
+      <div className="task-fold-body form-grid">{children}</div>
+    </details>
+  )
+}
+
 export function TaskEditForm({
   autoRefreshDocuments = true,
   canLinkRtm,
@@ -475,195 +535,234 @@ export function TaskEditForm({
   const projectLabel = item.projectId
     ? store.projects.find(project => project.id === item.projectId)?.name || 'Unknown project'
     : 'No project'
+  // One line under each folded section's title, so the essentials show without opening it.
+  const short = (date?: string) =>
+    date ? new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'
+  const scheduleMeta = `Due ${short(item.dueDate)} · Follow-up ${short(item.followUpDate)}`
+  const effortMeta = `${formatHours(effortSummary(item, store.items).logged)} logged`
+  const docCount = item.docHubDocuments?.length || 0
+  const docMeta = docCount ? `${docCount} document${docCount === 1 ? '' : 's'}` : 'None yet'
+  const assignee = store.accounts.find(account => account.id === item.assignedToUserId)?.name || 'Unassigned'
+  const detailsMeta = `${status} · ${item.priority || 'No priority'} · ${assignee}`
+  const moreMeta = `QA ${item.qaResult || 'Not Run'}${item.estimateHours ? ` · Est. ${formatHours(item.estimateHours)}` : ''}`
+  const descriptionMeta = item.description?.trim() ? item.description.trim().slice(0, 60) : 'Empty'
   return (
-    <form className="form-grid" onSubmit={event => void submit(event)}>
-      <div className="readonly-notice span-2">
-        <LockKeyhole size={18} />
-        <div>
-          <strong>{parent ? `Subtask of: ${parent.title}` : 'Task identity is locked'}</strong>
-          <span>
-            {parent
-              ? 'Subtask name, client, and parent project stay fixed. You can update its execution fields below.'
-              : 'Task name and client cannot be changed after creation.'}
-          </span>
-        </div>
-      </div>
+    <form className="form-grid task-edit-folds" onSubmit={event => void submit(event)}>
       <label className="span-2">
         {parent ? 'Subtask title' : 'Task title'}
         <input value={item.title} readOnly disabled />
       </label>
-      <label>
-        Client
-        <input value={clientLabel} readOnly disabled />
-      </label>
-      {parent ? (
+      <Fold id="schedule" title={`${parent ? 'Subtask' : 'Task'} schedule`} meta={scheduleMeta} defaultOpen>
+        <WorkScheduleFields
+          itemKind={parent ? 'Subtask' : 'Task'}
+          startDate={item.startDate || ''}
+          dueDate={item.dueDate || ''}
+          followUpDate={item.followUpDate || ''}
+        />
+      </Fold>
+      <Fold id="effort" title="Effort" meta={effortMeta} defaultOpen>
+        <TaskEffort
+          item={item}
+          allItems={store.items}
+          currentUser={currentUser}
+          canLog={currentUser.role !== 'Viewer'}
+          today={today}
+          onMutation={onTimeEntryMutation}
+          seedsRule={target => seedsTimeRule(store, target)}
+        />
+      </Fold>
+      <Fold id="dochub" title="DocHub documents" meta={docMeta} defaultOpen={docCount > 0}>
+        <DocHubHistory
+          active={autoRefreshDocuments}
+          taskId={item.id}
+          canCreate
+          onComplete={() => {
+            const closed = store.taskSettings.statuses.find(s => s.closed)
+            if (closed) setStatus(closed.label)
+          }}
+        />
+      </Fold>
+      <Fold id="details" title="Details" meta={detailsMeta}>
+        <div className="readonly-notice span-2">
+          <LockKeyhole size={18} />
+          <div>
+            <strong>{parent ? `Subtask of: ${parent.title}` : 'Task identity is locked'}</strong>
+            <span>
+              {parent
+                ? 'Subtask name, client, and parent project stay fixed. You can update its execution fields below.'
+                : 'Task name and client cannot be changed after creation.'}
+            </span>
+          </div>
+        </div>
         <label>
-          Project
-          <input value={projectLabel} readOnly disabled />
+          Client
+          <input value={clientLabel} readOnly disabled />
         </label>
-      ) : (
+        {parent ? (
+          <label>
+            Project
+            <input value={projectLabel} readOnly disabled />
+          </label>
+        ) : (
+          <label>
+            Project
+            <select name="projectId" value={editProjectId} onChange={e => setEditProjectId(e.target.value)}>
+              <option value="">No project</option>
+              {store.projects
+                .filter(project => !isArchived(project))
+                .map(project => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
         <label>
-          Project
-          <select name="projectId" value={editProjectId} onChange={e => setEditProjectId(e.target.value)}>
-            <option value="">No project</option>
-            {store.projects
-              .filter(project => !isArchived(project))
-              .map(project => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
+          Type
+          <select value={type} onChange={event => setType(event.target.value as ItemType)}>
+            <option>Task</option>
+            <option>Inquiry</option>
+            <option>Requirement</option>
+            <option>Issue</option>
+            <option>Decision</option>
+            <option>Follow-up</option>
           </select>
         </label>
-      )}
-      <label>
-        Type
-        <select value={type} onChange={event => setType(event.target.value as ItemType)}>
-          <option>Task</option>
-          <option>Inquiry</option>
-          <option>Requirement</option>
-          <option>Issue</option>
-          <option>Decision</option>
-          <option>Follow-up</option>
-        </select>
-      </label>
-      <label>
-        Status
-        <select value={status} onChange={event => setStatus(event.target.value)}>
-          {store.taskSettings.statuses.map(taskStatus => (
-            <option key={taskStatus.id} value={taskStatus.label}>
-              {taskStatus.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Priority
-        <select name="priority" defaultValue={item.priority}>
-          <PriorityOptions />
-        </select>
-      </label>
-      <label>
-        Waiting on
-        <select name="waitingOn" defaultValue={item.waitingOn}>
-          {waitingOnOptions(store.taskSettings).map(option => (
-            <option key={option.id}>{option.label}</option>
-          ))}
-          {item.waitingOn && !findWaitingOn(item.waitingOn, store.taskSettings) && <option>{item.waitingOn}</option>}
-        </select>
-      </label>
-      <SeedsTaskField
-        store={store}
-        projectId={parent ? item.projectId : editProjectId}
-        value={item.seedsTaskId}
-        inherited={parent?.seedsTaskId}
-      />
-      <label>
-        Assigned to
-        <select
-          name="assignedToUserId"
-          defaultValue={parent && inheritsParentAssignment ? inheritAssignmentValue : item.assignedToUserId || ''}
-        >
-          {parent && (
-            <option value={inheritAssignmentValue}>
-              Same as main task ·{' '}
-              {assignableUsers.find(account => account.id === parent.assignedToUserId)?.name || 'Unassigned'}
-            </option>
-          )}
-          <option value="">Unassigned</option>
-          {assignableUsers.map(account => (
-            <option key={account.id} value={account.id}>
-              {account.name} · {workloadFor(account.id)}
-            </option>
-          ))}
-        </select>
-        {parent && (
-          <small>
-            {inheritsParentAssignment
-              ? 'This subtask follows main-task assignment changes.'
-              : 'This subtask has its own assignee override.'}
-          </small>
-        )}
-      </label>
-      {canLinkRtm && (
-        <RtmTaskLinks
+        <label>
+          Status
+          <select value={status} onChange={event => setStatus(event.target.value)}>
+            {store.taskSettings.statuses.map(taskStatus => (
+              <option key={taskStatus.id} value={taskStatus.label}>
+                {taskStatus.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Priority
+          <select name="priority" defaultValue={item.priority}>
+            <PriorityOptions />
+          </select>
+        </label>
+        <label>
+          Waiting on
+          <select name="waitingOn" defaultValue={item.waitingOn}>
+            {waitingOnOptions(store.taskSettings).map(option => (
+              <option key={option.id}>{option.label}</option>
+            ))}
+            {item.waitingOn && !findWaitingOn(item.waitingOn, store.taskSettings) && <option>{item.waitingOn}</option>}
+          </select>
+        </label>
+        <SeedsTaskField
           store={store}
-          clientId={item.clientId || parent?.clientId}
-          projectId={editProjectId || parent?.projectId}
-          value={rtmLinks}
-          onChange={setRtmLinks}
+          projectId={parent ? item.projectId : editProjectId}
+          value={item.seedsTaskId}
+          inherited={parent?.seedsTaskId}
         />
+        <label>
+          Assigned to
+          <select
+            name="assignedToUserId"
+            defaultValue={parent && inheritsParentAssignment ? inheritAssignmentValue : item.assignedToUserId || ''}
+          >
+            {parent && (
+              <option value={inheritAssignmentValue}>
+                Same as main task ·{' '}
+                {assignableUsers.find(account => account.id === parent.assignedToUserId)?.name || 'Unassigned'}
+              </option>
+            )}
+            <option value="">Unassigned</option>
+            {assignableUsers.map(account => (
+              <option key={account.id} value={account.id}>
+                {account.name} · {workloadFor(account.id)}
+              </option>
+            ))}
+          </select>
+          {parent && (
+            <small>
+              {inheritsParentAssignment
+                ? 'This subtask follows main-task assignment changes.'
+                : 'This subtask has its own assignee override.'}
+            </small>
+          )}
+        </label>
+      </Fold>
+      {canLinkRtm && (
+        <Fold
+          id="rtm"
+          title="Requirements & Traceability"
+          meta={rtmLinks.length ? `${rtmLinks.length} linked` : 'None linked'}
+        >
+          <RtmTaskLinks
+            store={store}
+            clientId={item.clientId || parent?.clientId}
+            projectId={editProjectId || parent?.projectId}
+            value={rtmLinks}
+            onChange={setRtmLinks}
+          />
+        </Fold>
       )}
-      <label>
-        QA result
-        <select name="qaResult" defaultValue={item.qaResult || 'Not Run'}>
-          <option>Not Run</option>
-          <option>Passed</option>
-          <option>Failed</option>
-          <option>Blocked</option>
-        </select>
-        <small>Completed work without an explicit pass shows Done, not Passed.</small>
-      </label>
-      <WorkScheduleFields
-        itemKind={parent ? 'Subtask' : 'Task'}
-        startDate={item.startDate || ''}
-        dueDate={item.dueDate || ''}
-        followUpDate={item.followUpDate || ''}
-      />
-      <label>
-        Estimate (hours)
-        <input
-          name="estimateHours"
-          type="number"
-          inputMode="decimal"
-          min="0"
-          max="1000"
-          step="0.25"
-          defaultValue={item.estimateHours ?? ''}
-          placeholder="Optional"
-        />
-        <small>
-          {parent
-            ? 'Rolls up to the main task when it has no estimate.'
-            : 'Leave blank to use the sum of subtask estimates.'}
-        </small>
-      </label>
-      <label>
-        Source
-        <select name="source" defaultValue={item.source}>
-          <option>Email</option>
-          <option>Meeting</option>
-          <option>Chat</option>
-          <option>Discord</option>
-          <option>Internal</option>
-          <option>Other</option>
-        </select>
-      </label>
-      <label className="span-2">
-        Description / comments
-        <textarea name="description" rows={4} defaultValue={item.description} />
-      </label>
-      <DocHubHistory
-        active={autoRefreshDocuments}
-        taskId={item.id}
-        canCreate
-        onComplete={() => {
-          const closed = store.taskSettings.statuses.find(s => s.closed)
-          if (closed) setStatus(closed.label)
-        }}
-      />
-      <TaskEffort
-        item={item}
-        allItems={store.items}
-        currentUser={currentUser}
-        canLog={currentUser.role !== 'Viewer'}
-        today={today}
-        onMutation={onTimeEntryMutation}
-        seedsRule={target => seedsTimeRule(store, target)}
-      />
-      <WorkCommentTrail item={item} onMutation={onCommentMutation} />
-      {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}
-      <TaskDriveFiles item={item} />
+      <Fold id="more" title="QA, estimate & source" meta={moreMeta}>
+        <label>
+          QA result
+          <select name="qaResult" defaultValue={item.qaResult || 'Not Run'}>
+            <option>Not Run</option>
+            <option>Passed</option>
+            <option>Failed</option>
+            <option>Blocked</option>
+          </select>
+          <small>Completed work without an explicit pass shows Done, not Passed.</small>
+        </label>
+        <label>
+          Estimate (hours)
+          <input
+            name="estimateHours"
+            type="number"
+            inputMode="decimal"
+            min="0"
+            max="1000"
+            step="0.25"
+            defaultValue={item.estimateHours ?? ''}
+            placeholder="Optional"
+          />
+          <small>
+            {parent
+              ? 'Rolls up to the main task when it has no estimate.'
+              : 'Leave blank to use the sum of subtask estimates.'}
+          </small>
+        </label>
+        <label>
+          Source
+          <select name="source" defaultValue={item.source}>
+            <option>Email</option>
+            <option>Meeting</option>
+            <option>Chat</option>
+            <option>Discord</option>
+            <option>Internal</option>
+            <option>Other</option>
+          </select>
+        </label>
+      </Fold>
+      <Fold id="description" title="Description" meta={descriptionMeta}>
+        <label className="span-2">
+          Description / comments
+          <textarea name="description" rows={4} defaultValue={item.description} />
+        </label>
+      </Fold>
+      <Fold id="comments" title="Comments" meta={`${item.comments?.length || 0}`}>
+        <WorkCommentTrail item={item} onMutation={onCommentMutation} />
+      </Fold>
+      {parent && (
+        <Fold id="evidence" title="Evidence" meta={`${item.evidence?.length || 0}`}>
+          <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />
+        </Fold>
+      )}
+      {Boolean(item.driveFiles?.length) && (
+        <Fold id="drive" title="Drive files" meta={`${item.driveFiles?.length || 0}`}>
+          <TaskDriveFiles item={item} />
+        </Fold>
+      )}
       {saveError && (
         <p className="record-editor-error span-2" role="alert">
           {saveError}
