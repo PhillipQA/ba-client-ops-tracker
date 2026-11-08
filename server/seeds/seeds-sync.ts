@@ -139,6 +139,8 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     else delete project.clientId
     if (source.contractNumber) project.contractNumber = source.contractNumber
     else delete project.contractNumber
+    if (source.productId) project.seedsProductId = source.productId
+    else delete project.seedsProductId
     if (source.archived) project.seedsArchived = true
     else delete project.seedsArchived
   }

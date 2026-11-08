@@ -7,6 +7,7 @@ import {
   defaultSeedsTask,
   formatHours,
   MAX_SEEDS_REMARKS_LENGTH,
+  unsentToSeeds,
   subtaskRemarks,
   type SeedsTimeRule,
   validateTimeEntryInput,
@@ -15,6 +16,7 @@ import {
 } from './effort'
 import { addTimeEntry, deleteTimeEntry, type TimeEntryMutationResult } from './timeEntries'
 import type { WorkItem } from '../../shared/types'
+import { SendToSeedsButton } from '../seeds/SendToSeeds'
 import './effort.css'
 
 type Props = {
@@ -112,6 +114,11 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
       setBusy(false)
     }
   }
+
+  // This person's entries on this task that can go to Seeds and have not.
+  const myUnsent = (item.timeEntries || [])
+    .filter(entry => entry.userId === currentUser.id && unsentToSeeds(entry))
+    .map(entry => entry.id)
 
   const logAgainstField = subtasks.length > 0 && (
     <label>
@@ -384,6 +391,16 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
       )}
       {!canLog && message && <span className={`effort-message${message.ok ? ' success' : ''}`}>{message.text}</span>}
 
+      {rule && myUnsent.length > 0 && (
+        <div className="effort-log-actions">
+          <SendToSeedsButton
+            entryIds={myUnsent}
+            onSent={result => {
+              for (const updated of result.items) onMutation({ item: updated } as TimeEntryMutationResult)
+            }}
+          />
+        </div>
+      )}
       {entries.length > 0 && (
         <ul className="effort-entries">
           {entries.map(({ entry, owner }) => (
@@ -394,6 +411,14 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                   {entry.note || (entry.seedsTaskId ? seedsTaskLabel(entry.seedsTaskId) : entry.category)}
                 </strong>
                 <small>
+                  {entry.seedsTaskId && (
+                    <span
+                      className={`effort-seeds ${entry.seedsEntryId ? 'sent' : entry.seedsError ? 'failed' : ''}`}
+                      title={entry.seedsError || undefined}
+                    >
+                      {entry.seedsEntryId ? 'In Seeds' : entry.seedsError ? 'Not sent: retry' : 'Not sent'}
+                    </span>
+                  )}{' '}
                   {entry.userName} · {entry.seedsTaskId ? seedsTaskLabel(entry.seedsTaskId) : entry.category}
                   {entry.subtaskId && owner.id === item.id
                     ? ` · Subtask: ${subtasks.find(subtask => subtask.id === entry.subtaskId)?.title || 'removed'}`
@@ -402,7 +427,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                 </small>
               </div>
               <b>{formatHours(entry.hours)}</b>
-              {canLog && canRemoveTimeEntry(entry, currentUser) ? (
+              {canLog && canRemoveTimeEntry(entry, currentUser) && !entry.seedsEntryId ? (
                 <button
                   type="button"
                   className="icon-button"

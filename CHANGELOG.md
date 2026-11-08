@@ -43,6 +43,12 @@ Not released yet.
 - A client someone is assigned to only through one project shows by name only. New clients and projects you create stay visible to you.
 - Saves from a partial view never touch what you cannot see. Adding work to a client you cannot change, or moving work there, is refused with a message instead of being dropped.
 
+### Send time to Seeds
+- **Your time goes to Seeds.** A task's time list marks each entry *Not sent* or *In Seeds*. **Send to Seeds** on the task, or **Send my time** on the Seeds page, signs you in with Google (once an hour) and sends your entries. Seeds records them as you, so only your own entries are sent, and only with a Google sign-in for the same email as here.
+- Each entry is sent once: a key made from its id means sending again never doubles it in Seeds. An entry Seeds turns down keeps Seeds' reason and can be sent again. An entry in Seeds is changed or removed in Seeds, not here.
+- Entries carry the Seeds project, task, parent (client), the project's product (read from Seeds when it names one), minutes and remarks.
+- Setup: `workforce.time_entries.create` on the Seeds token, and a Google OAuth client ID registered with SEEDS Admin in `SEEDS_GOOGLE_CLIENT_ID` ([docs/setup/seeds.md](docs/setup/seeds.md)).
+
 ### Seeds (phase 2)
 - **Built on the Seeds Open API** ([reference](docs/seeds-api.md)). Seeds gives one application token per app, so the server holds it (`SEEDS_API_TOKEN`); nobody pastes a key. Read only; nothing is written to Seeds.
 - **Everyone is matched to Seeds by email.** The projects Seeds lists a person on as a member decide what they see; their role on the project (or their Seeds job title) becomes their job role. Only projects someone here works on, with their clients, come in.

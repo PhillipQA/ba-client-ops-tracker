@@ -24,6 +24,8 @@ import {
 } from '../../src/shared/seeds'
 import { httpSeedsSource, SeedsError, type SeedsFields, type SeedsSource } from './seeds-client'
 import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from './seeds-sync'
+import { checkGoogleIdToken, postSeedsTime, seedsTimeBody, seedsTimeKey } from './seeds-time'
+import { type TimeEntry, unsentToSeeds } from '../../src/features/tasks/effort'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 type User = { id: string; role: string; modules: string[]; organizationId: string }
@@ -41,6 +43,10 @@ export interface SeedsDeps {
   token: () => string
   /** The Seeds API address (SEEDS_API_URL, or the default). */
   apiUrl: () => string
+  /** The Google OAuth client ID registered with Seeds Admin for writes (SEEDS_GOOGLE_CLIENT_ID); empty when none. */
+  googleClientId?: () => string
+  /** Replaced in tests by a fake Seeds. */
+  postTime?: typeof postSeedsTime
   /** Replaced in tests by a fake Seeds. */
   source?: (token: string, apiUrl: string) => SeedsSource
 }
@@ -429,6 +435,111 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
       )
       // A rejected match becomes a new record on the next sync; run it now.
       res.json(deps.token() ? await service.sync(user.organizationId) : { ok: true })
+    }),
+  )
+
+  // ---- Sending time logs to Seeds ----
+  const MAX_SEND = 100
+  const mineUnsent = (state: any, userId: string) =>
+    list(state?.items).flatMap(item =>
+      list(item?.timeEntries)
+        .filter((entry: TimeEntry) => entry?.userId === userId && unsentToSeeds(entry))
+        .map((entry: TimeEntry) => ({ item, entry })),
+    )
+
+  app.get(
+    '/api/seeds/time',
+    ...auth,
+    wrap(async (req, res) => {
+      const user = who(req)
+      const state = (await deps.load(user.organizationId)).data || {}
+      const clientId = deps.googleClientId?.() || ''
+      const unsent = mineUnsent(state, user.id)
+      res.json({
+        ready: Boolean(seedsState(state).connected && deps.token() && clientId),
+        clientId,
+        unsent: unsent.length,
+        hours: unsent.reduce((total, { entry }) => total + (Number(entry.hours) || 0), 0),
+      })
+    }),
+  )
+
+  app.post(
+    '/api/seeds/time/send',
+    ...auth,
+    wrap(async (req, res) => {
+      const user = who(req)
+      const state = (await deps.load(user.organizationId)).data || {}
+      if (!seedsState(state).connected) throw new SeedsError('Seeds is not turned on for this account.', 409)
+      const token = deps.token()
+      const clientId = deps.googleClientId?.() || ''
+      if (!token || !clientId)
+        throw new SeedsError(
+          'Sending time to Seeds is not set up yet (SEEDS_GOOGLE_CLIENT_ID). Ask Internal Admin.',
+          503,
+        )
+      const account = list(state.accounts).find(candidate => String(candidate?.id) === user.id)
+      const checked = checkGoogleIdToken(req.body?.idToken, {
+        clientId,
+        email: String(account?.email || ''),
+        now: Date.now(),
+      })
+      if (!checked.ok) throw new SeedsError(checked.error, 400)
+      const wanted = Array.isArray(req.body?.entryIds) ? new Set(req.body.entryIds.map(String)) : null
+      const todo = mineUnsent(state, user.id)
+        .filter(({ entry }) => !wanted || wanted.has(entry.id))
+        .slice(0, MAX_SEND)
+      const outcome = new Map<string, { seedsEntryId?: string; error?: string }>()
+      for (const { item, entry } of todo) {
+        const body = seedsTimeBody(state, item, entry)
+        if (!body.ok) {
+          outcome.set(entry.id, { error: body.error })
+          continue
+        }
+        try {
+          const seedsEntryId = await (deps.postTime || postSeedsTime)({
+            baseUrl: deps.apiUrl(),
+            token,
+            idToken: String(req.body.idToken),
+            key: seedsTimeKey(entry),
+            body: body.body,
+          })
+          outcome.set(entry.id, { seedsEntryId })
+        } catch (error) {
+          const message = error instanceof SeedsError ? error.message : 'Seeds could not be reached.'
+          outcome.set(entry.id, { error: message })
+          // A rejected sign-in fails every entry the same way: stop rather than repeat it.
+          if (error instanceof SeedsError && (error.status === 401 || error.status === 403)) break
+        }
+      }
+      const now = new Date().toISOString()
+      const touched = new Set(todo.filter(({ entry }) => outcome.has(entry.id)).map(({ item }) => String(item.id)))
+      const saved = await service.update(user.organizationId, SEEDS_ACTOR, 'seeds-time-sent', current => ({
+        ...current,
+        items: list(current.items).map(item =>
+          touched.has(String(item?.id))
+            ? {
+                ...item,
+                timeEntries: list(item.timeEntries).map((entry: TimeEntry) => {
+                  const result = outcome.get(entry?.id)
+                  if (!result || entry.seedsEntryId) return entry
+                  if (result.seedsEntryId) {
+                    const { seedsError: _dropped, ...rest } = entry
+                    return { ...rest, seedsEntryId: result.seedsEntryId, seedsSentAt: now }
+                  }
+                  return { ...entry, seedsError: result.error }
+                }),
+              }
+            : item,
+        ),
+      }))
+      const failed = [...outcome].filter(([, result]) => result.error)
+      res.json({
+        sent: [...outcome.values()].filter(result => result.seedsEntryId).length,
+        failed: failed.map(([entryId, result]) => ({ entryId, error: result.error })),
+        left: Math.max(0, mineUnsent(saved, user.id).length),
+        items: list(saved.items).filter(item => touched.has(String(item?.id))),
+      })
     }),
   )
 

@@ -577,3 +577,23 @@
   text-align: right;
   color: var(--muted, #667085);
 }
+
+.effort-seeds {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-muted, #f2f4f7);
+  color: var(--muted, #667085);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.effort-seeds.sent {
+  background: color-mix(in srgb, #12b76a 16%, transparent);
+  color: #067647;
+}
+
+.effort-seeds.failed {
+  background: color-mix(in srgb, #f04438 14%, transparent);
+  color: #b42318;
+}

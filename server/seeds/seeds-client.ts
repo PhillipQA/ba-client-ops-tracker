@@ -114,6 +114,9 @@ export const parseSeeds = {
         'contract.contractNo',
       ),
     ),
+    ...(text(pick(record, 'productId', 'product_id', 'product.id'))
+      ? { productId: text(pick(record, 'productId', 'product_id', 'product.id')) }
+      : {}),
     ...(archived(record) ? { archived: true } : {}),
   }),
   task: (record: any, projectId: string) => ({

@@ -92,6 +92,8 @@ export interface Project {
   seedsArchived?: boolean
   /** Existed before Seeds was turned on: kept in the Before Seeds folder, still editable. */
   beforeSeeds?: boolean
+  /** The Seeds product (Barter CX…) its time entries carry, when Seeds names one. */
+  seedsProductId?: string
   /** This project's Seeds tasks (Go Live, Meetings…), from the sync: what its tasks and subtasks link to. */
   seedsTasks?: { id: string; name: string; archived?: boolean }[]
   accessLimited?: boolean

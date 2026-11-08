@@ -31,7 +31,15 @@ export interface TimeEntry {
   seedsTaskId?: string
   /** Once Seeds is on, time is logged on the task; this is the subtask it was for (its title is the remarks). */
   subtaskId?: string
+  /** Sent to Seeds: the Seeds time entry's id and when. A sent entry is changed or removed in Seeds, not here. */
+  seedsEntryId?: string
+  seedsSentAt?: string
+  /** The last try to send it failed, and why. */
+  seedsError?: string
 }
+
+/** Entries that can go to Seeds and have not yet: they carry a Seeds task. */
+export const unsentToSeeds = (entry: TimeEntry) => Boolean(entry?.seedsTaskId && !entry.seedsEntryId)
 
 export interface TimeEntryInput {
   date: string

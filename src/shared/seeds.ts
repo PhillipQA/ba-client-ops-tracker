@@ -29,6 +29,8 @@ export interface SeedsProject {
   clientId: string
   name: string
   contractNumber: string
+  /** The Seeds product (Barter CX…), when the project names one: time entries carry it. */
+  productId?: string
   archived?: boolean
 }
 export interface SeedsTask {
@@ -224,10 +226,10 @@ export function seedsStatusFor(state: any, user: { id: string; role?: string }):
 /** Fields Seeds owns on each kind of record. The browser cannot change them, add them or drop a linked record. */
 const SEEDS_FIELDS: Record<'clients' | 'projects' | 'items', string[]> = {
   clients: ['seedsId', 'name', 'seedsArchived'],
-  projects: ['seedsId', 'name', 'contractNumber', 'clientId', 'seedsArchived', 'seedsTasks'],
+  projects: ['seedsId', 'name', 'contractNumber', 'clientId', 'seedsArchived', 'seedsTasks', 'seedsProductId'],
   items: ['seedsId', 'title', 'seedsArchived'],
 }
-const LINK_FIELDS = ['seedsId', 'contractNumber', 'seedsArchived', 'seedsTasks', 'beforeSeeds']
+const LINK_FIELDS = ['seedsId', 'contractNumber', 'seedsArchived', 'seedsTasks', 'beforeSeeds', 'seedsProductId']
 
 export function keepSeedsFields(current: any, next: any) {
   const result = { ...next }
