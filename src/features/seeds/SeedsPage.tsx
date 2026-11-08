@@ -193,11 +193,44 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
 }
 
 /** "Seeds" chip with the contract number, for linked clients, projects and tasks. */
+/** Once Seeds is on, Clients and Projects show Seeds records or Before Seeds (what existed when it was turned on). */
+export type SourceFilter = 'seeds' | 'before' | 'all'
+export const sourceMatches = (filter: SourceFilter, record: { beforeSeeds?: boolean }) =>
+  filter === 'all' || (filter === 'before') === (record.beforeSeeds === true)
+
+export function SourceFilterSelect({
+  app,
+  value,
+  onChange,
+}: {
+  app: AppState
+  value: SourceFilter
+  onChange: (value: SourceFilter) => void
+}) {
+  if (!app.store.seeds?.cutoverAt) return null
+  return (
+    <label className="lifecycle-filter">
+      Folder
+      <select value={value} onChange={event => onChange(event.target.value as SourceFilter)}>
+        <option value="seeds">From Seeds</option>
+        <option value="before">Before Seeds</option>
+        <option value="all">All</option>
+      </select>
+    </label>
+  )
+}
+
 export function SeedsBadge({
   record,
 }: {
-  record: { seedsId?: string; contractNumber?: string; seedsArchived?: boolean }
+  record: { seedsId?: string; contractNumber?: string; seedsArchived?: boolean; beforeSeeds?: boolean }
 }) {
+  if (record.beforeSeeds)
+    return (
+      <span className="seeds-badge before" title="From before Seeds was turned on. Still editable.">
+        Before Seeds
+      </span>
+    )
   if (!record.seedsId) return null
   return (
     <span

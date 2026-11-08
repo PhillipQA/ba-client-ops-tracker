@@ -2,7 +2,8 @@ import type { AppState } from '../../app/useAppState'
 import { ChevronRight, Clock3, LayoutGrid, List, Pencil, Plus, Search, Table2, Users } from 'lucide-react'
 import { StatusChip } from '../../shared/ui/Chips'
 import { isArchived } from '../tasks/lifecycle'
-import { SeedsBadge } from '../seeds/SeedsPage'
+import { useState } from 'react'
+import { SeedsBadge, type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 import { niceDate } from '../../shared/dates'
 
 /** Clients screen. It reads the app state; see app/useAppState. */
@@ -20,8 +21,12 @@ export function ClientsPage({ app }: { app: AppState }) {
     setEditingRecord,
     setModal,
     setSelectedClientId,
-    visibleClients,
+    visibleClients: allVisible,
   } = app
+  const [source, setSource] = useState<SourceFilter>('seeds')
+  const visibleClients = app.store.seeds?.cutoverAt
+    ? allVisible.filter(({ client }) => sourceMatches(source, client))
+    : allVisible
   return (
     <section className="page-stack">
       <div className="section-actions">
@@ -35,6 +40,7 @@ export function ClientsPage({ app }: { app: AppState }) {
         )}
       </div>
       <div className="client-controls">
+        <SourceFilterSelect app={app} value={source} onChange={setSource} />
         <label className="lifecycle-filter">
           Show clients
           <select value={clientArchiveFilter} onChange={e => setClientArchiveFilter(e.target.value)}>

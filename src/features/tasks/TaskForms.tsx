@@ -6,7 +6,7 @@ import TaskEffort from './TaskEffort'
 import { PriorityOptions } from '../../shared/ui/Chips'
 import { type Store, defaultOpenTaskStatus, isTaskClosed } from '../../app/store'
 import { businessDateKey } from '../../shared/businessDate'
-import { normalizeEstimate } from './effort'
+import { normalizeEstimate, seedsTimeRule } from './effort'
 import { isArchived } from './lifecycle'
 import type { RtmLink } from '../requirements/rtm'
 import ClientSelect from '../../shared/ui/SearchSelect'
@@ -57,16 +57,30 @@ export function WorkScheduleFields({
   )
 }
 
-/** Subtasks under a Seeds project: which Seeds task (Go Live, Meetings…) the work counts toward. */
-function SeedsTaskField({ store, projectId, value }: { store: Store; projectId?: string; value?: string }) {
+/**
+ * Tasks and subtasks under a Seeds project: which Seeds task (Go Live, Meetings…) the work counts toward, so a task
+ * named your own way still logs time to the right Seeds task. A subtask with none follows its parent task's.
+ */
+function SeedsTaskField({
+  store,
+  projectId,
+  value,
+  inherited,
+}: {
+  store: Store
+  projectId?: string
+  value?: string
+  inherited?: string
+}) {
   const tasks = store.projects.find(project => project.id === projectId)?.seedsTasks || []
   if (!tasks.length && !value) return null
   const shown = tasks.filter(task => !task.archived || task.id === value)
+  const parentTask = inherited ? tasks.find(task => task.id === inherited)?.name : ''
   return (
-    <label>
+    <label key={projectId}>
       Seeds task
       <select name="seedsTaskId" defaultValue={value || ''}>
-        <option value="">-</option>
+        <option value="">{parentTask ? `Same as parent task (${parentTask})` : '-'}</option>
         {shown.map(task => (
           <option key={task.id} value={task.id}>
             {task.name}
@@ -131,7 +145,7 @@ export function TaskForm({
       rtmLinks,
       qaResult: String(form.get('qaResult') || 'Not Run') as WorkItem['qaResult'],
       parentTaskId: parent?.id,
-      seedsTaskId: (parent && String(form.get('seedsTaskId') || '')) || undefined,
+      seedsTaskId: String(form.get('seedsTaskId') || '') || undefined,
       subtaskOrder: parent
         ? Math.max(
             -1,
@@ -274,7 +288,7 @@ export function TaskForm({
           ))}
         </select>
       </label>
-      {parent && <SeedsTaskField store={store} projectId={parent.projectId} />}
+      <SeedsTaskField store={store} projectId={parent?.projectId || projectId} inherited={parent?.seedsTaskId} />
       {parent ? (
         <label>
           Assigned to
@@ -443,7 +457,7 @@ export function TaskEditForm({
       followUpDate: String(form.get('followUpDate') || ''),
       source: form.get('source') as WorkItem['source'],
       description: String(form.get('description') || ''),
-      seedsTaskId: (parent && String(form.get('seedsTaskId') || '')) || undefined,
+      seedsTaskId: String(form.get('seedsTaskId') || '') || undefined,
     }
     setSaveError('')
     setSaving(true)
@@ -538,7 +552,12 @@ export function TaskEditForm({
           {item.waitingOn && !findWaitingOn(item.waitingOn, store.taskSettings) && <option>{item.waitingOn}</option>}
         </select>
       </label>
-      {parent && <SeedsTaskField store={store} projectId={item.projectId} value={item.seedsTaskId} />}
+      <SeedsTaskField
+        store={store}
+        projectId={parent ? item.projectId : editProjectId}
+        value={item.seedsTaskId}
+        inherited={parent?.seedsTaskId}
+      />
       <label>
         Assigned to
         <select
@@ -640,6 +659,7 @@ export function TaskEditForm({
         canLog={currentUser.role !== 'Viewer'}
         today={today}
         onMutation={onTimeEntryMutation}
+        seedsRule={target => seedsTimeRule(store, target)}
       />
       <WorkCommentTrail item={item} onMutation={onCommentMutation} />
       {parent && <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />}

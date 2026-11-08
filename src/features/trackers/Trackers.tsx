@@ -122,6 +122,7 @@ function NewTrackerDialog({
             items,
             currentUserId,
             onCreateTasks,
+            projects,
           }).catch(error => ({ created: 0, error: error instanceof Error ? error.message : String(error) }))
           onCreated(
             tracker,

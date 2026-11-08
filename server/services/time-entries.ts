@@ -2,6 +2,7 @@ import {
   canRemoveTimeEntry,
   MAX_ENTRIES_PER_TASK,
   normalizeEstimate,
+  type SeedsTimeRule,
   validateTimeEntryInput,
   type TimeEntry,
 } from '../../src/features/tasks/effort'
@@ -31,8 +32,10 @@ export function addTimeEntry(
   actor: Actor,
   now: Date,
   id: string,
+  /** Once Seeds is on (see seedsTimeRule): only work tagged with a Seeds task takes time. */
+  seeds: SeedsTimeRule | null = null,
 ): Result<{ task: any; entry: TimeEntry }> {
-  const checked = validateTimeEntryInput(input)
+  const checked = validateTimeEntryInput(input, seeds)
   if (!checked.ok) return { ok: false, status: 400, error: checked.error }
   const existing: TimeEntry[] = Array.isArray(task?.timeEntries) ? task.timeEntries : []
   if (existing.length >= MAX_ENTRIES_PER_TASK)

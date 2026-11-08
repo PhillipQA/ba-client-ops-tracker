@@ -7,15 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { archivedWorkReason, isArchived, stableRecord } from '../../src/features/tasks/lifecycle'
 import { type Assignment, workspaceAccess } from '../../src/shared/access'
 import { roleForSeedsTitle } from '../../src/shared/roles'
-import {
-  CLOSE_MATCH,
-  matchKey,
-  nameSimilarity,
-  type SeedsCounts,
-  type SeedsMatch,
-  type SeedsSnapshot,
-  seedsState,
-} from '../../src/shared/seeds'
+import { type SeedsCounts, type SeedsMatch, type SeedsSnapshot, seedsState } from '../../src/shared/seeds'
 
 type Options = {
   now: string
@@ -72,27 +64,9 @@ function settle(before: any, after: any) {
   return { ...draft, items }
 }
 
-/** The best unlinked record for a Seeds name: exact, close (to confirm), or none. */
-function bestMatch(name: string, candidates: any[], field: 'name' | 'title') {
-  const key = matchKey(name)
-  const exact = candidates.find(candidate => key && matchKey(candidate[field]) === key)
-  if (exact) return { exact }
-  let close: any
-  let score = CLOSE_MATCH
-  for (const candidate of candidates) {
-    const similarity = nameSimilarity(name, candidate[field])
-    if (similarity >= score) {
-      score = similarity
-      close = candidate
-    }
-  }
-  return close ? { close } : {}
-}
-
 export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Options) {
   const makeId = options.id || randomUUID
   const seeds = seedsState(state)
-  const rejected = new Set(seeds.rejected)
   const counts: SeedsCounts = {
     people: snapshot.people.length,
     clients: snapshot.clients.length,
@@ -104,47 +78,28 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     renamed: 0,
   }
   const pending: SeedsMatch[] = []
-  const hold = (kind: SeedsMatch['kind'], seedsId: string, seedsName: string, app: any, extra = {}) =>
-    pending.push({
-      id: `${kind}:${seedsId}`,
-      kind,
-      seedsId,
-      seedsName,
-      appId: text(app.id),
-      appName: text(app.name ?? app.title),
-      ...extra,
-    })
 
   // Clients
   const clients = list(state?.clients).map(client => ({ ...client }))
   const clientBySeeds = new Map<string, any>()
   for (const client of clients) if (client.seedsId) clientBySeeds.set(text(client.seedsId), client)
   for (const source of snapshot.clients) {
+    // Seeds is the source of truth: a client comes from Seeds, linked by Seeds id only. What existed before Seeds was
+    // moved to Before Seeds and is never matched by name, so nothing is merged or duplicated by guesswork.
     let client = clientBySeeds.get(source.id)
     if (!client) {
-      const free = clients.filter(candidate => !candidate.seedsId)
-      const found = bestMatch(source.name, free, 'name')
-      if (found.exact) {
-        client = found.exact
-        client.seedsId = source.id
-        counts.linked++
-      } else if (found.close && !rejected.has(source.id)) {
-        hold('client', source.id, source.name, found.close)
-        continue
-      } else {
-        client = {
-          id: makeId(),
-          name: source.name,
-          contact: '',
-          email: '',
-          status: 'Active',
-          health: 'Good',
-          notes: '',
-          seedsId: source.id,
-        }
-        clients.push(client)
-        counts.created++
+      client = {
+        id: makeId(),
+        name: source.name,
+        contact: '',
+        email: '',
+        status: 'Active',
+        health: 'Good',
+        notes: '',
+        seedsId: source.id,
       }
+      clients.push(client)
+      counts.created++
       clientBySeeds.set(source.id, client)
     }
     if (client.name !== source.name) {
@@ -155,7 +110,7 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     else delete client.seedsArchived
   }
 
-  // Projects, under their Seeds client. A project whose client is waiting for a confirmation waits too.
+  // Projects, under their Seeds parent (this app's client).
   const projects = list(state?.projects).map(project => ({ ...project }))
   const projectBySeeds = new Map<string, any>()
   for (const project of projects) if (project.seedsId) projectBySeeds.set(text(project.seedsId), project)
@@ -164,32 +119,16 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     if (source.clientId && !client) continue
     let project = projectBySeeds.get(source.id)
     if (!project) {
-      const free = projects.filter(
-        candidate => !candidate.seedsId && (!candidate.clientId || candidate.clientId === client?.id),
-      )
-      const contract = matchKey(source.contractNumber)
-      const byContract =
-        contract.length >= 4 ? free.find(candidate => matchKey(candidate.name).includes(contract)) : undefined
-      const found = byContract ? { exact: byContract } : bestMatch(source.name, free, 'name')
-      if (found.exact) {
-        project = found.exact
-        project.seedsId = source.id
-        counts.linked++
-      } else if (found.close && !rejected.has(source.id)) {
-        hold('project', source.id, source.name, found.close, { contractNumber: source.contractNumber })
-        continue
-      } else {
-        project = {
-          id: makeId(),
-          name: source.name,
-          status: 'Active',
-          targetDate: '',
-          summary: '',
-          seedsId: source.id,
-        }
-        projects.push(project)
-        counts.created++
+      project = {
+        id: makeId(),
+        name: source.name,
+        status: 'Active',
+        targetDate: '',
+        summary: '',
+        seedsId: source.id,
       }
+      projects.push(project)
+      counts.created++
       projectBySeeds.set(source.id, project)
     }
     if (project.name !== source.name) {
@@ -204,9 +143,23 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     else delete project.seedsArchived
   }
 
-  // Seeds tasks (Go Live, Meetings…) sit at subtask level: they are not created here. Each project keeps its list, and
-  // subtasks pick one, so time can go to the right Seeds task later.
-  const items = list(state?.items)
+  // Work under a Seeds project belongs to that project's client: when Seeds moves a project, its tasks follow.
+  const clientOfSeedsProject = new Map(
+    projects.filter(project => project.seedsId).map(project => [text(project.id), text(project.clientId)] as const),
+  )
+  const items = list(state?.items).map(item => {
+    const projectId = text(item?.projectId)
+    if (!clientOfSeedsProject.has(projectId)) return item
+    const clientId = clientOfSeedsProject.get(projectId) || ''
+    if (text(item?.clientId) === clientId) return item
+    const moved = { ...item }
+    if (clientId) moved.clientId = clientId
+    else delete moved.clientId
+    return moved
+  })
+
+  // Seeds tasks (Go Live, Meetings…) are not created here: tasks and subtasks are this app's own, and each can be
+  // linked to one of its project's Seeds tasks, so time goes to the right Seeds task later.
   const tasksByProject = new Map<string, { id: string; name: string; archived?: boolean }[]>()
   for (const task of snapshot.tasks) {
     const tasks = tasksByProject.get(task.projectId) || []

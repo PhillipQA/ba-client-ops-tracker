@@ -9,7 +9,28 @@ the Seeds Open API ([reference](../seeds-api.md)).
 | Project | CURATED MEEPLE OPC (a store or a title) | **Project**, with its contract number |
 | Task | Go Live, POS Reset, Meetings | A **Seeds task** pick-list on subtasks of that project |
 
-Parent tasks have no Seeds equivalent; they stay this app's own. Everyone is matched to Seeds by their **email**, and sees the clients
+Seeds is the **source of truth** for clients and projects: they come only from Seeds, linked by Seeds id. Tasks and
+subtasks are this app's own, named your way, and each can be linked to one of its project's Seeds tasks.
+
+## Before Seeds
+
+The first time an Administrator turns Seeds on, every client and project that exists then moves to the **Before Seeds**
+folder, with all their tasks, subtasks, trackers, documents and emails. Nothing is deleted or merged. Before Seeds:
+
+- is open to **everyone**, whatever their assignments, and stays **editable**;
+- shows on Clients and Projects under **Folder › Before Seeds** (records carry a *Before Seeds* badge);
+- gets no new clients or projects (those come from Seeds), but new tasks under its projects are fine.
+
+**Trackers bridge the two.** A tracker keeps its Before Seeds client, and its rows keep their tasks. To move a tracker's
+work onto Seeds:
+
+1. Tracker details › **Project** › pick one under *From Seeds*. The tracker now also follows that project's client.
+2. On a row, open its task cell › **Create a new task** › **Where: Seeds** (the default), the Seeds project and, if
+   you like, the Seeds task. Or select rows › **Create tasks** to do many at once.
+3. A row on a Before Seeds task switches to the new Seeds task; the old task stays in Before Seeds with its history.
+   Subtasks made in the row's other cells go under the new task.
+4. Subtasks made from the tracker get a Seeds task: the one picked when creating it in a cell, else the Seeds task
+   with the same name (a *GO LIVE* step column → GO LIVE), else their task's. Everyone is matched to Seeds by their **email**, and sees the clients
 and projects Seeds lists them on as a project member. This app keeps the subtasks, emails, trackers, documents and time.
 
 ## Setting it up
@@ -30,6 +51,22 @@ and projects Seeds lists them on as a project member. This app keeps the subtask
 
 No database migration is needed.
 
+## Time logs
+
+Once Seeds is on, time is logged **on the task**, never on a subtask. Each entry matches the Seeds form:
+
+| Field | Here |
+|---|---|
+| Task date | any date up to today; as many entries as needed |
+| Duration | hrs + mins, 15-minute steps |
+| Subtask | optional: one of the task's subtasks |
+| Seeds task | the subtask's tag, else the task's; any of the project's Seeds tasks can be chosen |
+| Remarks | required, up to 120 characters: **subtask – task** when a subtask is chosen (for example *Go Live – Makati T1*; no date), otherwise typed |
+
+A task with no Seeds task tag (and no tagged subtask chosen) cannot take time. Before Seeds projects have no Seeds
+tasks, so new time goes on Seeds work. A subtask lists the time logged for it on its task. Sending entries to Seeds is
+a later step.
+
 ## What a sync does
 
 1. Reads `/users`, `/parents` and `/projects` (100 per page, following `nextCursor`); `/clients` too if a project names
@@ -37,10 +74,10 @@ No database migration is needed.
 2. Reads `/projects/{id}/members` for every open project, and keeps the projects where someone in this app (active, with
    an email) is a member.
 3. Reads `/projects/{id}/tasks` for those projects only.
-4. For each person: links or adds their clients (Seeds parents) and projects (with contract numbers), by Seeds id, then
-   exact name; close names wait on the Seeds page for an Administrator or PM to confirm. Each project keeps its Seeds
-   tasks, and a subtask's **Seeds task** dropdown picks from them. Their Seeds assignments are replaced with their
-   project memberships.
+4. For each person: adds their clients (Seeds parents) and projects (with contract numbers), or updates them by Seeds
+   id. Nothing is matched by name. When Seeds moves a project to another parent, its tasks and subtasks follow. Each
+   project keeps its Seeds tasks for the **Seeds task** dropdown on tasks and subtasks (a subtask without one follows
+   its parent). Their Seeds assignments are replaced with their project memberships.
 
 A member's role on the project becomes their job role through the titles in Settings › Roles. With no role on the
 membership, their Seeds job title is used, then `Member`. Titles no role claims are listed in Settings › Integrations ›

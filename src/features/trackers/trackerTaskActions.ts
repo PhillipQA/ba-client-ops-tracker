@@ -20,10 +20,15 @@ export async function createRowTasks(input: {
   onCreateTasks: (drafts: TaskDraft[]) => Promise<WorkItem[]>
   /** Only these rows get tasks; all rows are still read to find each phase's task. */
   onlyRowIds?: string[]
+  /** To find the client of the tracker's project when it comes from Seeds. */
+  projects?: { id: string; clientId?: string; seedsId?: string }[]
 }): Promise<RowTasksResult> {
   const { tracker } = input
   if (!keepsTasks(tracker.columns)) return { created: 0, rows: [] }
-  const clientId = trackerClients(tracker)[0] || ''
+  // A tracker on a Seeds project makes its tasks under that project's client (the Seeds parent), whichever other
+  // (Before Seeds) clients the tracker also follows.
+  const seedsProject = input.projects?.find(project => project.id === tracker.projectId && project.seedsId)
+  const clientId = seedsProject?.clientId || trackerClients(tracker)[0] || ''
   if (!clientId) return { created: 0, rows: [], error: 'Choose a client for this tracker so its tasks can be made.' }
   const fields = settleTimelineFields(tracker.columns, tracker.timeline?.fields || null)
   const plan = planRowTasks({

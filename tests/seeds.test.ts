@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { activeAssignments, scopedState, scopeFor } from '../src/shared/access'
-import { matchKey, nameSimilarity, seedsStatusFor, type SeedsSnapshot } from '../src/shared/seeds'
+import {
+  keepSeedsFields,
+  matchKey,
+  moveToBeforeSeeds,
+  nameSimilarity,
+  seedsStatusFor,
+  type SeedsSnapshot,
+} from '../src/shared/seeds'
 import { cleanSeedsBaseUrl, httpSeedsSource, parseSeeds } from '../server/seeds/seeds-client'
 import { personalSnapshot, registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
-import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
+import { planSeedsSync, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
 import { roleForSeedsTitle } from '../src/shared/roles'
 
 const options = {
@@ -88,135 +95,151 @@ test('names match whatever their case, punctuation or company suffix', () => {
   assert.ok(nameSimilarity('Acme', 'Nimbus Bank') < 0.5)
 })
 
-test('a first sync links what exists, adds what is new and holds close names for confirmation', () => {
-  counter = 0
-  const { state, counts, pending } = planSeedsSync(existing(), snapshot(), { ...options, id: sequential })
-  const acme = state.clients.find((c: any) => c.id === 'c-acme')
-  assert.equal(acme.seedsId, 's-acme')
-  assert.equal(acme.name, 'ACME Corp.', 'the name follows Seeds')
-  assert.equal(acme.notes, 'keep', 'app-owned details stay')
-  // Bolt Logistic vs Bolt Logistics: close, so it waits rather than being guessed or duplicated.
-  assert.deepEqual(
-    pending.map(match => [match.kind, match.seedsId, match.appId]),
-    [['client', 's-bolt', 'c-bolt']],
-  )
-  assert.equal(state.clients.find((c: any) => c.id === 'c-bolt').seedsId, undefined)
-  assert.ok(state.clients.some((c: any) => c.seedsId === 's-new' && c.name === 'Nimbus Bank'))
+const byName = (records: any[], name: string) => records.find(record => record.name === name)
 
-  const portal = state.projects.find((p: any) => p.id === 'p-portal')
+test('Seeds is the source of truth: a sync adds Seeds records fresh and leaves existing work alone', () => {
+  counter = 0
+  const before = existing()
+  const { state, counts, pending } = planSeedsSync(before, snapshot(), { ...options, id: sequential })
+  assert.deepEqual(pending, [], 'nothing is matched by name, so there is nothing to confirm')
   assert.deepEqual(
-    [portal.seedsId, portal.clientId, portal.contractNumber, portal.summary],
-    ['s-portal', 'c-acme', 'CN-2026-014', 'keep me'],
+    state.clients.slice(0, 2),
+    before.clients,
+    'Acme Corporation is not merged with ACME Corp.: existing clients stay as they were',
   )
+  const acme = byName(state.clients, 'ACME Corp.')
+  assert.equal(acme.seedsId, 's-acme')
+  assert.deepEqual(state.projects[0], before.projects[0], 'the existing Customer Portal is left alone')
+  const portal = state.projects.find((p: any) => p.seedsId === 's-portal')
+  assert.notEqual(portal.id, 'p-portal')
+  assert.deepEqual([portal.clientId, portal.contractNumber], [acme.id, 'CN-2026-014'])
   const internal = state.projects.find((p: any) => p.seedsId === 's-internal')
   assert.equal(internal.clientId, undefined, 'internal projects have no client')
-
-  // Seeds tasks are a pick-list on the project for subtasks; no tasks are created or linked.
+  // Seeds tasks are what tasks and subtasks link to; no tasks are created.
   assert.deepEqual(portal.seedsTasks, [
     { id: 's-docs', name: 'Documentation' },
     { id: 's-uat', name: 'UAT Support' },
   ])
-  assert.deepEqual(state.items, existing().items, 'tasks and subtasks stay as they are')
-
-  // Only Bea's own assignments, although Seeds also listed her colleagues'.
+  assert.deepEqual(state.items, before.items, 'tasks and subtasks stay as they are')
   assert.deepEqual(
-    activeAssignments(state, 'u-bea').map(a => [a.userId, a.role, a.projectId || a.clientId]),
-    [['u-bea', 'BA', 'p-portal']],
-  )
-  assert.deepEqual(activeAssignments(state, 'u-pao'), [], 'Paolo has not connected his Seeds')
-  assert.equal(
-    state.access.assignments.some((a: any) => a.id === 'm1'),
-    true,
-    'hand-entered ones are kept, unused',
+    activeAssignments(state, 'u-bea').map(a => [a.userId, a.role, a.projectId]),
+    [['u-bea', 'BA', portal.id]],
+    'only Bea’s own assignments, although Seeds also listed her colleagues’',
   )
   assert.equal(state.seeds.users['u-bea'].lastSuccessAt, options.now)
-  assert.equal(counts.created, 3, 'Nimbus, Core Banking and Internal')
+  assert.equal(counts.created, 6, 'three clients and three projects')
 })
 
-test('a second sync changes nothing; renames and archiving follow by Seeds id', () => {
+test('a second sync changes nothing; renames, moves and archiving follow by Seeds id', () => {
   const first = planSeedsSync(existing(), snapshot(), { ...options, id: sequential }).state
   const again = planSeedsSync(first, snapshot(), { ...options, id: sequential })
   assert.equal(again.counts.created, 0)
   assert.deepEqual(again.state.clients, first.clients)
-  assert.deepEqual(again.state.items, first.items)
-  const renamed = planSeedsSync(
-    first,
-    snapshot({ clients: [{ id: 's-acme', name: 'Acme Holdings', archived: true }], projects: [], tasks: [] }),
-    options,
+  assert.deepEqual(again.state.projects, first.projects)
+
+  // A task added here under the Seeds project; then Seeds moves the project to another parent.
+  const portal = first.projects.find((p: any) => p.seedsId === 's-portal')
+  const acme = first.clients.find((c: any) => c.seedsId === 's-acme')
+  const withTask = {
+    ...first,
+    items: [
+      ...first.items,
+      { id: 't-go', title: 'Go-live prep', projectId: portal.id, clientId: acme.id, type: 'Task', status: 'Open' },
+      { id: 't-go-1', title: 'Check printers', projectId: portal.id, clientId: acme.id, parentTaskId: 't-go' },
+    ],
+  }
+  const moved = planSeedsSync(
+    withTask,
+    snapshot({
+      clients: [{ id: 's-acme', name: 'Acme Holdings', archived: true }, ...snapshot().clients.slice(1)],
+      projects: [{ ...snapshot().projects[0], clientId: 's-new' }, ...snapshot().projects.slice(1)],
+    }),
+    { ...options, id: sequential },
   ).state
-  const acme = renamed.clients.find((c: any) => c.id === 'c-acme')
-  assert.deepEqual([acme.name, acme.seedsArchived], ['Acme Holdings', true])
+  const renamed = moved.clients.find((c: any) => c.seedsId === 's-acme')
+  assert.deepEqual([renamed.name, renamed.seedsArchived], ['Acme Holdings', true])
+  const nimbus = moved.clients.find((c: any) => c.seedsId === 's-new')
+  assert.equal(moved.projects.find((p: any) => p.seedsId === 's-portal').clientId, nimbus.id)
+  assert.deepEqual(
+    moved.items.filter((i: any) => i.id.startsWith('t-go')).map((i: any) => i.clientId),
+    [nimbus.id, nimbus.id],
+    'its tasks and subtasks follow the project',
+  )
+  assert.equal(moved.items.find((i: any) => i.id === 't-uat').clientId, 'c-acme', 'work before Seeds is not moved')
 })
 
 test('a sync passes the workspace rules: versions move on, archived work is left alone', () => {
-  const before: any = existing()
-  before.projects.push({
-    id: 'p-old',
-    name: 'Old Rollout',
-    status: 'Closed',
-    targetDate: '',
-    summary: '',
-    archived: true,
-  })
-  const base = snapshot()
+  const first = planSeedsSync(existing(), snapshot(), { ...options, id: sequential }).state
+  const archived = {
+    ...first,
+    projects: first.projects.map((p: any) =>
+      p.seedsId === 's-portal' ? { ...p, archived: true, status: 'Closed', seedsTasks: undefined } : p,
+    ),
+  }
   const { state } = planSeedsSync(
-    before,
-    snapshot({
-      projects: [...base.projects, { id: 's-old', clientId: 's-acme', name: 'Old Rollout', contractNumber: '' }],
-      tasks: [...base.tasks, { id: 's-late', projectId: 's-old', name: 'Late task' }],
-    }),
+    archived,
+    snapshot({ clients: [{ id: 's-acme', name: 'Acme Holdings' }, ...snapshot().clients.slice(1)] }),
     options,
   )
-  assert.doesNotThrow(() => assertLifecycleMutation(before, state, SEEDS_ACTOR as any))
-  assert.equal(state.clients.find((c: any) => c.id === 'c-acme').lifecycleVersion, 1)
+  assert.doesNotThrow(() => assertLifecycleMutation(archived, state, SEEDS_ACTOR as any))
+  const acme = state.clients.find((c: any) => c.seedsId === 's-acme')
+  assert.equal(acme.lifecycleVersion, 1, 'renamed, so its version moves on')
   assert.equal(
     state.clients.find((c: any) => c.id === 'c-bolt').lifecycleVersion,
     undefined,
     'untouched records keep theirs',
   )
   assert.equal(
-    state.projects.find((p: any) => p.id === 'p-old').seedsTasks,
+    state.projects.find((p: any) => p.seedsId === 's-portal').seedsTasks,
     undefined,
     'archived projects are left alone',
   )
-  const confirmed = decideSeedsMatch(state, 'client:s-bolt', 'confirm')
-  assert.doesNotThrow(() => assertLifecycleMutation(state, confirmed?.state, SEEDS_ACTOR as any))
 })
 
-test('Seeds assignments decide visibility once synced', () => {
-  const state = planSeedsSync(existing(), snapshot(), { ...options, id: sequential }).state
-  const bea = scopedState(state, scopeFor(state, 'u-bea'))
+test('turning Seeds on moves everything that exists to Before Seeds, once; everyone can open and change it', () => {
+  const before: any = { ...existing(), seeds: { connected: true } }
+  const moved = moveToBeforeSeeds(before, options.now)
   assert.deepEqual(
-    bea.items.map((item: any) => item.id).sort(),
-    [...state.items.filter((i: any) => i.projectId === 'p-portal').map((i: any) => i.id)].sort(),
+    [...moved.clients, ...moved.projects].map((r: any) => [r.id, r.beforeSeeds, r.lifecycleVersion]),
+    [
+      ['c-acme', true, 1],
+      ['c-bolt', true, 1],
+      ['p-portal', true, 1],
+    ],
   )
-  assert.ok(!bea.clients.some((c: any) => c.id === 'c-bolt'), 'the hand-entered Bolt assignment no longer counts')
+  assert.equal(moved.seeds.cutoverAt, options.now)
+  assert.doesNotThrow(() => assertLifecycleMutation(before, moved, SEEDS_ACTOR as any))
+  assert.equal(moveToBeforeSeeds(moved, 'later'), moved, 'only the first time')
+
+  // Synced: Seeds records come in beside Before Seeds; nothing old is touched.
+  const synced = planSeedsSync(moved, snapshot(), { ...options, id: sequential }).state
+  assert.equal(synced.clients.filter((c: any) => c.beforeSeeds).length, 2)
+  assert.ok(!synced.clients.some((c: any) => c.seedsId && c.beforeSeeds))
+
+  // Paolo has no assignment there, yet sees and can change all of Before Seeds.
+  const scope = scopeFor(synced, 'u-pao')
+  assert.ok(scope.fullClients.has('c-acme') && scope.writeClients.has('c-bolt'))
+  assert.ok(scope.writeProjects.has('p-portal'))
+  assert.ok(['t-uat', 't-sub', 't-local'].every(id => scope.writableItems.has(id)))
+  // …but not Bea's Seeds project.
+  const portal = synced.projects.find((p: any) => p.seedsId === 's-portal')
+  assert.ok(!scope.fullProjects.has(portal.id))
+
+  // The browser cannot take a record out of Before Seeds, or put one in.
+  const kept = keepSeedsFields(synced, {
+    ...synced,
+    clients: synced.clients.map((c: any) =>
+      c.id === 'c-acme' ? { ...c, beforeSeeds: undefined } : c.seedsId ? { ...c, beforeSeeds: true } : c,
+    ),
+  })
+  assert.equal(kept.clients.find((c: any) => c.id === 'c-acme').beforeSeeds, true)
+  assert.ok(!kept.clients.some((c: any) => c.seedsId && c.beforeSeeds))
 })
 
-test('confirming a match links it; turning it down adds a new record next time', () => {
-  const first = planSeedsSync(existing(), snapshot(), { ...options, id: sequential }).state
-  const confirmed = decideSeedsMatch(first, 'client:s-bolt', 'confirm')
-  assert.ok(confirmed)
-  const bolt = confirmed.state.clients.find((c: any) => c.id === 'c-bolt')
-  assert.deepEqual([bolt.seedsId, bolt.name], ['s-bolt', 'Bolt Logistics'])
-  assert.deepEqual(confirmed.state.seeds.pendingMatches, [])
-
-  const rejected = decideSeedsMatch(first, 'client:s-bolt', 'reject')
-  const next = planSeedsSync(rejected?.state, snapshot(), { ...options, id: sequential }).state
-  assert.equal(next.clients.find((c: any) => c.id === 'c-bolt').seedsId, undefined)
-  assert.ok(next.clients.some((c: any) => c.seedsId === 's-bolt' && c.id !== 'c-bolt'))
-  assert.equal(decideSeedsMatch(first, 'client:missing', 'confirm'), null)
-})
-
-test('only reviewers see matches, and only matches on records they can see', () => {
+test('Administrators see each person’s sync; only they see the list', () => {
   const bea = planSeedsSync(existing(), snapshot(), { ...options, id: sequential }).state
   const state = planSeedsSync(bea, snapshot(), { ...options, userId: 'u-pao', id: sequential }).state
-  assert.equal(seedsStatusFor(state, { id: 'admin', role: 'Administrator' }).pendingMatches.length, 1)
-  assert.equal(seedsStatusFor(state, { id: 'u-bea', role: 'Contributor' }).canReview, false)
-  const pm = seedsStatusFor(state, { id: 'u-pao', role: 'Contributor' })
-  assert.equal(pm.canReview, true, 'Paolo is PM in his own Seeds')
-  assert.deepEqual(pm.pendingMatches, [], 'Paolo manages Nimbus, not Bolt')
-  assert.equal(pm.people, undefined, 'only Administrators see who has connected')
+  assert.equal(seedsStatusFor(state, { id: 'u-pao', role: 'Contributor' }).people, undefined)
   assert.equal(seedsStatusFor(state, { id: 'admin', role: 'Administrator' }).people?.length, 2)
 })
 
@@ -536,30 +559,6 @@ test('when Seeds is down the last synced access stays and the error shows', asyn
   assert.deepEqual(activeAssignments(state(), 'u-bea'), before)
   assert.ok(state().seeds.sync.lastError)
   assert.ok(state().seeds.sync.lastSuccessAt, 'the last good sync is still known')
-})
-
-test('a reviewer confirms a match', async () => {
-  const { app, state } = setup(async () =>
-    snapshot({
-      projects: [...snapshot().projects, { id: 's-ship', clientId: 's-bolt', name: 'Shipping', contractNumber: '' }],
-      assignments: [
-        { personId: 'sp-bea', email: 'bea@company.com', role: 'BA', projectId: 's-portal' },
-        { personId: 'sp-pao', email: 'paolo@company.com', role: 'PM', projectId: 's-ship' },
-      ],
-    }),
-  )
-  await turnOn(app)
-  const match = state().seeds.pendingMatches.find((m: any) => m.id === 'client:s-bolt')
-  assert.ok(match, JSON.stringify(state().seeds.pendingMatches))
-  assert.equal(
-    (await app.ask('POST', '/api/seeds/matches/client:s-bolt', bea, { decision: 'confirm' })).status,
-    403,
-    'BAs do not confirm matches',
-  )
-  const done = await app.ask('POST', '/api/seeds/matches/client:s-bolt', admin, { decision: 'confirm' })
-  assert.equal(done.status, 200, JSON.stringify(done.body))
-  assert.equal(state().clients.find((c: any) => c.id === 'c-bolt').seedsId, 's-bolt')
-  assert.ok(!state().seeds.pendingMatches.some((m: any) => m.id === 'client:s-bolt'))
 })
 
 test('hand-entered assignments: Administrators only, names only, checked', async () => {

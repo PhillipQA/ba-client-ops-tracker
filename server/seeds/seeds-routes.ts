@@ -15,7 +15,13 @@ import type { Express, NextFunction, Request, Response } from 'express'
 import { normalizeAssignment, rolesFor, workspaceAccess } from '../../src/shared/access'
 import { jobRoles } from '../../src/shared/roles'
 import { defaultWaitingOn } from '../../src/features/tasks/waitingOn'
-import { type SeedsCounts, type SeedsSnapshot, seedsState, seedsStatusFor } from '../../src/shared/seeds'
+import {
+  moveToBeforeSeeds,
+  type SeedsCounts,
+  type SeedsSnapshot,
+  seedsState,
+  seedsStatusFor,
+} from '../../src/shared/seeds'
 import { httpSeedsSource, SeedsError, type SeedsFields, type SeedsSource } from './seeds-client'
 import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from './seeds-sync'
 
@@ -368,10 +374,11 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
       requireAdministrator(user)
       if (!deps.token())
         throw new SeedsError('The server has no Seeds token yet (SEEDS_API_TOKEN). Ask Internal Admin.', 503)
-      await service.update(user.organizationId, user, 'seeds-enable', state => ({
-        ...state,
-        seeds: { ...seedsState(state), connected: true },
-      }))
+      // The first time, everything that exists moves to Before Seeds: Seeds is the source of truth from here on.
+      await service.update(user.organizationId, SEEDS_ACTOR, 'seeds-enable', state => {
+        const on = { ...state, seeds: { ...seedsState(state), connected: true } }
+        return moveToBeforeSeeds(on, new Date().toISOString())
+      })
       // Turning it on is the first sync.
       res.json({ ok: true, connected: true, sync: await service.sync(user.organizationId) })
     }),

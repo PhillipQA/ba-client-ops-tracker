@@ -179,3 +179,8 @@
   color: var(--muted, #667085);
   word-break: break-word;
 }
+
+.seeds-badge.before {
+  background: var(--surface-muted, #f2f4f7);
+  color: var(--muted, #667085);
+}
