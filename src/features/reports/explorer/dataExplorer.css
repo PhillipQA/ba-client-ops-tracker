@@ -149,6 +149,9 @@
 }
 .dx-panel {
   display: grid;
+  /* One column that never grows past the panel: wide results scroll inside instead of pushing the page wider. */
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 10px;
   padding: 12px 14px;
   border: 1px solid var(--k-border);
@@ -296,6 +299,7 @@ textarea.dx-sql[readonly] {
 .dx-result {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 120px;
 }
 .dx-result:not(.dx-result-table) {
