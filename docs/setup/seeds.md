@@ -28,7 +28,9 @@ work onto Seeds:
 2. On a row, open its task cell › **Create a new task** › **Where: Seeds** (the default), the Seeds project and, if
    you like, the Seeds task. Or select rows › **Create tasks** to do many at once.
 3. A row on a Before Seeds task switches to the new Seeds task; the old task stays in Before Seeds with its history.
-   Subtasks made in the row's other cells go under the new task. Everyone is matched to Seeds by their **email**, and sees the clients
+   Subtasks made in the row's other cells go under the new task.
+4. Subtasks made from the tracker get a Seeds task: the one picked when creating it in a cell, else the Seeds task
+   with the same name (a *GO LIVE* step column → GO LIVE), else their task's. Everyone is matched to Seeds by their **email**, and sees the clients
 and projects Seeds lists them on as a project member. This app keeps the subtasks, emails, trackers, documents and time.
 
 ## Setting it up

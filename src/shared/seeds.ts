@@ -296,3 +296,17 @@ export function nameSimilarity(a: unknown, b: unknown) {
 }
 
 export const CLOSE_MATCH = 0.75
+
+const seedsKey = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+/**
+ * The Seeds task whose name matches a task or subtask title ("GO LIVE" ↔ "Go Live"), from a project's list: how a
+ * tracker's step and cell subtasks get their Seeds task without picking one.
+ */
+export function seedsTaskNamed(tasks: { id: string; name: string; archived?: boolean }[] | undefined, title: string) {
+  const key = seedsKey(title)
+  return key ? (tasks || []).find(task => !task.archived && seedsKey(task.name) === key)?.id : undefined
+}

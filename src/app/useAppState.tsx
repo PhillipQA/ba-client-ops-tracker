@@ -7,6 +7,7 @@ import { workHubSync, WORK_HUB_INTEGRATIONS } from '../features/work-hub/workHub
 import { useWorkHubSync } from '../features/work-hub/useWorkHubSync'
 import { trackerApi, type TaskLink } from '../features/trackers/trackerApi'
 import type { TaskDraft } from '../features/trackers/TrackerWork'
+import { seedsTaskNamed } from '../shared/seeds'
 import { applyTaskPatches, type TaskPatch } from '../features/trackers/trackerTasks'
 import { rememberTrackerRow } from '../features/trackers/trackerNav'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix } from '../features/requirements/rtm'
@@ -1661,6 +1662,16 @@ export function useAppState() {
       addedProjects.push(project)
       return project.id
     }
+    // Under a Seeds project, a task or subtask gets its Seeds task: the one chosen, else the one named like it (a
+    // tracker's "GO LIVE" step becomes a GO LIVE subtask). Without either, a subtask follows its task's.
+    const seedsTaskFor = (draft: TaskDraft, projectId?: string) => {
+      const seedsTasks = projects.find(project => project.id === projectId)?.seedsTasks
+      if (!seedsTasks?.length) return {}
+      const chosen =
+        draft.seedsTaskId && seedsTasks.some(task => task.id === draft.seedsTaskId) ? draft.seedsTaskId : undefined
+      const seedsTaskId = chosen || seedsTaskNamed(seedsTasks, draft.title)
+      return seedsTaskId ? { seedsTaskId } : {}
+    }
     const nextOrder = new Map<string, number>()
     const made: WorkItem[] = []
     drafts.forEach((draft, index) => {
@@ -1693,10 +1704,11 @@ export function useAppState() {
           ? draft.assignedToUserId
           : undefined)
       const isoDate = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '')
+      const projectId = parent ? parent.projectId : projectFor(draft)
       made.push({
         id: crypto.randomUUID(),
         clientId,
-        projectId: parent ? parent.projectId : projectFor(draft),
+        projectId,
         parentTaskId: parent?.id,
         subtaskOrder: order,
         title: draft.title.trim().slice(0, 200) || 'Untitled',
@@ -1715,7 +1727,7 @@ export function useAppState() {
         resolution: '',
         source: 'Internal',
         qaResult: 'Not Run',
-        ...(draft.seedsTaskId ? { seedsTaskId: draft.seedsTaskId } : {}),
+        ...seedsTaskFor(draft, projectId),
       })
     })
     const created = new Map(made.map(item => [item.id, item]))

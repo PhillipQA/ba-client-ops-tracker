@@ -110,3 +110,16 @@ test('without a subtask the remarks are typed and required; Seeds rules on durat
     /120/,
   )
 })
+
+test('a tracker subtask named like a Seeds task gets it', async () => {
+  const { seedsTaskNamed } = await import('../src/shared/seeds')
+  const tasks = [
+    { id: 'st-golive', name: 'GO LIVE' },
+    { id: 'st-bir', name: 'BIR/DRF CREATION' },
+    { id: 'st-x', name: 'MONITORING', archived: true },
+  ]
+  assert.equal(seedsTaskNamed(tasks, 'Go Live'), 'st-golive')
+  assert.equal(seedsTaskNamed(tasks, 'bir drf creation'), 'st-bir')
+  assert.equal(seedsTaskNamed(tasks, 'Monitoring'), undefined, 'not archived ones')
+  assert.equal(seedsTaskNamed(tasks, 'Hardware'), undefined)
+})

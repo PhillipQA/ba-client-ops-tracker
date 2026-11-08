@@ -4,6 +4,7 @@ import type { Tracker, TrackerColumn, TrackerRow } from './trackerModel'
 import { Dialog, Pill, Popover, plural } from './trackerUi'
 import type { WorkItem } from '../../shared/types'
 import ClientSelect from '../../shared/ui/SearchSelect'
+import { seedsTaskNamed } from '../../shared/seeds'
 
 /** What a tracker needs to create tasks and subtasks. They are saved with the rest of the workspace. */
 export type TaskDraft = {
@@ -223,6 +224,12 @@ export function TrackerWorkPicker(props: PickerProps) {
   const context = useTaskContext(tracker, tools)
   const byId = useMemo(() => new Map(tools.items.map(item => [item.id, item])), [tools.items])
   const task = row.taskId ? byId.get(row.taskId) : undefined
+  // A new subtask under a Seeds project: its Seeds task, matched from its name unless one is chosen.
+  const subtaskSeedsTasks = (tools.projects.find(project => project.id === task?.projectId)?.seedsTasks || []).filter(
+    option => !option.archived,
+  )
+  const [pickedSeedsTask, setPickedSeedsTask] = useState<string | null>(null)
+  const subtaskSeedsTask = pickedSeedsTask ?? (seedsTaskNamed(subtaskSeedsTasks, title) || '')
   const current = mode === 'task' ? task : props.current ? byId.get(props.current) : undefined
   const own = trackerClients(tracker)
   const clientName = (id?: string) => tools.clients.find(client => client.id === id)?.name || ''
@@ -275,7 +282,13 @@ export function TrackerWorkPicker(props: PickerProps) {
       } else {
         if (!task) throw new Error('Pick the row’s task first.')
         const [made] = await tools.onCreate([
-          { title: name, clientId: task.clientId || '', projectId: task.projectId || '', parentTaskId: task.id },
+          {
+            title: name,
+            clientId: task.clientId || '',
+            projectId: task.projectId || '',
+            parentTaskId: task.id,
+            ...(subtaskSeedsTask ? { seedsTaskId: subtaskSeedsTask } : {}),
+          },
         ])
         await props.onPickSubtask(made.id)
       }
@@ -440,7 +453,22 @@ export function TrackerWorkPicker(props: PickerProps) {
               {mode === 'task' ? (
                 context.fields
               ) : (
-                <p className="trk-muted-text">It goes under {task?.title}, with the same client and project.</p>
+                <>
+                  <p className="trk-muted-text">It goes under {task?.title}, with the same client and project.</p>
+                  {subtaskSeedsTasks.length > 0 && (
+                    <label className="trk-field-block">
+                      Seeds task
+                      <select value={subtaskSeedsTask} onChange={event => setPickedSeedsTask(event.target.value)}>
+                        <option value="">Same as the task</option>
+                        {subtaskSeedsTasks.map(option => (
+                          <option key={option.id} value={option.id}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </>
               )}
               <div className="k-dialog-actions">
                 <span className="trk-spacer" />
