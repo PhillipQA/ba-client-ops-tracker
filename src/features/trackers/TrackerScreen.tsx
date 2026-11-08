@@ -1225,12 +1225,28 @@ export default function TrackerScreen(props: Props) {
     [props.items, props.clients, props.projects, props.isTaskClosed, props.onCreateTasks, props.onOpenTask, canEdit],
   )
   const linkRowTasks = async (pairs: { rowId: string; taskId: string }[]) => {
+    // Rows switching to another task (Before Seeds → Seeds) let go of the old task's subtasks in their cells.
+    const switched = pairs.filter(pair => {
+      const before = rowsRef.current.find(row => row.id === pair.rowId)?.taskId
+      return before && before !== pair.taskId
+    })
+    const stale = linksRef.current.filter(link =>
+      switched.some(
+        pair =>
+          link.rowId === pair.rowId &&
+          link.columnId &&
+          itemsRef.current.find(item => item.id === link.taskId)?.parentTaskId !== pair.taskId,
+      ),
+    )
+    for (const link of stale) await removeLink(link)
+    if (stale.length) linksRef.current = linksRef.current.filter(link => !stale.includes(link))
     for (let at = 0; at < pairs.length; at += TRACKER_LIMITS.importBatch) {
       const result = await trackerApi.linkRowTasks(trackerId, pairs.slice(at, at + TRACKER_LIMITS.importBatch))
       const byId = new Map(result.rows.map(row => [row.id, row]))
       setRows(rowsRef.current.map(row => byId.get(row.id) || row))
     }
     say('info', `${plural(pairs.length, 'task')} created and linked.`)
+    if (switched.length && stepTasks) makeStepTasks(switched.map(pair => pair.rowId))
   }
   const removeLink = async (link: TaskLink) => {
     if (!canEdit) return
@@ -2620,7 +2636,21 @@ export default function TrackerScreen(props: Props) {
               tools={workTools}
               onClose={() => setWorkCell(null)}
               onPickTask={async taskId => {
+                // Switching the row to another task (say, from a Before Seeds task to a Seeds one): its cells let go
+                // of the old task's subtasks, which stay where they are, so the steps are made again under the new
+                // task instead of one row pointing at two tasks.
+                const stale =
+                  taskId && row.taskId && row.taskId !== taskId
+                    ? linksRef.current.filter(
+                        link =>
+                          link.rowId === row.id &&
+                          link.columnId &&
+                          itemsRef.current.find(item => item.id === link.taskId)?.parentTaskId !== taskId,
+                      )
+                    : []
                 linkTask(row, taskId)
+                for (const link of stale) await removeLink(link)
+                if (stale.length) linksRef.current = linksRef.current.filter(link => !stale.includes(link))
                 // A Site rollout row's task, however it was picked or made, gets a subtask for each step.
                 if (taskId && stepTasks) makeStepTasks([row.id])
               }}
