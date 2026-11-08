@@ -11,18 +11,14 @@ import path from 'node:path'
 import { registerStaticSite } from './platform/static-site'
 import { requirePlatformAdmin } from './platform/platform-auth'
 import { registerPlatformSettings } from './platform/platform-settings'
-import {
-  decryptSecret,
-  encryptionKey,
-  encryptSecret,
-  registerIntegrationRoutes,
-} from './integrations/tenant-integrations'
+import { registerIntegrationRoutes } from './integrations/tenant-integrations'
 import { registerAiAgentRoutes } from './ai/ai-agent-manager'
 import { createServer as createViteServer } from 'vite'
 import { dateKeyInTimeZone } from './services/follow-up-rollover'
 import { reconcileNotifications } from './services/notification-engine'
 import { registerGoogleCalendarRoutes } from './integrations/google-calendar'
 import { registerCommunications } from './integrations/communications'
+import { DEFAULT_SEEDS_URL } from './seeds/seeds-client'
 import { registerSeedsRoutes } from './seeds/seeds-routes'
 import { registerWorkflowRoutes } from './workspace/workflow-routes'
 import { WorkspaceRaceError } from './services/workspace-guard'
@@ -193,18 +189,8 @@ registerSeedsRoutes(app, {
   raced: error => error instanceof WorkspaceRaceError || (error instanceof TenantSaveError && error.raced),
   openStatus: openTaskStatus,
   today: () => dateKeyInTimeZone(new Date(), followUpTimeZone),
-  secrets: {
-    encrypt: (secret, owner) => encryptSecret(secret, owner, 'seeds-token'),
-    decrypt: (value, owner) => decryptSecret(value, owner, 'seeds-token'),
-    ready: () => {
-      try {
-        encryptionKey()
-        return true
-      } catch {
-        return false
-      }
-    },
-  },
+  token: () => (process.env.SEEDS_API_TOKEN || '').trim(),
+  apiUrl: () => (process.env.SEEDS_API_URL || '').trim() || DEFAULT_SEEDS_URL,
 }).start()
 registerTrackerTemplateRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
 

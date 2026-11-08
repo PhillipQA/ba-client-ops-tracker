@@ -1,6 +1,6 @@
 /**
  * Administrators: Seeds for the account (Settings › Integrations) and who sees what (Settings › Access).
- * Each person connects Seeds with their own API key on the Seeds page › Sync.
+ * The server holds the Seeds application token; people are matched to Seeds by email.
  */
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -12,8 +12,10 @@ import {
   loadSeedsAccount,
   type SeedsAccount,
   saveAccessSetup,
-  saveSeedsAccount,
+  type SyncResult,
+  syncSeeds,
   turnOffSeeds,
+  turnOnSeeds,
 } from './seedsApi'
 import './seeds.css'
 
@@ -21,14 +23,9 @@ const failure = (error: unknown) => (error instanceof Error ? error.message : 'R
 
 export function SeedsConnectionCard() {
   const [account, setAccount] = useState<SeedsAccount | null>(null)
-  const [baseUrl, setBaseUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const load = async () => {
-    const next = await loadSeedsAccount()
-    setAccount(next)
-    setBaseUrl(current => current || next.baseUrl)
-  }
+  const load = async () => setAccount(await loadSeedsAccount())
   useEffect(() => {
     void load().catch(error => setMessage(failure(error)))
   }, [])
@@ -44,86 +41,103 @@ export function SeedsConnectionCard() {
       setBusy(false)
     }
   }
+  const synced = (result: SyncResult) =>
+    result.ok
+      ? `Synced. Seeds found ${result.matched ?? 0} of your people on its projects${result.unmatched ? `; ${result.unmatched} not found` : ''}.${result.pending ? ` ${result.pending} close match${result.pending === 1 ? '' : 'es'} to confirm on the Seeds page.` : ''}`
+      : result.error || 'Seeds could not be read.'
   const people = account?.people || []
+  const found = people.filter(person => person.connected)
+  const missing = people.filter(person => !person.connected)
+  const sync = account?.sync
+  const fields = Object.entries(sync?.fields || {}).filter(([, names]) => names.length)
   return (
     <section className="panel account-integration-card">
       <div className="panel-heading">
         <div>
           <h2>Seeds</h2>
           <p>
-            Turn Seeds on and give its API address. Each person then connects with their own Seeds API key on the Seeds
-            page › Sync, and sees only what Seeds shows them.
+            Reads clients, projects, tasks and project members from Seeds. Each person is matched by email and sees the
+            projects Seeds lists them on. Syncs every 30 minutes once on.
           </p>
         </div>
-        <span className={account?.connected ? 'role-badge ok' : 'role-badge'}>{account?.connected ? 'On' : 'Off'}</span>
+        <span className={account?.connected ? (sync?.lastError ? 'role-badge warn' : 'role-badge ok') : 'role-badge'}>
+          {account?.connected ? (sync?.lastError ? 'Needs attention' : 'On') : 'Off'}
+        </span>
       </div>
-      {account && !account.encryptionReady && (
+      {account && !account.tokenReady && (
         <p role="alert" className="settings-message">
-          Credential storage needs setup by Internal Admin before people can save their Seeds keys.
+          The server has no Seeds token yet. Ask a SEEDS Admin for an application token, then add it in Northflank as
+          the secret SEEDS_API_TOKEN and redeploy.
         </p>
       )}
-      <div className="integration-form">
-        <label>
-          Seeds API address
-          <input
-            type="url"
-            placeholder="https://seeds.example.com/api/v1"
-            value={baseUrl}
-            onChange={event => setBaseUrl(event.target.value)}
-            autoComplete="off"
-          />
-        </label>
-      </div>
+      {account?.connected && sync && (
+        <p className="seeds-access-line">
+          {sync.lastSuccessAt ? `Last synced ${new Date(sync.lastSuccessAt).toLocaleString()}.` : 'Not synced yet.'}
+          {sync.lastError ? ` Last try failed: ${sync.lastError}` : ''}
+        </p>
+      )}
       <div className="integration-actions">
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || !baseUrl.trim()}
-          onClick={() =>
-            void act(async () => {
-              await saveSeedsAccount(baseUrl.trim())
-              return 'Seeds is on. People can now connect their own Seeds key on the Seeds page › Sync.'
-            })
-          }
-        >
-          {account?.connected ? 'Save address' : 'Turn on Seeds'}
-        </button>
-        {account?.connected && (
+        {!account?.connected ? (
           <button
             type="button"
-            className="secondary danger"
-            disabled={busy}
-            onClick={() => {
-              if (!window.confirm('Turn Seeds off? Hand-entered assignments count again until it is turned back on.'))
-                return
+            className="primary"
+            disabled={busy || !account?.tokenReady}
+            onClick={() =>
               void act(async () => {
-                await turnOffSeeds()
-                return 'Seeds is off.'
+                const result = await turnOnSeeds()
+                return `Seeds is on. ${synced(result.sync)}`
               })
-            }}
+            }
           >
-            Turn off
+            Turn on Seeds
           </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !account.tokenReady}
+              onClick={() => void act(async () => synced(await syncSeeds()))}
+            >
+              Sync now
+            </button>
+            <button
+              type="button"
+              className="secondary danger"
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm('Turn Seeds off? Hand-entered assignments count again until it is turned back on.'))
+                  return
+                void act(async () => {
+                  await turnOffSeeds()
+                  return 'Seeds is off.'
+                })
+              }}
+            >
+              Turn off
+            </button>
+          </>
         )}
       </div>
-      {account?.connected && (
+      {message && (
+        <p role="status" className="settings-message">
+          {message}
+        </p>
+      )}
+      {account?.connected && sync?.lastSuccessAt && (
         <>
-          <h3>Who has connected</h3>
-          {people.length ? (
+          <h3>Found in Seeds ({found.length})</h3>
+          {found.length ? (
             <ul className="seeds-list">
-              {people.map(person => (
+              {found.map(person => (
                 <li key={person.userId}>
                   <div>
                     <strong>{person.name}</strong>
                     <small>
                       {' '}
-                      ·{' '}
-                      {person.lastSuccessAt
-                        ? `synced ${new Date(person.lastSuccessAt).toLocaleString()}`
-                        : 'not synced yet'}
-                      {person.lastError ? ` · ${person.lastError}` : ''}
+                      · {person.counts?.assignments ?? 0} project role{person.counts?.assignments === 1 ? '' : 's'}
                       {person.unknownRoles?.length
-                        ? ` · Seeds titles with no role yet: ${person.unknownRoles.join(', ')} (add them in Settings › Roles)`
+                        ? ` · Seeds roles with no job role yet: ${person.unknownRoles.join(', ')} (add them in Settings › Roles)`
                         : ''}
                     </small>
                   </div>
@@ -131,14 +145,29 @@ export function SeedsConnectionCard() {
               ))}
             </ul>
           ) : (
-            <p>Nobody yet.</p>
+            <p>Nobody yet. Check that people's emails here match their Seeds emails.</p>
+          )}
+          {missing.length > 0 && (
+            <>
+              <h3>Not on any Seeds project ({missing.length})</h3>
+              <p>Their email here may differ from Seeds. Their hand-entered assignments (Settings › Access) apply.</p>
+              <p>{missing.map(person => person.name).join(', ')}</p>
+            </>
+          )}
+          {fields.length > 0 && (
+            <details>
+              <summary>Fields Seeds sent</summary>
+              <dl className="seeds-fields">
+                {fields.map(([list, names]) => (
+                  <div key={list}>
+                    <dt>{list}</dt>
+                    <dd>{names.join(', ')}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
           )}
         </>
-      )}
-      {message && (
-        <p role="status" className="settings-message">
-          {message}
-        </p>
       )}
     </section>
   )
@@ -182,7 +211,7 @@ export function AccessSettings() {
   const projects = new Map<string, AccessSetup['projects'][number]>(
     setup.projects.map(project => [project.id, project]),
   )
-  // In force per person: from their own Seeds sync once they have one, otherwise the ones entered here.
+  // In force per person: from Seeds once it lists them on a project, otherwise the ones entered here.
   const fromSeeds = new Set(setup.seedsConnected ? setup.seedsUsers : [])
   const shown = setup.assignments.filter(a => a.source === (fromSeeds.has(a.userId) ? 'seeds' : 'manual'))
   const manualAssignments = setup.assignments.filter(a => a.source === 'manual')
@@ -244,7 +273,7 @@ export function AccessSettings() {
             <h2>Assignments</h2>
             <p>
               {setup.seedsConnected
-                ? 'People who have connected their own Seeds get their access from Seeds (it changes there). For everyone else, enter it here.'
+                ? 'People Seeds lists on a project get their access from Seeds (it changes there). For everyone else, enter it here.'
                 : 'Until Seeds is on, enter who works on which client or project here. Roles add up: someone can be PM on one project and BA on another.'}
             </p>
           </div>

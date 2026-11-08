@@ -1,23 +1,24 @@
 import { requestJson } from '../../shared/http'
 import type { Assignment, SeedsRole } from '../../shared/access'
-import type { SeedsCounts, SeedsUserSync } from '../../shared/seeds'
+import type { SeedsAccountSync, SeedsCounts, SeedsUserSync } from '../../shared/seeds'
 
 /** Administrators: Seeds for the whole account. */
 export type SeedsAccount = {
   connected: boolean
-  baseUrl: string
-  encryptionReady: boolean
+  /** The server has its Seeds application token (SEEDS_API_TOKEN). */
+  tokenReady: boolean
+  apiUrl: string
+  sync: SeedsAccountSync
   people: (SeedsUserSync & { userId: string; name: string })[]
 }
-/** Each person: their own Seeds key. */
-export type MySeeds = {
-  available: boolean
-  configured: boolean
-  maskedKey: string
-  connectionStatus: string
-  mine: SeedsUserSync
+export type SyncResult = {
+  ok: boolean
+  error?: string
+  counts?: SeedsCounts
+  pending?: number
+  matched?: number
+  unmatched?: number
 }
-export type SyncResult = { ok: boolean; error?: string; counts?: SeedsCounts; pending?: number }
 
 export type AccessSetup = {
   strictVisibility: boolean
@@ -42,13 +43,9 @@ export type AssignmentInput = { userId: string; role: SeedsRole; clientId?: stri
 const fallback = 'Seeds is unavailable right now. Try again in a moment.'
 
 export const loadSeedsAccount = () => requestJson<SeedsAccount>('/api/account/seeds', { noStore: true, fallback })
-export const saveSeedsAccount = (baseUrl: string) =>
-  requestJson('/api/account/seeds', { method: 'PUT', body: { baseUrl }, fallback })
+export const turnOnSeeds = () =>
+  requestJson<{ ok: boolean; sync: SyncResult }>('/api/account/seeds', { method: 'PUT', body: {}, fallback })
 export const turnOffSeeds = () => requestJson('/api/account/seeds', { method: 'DELETE', fallback })
-export const loadMySeeds = () => requestJson<MySeeds>('/api/me/seeds', { noStore: true, fallback })
-export const saveMySeedsKey = (apiKey: string) =>
-  requestJson<{ saved: boolean; sync: SyncResult }>('/api/me/seeds', { method: 'PUT', body: { apiKey }, fallback })
-export const removeMySeeds = () => requestJson('/api/me/seeds', { method: 'DELETE', fallback })
 export const syncSeeds = () => requestJson<SyncResult>('/api/seeds/sync', { method: 'POST', body: {}, fallback })
 export const decideMatch = (id: string, decision: 'confirm' | 'reject') =>
   requestJson<SyncResult>(`/api/seeds/matches/${encodeURIComponent(id)}`, {

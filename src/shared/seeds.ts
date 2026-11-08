@@ -15,6 +15,8 @@ export interface SeedsPerson {
   id: string
   name: string
   email: string
+  /** Their job title in Seeds, when it says. */
+  title?: string
 }
 export interface SeedsClient {
   id: string
@@ -37,14 +39,13 @@ export interface SeedsTask {
 }
 export interface SeedsAssignment {
   personId: string
+  /** Lower-case email: how a Seeds person is matched to someone in this app. */
+  email?: string
   role: SeedsRole
   clientId?: string
   projectId?: string
 }
 export interface SeedsSnapshot {
-  /** Who the API key belongs to, when Seeds says. */
-  me?: SeedsPerson
-  /** May be empty: a personal key need not list other people. */
   people: SeedsPerson[]
   clients: SeedsClient[]
   projects: SeedsProject[]
@@ -76,9 +77,9 @@ export interface SeedsCounts {
   renamed: number
 }
 
-/** One person's own Seeds sync. */
+/** One person's part of the account's Seeds sync. */
 export interface SeedsUserSync {
-  /** This person has saved their Seeds API key. */
+  /** Seeds lists this person (matched by email) on at least one project. */
   connected: boolean
   lastAttemptAt?: string
   lastSuccessAt?: string
@@ -89,10 +90,22 @@ export interface SeedsUserSync {
   unknownRoles?: string[]
 }
 
+/** The account's last Seeds sync as a whole. */
+export interface SeedsAccountSync {
+  lastAttemptAt?: string
+  lastSuccessAt?: string
+  lastError?: string
+  /** People in this app that Seeds lists on a project, and those it does not. */
+  matched?: number
+  unmatched?: number
+  /** Record field names Seeds sent (names only), to check the mapping. */
+  fields?: Record<string, string[]>
+}
+
 export interface SeedsState {
-  /** An Administrator turned Seeds on and gave its API address. Each person then connects their own key. */
+  /** An Administrator turned Seeds on. The server holds the Seeds application token; nobody pastes a key. */
   connected: boolean
-  baseUrl?: string
+  sync: SeedsAccountSync
   users: Record<string, SeedsUserSync>
   pendingMatches: SeedsMatch[]
   /** Seeds ids whose suggested match was turned down; the next sync adds them as new records. */
@@ -102,11 +115,12 @@ export interface SeedsState {
 /** What the browser is told: the person's own sync, and matches only for those who can act on them. */
 export interface SeedsStatus {
   connected: boolean
-  baseUrl?: string
+  /** When the account last synced, and why it failed if it did. */
+  sync: Pick<SeedsAccountSync, 'lastAttemptAt' | 'lastSuccessAt' | 'lastError'>
   mine: SeedsUserSync
   canReview: boolean
   pendingMatches: SeedsMatch[]
-  /** Administrators: who has connected Seeds and how their last sync went. */
+  /** Administrators: how each person's part of the sync went. */
   people?: (SeedsUserSync & { userId: string })[]
 }
 
@@ -131,9 +145,20 @@ export function seedsState(state: any): SeedsState {
   const users: Record<string, SeedsUserSync> = {}
   if (raw.users && typeof raw.users === 'object')
     for (const [userId, value] of Object.entries(raw.users)) users[userId] = userSync(value)
+  const sync = raw.sync && typeof raw.sync === 'object' ? raw.sync : {}
+  const fields: Record<string, string[]> = {}
+  if (sync.fields && typeof sync.fields === 'object')
+    for (const [key, names] of Object.entries(sync.fields)) fields[key] = list(names).map(text).slice(0, 60)
   return {
     connected: raw.connected === true,
-    ...(raw.baseUrl ? { baseUrl: text(raw.baseUrl) } : {}),
+    sync: {
+      ...(sync.lastAttemptAt ? { lastAttemptAt: text(sync.lastAttemptAt) } : {}),
+      ...(sync.lastSuccessAt ? { lastSuccessAt: text(sync.lastSuccessAt) } : {}),
+      ...(sync.lastError ? { lastError: text(sync.lastError) } : {}),
+      ...(Number.isFinite(sync.matched) ? { matched: Number(sync.matched) } : {}),
+      ...(Number.isFinite(sync.unmatched) ? { unmatched: Number(sync.unmatched) } : {}),
+      ...(Object.keys(fields).length ? { fields } : {}),
+    },
     users,
     pendingMatches: list(raw.pendingMatches).filter(match => match?.id && match.seedsId && match.appId),
     rejected: list(raw.rejected).map(text).filter(Boolean),
@@ -156,7 +181,11 @@ export function seedsStatusFor(state: any, user: { id: string; role?: string }):
         : scope.visibleItems.has(match.appId))
   return {
     connected: seeds.connected,
-    ...(seeds.baseUrl ? { baseUrl: seeds.baseUrl } : {}),
+    sync: {
+      ...(seeds.sync.lastAttemptAt ? { lastAttemptAt: seeds.sync.lastAttemptAt } : {}),
+      ...(seeds.sync.lastSuccessAt ? { lastSuccessAt: seeds.sync.lastSuccessAt } : {}),
+      ...(seeds.sync.lastError ? { lastError: seeds.sync.lastError } : {}),
+    },
     mine: seeds.users[user.id] || { connected: false },
     canReview,
     pendingMatches: canReview ? seeds.pendingMatches.filter(sees) : [],
