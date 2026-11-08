@@ -144,6 +144,3 @@ record disappears from Seeds: work that is not in Seeds keeps working.
 Settings › Integrations › Seeds › **Turn off**. Hand-entered assignments count again; the Seeds links on records stay,
 so turning it back on picks up where it left off.
 
-## Later: time logs to Seeds
-
-See **Sending time to Seeds** above.
