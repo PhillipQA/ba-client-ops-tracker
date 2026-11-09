@@ -48,6 +48,7 @@ import { type Store, isTaskClosed, normalizeStore, seedStore } from './store'
 import { ActivityForm } from '../features/action-center/ActionCenterParts'
 import { ClientDetail, ClientForm, ProjectDetail, ProjectForm } from '../features/clients/ClientViews'
 import { TaskEditForm, TaskForm } from '../features/tasks/TaskForms'
+import MoveToSeedsDialog from '../features/seeds/MoveToSeedsDialog'
 import { useAppState } from './useAppState'
 import { isSeedsView, labels, sidebarItems } from './navigation'
 import { SeedsSyncPage, SeedsTabs } from '../features/seeds/SeedsPage'
@@ -82,6 +83,9 @@ function App() {
     editingActivity,
     editingRecord,
     editingTask,
+    movingToSeeds,
+    setMovingToSeeds,
+    moveWorkToSeeds,
     handleLogin,
     handleLogout,
     handleNotificationAction,
@@ -752,6 +756,15 @@ function App() {
                   onTimeEntryMutation={applyTimeEntryMutation}
                   currentUser={currentUser}
                   today={today}
+                  onMoveToSeeds={
+                    currentUser.role === 'Administrator' && store.seeds?.cutoverAt
+                      ? () => {
+                          setModal(null)
+                          setEditingTaskId(null)
+                          setMovingToSeeds({ taskId: editingTask.id })
+                        }
+                      : undefined
+                  }
                 />
               )}
               {modal === 'client' && (
@@ -779,6 +792,18 @@ function App() {
                 />
               )}
             </Modal>
+          )}
+          {movingToSeeds && currentUser.role === 'Administrator' && (
+            <MoveToSeedsDialog
+              items={store.items}
+              projects={store.projects}
+              clients={store.clients}
+              taskId={movingToSeeds.taskId}
+              fromProjectId={movingToSeeds.fromProjectId}
+              isClosed={status => isTaskClosed(status, store.taskSettings)}
+              onMove={moveWorkToSeeds}
+              onClose={() => setMovingToSeeds(null)}
+            />
           )}
           {editingRecord &&
             currentUser.role !== 'Viewer' &&
