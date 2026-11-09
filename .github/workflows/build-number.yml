@@ -2,7 +2,8 @@ name: Build number
 
 # After each pull request is merged into main, raise APP_BUILD in src/shared/version.ts by one (v2.0 → v2.0 · B01 →
 # B02…). A pull request that changes src/shared/version.ts itself sets the version by hand and is not counted. The
-# bump is its own small commit on main, marked [skip ci] so it does not run the Build workflow again.
+# bump is its own small commit on main. It must not say "skip ci": Northflank would then not deploy it, and the app
+# would show the previous build. (Pushes made with the workflow's own token never start other workflows anyway.)
 
 on:
   pull_request:
@@ -53,7 +54,7 @@ jobs:
             next=$((build + 1))
             sed -i -E "s/^export const APP_BUILD = [0-9]+$/export const APP_BUILD = $next/" src/shared/version.ts
             label=$(printf 'B%02d' "$next")
-            git commit --quiet -am "Build $label (#$PR) [skip ci]"
+            git commit --quiet -am "Build $label (#$PR)"
             if git push --quiet origin HEAD:main; then
               echo "Now $label"
               exit 0
