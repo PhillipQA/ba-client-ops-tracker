@@ -24,10 +24,12 @@ export type SeedsFields = Partial<Record<'users' | 'parents' | 'clients' | 'proj
 
 export interface SeedsSource {
   /** Everything one account sync needs. Tasks are read only for projects where someone in `emails` is a member. */
-  read(emails: Set<string>): Promise<{ snapshot: SeedsSnapshot; fields: SeedsFields }>
+  read(emails: Set<string>): Promise<{ snapshot: SeedsSnapshot; fields: SeedsFields; skipped?: string[] }>
 }
 
 export class SeedsError extends Error {
+  /** The field names Seeds sent before it failed, to check the mapping. */
+  fields?: SeedsFields
   constructor(
     message: string,
     public status = 502,
@@ -47,6 +49,20 @@ const pick = (record: any, ...keys: string[]) => {
   }
   return undefined
 }
+/**
+ * A record's Seeds id. Seeds ids in paths are whole numbers, so of the fields that may hold it, the first that is a
+ * whole number wins (a record may also carry a code or a uuid under one of the names); else the first one present.
+ */
+const idOf = (record: any, ...keys: string[]) => {
+  const values = keys
+    .map(key => pick(record, key))
+    .filter(value => value != null && value !== '')
+    .map(text)
+  return values.find(value => /^[1-9]\d*$/.test(value)) || values[0] || ''
+}
+/** A Seeds id that can go in a path: a whole number of at least 1. */
+export const pathId = (id: string) => /^[1-9]\d*$/.test(id)
+
 const archived = (record: any) =>
   record?.archived === true ||
   record?.isArchived === true ||
@@ -75,7 +91,7 @@ const fieldNames = (rows: any[]) => [
 
 export const parseSeeds = {
   person: (record: any) => ({
-    id: text(pick(record, 'id', 'userId', 'user_id', 'employeeId', 'employee_id')),
+    id: idOf(record, 'userId', 'user_id', 'id', 'employeeId', 'employee_id'),
     name: fullName(record),
     email: emailOf(record),
     title: text(
@@ -84,7 +100,7 @@ export const parseSeeds = {
   }),
   /** A Seeds parent: the customer company, which is this app's client. */
   parent: (record: any) => ({
-    id: text(pick(record, 'id', 'parentId', 'parent_id')),
+    id: idOf(record, 'parentId', 'parent_id', 'id'),
     name: text(
       pick(record, 'name', 'parentName', 'parent_name', 'companyName', 'company_name', 'clientName', 'client_name'),
     ),
@@ -92,14 +108,14 @@ export const parseSeeds = {
   }),
   /** A Seeds client, read only for the parent it belongs to. */
   client: (record: any) => ({
-    id: text(pick(record, 'id', 'clientId', 'client_id')),
+    id: idOf(record, 'clientId', 'client_id', 'id'),
     parentId: text(pick(record, 'parentId', 'parent_id', 'parent.id')),
   }),
   /** `clientId` here is the Seeds parent (this app's client); `seedsClientId` is Seeds' own client, if any. */
   project: (record: any) => ({
-    id: text(pick(record, 'id', 'projectId', 'project_id')),
-    clientId: text(pick(record, 'parentId', 'parent_id', 'parent.id')),
-    seedsClientId: text(pick(record, 'clientId', 'client_id', 'client.id')),
+    id: idOf(record, 'projectId', 'project_id', 'id'),
+    clientId: idOf(record, 'parentId', 'parent_id', 'parent.id'),
+    seedsClientId: idOf(record, 'clientId', 'client_id', 'client.id'),
     name: text(pick(record, 'name', 'projectName', 'project_name', 'title')),
     contractNumber: text(
       pick(
@@ -119,16 +135,14 @@ export const parseSeeds = {
     ...(archived(record) ? { archived: true } : {}),
   }),
   task: (record: any, projectId: string) => ({
-    id: text(pick(record, 'id', 'taskId', 'task_id')),
+    id: idOf(record, 'taskId', 'task_id', 'id'),
     projectId,
     name: text(pick(record, 'name', 'taskName', 'task_name', 'title', 'description')),
     ...(archived(record) ? { archived: true } : {}),
   }),
   /** A member names the person by user id (or carries their email) and their role on the project. */
   member: (record: any) => ({
-    personId: text(
-      pick(record, 'userId', 'user_id', 'user.id', 'employeeId', 'employee_id', 'memberId', 'member_id', 'id'),
-    ),
+    personId: idOf(record, 'userId', 'user_id', 'user.id', 'employeeId', 'employee_id', 'memberId', 'member_id', 'id'),
     email: emailOf(record),
     role: text(
       pick(
@@ -298,80 +312,124 @@ export function httpSeedsSource(
     return rows
   }
 
+  /**
+   * One project's members or tasks. If Seeds turns down that one project (400/404, say an id it does not accept),
+   * it is skipped and counted rather than stopping the whole sync.
+   */
+  async function readForProject(id: string, list: 'members' | 'tasks', skipped: string[]) {
+    if (!pathId(id)) {
+      skipped.push(id)
+      return null
+    }
+    try {
+      return await readOne(`/projects/${encodeURIComponent(id)}/${list}`, `project ${list}`)
+    } catch (error) {
+      if (error instanceof SeedsError && /answered (400|404|422)/.test(error.message)) {
+        skipped.push(id)
+        return null
+      }
+      throw error
+    }
+  }
+
   return {
     async read(emails) {
-      progress({ step: 'lists', done: 0, total: 3 })
-      const rawUsers = await readAll('/users', 'users')
-      progress({ step: 'lists', done: 1, total: 3 })
-      const rawParents = await readAll('/parents', 'parents')
-      progress({ step: 'lists', done: 2, total: 3 })
-      const rawProjects = await readAll('/projects', 'projects')
-      progress({ step: 'lists', done: 3, total: 3 })
-      const people = rawUsers.map(parseSeeds.person).filter(person => person.id)
-      const emailById = new Map(people.map(person => [person.id, person.email]))
-      const titleById = new Map(people.map(person => [person.id, person.title]))
-      const parsed = rawProjects.map(parseSeeds.project).filter(project => project.id && project.name)
-      // Projects that name a Seeds client but not its parent: look the parent up through /clients.
-      const rawClients = parsed.some(project => !project.clientId && project.seedsClientId)
-        ? await readAllIfAllowed('/clients', 'clients')
-        : []
-      const parentOfClient = new Map(
-        rawClients.map(parseSeeds.client).map(client => [client.id, client.parentId] as const),
-      )
-      const projects = parsed.map(({ seedsClientId, ...project }) => ({
-        ...project,
-        clientId: project.clientId || parentOfClient.get(seedsClientId) || '',
-      }))
-      const clients = rawParents.map(parseSeeds.parent).filter(client => client.id && client.name)
-
-      const rawMembers: any[] = []
-      const open = projects.filter(project => !project.archived)
-      const membersByProject: {
-        project: (typeof projects)[number]
-        members: ReturnType<typeof parseSeeds.member>[]
-      }[] = []
-      for (const project of open) {
-        progress({ step: 'members', done: membersByProject.length, total: open.length })
-        const rows = await readOne(`/projects/${encodeURIComponent(project.id)}/members`, 'project members')
-        rawMembers.push(...rows.slice(0, 5))
-        membersByProject.push({ project, members: rows.map(parseSeeds.member) })
+      // The field names Seeds sent so far, kept on a failure too, so the mapping can be checked either way.
+      const fields: SeedsFields = {}
+      const note = (key: keyof SeedsFields, rows: any[]) => {
+        if (rows.length) fields[key] = fieldNames(rows)
       }
-      const assignments: SeedsSnapshot['assignments'] = []
-      const wantedProjects: typeof projects = []
-      for (const { project, members } of membersByProject) {
-        let wanted = false
-        for (const member of members) {
-          const email = member.email || emailById.get(member.personId) || ''
-          if (!email || !emails.has(email)) continue
-          wanted = true
-          // No role on the project: fall back to the person's title, then "Member" (map it in Settings › Roles).
-          const role = member.role || titleById.get(member.personId) || 'Member'
-          assignments.push({ personId: member.personId, email, role, projectId: project.id })
-        }
-        if (wanted) wantedProjects.push(project)
-      }
-
-      const rawTasks: any[] = []
-      const taskLists: ReturnType<typeof parseSeeds.task>[][] = []
-      for (const project of wantedProjects) {
-        progress({ step: 'tasks', done: taskLists.length, total: wantedProjects.length })
-        const rows = await readOne(`/projects/${encodeURIComponent(project.id)}/tasks`, 'project tasks')
-        rawTasks.push(...rows.slice(0, 5))
-        taskLists.push(rows.map(row => parseSeeds.task(row, project.id)))
-      }
-      const tasks = taskLists.flat().filter(task => task.id && task.name)
-
-      return {
-        snapshot: { people, clients, projects, tasks, assignments },
-        fields: {
-          users: fieldNames(rawUsers),
-          parents: fieldNames(rawParents),
-          ...(rawClients.length ? { clients: fieldNames(rawClients) } : {}),
-          projects: fieldNames(rawProjects),
-          members: fieldNames(rawMembers),
-          tasks: fieldNames(rawTasks),
-        },
+      try {
+        return await readEverything(emails, fields, note)
+      } catch (error) {
+        if (error instanceof SeedsError) error.fields = fields
+        throw error
       }
     },
+  }
+
+  async function readEverything(
+    emails: Set<string>,
+    fields: SeedsFields,
+    note: (key: keyof SeedsFields, rows: any[]) => void,
+  ) {
+    progress({ step: 'lists', done: 0, total: 3 })
+    const rawUsers = await readAll('/users', 'users')
+    note('users', rawUsers)
+    progress({ step: 'lists', done: 1, total: 3 })
+    const rawParents = await readAll('/parents', 'parents')
+    note('parents', rawParents)
+    progress({ step: 'lists', done: 2, total: 3 })
+    const rawProjects = await readAll('/projects', 'projects')
+    note('projects', rawProjects)
+    progress({ step: 'lists', done: 3, total: 3 })
+    const people = rawUsers.map(parseSeeds.person).filter(person => person.id)
+    const emailById = new Map(people.map(person => [person.id, person.email]))
+    const titleById = new Map(people.map(person => [person.id, person.title]))
+    const parsed = rawProjects.map(parseSeeds.project).filter(project => project.id && project.name)
+    // Projects that name a Seeds client but not its parent: look the parent up through /clients.
+    const rawClients = parsed.some(project => !project.clientId && project.seedsClientId)
+      ? await readAllIfAllowed('/clients', 'clients')
+      : []
+    const parentOfClient = new Map(
+      rawClients.map(parseSeeds.client).map(client => [client.id, client.parentId] as const),
+    )
+    const projects = parsed.map(({ seedsClientId, ...project }) => ({
+      ...project,
+      clientId: project.clientId || parentOfClient.get(seedsClientId) || '',
+    }))
+    const clients = rawParents.map(parseSeeds.parent).filter(client => client.id && client.name)
+
+    const rawMembers: any[] = []
+    const open = projects.filter(project => !project.archived)
+    const membersByProject: {
+      project: (typeof projects)[number]
+      members: ReturnType<typeof parseSeeds.member>[]
+    }[] = []
+    const skipped: string[] = []
+    for (const [index, project] of open.entries()) {
+      progress({ step: 'members', done: index, total: open.length })
+      const rows = await readForProject(project.id, 'members', skipped)
+      if (!rows) continue
+      if (rawMembers.length < 5) note('members', [...rawMembers, ...rows.slice(0, 5)])
+      rawMembers.push(...rows.slice(0, 5))
+      membersByProject.push({ project, members: rows.map(parseSeeds.member) })
+    }
+    const assignments: SeedsSnapshot['assignments'] = []
+    const wantedProjects: typeof projects = []
+    for (const { project, members } of membersByProject) {
+      let wanted = false
+      for (const member of members) {
+        const email = member.email || emailById.get(member.personId) || ''
+        if (!email || !emails.has(email)) continue
+        wanted = true
+        // No role on the project: fall back to the person's title, then "Member" (map it in Settings › Roles).
+        const role = member.role || titleById.get(member.personId) || 'Member'
+        assignments.push({ personId: member.personId, email, role, projectId: project.id })
+      }
+      if (wanted) wantedProjects.push(project)
+    }
+
+    const rawTasks: any[] = []
+    const taskLists: ReturnType<typeof parseSeeds.task>[][] = []
+    for (const [index, project] of wantedProjects.entries()) {
+      progress({ step: 'tasks', done: index, total: wantedProjects.length })
+      const rows = await readForProject(project.id, 'tasks', skipped)
+      if (!rows) continue
+      rawTasks.push(...rows.slice(0, 5))
+      taskLists.push(rows.map(row => parseSeeds.task(row, project.id)))
+    }
+    const tasks = taskLists.flat().filter(task => task.id && task.name)
+
+    return {
+      snapshot: { people, clients, projects, tasks, assignments },
+      fields: {
+        ...fields,
+        ...(rawClients.length ? { clients: fieldNames(rawClients) } : {}),
+        members: fieldNames(rawMembers),
+        tasks: fieldNames(rawTasks),
+      },
+      skipped: [...new Set(skipped)],
+    }
   }
 }

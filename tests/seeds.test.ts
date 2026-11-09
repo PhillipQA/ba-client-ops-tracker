@@ -651,3 +651,30 @@ test('a long sync answers that it is running, and the card can follow it', async
   assert.deepEqual(service.status('org'), { running: false })
   assert.equal(stored.seeds.sync.matched, 2)
 })
+
+test('Seeds ids: the whole-number field wins; a project Seeds turns down is skipped, not fatal', async () => {
+  assert.equal(parseSeeds.project({ id: 'PRJ-0042', projectId: 42, name: 'Portal' }).id, '42')
+  assert.equal(parseSeeds.person({ id: 'a1b2', userId: 7, email: 'x@y' }).id, '7')
+  const { fetcher } = fakeSeeds({
+    '/projects?limit=100': {
+      data: [
+        { id: 20, parentId: 5, name: 'Curated Meeple OPC' },
+        { id: 'not-a-number', parentId: 5, name: 'Odd one' },
+        { id: 22, parentId: 5, name: 'Turned down' },
+      ],
+    },
+    '/projects/22/members': { status: 400, error: { code: 'bad', message: 'projectId is invalid' } },
+  })
+  const read = await httpSeedsSource('t', undefined, fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(['bea@company.com']),
+  )
+  assert.deepEqual(read.skipped?.sort(), ['22', 'not-a-number'])
+  assert.equal(read.snapshot.assignments.length, 1, 'the rest synced')
+
+  const broken = fakeSeeds({ '/projects?limit=100': { status: 500, error: { code: 'x', message: 'boom' } } })
+  await assert.rejects(
+    httpSeedsSource('t', undefined, broken.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(new Set()),
+    (error: any) => Boolean(error.fields?.users && error.fields?.parents),
+    'field names read so far are kept on a failure',
+  )
+})

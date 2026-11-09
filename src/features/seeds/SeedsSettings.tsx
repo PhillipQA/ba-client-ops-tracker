@@ -144,6 +144,25 @@ export function SeedsConnectionCard() {
           {message}
         </p>
       )}
+      {account?.connected && sync?.skipped ? (
+        <p className="seeds-access-line">
+          Seeds would not give the members or tasks of {sync.skipped} project{sync.skipped === 1 ? '' : 's'}; they were
+          skipped.
+        </p>
+      ) : null}
+      {account?.connected && fields.length > 0 && !sync?.lastSuccessAt && (
+        <details>
+          <summary>Fields Seeds sent</summary>
+          <dl className="seeds-fields">
+            {fields.map(([list, names]) => (
+              <div key={list}>
+                <dt>{list}</dt>
+                <dd>{names.join(', ')}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
       {account?.connected && sync?.lastSuccessAt && (
         <>
           <h3>Found in Seeds ({found.length})</h3>

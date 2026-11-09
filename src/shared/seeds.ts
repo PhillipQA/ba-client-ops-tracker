@@ -102,6 +102,8 @@ export interface SeedsAccountSync {
   unmatched?: number
   /** Record field names Seeds sent (names only), to check the mapping. */
   fields?: Record<string, string[]>
+  /** Seeds projects Seeds would not give members or tasks for (skipped, not failed). */
+  skipped?: number
 }
 
 export interface SeedsState {
@@ -162,6 +164,7 @@ export function seedsState(state: any): SeedsState {
       ...(sync.lastError ? { lastError: text(sync.lastError) } : {}),
       ...(Number.isFinite(sync.matched) ? { matched: Number(sync.matched) } : {}),
       ...(Number.isFinite(sync.unmatched) ? { unmatched: Number(sync.unmatched) } : {}),
+      ...(Number(sync.skipped) > 0 ? { skipped: Number(sync.skipped) } : {}),
       ...(Object.keys(fields).length ? { fields } : {}),
     },
     users,

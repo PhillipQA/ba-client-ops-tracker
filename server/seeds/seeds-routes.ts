@@ -87,7 +87,15 @@ export function planAccountSync(
   state: any,
   snapshot: SeedsSnapshot,
   fields: SeedsFields,
-  options: { now: string; today: string; openStatus: string; waitingOn: string; id?: () => string },
+  options: {
+    now: string
+    today: string
+    openStatus: string
+    waitingOn: string
+    id?: () => string
+    /** Seeds projects Seeds would not give members or tasks for. */
+    skipped?: number
+  },
 ) {
   let next = state
   let matched = 0
@@ -136,7 +144,14 @@ export function planAccountSync(
     ...next,
     seeds: {
       ...seeds,
-      sync: { lastAttemptAt: options.now, lastSuccessAt: options.now, matched, unmatched, fields },
+      sync: {
+        lastAttemptAt: options.now,
+        lastSuccessAt: options.now,
+        matched,
+        unmatched,
+        fields,
+        ...(options.skipped ? { skipped: options.skipped } : {}),
+      },
     },
   }
   return { state: next, counts: total, pending }
@@ -183,15 +198,23 @@ export function createSeedsService(deps: SeedsDeps) {
     } catch (error) {
       const message = error instanceof SeedsError ? error.message : 'Seeds could not be read.'
       if (!(error instanceof SeedsError)) console.error('Seeds read failed:', error)
+      const fields = error instanceof SeedsError && error.fields ? error.fields : undefined
       await update(organizationId, SEEDS_ACTOR, 'seeds-sync-failed', state => {
         const seeds = seedsState(state)
-        return { ...state, seeds: { ...seeds, sync: { ...seeds.sync, lastAttemptAt: now, lastError: message } } }
+        return {
+          ...state,
+          seeds: {
+            ...seeds,
+            sync: { ...seeds.sync, lastAttemptAt: now, lastError: message, ...(fields ? { fields } : {}) },
+          },
+        }
       })
       return { ok: false, error: message }
     }
     let result: ReturnType<typeof planAccountSync> | undefined
     await update(organizationId, SEEDS_ACTOR, 'seeds-sync', state => {
       result = planAccountSync(state, read.snapshot, read.fields, {
+        skipped: read.skipped?.length || 0,
         now,
         today: deps.today(),
         openStatus: deps.openStatus(state),
