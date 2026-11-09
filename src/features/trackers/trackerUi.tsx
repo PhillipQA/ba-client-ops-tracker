@@ -10,6 +10,7 @@ import {
   Hash,
   Link2,
   ListTodo,
+  LoaderCircle,
   Sigma,
   LockKeyhole,
   Type,
@@ -99,6 +100,25 @@ export function plural(count: number, one: string, many = `${one}s`) {
 
 // The dialog, popover and notice now live in the shared UI kit; trackers keep importing them from here.
 export { Dialog, Notice, Popover } from '../../shared/ui'
+
+/**
+ * Shown while trackers or a tracker load: a spinner and the message, then a few grey placeholder rows, so the page
+ * is never just empty. Screen readers hear the message once.
+ */
+export function TrackerLoading({ label, rows = 4 }: { label: string; rows?: number }) {
+  return (
+    <div className="trk-loading" role="status" aria-live="polite">
+      <p className="trk-loading-label">
+        <LoaderCircle size={16} className="trk-spin" aria-hidden="true" /> {label}
+      </p>
+      <div className="trk-skeleton" aria-hidden="true">
+        {Array.from({ length: rows }, (_, at) => (
+          <span key={at} style={{ width: `${92 - ((at * 17) % 30)}%` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 /** Row highlight colours, in the order they are offered. */
 export const HIGHLIGHTS: { color: OptionColor; label: string }[] = [

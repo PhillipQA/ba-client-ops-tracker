@@ -52,7 +52,7 @@ import { TrackerBulkTasks, TrackerWorkPicker, trackerClients, type TaskDraft, ty
 import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
 import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
-import { Dialog, HighlightSwatches, Notice, Popover, plural } from './trackerUi'
+import { Dialog, HighlightSwatches, Notice, Popover, TrackerLoading, plural } from './trackerUi'
 import type { Conflict } from './trackerTwoWay'
 import { rememberSheetEdits, takeReview, takeSheetEdits, takeTrackerRow, type SheetEditsFor } from './trackerNav'
 import { autoDoneColumn } from './trackerAutoDone'
@@ -1587,9 +1587,7 @@ export default function TrackerScreen(props: Props) {
   if (status === 'loading')
     return (
       <div className="trk-page">
-        <p className="trk-muted-text" role="status">
-          Loading tracker…
-        </p>
+        <TrackerLoading label="Loading tracker…" rows={8} />
       </div>
     )
   if (status === 'error' || !tracker)

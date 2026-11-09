@@ -16,7 +16,7 @@ const clientsOf = (tracker: Tracker) =>
   tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : []
 import TrackerScreen from './TrackerScreen'
 import TrackerImportDialog from './TrackerImportDialog'
-import { Dialog, Notice, niceTime, plural } from './trackerUi'
+import { Dialog, Notice, TrackerLoading, niceTime, plural } from './trackerUi'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
 import './trackers.css'
 import ClientSelect from '../../shared/ui/SearchSelect'
@@ -563,11 +563,7 @@ export default function Trackers(props: Props) {
           </section>
         </>
       )}
-      {!trackers && !error && (
-        <p className="trk-muted-text" role="status">
-          Loading trackers…
-        </p>
-      )}
+      {!trackers && !error && <TrackerLoading label="Loading trackers…" />}
 
       {managing && (
         <TemplatesDialog
