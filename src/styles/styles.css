@@ -148,7 +148,9 @@ main {
   justify-content: space-between;
   position: sticky;
   top: 0;
-  z-index: 5;
+  /* Above the page's own sticky parts (tracker headers and frozen columns go up to 7), so the notifications panel
+     and other menus that open from the top bar are never covered by them. */
+  z-index: 30;
 }
 .topbar h1 {
   font-size: 25px;
