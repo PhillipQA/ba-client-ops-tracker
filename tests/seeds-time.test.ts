@@ -123,3 +123,16 @@ test('a tracker subtask named like a Seeds task gets it', async () => {
   assert.equal(seedsTaskNamed(tasks, 'Monitoring'), undefined, 'not archived ones')
   assert.equal(seedsTaskNamed(tasks, 'Hardware'), undefined)
 })
+
+test('a task is Before Seeds work by its project, else by its client', async () => {
+  const { isBeforeSeedsWork } = await import('../src/shared/seeds')
+  const projects = [
+    { id: 'p-old', beforeSeeds: true },
+    { id: 'p-seeds', seedsId: '20' },
+  ]
+  const clients = [{ id: 'c-old', beforeSeeds: true }, { id: 'c-seeds' }]
+  assert.equal(isBeforeSeedsWork({ projectId: 'p-old', clientId: 'c-seeds' }, projects, clients), true)
+  assert.equal(isBeforeSeedsWork({ projectId: 'p-seeds', clientId: 'c-old' }, projects, clients), false)
+  assert.equal(isBeforeSeedsWork({ clientId: 'c-old' }, projects, clients), true)
+  assert.equal(isBeforeSeedsWork({}, projects, clients), false)
+})

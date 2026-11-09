@@ -6,6 +6,7 @@ import { Archive, Columns3, Plus, Table2 } from 'lucide-react'
 import { useState } from 'react'
 import TaskBoard from './TaskBoard'
 import { type SourceFilter, sourceMatches } from '../seeds/SeedsPage'
+import { isBeforeSeedsWork } from '../../shared/seeds'
 
 /** Tasks screen. It reads the app state; see app/useAppState. */
 export function TasksPage({ app }: { app: AppState }) {
@@ -50,14 +51,10 @@ export function TasksPage({ app }: { app: AppState }) {
   // or Before Seeds. Tasks with neither count as From Seeds.
   const [folder, setFolder] = useState<SourceFilter>('seeds')
   const cutover = Boolean(store.seeds?.cutoverAt)
-  const projectsById = new Map(store.projects.map(project => [project.id, project]))
-  const clientsById = new Map(store.clients.map(client => [client.id, client]))
-  const beforeSeeds = (item: { projectId?: string; clientId?: string }) => {
-    const project = item.projectId ? projectsById.get(item.projectId) : undefined
-    return Boolean(project ? project.beforeSeeds : item.clientId && clientsById.get(item.clientId)?.beforeSeeds)
-  }
   const filteredTasks = cutover
-    ? allFiltered.filter(item => sourceMatches(folder, { beforeSeeds: beforeSeeds(item) }))
+    ? allFiltered.filter(item =>
+        sourceMatches(folder, { beforeSeeds: isBeforeSeedsWork(item, store.projects, store.clients) }),
+      )
     : allFiltered
   // The client and project pickers follow the folder too.
   const folderClients = cutover ? store.clients.filter(client => sourceMatches(folder, client)) : store.clients
