@@ -332,3 +332,17 @@ export function seedsTaskNamed(tasks: { id: string; name: string; archived?: boo
   const key = seedsKey(title)
   return key ? (tasks || []).find(task => !task.archived && seedsKey(task.name) === key)?.id : undefined
 }
+
+/**
+ * Whether a task or subtask is Before Seeds work: it is in its project's folder, or its client's when it has no
+ * project. Work with neither counts as From Seeds.
+ */
+export function isBeforeSeedsWork(
+  item: { projectId?: string; clientId?: string },
+  projects: { id: string; beforeSeeds?: boolean }[],
+  clients: { id: string; beforeSeeds?: boolean }[],
+) {
+  const project = item.projectId ? projects.find(candidate => candidate.id === item.projectId) : undefined
+  if (project) return project.beforeSeeds === true
+  return Boolean(item.clientId && clients.find(candidate => candidate.id === item.clientId)?.beforeSeeds)
+}
