@@ -2,7 +2,7 @@
  * Administrators: Seeds for the account (Settings › Integrations) and who sees what (Settings › Access).
  * The server holds the Seeds application token; people are matched to Seeds by email.
  */
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { SeedsRole } from '../../shared/access'
 import {
@@ -12,6 +12,7 @@ import {
   loadSeedsAccount,
   type SeedsAccount,
   saveAccessSetup,
+  progressText,
   type SyncResult,
   syncSeeds,
   turnOffSeeds,
@@ -29,6 +30,12 @@ export function SeedsConnectionCard() {
   useEffect(() => {
     void load().catch(error => setMessage(failure(error)))
   }, [])
+  // While a sync runs, check on it every few seconds.
+  useEffect(() => {
+    if (!account?.running) return
+    const timer = setTimeout(() => void load().catch(() => {}), 4000)
+    return () => clearTimeout(timer)
+  }, [account])
   const act = async (action: () => Promise<string>) => {
     setBusy(true)
     setMessage('')
@@ -42,9 +49,11 @@ export function SeedsConnectionCard() {
     }
   }
   const synced = (result: SyncResult) =>
-    result.ok
-      ? `Synced. Seeds found ${result.matched ?? 0} of your people on its projects${result.unmatched ? `; ${result.unmatched} not found` : ''}.${result.pending ? ` ${result.pending} close match${result.pending === 1 ? '' : 'es'} to confirm on the Seeds page.` : ''}`
-      : result.error || 'Seeds could not be read.'
+    result.running
+      ? 'Syncing in the background. A first sync can take a few minutes; this card updates as it goes.'
+      : result.ok
+        ? `Synced. Seeds found ${result.matched ?? 0} of your people on its projects${result.unmatched ? `; ${result.unmatched} not found` : ''}.${result.pending ? ` ${result.pending} close match${result.pending === 1 ? '' : 'es'} to confirm on the Seeds page.` : ''}`
+        : result.error || 'Seeds could not be read.'
   const people = account?.people || []
   const found = people.filter(person => person.connected)
   const missing = people.filter(person => !person.connected)
@@ -70,7 +79,12 @@ export function SeedsConnectionCard() {
           the secret SEEDS_API_TOKEN and redeploy.
         </p>
       )}
-      {account?.connected && sync && (
+      {account?.running && (
+        <p className="seeds-access-line" role="status">
+          <RefreshCw size={14} className="spin" aria-hidden="true" /> Syncing: {progressText(account.progress)}
+        </p>
+      )}
+      {account?.connected && sync && !account.running && (
         <p className="seeds-access-line">
           {sync.lastSuccessAt ? `Last synced ${new Date(sync.lastSuccessAt).toLocaleString()}.` : 'Not synced yet.'}
           {sync.lastError ? ` Last try failed: ${sync.lastError}` : ''}
@@ -102,7 +116,7 @@ export function SeedsConnectionCard() {
             <button
               type="button"
               className="primary"
-              disabled={busy || !account.tokenReady}
+              disabled={busy || !account.tokenReady || account.running}
               onClick={() => void act(async () => synced(await syncSeeds()))}
             >
               Sync now
@@ -129,6 +143,25 @@ export function SeedsConnectionCard() {
         <p role="status" className="settings-message">
           {message}
         </p>
+      )}
+      {account?.connected && sync?.skipped ? (
+        <p className="seeds-access-line">
+          Seeds would not give the members or tasks of {sync.skipped} project{sync.skipped === 1 ? '' : 's'}; they were
+          skipped.
+        </p>
+      ) : null}
+      {account?.connected && fields.length > 0 && !sync?.lastSuccessAt && (
+        <details>
+          <summary>Fields Seeds sent</summary>
+          <dl className="seeds-fields">
+            {fields.map(([list, names]) => (
+              <div key={list}>
+                <dt>{list}</dt>
+                <dd>{names.join(', ')}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
       )}
       {account?.connected && sync?.lastSuccessAt && (
         <>
