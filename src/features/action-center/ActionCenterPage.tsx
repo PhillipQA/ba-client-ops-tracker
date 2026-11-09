@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarDays, ChevronRight, Inbox, Plus, Settings2, Spar
 import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from './actionCenterScope'
 import GoogleCalendarPanel from '../integrations/GoogleCalendarPanel'
 import ClientSelect from '../../shared/ui/SearchSelect'
+import { isClosedProject } from '../tasks/lifecycle'
 
 /** Action Center screen. It reads the app state; see app/useAppState. */
 export function ActionCenterPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
@@ -204,11 +205,13 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
                   }}
                 >
                   <option value="">All projects</option>
-                  {store.projects.map(project => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
+                  {store.projects
+                    .filter(project => !isClosedProject(project) || project.id === aiProjectId)
+                    .map(project => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
                 </select>
               </label>
             </div>

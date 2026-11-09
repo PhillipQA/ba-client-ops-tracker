@@ -1,6 +1,6 @@
 import type { AppState, SignedInUser } from '../../app/useAppState'
 import AIAssistant from './AIAssistant'
-import { isArchived } from '../tasks/lifecycle'
+import { isArchived, isClosedProject } from '../tasks/lifecycle'
 
 /** Ai screen. It reads the app state; see app/useAppState. */
 export function AiPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
@@ -10,7 +10,7 @@ export function AiPage({ app, currentUser }: { app: AppState; currentUser: Signe
     <section className="page-stack">
       <AIAssistant
         clients={store.clients.filter(client => !isArchived(client))}
-        projects={store.projects.filter(project => !isArchived(project))}
+        projects={store.projects.filter(project => !isClosedProject(project))}
         items={store.items}
         planner={store.planner}
         taskSettings={store.taskSettings}

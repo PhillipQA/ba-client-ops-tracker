@@ -6,6 +6,7 @@ import { Archive, Columns3, Plus, Table2 } from 'lucide-react'
 import { useState } from 'react'
 import TaskBoard from './TaskBoard'
 import { type SourceFilter, sourceMatches } from '../seeds/SeedsPage'
+import { isClosedProject } from './lifecycle'
 
 /** Tasks screen. It reads the app state; see app/useAppState. */
 export function TasksPage({ app }: { app: AppState }) {
@@ -61,7 +62,11 @@ export function TasksPage({ app }: { app: AppState }) {
     : allFiltered
   // The client and project pickers follow the folder too.
   const folderClients = cutover ? store.clients.filter(client => sourceMatches(folder, client)) : store.clients
-  const folderProjects = cutover ? store.projects.filter(project => sourceMatches(folder, project)) : store.projects
+  // Projects closed in Seeds (resolved, completed…) drop out of the Project filter unless one is chosen.
+  const folderProjects = store.projects.filter(
+    project =>
+      (!cutover || sourceMatches(folder, project)) && (!isClosedProject(project) || project.id === taskProjectFilter),
+  )
   return (
     <section className="page-stack">
       <div className="panel">

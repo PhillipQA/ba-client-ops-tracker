@@ -7,7 +7,7 @@ import { PriorityOptions } from '../../shared/ui/Chips'
 import { type Store, defaultOpenTaskStatus, isTaskClosed } from '../../app/store'
 import { businessDateKey } from '../../shared/businessDate'
 import { effortSummary, formatHours, normalizeEstimate, seedsTimeRule } from './effort'
-import { isArchived } from './lifecycle'
+import { isArchived, isClosedProject } from './lifecycle'
 import type { RtmLink } from '../requirements/rtm'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { type TaskCommentMutationResult, addTaskComment } from './taskComments'
@@ -252,7 +252,7 @@ export function TaskForm({
             <select value={projectId} disabled={!clientId} onChange={event => setProjectId(event.target.value)}>
               <option value="">{clientId ? 'No project' : 'Select a client first'}</option>
               {store.projects
-                .filter(project => !isArchived(project))
+                .filter(project => !isClosedProject(project))
                 .map(project => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -609,7 +609,7 @@ export function TaskEditForm({
             <select name="projectId" value={editProjectId} onChange={e => setEditProjectId(e.target.value)}>
               <option value="">No project</option>
               {store.projects
-                .filter(project => !isArchived(project))
+                .filter(project => !isClosedProject(project) || project.id === item.projectId)
                 .map(project => (
                   <option key={project.id} value={project.id}>
                     {project.name}

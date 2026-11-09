@@ -18,6 +18,9 @@ export class LifecycleError extends Error {
   }
 }
 export const isArchived = (record?: { archived?: boolean }) => record?.archived === true
+/** A project nobody should pick for new work: archived here, or closed (resolved, completed…) in Seeds. */
+export const isClosedProject = (project?: { archived?: boolean; seedsArchived?: boolean }) =>
+  isArchived(project) || project?.seedsArchived === true
 export const isWorkDone = (item: WorkItem, settings: TaskSettings) =>
   settings.statuses.find(s => s.label === item.status)?.closed ??
   ['Resolved', 'Closed', 'Completed', 'Done'].includes(item.status)

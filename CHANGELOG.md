@@ -52,6 +52,7 @@ Released with pull request #110.
 - Setup: `workforce.time_entries.create` on the Seeds token, and a Google OAuth client ID registered with SEEDS Admin in `SEEDS_GOOGLE_CLIENT_ID` ([docs/setup/seeds.md](docs/setup/seeds.md)).
 
 ### Seeds (phase 2)
+- **Closed Seeds projects are hidden from project pickers.** A Seeds project whose status means it is over (closed, resolved, completed, cancelled, done, archived…, by name or through `/statuses` when the token may read it) is marked closed; it stays with its work but drops out of the Project lists for new work (task forms, Tasks and Action Center filters, Requirements, trackers, AI) and shows under **Archived** on Projects.
 - **Quick and full syncs.** Every 30 minutes a quick sync reads the project list and then members and tasks only for projects that are new, created or updated in the last day, or already have someone from here; a full sync of every open project runs the first time, once a day, and on **Full sync**. The Seeds card says which ran and how many projects it checked.
 - **Built on the Seeds Open API** ([reference](docs/seeds-api.md)). Seeds gives one application token per app, so the server holds it (`SEEDS_API_TOKEN`); nobody pastes a key. Read only; nothing is written to Seeds.
 - **Everyone is matched to Seeds by email.** The projects Seeds lists a person on as a member decide what they see; their role on the project (or their Seeds job title) becomes their job role. Only projects someone here works on, with their clients, come in.
