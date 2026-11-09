@@ -31,6 +31,8 @@ export type ColumnDraft = {
   total?: 'sum' | null
   /** Done when its tasks are done: the setting, or null to turn it off. Left out when unchanged. */
   autoDone?: AutoDone | null
+  /** Text columns: show the contract number of the row's project ('contract'), or null to stop. Left out when unchanged. */
+  contract?: boolean
 }
 
 type Props = {
@@ -80,6 +82,9 @@ export default function TrackerColumnDialog({
   const [autoDoneOption, setAutoDoneOption] = useState(column?.autoDone?.done || '')
   const [autoUndoneOption, setAutoUndoneOption] = useState(column?.autoDone?.undone || '')
   const otherAutoDone = columns.find(item => item.id !== column?.id && item.autoDone)
+  // Text columns can show the contract number of the row's project (from Seeds), e.g. an "SLSS #" column.
+  const [contractOn, setContractOn] = useState(column?.taskField === 'contract')
+  const otherContract = columns.find(item => item.id !== column?.id && item.taskField === 'contract')
   /** When the setting is turned on, an option named like Done is chosen for "Set to", so most people need not pick it. */
   const guessDoneOption = () =>
     options.find(option => /^(done|completed?|closed|resolved|finished)$/i.test(option.label.trim()))?.id || ''
@@ -103,6 +108,7 @@ export default function TrackerColumnDialog({
   const lastOption = useRef<HTMLInputElement>(null)
   const info = COLUMN_TYPES.find(item => item.type === type)!
   const converting = !adding && Boolean(column) && type !== column!.type
+  const contractAllowed = type === 'text' && !converting && (!column?.taskField || column.taskField === 'contract')
   const hasOptions = (type === 'select' || type === 'multiselect') && !converting
   const [report, setReport] = useState<Extract<ConvertReport, { applied: false }> | null>(null)
   const autoAllowed = canAutoDone({ type }) && !converting
@@ -206,6 +212,7 @@ export default function TrackerColumnDialog({
         ...(column?.type === 'formula' ? { formula } : {}),
         ...(summable ? { total: total ? ('sum' as const) : null } : {}),
         ...(autoChanged ? { autoDone } : {}),
+        ...(contractAllowed && contractOn !== (column?.taskField === 'contract') ? { contract: contractOn } : {}),
       }
       const renamed =
         column &&
@@ -535,6 +542,23 @@ export default function TrackerColumnDialog({
               {autoOn && otherAutoDone && (
                 <p className="trk-muted-text">
                   “{otherAutoDone.name}” does this now. Only one column can, so saving moves it here.
+                </p>
+              )}
+            </fieldset>
+          )}
+          {contractAllowed && (
+            <fieldset className="trk-options">
+              <legend>Contract number</legend>
+              <label className="trk-checkline">
+                <input type="checkbox" checked={contractOn} onChange={event => setContractOn(event.target.checked)} />{' '}
+                Fill it with the contract number of the row's project (from Seeds)
+              </label>
+              {contractOn && (
+                <p className="trk-muted-text">
+                  Each row shows its task's project's contract number. A row with no task yet goes to the project whose
+                  contract number you type here, when its task is made (one of the tracker's projects, or one of its
+                  clients').
+                  {otherContract ? ` “${otherContract.name}” does this now; saving moves it here.` : ''}
                 </p>
               )}
             </fieldset>

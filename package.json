@@ -43,7 +43,7 @@
     "test:tracker-columns": "node --import ./tests/support/setup.mjs --test tests/tracker-columns.test.ts",
     "test:sidebar": "node --import ./tests/support/setup.mjs --test tests/sidebar-state.test.ts",
     "test:email-templates": "node --import ./tests/support/setup.mjs --test tests/email-templates.test.ts",
-    "test:trackers": "node --import ./tests/support/setup.mjs --test tests/trackers.test.ts tests/tracker-logic.test.ts tests/tracker-formula.test.ts tests/tracker-sync.test.ts tests/tracker-sheets.test.ts tests/tracker-review.test.ts tests/tracker-auto-done.test.ts tests/tracker-two-way.test.ts",
+    "test:trackers": "node --import ./tests/support/setup.mjs --test tests/trackers.test.ts tests/tracker-logic.test.ts tests/tracker-formula.test.ts tests/tracker-sync.test.ts tests/tracker-sheets.test.ts tests/tracker-review.test.ts tests/tracker-auto-done.test.ts tests/tracker-two-way.test.ts tests/tracker-projects.test.ts",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome ci ."

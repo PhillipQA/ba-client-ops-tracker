@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { LayoutTemplate, Link2, Lock, Plus, Search, Table2, Upload } from 'lucide-react'
-import { TRACKER_LIMITS, columnTypeLabel, type Tracker } from './trackerModel'
+import { TRACKER_LIMITS, columnTypeLabel, trackerProjectIds, type Tracker } from './trackerModel'
 import { templateChoices, templateRows, withDoneColumn, type TemplateChoice } from './trackerTemplates'
 import { TemplatesDialog, TemplateTag, useTrackerTemplates } from './TemplateManager'
 import { createRowTasks } from './trackerTaskActions'
@@ -365,7 +365,7 @@ export default function Trackers(props: Props) {
         (showArchived || !tracker.archived) &&
         (!clientFilter || clientsOf(tracker).includes(clientFilter)) &&
         words.every(word =>
-          `${tracker.name} ${clientsOf(tracker).map(clientName).join(' ')} ${projectName(tracker.projectId)} ${tracker.createdByName}`
+          `${tracker.name} ${clientsOf(tracker).map(clientName).join(' ')} ${trackerProjectIds(tracker).map(projectName).join(' ')} ${tracker.createdByName}`
             .toLowerCase()
             .includes(word),
         ),
@@ -534,7 +534,10 @@ export default function Trackers(props: Props) {
                   {tracker.archived && <span className="trk-chip warn">Archived</span>}
                 </span>
                 <span role="cell">
-                  {[clientsOf(tracker).map(clientName).join(', '), projectName(tracker.projectId)]
+                  {[
+                    clientsOf(tracker).map(clientName).join(', '),
+                    trackerProjectIds(tracker).map(projectName).filter(Boolean).join(', '),
+                  ]
                     .filter(Boolean)
                     .join(' · ') || <span className="trk-muted">—</span>}
                 </span>

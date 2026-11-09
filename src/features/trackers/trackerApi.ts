@@ -117,6 +117,8 @@ export const trackerApi = {
       clientId?: string
       clientIds?: string[]
       projectId?: string
+      /** Several projects, the default first. */
+      projectIds?: string[]
       private?: boolean
       archived?: boolean
       stepTasks?: boolean

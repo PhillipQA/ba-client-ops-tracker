@@ -139,7 +139,10 @@ function harness(options: { failChanges?: boolean } = {}) {
   const db = memoryDb(options)
   const state = {
     clients: [{ id: 'c1', name: 'Acme' }],
-    projects: [{ id: 'p1', name: 'Rollout' }],
+    projects: [
+      { id: 'p1', name: 'Rollout' },
+      { id: 'p2', name: 'Rollout phase 2' },
+    ],
     items: [
       { id: 't1', title: 'Davao store' },
       { id: 't2', title: 'Train the staff', parentTaskId: 't1' },
@@ -262,6 +265,14 @@ test('a tracker is created with its columns, listed, renamed, linked, archived a
     assert.equal((await ask('GET', '/api/trackers')).body.trackers.length, 1)
     const renamed = await ask('PATCH', `/api/trackers/${tracker.id}`, { name: 'Rollout sites' })
     assert.equal(renamed.body.tracker.name, 'Rollout sites')
+    // Several projects of the client (each with its own contract); the first is the default.
+    const both = await ask('PATCH', `/api/trackers/${tracker.id}`, { projectIds: ['p2', 'p1', 'p2'] })
+    assert.deepEqual(both.body.tracker.projectIds, ['p2', 'p1'])
+    assert.equal(both.body.tracker.projectId, 'p2')
+    assert.equal((await ask('PATCH', `/api/trackers/${tracker.id}`, { projectIds: ['nope'] })).status, 400)
+    assert.equal((await ask('PATCH', `/api/trackers/${tracker.id}`, { projectIds: 'p1' })).status, 400)
+    const one = await ask('PATCH', `/api/trackers/${tracker.id}`, { projectId: 'p1' })
+    assert.deepEqual(one.body.tracker.projectIds, ['p1'])
     // Only the creator or an Administrator archives; anyone else is refused.
     assert.equal(
       (await ask('PATCH', `/api/trackers/${tracker.id}`, { archived: true }, { 'x-user': 'u2' })).status,
