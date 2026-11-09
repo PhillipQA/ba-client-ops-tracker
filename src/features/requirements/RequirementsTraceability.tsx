@@ -18,7 +18,7 @@ import {
   Archive,
   ExternalLink,
 } from 'lucide-react'
-import { archivedWorkReason, stableRecord, workContext } from '../tasks/lifecycle'
+import { archivedWorkReason, isClosedProject, stableRecord, workContext } from '../tasks/lifecycle'
 import type { WorkItem } from '../../shared/types'
 import {
   RTM_STAGES,
@@ -189,7 +189,7 @@ function MatrixEditor({
             >
               <option value="">Select project</option>
               {store.projects
-                .filter(p => !p.archived || p.id === value?.projectId)
+                .filter(p => !isClosedProject(p) || p.id === value?.projectId)
                 .map(p => (
                   <option key={p.id} value={p.id}>
                     {p.name}

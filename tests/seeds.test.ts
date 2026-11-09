@@ -748,3 +748,45 @@ test('the first sync is full, the next quick, and Full sync forces one', async (
   await service.sync('org', true)
   assert.equal(plans[2], undefined, 'Full sync asked for')
 })
+
+test('closed, resolved and completed Seeds projects count as closed, by name or by status id', async () => {
+  const { closedStatus } = await import('../server/seeds/seeds-client')
+  for (const status of ['Closed', 'RESOLVED', 'Completed', 'Cancelled', 'Done', 'Closed - Resolved', 'Archived'])
+    assert.equal(closedStatus(status), true, status)
+  for (const status of ['Open', 'In Progress', 'Pre Live', 'Live', 'On going', ''])
+    assert.equal(closedStatus(status), false, status)
+  assert.equal(parseSeeds.project({ id: 1, name: 'P', status: { name: 'Resolved' } }).archived, true)
+  assert.equal(parseSeeds.project({ id: 2, name: 'P', projectStatus: 'Ongoing' }).archived, undefined)
+
+  const { fetcher } = fakeSeeds({
+    '/projects?limit=100': {
+      data: [
+        { id: 20, parentId: 5, name: 'Open one', statusId: 1 },
+        { id: 21, parentId: 5, name: 'Resolved one', statusId: 2 },
+      ],
+    },
+    '/statuses?limit=100': {
+      data: [
+        { id: 1, name: 'Ongoing' },
+        { id: 2, name: 'Resolved' },
+      ],
+    },
+  })
+  const read = await httpSeedsSource('t', undefined, fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(['bea@company.com']),
+  )
+  assert.deepEqual(
+    read.snapshot.projects.map(project => [project.id, Boolean(project.archived)]),
+    [
+      ['20', false],
+      ['21', true],
+    ],
+  )
+})
+
+test('closed projects are not offered for new work', async () => {
+  const { isClosedProject } = await import('../src/features/tasks/lifecycle')
+  assert.equal(isClosedProject({ seedsArchived: true }), true)
+  assert.equal(isClosedProject({ archived: true }), true)
+  assert.equal(isClosedProject({}), false)
+})

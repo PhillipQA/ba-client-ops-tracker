@@ -2,7 +2,7 @@ import type { AppState } from '../../app/useAppState'
 import { useState } from 'react'
 import { SeedsBadge, type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 import { Pencil, Plus } from 'lucide-react'
-import { isArchived } from '../tasks/lifecycle'
+import { isArchived, isClosedProject } from '../tasks/lifecycle'
 import { Empty, StatusChip } from '../../shared/ui/Chips'
 import { niceDate } from '../../shared/dates'
 
@@ -25,7 +25,8 @@ export function ProjectsPage({ app }: { app: AppState }) {
   const shown = store.projects.filter(
     project =>
       (!store.seeds?.cutoverAt || sourceMatches(source, project)) &&
-      (projectArchiveFilter === 'all' || isArchived(project) === (projectArchiveFilter === 'archived')),
+      // Projects closed in Seeds (resolved, completed…) count as archived here.
+      (projectArchiveFilter === 'all' || isClosedProject(project) === (projectArchiveFilter === 'archived')),
   )
   return (
     <section className="page-stack">

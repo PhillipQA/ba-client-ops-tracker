@@ -89,8 +89,27 @@ const archived = (record: any) =>
   record?.is_active === false ||
   record?.deletedAt != null ||
   record?.deleted_at != null ||
-  ['archived', 'inactive', 'closed', 'cancelled', 'canceled', 'completed', 'done'].includes(
-    text(pick(record, 'status', 'status.name', 'statusName', 'status_name')).toLowerCase(),
+  closedStatus(statusOf(record))
+
+/** A Seeds status that means the work is over: closed, resolved, completed, cancelled, archived… */
+export const closedStatus = (status: string) =>
+  /\b(closed?|resolved|completed?|done|finished|cancell?ed|terminated|archived|inactive|dropped|lost)\b/i.test(status)
+
+/** A record's status name, if it names one. */
+const statusOf = (record: any) =>
+  text(
+    pick(
+      record,
+      'status',
+      'status.name',
+      'status.label',
+      'statusName',
+      'status_name',
+      'projectStatus',
+      'project_status',
+      'projectStatus.name',
+      'state',
+    ),
   )
 /** When Seeds last created or changed a record, if it says (the later of the two). */
 const changedAt = (record: any) => {
@@ -404,7 +423,23 @@ export function httpSeedsSource(
     const people = rawUsers.map(parseSeeds.person).filter(person => person.id)
     const emailById = new Map(people.map(person => [person.id, person.email]))
     const titleById = new Map(people.map(person => [person.id, person.title]))
-    const parsed = rawProjects.map(parseSeeds.project).filter(project => project.id && project.name)
+    // Projects that give only a status id: name it from /statuses (when the token may read it) to tell closed ones.
+    const statusIds = rawProjects.some(record => !statusOf(record) && pick(record, 'statusId', 'status_id'))
+    const statusNames = statusIds
+      ? new Map(
+          (await readAllIfAllowed('/statuses', 'statuses')).map(row => [
+            idOf(row, 'statusId', 'status_id', 'id'),
+            text(pick(row, 'name', 'statusName', 'status_name', 'label', 'description')),
+          ]),
+        )
+      : new Map<string, string>()
+    const parsed = rawProjects
+      .map(record => {
+        const project = parseSeeds.project(record)
+        const named = statusNames.get(idOf(record, 'statusId', 'status_id'))
+        return named && closedStatus(named) ? { ...project, archived: true as const } : project
+      })
+      .filter(project => project.id && project.name)
     // Projects that name a Seeds client but not its parent: look the parent up through /clients.
     const rawClients = parsed.some(project => !project.clientId && project.seedsClientId)
       ? await readAllIfAllowed('/clients', 'clients')

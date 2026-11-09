@@ -6,7 +6,7 @@ import TrackerClientPicker from './TrackerClientPicker'
 type Props = {
   tracker: Tracker
   clients: { id: string; name: string }[]
-  projects: { id: string; name: string; clientId?: string; seedsId?: string }[]
+  projects: { id: string; name: string; clientId?: string; seedsId?: string; seedsArchived?: boolean }[]
   onClose: () => void
   onSave: (body: { name: string; clientIds: string[]; projectId: string }) => Promise<void>
 }
@@ -18,7 +18,10 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, onClo
     tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : [],
   )
   const [projectId, setProjectId] = useState(tracker.projectId)
-  const fromSeeds = projects.filter(project => project.seedsId)
+  // Projects closed in Seeds are not offered, unless the tracker is already on one.
+  const fromSeeds = projects.filter(
+    project => project.seedsId && (!project.seedsArchived || project.id === tracker.projectId),
+  )
   const before = projects.filter(project => !project.seedsId)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')

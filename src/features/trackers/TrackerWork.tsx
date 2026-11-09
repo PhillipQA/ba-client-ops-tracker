@@ -31,6 +31,9 @@ export type WorkProject = {
   seedsId?: string
   beforeSeeds?: boolean
   seedsTasks?: { id: string; name: string; archived?: boolean }[]
+  /** Closed in Seeds (resolved, completed…) or archived here: not offered for new work. */
+  seedsArchived?: boolean
+  archived?: boolean
 }
 export type WorkTools = {
   items: WorkItem[]
@@ -48,7 +51,8 @@ export const trackerClients = (tracker: Tracker) =>
 const doneTone = (closed: boolean) => (closed ? ('green' as const) : ('gray' as const))
 
 /** Seeds projects (once Seeds is on, new work goes there by default), and whether there are any. */
-export const seedsProjects = (projects: WorkProject[]) => projects.filter(project => project.seedsId)
+export const seedsProjects = (projects: WorkProject[]) =>
+  projects.filter(project => project.seedsId && !project.seedsArchived && !project.archived)
 const isSeedsProject = (projects: WorkProject[], id?: string) =>
   Boolean(id) && projects.some(project => project.id === id && project.seedsId)
 
