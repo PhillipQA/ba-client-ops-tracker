@@ -903,7 +903,10 @@ export default function TrackerScreen(props: Props) {
       noClientSaid.current = true
       return
     }
-    const clientId = trackerClients(current)[0] || ''
+    // On a Seeds project, sites go under that project's client (the Seeds parent), whichever Before Seeds clients the
+    // tracker also follows.
+    const seedsClient = props.projects.find(project => project.id === current.projectId && project.seedsId)?.clientId
+    const clientId = seedsClient || trackerClients(current)[0] || ''
     if (!clientId) {
       if (!noClientSaid.current || rowIds === null)
         say(
