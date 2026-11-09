@@ -47,9 +47,15 @@ export function Popover({
     return () => window.removeEventListener('resize', place)
   }, [anchor, minWidth])
   useEffect(() => {
+    // A type-to-search field's list floats outside the panel (on the page), but it is part of the panel: picking from
+    // it or scrolling it must not close the panel.
+    const inList = (target: EventTarget | null) => {
+      const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null
+      return Boolean(element?.closest('.client-combo-list'))
+    }
     const down = (event: MouseEvent) => {
       const target = event.target as Node
-      if (box.current?.contains(target) || anchor.current?.contains(target)) return
+      if (box.current?.contains(target) || anchor.current?.contains(target) || inList(target)) return
       close.current()
     }
     const key = (event: KeyboardEvent) => {
@@ -59,7 +65,7 @@ export function Popover({
       }
     }
     const scroll = (event: Event) => {
-      if (!box.current?.contains(event.target as Node)) close.current()
+      if (!box.current?.contains(event.target as Node) && !inList(event.target)) close.current()
     }
     document.addEventListener('mousedown', down, true)
     document.addEventListener('keydown', key, true)

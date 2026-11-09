@@ -1,11 +1,11 @@
 import { useMemo, useState, type RefObject } from 'react'
 import { ExternalLink, Plus, Search, Unlink } from 'lucide-react'
-import { taskFieldColumn, type Tracker, type TrackerColumn, type TrackerRow } from './trackerModel'
+import { taskFieldColumn, trackerProjectIds, type Tracker, type TrackerColumn, type TrackerRow } from './trackerModel'
 import { projectForContract } from './trackerProjects'
 import { cellText } from './trackerTasks'
 import { Dialog, Pill, Popover, plural } from './trackerUi'
 import type { WorkItem } from '../../shared/types'
-import ClientSelect from '../../shared/ui/SearchSelect'
+import ClientSelect, { SearchSelect, type SearchChoice } from '../../shared/ui/SearchSelect'
 import { seedsTaskNamed } from '../../shared/seeds'
 
 /** What a tracker needs to create tasks and subtasks. They are saved with the rest of the workspace. */
@@ -104,25 +104,43 @@ function useTaskContext(tracker: Tracker, tools: WorkTools, row?: Pick<TrackerRo
   const seedsTasks = (seedsProject?.seedsTasks || []).filter(task => !task.archived)
   const oldProjects = tools.projects.filter(project => !project.seedsId)
 
+  // Projects to type into: the tracker's own first, each with its contract number and client.
+  const mine = new Set(trackerProjectIds(tracker))
+  const projectChoices = (list: WorkProject[]): SearchChoice[] => {
+    const sorted = [...list].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }),
+    )
+    const choice = (project: WorkProject, group?: string): SearchChoice => ({
+      value: project.id,
+      label: project.name,
+      hint: [project.contractNumber, tools.clients.find(client => client.id === project.clientId)?.name]
+        .filter(Boolean)
+        .join(' · '),
+      group,
+    })
+    const own = sorted.filter(project => mine.has(project.id))
+    if (!own.length) return sorted.map(project => choice(project))
+    return [
+      ...own.map(project => choice(project, "This tracker's projects")),
+      ...sorted.filter(project => !mine.has(project.id)).map(project => choice(project, 'Other projects')),
+    ]
+  }
   const seedsFields = (
     <>
       <label className="trk-field-block">
         Seeds project
-        <select
+        <SearchSelect
           value={seedsProjectId}
-          onChange={event => {
-            setSeedsProjectId(event.target.value)
+          onChange={value => {
+            setSeedsProjectId(value)
             setSeedsTaskId('')
           }}
           required
-        >
-          <option value="">Choose the Seeds project</option>
-          {fromSeeds.map(project => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
+          aria-label="Seeds project"
+          placeholder="Type a project, contract number or client"
+          empty="No open Seeds project matches"
+          choices={[{ value: '', label: 'Choose the Seeds project' }, ...projectChoices(fromSeeds)]}
+        />
       </label>
       <label className="trk-field-block">
         Client
@@ -131,14 +149,17 @@ function useTaskContext(tracker: Tracker, tools: WorkTools, row?: Pick<TrackerRo
       {seedsTasks.length > 0 && (
         <label className="trk-field-block">
           Seeds task
-          <select value={seedsTaskId} onChange={event => setSeedsTaskId(event.target.value)}>
-            <option value="">-</option>
-            {seedsTasks.map(task => (
-              <option key={task.id} value={task.id}>
-                {task.name}
-              </option>
-            ))}
-          </select>
+          <SearchSelect
+            value={seedsTaskId}
+            onChange={setSeedsTaskId}
+            aria-label="Seeds task"
+            placeholder="Type a Seeds task"
+            empty="No Seeds task matches"
+            choices={[
+              { value: '', label: 'No Seeds task' },
+              ...seedsTasks.map(task => ({ value: task.id, label: task.name })),
+            ]}
+          />
         </label>
       )}
     </>
@@ -162,14 +183,17 @@ function useTaskContext(tracker: Tracker, tools: WorkTools, row?: Pick<TrackerRo
       </label>
       <label className="trk-field-block">
         Project
-        <select value={projectId} onChange={event => setProjectId(event.target.value)}>
-          <option value="">No project</option>
-          {(fromSeeds.length ? oldProjects : tools.projects).map(project => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
+        <SearchSelect
+          value={projectId}
+          onChange={setProjectId}
+          aria-label="Project"
+          placeholder="Type a project"
+          empty="No project matches"
+          choices={[
+            { value: '', label: 'No project' },
+            ...projectChoices(fromSeeds.length ? oldProjects.filter(project => !project.archived) : tools.projects),
+          ]}
+        />
       </label>
     </>
   )
@@ -486,14 +510,17 @@ export function TrackerWorkPicker(props: PickerProps) {
                   {subtaskSeedsTasks.length > 0 && (
                     <label className="trk-field-block">
                       Seeds task
-                      <select value={subtaskSeedsTask} onChange={event => setPickedSeedsTask(event.target.value)}>
-                        <option value="">Same as the task</option>
-                        {subtaskSeedsTasks.map(option => (
-                          <option key={option.id} value={option.id}>
-                            {option.name}
-                          </option>
-                        ))}
-                      </select>
+                      <SearchSelect
+                        value={subtaskSeedsTask}
+                        onChange={setPickedSeedsTask}
+                        aria-label="Seeds task"
+                        placeholder="Type a Seeds task"
+                        empty="No Seeds task matches"
+                        choices={[
+                          { value: '', label: 'Same as the task' },
+                          ...subtaskSeedsTasks.map(option => ({ value: option.id, label: option.name })),
+                        ]}
+                      />
                     </label>
                   )}
                 </>
