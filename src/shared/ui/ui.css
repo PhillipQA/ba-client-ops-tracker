@@ -189,6 +189,21 @@ label > .client-combo,
 .client-combo-list li.chosen::after {
   content: " ✓";
 }
+.client-combo-list li.client-combo-group {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  margin: 2px -4px 0;
+  padding: 6px 14px 4px;
+  border-radius: 0;
+  background: inherit;
+  cursor: default;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, currentColor 58%, transparent);
+}
 .client-combo-list .client-combo-empty {
   cursor: default;
   color: color-mix(in srgb, currentColor 60%, transparent);

@@ -10,9 +10,12 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 
-export type ClientChoice = { id: string; name: string }
-type Extra = { value: string; label: string; hint?: string; depth?: number }
-/** One choice in a SearchSelect: `hint` is shown small beside it and is searched too; `depth` 1 marks a subtask. */
+export type ClientChoice = { id: string; name: string; seedsId?: string }
+type Extra = { value: string; label: string; hint?: string; depth?: number; group?: string }
+/**
+ * One choice in a SearchSelect: `hint` is shown small beside it and is searched too; `depth` 1 marks a subtask;
+ * `group` puts a heading (such as "From Seeds") above the first choice of each group. Keep a group's choices together.
+ */
 export type SearchChoice = Extra
 
 type Props = {
@@ -37,12 +40,19 @@ const sortByName = (list: readonly ClientChoice[]) =>
 /**
  * A client field you type into: it lists clients A to Z and narrows them as you type, like the email recipient box.
  * Arrow keys move, Enter picks, Escape goes back to the last choice. It submits the client id under `name` in forms.
+ * Once Seeds is on (some clients come from Seeds), they are grouped: From Seeds first, then Before Seeds.
  */
 export default function ClientSelect({ clients, extra = [], placeholder = 'Type a client name', ...props }: Props) {
-  const choices = useMemo(
-    () => [...extra, ...sortByName(clients).map(client => ({ value: client.id, label: client.name }))],
-    [clients, extra],
-  )
+  const choices = useMemo(() => {
+    const sorted = sortByName(clients)
+    const choice = (client: ClientChoice, group?: string) => ({ value: client.id, label: client.name, group })
+    if (!sorted.some(client => client.seedsId)) return [...extra, ...sorted.map(client => choice(client))]
+    return [
+      ...extra,
+      ...sorted.filter(client => client.seedsId).map(client => choice(client, 'From Seeds')),
+      ...sorted.filter(client => !client.seedsId).map(client => choice(client, 'Before Seeds')),
+    ]
+  }, [clients, extra])
   return <SearchSelect {...props} choices={choices} placeholder={placeholder} empty="No client matches" />
 }
 
@@ -90,11 +100,13 @@ export function SearchSelect({
     const hits = choices.filter(choice =>
       words.every(word => `${choice.label} ${choice.hint || ''}`.toLowerCase().includes(word)),
     )
-    // Names that start with what was typed come first, then the rest, each A to Z.
-    return [
+    // Names that start with what was typed come first, then the rest, each A to Z; groups stay together.
+    const ranked = [
       ...hits.filter(choice => name(choice).startsWith(words[0])),
       ...hits.filter(choice => !name(choice).startsWith(words[0])),
     ]
+    const groups = [...new Set(choices.map(choice => choice.group || ''))]
+    return ranked.sort((a, b) => groups.indexOf(a.group || '') - groups.indexOf(b.group || ''))
   }, [choices, text, typed])
 
   // The list floats above dialogs and scrolling panels, so it follows the field on screen.
@@ -109,15 +121,18 @@ export function SearchSelect({
       // 0,0 really is by placing the list there for a moment, then place it relative to that.
       let originX = 0,
         originY = 0,
-        natural = Math.max(120, shown.length * 34 + 8)
+        natural = Math.max(120, (shown.length + new Set(shown.map(choice => choice.group || '')).size) * 34 + 8)
       if (el) {
+        // Measuring drops the height limit for a moment, which resets the list's scroll: put it back after.
         const keep = el.getAttribute('style') || ''
+        const scrolled = el.scrollTop
         el.style.cssText = 'position:fixed;left:0;top:0;bottom:auto;max-height:none;visibility:hidden'
         const probe = el.getBoundingClientRect()
         originX = probe.left
         originY = probe.top
         natural = probe.height
         el.setAttribute('style', keep)
+        el.scrollTop = scrolled
       }
       const below = window.innerHeight - box.bottom - 12,
         above = box.top - 12
@@ -148,11 +163,17 @@ export function SearchSelect({
     // A modal dialog sits in the browser's top layer, so the list must be inside it to show and take clicks.
     setHost(input.current?.closest<HTMLElement>('dialog[open]') || document.body)
     follow()
+    // Scrolling the list itself does not move the field: re-measuring then would jump the list back to the top, so
+    // the list could not be scrolled at all.
+    const scrolled = (event: Event) => {
+      if (list.current && event.target instanceof Node && list.current.contains(event.target)) return
+      follow()
+    }
     window.addEventListener('resize', follow)
-    window.addEventListener('scroll', follow, true)
+    window.addEventListener('scroll', scrolled, true)
     return () => {
       window.removeEventListener('resize', follow)
-      window.removeEventListener('scroll', follow, true)
+      window.removeEventListener('scroll', scrolled, true)
     }
   }, [open, shown.length, host])
   useEffect(() => {
@@ -257,7 +278,12 @@ export function SearchSelect({
         host &&
         createPortal(
           <ul ref={list} id={listId} role="listbox" className="client-combo-list" style={place}>
-            {shown.map((choice, at) => (
+            {shown.map((choice, at) => [
+              choice.group && choice.group !== shown[at - 1]?.group ? (
+                <li key={`group:${choice.group}:${at}`} className="client-combo-group" role="presentation">
+                  {choice.group}
+                </li>
+              ) : null,
               <li
                 key={`${choice.value || '__blank'}:${at}`}
                 id={`${listId}-${at}`}
@@ -278,8 +304,8 @@ export function SearchSelect({
                 ) : null}
                 {choice.label}
                 {choice.hint && <small>{choice.hint}</small>}
-              </li>
-            ))}
+              </li>,
+            ])}
             {!shown.length && (
               <li className="client-combo-empty" role="presentation">
                 {empty} “{text.trim()}”
