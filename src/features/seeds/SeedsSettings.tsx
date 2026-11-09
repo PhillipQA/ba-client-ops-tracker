@@ -14,6 +14,7 @@ import {
   saveAccessSetup,
   progressText,
   type SyncResult,
+  fullSyncSeeds,
   syncSeeds,
   turnOffSeeds,
   turnOnSeeds,
@@ -66,7 +67,8 @@ export function SeedsConnectionCard() {
           <h2>Seeds</h2>
           <p>
             Reads clients, projects, tasks and project members from Seeds. Each person is matched by email and sees the
-            projects Seeds lists them on. Syncs every 30 minutes once on.
+            projects Seeds lists them on. Every 30 minutes a quick sync checks only projects that are new, changed or
+            already have people from here; once a day a full sync checks them all.
           </p>
         </div>
         <span className={account?.connected ? (sync?.lastError ? 'role-badge warn' : 'role-badge ok') : 'role-badge'}>
@@ -86,7 +88,13 @@ export function SeedsConnectionCard() {
       )}
       {account?.connected && sync && !account.running && (
         <p className="seeds-access-line">
-          {sync.lastSuccessAt ? `Last synced ${new Date(sync.lastSuccessAt).toLocaleString()}.` : 'Not synced yet.'}
+          {sync.lastSuccessAt ? `Last synced ${new Date(sync.lastSuccessAt).toLocaleString()}` : 'Not synced yet.'}
+          {sync.lastSuccessAt && sync.mode
+            ? ` (${sync.mode}: ${sync.checked ?? 0} project${sync.checked === 1 ? '' : 's'} checked).`
+            : sync.lastSuccessAt
+              ? '.'
+              : ''}
+          {sync.lastFullAt ? ` Last full sync ${new Date(sync.lastFullAt).toLocaleString()}.` : ''}
           {sync.lastError ? ` Last try failed: ${sync.lastError}` : ''}
         </p>
       )}
@@ -120,6 +128,15 @@ export function SeedsConnectionCard() {
               onClick={() => void act(async () => synced(await syncSeeds()))}
             >
               Sync now
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              title="Reads the members of every open Seeds project, not only the ones that changed. Takes a few minutes."
+              disabled={busy || !account.tokenReady || account.running}
+              onClick={() => void act(async () => synced(await fullSyncSeeds()))}
+            >
+              Full sync
             </button>
             <button
               type="button"

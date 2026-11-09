@@ -89,6 +89,20 @@ entry Seeds turns down shows *Not sent: retry* with Seeds' reason. An entry in S
 Each entry is sent as: task date, the Seeds project, minutes, the Seeds task, the parent (client), the project's
 product when Seeds names one, and the remarks.
 
+## Quick and full syncs
+
+Seeds limits how fast the app may read, and reading every project's members takes minutes (about 800 requests for
+800 projects). So:
+
+- **Full sync** reads the members of every open Seeds project. It runs the first time, then at most once a day, and
+  when an Administrator chooses **Full sync**.
+- **Quick sync** (every 30 minutes, and **Sync now**) reads the project list, then members and tasks only for
+  projects that are **new**, that Seeds shows as **created or updated** in the last day (`updatedAt`/`createdAt`), or
+  that **already have someone from here** on them.
+
+If Seeds does not change a project's `updatedAt` when someone is added to it, that person shows up on the next full
+sync (or after a **Full sync**).
+
 ## What a sync does
 
 1. Reads `/users`, `/parents` and `/projects` (100 per page, following `nextCursor`); `/clients` too if a project names

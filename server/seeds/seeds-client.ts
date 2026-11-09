@@ -22,9 +22,26 @@ export const DEFAULT_SEEDS_URL = 'https://seeds.iripple.com/api/v1'
 
 export type SeedsFields = Partial<Record<'users' | 'parents' | 'clients' | 'projects' | 'members' | 'tasks', string[]>>
 
+/**
+ * A quick sync: members and tasks are read only for projects that are new (not in `known`), that already have
+ * someone from this app (`keep`), or that Seeds shows as created or updated since `since`. Without it, every open
+ * project is read (a full sync).
+ */
+export type SeedsQuickPlan = { since: string; known: Set<string>; keep: Set<string> }
+
+export type SeedsRead = {
+  snapshot: SeedsSnapshot
+  fields: SeedsFields
+  skipped?: string[]
+  /** Every Seeds project id seen, for the next quick sync. */
+  projectIds?: string[]
+  /** Projects whose members were read this time. */
+  checked?: number
+}
+
 export interface SeedsSource {
   /** Everything one account sync needs. Tasks are read only for projects where someone in `emails` is a member. */
-  read(emails: Set<string>): Promise<{ snapshot: SeedsSnapshot; fields: SeedsFields; skipped?: string[] }>
+  read(emails: Set<string>, quick?: SeedsQuickPlan): Promise<SeedsRead>
 }
 
 export class SeedsError extends Error {
@@ -75,6 +92,25 @@ const archived = (record: any) =>
   ['archived', 'inactive', 'closed', 'cancelled', 'canceled', 'completed', 'done'].includes(
     text(pick(record, 'status', 'status.name', 'statusName', 'status_name')).toLowerCase(),
   )
+/** When Seeds last created or changed a record, if it says (the later of the two). */
+const changedAt = (record: any) => {
+  const times = [
+    'updatedAt',
+    'updated_at',
+    'modifiedAt',
+    'modified_at',
+    'lastModified',
+    'dateUpdated',
+    'date_updated',
+    'createdAt',
+    'created_at',
+    'dateCreated',
+    'date_created',
+  ]
+    .map(key => Date.parse(text(pick(record, key))))
+    .filter(Number.isFinite)
+  return times.length ? new Date(Math.max(...times)).toISOString() : ''
+}
 const fullName = (record: any) =>
   text(pick(record, 'name', 'fullName', 'full_name', 'displayName', 'display_name')) ||
   [pick(record, 'firstName', 'first_name', 'firstname'), pick(record, 'lastName', 'last_name', 'lastname')]
@@ -133,6 +169,7 @@ export const parseSeeds = {
       ? { productId: text(pick(record, 'productId', 'product_id', 'product.id')) }
       : {}),
     ...(archived(record) ? { archived: true } : {}),
+    ...(changedAt(record) ? { changedAt: changedAt(record) } : {}),
   }),
   task: (record: any, projectId: string) => ({
     id: idOf(record, 'taskId', 'task_id', 'id'),
@@ -333,14 +370,14 @@ export function httpSeedsSource(
   }
 
   return {
-    async read(emails) {
+    async read(emails, quick) {
       // The field names Seeds sent so far, kept on a failure too, so the mapping can be checked either way.
       const fields: SeedsFields = {}
       const note = (key: keyof SeedsFields, rows: any[]) => {
         if (rows.length) fields[key] = fieldNames(rows)
       }
       try {
-        return await readEverything(emails, fields, note)
+        return await readEverything(emails, fields, note, quick)
       } catch (error) {
         if (error instanceof SeedsError) error.fields = fields
         throw error
@@ -352,6 +389,7 @@ export function httpSeedsSource(
     emails: Set<string>,
     fields: SeedsFields,
     note: (key: keyof SeedsFields, rows: any[]) => void,
+    quick?: SeedsQuickPlan,
   ) {
     progress({ step: 'lists', done: 0, total: 3 })
     const rawUsers = await readAll('/users', 'users')
@@ -381,7 +419,17 @@ export function httpSeedsSource(
     const clients = rawParents.map(parseSeeds.parent).filter(client => client.id && client.name)
 
     const rawMembers: any[] = []
-    const open = projects.filter(project => !project.archived)
+    // A quick sync reads members only where something may have changed; a full one reads every open project.
+    const since = quick ? Date.parse(quick.since) : Number.NaN
+    const open = projects.filter(
+      project =>
+        !project.archived &&
+        (!quick ||
+          !quick.known.has(project.id) ||
+          quick.keep.has(project.id) ||
+          !Number.isFinite(since) ||
+          Boolean(project.changedAt && Date.parse(project.changedAt) >= since)),
+    )
     const membersByProject: {
       project: (typeof projects)[number]
       members: ReturnType<typeof parseSeeds.member>[]
@@ -422,7 +470,15 @@ export function httpSeedsSource(
     const tasks = taskLists.flat().filter(task => task.id && task.name)
 
     return {
-      snapshot: { people, clients, projects, tasks, assignments },
+      snapshot: {
+        people,
+        clients,
+        projects: projects.map(({ changedAt: _changed, ...project }) => project),
+        tasks,
+        assignments,
+      },
+      projectIds: projects.map(project => project.id),
+      checked: membersByProject.length,
       fields: {
         ...fields,
         ...(rawClients.length ? { clients: fieldNames(rawClients) } : {}),

@@ -104,6 +104,14 @@ export interface SeedsAccountSync {
   fields?: Record<string, string[]>
   /** Seeds projects Seeds would not give members or tasks for (skipped, not failed). */
   skipped?: number
+  /** The last sync read every open project (full, once a day) or only those that may have changed (quick). */
+  mode?: 'full' | 'quick'
+  /** Projects whose members the last sync read. */
+  checked?: number
+  lastFullAt?: string
+  /** Every Seeds project id seen, and those with someone from this app: what a quick sync reads. */
+  knownProjects?: string[]
+  memberProjects?: string[]
 }
 
 export interface SeedsState {
@@ -165,6 +173,15 @@ export function seedsState(state: any): SeedsState {
       ...(Number.isFinite(sync.matched) ? { matched: Number(sync.matched) } : {}),
       ...(Number.isFinite(sync.unmatched) ? { unmatched: Number(sync.unmatched) } : {}),
       ...(Number(sync.skipped) > 0 ? { skipped: Number(sync.skipped) } : {}),
+      ...(sync.mode === 'full' || sync.mode === 'quick' ? { mode: sync.mode } : {}),
+      ...(Number(sync.checked) >= 0 && sync.checked != null ? { checked: Number(sync.checked) } : {}),
+      ...(sync.lastFullAt ? { lastFullAt: text(sync.lastFullAt) } : {}),
+      ...(Array.isArray(sync.knownProjects)
+        ? { knownProjects: list(sync.knownProjects).map(text).slice(0, 20000) }
+        : {}),
+      ...(Array.isArray(sync.memberProjects)
+        ? { memberProjects: list(sync.memberProjects).map(text).slice(0, 5000) }
+        : {}),
       ...(Object.keys(fields).length ? { fields } : {}),
     },
     users,
