@@ -3,8 +3,22 @@ import type { Assignment, SeedsRole } from '../../shared/access'
 import type { SeedsAccountSync, SeedsCounts, SeedsUserSync } from '../../shared/seeds'
 
 /** Administrators: Seeds for the whole account. */
+/** Where a running sync is: reading the lists, then each project's members, then tasks. */
+export type SeedsProgress = { step: 'lists' | 'members' | 'tasks'; done: number; total: number; startedAt?: string }
+export const progressText = (progress?: SeedsProgress) =>
+  !progress
+    ? 'Starting…'
+    : progress.step === 'lists'
+      ? `Reading people, clients and projects (${progress.done}/${progress.total})…`
+      : progress.step === 'members'
+        ? `Reading project members (${progress.done}/${progress.total})…`
+        : `Reading Seeds tasks (${progress.done}/${progress.total})…`
+
 export type SeedsAccount = {
   connected: boolean
+  /** A sync is running now (a first one over many projects takes minutes). */
+  running?: boolean
+  progress?: SeedsProgress
   /** The server has its Seeds application token (SEEDS_API_TOKEN). */
   tokenReady: boolean
   apiUrl: string
@@ -13,6 +27,9 @@ export type SeedsAccount = {
 }
 export type SyncResult = {
   ok: boolean
+  /** Still running in the background; the Seeds card shows how far it is. */
+  running?: boolean
+  progress?: SeedsProgress
   error?: string
   counts?: SeedsCounts
   pending?: number

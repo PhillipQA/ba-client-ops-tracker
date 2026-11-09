@@ -22,7 +22,14 @@ import {
   seedsState,
   seedsStatusFor,
 } from '../../src/shared/seeds'
-import { httpSeedsSource, SeedsError, type SeedsFields, type SeedsSource } from './seeds-client'
+import {
+  httpSeedsSource,
+  SeedsError,
+  type SeedsFields,
+  type SeedsProgress,
+  type SeedsReadOptions,
+  type SeedsSource,
+} from './seeds-client'
 import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from './seeds-sync'
 import { checkGoogleIdToken, postSeedsTime, seedsTimeBody, seedsTimeKey } from './seeds-time'
 import { type TimeEntry, unsentToSeeds } from '../../src/features/tasks/effort'
@@ -48,7 +55,7 @@ export interface SeedsDeps {
   /** Replaced in tests by a fake Seeds. */
   postTime?: typeof postSeedsTime
   /** Replaced in tests by a fake Seeds. */
-  source?: (token: string, apiUrl: string) => SeedsSource
+  source?: (token: string, apiUrl: string, options: SeedsReadOptions) => SeedsSource
 }
 
 const SYNC_EVERY_MS = 30 * 60_000
@@ -137,6 +144,8 @@ export function planAccountSync(
 
 export function createSeedsService(deps: SeedsDeps) {
   const running = new Map<string, Promise<any>>()
+  // Where each account's running sync is, for the Seeds card.
+  const progress = new Map<string, SeedsProgress & { startedAt: string }>()
 
   /** Load, change and save the workspace, starting again if someone else saved in between. */
   async function update(organizationId: string, actor: any, reason: string, change: (state: any) => any) {
@@ -164,7 +173,13 @@ export function createSeedsService(deps: SeedsDeps) {
     const emails = new Set<string>(active(before).map(emailOf))
     let read: Awaited<ReturnType<SeedsSource['read']>>
     try {
-      read = await (deps.source || httpSeedsSource)(token, deps.apiUrl()).read(emails)
+      const options: SeedsReadOptions = {
+        onProgress: step => progress.set(organizationId, { ...step, startedAt: now }),
+      }
+      read = await (deps.source
+        ? deps.source(token, deps.apiUrl(), options)
+        : httpSeedsSource(token, deps.apiUrl(), fetch, 20000, options)
+      ).read(emails)
     } catch (error) {
       const message = error instanceof SeedsError ? error.message : 'Seeds could not be read.'
       if (!(error instanceof SeedsError)) console.error('Seeds read failed:', error)
@@ -197,10 +212,28 @@ export function createSeedsService(deps: SeedsDeps) {
   function sync(organizationId: string) {
     const existing = running.get(organizationId)
     if (existing) return existing
-    const job = syncNow(organizationId).finally(() => running.delete(organizationId))
+    const job = syncNow(organizationId).finally(() => {
+      running.delete(organizationId)
+      progress.delete(organizationId)
+    })
     running.set(organizationId, job)
     return job
   }
+
+  /**
+   * Starts a sync (or joins the running one) and answers within `ms`: the result if it finished, otherwise that it
+   * is still running. A first sync over many projects can take minutes, because Seeds limits how fast the app reads.
+   */
+  async function syncFor(organizationId: string, ms = 20000) {
+    const job = sync(organizationId)
+    job.catch(() => {})
+    const late = Symbol('late')
+    const first = await Promise.race([job, new Promise(resolve => setTimeout(() => resolve(late), ms))])
+    return first === late ? { ok: true, running: true, progress: progress.get(organizationId) } : first
+  }
+
+  const status = (organizationId: string) =>
+    running.has(organizationId) ? { running: true, progress: progress.get(organizationId) } : { running: false }
 
   async function syncAll() {
     if (!deps.token()) return
@@ -217,7 +250,7 @@ export function createSeedsService(deps: SeedsDeps) {
     }
   }
 
-  return { sync, syncAll, update }
+  return { sync, syncFor, status, syncAll, update }
 }
 
 export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
@@ -367,6 +400,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         tokenReady: Boolean(deps.token()),
         apiUrl: deps.apiUrl(),
         sync: seeds.sync,
+        ...service.status(user.organizationId),
         people: (status.people || []).map(person => ({ ...person, name: names.get(person.userId) || 'Former user' })),
       })
     }),
@@ -386,7 +420,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         return moveToBeforeSeeds(on, new Date().toISOString())
       })
       // Turning it on is the first sync.
-      res.json({ ok: true, connected: true, sync: await service.sync(user.organizationId) })
+      res.json({ ok: true, connected: true, sync: await service.syncFor(user.organizationId) })
     }),
   )
 
@@ -410,7 +444,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
     ...auth,
     wrap(async (req, res) => {
       const user = who(req)
-      res.json(await service.sync(user.organizationId))
+      res.json(await service.syncFor(user.organizationId))
     }),
   )
 
@@ -434,7 +468,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         current => decideSeedsMatch(current, matchId, decision)?.state,
       )
       // A rejected match becomes a new record on the next sync; run it now.
-      res.json(deps.token() ? await service.sync(user.organizationId) : { ok: true })
+      res.json(deps.token() ? await service.syncFor(user.organizationId) : { ok: true })
     }),
   )
 

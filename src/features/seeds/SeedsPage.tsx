@@ -69,15 +69,20 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
   const [busy, setBusy] = useState('')
   const [message, setMessage] = useState('')
 
-  const run = async (label: string, action: () => Promise<{ ok: boolean; error?: string; pending?: number }>) => {
+  const run = async (
+    label: string,
+    action: () => Promise<{ ok: boolean; error?: string; pending?: number; running?: boolean }>,
+  ) => {
     setBusy(label)
     setMessage('')
     try {
       const result = await action()
       setMessage(
-        result.ok
-          ? `Synced.${result.pending ? ` ${result.pending} match${result.pending === 1 ? '' : 'es'} to confirm.` : ''}`
-          : result.error || 'Seeds could not be read.',
+        result.running
+          ? 'Syncing in the background. A first sync can take a few minutes; refresh this page in a bit.'
+          : result.ok
+            ? `Synced.${result.pending ? ` ${result.pending} match${result.pending === 1 ? '' : 'es'} to confirm.` : ''}`
+            : result.error || 'Seeds could not be read.',
       )
       await app.refreshWorkspace(true)
     } catch (error) {

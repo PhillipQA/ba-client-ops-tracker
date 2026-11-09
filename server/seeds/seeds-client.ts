@@ -39,7 +39,6 @@ export class SeedsError extends Error {
 const PAGE_SIZE = 100
 const MAX_PAGES = 200
 const MAX_RECORDS = 20000
-const PARALLEL = 4
 const text = (value: unknown) => (value == null ? '' : String(value).trim())
 const pick = (record: any, ...keys: string[]) => {
   for (const key of keys) {
@@ -193,25 +192,44 @@ function page(body: any) {
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-async function inBatches<T, R>(values: T[], size: number, work: (value: T) => Promise<R>) {
-  const results: R[] = []
-  for (let start = 0; start < values.length; start += size)
-    results.push(...(await Promise.all(values.slice(start, start + size).map(work))))
-  return results
+/** Where a sync is, for the Seeds card: which step, and how far through it. */
+export type SeedsProgress = { step: 'lists' | 'members' | 'tasks'; done: number; total: number }
+
+export type SeedsReadOptions = {
+  /** The least time between two requests to Seeds; it grows when Seeds says to slow down. */
+  gapMs?: number
+  /** How many times to wait and try again when Seeds says to slow down (429). */
+  retries?: number
+  onProgress?: (progress: SeedsProgress) => void
+  /** Replaced in tests so they do not wait. */
+  sleep?: (ms: number) => Promise<unknown>
 }
 
+/**
+ * Seeds limits how fast an app may read (429 Too Many Requests). One request at a time, a short gap between them,
+ * and when Seeds says to slow down: wait as long as it asks (or longer each time), widen the gap, and carry on.
+ */
 export function httpSeedsSource(
   token: string,
   baseUrl = DEFAULT_SEEDS_URL,
   request: typeof fetch = fetch,
   timeoutMs = 20000,
+  options: SeedsReadOptions = {},
 ): SeedsSource {
   const base = cleanSeedsBaseUrl(baseUrl)
+  const sleep = options.sleep || wait
+  const retries = options.retries ?? 6
+  let gap = options.gapMs ?? 400
+  let lastStart = 0
+  const progress = options.onProgress || (() => {})
 
   async function get(path: string, what: string, query: Record<string, string> = {}): Promise<any> {
     const url = new URL(`${base}${path}`)
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value)
     for (let attempt = 0; ; attempt++) {
+      const due = lastStart + gap - Date.now()
+      if (due > 0) await sleep(due)
+      lastStart = Date.now()
       let response: Response
       try {
         response = await request(url.toString(), {
@@ -222,9 +240,11 @@ export function httpSeedsSource(
       } catch {
         throw new SeedsError('Seeds could not be reached. The last synced access stays in place.')
       }
-      if (response.status === 429 && attempt < 2) {
+      if (response.status === 429 && attempt < retries) {
         const seconds = Number(response.headers.get('retry-after'))
-        await wait(Math.min(Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 2000, 15000))
+        const backoff = Math.min(5000 * 2 ** attempt, 60000)
+        gap = Math.min(gap * 2 || 500, 3000)
+        await sleep(Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, 120000) : backoff)
         continue
       }
       const body: any = await response.json().catch(() => null)
@@ -239,7 +259,10 @@ export function httpSeedsSource(
         throw new SeedsError(`Seeds did not accept the application token.${detail} Check SEEDS_API_TOKEN.`, 502)
       if (response.status === 403)
         throw new SeedsError(`The Seeds token is not allowed to read ${what}.${detail} Ask a SEEDS Admin.`, 502)
-      if (response.status === 429) throw new SeedsError('Seeds is busy (too many requests). Try again later.')
+      if (response.status === 429)
+        throw new SeedsError(
+          'Seeds kept saying the app reads too fast, even after slowing down. The next sync (in 30 minutes) tries again; ask the SEEDS Admin about the app’s rate limit if it keeps happening.',
+        )
       throw new SeedsError(`Seeds answered ${response.status} for ${what}.${detail}`)
     }
   }
@@ -277,11 +300,13 @@ export function httpSeedsSource(
 
   return {
     async read(emails) {
-      const [rawUsers, rawParents, rawProjects] = await Promise.all([
-        readAll('/users', 'users'),
-        readAll('/parents', 'parents'),
-        readAll('/projects', 'projects'),
-      ])
+      progress({ step: 'lists', done: 0, total: 3 })
+      const rawUsers = await readAll('/users', 'users')
+      progress({ step: 'lists', done: 1, total: 3 })
+      const rawParents = await readAll('/parents', 'parents')
+      progress({ step: 'lists', done: 2, total: 3 })
+      const rawProjects = await readAll('/projects', 'projects')
+      progress({ step: 'lists', done: 3, total: 3 })
       const people = rawUsers.map(parseSeeds.person).filter(person => person.id)
       const emailById = new Map(people.map(person => [person.id, person.email]))
       const titleById = new Map(people.map(person => [person.id, person.title]))
@@ -300,15 +325,17 @@ export function httpSeedsSource(
       const clients = rawParents.map(parseSeeds.parent).filter(client => client.id && client.name)
 
       const rawMembers: any[] = []
-      const membersByProject = await inBatches(
-        projects.filter(project => !project.archived),
-        PARALLEL,
-        async project => {
-          const rows = await readOne(`/projects/${encodeURIComponent(project.id)}/members`, 'project members')
-          rawMembers.push(...rows.slice(0, 5))
-          return { project, members: rows.map(parseSeeds.member) }
-        },
-      )
+      const open = projects.filter(project => !project.archived)
+      const membersByProject: {
+        project: (typeof projects)[number]
+        members: ReturnType<typeof parseSeeds.member>[]
+      }[] = []
+      for (const project of open) {
+        progress({ step: 'members', done: membersByProject.length, total: open.length })
+        const rows = await readOne(`/projects/${encodeURIComponent(project.id)}/members`, 'project members')
+        rawMembers.push(...rows.slice(0, 5))
+        membersByProject.push({ project, members: rows.map(parseSeeds.member) })
+      }
       const assignments: SeedsSnapshot['assignments'] = []
       const wantedProjects: typeof projects = []
       for (const { project, members } of membersByProject) {
@@ -325,11 +352,13 @@ export function httpSeedsSource(
       }
 
       const rawTasks: any[] = []
-      const taskLists = await inBatches(wantedProjects, PARALLEL, async project => {
+      const taskLists: ReturnType<typeof parseSeeds.task>[][] = []
+      for (const project of wantedProjects) {
+        progress({ step: 'tasks', done: taskLists.length, total: wantedProjects.length })
         const rows = await readOne(`/projects/${encodeURIComponent(project.id)}/tasks`, 'project tasks')
         rawTasks.push(...rows.slice(0, 5))
-        return rows.map(row => parseSeeds.task(row, project.id))
-      })
+        taskLists.push(rows.map(row => parseSeeds.task(row, project.id)))
+      }
       const tasks = taskLists.flat().filter(task => task.id && task.name)
 
       return {

@@ -580,3 +580,74 @@ test('hand-entered assignments: Administrators only, names only, checked', async
     { id: 'manual:u-pao:PM:p-portal', userId: 'u-pao', role: 'PM', projectId: 'p-portal', source: 'manual' },
   ])
 })
+
+test('when Seeds says to slow down, the reader waits as asked, widens the gap and carries on', async () => {
+  const { fetcher } = fakeSeeds()
+  let busyOnce = true
+  const waits: number[] = []
+  const steps: string[] = []
+  const slowing = (async (url: string, init: any) => {
+    if (busyOnce && url.endsWith('/projects/20/members')) {
+      busyOnce = false
+      return { ok: false, status: 429, headers: new Headers({ 'retry-after': '7' }), json: async () => ({}) } as any
+    }
+    return fetcher(url, init)
+  }) as any
+  const { snapshot: read } = await httpSeedsSource('t', undefined, slowing, 1000, {
+    gapMs: 0,
+    sleep: async ms => waits.push(ms),
+    onProgress: step => steps.push(`${step.step}:${step.done}/${step.total}`),
+  }).read(new Set(['bea@company.com']))
+  assert.equal(read.assignments.length, 1, 'the sync finished after waiting')
+  assert.ok(waits.includes(7000), 'waited as long as Seeds asked')
+  assert.deepEqual(steps.slice(0, 4), ['lists:0/3', 'lists:1/3', 'lists:2/3', 'lists:3/3'])
+  assert.ok(steps.includes('members:1/2') && steps.includes('tasks:0/1'))
+
+  const always = (async () =>
+    ({ ok: false, status: 429, headers: new Headers(), json: async () => ({}) }) as any) as any
+  await assert.rejects(
+    httpSeedsSource('t', undefined, always, 1000, { gapMs: 0, retries: 2, sleep: async () => {} }).read(new Set()),
+    /reads too fast/,
+  )
+})
+
+test('a long sync answers that it is running, and the card can follow it', async () => {
+  const { createSeedsService } = await import('../server/seeds/seeds-routes')
+  let release: () => void = () => {}
+  const gate = new Promise<void>(resolve => {
+    release = resolve
+  })
+  let stored: any = { ...existing(), seeds: { connected: true } }
+  const service = createSeedsService({
+    db: {},
+    requireAuth: () => {},
+    requireTenant: () => {},
+    load: async () => ({ data: stored }),
+    commit: async (_id, state) => {
+      stored = state
+    },
+    raced: () => false,
+    openStatus: () => 'Open',
+    today: () => '2026-11-09',
+    token: () => 'app-token',
+    apiUrl: () => 'https://seeds.iripple.com/api/v1',
+    source: (_token, _url, options) => ({
+      read: async () => {
+        options.onProgress?.({ step: 'members', done: 3, total: 40 })
+        await gate
+        return { snapshot: account(), fields: {} }
+      },
+    }),
+  })
+  const early: any = await service.syncFor('org', 20)
+  assert.equal(early.running, true)
+  assert.deepEqual(service.status('org'), {
+    running: true,
+    progress: { step: 'members', done: 3, total: 40, startedAt: (service.status('org') as any).progress.startedAt },
+  })
+  release()
+  const done: any = await service.sync('org')
+  assert.equal(done.ok, true)
+  assert.deepEqual(service.status('org'), { running: false })
+  assert.equal(stored.seeds.sync.matched, 2)
+})
