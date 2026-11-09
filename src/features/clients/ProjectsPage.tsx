@@ -1,7 +1,7 @@
 import type { AppState } from '../../app/useAppState'
 import { useState } from 'react'
 import { SeedsBadge, type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
-import { Pencil, Plus } from 'lucide-react'
+import { Pencil, Plus, Sprout } from 'lucide-react'
 import { isArchived, isClosedProject } from '../tasks/lifecycle'
 import { Empty, StatusChip } from '../../shared/ui/Chips'
 import { niceDate } from '../../shared/dates'
@@ -11,6 +11,8 @@ export function ProjectsPage({ app }: { app: AppState }) {
   const {
     canWrite,
     clientName,
+    currentUser,
+    setMovingToSeeds,
     hasModule,
     openItems,
     projectArchiveFilter,
@@ -115,6 +117,18 @@ export function ProjectsPage({ app }: { app: AppState }) {
                           <Pencil size={14} /> Edit project
                         </button>
                       )}
+                      {/* While moving to Seeds: an Administrator moves a Before Seeds project's tasks to a Seeds project. */}
+                      {currentUser?.role === 'Administrator' &&
+                        store.seeds?.cutoverAt &&
+                        project.beforeSeeds &&
+                        !isArchived(project) && (
+                          <button
+                            className="secondary compact"
+                            onClick={() => setMovingToSeeds({ fromProjectId: project.id })}
+                          >
+                            <Sprout size={14} /> Move to Seeds…
+                          </button>
+                        )}
                     </td>
                   </tr>
                 )

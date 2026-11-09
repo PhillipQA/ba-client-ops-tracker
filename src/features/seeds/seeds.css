@@ -206,3 +206,103 @@
   min-height: 44px;
   margin: 12px 0;
 }
+
+/* Move to Seeds: one task from its editor, or a Before Seeds project's tasks. */
+.seeds-move {
+  display: grid;
+  gap: 14px;
+}
+.seeds-move-intro {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  line-height: 1.5;
+}
+.seeds-move-intro svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--ui-accent, #7cb342);
+}
+.seeds-move-tasks {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--ui-border, #3a4350);
+  border-radius: 12px;
+  min-width: 0;
+}
+.seeds-move-tasks legend {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 0 6px;
+  font-weight: 650;
+  font-size: 13px;
+}
+.seeds-move-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--ui-accent, #7cb342);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.seeds-move-list {
+  display: grid;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.seeds-move-list label,
+.seeds-move-check {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  padding: 4px 2px;
+  font-size: 13px;
+}
+.seeds-move-check {
+  grid-template-columns: auto 1fr;
+  margin-top: 4px;
+}
+.seeds-move-list label span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.seeds-move-list label small,
+.seeds-move-muted {
+  color: color-mix(in srgb, currentColor 60%, transparent);
+  font-size: 12px;
+}
+.seeds-move-list label.off {
+  opacity: 0.55;
+}
+.seeds-move-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 0;
+  font-size: 13px;
+}
+.seeds-move-skipped {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.seeds-move-error {
+  margin: 0;
+  color: var(--ui-danger, #ff8a80);
+}
+.seeds-move-spacer {
+  flex: 1;
+}
+.task-move-seeds {
+  justify-self: start;
+  margin-top: 6px;
+}

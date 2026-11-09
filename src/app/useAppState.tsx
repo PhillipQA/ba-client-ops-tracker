@@ -8,6 +8,9 @@ import { useWorkHubSync } from '../features/work-hub/useWorkHubSync'
 import { trackerApi, type TaskLink } from '../features/trackers/trackerApi'
 import type { TaskDraft } from '../features/trackers/TrackerWork'
 import { seedsTaskNamed } from '../shared/seeds'
+import { moveToSeeds } from '../features/seeds/moveToSeeds'
+import type { MoveOutcome, MoveRequest } from '../features/seeds/MoveToSeedsDialog'
+import { trackerProjectIds } from '../features/trackers/trackerModel'
 import { applyTaskPatches, type TaskPatch } from '../features/trackers/trackerTasks'
 import { rememberTrackerRow } from '../features/trackers/trackerNav'
 import { assertRtmMutation, reconcileRtm, type RtmMatrix } from '../features/requirements/rtm'
@@ -146,6 +149,8 @@ export function useAppState() {
   const [projectArchiveFilter, setProjectArchiveFilter] = useState('active')
   const [lifecycleSaving, setLifecycleSaving] = useState(false)
   const [editingRecord, setEditingRecord] = useState<{ kind: 'clients' | 'projects'; id: string } | null>(null)
+  /** Before Seeds work being moved into Seeds: one task, or a project's tasks. Administrators only. */
+  const [movingToSeeds, setMovingToSeeds] = useState<{ taskId?: string; fromProjectId?: string } | null>(null)
   const [waitingFilter, setWaitingFilter] = useState<'All' | WaitingOn>('All')
   const [taskClientFilter, setTaskClientFilter] = useState('')
   const [taskProjectFilter, setTaskProjectFilter] = useState('')
@@ -1585,6 +1590,62 @@ export function useAppState() {
     }
   }
 
+  /**
+   * Moves Before Seeds tasks (with their subtasks) into a Seeds project and its client. Administrators only: it is for
+   * the move to Seeds, and the Before Seeds data is removed once everything is moved. Trackers on the old project can
+   * get the Seeds project as their default too.
+   */
+  const moveWorkToSeeds = async (request: MoveRequest): Promise<MoveOutcome> => {
+    if (authUser?.role !== 'Administrator') throw new Error('Only an Administrator can move work to Seeds.')
+    await waitForCloudSaves().catch(() => undefined)
+    const current = storeRef.current
+    const project = current.projects.find(candidate => candidate.id === request.projectId)
+    if (!project) throw new Error('That Seeds project is no longer here. Sync Seeds and try again.')
+    const fromIds = [
+      ...new Set(
+        request.taskIds.map(id => current.items.find(item => item.id === id)?.projectId).filter(Boolean) as string[],
+      ),
+    ]
+    const result = moveToSeeds(current.items, { taskIds: request.taskIds, project, seedsTaskId: request.seedsTaskId })
+    const skipped = result.skipped.map(skip => ({ title: skip.title, reason: skip.reason }))
+    if (!result.moved.length) return { moved: 0, subtasks: 0, skipped }
+    const today = businessDateKey()
+    const titles = result.moved.map(id => current.items.find(item => item.id === id)?.title || '').filter(Boolean)
+    const next: Store = {
+      ...current,
+      items: result.items,
+      activity: [
+        {
+          id: crypto.randomUUID(),
+          clientId: project.clientId,
+          projectId: project.id,
+          date: today,
+          text: `Moved to Seeds (${project.name}): ${titles.slice(0, 5).join(', ')}${titles.length > 5 ? ` and ${titles.length - 5} more` : ''}`,
+        },
+        ...current.activity,
+      ],
+    }
+    assertLifecycleMutation(current, next, authUser)
+    if (persist(next) === false) throw new Error('The move was not allowed.')
+    if (cloudStatus !== 'local') await waitForCloudSaves()
+    // Trackers on the old project take the Seeds project as their default, so new rows and sites go to Seeds.
+    if (request.trackers && fromIds.length) {
+      const listed = await trackerApi.list().catch(() => null)
+      for (const tracker of listed?.trackers || []) {
+        const ids = trackerProjectIds(tracker)
+        if (!ids.some(id => fromIds.includes(id)) || ids[0] === project.id) continue
+        const clientIds = tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : []
+        await trackerApi
+          .update(tracker.id, {
+            projectIds: [project.id, ...ids.filter(id => id !== project.id)],
+            clientIds: clientIds.includes(project.clientId || '') ? clientIds : [...clientIds, project.clientId || ''],
+          })
+          .catch(() => undefined)
+      }
+    }
+    return { moved: result.moved.length, subtasks: result.subtasks, skipped }
+  }
+
   const deleteTask = (id: string) => {
     if (!canWriteTasks) return
     const target = store.items.find(item => item.id === id)
@@ -2082,6 +2143,9 @@ export function useAppState() {
     editingActivity,
     editingRecord,
     editingTask,
+    movingToSeeds,
+    setMovingToSeeds,
+    moveWorkToSeeds,
     filteredTasks,
     handleLogin,
     handleLogout,

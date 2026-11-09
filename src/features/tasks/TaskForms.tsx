@@ -8,6 +8,7 @@ import { type Store, defaultOpenTaskStatus, isTaskClosed } from '../../app/store
 import { businessDateKey } from '../../shared/businessDate'
 import { effortSummary, formatHours, normalizeEstimate, seedsTimeRule } from './effort'
 import { isArchived, isClosedProject } from './lifecycle'
+import { isBeforeSeedsWork } from '../../shared/seeds'
 import type { RtmLink } from '../requirements/rtm'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { type TaskCommentMutationResult, addTaskComment } from './taskComments'
@@ -438,6 +439,7 @@ export function TaskEditForm({
   onTimeEntryMutation,
   currentUser,
   today,
+  onMoveToSeeds,
 }: {
   autoRefreshDocuments?: boolean
   canLinkRtm: boolean
@@ -450,6 +452,8 @@ export function TaskEditForm({
   onTimeEntryMutation: (result: TimeEntryMutationResult) => void
   currentUser: { id: string; role?: string }
   today: string
+  /** Administrators, once Seeds is on: moves this Before Seeds task (with its subtasks) to a Seeds project. */
+  onMoveToSeeds?: () => void
 }) {
   const [rtmLinks, setRtmLinks] = useState<RtmLink[]>(item.rtmLinks || [])
   const [editProjectId, setEditProjectId] = useState(item.projectId || '')
@@ -616,6 +620,11 @@ export function TaskEditForm({
                   </option>
                 ))}
             </select>
+            {onMoveToSeeds && !item.archived && isBeforeSeedsWork(item, store.projects, store.clients) && (
+              <button type="button" className="secondary compact task-move-seeds" onClick={onMoveToSeeds}>
+                Move to Seeds…
+              </button>
+            )}
           </label>
         )}
         <label>
