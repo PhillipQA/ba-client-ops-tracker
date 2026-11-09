@@ -9,6 +9,7 @@ import {
   canConvertType,
   cleanCell,
   splitClientIds,
+  TRACKER_PROJECTS,
   cleanName,
   cleanSecret,
   isBasicType,
@@ -189,7 +190,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     return (row: any) => {
       const clients = splitClientIds(row.client_id)
       if (clients.length) return clients.every(clientId => scope.fullClients.has(clientId))
-      if (row.project_id) return scope.fullProjects.has(String(row.project_id))
+      const projects = splitClientIds(row.project_id)
+      if (projects.length) return projects.some(projectId => scope.fullProjects.has(projectId))
       return row.created_by === user.id
     }
   }
@@ -215,7 +217,9 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     name: row.name,
     clientId: splitClientIds(row.client_id)[0] || '',
     clientIds: splitClientIds(row.client_id),
-    projectId: row.project_id || '',
+    // A tracker can have several projects (comma-separated, like clients); the first is its default.
+    projectId: splitClientIds(row.project_id)[0] || '',
+    projectIds: splitClientIds(row.project_id),
     private: Boolean(row.private),
     template: row.template || '',
     ...(typeof row.step_tasks === 'boolean' ? { stepTasks: row.step_tasks } : {}),
@@ -301,7 +305,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
 
   function validateLinks(
     state: any,
-    body: { clientId?: unknown; clientIds?: unknown; projectId?: unknown },
+    body: { clientId?: unknown; clientIds?: unknown; projectId?: unknown; projectIds?: unknown },
     user: User,
   ) {
     const scope = scopeFor(state, user.id)
@@ -323,10 +327,19 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         throw new TrackerError(`A tracker can follow at most ${TRACKER_CLIENTS} clients.`)
       clientId = ids.join(',')
     } else if (body.clientId !== undefined) clientId = pick(body.clientId, state.clients, 'client')
-    return {
-      clientId,
-      projectId: body.projectId === undefined ? undefined : pick(body.projectId, state.projects, 'project'),
-    }
+    // Several projects under the tracker's clients (each with its own contract). `projectIds` wins; its first is the
+    // default. A single `projectId` still works for older callers.
+    let projectId: string | undefined
+    if (body.projectIds !== undefined) {
+      if (!Array.isArray(body.projectIds)) throw new TrackerError('projectIds must be a list.')
+      const ids = [
+        ...new Set(body.projectIds.map((value: unknown) => pick(value, state.projects, 'project')).filter(Boolean)),
+      ]
+      if (ids.length > TRACKER_PROJECTS)
+        throw new TrackerError(`A tracker can have at most ${TRACKER_PROJECTS} projects.`)
+      projectId = ids.join(',')
+    } else if (body.projectId !== undefined) projectId = pick(body.projectId, state.projects, 'project')
+    return { clientId, projectId }
   }
   function taskIdOf(state: any, value: unknown) {
     const id = String(value ?? '').trim()
@@ -2034,7 +2047,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           tenantId: tenant,
           title,
           clientId: splitClientIds(tracker.client_id)[0] || undefined,
-          projectId: tracker.project_id || undefined,
+          projectId: splitClientIds(tracker.project_id)[0] || undefined,
           editorEmail: String(access.email),
         })
         spreadsheetId = made.spreadsheetId
@@ -2720,7 +2733,12 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const body = req.body || {},
         patch: Record<string, unknown> = {}
       if (body.name !== undefined) patch.name = cleanName(body.name, 'tracker name', TRACKER_LIMITS.nameLength)
-      if (body.clientId !== undefined || body.clientIds !== undefined || body.projectId !== undefined) {
+      if (
+        body.clientId !== undefined ||
+        body.clientIds !== undefined ||
+        body.projectId !== undefined ||
+        body.projectIds !== undefined
+      ) {
         const links = validateLinks(await workspace(tenant), body, user)
         if (links.clientId !== undefined) patch.client_id = links.clientId
         if (links.projectId !== undefined) patch.project_id = links.projectId

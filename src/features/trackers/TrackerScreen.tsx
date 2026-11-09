@@ -35,6 +35,7 @@ import {
   type TrackerView,
   isFrozenColumn,
   taskFieldColumn,
+  trackerProjectIds,
 } from './trackerModel'
 import { rowTones, settleTimelineFields, todayNumber } from './timelineModel'
 import { cellText, keepsTasks, phaseRollup, rowTaskPatch, type TaskPatch } from './trackerTasks'
@@ -61,6 +62,7 @@ import { niceTime } from './trackerUi'
 import { SaveAsTemplateDialog } from './TemplateManager'
 import { sheetHasGantt } from './sheetGantt'
 import { keepsStepTasks, planMissingSteps, planStepTasks, siteTaskPatch, siteTaskTitle, stepColumns } from './stepTasks'
+import { rowContract, rowPlace } from './trackerProjects'
 import { cellSubtaskPatches } from './cellSubtasks'
 import { waitForCloudSaves } from '../../app/cloudStore'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
@@ -914,10 +916,11 @@ export default function TrackerScreen(props: Props) {
       return
     }
     // On a Seeds project, sites go under that project's client (the Seeds parent), whichever Before Seeds clients the
-    // tracker also follows.
+    // tracker also follows. A row whose contract number names another of the tracker's projects goes there.
     const seedsClient = props.projects.find(project => project.id === current.projectId && project.seedsId)?.clientId
     const clientId = seedsClient || trackerClients(current)[0] || ''
-    if (!clientId) {
+    const placeFor = (row: Pick<TrackerRow, 'cells' | 'taskId'>) => rowPlace(current, row, props.projects)
+    if (!clientId && !current.columns.some(column => column.taskField === 'contract')) {
       if (!noClientSaid.current || rowIds === null)
         say(
           'error',
@@ -937,6 +940,7 @@ export default function TrackerScreen(props: Props) {
         clientId,
         projectId: current.projectId,
         assigneeId: props.currentUserId || '',
+        placeFor,
       })
       try {
         let sites = 0
@@ -1114,6 +1118,21 @@ export default function TrackerScreen(props: Props) {
     const timer = window.setTimeout(() => void update(patches).catch(() => undefined), 800)
     return () => window.clearTimeout(timer)
   }, [props.items, rows, tasksKept, canEdit, props.onUpdateTasks, props.isTaskClosed, status])
+
+  // The Contract number column (an "SLSS #" column, say) shows the contract of each row's task's project, from Seeds.
+  const contractFilled = useRef(new Set<string>())
+  useEffect(() => {
+    const column = taskFieldColumn(columns, 'contract')
+    if (!column || column.synced || !canEdit || status !== 'ready') return
+    for (const row of rows) {
+      const contract = rowContract(row, props.projects, props.items)
+      const key = `${row.id}|${contract}`
+      if (!contract || contractFilled.current.has(key)) continue
+      if (cellText(column, row.cells[column.id]).trim() === contract) continue
+      contractFilled.current.add(key)
+      patchRow(row.id, { cells: { [column.id]: contract } })
+    }
+  }, [rows, columns, props.projects, props.items, canEdit, status])
 
   // ---- row highlights, and colouring rows by their state ----
   const [statusColorsHere, setStatusColorsHere] = useState(() => {
@@ -1383,13 +1402,22 @@ export default function TrackerScreen(props: Props) {
       else if (draft.total) copy.total = draft.total
       if (draft.autoDone === null) delete copy.autoDone
       else if (draft.autoDone) copy.autoDone = draft.autoDone
+      if (draft.contract === true) copy.taskField = 'contract'
+      else if (draft.contract === false && copy.taskField === 'contract') delete copy.taskField
       return copy
     }
-    // Only one column marks rows done: turning it on here turns it off elsewhere.
+    // Only one column marks rows done (or shows the contract): turning it on here turns it off elsewhere.
     const others = (column: TrackerColumn): TrackerColumn => {
-      if (!draft.autoDone || !column.autoDone) return column
-      const { autoDone: _off, ...rest } = column
-      return rest
+      let result = column
+      if (draft.autoDone && result.autoDone) {
+        const { autoDone: _off, ...rest } = result
+        result = rest
+      }
+      if (draft.contract === true && result.taskField === 'contract') {
+        const { taskField: _field, ...rest } = result
+        result = rest
+      }
+      return result
     }
     const next: TrackerColumn[] = existing
       ? columns.map(column =>
@@ -1594,12 +1622,22 @@ export default function TrackerScreen(props: Props) {
         <div className="trk-title">
           <h2>{tracker.name}</h2>
           {(trackerClients(tracker).length > 0 || tracker.projectId) && (
-            <span className="trk-chip" title={trackerClients(tracker).map(clientName).join(', ')}>
+            <span
+              className="trk-chip"
+              title={[
+                trackerClients(tracker).map(clientName).join(', '),
+                trackerProjectIds(tracker).map(projectName).filter(Boolean).join(', '),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            >
               {[
                 trackerClients(tracker).length > 2
                   ? `${clientName(trackerClients(tracker)[0])} +${trackerClients(tracker).length - 1} clients`
                   : trackerClients(tracker).map(clientName).join(', '),
-                projectName(tracker.projectId),
+                trackerProjectIds(tracker).length > 1
+                  ? `${projectName(tracker.projectId)} +${trackerProjectIds(tracker).length - 1} projects`
+                  : projectName(tracker.projectId),
               ]
                 .filter(Boolean)
                 .join(' · ')}

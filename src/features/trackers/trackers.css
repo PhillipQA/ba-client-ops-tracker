@@ -2963,3 +2963,23 @@ a.trk-link-button {
     justify-content: flex-start;
   }
 }
+
+/* Project picker: chips carry the contract number; matches show contract and client under the name. */
+.trk-chip-note {
+  color: var(--k-muted);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.trk-client-chip .trk-chip-text {
+  font-size: 12px;
+  color: var(--k-muted);
+}
+.trk-project-options button {
+  display: grid;
+  gap: 1px;
+}
+.trk-project-options button small {
+  color: var(--k-muted);
+  font-size: 11.5px;
+}

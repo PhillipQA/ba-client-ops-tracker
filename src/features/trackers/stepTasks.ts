@@ -59,6 +59,8 @@ export function planStepTasks(input: {
   clientId: string
   projectId: string
   assigneeId: string
+  /** Where a row's task goes, when rows of one tracker go to different projects (by contract number). */
+  placeFor?: (row: Pick<TrackerRow, 'id' | 'cells' | 'taskId'>) => { clientId: string; projectId: string }
 }): StepPlan {
   const plan: StepPlan = { drafts: [], rowTasks: [], cellTasks: [], ticked: [] }
   const steps = stepColumns(input.columns)
@@ -67,11 +69,15 @@ export function planStepTasks(input: {
     if (row.taskId) continue
     const title = siteTaskTitle(input.columns, row.cells)
     if (!title) continue
+    const place = input.placeFor?.(row)
+    const clientId = place?.clientId || input.clientId
+    const projectId = place?.clientId ? place.projectId : input.projectId
+    if (!clientId) continue
     const parent = plan.drafts.length
     plan.drafts.push({
       title,
-      clientId: input.clientId,
-      projectId: input.projectId,
+      clientId,
+      projectId,
       assignedToUserId: input.assigneeId || undefined,
       dueDate: dateOf(goLive ? row.cells[goLive.id] : undefined) || undefined,
       description: 'A site of a Site rollout tracker. Its steps are the subtasks.',
@@ -81,8 +87,8 @@ export function planStepTasks(input: {
       const at = plan.drafts.length
       plan.drafts.push({
         title: step.name,
-        clientId: input.clientId,
-        projectId: input.projectId,
+        clientId,
+        projectId,
         parentIndex: parent,
         assignedToUserId: input.assigneeId || undefined,
       })

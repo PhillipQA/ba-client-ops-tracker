@@ -164,12 +164,17 @@ export type TrackerColumn = {
   taskField?: TaskField
 }
 
-export type TaskField = 'title' | 'start' | 'due' | 'progress'
+/**
+ * `contract` (Text) is one-way: it shows the contract number of the linked task's project (from Seeds), and a row with
+ * no task yet uses it to say which of the tracker's projects it is for (see rowProject).
+ */
+export type TaskField = 'title' | 'start' | 'due' | 'progress' | 'contract'
 const TASK_FIELD_TYPES: Record<TaskField, ColumnType[]> = {
   title: ['text'],
   start: ['date'],
   due: ['date'],
   progress: ['number'],
+  contract: ['text'],
 }
 /** The column that mirrors a task field, if any. */
 export const taskFieldColumn = (columns: TrackerColumn[], field: TaskField) =>
@@ -305,7 +310,10 @@ export type Tracker = {
   clientId: string
   /** Every client this tracker follows. */
   clientIds: string[]
+  /** The default project: new rows' tasks go here unless the row says otherwise (see rowProject). */
   projectId: string
+  /** All its projects, the default first. Older trackers have just the one. */
+  projectIds?: string[]
   private: boolean
   template: string
   /**
@@ -1004,6 +1012,11 @@ export function columnTotal(
 
 /** Trackers keep their clients in one text field as comma-separated ids. */
 export const TRACKER_CLIENTS = 20
+/** How many projects one tracker can have (each with its own contract, usually under one client). */
+export const TRACKER_PROJECTS = 50
+/** A tracker's projects, the default first. */
+export const trackerProjectIds = (tracker: Pick<Tracker, 'projectId' | 'projectIds'>) =>
+  tracker.projectIds?.length ? tracker.projectIds : tracker.projectId ? [tracker.projectId] : []
 export const splitClientIds = (value: unknown) => [
   ...new Set(
     String(value ?? '')

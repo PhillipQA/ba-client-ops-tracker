@@ -1,6 +1,8 @@
 import { useMemo, useState, type RefObject } from 'react'
 import { ExternalLink, Plus, Search, Unlink } from 'lucide-react'
-import type { Tracker, TrackerColumn, TrackerRow } from './trackerModel'
+import { taskFieldColumn, type Tracker, type TrackerColumn, type TrackerRow } from './trackerModel'
+import { projectForContract } from './trackerProjects'
+import { cellText } from './trackerTasks'
 import { Dialog, Pill, Popover, plural } from './trackerUi'
 import type { WorkItem } from '../../shared/types'
 import ClientSelect from '../../shared/ui/SearchSelect'
@@ -29,6 +31,7 @@ export type WorkProject = {
   name: string
   clientId?: string
   seedsId?: string
+  contractNumber?: string
   beforeSeeds?: boolean
   seedsTasks?: { id: string; name: string; archived?: boolean }[]
   /** Closed in Seeds (resolved, completed…) or archived here: not offered for new work. */
@@ -56,23 +59,44 @@ export const seedsProjects = (projects: WorkProject[]) =>
 const isSeedsProject = (projects: WorkProject[], id?: string) =>
   Boolean(id) && projects.some(project => project.id === id && project.seedsId)
 
+/** The project a row's Contract number column names (one of the tracker's projects, or of its clients'), if any. */
+const contractProjectOf = (tracker: Tracker, projects: WorkProject[], row?: Pick<TrackerRow, 'cells'>) => {
+  const column = row && taskFieldColumn(tracker.columns, 'contract')
+  return column ? projectForContract(tracker, cellText(column, row.cells[column.id]), projects) : undefined
+}
+
 /**
  * Client and project for a new task. Once Seeds is on, new tasks go to a Seeds project by default (its client is the
  * Seeds parent, filled in), with an optional Seeds task; Before Seeds is still there to choose. Otherwise: the
  * tracker's clients first (picked automatically when there is one), and any project.
  */
-function useTaskContext(tracker: Tracker, tools: WorkTools) {
+function useTaskContext(tracker: Tracker, tools: WorkTools, row?: Pick<TrackerRow, 'cells'>) {
   const fromSeeds = seedsProjects(tools.projects)
-  const [target, setTarget] = useState<'seeds' | 'before'>(fromSeeds.length ? 'seeds' : 'before')
+  // A row whose contract number names a project starts on that project; else the tracker's default project.
+  const byContract = contractProjectOf(tracker, tools.projects, row)
+  const startProject = byContract?.id || tracker.projectId
+  const [target, setTarget] = useState<'seeds' | 'before'>(
+    fromSeeds.length && !(byContract && !byContract.seedsId) ? 'seeds' : 'before',
+  )
   const own = trackerClients(tracker).filter(id => tools.clients.some(client => client.id === id))
   const choices = own.length ? tools.clients.filter(client => own.includes(client.id)) : tools.clients
-  const [clientId, setClientId] = useState(own.length === 1 ? own[0] : '')
+  const [clientId, setClientId] = useState(
+    byContract && !byContract.seedsId && byContract.clientId && own.includes(byContract.clientId)
+      ? byContract.clientId
+      : own.length === 1
+        ? own[0]
+        : '',
+  )
   const [projectId, setProjectId] = useState(
-    tracker.projectId && tools.projects.some(project => project.id === tracker.projectId) ? tracker.projectId : '',
+    startProject && tools.projects.some(project => project.id === startProject && !project.seedsId) ? startProject : '',
   )
   // The tracker's own Seeds project when it has one.
   const [seedsProjectId, setSeedsProjectId] = useState(
-    isSeedsProject(tools.projects, tracker.projectId) ? tracker.projectId : '',
+    isSeedsProject(tools.projects, startProject)
+      ? startProject
+      : isSeedsProject(tools.projects, tracker.projectId)
+        ? tracker.projectId
+        : '',
   )
   const [seedsTaskId, setSeedsTaskId] = useState('')
   const seedsProject = fromSeeds.find(project => project.id === seedsProjectId)
@@ -225,7 +249,7 @@ export function TrackerWorkPicker(props: PickerProps) {
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const context = useTaskContext(tracker, tools)
+  const context = useTaskContext(tracker, tools, row)
   const byId = useMemo(() => new Map(tools.items.map(item => [item.id, item])), [tools.items])
   const task = row.taskId ? byId.get(row.taskId) : undefined
   // A new subtask under a Seeds project: its Seeds task, matched from its name unless one is chosen.
@@ -523,19 +547,37 @@ export function TrackerBulkTasks({
   const switches = todo.filter(switching).length
   const named = todo.filter(row => titleOf(row) !== 'Untitled row')
   const skipped = rows.length - named.length
+  // A row whose contract number names a project (of the same kind, Seeds or Before Seeds) goes to that project.
+  const placeOf = (row: TrackerRow) => {
+    const project = contractProjectOf(tracker, tools.projects, row)
+    if (!project || Boolean(project.seedsId) !== (context.target === 'seeds')) return undefined
+    const clientId = project.clientId || (context.target === 'before' ? context.clientId : '')
+    return clientId ? { project, clientId } : undefined
+  }
+  const byContract = named.filter(row => placeOf(row)).length
   const submit = async () => {
     if (!tools.onCreate || !named.length) return
-    if (!context.ready) return setError(context.problem)
+    if (!context.ready && named.some(row => !placeOf(row))) return setError(context.problem)
     setBusy(true)
     setError('')
     try {
       const made = await tools.onCreate(
-        named.map(row => ({
-          title: titleOf(row),
-          clientId: context.clientId,
-          projectId: context.projectId,
-          seedsTaskId: context.seedsTaskId,
-        })),
+        named.map(row => {
+          const place = placeOf(row)
+          if (!place)
+            return {
+              title: titleOf(row),
+              clientId: context.clientId,
+              projectId: context.projectId,
+              seedsTaskId: context.seedsTaskId,
+            }
+          return {
+            title: titleOf(row),
+            clientId: place.clientId,
+            projectId: place.project.id,
+            seedsTaskId: place.project.id === context.projectId ? context.seedsTaskId : undefined,
+          }
+        }),
       )
       await onDone(named.map((row, at) => ({ rowId: row.id, taskId: made[at].id })))
       onClose()
@@ -573,11 +615,24 @@ export function TrackerBulkTasks({
         </p>
         {named.length > 0 && (
           <ul className="trk-bulk-preview" aria-label="Tasks to create">
-            {named.slice(0, 50).map(row => (
-              <li key={row.id}>{titleOf(row)}</li>
-            ))}
+            {named.slice(0, 50).map(row => {
+              const place = placeOf(row)
+              return (
+                <li key={row.id}>
+                  {titleOf(row)}
+                  {place && <span className="trk-muted"> · {place.project.name}</span>}
+                </li>
+              )
+            })}
             {named.length > 50 && <li className="trk-muted">…and {named.length - 50} more</li>}
           </ul>
+        )}
+        {byContract > 0 && (
+          <p className="trk-muted-text">
+            {plural(byContract, 'row')} {byContract === 1 ? 'goes' : 'go'} to the project whose contract number{' '}
+            {byContract === 1 ? 'is' : 'are'} in the row (shown next to its name)
+            {byContract < named.length ? '; the rest go to the project below.' : '.'}
+          </p>
         )}
         {named.length > 0 && context.fields}
         {error && (
