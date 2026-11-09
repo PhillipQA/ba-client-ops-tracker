@@ -52,6 +52,7 @@ Released with pull request #110.
 - Setup: `workforce.time_entries.create` on the Seeds token, and a Google OAuth client ID registered with SEEDS Admin in `SEEDS_GOOGLE_CLIENT_ID` ([docs/setup/seeds.md](docs/setup/seeds.md)).
 
 ### Seeds (phase 2)
+- **Trackers show they are loading:** a spinner with *Loading trackers…* (or *Loading tracker…*) and grey placeholder rows, instead of an empty page while the list or a tracker loads.
 - **Work Hub › Create a project task:** clients and projects are grouped *From Seeds* and *Before Seeds*; Project is now a type-to-search field (name or contract number, closed projects left out; with a Seeds client chosen, only its projects). Picking a Seeds project fills its client. The **Link this email** button is a normal button again.
 - **Fixed: type-to-search lists could not be scrolled** (client, task and project pickers everywhere): scrolling the list re-measured it and jumped back to the top.
 - **Fixed: Edit project on a Seeds project blanked the app.** The editor focused the Status list (a Seeds project's name is locked) and called a text-only method on it. Now it just focuses Status. If any screen fails to draw, the app shows the error with **Reload** instead of a blank page.
