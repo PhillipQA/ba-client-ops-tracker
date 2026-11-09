@@ -37,6 +37,11 @@ test('tracker values become Sheet text; text is written as typed, numbers and da
     input: 'USER_ENTERED',
   })
   assert.deepEqual(sheetTextOf(columns[1], '', people), { text: '', input: 'RAW' })
+  // Unticking must stay a checkbox in the Sheet: FALSE written as text showed the word instead of an empty box.
+  const box = { id: 'b', name: 'BIR Permit', type: 'checkbox' as const }
+  assert.deepEqual(sheetTextOf(box, false, people, 'TRUE'), { text: 'FALSE', input: 'USER_ENTERED' })
+  assert.deepEqual(sheetTextOf(box, undefined, people), { text: 'FALSE', input: 'USER_ENTERED' })
+  assert.deepEqual(sheetTextOf(box, false, people, 'Yes'), { text: 'No', input: 'USER_ENTERED' })
 })
 
 test('cell writes find the row by name and order, and stop at a cell changed in the Sheet', () => {
