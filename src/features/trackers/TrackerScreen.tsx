@@ -893,6 +893,16 @@ export default function TrackerScreen(props: Props) {
       linksRef.current = result.links
     }
   }
+  /** Step-cell links to a subtask of a task other than the row's own (left from the row's earlier task). */
+  const staleStepLinks = (rowsToCheck: TrackerRow[]) => {
+    const stepIds = new Set(stepColumns(trackerRef.current?.columns || []).map(column => column.id))
+    return linksRef.current.filter(link => {
+      if (!link.columnId || !stepIds.has(link.columnId)) return false
+      const row = rowsToCheck.find(candidate => candidate.id === link.rowId)
+      const linked = itemsRef.current.find(item => item.id === link.taskId)
+      return Boolean(row?.taskId && linked?.parentTaskId && linked.parentTaskId !== row.taskId)
+    })
+  }
   /** Named rows without a task get one, with a subtask in each step cell. Null: every such row. */
   const makeStepTasks = (rowIds: string[] | null) => {
     const current = trackerRef.current
@@ -946,6 +956,16 @@ export default function TrackerScreen(props: Props) {
           await linkCells(cellLinks)
           const ticked = plan.ticked.flatMap(at => (made[at] ? [{ id: made[at].id, done: true }] : []))
           if (ticked.length && update) await update(ticked)
+        }
+        // A step cell still on a subtask of another task (the row moved to a new task, say from Before Seeds to
+        // Seeds) lets go of it, so the step is made again under the row's task. The old subtask stays where it is.
+        const stale = staleStepLinks(
+          rowsRef.current.filter(row => row.taskId && (rowIds === null || rowIds.includes(row.id))),
+        )
+        for (const link of stale) await trackerApi.removeLink(trackerId, link.id)
+        if (stale.length) {
+          linksRef.current = linksRef.current.filter(link => !stale.includes(link))
+          if (alive.current) setLinks(linksRef.current)
         }
         // Rows whose task was picked or made from the cell, or that lack a step added later: their missing subtasks.
         const missing = planMissingSteps({
@@ -1010,12 +1030,17 @@ export default function TrackerScreen(props: Props) {
     if (patches.length) void update(patches).catch(taskFailed)
   }
   const stepCount = stepTasks ? stepColumns(columns).length : 0
+  // A step counts as made when its cell is on a subtask of the row's own task (or one not loaded yet).
   const sitesWithoutTask = stepTasks
-    ? rows.filter(row =>
-        row.taskId
-          ? links.filter(link => link.rowId === row.id && link.columnId).length < stepCount
-          : siteTaskTitle(columns, row.cells),
-      ).length
+    ? rows.filter(row => {
+        if (!row.taskId) return siteTaskTitle(columns, row.cells)
+        const own = links.filter(link => {
+          if (link.rowId !== row.id || !link.columnId) return false
+          const linked = props.items.find(item => item.id === link.taskId)
+          return !linked?.parentTaskId || linked.parentTaskId === row.taskId
+        })
+        return new Set(own.map(link => link.columnId)).size < stepCount
+      }).length
     : 0
 
   /** After a row edit: its task follows (title, dates, done, phase), or a named row gets its task. */
@@ -1249,7 +1274,8 @@ export default function TrackerScreen(props: Props) {
       setRows(rowsRef.current.map(row => byId.get(row.id) || row))
     }
     say('info', `${plural(pairs.length, 'task')} created and linked.`)
-    if (switched.length && stepTasks) makeStepTasks(switched.map(pair => pair.rowId))
+    // Site rollout: every row given a task here gets its step subtasks (not only rows that switched).
+    if (pairs.length && stepTasks) makeStepTasks(pairs.map(pair => pair.rowId))
   }
   const removeLink = async (link: TaskLink) => {
     if (!canEdit) return
