@@ -52,6 +52,7 @@ Released with pull request #110.
 - Setup: `workforce.time_entries.create` on the Seeds token, and a Google OAuth client ID registered with SEEDS Admin in `SEEDS_GOOGLE_CLIENT_ID` ([docs/setup/seeds.md](docs/setup/seeds.md)).
 
 ### Seeds (phase 2)
+- **Fixed: unticking a checkbox wrote the word FALSE into the Google Sheet** instead of leaving an empty checkbox. Unticked boxes are now written so Google reads them as checkboxes. A cell already showing FALSE turns back into a box the next time it is ticked or unticked in the tracker.
 - **Trackers show they are loading:** a spinner with *Loading trackers…* (or *Loading tracker…*) and grey placeholder rows, instead of an empty page while the list or a tracker loads.
 - **Work Hub › Create a project task:** clients and projects are grouped *From Seeds* and *Before Seeds*; Project is now a type-to-search field (name or contract number, closed projects left out; with a Seeds client chosen, only its projects). Picking a Seeds project fills its client. The **Link this email** button is a normal button again.
 - **Fixed: type-to-search lists could not be scrolled** (client, task and project pickers everywhere): scrolling the list re-measured it and jumped back to the top.

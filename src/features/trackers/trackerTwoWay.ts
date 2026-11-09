@@ -22,8 +22,12 @@ export function sheetTextOf(
   people: Person[],
   previous = '',
 ): { text: string; input: InputOption } {
+  // An unticked checkbox goes as USER_ENTERED too: written RAW, FALSE became the word "FALSE" in the cell instead of
+  // an empty checkbox.
   if (value === undefined || isEmptyCell(value as Cell))
-    return { text: column.type === 'checkbox' ? sheetTextFor(column, false, previous) : '', input: 'RAW' }
+    return column.type === 'checkbox'
+      ? { text: sheetTextFor(column, false, previous), input: 'USER_ENTERED' }
+      : { text: '', input: 'RAW' }
   switch (column.type) {
     case 'number':
       return { text: String(value), input: 'USER_ENTERED' }
