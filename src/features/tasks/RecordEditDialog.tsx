@@ -23,11 +23,13 @@ export default function RecordEditDialog({ kind, record, canRenameClient, onClos
     nameLocked = fromSeeds || (client && !canRenameClient),
     limited = Boolean((record as { accessLimited?: boolean }).accessLimited)
   useModalDialog(dialog, element => {
-    const firstInput = element.querySelector<HTMLInputElement>(
+    // A Seeds project's name is locked, so focus goes to its Status. That is a <select>, which has no select():
+    // calling it threw and blanked the whole app.
+    const first = element.querySelector<HTMLInputElement | HTMLSelectElement>(
       nameLocked ? (client ? '[name=contact]' : '[name=status]') : '[name=name]',
     )
-    firstInput?.focus()
-    firstInput?.select()
+    first?.focus()
+    if (first instanceof HTMLInputElement) first.select()
   })
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
