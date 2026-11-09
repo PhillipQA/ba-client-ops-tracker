@@ -8683,3 +8683,18 @@ select option {
     transition: none;
   }
 }
+
+/* Action Center task panel: the Folder filter sits beside "View all tasks". */
+.dashboard-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dashboard-panel-actions .lifecycle-filter {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}

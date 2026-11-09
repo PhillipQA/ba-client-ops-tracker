@@ -4,6 +4,9 @@ import { AlertTriangle, CalendarDays, ChevronRight, Inbox, Plus, Settings2, Spar
 import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from './actionCenterScope'
 import GoogleCalendarPanel from '../integrations/GoogleCalendarPanel'
 import ClientSelect from '../../shared/ui/SearchSelect'
+import { useState } from 'react'
+import { isBeforeSeedsWork } from '../../shared/seeds'
+import { type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 
 /** Action Center screen. It reads the app state; see app/useAppState. */
 export function ActionCenterPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
@@ -51,6 +54,13 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     weekActivities,
     weekFollowUps,
   } = app
+  // Once Seeds is on: show the work From Seeds or Before Seeds (or all), like the Tasks page.
+  const [folder, setFolder] = useState<SourceFilter>('seeds')
+  const shownActionItems = store.seeds?.cutoverAt
+    ? actionItems.filter(item =>
+        sourceMatches(folder, { beforeSeeds: isBeforeSeedsWork(item, store.projects, store.clients) }),
+      )
+    : actionItems
   return (
     <section className="page-stack dashboard-stack">
       <div className="metric-grid dashboard-metrics">
@@ -264,15 +274,18 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
               {resolvedActionCenterScope.kind === 'all' ? 'Unassigned work is included.' : ''}
             </p>
           </div>
-          {hasModule('items') && (
-            <button className="secondary" onClick={() => setView('items')}>
-              View all tasks
-            </button>
-          )}
+          <div className="dashboard-panel-actions">
+            <SourceFilterSelect app={app} value={folder} onChange={setFolder} />
+            {hasModule('items') && (
+              <button className="secondary" onClick={() => setView('items')}>
+                View all tasks
+              </button>
+            )}
+          </div>
         </div>
         <DashboardActionTable
-          key={actionCenterScope}
-          items={actionItems}
+          key={`${actionCenterScope}:${folder}`}
+          items={shownActionItems}
           accounts={store.accounts}
           clients={store.clients}
           projects={store.projects}
