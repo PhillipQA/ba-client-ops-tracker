@@ -678,3 +678,73 @@ test('Seeds ids: the whole-number field wins; a project Seeds turns down is skip
     'field names read so far are kept on a failure',
   )
 })
+
+test('a quick sync reads members only for new, changed and already-linked projects', async () => {
+  const projectsList = {
+    data: [
+      { id: 20, parentId: 5, name: 'Linked already', updatedAt: '2026-01-01T00:00:00Z' },
+      { id: 21, parentId: 5, name: 'Old, untouched', updated_at: '2026-01-01T00:00:00Z' },
+      { id: 23, parentId: 5, name: 'Changed today', updatedAt: '2026-11-09T01:00:00Z' },
+      { id: 24, parentId: 5, name: 'Brand new' },
+    ],
+  }
+  const { calls, fetcher } = fakeSeeds({
+    '/projects?limit=100': projectsList,
+    '/projects/23/members': { data: [] },
+    '/projects/24/members': { data: [] },
+  })
+  const read = await httpSeedsSource('t', undefined, fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(['bea@company.com']),
+    { since: '2026-11-08T00:00:00Z', known: new Set(['20', '21', '23']), keep: new Set(['20']) },
+  )
+  const membersRead = calls.map(call => call.url.match(/projects\/(\d+)\/members/)?.[1]).filter(Boolean)
+  assert.deepEqual(membersRead, ['20', '23', '24'], 'not 21: known, untouched, nobody from here on it')
+  assert.equal(read.checked, 3)
+  assert.deepEqual(read.projectIds, ['20', '21', '23', '24'])
+  assert.equal(read.snapshot.assignments.length, 1, 'Bea is still on 20')
+  assert.ok(!('changedAt' in read.snapshot.projects[0]))
+
+  const full = fakeSeeds({
+    '/projects?limit=100': projectsList,
+    '/projects/23/members': { data: [] },
+    '/projects/24/members': { data: [] },
+  })
+  await httpSeedsSource('t', undefined, full.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(new Set())
+  assert.equal(full.calls.filter(call => call.url.includes('/members')).length, 4, 'a full sync reads them all')
+})
+
+test('the first sync is full, the next quick, and Full sync forces one', async () => {
+  const { createSeedsService } = await import('../server/seeds/seeds-routes')
+  let stored: any = { ...existing(), seeds: { connected: true } }
+  const plans: any[] = []
+  const service = createSeedsService({
+    db: {},
+    requireAuth: () => {},
+    requireTenant: () => {},
+    load: async () => ({ data: stored }),
+    commit: async (_id, state) => {
+      stored = state
+    },
+    raced: () => false,
+    openStatus: () => 'Open',
+    today: () => '2026-11-09',
+    token: () => 'app-token',
+    apiUrl: () => 'https://seeds.iripple.com/api/v1',
+    source: () => ({
+      read: async (_emails, quick) => {
+        plans.push(quick)
+        return { snapshot: account(), fields: {}, projectIds: ['s-portal', 's-core', 's-internal'], checked: 3 }
+      },
+    }),
+  })
+  await service.sync('org')
+  assert.equal(plans[0], undefined, 'first: full')
+  assert.equal(stored.seeds.sync.mode, 'full')
+  assert.deepEqual(stored.seeds.sync.memberProjects.sort(), ['s-core', 's-portal'])
+  await service.sync('org')
+  assert.deepEqual([...plans[1].known].sort(), ['s-core', 's-internal', 's-portal'])
+  assert.deepEqual([...plans[1].keep].sort(), ['s-core', 's-portal'])
+  assert.equal(stored.seeds.sync.mode, 'quick')
+  await service.sync('org', true)
+  assert.equal(plans[2], undefined, 'Full sync asked for')
+})

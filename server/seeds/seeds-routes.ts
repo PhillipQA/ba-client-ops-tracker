@@ -59,6 +59,8 @@ export interface SeedsDeps {
 }
 
 const SYNC_EVERY_MS = 30 * 60_000
+/** A full sync (every open project's members) at most once a day; quick ones in between. */
+const FULL_SYNC_EVERY_MS = 24 * 3600_000
 const MAX_ASSIGNMENTS = 5000
 const text = (value: unknown) => (value == null ? '' : String(value))
 const emailOf = (account: any) => text(account?.email).trim().toLowerCase()
@@ -178,7 +180,7 @@ export function createSeedsService(deps: SeedsDeps) {
     }
   }
 
-  async function syncNow(organizationId: string) {
+  async function syncNow(organizationId: string, full = false) {
     const before = (await deps.load(organizationId)).data || {}
     if (!seedsState(before).connected)
       throw new SeedsError('Seeds is not turned on for this account yet. Ask an Administrator.', 409)
@@ -186,6 +188,21 @@ export function createSeedsService(deps: SeedsDeps) {
     if (!token) throw new SeedsError('The server has no Seeds token yet (SEEDS_API_TOKEN). Ask Internal Admin.', 503)
     const now = new Date().toISOString()
     const emails = new Set<string>(active(before).map(emailOf))
+    // Quick unless a full one is asked for or due (once a day, and the first time).
+    const last = seedsState(before).sync
+    const fullDue =
+      full ||
+      !last.lastFullAt ||
+      !last.knownProjects?.length ||
+      Date.now() - Date.parse(last.lastFullAt) >= FULL_SYNC_EVERY_MS
+    const quick = fullDue
+      ? undefined
+      : {
+          // A day's margin, so a change Seeds dates a little late is still caught.
+          since: new Date(Date.parse(last.lastSuccessAt || last.lastFullAt || now) - 24 * 3600_000).toISOString(),
+          known: new Set(last.knownProjects || []),
+          keep: new Set(last.memberProjects || []),
+        }
     let read: Awaited<ReturnType<SeedsSource['read']>>
     try {
       const options: SeedsReadOptions = {
@@ -194,7 +211,7 @@ export function createSeedsService(deps: SeedsDeps) {
       read = await (deps.source
         ? deps.source(token, deps.apiUrl(), options)
         : httpSeedsSource(token, deps.apiUrl(), fetch, 20000, options)
-      ).read(emails)
+      ).read(emails, quick)
     } catch (error) {
       const message = error instanceof SeedsError ? error.message : 'Seeds could not be read.'
       if (!(error instanceof SeedsError)) console.error('Seeds read failed:', error)
@@ -220,7 +237,23 @@ export function createSeedsService(deps: SeedsDeps) {
         openStatus: deps.openStatus(state),
         waitingOn: defaultWaitingOn(state.taskSettings),
       })
-      return result.state
+      // What the next quick sync needs: every project seen, and those with someone from here on them.
+      const seeds = seedsState(result.state)
+      const memberProjects = [...new Set(read.snapshot.assignments.map(a => a.projectId).filter(Boolean))] as string[]
+      return {
+        ...result.state,
+        seeds: {
+          ...seeds,
+          sync: {
+            ...seeds.sync,
+            mode: fullDue ? 'full' : 'quick',
+            checked: read.checked ?? 0,
+            lastFullAt: fullDue ? now : last.lastFullAt,
+            knownProjects: read.projectIds || last.knownProjects || [],
+            memberProjects,
+          },
+        },
+      }
     })
     return {
       ok: true,
@@ -232,10 +265,10 @@ export function createSeedsService(deps: SeedsDeps) {
   }
 
   /** One sync per account at a time; a second request waits for the running one. */
-  function sync(organizationId: string) {
+  function sync(organizationId: string, full = false) {
     const existing = running.get(organizationId)
     if (existing) return existing
-    const job = syncNow(organizationId).finally(() => {
+    const job = syncNow(organizationId, full).finally(() => {
       running.delete(organizationId)
       progress.delete(organizationId)
     })
@@ -247,8 +280,8 @@ export function createSeedsService(deps: SeedsDeps) {
    * Starts a sync (or joins the running one) and answers within `ms`: the result if it finished, otherwise that it
    * is still running. A first sync over many projects can take minutes, because Seeds limits how fast the app reads.
    */
-  async function syncFor(organizationId: string, ms = 20000) {
-    const job = sync(organizationId)
+  async function syncFor(organizationId: string, ms = 20000, full = false) {
+    const job = sync(organizationId, full)
     job.catch(() => {})
     const late = Symbol('late')
     const first = await Promise.race([job, new Promise(resolve => setTimeout(() => resolve(late), ms))])
@@ -422,7 +455,8 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         connected: seeds.connected,
         tokenReady: Boolean(deps.token()),
         apiUrl: deps.apiUrl(),
-        sync: seeds.sync,
+        // The project id lists stay on the server.
+        sync: (({ knownProjects: _known, memberProjects: _members, ...rest }) => rest)(seeds.sync),
         ...service.status(user.organizationId),
         people: (status.people || []).map(person => ({ ...person, name: names.get(person.userId) || 'Former user' })),
       })
@@ -467,7 +501,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
     ...auth,
     wrap(async (req, res) => {
       const user = who(req)
-      res.json(await service.syncFor(user.organizationId))
+      res.json(await service.syncFor(user.organizationId, 20000, req.body?.full === true))
     }),
   )
 

@@ -63,6 +63,8 @@ export const loadSeedsAccount = () => requestJson<SeedsAccount>('/api/account/se
 export const turnOnSeeds = () =>
   requestJson<{ ok: boolean; sync: SyncResult }>('/api/account/seeds', { method: 'PUT', body: {}, fallback })
 export const turnOffSeeds = () => requestJson('/api/account/seeds', { method: 'DELETE', fallback })
+export const fullSyncSeeds = () =>
+  requestJson<SyncResult>('/api/seeds/sync', { method: 'POST', body: { full: true }, fallback })
 export const syncSeeds = () => requestJson<SyncResult>('/api/seeds/sync', { method: 'POST', body: {}, fallback })
 export const decideMatch = (id: string, decision: 'confirm' | 'reject') =>
   requestJson<SyncResult>(`/api/seeds/matches/${encodeURIComponent(id)}`, {
