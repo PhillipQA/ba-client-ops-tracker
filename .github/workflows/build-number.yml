@@ -2,8 +2,7 @@ name: Build number
 
 # After each pull request is merged into main, raise APP_BUILD in src/shared/version.ts by one (v2.0 → v2.0 · B01 →
 # B02…). A pull request that changes src/shared/version.ts itself sets the version by hand and is not counted. The
-# bump is its own small commit on main. It must not say "skip ci": Northflank would then not deploy it, and the app
-# would show the previous build. (Pushes made with the workflow's own token never start other workflows anyway.)
+# bump is its own small commit on main; the last step asks Northflank to build it (see there).
 
 on:
   pull_request:
@@ -41,6 +40,7 @@ jobs:
           fetch-depth: 0
 
       - name: Raise the build number and push
+        id: bump
         if: steps.check.outputs.skip != 'true'
         env:
           PR: ${{ github.event.pull_request.number }}
@@ -57,9 +57,36 @@ jobs:
             git commit --quiet -am "Build $label (#$PR)"
             if git push --quiet origin HEAD:main; then
               echo "Now $label"
+              echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             git reset --quiet --hard origin/main
           done
           echo 'Could not push the build number.'
           exit 1
+
+      # Northflank does not build commits pushed by this workflow, so ask it to build this one: the app then shows
+      # the new build number. Needs the repository secret NORTHFLANK_TOKEN (a Northflank API token allowed to start
+      # builds of the service) and, if they differ from the defaults, the variables NORTHFLANK_PROJECT and
+      # NORTHFLANK_SERVICE. Without the token this step is skipped and the next merge deploys the number instead.
+      - name: Ask Northflank to build it
+        if: steps.bump.outputs.sha != ''
+        env:
+          TOKEN: ${{ secrets.NORTHFLANK_TOKEN }}
+          PROJECT: ${{ vars.NORTHFLANK_PROJECT || 'ba-client-ops-tracker' }}
+          SERVICE: ${{ vars.NORTHFLANK_SERVICE || 'ba-client-ops-tracker' }}
+          SHA: ${{ steps.bump.outputs.sha }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo '::notice::NORTHFLANK_TOKEN is not set, so Northflank was not asked to build the new build number.'
+            exit 0
+          fi
+          status=$(curl -sS -o response.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            --data "{\"sha\":\"$SHA\"}" \
+            "https://api.northflank.com/v1/projects/$PROJECT/services/$SERVICE/build")
+          echo "Northflank answered $status"
+          if [ "$status" -ge 300 ]; then
+            cat response.json
+            echo '::warning::Northflank did not start the build. Check NORTHFLANK_TOKEN, NORTHFLANK_PROJECT and NORTHFLANK_SERVICE.'
+          fi
