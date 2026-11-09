@@ -9,6 +9,7 @@ import { trackerApi } from './trackerApi'
 import { rememberTracker, rememberedTracker } from './trackerNav'
 import { VIEW_PATHS, opensElsewhere, pathForTracker, trackerIdFromPath } from '../../app/routes'
 import TrackerClientPicker from './TrackerClientPicker'
+import TrackerProjectPicker from './TrackerProjectPicker'
 import type { TaskDraft } from './TrackerWork'
 
 const clientsOf = (tracker: Tracker) =>
@@ -68,7 +69,8 @@ function NewTrackerDialog({
   const [name, setName] = useState(initialTemplate === 'blank' ? '' : templateById(initialTemplate)?.name || '')
   const [touched, setTouched] = useState(false)
   const [clientIds, setClientIds] = useState<string[]>([])
-  const [projectId, setProjectId] = useState('')
+  const [projectIds, setProjectIds] = useState<string[]>([])
+  const projectId = projectIds[0] || ''
   const [onlyMe, setOnlyMe] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -99,7 +101,7 @@ function NewTrackerDialog({
         template: template.saved && !template.builtIn ? 'saved' : template.id,
         ...(template.stepTasks !== undefined ? { stepTasks: template.stepTasks } : {}),
         clientIds,
-        projectId,
+        projectIds,
         private: onlyMe,
       })
       let tracker = result.tracker
@@ -185,17 +187,18 @@ function NewTrackerDialog({
             />
           </label>
           <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
-          <label className="trk-field-block">
-            Project
-            <select value={projectId} onChange={event => setProjectId(event.target.value)}>
-              <option value="">None</option>
-              {projects.map(project => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <TrackerProjectPicker
+            projects={projects}
+            clients={clients}
+            clientIds={clientIds}
+            value={projectIds}
+            onChange={(ids, picked) => {
+              setProjectIds(ids)
+              // A Seeds project brings its client (the Seeds parent).
+              if (picked?.seedsId && picked.clientId && !clientIds.includes(picked.clientId))
+                setClientIds([...clientIds, picked.clientId])
+            }}
+          />
           {starter > 0 && (
             <fieldset className="trk-starter">
               <label className="trk-checkline">

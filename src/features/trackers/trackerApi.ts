@@ -106,6 +106,7 @@ export const trackerApi = {
     clientId?: string
     clientIds?: string[]
     projectId?: string
+    projectIds?: string[]
     private?: boolean
     stepTasks?: boolean
   }) => call<{ tracker: Tracker }>('POST', '', body),

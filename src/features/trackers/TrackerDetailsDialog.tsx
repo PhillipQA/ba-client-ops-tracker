@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { TRACKER_LIMITS, TRACKER_PROJECTS, type Tracker, trackerProjectIds } from './trackerModel'
 import { Dialog } from './trackerUi'
 import TrackerClientPicker from './TrackerClientPicker'
+import TrackerProjectPicker from './TrackerProjectPicker'
 
 type Props = {
   tracker: Tracker
@@ -28,27 +29,12 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, onClo
     tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : [],
   )
   const [projectIds, setProjectIds] = useState<string[]>(trackerProjectIds(tracker))
-  const [search, setSearch] = useState('')
-  const chosen = new Set(projectIds)
-  // Offered: projects of the tracker's clients (or with no client), open ones; plus whatever is already chosen.
-  const offered = projects.filter(
-    project =>
-      chosen.has(project.id) ||
-      (!project.seedsArchived && (!project.clientId || !clientIds.length || clientIds.includes(project.clientId))),
-  )
-  const term = search.trim().toLowerCase()
-  const matches = (project: (typeof projects)[number]) =>
-    !term || `${project.name} ${project.contractNumber || ''}`.toLowerCase().includes(term)
-  const fromSeeds = offered.filter(project => project.seedsId && matches(project))
-  const before = offered.filter(project => !project.seedsId && matches(project))
-  const toggle = (id: string) => {
-    if (chosen.has(id)) return setProjectIds(projectIds.filter(other => other !== id))
-    setProjectIds([...projectIds, id])
-    // A Seeds project brings its client (the Seeds parent); the tracker's other clients stay.
-    const client = projects.find(project => project.id === id && project.seedsId)?.clientId
-    if (client && !clientIds.includes(client)) setClientIds([...clientIds, client])
+  // Picking a Seeds project brings its client (the Seeds parent); the tracker's other clients stay.
+  const pickProjects = (ids: string[], picked?: { clientId?: string; seedsId?: string }) => {
+    setProjectIds(ids)
+    if (picked?.seedsId && picked.clientId && !clientIds.includes(picked.clientId))
+      setClientIds([...clientIds, picked.clientId])
   }
-  const projectName = (id: string) => projects.find(project => project.id === id)?.name || 'Unknown project'
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const submit = async (event: FormEvent) => {
@@ -66,13 +52,6 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, onClo
       setBusy(false)
     }
   }
-  const option = (project: (typeof projects)[number]) => (
-    <label key={project.id} className="trk-project-option">
-      <input type="checkbox" checked={chosen.has(project.id)} onChange={() => toggle(project.id)} />
-      <span>{project.name}</span>
-      {project.contractNumber && <small>{project.contractNumber}</small>}
-    </label>
-  )
   return (
     <Dialog title="Tracker details" eyebrow="Edit" onClose={onClose} busy={busy}>
       <form className="trk-form" onSubmit={event => void submit(event)}>
@@ -87,42 +66,17 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, onClo
           />
         </label>
         <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
-        <fieldset className="trk-field-block trk-projects">
-          <legend>Projects ({projectIds.length})</legend>
-          <input
-            type="search"
-            placeholder="Find a project or contract number"
-            value={search}
-            onChange={event => setSearch(event.target.value)}
-          />
-          <div className="trk-project-list">
-            {fromSeeds.length > 0 && <p className="trk-project-group">From Seeds</p>}
-            {fromSeeds.map(option)}
-            {before.length > 0 && fromSeeds.length > 0 && <p className="trk-project-group">Before Seeds</p>}
-            {before.map(option)}
-            {!fromSeeds.length && !before.length && <p className="trk-muted-text">No projects match.</p>}
-          </div>
-        </fieldset>
-        {projectIds.length > 1 && (
-          <label className="trk-field-block">
-            Default project
-            <select
-              value={projectIds[0]}
-              onChange={event =>
-                setProjectIds([event.target.value, ...projectIds.filter(id => id !== event.target.value)])
-              }
-            >
-              {projectIds.map(id => (
-                <option key={id} value={id}>
-                  {projectName(id)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <TrackerProjectPicker
+          projects={projects}
+          clients={clients}
+          clientIds={clientIds}
+          value={projectIds}
+          onChange={pickProjects}
+        />
         <p className="trk-muted-text">
-          Each row goes to its task's project. A row with no task yet goes to the project whose contract number is in
-          its Contract number column (for example SLSS #), else to the default project.
+          Type a project's name or contract number to add it; ★ makes one the default. Each row goes to its task's
+          project; a row with no task yet goes to the project whose contract number is in its Contract number column
+          (for example SLSS #), else to the default project.
         </p>
         {error && (
           <p className="trk-field-error" role="alert">
