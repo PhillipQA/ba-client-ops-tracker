@@ -3,7 +3,9 @@ import { FilterBar, TaskTable } from './TaskTable'
 import { waitingOnOptions } from './waitingOn'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { Archive, Columns3, Plus, Table2 } from 'lucide-react'
+import { useState } from 'react'
 import TaskBoard from './TaskBoard'
+import { type SourceFilter, sourceMatches } from '../seeds/SeedsPage'
 
 /** Tasks screen. It reads the app state; see app/useAppState. */
 export function TasksPage({ app }: { app: AppState }) {
@@ -19,7 +21,7 @@ export function TasksPage({ app }: { app: AppState }) {
     canWriteTasks,
     chooseTaskView,
     deleteTask,
-    filteredTasks,
+    filteredTasks: allFiltered,
     openSubtaskCreator,
     openTaskEditor,
     query,
@@ -44,6 +46,22 @@ export function TasksPage({ app }: { app: AppState }) {
     updateTaskWaitingOn,
     waitingFilter,
   } = app
+  // Once Seeds is on, tasks are in the same folders as their project (or, with no project, their client): From Seeds
+  // or Before Seeds. Tasks with neither count as From Seeds.
+  const [folder, setFolder] = useState<SourceFilter>('seeds')
+  const cutover = Boolean(store.seeds?.cutoverAt)
+  const projectsById = new Map(store.projects.map(project => [project.id, project]))
+  const clientsById = new Map(store.clients.map(client => [client.id, client]))
+  const beforeSeeds = (item: { projectId?: string; clientId?: string }) => {
+    const project = item.projectId ? projectsById.get(item.projectId) : undefined
+    return Boolean(project ? project.beforeSeeds : item.clientId && clientsById.get(item.clientId)?.beforeSeeds)
+  }
+  const filteredTasks = cutover
+    ? allFiltered.filter(item => sourceMatches(folder, { beforeSeeds: beforeSeeds(item) }))
+    : allFiltered
+  // The client and project pickers follow the folder too.
+  const folderClients = cutover ? store.clients.filter(client => sourceMatches(folder, client)) : store.clients
+  const folderProjects = cutover ? store.projects.filter(project => sourceMatches(folder, project)) : store.projects
   return (
     <section className="page-stack">
       <div className="panel">
@@ -99,6 +117,23 @@ export function TasksPage({ app }: { app: AppState }) {
           options={waitingOnOptions(store.taskSettings).map(option => option.label)}
         />
         <div className="task-filter-grid">
+          {cutover && (
+            <label>
+              Folder
+              <select
+                value={folder}
+                onChange={event => {
+                  setFolder(event.target.value as SourceFilter)
+                  setTaskClientFilter('')
+                  setTaskProjectFilter('')
+                }}
+              >
+                <option value="seeds">From Seeds</option>
+                <option value="before">Before Seeds</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+          )}
           <label>
             Status
             <select value={taskStatusFilter} onChange={event => setTaskStatusFilter(event.target.value)}>
@@ -120,7 +155,7 @@ export function TasksPage({ app }: { app: AppState }) {
           <label>
             Client
             <ClientSelect
-              clients={store.clients}
+              clients={folderClients}
               value={taskClientFilter}
               onChange={value => {
                 setTaskClientFilter(value)
@@ -137,7 +172,7 @@ export function TasksPage({ app }: { app: AppState }) {
             <select value={taskProjectFilter} onChange={event => setTaskProjectFilter(event.target.value)}>
               <option value="">All projects</option>
               <option value="__none__">No project</option>
-              {store.projects.map(project => (
+              {folderProjects.map(project => (
                 <option key={project.id} value={project.id}>
                   {project.name}
                 </option>
