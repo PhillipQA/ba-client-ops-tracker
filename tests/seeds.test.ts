@@ -791,8 +791,7 @@ test('closed projects are not offered for new work', async () => {
   assert.equal(isClosedProject({}), false)
 })
 
-
-test('successful Seeds sync persists the tenant-wide people directory for document suggestions', () => {
+test('successful Seeds sync persists the tenant-wide people directory for document suggestions, () => {
   const before = { ...existing(), seeds: { connected: true } }
   const result = planAccountSync(before, snapshot(), {}, {
     now: options.now,
@@ -802,7 +801,11 @@ test('successful Seeds sync persists the tenant-wide people directory for docume
     id: sequential,
   })
   assert.deepEqual(
-    result.state.seeds.people.map((person: any) => [person.id, person.name, person.email]),
+    result.state.seeds.people.map((person: any) => [
+      person.id,
+      person.name,
+      person.email,
+    ]),
     [
       ['sp-bea', 'Bea', 'bea@company.com'],
       ['sp-pao', 'Paolo', 'paolo@company.com'],
