@@ -146,18 +146,30 @@ const fieldNames = (rows: any[]) => [
 
 export const parseSeeds = {
   person: (record: any) => {
-    // Seeds /users returns account identity at the top level and employee details
-    // inside an Employee array (capital E), e.g. { id, email, Employee: [{ firstName, lastName, currentRole }] }.
+    // Seeds /users returns identity at the top level and employee details inside
+    // an Employee array (capital E).
     const employeeValue = record?.Employee ?? record?.employee
     const employee = Array.isArray(employeeValue) ? employeeValue[0] : employeeValue
     const details = employee && typeof employee === 'object' ? employee : record
     return {
-      id: idOf(record, 'userId', 'user_id', 'id', 'employeeId', 'employee_id') ||
+      id:
+        idOf(record, 'userId', 'user_id', 'id', 'employeeId', 'employee_id') ||
         idOf(details, 'userId', 'user_id', 'id', 'employeeId', 'employee_id'),
       name: fullName(details) || fullName(record),
       email: emailOf(record) || emailOf(details),
       title: text(
-        pick(details, 'currentRole', 'position', 'jobTitle', 'job_title', 'title', 'designation', 'role', 'role.name', 'roleName'),
+        pick(
+          details,
+          'currentRole',
+          'position',
+          'jobTitle',
+          'job_title',
+          'title',
+          'designation',
+          'role',
+          'role.name',
+          'roleName',
+        ),
       ),
     }
   },
