@@ -27,21 +27,70 @@ type Props = {
 
 const DELAY_MS = 180
 const SHOWN = 8
+let seedsDirectoryCache: { expiresAt: number; people: Suggestion[] } | undefined
+let seedsDirectoryRequest: Promise<Suggestion[]> | undefined
+
+function loadSeedsDirectory(): Promise<Suggestion[]> {
+  if (seedsDirectoryCache && seedsDirectoryCache.expiresAt > Date.now())
+    return Promise.resolve(seedsDirectoryCache.people)
+  if (!seedsDirectoryRequest) {
+    seedsDirectoryRequest = fetch('/api/seeds/people', { credentials: 'same-origin' })
+      .then(async response => {
+        if (!response.ok) return []
+        const payload = (await response.json().catch(() => ({}))) as { people?: Suggestion[] }
+        return Array.isArray(payload.people)
+          ? payload.people.filter(
+              person => person && typeof person.name === 'string' && typeof person.email === 'string',
+            )
+          : []
+      })
+      .catch(() => [])
+      .then(people => {
+        seedsDirectoryCache = { expiresAt: Date.now() + 5 * 60_000, people }
+        return people
+      })
+      .finally(() => {
+        seedsDirectoryRequest = undefined
+      })
+  }
+  return seedsDirectoryRequest
+}
+
 const sameAddress = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 
 export function PersonNameInput({ label, value, email, onName, onEmail, local, maxLength, placeholder }: Props) {
   const id = useId(),
     listId = `${id}-list`
   const [remote, setRemote] = useState<Suggestion[]>([])
+  const [directory, setDirectory] = useState<Suggestion[]>([])
   const [active, setActive] = useState(0),
     [navigated, setNavigated] = useState(false),
     [focused, setFocused] = useState(false),
     [closed, setClosed] = useState(false)
   const [filled, setFilled] = useState('')
+  const known = useMemo(() => {
+    const seen = new Set<string>()
+    return [...local, ...directory].filter(person => {
+      const email = person.email.trim().toLowerCase()
+      if (!email || seen.has(email)) return false
+      seen.add(email)
+      return true
+    })
+  }, [local, directory])
   // The email this field put in, so a change of name can take it out again and a hand-typed email is never touched.
   const auto = useRef('')
-  const latest = useRef({ value, email, local, onEmail })
-  latest.current = { value, email, local, onEmail }
+  const latest = useRef({ value, email, local: known, onEmail })
+  latest.current = { value, email, local: known, onEmail }
+
+  useEffect(() => {
+    let alive = true
+    loadSeedsDirectory().then(people => {
+      if (alive) setDirectory(people)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
   const run = useRef(0),
     mounted = useRef(true)
   useEffect(
@@ -78,11 +127,11 @@ export function PersonNameInput({ label, value, email, onName, onEmail, local, m
   const suggestions = useMemo(() => {
     if (!query) return []
     const emailed = matchPeople(remote, query, { limit: SHOWN, keepOrder: true })
-    return matchPeople([...emailed, ...matchPeople(local, query, { limit: SHOWN })], query, {
+    return matchPeople([...emailed, ...matchPeople(known, query, { limit: SHOWN })], query, {
       limit: SHOWN,
       keepOrder: true,
     })
-  }, [query, remote, local])
+  }, [query, remote, known])
 
   const open = focused && !closed && suggestions.length > 0
   const highlighted = Math.min(active, Math.max(0, suggestions.length - 1))

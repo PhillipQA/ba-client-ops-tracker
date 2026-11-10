@@ -117,6 +117,8 @@ export interface SeedsAccountSync {
 export interface SeedsState {
   /** An Administrator turned Seeds on. The server holds the Seeds application token; nobody pastes a key. */
   connected: boolean
+  /** Tenant-wide people directory from the last successful /users sync; used for document signatory suggestions. */
+  people: SeedsPerson[]
   sync: SeedsAccountSync
   users: Record<string, SeedsUserSync>
   pendingMatches: SeedsMatch[]
@@ -166,6 +168,15 @@ export function seedsState(state: any): SeedsState {
     for (const [key, names] of Object.entries(sync.fields)) fields[key] = list(names).map(text).slice(0, 60)
   return {
     connected: raw.connected === true,
+    people: list(raw.people)
+      .filter((person: any) => person && text(person.id) && text(person.email))
+      .slice(0, 20000)
+      .map((person: any) => ({
+        id: text(person.id),
+        name: text(person.name),
+        email: text(person.email).toLowerCase(),
+        ...(text(person.title) ? { title: text(person.title) } : {}),
+      })),
     sync: {
       ...(sync.lastAttemptAt ? { lastAttemptAt: text(sync.lastAttemptAt) } : {}),
       ...(sync.lastSuccessAt ? { lastSuccessAt: text(sync.lastSuccessAt) } : {}),
