@@ -791,7 +791,7 @@ test('closed projects are not offered for new work', async () => {
   assert.equal(isClosedProject({}), false)
 })
 
-test('successful Seeds sync persists the tenant-wide people directory for document suggestions, () => {
+test('successful Seeds sync persists the tenant-wide people directory for document suggestions', () => {
   const before = { ...existing(), seeds: { connected: true } }
   const result = planAccountSync(before, snapshot(), {}, {
     now: options.now,
