@@ -333,6 +333,29 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
   const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 
   app.get(
+    '/api/seeds/people',
+    ...auth,
+    wrap(async (req, res) => {
+      const user = who(req)
+      if (!user.modules.includes('documents'))
+        throw new SeedsError('Document module access is required.', 403)
+      const state = (await deps.load(user.organizationId)).data || {}
+      const seeds = seedsState(state)
+      res.json({
+        people: seeds.connected
+          ? seeds.people
+              .filter(person => person.email)
+              .map(person => ({
+                name: person.name,
+                email: person.email,
+                hint: person.title ? `Seeds · ${person.title}` : 'Seeds directory',
+              }))
+          : [],
+      })
+    }),
+  )
+
+  app.get(
     '/api/access',
     ...auth,
     wrap(async (req, res) => {
