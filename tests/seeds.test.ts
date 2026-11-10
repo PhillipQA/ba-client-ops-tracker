@@ -801,11 +801,7 @@ test('successful Seeds sync persists the tenant-wide people directory for docume
     id: sequential,
   })
   assert.deepEqual(
-    result.state.seeds.people.map((person: any) => [
-      person.id,
-      person.name,
-      person.email,
-    ]),
+    result.state.seeds.people.map((person: any) => [person.id, person.name, person.email]),
     [
       ['sp-bea', 'Bea', 'bea@company.com'],
       ['sp-pao', 'Paolo', 'paolo@company.com'],
