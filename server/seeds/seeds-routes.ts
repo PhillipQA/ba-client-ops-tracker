@@ -151,7 +151,7 @@ export function planAccountSync(
       people: snapshot.people
         .filter(person => {
           const email = text(person.email).trim().toLowerCase()
-          return Boolean(text(person.id).trim() && text(person.name).trim() && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))
+          return Boolean(text(person.id).trim() && text(person.name).trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
         })
         .slice(0, 20000)
         .map(person => ({
@@ -351,7 +351,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
     ...auth,
     wrap(async (req, res) => {
       const user = who(req)
-      if (!user.modules.includes('documents'))
+      if (!Array.isArray(user.modules) || !user.modules.includes('documents'))
         throw new SeedsError('Document module access is required.', 403)
       const state = (await deps.load(user.organizationId)).data || {}
       const seeds = seedsState(state)
