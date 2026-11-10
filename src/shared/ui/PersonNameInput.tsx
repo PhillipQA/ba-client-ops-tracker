@@ -39,7 +39,9 @@ function loadSeedsDirectory(): Promise<Suggestion[]> {
         if (!response.ok) return []
         const payload = (await response.json().catch(() => ({}))) as { people?: Suggestion[] }
         return Array.isArray(payload.people)
-          ? payload.people.filter(person => person && typeof person.name === 'string' && typeof person.email === 'string')
+          ? payload.people.filter(
+              person => person && typeof person.name === 'string' && typeof person.email === 'string',
+            )
           : []
       })
       .catch(() => [])
