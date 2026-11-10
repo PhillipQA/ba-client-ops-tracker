@@ -146,6 +146,20 @@ export function planAccountSync(
     ...next,
     seeds: {
       ...seeds,
+      // Keep the complete account directory, not only people assigned to projects in this app.
+      // A failed sync never reaches this point, so the last known-good directory remains available.
+      people: snapshot.people
+        .filter(person => {
+          const email = text(person.email).trim().toLowerCase()
+          return Boolean(text(person.id).trim() && text(person.name).trim() && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))
+        })
+        .slice(0, 20000)
+        .map(person => ({
+          id: text(person.id).trim(),
+          name: text(person.name).trim(),
+          email: text(person.email).trim().toLowerCase(),
+          ...(text(person.title).trim() ? { title: text(person.title).trim() } : {}),
+        })),
       sync: {
         lastAttemptAt: options.now,
         lastSuccessAt: options.now,
