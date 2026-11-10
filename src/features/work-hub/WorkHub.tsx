@@ -14,6 +14,7 @@ import type { Client, Project, TaskSettings, UserAccount, WorkItem } from '../..
 import { findCommunicationTaskDuplicate, findSubtaskDuplicate, subtaskParentProblem } from './communicationTasks'
 import { isTaskClosed } from '../../app/store'
 import { isClosedProject } from '../tasks/lifecycle'
+import { isBeforeSeedsWork } from '../../shared/seeds'
 import { composeEmail, useEmailEnabled } from '../email/EmailComposer'
 import { replyAllPrefill } from '../email/replyAll'
 import ClientSelect, { SearchSelect, type SearchChoice } from '../../shared/ui/SearchSelect'
@@ -370,6 +371,33 @@ export default function WorkHub({
     [parentId, setParentId] = useState(''),
     [linkId, setLinkId] = useState(''),
     [linkNote, setLinkNote] = useState('')
+  // Once Seeds is on, Before Seeds tasks are left out of the task pickers unless asked for.
+  const [withBefore, setWithBefore] = useState(false)
+  const seedsOn = projects.some(project => project.beforeSeeds) || clients.some(client => client.beforeSeeds)
+  const before = (task: WorkItem) => seedsOn && isBeforeSeedsWork(task, projects, clients)
+  /** Seeds tasks first; Before Seeds ones (only when asked for) after, under their own heading. */
+  const seedsFirst = (choices: (SearchChoice & { before: boolean })[]): SearchChoice[] => {
+    const kept = choices.filter(choice => withBefore || !choice.before)
+    if (!seedsOn || !withBefore) return kept.map(({ before: _b, ...choice }) => choice)
+    return [
+      ...kept.filter(choice => !choice.before).map(({ before: _b, ...choice }) => ({ ...choice, group: 'From Seeds' })),
+      ...kept
+        .filter(choice => choice.before)
+        .map(({ before: _b, ...choice }) => ({ ...choice, group: 'Before Seeds' })),
+    ]
+  }
+  // A switch, not a nested checkbox label: it sits inside the picker's own label.
+  const beforeToggle = seedsOn && (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={withBefore}
+      className="communication-before-toggle"
+      onClick={() => setWithBefore(!withBefore)}
+    >
+      <span aria-hidden="true">{withBefore ? '☑' : '☐'}</span> Include Before Seeds tasks
+    </button>
+  )
   const [message, setMessage] = useState(''),
     [busy, setBusy] = useState(false)
   const hubSync = useWorkHubSync()
@@ -1488,27 +1516,31 @@ export default function WorkHub({
                       empty="No task or subtask matches"
                       choices={[
                         { value: '', label: 'Choose a task or subtask' },
-                        ...tasks
-                          .filter(task => !task.archived && !linkedIds(selected).includes(task.id))
-                          .map(task => {
-                            const parent = task.parentTaskId
-                              ? tasks.find(item => item.id === task.parentTaskId)
-                              : undefined
-                            return {
-                              value: task.id,
-                              label: task.title,
-                              hint: [
-                                parent ? `under ${parent.title}` : '',
-                                clients.find(client => client.id === task.clientId)?.name,
-                                projects.find(project => project.id === task.projectId)?.name,
-                                closed(task.status) ? task.status : '',
-                              ]
-                                .filter(Boolean)
-                                .join(' / '),
-                            }
-                          }),
+                        ...seedsFirst(
+                          tasks
+                            .filter(task => !task.archived && !linkedIds(selected).includes(task.id))
+                            .map(task => {
+                              const parent = task.parentTaskId
+                                ? tasks.find(item => item.id === task.parentTaskId)
+                                : undefined
+                              return {
+                                value: task.id,
+                                label: task.title,
+                                hint: [
+                                  parent ? `under ${parent.title}` : '',
+                                  clients.find(client => client.id === task.clientId)?.name,
+                                  projects.find(project => project.id === task.projectId)?.name,
+                                  closed(task.status) ? task.status : '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' / '),
+                                before: before(task),
+                              }
+                            }),
+                        ),
                       ]}
                     />
+                    {beforeToggle}
                   </label>
                   <button
                     type="button"
@@ -1534,26 +1566,30 @@ export default function WorkHub({
                           empty="No open task matches"
                           choices={[
                             { value: '', label: 'Choose a task' },
-                            ...tasks
-                              .filter(
-                                task =>
-                                  !task.parentTaskId &&
-                                  !subtaskParentProblem(task, closed) &&
-                                  clients.some(client => client.id === task.clientId && !client.archived) &&
-                                  projects.some(project => project.id === task.projectId && !project.archived),
-                              )
-                              .map(task => ({
-                                value: task.id,
-                                label: task.title,
-                                hint: [
-                                  clients.find(client => client.id === task.clientId)?.name,
-                                  projects.find(project => project.id === task.projectId)?.name,
-                                ]
-                                  .filter(Boolean)
-                                  .join(' / '),
-                              })),
+                            ...seedsFirst(
+                              tasks
+                                .filter(
+                                  task =>
+                                    !task.parentTaskId &&
+                                    !subtaskParentProblem(task, closed) &&
+                                    clients.some(client => client.id === task.clientId && !client.archived) &&
+                                    projects.some(project => project.id === task.projectId && !project.archived),
+                                )
+                                .map(task => ({
+                                  value: task.id,
+                                  label: task.title,
+                                  hint: [
+                                    clients.find(client => client.id === task.clientId)?.name,
+                                    projects.find(project => project.id === task.projectId)?.name,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' / '),
+                                  before: before(task),
+                                })),
+                            ),
                           ]}
                         />
+                        {beforeToggle}
                       </label>
                     )}
                     <label>
