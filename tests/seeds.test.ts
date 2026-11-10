@@ -308,6 +308,27 @@ test('Seeds answers are read leniently', () => {
     email: 'bea@co',
     title: '',
   })
+
+  assert.deepEqual(
+    parseSeeds.person({
+      id: '10',
+      email: 'jdelfin@iripple.com',
+      Employee: [
+        {
+          firstName: 'JONATHAN',
+          lastName: 'DELFIN',
+          currentRole: 'Software Engineer - Barter',
+          department: { id: 18 },
+        },
+      ],
+    }),
+    {
+      id: '10',
+      name: 'JONATHAN DELFIN',
+      email: 'jdelfin@iripple.com',
+      title: 'Software Engineer - Barter',
+    },
+  )
   assert.deepEqual(parseSeeds.parent({ parent_id: 1, parent_name: 'Think Library, Inc.', status: 'Archived' }), {
     id: '1',
     name: 'Think Library, Inc.',
