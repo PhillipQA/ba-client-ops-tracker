@@ -10,7 +10,7 @@ import {
   type SeedsSnapshot,
 } from '../src/shared/seeds'
 import { cleanSeedsBaseUrl, httpSeedsSource, parseSeeds } from '../server/seeds/seeds-client'
-import { personalSnapshot, registerSeedsRoutes } from '../server/seeds/seeds-routes'
+import { personalSnapshot, planAccountSync, registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
 import { planSeedsSync, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
 import { roleForSeedsTitle } from '../src/shared/roles'
@@ -789,4 +789,24 @@ test('closed projects are not offered for new work', async () => {
   assert.equal(isClosedProject({ seedsArchived: true }), true)
   assert.equal(isClosedProject({ archived: true }), true)
   assert.equal(isClosedProject({}), false)
+})
+
+
+test('successful Seeds sync persists the tenant-wide people directory for document suggestions', () => {
+  const before = { ...existing(), seeds: { connected: true } }
+  const result = planAccountSync(before, snapshot(), {}, {
+    now: options.now,
+    today: options.today,
+    openStatus: options.openStatus,
+    waitingOn: options.waitingOn,
+    id: sequential,
+  })
+  assert.deepEqual(
+    result.state.seeds.people.map((person: any) => [person.id, person.name, person.email]),
+    [
+      ['sp-bea', 'Bea', 'bea@company.com'],
+      ['sp-pao', 'Paolo', 'paolo@company.com'],
+      ['sp-x', 'Xavier', 'xavier@company.com'],
+    ],
+  )
 })
