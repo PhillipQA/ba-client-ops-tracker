@@ -9,8 +9,17 @@ import type {
   WorkItem,
 } from '../../shared/types'
 import { requestJson } from '../../shared/http'
+import { cleanDrfPrefill, type DrfPrefill } from '../documents/drfPrefill'
+import type { TrackerDraft } from './trackerDraft'
 
-export type AISuggestionKind = 'issue' | 'requirement' | 'follow_up' | 'activity' | 'draft_reply' | 'email_document'
+export type AISuggestionKind =
+  | 'issue'
+  | 'requirement'
+  | 'follow_up'
+  | 'activity'
+  | 'draft_reply'
+  | 'email_document'
+  | 'tracker_draft'
 
 export interface AISuggestion {
   id: string
@@ -32,6 +41,8 @@ export interface AISuggestion {
   newTask?: { title: string; clientId: string; projectId: string; clientName?: string; projectName?: string }
   /** email_document: the document to open for that task once the email is linked. */
   document?: 'drf' | 'signoff'
+  /** tracker_draft: the tracker to make once approved. */
+  tracker?: TrackerDraft
 }
 
 export interface AIMessage {
@@ -120,4 +131,18 @@ export async function applyEmailDocument(suggestion: AISuggestion, userId: strin
     fallback: 'The task could not be created from the email.',
   })
   return { taskId: made.task.id, created: true }
+}
+
+/**
+ * A draft of the DRF's fields from one of the person's own emails, to fill the form for review. Nothing when it
+ * cannot be drafted: the DRF then opens empty.
+ */
+export async function draftDrfFromEmail(emailId: string): Promise<DrfPrefill | undefined> {
+  try {
+    const result = await requestJson<{ fields?: unknown }>('/api/assistant/drf-draft', { body: { emailId } })
+    const fields = cleanDrfPrefill(result.fields)
+    return Object.keys(fields).length ? fields : undefined
+  } catch {
+    return undefined
+  }
 }

@@ -128,6 +128,7 @@ registerInternalAdminRoutes(app)
 registerAssistantRoutes(app, {
   trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick),
   emails: (tenant, userId) => communications.recentEmails(tenant, userId),
+  email: (tenant, userId, id) => communications.emailFor(tenant, userId, id),
 })
 
 registerBrdRoutes(app, {

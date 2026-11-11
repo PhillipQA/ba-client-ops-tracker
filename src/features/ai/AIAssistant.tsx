@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   Bot,
   CalendarPlus,
+  Table2,
   CheckCircle2,
   Clipboard,
   FileText,
@@ -16,6 +17,7 @@ import { useDocumentOperation } from '../documents/useDocumentOperation'
 import {
   applyEmailDocument,
   askBAAssistant,
+  draftDrfFromEmail,
   assistantMessages,
   type AIMessage,
   type AISuggestion,
@@ -31,6 +33,8 @@ import type {
   WorkItem,
 } from '../../shared/types'
 import { isWaitingOnDone } from '../tasks/waitingOn'
+import { drfPrefillCount } from '../documents/drfPrefill'
+import { createTrackerDraft } from './trackerDraft'
 import ClientSelect from '../../shared/ui/SearchSelect'
 
 const THREAD_STORAGE_KEY = 'ba-client-ops-ai-threads-v1'
@@ -51,6 +55,7 @@ function suggestionIcon(kind: AISuggestionKind) {
   if (kind === 'activity') return <CalendarPlus size={16} />
   if (kind === 'draft_reply') return <MessageSquareText size={16} />
   if (kind === 'email_document') return <Mail size={16} />
+  if (kind === 'tracker_draft') return <Table2 size={16} />
   if (kind === 'issue') return <TicketCheck size={16} />
   if (kind === 'requirement') return <FileText size={16} />
   return <PlusCircle size={16} />
@@ -60,6 +65,7 @@ function suggestionLabel(kind: AISuggestionKind) {
   if (kind === 'draft_reply') return 'Draft reply'
   if (kind === 'follow_up') return 'Follow-up'
   if (kind === 'email_document') return 'Link email'
+  if (kind === 'tracker_draft') return 'Tracker draft'
   return kind.charAt(0).toUpperCase() + kind.slice(1)
 }
 
@@ -71,7 +77,24 @@ function emailPlan(suggestion: AISuggestion) {
   return `Email: ${suggestion.emailSubject || 'No subject'} · ${task}${then}`
 }
 
+/** What approving a tracker draft makes: its template, where it belongs, and the first rows. */
+function trackerPlan(suggestion: AISuggestion) {
+  const draft = suggestion.tracker
+  if (!draft) return ''
+  const place = [draft.clientName, draft.projectName].filter(Boolean).join(' / ')
+  const first = draft.rows.slice(0, 3).map(row => Object.values(row)[0])
+  const more = draft.rows.length > first.length ? ` +${draft.rows.length - first.length} more` : ''
+  const rows = draft.rows.length ? `${draft.rows.length} rows: ${first.join(', ')}${more}` : 'No rows yet'
+  return `“${draft.name}” · ${draft.templateName} template${place ? ` · ${place}` : ''} · ${rows}`
+}
+
 function applyLabel(suggestion: AISuggestion, done: boolean) {
+  if (suggestion.kind === 'tracker_draft')
+    return (
+      <>
+        <Table2 size={15} /> {done ? 'Created' : 'Approve & create'}
+      </>
+    )
   if (suggestion.kind === 'email_document')
     return (
       <>
@@ -251,10 +274,15 @@ export default function AIAssistant({
       if (created) await onWorkChanged?.()
       const where = suggestion.taskTitle || suggestion.newTask?.title || 'the task'
       const opened = suggestion.document === 'drf' ? 'DRF' : suggestion.document === 'signoff' ? 'sign-off' : ''
-      const next = opened ? ` Opening the ${opened} for it.` : ''
+      // A DRF opens with a draft of its fields from the email, when one can be made. It is only a draft to review.
+      const drf = suggestion.document === 'drf' ? await draftDrfFromEmail(suggestion.emailId || '') : undefined
+      const drafted = drf ? ` ${drfPrefillCount(drf)} fields were drafted from the email: review each one.` : ''
+      const next = opened ? ` Opening the ${opened} for it.${drafted}` : ''
       setActionNotice(`Email linked to “${where}”${created ? ' (new task)' : ''}.${next}`)
-      if (suggestion.document)
-        window.dispatchEvent(new CustomEvent('dochub-create', { detail: { taskId, flow: suggestion.document } }))
+      if (suggestion.document) {
+        const detail = { taskId, flow: suggestion.document, drf }
+        window.dispatchEvent(new CustomEvent('dochub-create', { detail }))
+      }
     } catch (applyError) {
       setError(applyError instanceof Error ? applyError.message : 'The email could not be linked.')
     } finally {
@@ -262,8 +290,28 @@ export default function AIAssistant({
     }
   }
 
+  const applyTracker = async (suggestion: AISuggestion) => {
+    if (!suggestion.tracker) return
+    setApplying(suggestion.id)
+    setError('')
+    setActionNotice('')
+    try {
+      const made = await createTrackerDraft(suggestion.tracker)
+      setApplied(done => [...done, suggestion.id])
+      const rows = made.rowsFailed ? 'its rows could not be added' : `${made.rows} rows added`
+      setActionNotice(
+        `Tracker “${made.tracker.name}” created, ${rows}. Only you can see it until you share it: open Trackers to review.`,
+      )
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : 'The tracker could not be created.')
+    } finally {
+      setApplying('')
+    }
+  }
+
   const applySuggestion = (suggestion: AISuggestion) => {
     if (suggestion.kind === 'email_document') return void applyEmail(suggestion)
+    if (suggestion.kind === 'tracker_draft') return void applyTracker(suggestion)
     if (suggestion.kind === 'draft_reply') {
       if (suggestion.draft && navigator.clipboard) {
         navigator.clipboard
@@ -386,6 +434,11 @@ export default function AIAssistant({
             Link an email
           </button>
           {currentUser.modules?.includes('trackers') && (
+            <button type="button" onClick={() => setInput('Create a Site rollout tracker for … with these sites: ')}>
+              Draft a tracker
+            </button>
+          )}
+          {currentUser.modules?.includes('trackers') && (
             <button
               type="button"
               onClick={() =>
@@ -443,6 +496,7 @@ export default function AIAssistant({
                       {suggestion.description && <small>{suggestion.description}</small>}
                       {suggestion.draft && <div className="ai-draft">{suggestion.draft}</div>}
                       {suggestion.kind === 'email_document' && <small>{emailPlan(suggestion)}</small>}
+                      {suggestion.kind === 'tracker_draft' && <small>{trackerPlan(suggestion)}</small>}
                       <button
                         className="secondary"
                         type="button"
