@@ -217,6 +217,12 @@ export function createSeedsService(deps: SeedsDeps) {
           known: new Set(last.knownProjects || []),
           keep: new Set(last.memberProjects || []),
         }
+    // Projects from Seeds that are still open here: if Seeds stops listing one, the read asks whether it was closed.
+    const linked = new Set<string>(
+      (Array.isArray(before.projects) ? before.projects : [])
+        .filter((project: any) => project?.seedsId && !project.seedsArchived && !project.archived)
+        .map((project: any) => String(project.seedsId)),
+    )
     let read: Awaited<ReturnType<SeedsSource['read']>>
     try {
       const options: SeedsReadOptions = {
@@ -225,7 +231,7 @@ export function createSeedsService(deps: SeedsDeps) {
       read = await (deps.source
         ? deps.source(token, deps.apiUrl(), options)
         : httpSeedsSource(token, deps.apiUrl(), fetch, 20000, options)
-      ).read(emails, quick)
+      ).read(emails, quick, linked)
     } catch (error) {
       const message = error instanceof SeedsError ? error.message : 'Seeds could not be read.'
       if (!(error instanceof SeedsError)) console.error('Seeds read failed:', error)

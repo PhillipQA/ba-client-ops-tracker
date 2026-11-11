@@ -805,6 +805,37 @@ test('closed, resolved and completed Seeds projects count as closed, by name or 
   )
 })
 
+test('a linked project Seeds no longer lists is asked for by id, and closed when Seeds says completed', async () => {
+  const { calls, fetcher } = fakeSeeds({
+    // The shape Seeds sends for one project: the record under `data`, the status as an object.
+    '/projects/1059': {
+      data: { id: 1059, name: 'GOLDWING BALABALA', projectStatus: { id: 4, name: 'Completed' }, parent: { id: 5 } },
+    },
+    '/projects/1060': { data: { id: 1060, name: 'Hidden but open', projectStatus: { id: 1, name: 'Ongoing' } } },
+  })
+  const read = await httpSeedsSource('t', undefined, fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(['bea@company.com']),
+    undefined,
+    new Set(['20', '1059', '1060', '1061']),
+  )
+  const found = read.snapshot.projects.find(project => project.id === '1059')
+  assert.deepEqual([found?.name, found?.archived, found?.clientId], ['GOLDWING BALABALA', true, '5'])
+  assert.ok(!read.snapshot.projects.some(project => project.id === '1060'), 'an open one is left as it is')
+  assert.ok(!read.snapshot.projects.some(project => project.id === '1061'), 'one Seeds does not have is skipped')
+  assert.ok(!calls.some(call => call.url.endsWith('/projects/20')), 'a listed project is not asked for again')
+  assert.ok(!calls.some(call => call.url.endsWith('/projects/1059/members')), 'no members for a closed project')
+
+  // A list that gives only the status id, under the project status name, is still told apart through /statuses.
+  const byId = fakeSeeds({
+    '/projects?limit=100': { data: [{ id: 20, parentId: 5, name: 'Done one', projectStatusId: 4 }] },
+    '/statuses?limit=100': { data: [{ id: 4, name: 'Completed' }] },
+  })
+  const second = await httpSeedsSource('t', undefined, byId.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(['bea@company.com']),
+  )
+  assert.equal(second.snapshot.projects[0].archived, true)
+})
+
 test('closed projects are not offered for new work', async () => {
   const { isClosedProject } = await import('../src/features/tasks/lifecycle')
   assert.equal(isClosedProject({ seedsArchived: true }), true)

@@ -63,6 +63,8 @@ test('Drive task choices list tasks with their subtasks and skip archived client
   assert.match(taskOptions(scope, '')[1].label, /↳ DRF Creation/)
   assert.deepEqual(taskOptions(scope, 'c2'), [], 'An archived client offers nothing')
   assert.deepEqual(taskOptions({ ...scope, items: [] }, ''), [])
+  const completed = { ...scope, projects: [{ id: 'p1', name: 'Rollout', seedsArchived: true }, scope.projects[1]] }
+  assert.deepEqual(taskOptions(completed, ''), [], 'Work under a project completed in Seeds is not offered')
 })
 
 test('Drive file picker lists only accepted, searchable files from active work', () => {

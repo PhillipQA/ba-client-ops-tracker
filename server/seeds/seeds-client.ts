@@ -40,8 +40,12 @@ export type SeedsRead = {
 }
 
 export interface SeedsSource {
-  /** Everything one account sync needs. Tasks are read only for projects where someone in `emails` is a member. */
-  read(emails: Set<string>, quick?: SeedsQuickPlan): Promise<SeedsRead>
+  /**
+   * Everything one account sync needs. Tasks are read only for projects where someone in `emails` is a member.
+   * `linked` are the Seeds ids of this app's projects that are still open: one that Seeds no longer lists is asked
+   * for by id, to learn whether it was completed or closed there.
+   */
+  read(emails: Set<string>, quick?: SeedsQuickPlan, linked?: Set<string>): Promise<SeedsRead>
 }
 
 export class SeedsError extends Error {
@@ -58,6 +62,8 @@ export class SeedsError extends Error {
 const PAGE_SIZE = 100
 const MAX_PAGES = 200
 const MAX_RECORDS = 20000
+/** How many linked projects missing from Seeds' list a quick sync asks for by id. */
+const MISSING_PER_QUICK_SYNC = 25
 const text = (value: unknown) => (value == null ? '' : String(value).trim())
 const pick = (record: any, ...keys: string[]) => {
   for (const key of keys) {
@@ -111,6 +117,9 @@ const statusOf = (record: any) =>
       'state',
     ),
   )
+/** A record's status id, for when it does not name the status itself. */
+const statusIdOf = (record: any) =>
+  idOf(record, 'statusId', 'status_id', 'projectStatusId', 'project_status_id', 'projectStatus.id', 'status.id')
 /** When Seeds last created or changed a record, if it says (the later of the two). */
 const changedAt = (record: any) => {
   const times = [
@@ -408,15 +417,27 @@ export function httpSeedsSource(
     }
   }
 
+  /** One project by id, or nothing when Seeds does not have it or will not show it. */
+  async function readProject(id: string) {
+    try {
+      const body = await get(`/projects/${encodeURIComponent(id)}`, 'project')
+      const record = body?.data ?? body
+      return record && typeof record === 'object' && !Array.isArray(record) ? record : null
+    } catch (error) {
+      if (error instanceof SeedsError && /not allowed|answered (400|404|422)/.test(error.message)) return null
+      throw error
+    }
+  }
+
   return {
-    async read(emails, quick) {
+    async read(emails, quick, linked) {
       // The field names Seeds sent so far, kept on a failure too, so the mapping can be checked either way.
       const fields: SeedsFields = {}
       const note = (key: keyof SeedsFields, rows: any[]) => {
         if (rows.length) fields[key] = fieldNames(rows)
       }
       try {
-        return await readEverything(emails, fields, note, quick)
+        return await readEverything(emails, fields, note, quick, linked)
       } catch (error) {
         if (error instanceof SeedsError) error.fields = fields
         throw error
@@ -429,6 +450,7 @@ export function httpSeedsSource(
     fields: SeedsFields,
     note: (key: keyof SeedsFields, rows: any[]) => void,
     quick?: SeedsQuickPlan,
+    linked?: Set<string>,
   ) {
     progress({ step: 'lists', done: 0, total: 3 })
     const rawUsers = await readAll('/users', 'users')
@@ -444,7 +466,7 @@ export function httpSeedsSource(
     const emailById = new Map(people.map(person => [person.id, person.email]))
     const titleById = new Map(people.map(person => [person.id, person.title]))
     // Projects that give only a status id: name it from /statuses (when the token may read it) to tell closed ones.
-    const statusIds = rawProjects.some(record => !statusOf(record) && pick(record, 'statusId', 'status_id'))
+    const statusIds = rawProjects.some(record => !statusOf(record) && statusIdOf(record))
     const statusNames = statusIds
       ? new Map(
           (await readAllIfAllowed('/statuses', 'statuses')).map(row => [
@@ -453,13 +475,22 @@ export function httpSeedsSource(
           ]),
         )
       : new Map<string, string>()
-    const parsed = rawProjects
-      .map(record => {
-        const project = parseSeeds.project(record)
-        const named = statusNames.get(idOf(record, 'statusId', 'status_id'))
-        return named && closedStatus(named) ? { ...project, archived: true as const } : project
-      })
-      .filter(project => project.id && project.name)
+    const withStatus = (record: any) => {
+      const project = parseSeeds.project(record)
+      const named = statusNames.get(statusIdOf(record))
+      return named && closedStatus(named) ? { ...project, archived: true as const } : project
+    }
+    const parsed = rawProjects.map(withStatus).filter(project => project.id && project.name)
+    // Seeds may leave finished projects out of its list. A project linked here that is missing from it is asked for
+    // by id, so one completed or closed in Seeds is marked closed here instead of staying open. A quick sync checks
+    // a few; the daily full sync checks them all.
+    const listed = new Set(parsed.map(project => project.id))
+    const missing = [...(linked || [])].filter(id => pathId(id) && !listed.has(id))
+    for (const id of quick ? missing.slice(0, MISSING_PER_QUICK_SYNC) : missing) {
+      const record = await readProject(id)
+      const project = record ? withStatus(record) : null
+      if (project?.archived && project.id === id && project.name) parsed.push(project)
+    }
     // Projects that name a Seeds client but not its parent: look the parent up through /clients.
     const rawClients = parsed.some(project => !project.clientId && project.seedsClientId)
       ? await readAllIfAllowed('/clients', 'clients')

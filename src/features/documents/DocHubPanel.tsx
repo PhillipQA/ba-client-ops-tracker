@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Client, Project, WorkItem } from '../../shared/types'
+import { isClosedProject } from '../tasks/lifecycle'
 import {
   canNotifyDocHubSigner,
   dochubRequest,
@@ -206,7 +207,7 @@ export function DocHubOptions({
       (!draft.options.clientId || i.clientId === draft.options.clientId) &&
       (!projectId || i.projectId === projectId) &&
       !clients.find(c => c.id === i.clientId)?.archived &&
-      !projects.find(p => p.id === i.projectId)?.archived,
+      !isClosedProject(projects.find(p => p.id === i.projectId)),
   )
   return (
     <section className="document-extraction-panel dochub-options">
@@ -248,7 +249,7 @@ export function DocHubOptions({
             >
               <option value="">All projects</option>
               {projects
-                .filter(p => !p.archived)
+                .filter(p => !isClosedProject(p))
                 .map(p => (
                   <option key={p.id} value={p.id}>
                     {p.name}
