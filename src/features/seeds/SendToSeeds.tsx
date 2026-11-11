@@ -13,7 +13,15 @@ import './seeds.css'
 export type SeedsTimeStatus = { ready: boolean; clientId: string; unsent: number; hours: number }
 export type SeedsSendResult = {
   sent: number
-  failed: { entryId: string; error: string }[]
+  failed: {
+    entryId: string
+    error: string
+    projectName?: string
+    taskName?: string
+    date?: string
+    hours?: number
+    remarks?: string
+  }[]
   left: number
   items: WorkItem[]
 }
@@ -26,6 +34,21 @@ const sendTime = (idToken: string, entryIds?: string[]) =>
     body: { idToken, ...(entryIds ? { entryIds } : {}) },
     fallback: 'The time could not be sent to Seeds.',
   })
+
+const failedEntriesTooltip = (failed: SeedsSendResult['failed']) =>
+  [
+    `Unsent entries (${failed.length})`,
+    ...failed.map((failure, index) =>
+      [
+        `${index + 1}. ${failure.projectName || 'Unknown project'}`,
+        `Task: ${failure.taskName || 'Unknown task'}`,
+        ...(failure.date ? [`Date: ${failure.date}`] : []),
+        ...(typeof failure.hours === 'number' ? [`Time: ${failure.hours}h`] : []),
+        ...(failure.remarks ? [`Remarks: ${failure.remarks}`] : []),
+        `Reason: ${failure.error}`,
+      ].join('\n'),
+    ),
+  ].join('\n\n')
 
 let signedIn: { token: string; until: number } | null = null
 const expiresAt = (token: string) => {
@@ -69,7 +92,11 @@ export function SendToSeedsButton({
   const [status, setStatus] = useState<SeedsTimeStatus | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
+  const [message, setMessage] = useState<{
+    text: string
+    ok: boolean
+    failed?: SeedsSendResult['failed']
+  } | null>(null)
   const holder = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -90,6 +117,7 @@ export function SendToSeedsButton({
         text: failed
           ? `${result.sent} sent, ${failed} not: ${result.failed[0].error}`
           : `${result.sent} ${result.sent === 1 ? 'entry' : 'entries'} sent to Seeds.`,
+        ...(failed ? { failed: result.failed } : {}),
       })
       if (/sign in|sign-in/i.test(result.failed[0]?.error || '')) signedIn = null
       setOpen(false)
@@ -132,6 +160,7 @@ export function SendToSeedsButton({
   if (!status?.ready) return null
   const count = entryIds ? entryIds.length : status.unsent
   if (!count && !message) return null
+  const failureTooltip = message?.failed?.length ? failedEntriesTooltip(message.failed) : undefined
   return (
     <span className="seeds-send">
       {count > 0 && (
@@ -140,7 +169,13 @@ export function SendToSeedsButton({
         </button>
       )}
       {message && (
-        <small className={message.ok ? 'seeds-send-ok' : 'seeds-send-error'} role={message.ok ? 'status' : 'alert'}>
+        <small
+          className={message.ok ? 'seeds-send-ok' : 'seeds-send-error'}
+          role={message.ok ? 'status' : 'alert'}
+          data-tooltip={failureTooltip}
+          tabIndex={failureTooltip ? 0 : undefined}
+          aria-label={failureTooltip ? `${message.text}. ${failureTooltip}` : message.text}
+        >
           {message.text}
         </small>
       )}
