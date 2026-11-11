@@ -207,7 +207,8 @@
   outline: 2px solid var(--ui-primary);
   border-radius: 4px;
 }
-.seeds-send-tooltip {
+.seeds-send-error[data-tooltip]::after {
+  content: attr(data-tooltip);
   display: none;
   position: absolute;
   z-index: 100;
@@ -227,27 +228,11 @@
   font-weight: 500;
   line-height: 1.45;
   text-align: left;
-  white-space: normal;
+  white-space: pre-line;
 }
-.seeds-send-error:hover .seeds-send-tooltip,
-.seeds-send-error:focus .seeds-send-tooltip,
-.seeds-send-error:focus-within .seeds-send-tooltip {
-  display: grid;
-  gap: 8px;
-}
-.seeds-send-tooltip-entry {
-  display: grid;
-  gap: 3px;
-  padding-top: 8px;
-  border-top: 1px solid var(--ui-border);
-  color: var(--ui-text);
-  overflow-wrap: anywhere;
-}
-.seeds-send-tooltip-meta {
-  color: var(--ui-muted);
-}
-.seeds-send-tooltip-reason {
-  color: var(--ui-danger, #b42318);
+.seeds-send-error[data-tooltip]:hover::after,
+.seeds-send-error[data-tooltip]:focus-visible::after {
+  display: block;
 }
 
 .seeds-google-button {
