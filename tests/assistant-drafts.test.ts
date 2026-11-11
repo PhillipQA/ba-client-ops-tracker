@@ -25,7 +25,10 @@ test('tracker templates reach the model only when a new tracker is asked for', (
   const rollout = asked.context.trackerDrafts.templates.find((template: any) => template.id === 'site-rollout')
   assert.ok(rollout.columns.some((column: any) => column.name === 'Status' && column.options.includes('Live')))
   assert.ok(!asked.context.trackerDrafts.templates.some((template: any) => template.id === 'blank'))
-  assert.deepEqual(asked.context.trackerDrafts.places.projects.map((project: any) => project.id), ['p1'])
+  assert.deepEqual(
+    asked.context.trackerDrafts.places.projects.map((project: any) => project.id),
+    ['p1'],
+  )
 })
 
 test('a tracker draft keeps only a known template, its columns and a place the person can use', () => {
