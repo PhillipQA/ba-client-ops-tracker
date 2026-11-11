@@ -179,6 +179,15 @@ test('someone else’s Google account cannot send my time, and a failure is kept
   })
   const result = await failing.app.ask('POST', '/api/seeds/time/send', bea, { idToken: goodToken(), entryIds: ['e1'] })
   assert.equal(result.body.sent, 0)
+  assert.deepEqual(result.body.failed[0], {
+    entryId: 'e1',
+    error: 'Seeds said: postDate is in a closed period',
+    projectName: 'CURATED MEEPLE OPC',
+    taskName: 'Go-live prep',
+    date: '2026-11-09',
+    hours: 1.75,
+    remarks: 'Go Live – Makati T1',
+  })
   assert.match(result.body.failed[0].error, /closed period/)
   const e1 = entries(failing.state()).find((e: any) => e.id === 'e1')
   assert.deepEqual([e1.seedsEntryId, e1.seedsError], [undefined, 'Seeds said: postDate is in a closed period'])
