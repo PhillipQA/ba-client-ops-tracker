@@ -132,7 +132,7 @@ export function registerAssistantRoutes(
       if (!responseMessage) throw new Error('The model returned no assessment.')
       res.json({
         message: responseMessage,
-        followUp: String(parsed.followUp || '').trim().slice(0, 300),
+        followUp: `${parsed.followUp || ''}`.trim().slice(0, 300),
         suggestions: sanitizeSuggestions(parsed.suggestions, taskSettings),
         contextCoverage: context.coverage,
       })
