@@ -363,7 +363,7 @@ try {
     },
   )
   wire = []
-  modelReply = { message: 'Fixture assistant result', suggestions: [] }
+  modelReply = { message: 'Fixture assistant result', followUp: 'What would you like to do next?', suggestions: [] }
   result = await post('/api/assistant', { message: 'What urgent work should I follow up?', context: {}, history: [] })
   assert.equal(result.status, 200)
   const assistantInput = wire[0].body.messages[0].content
@@ -379,7 +379,9 @@ try {
   assert.equal(assistantInput.includes('Critical missing legacy follow-up'), true)
   assert.equal(context.coverage.totalItems, 161)
   assert.equal(context.coverage.partial, true)
-  assert.match(result.body.message, /Context is partial/)
+  assert.equal(result.body.message, 'Fixture assistant result', 'the answer carries no note about partial context')
+  assert.equal(result.body.followUp, 'What would you like to do next?', 'the question is sent on its own')
+  assert.equal(result.body.contextCoverage.partial, true)
   workspace = state()
   workspace.items = [task('A', { priority: 'Medium' }), task('B')]
   const originalSnapshot = structuredClone(workspace)

@@ -43,7 +43,7 @@ import {
 } from './cloudStore'
 import { mergeWorkspace } from './workspaceMerge'
 import { settingsRequest } from '../features/settings/Settings'
-import { askBAAssistant, type AIMessage, type AISuggestion } from '../features/ai/ai'
+import { askBAAssistant, assistantMessages, type AIMessage, type AISuggestion } from '../features/ai/ai'
 import {
   defaultWaitingOn,
   doneWaitingOn,
@@ -1997,17 +1997,7 @@ export function useAppState() {
       const result = await askBAAssistant({ message: text, context: dashboardAiContext, history: history.slice(-8) })
       const now = new Date().toISOString()
       const userMessage: AIMessage = { id: crypto.randomUUID(), role: 'user', content: text, createdAt: now }
-      const assistantMessage: AIMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: result.message,
-        suggestions: result.suggestions.map(suggestion => ({
-          ...suggestion,
-          id: suggestion.id || crypto.randomUUID(),
-        })),
-        createdAt: new Date().toISOString(),
-      }
-      const nextThreads = { ...threads, [threadKey]: [...history, userMessage, assistantMessage] }
+      const nextThreads = { ...threads, [threadKey]: [...history, userMessage, ...assistantMessages(result)] }
       localStorage.setItem('ba-client-ops-ai-threads-v1', JSON.stringify(nextThreads))
       const wordCount = result.message.trim().split(/\s+/).filter(Boolean).length
       setDashboardAiResult({ message: result.message, wordCount })

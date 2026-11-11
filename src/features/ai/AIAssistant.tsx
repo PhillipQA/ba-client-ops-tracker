@@ -12,7 +12,7 @@ import {
   TicketCheck,
 } from 'lucide-react'
 import { useDocumentOperation } from '../documents/useDocumentOperation'
-import { askBAAssistant, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
+import { askBAAssistant, assistantMessages, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
 import type {
   Client,
   PlannerActivity,
@@ -187,17 +187,8 @@ export default function AIAssistant({
     try {
       const result = await askBAAssistant({ message: text, context, history: messages.slice(-8) }, job.signal)
       if (!job.isCurrent()) return
-      const assistantMessage: AIMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: result.message,
-        suggestions: result.suggestions.map(suggestion => ({
-          ...suggestion,
-          id: suggestion.id || crypto.randomUUID(),
-        })),
-        createdAt: new Date().toISOString(),
-      }
-      setThreads(current => ({ ...current, [threadKey]: [...(current[threadKey] || nextMessages), assistantMessage] }))
+      const replies = assistantMessages(result)
+      setThreads(current => ({ ...current, [threadKey]: [...(current[threadKey] || nextMessages), ...replies] }))
     } catch (requestError) {
       if (job.isCurrent())
         setError(requestError instanceof Error ? requestError.message : 'The AI assistant could not respond.')
