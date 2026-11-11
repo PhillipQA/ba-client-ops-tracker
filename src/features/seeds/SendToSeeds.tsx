@@ -35,6 +35,17 @@ const sendTime = (idToken: string, entryIds?: string[]) =>
     fallback: 'The time could not be sent to Seeds.',
   })
 
+const failedEntriesLabel = (failed: SeedsSendResult['failed']) =>
+  failed
+    .map(failure =>
+      [
+        `Project: ${failure.projectName || 'Unknown project'}`,
+        `Task: ${failure.taskName || 'Unknown task'}`,
+        `Reason: ${failure.error}`,
+      ].join('; '),
+    )
+    .join('. ')
+
 let signedIn: { token: string; until: number } | null = null
 const expiresAt = (token: string) => {
   try {
@@ -158,11 +169,7 @@ export function SendToSeedsButton({
           role={message.ok ? 'status' : 'alert'}
           tabIndex={message.failed?.length ? 0 : undefined}
           aria-label={
-            message.failed?.length
-              ? `${message.text}. ${message.failed
-                  .map(failure => `Project: ${failure.projectName || 'Unknown project'}; task: ${failure.taskName || 'Unknown task'}; reason: ${failure.error}`)
-                  .join('. ')}`
-              : undefined
+            message.failed?.length ? `${message.text}. ${failedEntriesLabel(message.failed)}` : message.text
           }
         >
           <small>{message.text}</small>
