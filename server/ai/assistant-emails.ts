@@ -34,7 +34,7 @@ const list = (state: any, key: string): any[] => (Array.isArray(state?.[key]) ? 
 export const asksAboutEmail = (message: string) => /\b(e-?mails?|mails?|inbox|gmail)\b/i.test(message)
 
 /** Clients and open projects the message names, so a new task can be placed. The chosen client always counts. */
-function places(state: any, message: string, requested: any) {
+export function places(state: any, message: string, requested: any) {
   const words = new Set(wordsOf(message))
   const named = (name: unknown) => wordsOf(`${name || ''}`).some(word => words.has(word))
   const chosenClient = String(requested?.client?.id || '')

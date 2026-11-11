@@ -1435,6 +1435,18 @@ export function registerCommunications(
       if (error) throw error
       return (data || []) as any[]
     },
+    /** One email, only when it belongs to that person. */
+    async emailFor(tenantId: string, userId: string, id: string) {
+      const { data, error } = await db
+        .from('user_communications')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('owner_user_id', userId)
+        .eq('id', id)
+        .maybeSingle()
+      if (error) throw error
+      return (data as any) || null
+    },
     async captureDiscord(message: any, tenantId: string) {
       const ids = [...new Set((message.mentions?.users ? [...message.mentions.users.keys()] : []) as string[])]
       const { data: linked, error } = await db

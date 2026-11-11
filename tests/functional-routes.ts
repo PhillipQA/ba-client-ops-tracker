@@ -8,6 +8,7 @@ import { registerFsdRoutes } from '../server/documents/fsd-documents'
 import { buildAssistantContext } from '../server/ai/assistant-context'
 import { addTrackers } from '../server/ai/assistant-trackers'
 import { addEmails, emailSuggestions } from '../server/ai/assistant-emails'
+import { addTrackerDrafts, trackerSuggestions } from '../server/ai/assistant-drafts'
 import { workspaceVersion, mergeActivity } from '../server/services/workspace-version'
 import { runTenantAi } from '../server/ai/tenant-ai'
 import { emptyFsdDraft, fsdSectionsForModules } from '../src/features/documents/fsd-model'
@@ -348,6 +349,8 @@ try {
       addTrackers,
       addEmails,
       emailSuggestions,
+      addTrackerDrafts,
+      trackerSuggestions,
       deps: {},
       requireAuth: pass,
       requireTenantWorkspace: pass,

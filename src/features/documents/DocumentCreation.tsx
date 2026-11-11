@@ -13,6 +13,7 @@ import { LinkedEmails } from './LinkedEmails'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { SIGNOFF_FORM_TYPES, SIGNOFF_TEMPLATE_KIND, type SignoffFormType, type SignoffTemplateKind } from './signoff'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { DrfPrefill } from './drfPrefill'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
 import { DriveFilePicker, SaveToDriveBar, useDocumentDrive } from './documentDrive'
 import {
@@ -161,7 +162,7 @@ export default function DocumentCreation({
   projects: Project[]
   accounts?: UserAccount[]
   items: WorkItem[]
-  launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number }
+  launch?: { taskId: string; flow: 'drf' | 'signoff'; nonce: number; drf?: DrfPrefill }
   canGenerate: boolean
   /** Work Hub: the DRF's task's emails can be read beside the form. */
   canUseInbox?: boolean
@@ -295,6 +296,23 @@ export default function DocumentCreation({
   const [failedDrfAction, setFailedDrfAction] = useState<'extract' | 'generate'>('extract')
   const operation = useDocumentOperation()
   const corInput = useRef<HTMLInputElement>(null)
+  // A DRF opened by the BA assistant with fields drafted from an email: fill in what it found, for review.
+  useEffect(() => {
+    const draft = launch?.flow === 'drf' ? launch.drf : undefined
+    if (!draft) return
+    if (draft.businessName) setBusinessName(draft.businessName)
+    if (draft.tradeName) setTradeName(draft.tradeName)
+    if (draft.tin) setTin(draft.tin)
+    if (draft.address) setAddress(draft.address)
+    if (draft.branchName) setBranchName(draft.branchName)
+    if (draft.goLiveDate) setGoLiveDate(draft.goLiveDate)
+    if (draft.contractNumber) setContractNumber(draft.contractNumber)
+    if (draft.notes) setNotes(draft.notes)
+    const machines = draft.posRows?.slice(0, MAX_POS_ROWS).map(row => ({ ...newPosRow(), ...row }))
+    if (machines?.length) setPosRows(machines)
+    setDocumentError('')
+    setDocumentMessage('Drafted from the linked email by the BA Assistant. Review every field before generating.')
+  }, [launch])
   const loadDrfErrors = async () => {
     const response = await fetch('/api/documents/drf/errors', { credentials: 'same-origin' })
     const payload = (await response.json().catch(() => ({}))) as { items?: typeof recentDrfErrors; error?: string }

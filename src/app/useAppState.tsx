@@ -44,6 +44,7 @@ import {
 import { mergeWorkspace } from './workspaceMerge'
 import { settingsRequest } from '../features/settings/Settings'
 import { askBAAssistant, assistantMessages, type AIMessage, type AISuggestion } from '../features/ai/ai'
+import type { DrfPrefill } from '../features/documents/drfPrefill'
 import {
   defaultWaitingOn,
   doneWaitingOn,
@@ -119,7 +120,13 @@ function forgetBrowserCopies(user: { id?: string; organizationId?: string } | nu
 
 export function useAppState() {
   const today = useBusinessDate()
-  const [documentLaunch, setDocumentLaunch] = useState<{ taskId: string; flow: 'drf' | 'signoff'; nonce: number }>()
+  const [documentLaunch, setDocumentLaunch] = useState<{
+    taskId: string
+    flow: 'drf' | 'signoff'
+    nonce: number
+    /** DRF fields the BA assistant drafted from an email, to fill the form for review. */
+    drf?: DrfPrefill
+  }>()
 
   const [resetToken, setResetToken] = useState<string | null>(() =>
     new URLSearchParams(window.location.hash.slice(1)).get('reset-password'),
