@@ -2,7 +2,7 @@ import ActivityCommentPreview from '../tasks/ActivityCommentPreview'
 import TrackerLinkChips from '../trackers/TrackerLinkChips'
 import { businessDateKey } from '../../shared/businessDate'
 import { docHubLabels } from '../documents/dochub'
-import { isArchived } from '../tasks/lifecycle'
+import { isArchived, isClosedProject } from '../tasks/lifecycle'
 import { activityTime, niceDate } from '../../shared/dates'
 import { Empty, PriorityChip, StatusChip } from '../../shared/ui/Chips'
 import ClientSelect from '../../shared/ui/SearchSelect'
@@ -511,7 +511,7 @@ export function ActivityForm({
         <select name="projectId" defaultValue={initial?.projectId ?? ''}>
           <option value="">No project</option>
           {linkedProjects
-            .filter(project => !isArchived(project) || project.id === initial?.projectId)
+            .filter(project => !isClosedProject(project) || project.id === initial?.projectId)
             .map(project => (
               <option key={project.id} value={project.id}>
                 {project.name}

@@ -1573,7 +1573,9 @@ export default function WorkHub({
                                     !task.parentTaskId &&
                                     !subtaskParentProblem(task, closed) &&
                                     clients.some(client => client.id === task.clientId && !client.archived) &&
-                                    projects.some(project => project.id === task.projectId && !project.archived),
+                                    projects.some(
+                                      project => project.id === task.projectId && !isClosedProject(project),
+                                    ),
                                 )
                                 .map(task => ({
                                   value: task.id,

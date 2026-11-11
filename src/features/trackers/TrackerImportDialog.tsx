@@ -15,12 +15,13 @@ import { checkNameColumns, sheetIdFrom, type NameColumnCheck } from './trackerSy
 import { rememberReview } from './trackerNav'
 import { Dialog, plural } from './trackerUi'
 import TrackerClientPicker from './TrackerClientPicker'
+import { isClosedProject } from '../tasks/lifecycle'
 
 type Props = {
   /** Importing into a tracker that exists, or into a new one made from the sheet. */
   tracker?: Tracker
   clients: { id: string; name: string }[]
-  projects: { id: string; name: string }[]
+  projects: { id: string; name: string; archived?: boolean; seedsArchived?: boolean }[]
   people: Person[]
   today: string
   onClose: () => void
@@ -534,11 +535,13 @@ export default function TrackerImportDialog({
                 Project
                 <select value={projectId} onChange={event => setProjectId(event.target.value)}>
                   <option value="">None</option>
-                  {projects.map(project => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
+                  {projects
+                    .filter(project => !isClosedProject(project) || project.id === projectId)
+                    .map(project => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label className="trk-checkline">

@@ -5,6 +5,7 @@ import DocumentProcessingPanel from './DocumentProcessingPanel'
 import { useDocumentOperation } from './useDocumentOperation'
 import { isFsdImageFile, readFsdSource } from './fsd-sources'
 import type { Project } from '../../shared/types'
+import { isClosedProject } from '../tasks/lifecycle'
 import { APP_LABEL } from '../../shared/version'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { announceGeneratedDocument } from './documentDrive'
@@ -373,9 +374,11 @@ export default function BrdCreation({
                     onChange={e => detail('projectName', e.target.value)}
                   />
                   <datalist id={`brd-projects-${draftKey}`}>
-                    {projects.map(p => (
-                      <option key={p.id} value={p.name} />
-                    ))}
+                    {projects
+                      .filter(p => !isClosedProject(p))
+                      .map(p => (
+                        <option key={p.id} value={p.name} />
+                      ))}
                   </datalist>
                 </label>
                 <label>

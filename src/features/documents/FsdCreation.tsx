@@ -4,6 +4,7 @@ import { announceGeneratedDocument } from './documentDrive'
 import DocumentReset from './DocumentReset'
 import { useDocumentOperation } from './useDocumentOperation'
 import type { Client, Project } from '../../shared/types'
+import { isClosedProject } from '../tasks/lifecycle'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import {
   emptyFsdDraft,
@@ -686,9 +687,11 @@ export default function FsdCreation({
                     placeholder="Choose a project or enter its name"
                   />
                   <datalist id={`fsd-projects-${draftKey}`}>
-                    {projects.map(p => (
-                      <option key={p.id} value={p.name} />
-                    ))}
+                    {projects
+                      .filter(p => !isClosedProject(p))
+                      .map(p => (
+                        <option key={p.id} value={p.name} />
+                      ))}
                   </datalist>
                 </label>
                 {detailsField('feature', 'Document title', 'text', true)}

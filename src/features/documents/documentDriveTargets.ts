@@ -1,4 +1,5 @@
 import type { Client, Project, TaskDriveFile, WorkItem } from '../../shared/types'
+import { isClosedProject } from '../tasks/lifecycle'
 
 /** Pure helpers behind the Google Drive pickers in Document Creation. */
 export type DriveScope = { items: WorkItem[]; clients: Client[]; projects: Project[] }
@@ -7,8 +8,11 @@ export const fileSize = (bytes: number) =>
   bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 export const extensionOf = (name: string) => (name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '')
 
+/** Under an archived client, or under a project that is archived here or closed (completed…) in Seeds. */
 export const archivedContext = ({ clients, projects }: DriveScope, item: WorkItem) =>
-  Boolean(clients.find(c => c.id === item.clientId)?.archived || projects.find(p => p.id === item.projectId)?.archived)
+  Boolean(
+    clients.find(c => c.id === item.clientId)?.archived || isClosedProject(projects.find(p => p.id === item.projectId)),
+  )
 export const placeOf = ({ clients, projects }: DriveScope, item: WorkItem) =>
   [clients.find(c => c.id === item.clientId)?.name, projects.find(p => p.id === item.projectId)?.name]
     .filter(Boolean)
