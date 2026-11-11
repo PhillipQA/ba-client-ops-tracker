@@ -25,6 +25,8 @@ export type SeedsSendResult = {
   left: number
   items: WorkItem[]
 }
+type SeedsFailure = SeedsSendResult['failed'][number]
+const entryWord = (count: number) => (count === 1 ? 'entry' : 'entries')
 
 export const loadSeedsTime = () =>
   requestJson<SeedsTimeStatus>('/api/seeds/time', { fallback: 'Seeds time could not be read.' })
@@ -34,21 +36,6 @@ const sendTime = (idToken: string, entryIds?: string[]) =>
     body: { idToken, ...(entryIds ? { entryIds } : {}) },
     fallback: 'The time could not be sent to Seeds.',
   })
-
-const failedEntriesTooltip = (failed: SeedsSendResult['failed']) =>
-  [
-    `Unsent entries (${failed.length})`,
-    ...failed.map((failure, index) =>
-      [
-        `${index + 1}. ${failure.projectName || 'Unknown project'}`,
-        `Task: ${failure.taskName || 'Unknown task'}`,
-        ...(failure.date ? [`Date: ${failure.date}`] : []),
-        ...(typeof failure.hours === 'number' ? [`Time: ${failure.hours}h`] : []),
-        ...(failure.remarks ? [`Remarks: ${failure.remarks}`] : []),
-        `Reason: ${failure.error}`,
-      ].join('\n'),
-    ),
-  ].join('\n\n')
 
 let signedIn: { token: string; until: number } | null = null
 const expiresAt = (token: string) => {
@@ -77,6 +64,40 @@ function loadGoogle() {
   return script
 }
 
+/** The entries Seeds turned down, behind a toggle. Shown inline so no surrounding panel can clip them. */
+function FailedEntries({ failed }: { failed: SeedsFailure[] }) {
+  const [shown, setShown] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        className="seeds-send-details-toggle"
+        aria-expanded={shown}
+        onClick={() => setShown(value => !value)}
+      >
+        {shown ? 'Hide failed entries' : `View ${failed.length} failed ${entryWord(failed.length)}`}
+      </button>
+      {shown && (
+        <div className="seeds-send-failures" aria-label="Unsent Seeds entries">
+          <strong>Unsent entries ({failed.length})</strong>
+          {failed.map((failure, index) => (
+            <div className="seeds-send-failure" key={failure.entryId}>
+              <strong>
+                {index + 1}. {failure.projectName || 'Unknown project'}
+              </strong>
+              <span>Task: {failure.taskName || 'Unknown task'}</span>
+              {failure.date && <span>Date: {failure.date}</span>}
+              {typeof failure.hours === 'number' && <span>Time: {failure.hours}h</span>}
+              {failure.remarks && <span>Remarks: {failure.remarks}</span>}
+              <span className="seeds-send-failure-reason">Reason: {failure.error}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 /** A button that sends the person's unsent time (all of it, or the entries given) to Seeds, signing in if needed. */
 export function SendToSeedsButton({
   entryIds,
@@ -95,7 +116,7 @@ export function SendToSeedsButton({
   const [message, setMessage] = useState<{
     text: string
     ok: boolean
-    failed?: SeedsSendResult['failed']
+    failed?: SeedsFailure[]
   } | null>(null)
   const holder = useRef<HTMLDivElement>(null)
 
@@ -116,7 +137,7 @@ export function SendToSeedsButton({
         ok: !failed,
         text: failed
           ? `${result.sent} sent, ${failed} not: ${result.failed[0].error}`
-          : `${result.sent} ${result.sent === 1 ? 'entry' : 'entries'} sent to Seeds.`,
+          : `${result.sent} ${entryWord(result.sent)} sent to Seeds.`,
         ...(failed ? { failed: result.failed } : {}),
       })
       if (/sign in|sign-in/i.test(result.failed[0]?.error || '')) signedIn = null
@@ -160,7 +181,6 @@ export function SendToSeedsButton({
   if (!status?.ready) return null
   const count = entryIds ? entryIds.length : status.unsent
   if (!count && !message) return null
-  const failureTooltip = message?.failed?.length ? failedEntriesTooltip(message.failed) : undefined
   return (
     <span className="seeds-send">
       {count > 0 && (
@@ -169,15 +189,10 @@ export function SendToSeedsButton({
         </button>
       )}
       {message && (
-        <small
-          className={message.ok ? 'seeds-send-ok' : 'seeds-send-error'}
-          role={message.ok ? 'status' : 'alert'}
-          data-tooltip={failureTooltip}
-          tabIndex={failureTooltip ? 0 : undefined}
-          aria-label={failureTooltip ? `${message.text}. ${failureTooltip}` : message.text}
-        >
-          {message.text}
-        </small>
+        <div className={message.ok ? 'seeds-send-ok' : 'seeds-send-feedback'}>
+          <small role={message.ok ? 'status' : 'alert'}>{message.text}</small>
+          {message.failed?.length ? <FailedEntries failed={message.failed} /> : null}
+        </div>
       )}
       {open && (
         <Dialog title="Sign in to send to Seeds" eyebrow="Seeds" onClose={() => setOpen(false)} busy={busy}>
