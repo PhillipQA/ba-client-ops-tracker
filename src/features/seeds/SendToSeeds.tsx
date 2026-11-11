@@ -46,9 +46,9 @@ const failedEntriesTooltip = (failed: SeedsSendResult['failed']) =>
         ...(typeof failure.hours === 'number' ? [`Time: ${failure.hours}h`] : []),
         ...(failure.remarks ? [`Remarks: ${failure.remarks}`] : []),
         `Reason: ${failure.error}`,
-      ].join('\\n'),
+      ].join('\n'),
     ),
-  ].join('\\n\\n')
+  ].join('\n\n')
 
 let signedIn: { token: string; until: number } | null = null
 const expiresAt = (token: string) => {
