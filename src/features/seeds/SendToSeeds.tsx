@@ -35,16 +35,20 @@ const sendTime = (idToken: string, entryIds?: string[]) =>
     fallback: 'The time could not be sent to Seeds.',
   })
 
-const failedEntriesLabel = (failed: SeedsSendResult['failed']) =>
-  failed
-    .map(failure =>
+const failedEntriesTooltip = (failed: SeedsSendResult['failed']) =>
+  [
+    `Unsent entries (${failed.length})`,
+    ...failed.map((failure, index) =>
       [
-        `Project: ${failure.projectName || 'Unknown project'}`,
+        `${index + 1}. ${failure.projectName || 'Unknown project'}`,
         `Task: ${failure.taskName || 'Unknown task'}`,
+        ...(failure.date ? [`Date: ${failure.date}`] : []),
+        ...(typeof failure.hours === 'number' ? [`Time: ${failure.hours}h`] : []),
+        ...(failure.remarks ? [`Remarks: ${failure.remarks}`] : []),
         `Reason: ${failure.error}`,
-      ].join('; '),
-    )
-    .join('. ')
+      ].join('\\n'),
+    ),
+  ].join('\\n\\n')
 
 let signedIn: { token: string; until: number } | null = null
 const expiresAt = (token: string) => {
@@ -156,6 +160,7 @@ export function SendToSeedsButton({
   if (!status?.ready) return null
   const count = entryIds ? entryIds.length : status.unsent
   if (!count && !message) return null
+  const failureTooltip = message?.failed?.length ? failedEntriesTooltip(message.failed) : undefined
   return (
     <span className="seeds-send">
       {count > 0 && (
@@ -164,35 +169,15 @@ export function SendToSeedsButton({
         </button>
       )}
       {message && (
-        <span
+        <small
           className={message.ok ? 'seeds-send-ok' : 'seeds-send-error'}
           role={message.ok ? 'status' : 'alert'}
-          tabIndex={message.failed?.length ? 0 : undefined}
-          aria-label={
-            message.failed?.length ? `${message.text}. ${failedEntriesLabel(message.failed)}` : message.text
-          }
+          data-tooltip={failureTooltip}
+          tabIndex={failureTooltip ? 0 : undefined}
+          aria-label={failureTooltip ? `${message.text}. ${failureTooltip}` : message.text}
         >
-          <small>{message.text}</small>
-          {Boolean(message.failed?.length) && (
-            <span className="seeds-send-tooltip" role="tooltip">
-              <strong>Unsent entries ({message.failed?.length})</strong>
-              {message.failed?.map(failure => (
-                <span className="seeds-send-tooltip-entry" key={failure.entryId}>
-                  <strong>{failure.projectName || 'Unknown project'}</strong>
-                  <span>{failure.taskName || 'Unknown task'}</span>
-                  {(failure.date || typeof failure.hours === 'number') && (
-                    <span className="seeds-send-tooltip-meta">
-                      {failure.date ? `Date: ${failure.date}` : ''}
-                      {typeof failure.hours === 'number' ? ` · ${failure.hours}h` : ''}
-                    </span>
-                  )}
-                  {failure.remarks && <span>Remarks: {failure.remarks}</span>}
-                  <span className="seeds-send-tooltip-reason">Reason: {failure.error}</span>
-                </span>
-              ))}
-            </span>
-          )}
-        </span>
+          {message.text}
+        </small>
       )}
       {open && (
         <Dialog title="Sign in to send to Seeds" eyebrow="Seeds" onClose={() => setOpen(false)} busy={busy}>
