@@ -245,6 +245,7 @@
 .seeds-send-failure-reason {
   color: var(--ui-danger, #b42318);
 }
+
 .seeds-google-button {
   display: flex;
   justify-content: center;

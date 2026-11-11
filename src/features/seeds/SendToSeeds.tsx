@@ -25,6 +25,8 @@ export type SeedsSendResult = {
   left: number
   items: WorkItem[]
 }
+type SeedsFailure = SeedsSendResult['failed'][number]
+const entryWord = (count: number) => (count === 1 ? 'entry' : 'entries')
 
 export const loadSeedsTime = () =>
   requestJson<SeedsTimeStatus>('/api/seeds/time', { fallback: 'Seeds time could not be read.' })
@@ -62,6 +64,40 @@ function loadGoogle() {
   return script
 }
 
+/** The entries Seeds turned down, behind a toggle. Shown inline so no surrounding panel can clip them. */
+function FailedEntries({ failed }: { failed: SeedsFailure[] }) {
+  const [shown, setShown] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        className="seeds-send-details-toggle"
+        aria-expanded={shown}
+        onClick={() => setShown(value => !value)}
+      >
+        {shown ? 'Hide failed entries' : `View ${failed.length} failed ${entryWord(failed.length)}`}
+      </button>
+      {shown && (
+        <div className="seeds-send-failures" aria-label="Unsent Seeds entries">
+          <strong>Unsent entries ({failed.length})</strong>
+          {failed.map((failure, index) => (
+            <div className="seeds-send-failure" key={failure.entryId}>
+              <strong>
+                {index + 1}. {failure.projectName || 'Unknown project'}
+              </strong>
+              <span>Task: {failure.taskName || 'Unknown task'}</span>
+              {failure.date && <span>Date: {failure.date}</span>}
+              {typeof failure.hours === 'number' && <span>Time: {failure.hours}h</span>}
+              {failure.remarks && <span>Remarks: {failure.remarks}</span>}
+              <span className="seeds-send-failure-reason">Reason: {failure.error}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 /** A button that sends the person's unsent time (all of it, or the entries given) to Seeds, signing in if needed. */
 export function SendToSeedsButton({
   entryIds,
@@ -77,11 +113,10 @@ export function SendToSeedsButton({
   const [status, setStatus] = useState<SeedsTimeStatus | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [showFailures, setShowFailures] = useState(false)
   const [message, setMessage] = useState<{
     text: string
     ok: boolean
-    failed?: SeedsSendResult['failed']
+    failed?: SeedsFailure[]
   } | null>(null)
   const holder = useRef<HTMLDivElement>(null)
 
@@ -94,7 +129,6 @@ export function SendToSeedsButton({
   const send = async (token: string) => {
     setBusy(true)
     setMessage(null)
-    setShowFailures(false)
     try {
       const result = await sendTime(token, entryIds)
       onSent(result)
@@ -103,7 +137,7 @@ export function SendToSeedsButton({
         ok: !failed,
         text: failed
           ? `${result.sent} sent, ${failed} not: ${result.failed[0].error}`
-          : `${result.sent} ${result.sent === 1 ? 'entry' : 'entries'} sent to Seeds.`,
+          : `${result.sent} ${entryWord(result.sent)} sent to Seeds.`,
         ...(failed ? { failed: result.failed } : {}),
       })
       if (/sign in|sign-in/i.test(result.failed[0]?.error || '')) signedIn = null
@@ -157,31 +191,7 @@ export function SendToSeedsButton({
       {message && (
         <div className={message.ok ? 'seeds-send-ok' : 'seeds-send-feedback'}>
           <small role={message.ok ? 'status' : 'alert'}>{message.text}</small>
-          {Boolean(message.failed?.length) && (
-            <button
-              type="button"
-              className="seeds-send-details-toggle"
-              aria-expanded={showFailures}
-              onClick={() => setShowFailures(value => !value)}
-            >
-              {showFailures ? 'Hide failed entries' : `View ${message.failed?.length} failed entries`}
-            </button>
-          )}
-          {showFailures && message.failed?.length ? (
-            <div className="seeds-send-failures" aria-label="Unsent Seeds entries">
-              <strong>Unsent entries ({message.failed.length})</strong>
-              {message.failed.map((failure, index) => (
-                <div className="seeds-send-failure" key={failure.entryId}>
-                  <strong>{index + 1}. {failure.projectName || 'Unknown project'}</strong>
-                  <span>Task: {failure.taskName || 'Unknown task'}</span>
-                  {failure.date && <span>Date: {failure.date}</span>}
-                  {typeof failure.hours === 'number' && <span>Time: {failure.hours}h</span>}
-                  {failure.remarks && <span>Remarks: {failure.remarks}</span>}
-                  <span className="seeds-send-failure-reason">Reason: {failure.error}</span>
-                </div>
-              ))}
-            </div>
-          ) : null}
+          {message.failed?.length ? <FailedEntries failed={message.failed} /> : null}
         </div>
       )}
       {open && (
