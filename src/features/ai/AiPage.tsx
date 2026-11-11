@@ -1,11 +1,22 @@
 import type { AppState, SignedInUser } from '../../app/useAppState'
 import AIAssistant from './AIAssistant'
 import { isArchived, isClosedProject } from '../tasks/lifecycle'
+import { loadCloudStore } from '../../app/cloudStore'
+import { normalizeStore, seedStore, type Store } from '../../app/store'
 
 /** Ai screen. It reads the app state; see app/useAppState. */
 export function AiPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
-  const { aiClientId, aiProjectId, aiPrompt, applyAISuggestion, setAiClientId, setAiProjectId, setAiPrompt, store } =
-    app
+  const {
+    aiClientId,
+    aiProjectId,
+    aiPrompt,
+    applyAISuggestion,
+    setAiClientId,
+    setAiProjectId,
+    setAiPrompt,
+    setStore,
+    store,
+  } = app
   return (
     <section className="page-stack">
       <AIAssistant
@@ -26,6 +37,10 @@ export function AiPage({ app, currentUser }: { app: AppState; currentUser: Signe
           setAiPrompt('')
         }}
         onApplySuggestion={applyAISuggestion}
+        onWorkChanged={async () => {
+          const result = await loadCloudStore<Store>()
+          if (result.data) setStore(normalizeStore(result.data, seedStore()))
+        }}
       />
     </section>
   )

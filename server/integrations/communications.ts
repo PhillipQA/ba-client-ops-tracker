@@ -1421,6 +1421,20 @@ export function registerCommunications(
     googleAccess: grantFor,
     /** Files a document into the shared Google Drive; used by DocHub when a signature completes. */
     driveFiler: drive.filer,
+    /** One person's own latest emails that are not archived, newest first: what the BA assistant may read for them. */
+    async recentEmails(tenantId: string, userId: string) {
+      const { data, error } = await db
+        .from('user_communications')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('owner_user_id', userId)
+        .eq('source', 'Gmail')
+        .neq('status', 'Archived')
+        .order('received_at', { ascending: false })
+        .limit(25)
+      if (error) throw error
+      return (data || []) as any[]
+    },
     async captureDiscord(message: any, tenantId: string) {
       const ids = [...new Set((message.mentions?.users ? [...message.mentions.users.keys()] : []) as string[])]
       const { data: linked, error } = await db

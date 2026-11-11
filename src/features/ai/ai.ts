@@ -8,8 +8,9 @@ import type {
   WorkActivityEvent,
   WorkItem,
 } from '../../shared/types'
+import { requestJson } from '../../shared/http'
 
-export type AISuggestionKind = 'issue' | 'requirement' | 'follow_up' | 'activity' | 'draft_reply'
+export type AISuggestionKind = 'issue' | 'requirement' | 'follow_up' | 'activity' | 'draft_reply' | 'email_document'
 
 export interface AISuggestion {
   id: string
@@ -23,6 +24,14 @@ export interface AISuggestion {
   activityDate?: string
   activityTime?: string
   draft?: string
+  /** email_document: the person's own email to link, and the task it goes to (an existing one, or a new one). */
+  emailId?: string
+  emailSubject?: string
+  taskId?: string
+  taskTitle?: string
+  newTask?: { title: string; clientId: string; projectId: string; clientName?: string; projectName?: string }
+  /** email_document: the document to open for that task once the email is linked. */
+  document?: 'drf' | 'signoff'
 }
 
 export interface AIMessage {
@@ -83,4 +92,32 @@ export function assistantMessages(result: { message: string; followUp: string; s
   }
   const question: AIMessage = { id: crypto.randomUUID(), role: 'assistant', content: result.followUp, createdAt }
   return result.followUp ? [answer, question] : [answer]
+}
+
+/**
+ * Carries out an approved email_document suggestion: links the email to its task, or makes the task from the email
+ * (which links it), and answers with the task. Opening the document is left to the screen.
+ */
+export async function applyEmailDocument(suggestion: AISuggestion, userId: string) {
+  if (!suggestion.emailId) throw new Error('This suggestion does not name an email.')
+  const base = `/api/communications/${encodeURIComponent(suggestion.emailId)}`
+  if (suggestion.taskId) {
+    await requestJson(`${base}/link-task`, {
+      body: { taskId: suggestion.taskId },
+      fallback: 'The email could not be linked.',
+    })
+    return { taskId: suggestion.taskId, created: false }
+  }
+  if (!suggestion.newTask) throw new Error('This suggestion does not name a task.')
+  const made = await requestJson<{ task: { id: string } }>(`${base}/create-task`, {
+    body: {
+      clientId: suggestion.newTask.clientId,
+      projectId: suggestion.newTask.projectId,
+      title: suggestion.newTask.title,
+      description: suggestion.rationale || suggestion.emailSubject || suggestion.newTask.title,
+      assignedToUserId: userId,
+    },
+    fallback: 'The task could not be created from the email.',
+  })
+  return { taskId: made.task.id, created: true }
 }

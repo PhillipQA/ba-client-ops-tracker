@@ -125,7 +125,10 @@ registerStoreRoutes(app)
 registerInternalAdminRoutes(app)
 
 // The assistant reads trackers through the tracker routes (registered below), with the same access rules.
-registerAssistantRoutes(app, { trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick) })
+registerAssistantRoutes(app, {
+  trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick),
+  emails: (tenant, userId) => communications.recentEmails(tenant, userId),
+})
 
 registerBrdRoutes(app, {
   db,
