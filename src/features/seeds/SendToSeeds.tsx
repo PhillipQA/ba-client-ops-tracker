@@ -13,7 +13,15 @@ import './seeds.css'
 export type SeedsTimeStatus = { ready: boolean; clientId: string; unsent: number; hours: number }
 export type SeedsSendResult = {
   sent: number
-  failed: { entryId: string; error: string }[]
+  failed: {
+    entryId: string
+    error: string
+    projectName?: string
+    taskName?: string
+    date?: string
+    hours?: number
+    remarks?: string
+  }[]
   left: number
   items: WorkItem[]
 }
@@ -69,7 +77,11 @@ export function SendToSeedsButton({
   const [status, setStatus] = useState<SeedsTimeStatus | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
+  const [message, setMessage] = useState<{
+    text: string
+    ok: boolean
+    failed?: SeedsSendResult['failed']
+  } | null>(null)
   const holder = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -90,6 +102,7 @@ export function SendToSeedsButton({
         text: failed
           ? `${result.sent} sent, ${failed} not: ${result.failed[0].error}`
           : `${result.sent} ${result.sent === 1 ? 'entry' : 'entries'} sent to Seeds.`,
+        ...(failed ? { failed: result.failed } : {}),
       })
       if (/sign in|sign-in/i.test(result.failed[0]?.error || '')) signedIn = null
       setOpen(false)
@@ -140,9 +153,39 @@ export function SendToSeedsButton({
         </button>
       )}
       {message && (
-        <small className={message.ok ? 'seeds-send-ok' : 'seeds-send-error'} role={message.ok ? 'status' : 'alert'}>
-          {message.text}
-        </small>
+        <span
+          className={message.ok ? 'seeds-send-ok' : 'seeds-send-error'}
+          role={message.ok ? 'status' : 'alert'}
+          tabIndex={message.failed?.length ? 0 : undefined}
+          aria-label={
+            message.failed?.length
+              ? `${message.text}. ${message.failed
+                  .map(failure => `Project: ${failure.projectName || 'Unknown project'}; task: ${failure.taskName || 'Unknown task'}; reason: ${failure.error}`)
+                  .join('. ')}`
+              : undefined
+          }
+        >
+          <small>{message.text}</small>
+          {Boolean(message.failed?.length) && (
+            <span className="seeds-send-tooltip" role="tooltip">
+              <strong>Unsent entries ({message.failed?.length})</strong>
+              {message.failed?.map(failure => (
+                <span className="seeds-send-tooltip-entry" key={failure.entryId}>
+                  <strong>{failure.projectName || 'Unknown project'}</strong>
+                  <span>{failure.taskName || 'Unknown task'}</span>
+                  {(failure.date || typeof failure.hours === 'number') && (
+                    <span className="seeds-send-tooltip-meta">
+                      {failure.date ? `Date: ${failure.date}` : ''}
+                      {typeof failure.hours === 'number' ? ` · ${failure.hours}h` : ''}
+                    </span>
+                  )}
+                  {failure.remarks && <span>Remarks: {failure.remarks}</span>}
+                  <span className="seeds-send-tooltip-reason">Reason: {failure.error}</span>
+                </span>
+              ))}
+            </span>
+          )}
+        </span>
       )}
       {open && (
         <Dialog title="Sign in to send to Seeds" eyebrow="Seeds" onClose={() => setOpen(false)} busy={busy}>
