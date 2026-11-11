@@ -35,21 +35,6 @@ const sendTime = (idToken: string, entryIds?: string[]) =>
     fallback: 'The time could not be sent to Seeds.',
   })
 
-const failedEntriesTooltip = (failed: SeedsSendResult['failed']) =>
-  [
-    `Unsent entries (${failed.length})`,
-    ...failed.map((failure, index) =>
-      [
-        `${index + 1}. ${failure.projectName || 'Unknown project'}`,
-        `Task: ${failure.taskName || 'Unknown task'}`,
-        ...(failure.date ? [`Date: ${failure.date}`] : []),
-        ...(typeof failure.hours === 'number' ? [`Time: ${failure.hours}h`] : []),
-        ...(failure.remarks ? [`Remarks: ${failure.remarks}`] : []),
-        `Reason: ${failure.error}`,
-      ].join('\n'),
-    ),
-  ].join('\n\n')
-
 let signedIn: { token: string; until: number } | null = null
 const expiresAt = (token: string) => {
   try {
@@ -162,7 +147,6 @@ export function SendToSeedsButton({
   if (!status?.ready) return null
   const count = entryIds ? entryIds.length : status.unsent
   if (!count && !message) return null
-  const failureTooltip = message?.failed?.length ? failedEntriesTooltip(message.failed) : undefined
   return (
     <span className="seeds-send">
       {count > 0 && (
