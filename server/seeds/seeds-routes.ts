@@ -662,9 +662,28 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         ),
       }))
       const failed = [...outcome].filter(([, result]) => result.error)
+      const projectById = new Map(list(state.projects).map(project => [String(project?.id), project]))
+      const detailsByEntryId = new Map<
+        string,
+        { projectName: string; taskName: string; date: string; hours: number; remarks: string }
+      >()
+      for (const { item, entry } of todo) {
+        const project = projectById.get(String(item?.projectId))
+        detailsByEntryId.set(entry.id, {
+          projectName: text(project?.name) || 'Unknown project',
+          taskName: text(item?.title) || 'Unknown task',
+          date: text(entry?.date),
+          hours: Number(entry?.hours) || 0,
+          remarks: text(entry?.note),
+        })
+      }
       res.json({
         sent: [...outcome.values()].filter(result => result.seedsEntryId).length,
-        failed: failed.map(([entryId, result]) => ({ entryId, error: result.error })),
+        failed: failed.map(([entryId, result]) => ({
+          entryId,
+          error: result.error,
+          ...(detailsByEntryId.get(entryId) || {}),
+        })),
         left: Math.max(0, mineUnsent(saved, user.id).length),
         items: list(saved.items).filter(item => touched.has(String(item?.id))),
       })
