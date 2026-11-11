@@ -7,6 +7,7 @@ import { registerTestCaseRoutes } from '../server/documents/testcase-documents'
 import { registerFsdRoutes } from '../server/documents/fsd-documents'
 import { buildAssistantContext } from '../server/ai/assistant-context'
 import { addTrackers } from '../server/ai/assistant-trackers'
+import { addEmails, emailSuggestions } from '../server/ai/assistant-emails'
 import { workspaceVersion, mergeActivity } from '../server/services/workspace-version'
 import { runTenantAi } from '../server/ai/tenant-ai'
 import { emptyFsdDraft, fsdSectionsForModules } from '../src/features/documents/fsd-model'
@@ -345,6 +346,8 @@ try {
       openWaitingOnOptions,
       buildAssistantContext,
       addTrackers,
+      addEmails,
+      emailSuggestions,
       deps: {},
       requireAuth: pass,
       requireTenantWorkspace: pass,

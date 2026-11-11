@@ -6,13 +6,21 @@ import {
   Clipboard,
   FileText,
   Loader2,
+  Mail,
   MessageSquareText,
   PlusCircle,
   Sparkles,
   TicketCheck,
 } from 'lucide-react'
 import { useDocumentOperation } from '../documents/useDocumentOperation'
-import { askBAAssistant, assistantMessages, type AIMessage, type AISuggestion, type AISuggestionKind } from './ai'
+import {
+  applyEmailDocument,
+  askBAAssistant,
+  assistantMessages,
+  type AIMessage,
+  type AISuggestion,
+  type AISuggestionKind,
+} from './ai'
 import type {
   Client,
   PlannerActivity,
@@ -42,6 +50,7 @@ function saveThreads(threads: Record<string, AIMessage[]>) {
 function suggestionIcon(kind: AISuggestionKind) {
   if (kind === 'activity') return <CalendarPlus size={16} />
   if (kind === 'draft_reply') return <MessageSquareText size={16} />
+  if (kind === 'email_document') return <Mail size={16} />
   if (kind === 'issue') return <TicketCheck size={16} />
   if (kind === 'requirement') return <FileText size={16} />
   return <PlusCircle size={16} />
@@ -50,7 +59,36 @@ function suggestionIcon(kind: AISuggestionKind) {
 function suggestionLabel(kind: AISuggestionKind) {
   if (kind === 'draft_reply') return 'Draft reply'
   if (kind === 'follow_up') return 'Follow-up'
+  if (kind === 'email_document') return 'Link email'
   return kind.charAt(0).toUpperCase() + kind.slice(1)
+}
+
+/** What approving an email suggestion does: the email, the task it goes to, and the document opened after. */
+function emailPlan(suggestion: AISuggestion) {
+  const place = suggestion.newTask ? ` (${suggestion.newTask.clientName} / ${suggestion.newTask.projectName})` : ''
+  const task = suggestion.taskTitle ? `Task: ${suggestion.taskTitle}` : `New task: ${suggestion.newTask?.title}${place}`
+  const then = suggestion.document ? ` · Then: open the ${suggestion.document === 'drf' ? 'DRF' : 'sign-off'}` : ''
+  return `Email: ${suggestion.emailSubject || 'No subject'} · ${task}${then}`
+}
+
+function applyLabel(suggestion: AISuggestion, done: boolean) {
+  if (suggestion.kind === 'email_document')
+    return (
+      <>
+        <Mail size={15} /> {done ? 'Linked' : 'Approve & link'}
+      </>
+    )
+  if (suggestion.kind === 'draft_reply')
+    return (
+      <>
+        <Clipboard size={15} /> Copy draft
+      </>
+    )
+  return (
+    <>
+      <PlusCircle size={15} /> Approve & add
+    </>
+  )
 }
 
 export default function AIAssistant({
@@ -67,6 +105,7 @@ export default function AIAssistant({
   initialPrompt = '',
   onContextChange,
   onApplySuggestion,
+  onWorkChanged,
 }: {
   clients: Client[]
   projects: Project[]
@@ -81,6 +120,8 @@ export default function AIAssistant({
   initialPrompt?: string
   onContextChange?: (clientId: string, projectId: string) => void
   onApplySuggestion: (suggestion: AISuggestion, clientId: string, projectId: string) => string
+  /** The server made a task (from an email): reload the workspace so it shows. */
+  onWorkChanged?: () => Promise<void>
 }) {
   const [clientId, setClientId] = useState(initialClientId)
   const [projectId, setProjectId] = useState(initialProjectId)
@@ -90,6 +131,9 @@ export default function AIAssistant({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [actionNotice, setActionNotice] = useState('')
+  // An email suggestion being carried out, and those already done (so one is not linked twice).
+  const [applying, setApplying] = useState('')
+  const [applied, setApplied] = useState<string[]>([])
 
   useEffect(() => {
     setClientId(initialClientId)
@@ -197,7 +241,29 @@ export default function AIAssistant({
     }
   }
 
+  const applyEmail = async (suggestion: AISuggestion) => {
+    setApplying(suggestion.id)
+    setError('')
+    setActionNotice('')
+    try {
+      const { taskId, created } = await applyEmailDocument(suggestion, currentUser.id)
+      setApplied(done => [...done, suggestion.id])
+      if (created) await onWorkChanged?.()
+      const where = suggestion.taskTitle || suggestion.newTask?.title || 'the task'
+      const opened = suggestion.document === 'drf' ? 'DRF' : suggestion.document === 'signoff' ? 'sign-off' : ''
+      const next = opened ? ` Opening the ${opened} for it.` : ''
+      setActionNotice(`Email linked to “${where}”${created ? ' (new task)' : ''}.${next}`)
+      if (suggestion.document)
+        window.dispatchEvent(new CustomEvent('dochub-create', { detail: { taskId, flow: suggestion.document } }))
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : 'The email could not be linked.')
+    } finally {
+      setApplying('')
+    }
+  }
+
   const applySuggestion = (suggestion: AISuggestion) => {
+    if (suggestion.kind === 'email_document') return void applyEmail(suggestion)
     if (suggestion.kind === 'draft_reply') {
       if (suggestion.draft && navigator.clipboard) {
         navigator.clipboard
@@ -313,6 +379,12 @@ export default function AIAssistant({
           >
             Draft client update
           </button>
+          <button
+            type="button"
+            onClick={() => setInput('I received an email from … about …. Link it to … and prepare a DRF.')}
+          >
+            Link an email
+          </button>
           {currentUser.modules?.includes('trackers') && (
             <button
               type="button"
@@ -370,16 +442,14 @@ export default function AIAssistant({
                       <p>{suggestion.rationale}</p>
                       {suggestion.description && <small>{suggestion.description}</small>}
                       {suggestion.draft && <div className="ai-draft">{suggestion.draft}</div>}
-                      <button className="secondary" type="button" onClick={() => applySuggestion(suggestion)}>
-                        {suggestion.kind === 'draft_reply' ? (
-                          <>
-                            <Clipboard size={15} /> Copy draft
-                          </>
-                        ) : (
-                          <>
-                            <PlusCircle size={15} /> Approve & add
-                          </>
-                        )}
+                      {suggestion.kind === 'email_document' && <small>{emailPlan(suggestion)}</small>}
+                      <button
+                        className="secondary"
+                        type="button"
+                        disabled={applying === suggestion.id || applied.includes(suggestion.id)}
+                        onClick={() => applySuggestion(suggestion)}
+                      >
+                        {applyLabel(suggestion, applied.includes(suggestion.id))}
                       </button>
                     </div>
                   ))}
