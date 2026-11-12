@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### AI BA Assistant: four approve-first actions
+Each is prepared as a card; nothing happens until you approve it. They are offered only to people who may do them (not Viewers).
+- **Follow-up email:** "Remind the client about the printer specs" drafts an email for the task. **Open draft** opens it in the email window, as Reply all on the task's latest email when it has one. Nothing is sent until you press Send.
+- **Notes to tasks:** paste meeting notes and get tasks and subtasks under one client and project, with assignees and due dates. Untick what you don't want, then **Approve & create**. Subtasks follow their task's assignee.
+- **Update a tracker:** "Mark Makati T1 permits done and set go-live to Nov 20" shows each row's change as before → after. **Approve & update** changes those rows; a row someone changed since is left as it is and reported.
+- **Log time:** "Log 2 hours today on Go Live – Makati T1" prepares the entry with its Seeds task and remarks, checked by the task's own time-log rules (a problem is shown and blocks approval). Sending it to Seeds stays on the task.
+
 ### Close a task together with its open subtasks
 - Resolving or closing a task that still has open subtasks (Resolve button, status menu, board, or the task's edit window) no longer stops you. A window lists the open subtasks and asks you to type a word shown (for example *finish*) to confirm; then the task and those subtasks close together, with the same status.
 - Subtasks already finished keep their own status and date. Cancelling leaves everything open.

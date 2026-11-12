@@ -2,6 +2,9 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   Bot,
   CalendarPlus,
+  Clock,
+  ListChecks,
+  PencilLine,
   Table2,
   CheckCircle2,
   Clipboard,
@@ -16,6 +19,12 @@ import {
 import { useDocumentOperation } from '../documents/useDocumentOperation'
 import {
   applyEmailDocument,
+  applyTimeLog,
+  applyTrackerChange,
+  openEmailDraft,
+  plannedRefs,
+  togglePlanned,
+  type TaskPlan,
   askBAAssistant,
   draftDrfFromEmail,
   assistantMessages,
@@ -36,6 +45,7 @@ import { isWaitingOnDone } from '../tasks/waitingOn'
 import { drfPrefillCount } from '../documents/drfPrefill'
 import { createTrackerDraft } from './trackerDraft'
 import ClientSelect from '../../shared/ui/SearchSelect'
+import type { TimeEntryMutationResult } from '../tasks/timeEntries'
 
 const THREAD_STORAGE_KEY = 'ba-client-ops-ai-threads-v1'
 
@@ -56,6 +66,10 @@ function suggestionIcon(kind: AISuggestionKind) {
   if (kind === 'draft_reply') return <MessageSquareText size={16} />
   if (kind === 'email_document') return <Mail size={16} />
   if (kind === 'tracker_draft') return <Table2 size={16} />
+  if (kind === 'email_draft') return <Mail size={16} />
+  if (kind === 'task_plan') return <ListChecks size={16} />
+  if (kind === 'tracker_update') return <PencilLine size={16} />
+  if (kind === 'time_log') return <Clock size={16} />
   if (kind === 'issue') return <TicketCheck size={16} />
   if (kind === 'requirement') return <FileText size={16} />
   return <PlusCircle size={16} />
@@ -66,6 +80,10 @@ function suggestionLabel(kind: AISuggestionKind) {
   if (kind === 'follow_up') return 'Follow-up'
   if (kind === 'email_document') return 'Link email'
   if (kind === 'tracker_draft') return 'Tracker draft'
+  if (kind === 'email_draft') return 'Follow-up email'
+  if (kind === 'task_plan') return 'Tasks from notes'
+  if (kind === 'tracker_update') return 'Tracker update'
+  if (kind === 'time_log') return 'Time log'
   return kind.charAt(0).toUpperCase() + kind.slice(1)
 }
 
@@ -88,7 +106,52 @@ function trackerPlan(suggestion: AISuggestion) {
   return `“${draft.name}” · ${draft.templateName} template${place ? ` · ${place}` : ''} · ${rows}`
 }
 
-function applyLabel(suggestion: AISuggestion, done: boolean) {
+const hoursText = (hours: number) => {
+  const whole = Math.floor(hours),
+    minutes = Math.round((hours - whole) * 60)
+  return [whole ? `${whole}h` : '', minutes ? `${minutes}m` : ''].filter(Boolean).join(' ') || '0m'
+}
+
+/** What approving a time log logs. */
+function timeLogPlan(suggestion: AISuggestion) {
+  const log = suggestion.timeLog
+  if (!log) return ''
+  return [
+    `Task: ${log.taskTitle}`,
+    log.subtaskTitle ? `Subtask: ${log.subtaskTitle}` : '',
+    `${log.date} · ${hoursText(log.hours)}`,
+    log.seeds ? `Seeds task: ${log.seedsTaskName || 'the task’s tag'}` : `Category: ${log.category}`,
+    log.note ? `Remarks: ${log.note}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+function applyLabel(suggestion: AISuggestion, done: boolean, count = 0) {
+  if (suggestion.kind === 'email_draft')
+    return (
+      <>
+        <Mail size={15} /> {done ? 'Opened' : 'Open draft'}
+      </>
+    )
+  if (suggestion.kind === 'task_plan')
+    return (
+      <>
+        <ListChecks size={15} /> {done ? 'Created' : `Approve & create ${count}`}
+      </>
+    )
+  if (suggestion.kind === 'tracker_update')
+    return (
+      <>
+        <PencilLine size={15} /> {done ? 'Updated' : 'Approve & update'}
+      </>
+    )
+  if (suggestion.kind === 'time_log')
+    return (
+      <>
+        <Clock size={15} /> {done ? 'Logged' : 'Approve & log'}
+      </>
+    )
   if (suggestion.kind === 'tracker_draft')
     return (
       <>
@@ -129,6 +192,9 @@ export default function AIAssistant({
   onContextChange,
   onApplySuggestion,
   onWorkChanged,
+  canWriteTasks = false,
+  onCreateTasks,
+  onTimeEntry,
 }: {
   clients: Client[]
   projects: Project[]
@@ -145,6 +211,12 @@ export default function AIAssistant({
   onApplySuggestion: (suggestion: AISuggestion, clientId: string, projectId: string) => string
   /** The server made a task (from an email): reload the workspace so it shows. */
   onWorkChanged?: () => Promise<void>
+  /** Whether this person may add tasks and log time (actions are shown, but not approvable, without it). */
+  canWriteTasks?: boolean
+  /** Creates the ticked tasks of a plan drafted from notes. */
+  onCreateTasks?: (plan: TaskPlan, refs: string[]) => { ok: boolean; message: string }
+  /** A time entry was logged on a task: put it in the workspace. */
+  onTimeEntry?: (result: TimeEntryMutationResult) => void
 }) {
   const [clientId, setClientId] = useState(initialClientId)
   const [projectId, setProjectId] = useState(initialProjectId)
@@ -157,6 +229,10 @@ export default function AIAssistant({
   // An email suggestion being carried out, and those already done (so one is not linked twice).
   const [applying, setApplying] = useState('')
   const [applied, setApplied] = useState<string[]>([])
+  // Which tasks of each plan are ticked (all of them until changed).
+  const [ticked, setTicked] = useState<Record<string, string[]>>({})
+  const tickedOf = (suggestion: AISuggestion) =>
+    ticked[suggestion.id] ?? suggestion.plan?.tasks.map(task => task.ref) ?? []
 
   useEffect(() => {
     setClientId(initialClientId)
@@ -309,8 +385,79 @@ export default function AIAssistant({
     }
   }
 
+  /** Runs an approved action, marking it done when it worked. */
+  const run = async (suggestion: AISuggestion, action: () => Promise<string>, fallback: string) => {
+    setApplying(suggestion.id)
+    setError('')
+    setActionNotice('')
+    try {
+      setActionNotice(await action())
+      setApplied(done => [...done, suggestion.id])
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : fallback)
+    } finally {
+      setApplying('')
+    }
+  }
+
+  const applyEmailDraft = (suggestion: AISuggestion) =>
+    run(
+      suggestion,
+      async () =>
+        (await openEmailDraft(suggestion)) === 'reply'
+          ? 'The draft opened as Reply all on the task’s latest email. Review it there; nothing is sent until you press Send.'
+          : 'The draft opened as a new email filed under the task. Add who it goes to, review it, then send.',
+      'The draft could not be opened.',
+    )
+
+  const applyPlan = (suggestion: AISuggestion) =>
+    run(
+      suggestion,
+      async () => {
+        if (!suggestion.plan || !onCreateTasks) throw new Error('Tasks cannot be created here.')
+        const result = onCreateTasks(suggestion.plan, plannedRefs(suggestion.plan, tickedOf(suggestion)))
+        if (!result.ok) throw new Error(result.message)
+        return result.message
+      },
+      'The tasks could not be created.',
+    )
+
+  const applyTrackerUpdate = (suggestion: AISuggestion) =>
+    run(
+      suggestion,
+      async () => {
+        const change = suggestion.trackerChange
+        if (!change) throw new Error('This update names no rows.')
+        const { done, failed } = await applyTrackerChange(change)
+        if (!done) throw new Error(failed.map(row => `${row.label}: ${row.error}`).join(' '))
+        const rows = `${done} row${done === 1 ? '' : 's'}`
+        const left = failed.length ? ` Not changed: ${failed.map(row => `${row.label} (${row.error})`).join('; ')}` : ''
+        return `Updated ${rows} in “${change.trackerName}”.${left}`
+      },
+      'The tracker could not be updated.',
+    )
+
+  const applyTime = (suggestion: AISuggestion) =>
+    run(
+      suggestion,
+      async () => {
+        const log = suggestion.timeLog
+        if (!log) throw new Error('This time log names no task.')
+        const result = await applyTimeLog(log)
+        onTimeEntry?.(result)
+        return `Logged ${hoursText(log.hours)} on “${log.taskTitle}”.${
+          log.seeds ? ' It is not in Seeds yet: send it from the task’s time log.' : ''
+        }`
+      },
+      'The time could not be logged.',
+    )
+
   const applySuggestion = (suggestion: AISuggestion) => {
     if (suggestion.kind === 'email_document') return void applyEmail(suggestion)
+    if (suggestion.kind === 'email_draft') return void applyEmailDraft(suggestion)
+    if (suggestion.kind === 'task_plan') return void applyPlan(suggestion)
+    if (suggestion.kind === 'tracker_update') return void applyTrackerUpdate(suggestion)
+    if (suggestion.kind === 'time_log') return void applyTime(suggestion)
     if (suggestion.kind === 'tracker_draft') return void applyTracker(suggestion)
     if (suggestion.kind === 'draft_reply') {
       if (suggestion.draft && navigator.clipboard) {
@@ -438,6 +585,26 @@ export default function AIAssistant({
               Draft a tracker
             </button>
           )}
+          {currentUser.modules?.includes('inbox') && (
+            <button type="button" onClick={() => setInput('Remind the client about … on the task ….')}>
+              Follow-up email
+            </button>
+          )}
+          {canWriteTasks && (
+            <button type="button" onClick={() => setInput('Create tasks for … / … from these meeting notes:\n')}>
+              Notes to tasks
+            </button>
+          )}
+          {currentUser.modules?.includes('trackers') && (
+            <button type="button" onClick={() => setInput('In the … tracker, mark … as … and set … to ….')}>
+              Update a tracker
+            </button>
+          )}
+          {canWriteTasks && (
+            <button type="button" onClick={() => setInput('Log 2 hours today on … for ….')}>
+              Log time
+            </button>
+          )}
           {currentUser.modules?.includes('trackers') && (
             <button
               type="button"
@@ -497,13 +664,69 @@ export default function AIAssistant({
                       {suggestion.draft && <div className="ai-draft">{suggestion.draft}</div>}
                       {suggestion.kind === 'email_document' && <small>{emailPlan(suggestion)}</small>}
                       {suggestion.kind === 'tracker_draft' && <small>{trackerPlan(suggestion)}</small>}
+                      {suggestion.kind === 'email_draft' && (
+                        <small>
+                          Task: {suggestion.taskTitle} · Subject: {suggestion.emailSubject}
+                        </small>
+                      )}
+                      {suggestion.kind === 'task_plan' && suggestion.plan && (
+                        <PlanList
+                          plan={suggestion.plan}
+                          ticked={tickedOf(suggestion)}
+                          locked={applied.includes(suggestion.id)}
+                          onToggle={ref =>
+                            setTicked(current => ({
+                              ...current,
+                              [suggestion.id]: togglePlanned(suggestion.plan!, tickedOf(suggestion), ref),
+                            }))
+                          }
+                        />
+                      )}
+                      {suggestion.kind === 'tracker_update' && suggestion.trackerChange && (
+                        <div className="ai-plan">
+                          <small>Tracker: {suggestion.trackerChange.trackerName}</small>
+                          <ul>
+                            {suggestion.trackerChange.rows.map(row => (
+                              <li key={row.rowId}>
+                                <b>
+                                  Row {row.row} · {row.label}
+                                </b>
+                                {row.changes.map(change => (
+                                  <span key={change.column}>
+                                    {change.column}: {change.from} → <strong>{change.to}</strong>
+                                  </span>
+                                ))}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {suggestion.kind === 'time_log' && suggestion.timeLog && (
+                        <>
+                          <small>{timeLogPlan(suggestion)}</small>
+                          {suggestion.timeLog.problem && (
+                            <small className="ai-suggestion-problem">{suggestion.timeLog.problem}</small>
+                          )}
+                        </>
+                      )}
                       <button
                         className="secondary"
                         type="button"
-                        disabled={applying === suggestion.id || applied.includes(suggestion.id)}
+                        disabled={
+                          applying === suggestion.id ||
+                          applied.includes(suggestion.id) ||
+                          ((suggestion.kind === 'task_plan' || suggestion.kind === 'time_log') && !canWriteTasks) ||
+                          (suggestion.kind === 'time_log' && Boolean(suggestion.timeLog?.problem)) ||
+                          (suggestion.kind === 'task_plan' &&
+                            !plannedRefs(suggestion.plan!, tickedOf(suggestion)).length)
+                        }
                         onClick={() => applySuggestion(suggestion)}
                       >
-                        {applyLabel(suggestion, applied.includes(suggestion.id))}
+                        {applyLabel(
+                          suggestion,
+                          applied.includes(suggestion.id),
+                          suggestion.plan ? plannedRefs(suggestion.plan, tickedOf(suggestion)).length : 0,
+                        )}
                       </button>
                     </div>
                   ))}
@@ -535,5 +758,56 @@ export default function AIAssistant({
         </form>
       </div>
     </section>
+  )
+}
+
+/** The tasks of a plan, each with a tick box; subtasks under their task. */
+function PlanList({
+  plan,
+  ticked,
+  locked,
+  onToggle,
+}: {
+  plan: TaskPlan
+  ticked: string[]
+  locked: boolean
+  onToggle: (ref: string) => void
+}) {
+  const tops = plan.tasks.filter(task => !task.parentRef)
+  const under = (ref: string) => plan.tasks.filter(task => task.parentRef === ref)
+  const row = (task: TaskPlan['tasks'][number], subtask: boolean) => (
+    <li key={task.ref} className={subtask ? 'ai-plan-subtask' : ''}>
+      <label>
+        <input
+          type="checkbox"
+          checked={ticked.includes(task.ref)}
+          disabled={locked}
+          onChange={() => onToggle(task.ref)}
+        />
+        <span>
+          <b>{task.title}</b>
+          <small>
+            {[
+              task.parentTitle ? `Subtask of ${task.parentTitle}` : '',
+              subtask ? '' : task.assigneeName ? `For ${task.assigneeName}` : 'Unassigned',
+              task.dueDate ? `Due ${task.dueDate}` : '',
+              task.priority || '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </small>
+        </span>
+      </label>
+    </li>
+  )
+  return (
+    <div className="ai-plan">
+      <small>
+        {plan.clientName} / {plan.projectName} · subtasks follow their task’s assignee
+      </small>
+      <ul>
+        {tops.flatMap(task => [row(task, Boolean(task.parentTaskId)), ...under(task.ref).map(sub => row(sub, true))])}
+      </ul>
+    </div>
   )
 }
