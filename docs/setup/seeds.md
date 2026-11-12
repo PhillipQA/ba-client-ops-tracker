@@ -91,11 +91,24 @@ login page shows **Continue with Google** under the password form.
 - The person picks their Google account; the server checks Google's signature on the answer and signs in the user
   whose **email** (Users & Permissions) is exactly that Google email. No user is ever created this way: an email
   nobody is registered with is refused.
-- Once Seeds is on for the account, the email must also be in Seeds' employee directory (read at each Seeds sync), so
-  someone who has left cannot sign in with Google even if their user here was not disabled.
+- Once Seeds is on, the email must also be in Seeds' active-employee directory (see below).
 - An email registered in more than one account asks which account to open. Two users with the same email in one
   account are refused until an Administrator fixes the duplicate.
 - Password sign-in is unchanged and stays as the backup. Internal Admin signs in with a password only.
+
+## Seeds decides who signs in
+
+Once Seeds is on for the account and a sync has read its active-employee directory (`/users`):
+
+- **Every sign-in**, Google or password, needs the user's email to be an active employee in Seeds. Anyone else is
+  refused with a message saying so. A user with no email cannot be matched and is refused too.
+- **Signed-in sessions end** when someone drops out of the directory: after the next Seeds sync, their next request
+  signs them out.
+- **Administrators are always let in**, so the account cannot be locked out (for example if an Administrator's email
+  differs in Seeds, or Seeds is misconfigured). Internal Admin is not affected.
+- Someone in Seeds without a user here is still refused: an Administrator adds them in Users & Permissions.
+- The check uses the directory from the last sync, so sign-in keeps working while Seeds itself is down. Before Seeds
+  is on, or if its directory is empty, nothing is checked.
 
 **Sending:** a task's time list shows each entry as *Not sent* or *In Seeds*. **Send to Seeds** on the task (your
 entries there) or **Send my time** on the Seeds page (all of yours) asks you to sign in with Google the first time
