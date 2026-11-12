@@ -13,6 +13,7 @@ import LifecycleControls from '../features/tasks/LifecycleControls'
 import { isArchived } from '../features/tasks/lifecycle'
 import AppTour from '../features/onboarding/AppTour'
 import { tourSteps, tourStorageKey, type TourView } from '../features/onboarding/tourSteps'
+import CloseWithSubtasksDialog from '../features/tasks/CloseWithSubtasksDialog'
 import {
   Building2,
   CircleDot,
@@ -116,6 +117,7 @@ function App() {
     reorderSubtasks,
     resetToken,
     resolveItem,
+    closeRequest,
     rtmContext,
     saveActivity,
     saveConflict,
@@ -823,6 +825,7 @@ function App() {
                 />
               ) : null
             })()}
+          {closeRequest && <CloseWithSubtasksDialog request={closeRequest} />}
           {tourOpen && inWorkspace && (
             <AppTour
               steps={tourSteps({

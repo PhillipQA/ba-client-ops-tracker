@@ -8742,3 +8742,25 @@ select option {
   color: #ffb4a8;
   font-size: 13px;
 }
+
+/* Closing a task with open subtasks: confirm by typing a word */
+.close-subtasks-body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 22px 22px;
+}
+.close-subtasks-body ul {
+  margin: 0;
+  padding-left: 20px;
+  max-height: 180px;
+  overflow: auto;
+}
+.close-subtasks-body label {
+  display: grid;
+  gap: 6px;
+}
+.close-subtasks-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

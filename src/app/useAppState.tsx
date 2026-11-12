@@ -63,6 +63,8 @@ import {
 import type { TaskCommentMutationResult } from '../features/tasks/taskComments'
 import type { BoardGroup, TaskLayout } from '../features/tasks/taskBoardModel'
 import type { TimeEntryMutationResult } from '../features/tasks/timeEntries'
+import { closeOpenSubtasks, confirmWord, openSubtasks as findOpenSubtasks } from '../features/tasks/closeSubtasks'
+import type { CloseWithSubtasksRequest } from '../features/tasks/CloseWithSubtasksDialog'
 import type {
   AppModule,
   AppNotification,
@@ -181,6 +183,29 @@ export function useAppState() {
     parentTaskId?: string
   } | null>(null)
   const [modal, setModal] = useState<'item' | 'taskEdit' | 'client' | 'project' | 'activity' | null>(null)
+  /** Asking before a task with open subtasks closes (they close with it). */
+  const [closeRequest, setCloseRequest] = useState<CloseWithSubtasksRequest | null>(null)
+  const confirmCloseWithSubtasks = (task: WorkItem, status: string, subtasks: WorkItem[]) =>
+    new Promise<boolean>(resolve =>
+      setCloseRequest({
+        taskTitle: task.title,
+        status,
+        subtasks: subtasks.map(subtask => subtask.title),
+        word: confirmWord(),
+        answer: confirmed => {
+          setCloseRequest(null)
+          resolve(confirmed)
+        },
+      }),
+    )
+  /** The activity line for subtasks closed with their task. */
+  const closedSubtasksNote = (task: WorkItem, count: number, date: string) => ({
+    id: crypto.randomUUID(),
+    clientId: task.clientId,
+    projectId: task.projectId,
+    date,
+    text: `Closed ${count} open subtask${count === 1 ? '' : 's'} with task: ${task.title}`,
+  })
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null)
   const [aiClientId, setAiClientId] = useState('')
   const [aiProjectId, setAiProjectId] = useState('')
@@ -1334,32 +1359,26 @@ export function useAppState() {
   }, [view, selectedProject?.name, selectedClient?.name, Boolean(currentUser)])
   const editingTask = editingTaskId ? (store.items.find(item => item.id === editingTaskId) ?? null) : null
 
-  const resolveItem = (id: string) => {
+  const resolveItem = async (id: string) => {
     if (!canWriteTasks) return
-    const now = new Date().toISOString().slice(0, 10)
-    const target = store.items.find(item => item.id === id)
+    const before = storeRef.current
+    const target = before.items.find(item => item.id === id)
     if (!target) return
-    const openSubtasks = store.items.filter(
-      item =>
-        item.parentTaskId === id &&
-        !isTaskClosed(item.status, store.taskSettings) &&
-        !isWaitingOnDone(item.waitingOn, store.taskSettings),
-    )
-    if (openSubtasks.length) {
-      window.alert(
-        `Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before completing this task.`,
-      )
-      return
-    }
-    const closedStatus = defaultClosedTaskStatus(store.taskSettings)
+    const closedStatus = defaultClosedTaskStatus(before.taskSettings)
+    // Open subtasks close with the task, once the person confirms.
+    const open = findOpenSubtasks(before.items, id, before.taskSettings)
+    if (open.length && !(await confirmCloseWithSubtasks(target, closedStatus, open))) return
+    const current = storeRef.current
+    const now = new Date().toISOString().slice(0, 10)
+    const closing = findOpenSubtasks(current.items, id, current.taskSettings).length
     persist({
-      ...store,
-      items: store.items.map(item =>
+      ...current,
+      items: closeOpenSubtasks(current.items, id, closedStatus, current.taskSettings, now).map(item =>
         item.id === id
           ? {
               ...item,
               status: closedStatus,
-              waitingOn: doneWaitingOn(store.taskSettings),
+              waitingOn: doneWaitingOn(current.taskSettings),
               followUpDate: '',
               resolvedDate: now,
             }
@@ -1373,7 +1392,8 @@ export function useAppState() {
           date: now,
           text: `Completed task: ${target.title}`,
         },
-        ...store.activity,
+        ...(closing ? [closedSubtasksNote(target, closing, now)] : []),
+        ...current.activity,
       ],
     })
   }
@@ -1438,29 +1458,26 @@ export function useAppState() {
     if (saved !== false) setTaskArchiveView('active')
   }
 
-  const updateTaskStatus = (id: string, status: string) => {
+  const updateTaskStatus = async (id: string, status: string) => {
     if (!canWriteTasks) return
+    const before = storeRef.current
+    const original = before.items.find(item => item.id === id)
+    if (!original || original.status === status) return
+    // Closing with open subtasks: they close with it, once the person confirms.
+    const open = isTaskClosed(status, before.taskSettings)
+      ? findOpenSubtasks(before.items, id, before.taskSettings)
+      : []
+    if (open.length && !(await confirmCloseWithSubtasks(original, status, open))) return
+    const store = storeRef.current
     const target = store.items.find(item => item.id === id)
     if (!target || target.status === status) return
     const closed = isTaskClosed(status, store.taskSettings)
-    const openSubtasks = closed
-      ? store.items.filter(
-          item =>
-            item.parentTaskId === id &&
-            !isTaskClosed(item.status, store.taskSettings) &&
-            !isWaitingOnDone(item.waitingOn, store.taskSettings),
-        )
-      : []
-    if (openSubtasks.length) {
-      window.alert(
-        `Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`,
-      )
-      return
-    }
+    const closing = closed ? findOpenSubtasks(store.items, id, store.taskSettings).length : 0
     const reopened = isTaskClosed(target.status, store.taskSettings) && !closed
+    const items = closed ? closeOpenSubtasks(store.items, id, status, store.taskSettings, today) : store.items
     persist({
       ...store,
-      items: store.items.map(item =>
+      items: items.map(item =>
         item.id === id
           ? {
               ...item,
@@ -1483,6 +1500,7 @@ export function useAppState() {
           date: today,
           text: `Task status changed: ${target.title} → ${status}`,
         },
+        ...(closing ? [closedSubtasksNote(target, closing, today)] : []),
         ...store.activity,
       ],
     })
@@ -1521,23 +1539,23 @@ export function useAppState() {
     try {
       // A prior optimistic save may have failed. Allow this confirmed edit to retry.
       await waitForCloudSaves().catch(() => undefined)
+      // Closing with open subtasks: they close with it, once the person confirms.
+      const before = storeRef.current
+      const beforeTask = before.items.find(item => item.id === updated.id)
+      if (
+        beforeTask &&
+        isTaskClosed(updated.status, before.taskSettings) &&
+        !isTaskClosed(beforeTask.status, before.taskSettings)
+      ) {
+        const open = findOpenSubtasks(before.items, updated.id, before.taskSettings)
+        if (open.length && !(await confirmCloseWithSubtasks(beforeTask, updated.status, open)))
+          throw new Error('Not saved. The task and its open subtasks were left open.')
+      }
       const current = storeRef.current
       const previous = current.items.find(item => item.id === updated.id)
       if (!previous) throw new Error('This task is no longer available. Reload the workspace and try again.')
       const closed = isTaskClosed(updated.status, current.taskSettings)
-      const openSubtasks = closed
-        ? current.items.filter(
-            item =>
-              item.parentTaskId === updated.id &&
-              !isTaskClosed(item.status, current.taskSettings) &&
-              !isWaitingOnDone(item.waitingOn, current.taskSettings),
-          )
-        : []
-      if (openSubtasks.length) {
-        throw new Error(
-          `Complete the ${openSubtasks.length} open subtask${openSubtasks.length === 1 ? '' : 's'} before closing this task.`,
-        )
-      }
+      const closing = closed ? findOpenSubtasks(current.items, updated.id, current.taskSettings).length : 0
       const normalized: WorkItem = {
         ...updated,
         title: previous.title,
@@ -1558,7 +1576,10 @@ export function useAppState() {
             ? { ...item, projectId: normalized.projectId }
             : item,
       )
-      const inheritedItems = applySubtaskAssignmentInheritance(current.items, editedItems)
+      const closedItems = closed
+        ? closeOpenSubtasks(editedItems, updated.id, updated.status, current.taskSettings, today)
+        : editedItems
+      const inheritedItems = applySubtaskAssignmentInheritance(current.items, closedItems)
       const next: Store = {
         ...current,
         items: inheritedItems.map(item => ({
@@ -1575,6 +1596,7 @@ export function useAppState() {
             date: today,
             text: `Updated task: ${previous.title}`,
           },
+          ...(closing ? [closedSubtasksNote(previous, closing, today)] : []),
           ...current.activity,
         ],
       }
@@ -2109,6 +2131,7 @@ export function useAppState() {
   }
   return {
     acceptAccountUsers,
+    closeRequest,
     actionCenterClientCount,
     actionCenterInquiryCount,
     actionCenterScope,
