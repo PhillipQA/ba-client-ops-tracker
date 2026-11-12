@@ -11,6 +11,22 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Tracker folders
+**Database update:** run [database/migrations/schema-v36-tracker-members.sql](database/migrations/schema-v36-tracker-members.sql) on the live database before deploying (it adds `tenant_trackers.members`). Until it runs, everything works except adding people to a tracker.
+
+- **Every person has a folder** on the Trackers page, made from the account's people, so a new person has one from the start. Nothing to create.
+- **A tracker shows in the folder of each of its users:** its creator, the people on its projects (from Seeds, or an Administrator's assignments), and anyone its creator or an Administrator adds under **Tracker details › Users**. It is the same tracker in each folder, not a copy.
+- **My folder / Folders / All trackers:** the page opens on your folder; Folders lists everyone's (yours first) with how many trackers each holds; All trackers is the full list. Folders show only trackers you may open, so a private tracker stays in its creator's folder only.
+- **Layouts:** trackers as **Tile**, **List** or **Table** (the previous list), and folders as **Tile** or **Row**. Your choice is remembered in this browser. Search, the client filter and Show archived apply in every view.
+
+### Seeds time: type your own remarks
+- Choosing a subtask on a time entry fills in the remarks as "subtask – task", and they can now be edited or replaced. Typed remarks are what Seeds receives; with a subtask and empty remarks, "subtask – task" is used.
+
+### DocHub: void a request, remove a document
+- **Void request:** a DRF or sign-off sent for signature but not fully signed can be voided from its details in the tracker. DocHub cancels the request, so signatories who have not signed can no longer sign it. The latest status is checked first, so a document signed in the meantime is never voided.
+- **Remove from tracker:** takes a document off Document history and its task (a note is added to the task's activity). Fully signed documents are kept as the signing record; a request still out for signature has to be voided first. Nothing is deleted in DocHub.
+- **Deleted in DocHub:** a document deleted directly in DocHub (DocHub answers 404) now shows as *Deleted in DocHub* instead of an error, is no longer checked in the background, and has a **Remove** button on its row.
+
 ### Type into report tables
 - In a custom report, a table that comes from one tracker can be typed into: tap a cell in a column marked ✎, type, and press Enter. It saves to that row in the tracker.
 - Works for text, long text, number and date columns, for people who can edit that tracker, and only when the query reads one tracker without JOIN, GROUP BY, DISTINCT, UNION or WITH. A column picked as `remarks` or `COALESCE(remarks, '') AS remarks` counts; a CASE or other worked-out value does not.

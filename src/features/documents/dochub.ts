@@ -68,6 +68,22 @@ export const docHubLabels: Record<string, string> = {
   UNKNOWN: 'Status unavailable',
   REVIEW_REQUIRED: 'Import needs review',
   IMPORT_FAILED: 'Import failed',
+  MISSING: 'Deleted in DocHub',
+}
+
+/** A sent request that is not fully signed: it can be voided from the tracker so no one can sign it any more. */
+const VOIDABLE_STATUSES = ['SENT', 'VIEWED', 'PARTIALLY_SIGNED', 'BOUNCE', 'ERROR']
+export function canVoidDocHub(doc: Pick<DocHubDocument, 'status' | 'signRequestId'>): boolean {
+  return VOIDABLE_STATUSES.includes(String(doc.status || '').toUpperCase()) && Boolean(doc.signRequestId)
+}
+/**
+ * Removing a document only takes it off the tracker. Kept: fully signed records, and requests still out for signature
+ * (void those first, so nobody signs a document the tracker no longer follows). A request DocHub reports as an error
+ * may not be voidable, so it can be removed too.
+ */
+const KEPT_STATUSES = ['SENT', 'VIEWED', 'PARTIALLY_SIGNED', 'BOUNCE', 'UNKNOWN', 'COMPLETED', 'COMPLETE', 'DONE']
+export function canRemoveDocHub(status: string): boolean {
+  return !KEPT_STATUSES.includes(String(status || '').toUpperCase())
 }
 
 export function isDocHubSignerSigned(signer: Pick<DocHubSigner, 'signedAt' | 'status'>): boolean {
@@ -88,6 +104,8 @@ export function docHubGuidance(doc: Pick<DocHubDocument, 'status' | 'setupNote'>
       doc.setupNote || 'Open DocHub to place and assign the signature fields, then review and send the request there.'
     )
   const messages: Record<string, string> = {
+    MISSING: 'This document no longer exists in DocHub, so it can’t be signed. Remove it from the tracker.',
+    VOIDED: 'The signature request was voided. Signatories can no longer sign it.',
     READY_TO_REVIEW: 'Signature fields are ready. Open DocHub to review and send the request.',
     SENT: 'The request has been sent. Waiting for the signatories to sign.',
     VIEWED: 'The document has been viewed. Remaining signatures are pending.',

@@ -39,7 +39,7 @@ createdb ba_tracker
 psql "postgresql://localhost/ba_tracker" -v ON_ERROR_STOP=1 -f database/schema.sql
 ```
 
-It ends with `BA Client Ops Tracker database ready | 35`. No `psql`? Open `database/schema.sql` in DBeaver, connected to the empty database, and run the whole script. More in [database/README.md](database/README.md).
+It ends with `BA Client Ops Tracker database ready | 36`. No `psql`? Open `database/schema.sql` in DBeaver, connected to the empty database, and run the whole script. More in [database/README.md](database/README.md).
 
 **3. Add your settings**
 

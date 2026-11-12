@@ -110,8 +110,12 @@ export default function TrackerScreen(props: Props) {
   const [tracker, setTrackerState] = useState<Tracker | null>(null)
   const trackerRef = useRef<Tracker | null>(null)
   const setTracker = (next: Tracker | null) => {
-    trackerRef.current = next
-    setTrackerState(next)
+    // Only some answers carry the tracker's users (they need the workspace); the others keep the last known list.
+    const previous = trackerRef.current
+    const kept =
+      next && !next.users && previous?.id === next.id && previous.users ? { ...next, users: previous.users } : next
+    trackerRef.current = kept
+    setTrackerState(kept)
   }
   const [rows, setRowsState] = useState<TrackerRow[]>([])
   const rowsRef = useRef<TrackerRow[]>([])
@@ -2865,6 +2869,9 @@ export default function TrackerScreen(props: Props) {
           tracker={tracker}
           clients={props.clients}
           projects={props.projects}
+          people={props.accounts
+            .filter(account => account.status === 'Active')
+            .map(account => ({ id: account.id, name: account.name || account.username }))}
           onClose={() => setDetails(false)}
           onSave={async body => {
             const result = await trackerApi.update(trackerId, body)

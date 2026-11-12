@@ -55,10 +55,10 @@ export const MAX_SEEDS_REMARKS_LENGTH = 120
 
 /**
  * Once Seeds is on, time is logged on the **task**, never on a subtask. An entry may name one of the task's subtasks:
- * its remarks are then "subtask – task" ("Go Live – Makati T1"), so entries for same-named steps of different sites
- * stay apart in Seeds (Seeds requires remarks, up to 120 characters). Without a subtask, the
- * remarks are typed. Each entry counts toward a Seeds task from the project's list: the one chosen, else the
- * subtask's tag, else the task's tag; without any, no time can be logged.
+ * its remarks are then filled in as "subtask – task" ("Go Live – Makati T1"), so entries for same-named steps of
+ * different sites stay apart in Seeds, and the person can edit them (Seeds requires remarks, up to 120 characters).
+ * Without a subtask, the remarks are typed. Each entry counts toward a Seeds task from the project's list: the one
+ * chosen, else the subtask's tag, else the task's tag; without any, no time can be logged.
  */
 export type SeedsTimeRule = {
   /** The Seeds tasks an entry may count toward (its project's list). */
@@ -299,12 +299,9 @@ function validateSeedsEntry(
     typeof body.seedsTaskId === 'string' && body.seedsTaskId ? body.seedsTaskId : defaultSeedsTask(seeds, subtaskId)
   if (!seedsTaskId) return { ok: false, error: 'Tag a Seeds task on this task (or the subtask) before logging time.' }
   if (!seeds.tasks.some(task => task.id === seedsTaskId)) return { ok: false, error: 'Choose a Seeds task.' }
-  // Seeds requires remarks: the subtask's title, or what was typed.
-  const note = subtask
-    ? subtaskRemarks(subtask.title, seeds.taskTitle)
-    : typeof body.note === 'string'
-      ? body.note.trim()
-      : ''
+  // Seeds requires remarks: what was typed, else "subtask – task" for an entry for a subtask.
+  const typed = typeof body.note === 'string' ? body.note.trim() : ''
+  const note = typed || (subtask ? subtaskRemarks(subtask.title, seeds.taskTitle) : '')
   if (!note) return { ok: false, error: 'Enter the remarks, or choose a subtask (its title becomes the remarks).' }
   if (note.length > MAX_SEEDS_REMARKS_LENGTH)
     return { ok: false, error: `Remarks must be ${MAX_SEEDS_REMARKS_LENGTH} characters or fewer.` }

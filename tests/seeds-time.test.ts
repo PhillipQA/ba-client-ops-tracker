@@ -63,7 +63,7 @@ test('once Seeds is on, time is logged on the task; a subtask points there', () 
 
 test('an entry for a subtask takes its title as remarks, and its Seeds task tag first', () => {
   const s = state()
-  const printers = log(s, 't-go', { date: '2026-11-08', hours: 1.75, subtaskId: 's-printers', note: 'ignored' })
+  const printers = log(s, 't-go', { date: '2026-11-08', hours: 1.75, subtaskId: 's-printers' })
   assert.ok(printers.ok)
   assert.deepEqual(
     [
@@ -79,6 +79,10 @@ test('an entry for a subtask takes its title as remarks, and its Seeds task tag 
   assert.ok(call.ok && call.value.entry.seedsTaskId === 'st-meet', 'the subtask’s own Seeds task wins')
   const chosen = log(s, 't-go', { date: '2026-11-09', hours: 0.5, subtaskId: 's-call', seedsTaskId: 'st-golive' })
   assert.ok(chosen.ok && chosen.value.entry.seedsTaskId === 'st-golive', 'or the one chosen for the entry')
+  const note = '  Printer setup, Makati T1 '
+  const typed = log(s, 't-go', { date: '2026-11-09', hours: 1, subtaskId: 's-printers', note })
+  assert.ok(typed.ok && typed.value.entry.note === 'Printer setup, Makati T1', 'remarks typed for a subtask are kept')
+  assert.ok(typed.ok && typed.value.entry.subtaskId === 's-printers')
   const long = {
     ...state(),
     items: [...state().items, { id: 's-long', title: 'y'.repeat(200), projectId: 'p-seeds', parentTaskId: 't-go' }],
