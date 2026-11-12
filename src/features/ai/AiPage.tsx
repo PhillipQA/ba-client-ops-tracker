@@ -11,6 +11,9 @@ export function AiPage({ app, currentUser }: { app: AppState; currentUser: Signe
     aiProjectId,
     aiPrompt,
     applyAISuggestion,
+    applyTimeEntryMutation,
+    canWriteTasks,
+    createPlannedTasks,
     setAiClientId,
     setAiProjectId,
     setAiPrompt,
@@ -37,6 +40,9 @@ export function AiPage({ app, currentUser }: { app: AppState; currentUser: Signe
           setAiPrompt('')
         }}
         onApplySuggestion={applyAISuggestion}
+        canWriteTasks={canWriteTasks}
+        onCreateTasks={createPlannedTasks}
+        onTimeEntry={applyTimeEntryMutation}
         onWorkChanged={async () => {
           const result = await loadCloudStore<Store>()
           if (result.data) setStore(normalizeStore(result.data, seedStore()))

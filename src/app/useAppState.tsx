@@ -43,7 +43,7 @@ import {
 } from './cloudStore'
 import { mergeWorkspace } from './workspaceMerge'
 import { settingsRequest } from '../features/settings/Settings'
-import { askBAAssistant, assistantMessages, type AIMessage, type AISuggestion } from '../features/ai/ai'
+import { askBAAssistant, assistantMessages, type AIMessage, type AISuggestion, type TaskPlan } from '../features/ai/ai'
 import type { DrfPrefill } from '../features/documents/drfPrefill'
 import {
   defaultWaitingOn,
@@ -2129,6 +2129,90 @@ export function useAppState() {
     })
     return `Created ${type.toLowerCase()} task: ${suggestion.title}`
   }
+
+  /**
+   * Creates the ticked tasks of a plan the AI assistant drafted from notes, in one save: tasks first, then subtasks
+   * under them (or under an open task of the project). Subtasks take their task's assignee, as everywhere else.
+   */
+  const createPlannedTasks = (plan: TaskPlan, refs: string[]): { ok: boolean; message: string } => {
+    if (!canWriteTasks) return { ok: false, message: 'Task write access is required to create tasks.' }
+    const current = storeRef.current
+    const locked = archivedWorkReason(current, { clientId: plan.clientId, projectId: plan.projectId })
+    if (locked) return { ok: false, message: locked }
+    const chosen = new Set(refs)
+    const ids = new Map<string, string>()
+    const made: WorkItem[] = []
+    const nextOrder = new Map<string, number>()
+    const orderUnder = (parentId: string) => {
+      const next =
+        nextOrder.get(parentId) ??
+        Math.max(
+          -1,
+          ...current.items.filter(item => item.parentTaskId === parentId).map(item => item.subtaskOrder ?? -1),
+        ) + 1
+      nextOrder.set(parentId, next + 1)
+      return next
+    }
+    for (const subtasks of [false, true])
+      for (const task of plan.tasks) {
+        const isSubtask = Boolean(task.parentRef || task.parentTaskId)
+        if (!chosen.has(task.ref) || isSubtask !== subtasks) continue
+        const parentId = task.parentRef ? ids.get(task.parentRef) : task.parentTaskId
+        const parent = parentId
+          ? made.find(item => item.id === parentId) || current.items.find(item => item.id === parentId)
+          : undefined
+        if (isSubtask && (!parent || isTaskClosed(parent.status, current.taskSettings))) continue
+        const id = crypto.randomUUID()
+        ids.set(task.ref, id)
+        const assignedToUserId = parent ? parent.assignedToUserId : task.assigneeId
+        made.push({
+          id,
+          clientId: plan.clientId,
+          projectId: plan.projectId,
+          title: task.title,
+          type: 'Task',
+          priority: task.priority || 'Medium',
+          status: defaultOpenTaskStatus(current.taskSettings),
+          waitingOn: defaultWaitingOn(current.taskSettings),
+          assignedToUserId,
+          assignmentInherited: parent ? true : undefined,
+          owner: assignedToUserId ? current.accounts.find(account => account.id === assignedToUserId)?.name || '' : '',
+          parentTaskId: parent?.id,
+          subtaskOrder: parent ? orderUnder(parent.id) : undefined,
+          dateRaised: today,
+          startDate: '',
+          dueDate: task.dueDate || '',
+          followUpDate: '',
+          description: task.description || '',
+          resolution: '',
+          source: 'Internal',
+        })
+      }
+    if (!made.length) return { ok: false, message: 'Nothing to create: tick at least one task.' }
+    const subtaskCount = made.filter(item => item.parentTaskId).length
+    const taskCount = made.length - subtaskCount
+    const counts = [
+      taskCount ? `${taskCount} task${taskCount === 1 ? '' : 's'}` : '',
+      subtaskCount ? `${subtaskCount} subtask${subtaskCount === 1 ? '' : 's'}` : '',
+    ]
+      .filter(Boolean)
+      .join(' and ')
+    persist({
+      ...current,
+      items: [...made, ...current.items],
+      activity: [
+        {
+          id: crypto.randomUUID(),
+          clientId: plan.clientId,
+          projectId: plan.projectId,
+          date: today,
+          text: `AI plan approved: created ${counts} in ${plan.projectName}`,
+        },
+        ...current.activity,
+      ],
+    })
+    return { ok: true, message: `Created ${counts} in ${plan.clientName} / ${plan.projectName}.` }
+  }
   return {
     acceptAccountUsers,
     closeRequest,
@@ -2147,6 +2231,7 @@ export function useAppState() {
     aiProjectId,
     aiPrompt,
     applyAISuggestion,
+    createPlannedTasks,
     applyCommentMutation,
     applyEvidenceMutation,
     applyTimeEntryMutation,
