@@ -238,6 +238,18 @@ export function driveClient(token: string) {
         throw new IntegrationError(bytes.length ? 'This file is too large.' : 'This file is empty.', 413)
       return bytes
     },
+    /** Moves a file to the Drive trash (it can be restored there for 30 days). A file already gone is fine. */
+    async trash(id: string) {
+      try {
+        await call(`${DRIVE}/files/${encodeURIComponent(id)}?fields=id&supportsAllDrives=true`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trashed: true }),
+        })
+      } catch (error) {
+        if ((error as any)?.upstreamStatus !== 404) throw error
+      }
+    },
     /** An empty Google Sheet in a folder. */
     async createSheet(name: string, parentId: string) {
       const { data } = await call(`${DRIVE}/files?fields=id&supportsAllDrives=true`, {
@@ -324,9 +336,17 @@ export type SheetJob = {
   /** The Google account that will fill and sync the Sheet; it is made an editor. */
   editorEmail: string
 }
+/** A file kept in a task's Drive folder but listed elsewhere (task evidence), not in the task's Drive files. */
+export type StoreJob = { tenantId: string; taskId: string; name: string; mimeType: string; bytes: Buffer }
 export type DriveFiler = {
   ready: (tenantId: string) => Promise<boolean>
   file: (job: FileJob) => Promise<FileResult>
+  /** Uploads into the task's Client / Project / Task / Subtask folder; the caller lists it. */
+  store?: (job: StoreJob) => Promise<{ fileId: string; url: string; path: string[] }>
+  /** Bytes of a file the app put in Drive, refused above maxBytes. */
+  read?: (tenantId: string, fileId: string, maxBytes: number) => Promise<Buffer>
+  /** Moves a file the app put in Drive to the trash. */
+  trash?: (tenantId: string, fileId: string) => Promise<void>
   /** An empty Google Sheet in the account Drive, under Client / Project, that the editor can fill. */
   sheet?: (job: SheetJob) => Promise<{ spreadsheetId: string; path: string[] }>
 }
@@ -977,6 +997,41 @@ export function registerDrive(app: Express, deps: Deps) {
       await drive.shareWith(spreadsheetId, job.editorEmail)
     return { spreadsheetId, path: [DRIVE_ROOT_NAME, ...steps.map(step => step.name)] }
   }
-  const filer: DriveFiler = { ready: driveReady, file: fileInDrive, sheet: sheetInDrive }
+  /** The account Drive, ready to use: its client, and the root folder (made again if it was deleted). */
+  const openDrive = async (tenantId: string) => {
+    const { row, config } = await liveConnection(tenantId)
+    const drive = driveClient(await accessToken(tenantId, row, config))
+    const rootId =
+      (row.root_folder_id && (await drive.existingFolder(row.root_folder_id, DRIVE_ROOT_NAME))) ||
+      (await drive.createFolder(DRIVE_ROOT_NAME))
+    return { drive, row, rootId }
+  }
+  /** A file for a task's folder that the task lists itself (evidence): uploaded, but not added to its Drive files. */
+  const storeInDrive = async (job: StoreJob) => {
+    const state = (await deps.load(job.tenantId)).data
+    if (!state) throw new IntegrationError('Workspace data is unavailable.', 503)
+    const steps = driveFolderPath(state, job.taskId)
+    const { drive, row, rootId } = await openDrive(job.tenantId)
+    const resolved = await ensureDrivePath(drive, rootId, rootId === row.root_folder_id ? row.folders || {} : {}, steps)
+    await saveFolders(job.tenantId, { root_folder_id: rootId, folders: resolved.folders })
+    const fileId = await drive.upload(resolved.folderId, driveName(job.name, 'evidence'), job.mimeType, job.bytes)
+    return { fileId, url: driveFileUrl(fileId), path: [DRIVE_ROOT_NAME, ...steps.map(step => step.name)] }
+  }
+  const readFromDrive = async (tenantId: string, fileId: string, maxBytes: number) => {
+    const { row, config } = await liveConnection(tenantId)
+    return driveClient(await accessToken(tenantId, row, config)).download(fileId, maxBytes)
+  }
+  const trashInDrive = async (tenantId: string, fileId: string) => {
+    const { row, config } = await liveConnection(tenantId)
+    await driveClient(await accessToken(tenantId, row, config)).trash(fileId)
+  }
+  const filer: DriveFiler = {
+    ready: driveReady,
+    file: fileInDrive,
+    sheet: sheetInDrive,
+    store: storeInDrive,
+    read: readFromDrive,
+    trash: trashInDrive,
+  }
   return { handles, callback, filer, taskFile }
 }

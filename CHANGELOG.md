@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Task evidence in Google Drive
+**No database migration.** Needs Google Drive connected in Settings › Integrations (as for Gmail attachments).
+- New evidence (screenshots and files) is saved in the task's folder in the team Drive: Client / Project / Task / Subtask, next to the email attachments and signed documents. **Open** in the app works for everyone as before; a **Drive** link opens it in Google Drive for people with access to the team folder.
+- **Tasks can have evidence too**, not only subtasks.
+- Removing evidence moves its Drive copy to the Drive trash (restorable for 30 days).
+- **Moving older files:** Settings › Integrations › Google Drive shows how many evidence files are still in the app's database, with **Move N files to Drive**. Files move in batches; each is removed from the database only after it is saved in Drive and its task points to it. Archived work is included.
+- Without Drive connected, evidence is still saved in the database, as before.
+
 ### Close a task together with its open subtasks
 - Resolving or closing a task that still has open subtasks (Resolve button, status menu, board, or the task's edit window) no longer stops you. A window lists the open subtasks and asks you to type a word shown (for example *finish*) to confirm; then the task and those subtasks close together, with the same status.
 - Subtasks already finished keep their own status and date. Cancelling leaves everything open.

@@ -762,11 +762,9 @@ export function TaskEditForm({
       <Fold id="comments" title="Comments" meta={`${item.comments?.length || 0}`}>
         <WorkCommentTrail item={item} onMutation={onCommentMutation} />
       </Fold>
-      {parent && (
-        <Fold id="evidence" title="Evidence" meta={`${item.evidence?.length || 0}`}>
-          <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />
-        </Fold>
-      )}
+      <Fold id="evidence" title="Evidence" meta={`${item.evidence?.length || 0}`}>
+        <SubtaskEvidencePanel item={item} onMutation={onEvidenceMutation} />
+      </Fold>
       {Boolean(item.driveFiles?.length) && (
         <Fold id="drive" title="Drive files" meta={`${item.driveFiles?.length || 0}`}>
           <TaskDriveFiles item={item} />
@@ -1041,7 +1039,9 @@ export function SubtaskEvidencePanel({
   }
 
   const removeEvidence = async (entry: TaskEvidence) => {
-    if (busy || !window.confirm(`Remove evidence "${entry.fileName}" from this subtask?`)) return
+    const where = item.parentTaskId ? 'subtask' : 'task'
+    const drive = entry.driveFileId ? ' Its copy in Google Drive goes to the Drive trash.' : ''
+    if (busy || !window.confirm(`Remove evidence "${entry.fileName}" from this ${where}?${drive}`)) return
     setBusy(true)
     setMessage('')
     try {
@@ -1080,7 +1080,9 @@ export function SubtaskEvidencePanel({
             <Paperclip size={15} /> Activity evidence
           </strong>
           <span>
-            Attach a file, drag and drop, or paste a screenshot with Ctrl+V. Files are stored privately in the database.
+            Attach a file, drag and drop, or paste a screenshot with Ctrl+V. Files are saved in the team Google Drive,
+            in this {item.parentTaskId ? 'subtask' : 'task'}’s folder (in the app’s database when Drive is not
+            connected).
           </span>
         </div>
         <span className="count-pill">{evidence.length}</span>
@@ -1128,6 +1130,7 @@ export function SubtaskEvidencePanel({
                   <span>
                     {entry.kind} · {evidenceSize(entry.fileSize)} · {evidenceDate(entry.uploadedAt)}
                     {entry.uploadedByName ? ` · ${entry.uploadedByName}` : ''}
+                    {entry.driveFileId ? ' · Google Drive' : ''}
                   </span>
                 </div>
               </div>
@@ -1140,6 +1143,17 @@ export function SubtaskEvidencePanel({
                 >
                   Open
                 </a>
+                {entry.driveUrl && (
+                  <a
+                    className="secondary compact"
+                    href={entry.driveUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open in Google Drive (needs access to the team Drive)"
+                  >
+                    Drive
+                  </a>
+                )}
                 <button
                   type="button"
                   className="icon-button danger-button"
