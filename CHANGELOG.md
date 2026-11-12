@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Close a task together with its open subtasks
+- Resolving or closing a task that still has open subtasks (Resolve button, status menu, board, or the task's edit window) no longer stops you. A window lists the open subtasks and asks you to type a word shown (for example *finish*) to confirm; then the task and those subtasks close together, with the same status.
+- Subtasks already finished keep their own status and date. Cancelling leaves everything open.
+
 ### Seeds decides who signs in
 - Once Seeds is on, **every sign-in** (Google or password) needs the user's email to be an active employee in Seeds. Others are refused with a message saying so.
 - Someone removed from Seeds is **signed out** after the next Seeds sync.
