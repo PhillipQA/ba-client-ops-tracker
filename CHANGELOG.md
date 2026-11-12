@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Link an existing Google Sheet to a tracker
+- A tracker's **Import** window has a new **Link an existing Google Sheet** button (shown when the tracker isn't following a Sheet yet). Pick the Sheet and tab, choose the task name column and what each column becomes, then **Link and sync**: the tracker follows that tab from then on, the same as a tracker made from a Sheet.
+- Rows the tracker already has are not doubled: a tracker row whose task name matches a Sheet row is linked to it and updated from the Sheet. Other Sheet rows are added; tracker rows with no match stay as they are.
+- Stopping the sync now points to this button for linking a Sheet again.
 ### Task evidence in Google Drive
 **No database migration.** Needs Google Drive connected in Settings › Integrations (as for Gmail attachments).
 - New evidence (screenshots and files) is saved in the task's folder in the team Drive: Client / Project / Task / Subtask, next to the email attachments and signed documents. **Open** in the app works for everyone as before; a **Drive** link opens it in Google Drive for people with access to the team folder.
