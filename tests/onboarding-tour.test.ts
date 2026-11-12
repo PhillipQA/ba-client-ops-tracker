@@ -2,34 +2,64 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { tourSteps, tourStorageKey } from '../src/features/onboarding/tourSteps'
 
-const ALL = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'trackers', 'reports', 'settings']
+const ALL = ['action', 'clients', 'projects', 'inbox', 'items', 'documents', 'trackers', 'reports', 'ai', 'settings']
 const ids = (steps: { id: string }[]) => steps.map(step => step.id)
 
-test('Administrators set up the account first, then their own Gmail and calendar, then daily work', () => {
+test('the tour follows a working day: Action Center to Settings, with account setup last for Administrators', () => {
   const steps = ids(tourSteps({ isAdmin: true, modules: ALL, canWrite: true }))
-  assert.equal(steps[0], 'welcome')
-  assert.equal(steps.at(-1), 'done')
-  for (const id of ['admin-settings', 'admin-integrations', 'admin-templates', 'admin-agents', 'admin-users'])
-    assert.ok(steps.indexOf(id) < steps.indexOf('gmail'), id)
-  assert.ok(steps.indexOf('gmail') < steps.indexOf('action'))
-  assert.ok(steps.indexOf('calendar') < steps.indexOf('seeds'))
+  assert.deepEqual(steps, [
+    'welcome',
+    'action',
+    'calendar',
+    'workhub',
+    'gmail',
+    'discord',
+    'gitlab',
+    'trackers',
+    'documents',
+    'reports',
+    'ai',
+    'settings',
+    'admin-integrations',
+    'admin-templates',
+    'admin-agents',
+    'admin-users',
+    'done',
+  ])
 })
 
-test('others see only their own setup and the pages they can open', () => {
-  const steps = ids(tourSteps({ isAdmin: false, modules: ['inbox', 'items'], canWrite: true }))
-  assert.ok(!steps.some(id => id.startsWith('admin-')))
-  assert.ok(steps.includes('gmail'))
-  for (const id of ['calendar', 'action', 'documents', 'trackers', 'reports']) assert.ok(!steps.includes(id), id)
-  // Tasks live inside Seeds, so the Seeds step shows for anyone with Tasks.
-  assert.ok(steps.includes('seeds'))
-  assert.ok(steps.includes('add-task'))
+test('others see only the pages they can open, and no account setup', () => {
+  const steps = ids(tourSteps({ isAdmin: false, modules: ['inbox', 'items', 'trackers'], canWrite: true }))
+  assert.deepEqual(steps, ['welcome', 'workhub', 'gmail', 'discord', 'gitlab', 'trackers', 'done'])
+  const withSettings = ids(tourSteps({ isAdmin: false, modules: ['settings'], canWrite: true }))
+  assert.deepEqual(withSettings, ['welcome', 'settings', 'done'])
 })
 
-test('Viewers are not told to add tasks; every lit-up step names what to light up', () => {
+test('Viewers are not told to add, send or void; every lit-up step names what to light up', () => {
   const steps = tourSteps({ isAdmin: false, modules: ALL, canWrite: false })
-  assert.ok(!ids(steps).includes('add-task'))
+  const text = JSON.stringify(steps)
+  for (const phrase of ['turn it into a new one', 'Allow sending email', 'Void a request', 'Draft a tracker'])
+    assert.ok(!text.includes(phrase), phrase)
   for (const step of steps) if (step.id !== 'welcome') assert.ok(step.target, step.id)
   assert.equal(new Set(ids(steps)).size, steps.length)
+})
+
+test('each page step opens its page; Work Hub steps show their own tab', () => {
+  const steps = tourSteps({ isAdmin: true, modules: ALL, canWrite: true })
+  const step = (id: string) => steps.find(candidate => candidate.id === id)!
+  for (const [id, view] of [
+    ['action', 'action'],
+    ['workhub', 'inbox'],
+    ['trackers', 'trackers'],
+    ['documents', 'documents'],
+    ['reports', 'reports'],
+    ['ai', 'ai'],
+    ['settings', 'settings'],
+  ])
+    assert.equal(step(id).view, view, id)
+  assert.equal(step('gmail').click, '[data-tour="workhub-tab-Gmail"]')
+  assert.equal(step('discord').click, '[data-tour="workhub-tab-Discord"]')
+  assert.equal(step('gitlab').click, '[data-tour="workhub-tab-GitHub"]')
 })
 
 test('the tour is remembered per person and account', () => {
