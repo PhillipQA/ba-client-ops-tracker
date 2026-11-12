@@ -15,6 +15,12 @@ Released with pull request #110.
 - Resolving or closing a task that still has open subtasks (Resolve button, status menu, board, or the task's edit window) no longer stops you. A window lists the open subtasks and asks you to type a word shown (for example *finish*) to confirm; then the task and those subtasks close together, with the same status.
 - Subtasks already finished keep their own status and date. Cancelling leaves everything open.
 
+### Tour follows a working day
+- The tour now goes Action Center, Google Calendar, Work Hub, Gmail, Discord, GitLab/GitHub, Trackers, Document Creation, Reports, AI BA Assistant, then Settings (with account setup for Administrators last).
+- Each step opens its page; the Work Hub steps show their own tab.
+- Text is updated for tracker folders and layouts, voiding and removing DocHub documents, the assistant's approve-first actions, Seeds, and signing in with Google.
+- The Seeds, add-task, profile and refresh steps are no longer part of the tour.
+
 ### Seeds decides who signs in
 - Once Seeds is on, **every sign-in** (Google or password) needs the user's email to be an active employee in Seeds. Others are refused with a message saying so.
 - Someone removed from Seeds is **signed out** after the next Seeds sync.

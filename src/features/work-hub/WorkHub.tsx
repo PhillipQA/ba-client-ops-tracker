@@ -1069,6 +1069,7 @@ export default function WorkHub({
           {WORK_HUB_TABS.map(({ id, label }) => (
             <button
               key={id}
+              data-tour={`workhub-tab-${id}`}
               className={tab === id ? 'active' : ''}
               aria-pressed={tab === id}
               disabled={busy}
