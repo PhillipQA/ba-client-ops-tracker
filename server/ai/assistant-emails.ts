@@ -104,9 +104,11 @@ export async function addEmails(
     message: string
     requested: any
     allowed: (module: string) => boolean
+    /** Read them even though the question does not say "email" (a follow-up to draft, say). */
+    force?: boolean
   },
 ): Promise<{ context: any; emails?: AssistantEmails }> {
-  if (!input.read || !input.allowed('inbox') || !asksAboutEmail(input.message)) return { context }
+  if (!input.read || !input.allowed('inbox') || !(input.force || asksAboutEmail(input.message))) return { context }
   try {
     const rows = await input.read(input.tenant, input.user.id)
     const section = emailContext(rows, input.state, input.message, input.requested)
@@ -126,7 +128,6 @@ export const EMAIL_INSTRUCTIONS = `
 export const EMAIL_SUGGESTION_FIELDS = `,
         "emailRef": "only for email_document",
         "document": "drf | signoff | none, only for email_document",
-        "taskId": "existing task, only for email_document",
         "newTaskTitle": "only for email_document without taskId",
         "clientId": "only with newTaskTitle",
         "projectId": "only with newTaskTitle"`

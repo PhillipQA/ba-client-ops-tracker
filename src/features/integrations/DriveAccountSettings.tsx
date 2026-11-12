@@ -18,6 +18,84 @@ const RESULTS: Record<string, string> = {
     'Google Drive connection did not complete. Make sure the Google Drive API is enabled in the same Google Cloud project as Gmail, then try again.',
 }
 
+type EvidenceStorage = { inDatabase: number; inDrive: number; driveReady: boolean }
+type MoveResult = { moved: number; failed: { fileName: string; error: string }[]; remaining: number }
+
+/**
+ * Task evidence still kept in the app's database, and a button that moves it to the task folders in Drive, a batch
+ * at a time until none is left (or a batch moves nothing, so a file that keeps failing does not loop forever).
+ */
+function EvidenceToDrive({ connected }: { connected: boolean }) {
+  const [storage, setStorage] = useState<EvidenceStorage | null>(null),
+    [busy, setBusy] = useState(false),
+    [message, setMessage] = useState('')
+  const load = async () =>
+    setStorage(
+      (await requestJson('/api/tasks/evidence/storage', {
+        fallback: 'Evidence storage could not be read.',
+      })) as EvidenceStorage,
+    )
+  useEffect(() => {
+    void load().catch(() => setStorage(null))
+  }, [connected])
+  if (!storage || (!storage.inDatabase && !storage.inDrive)) return null
+  const move = async () => {
+    setBusy(true)
+    setMessage('')
+    let moved = 0
+    const failed: MoveResult['failed'] = []
+    try {
+      for (;;) {
+        const result = (await requestJson('/api/tasks/evidence/move-to-drive', {
+          method: 'POST',
+          fallback: 'Evidence could not be moved to Google Drive.',
+        })) as MoveResult
+        moved += result.moved
+        failed.push(...result.failed)
+        setMessage(`Moving… ${moved} moved, ${result.remaining} left.`)
+        if (!result.remaining || !result.moved) break
+      }
+      const left = failed.length
+        ? ` Not moved: ${failed
+            .slice(0, 5)
+            .map(file => `${file.fileName} (${file.error})`)
+            .join('; ')}${failed.length > 5 ? ` and ${failed.length - 5} more` : ''}.`
+        : ''
+      setMessage(`${moved} evidence file${moved === 1 ? '' : 's'} moved to Google Drive.${left}`)
+    } catch (e) {
+      setMessage(`${moved ? `${moved} moved, then: ` : ''}${e instanceof Error ? e.message : 'The move stopped.'}`)
+    } finally {
+      setBusy(false)
+      await load().catch(() => undefined)
+    }
+  }
+  return (
+    <div className="evidence-storage">
+      <h3>Task evidence</h3>
+      <p>
+        New evidence is saved in each task’s folder in this Drive.{' '}
+        {storage.inDatabase
+          ? `${storage.inDatabase} older file${storage.inDatabase === 1 ? ' is' : 's are'} still stored in the app’s database.`
+          : 'All evidence files are in Drive.'}
+        {storage.inDrive ? ` ${storage.inDrive} in Drive.` : ''}
+      </p>
+      {storage.inDatabase > 0 && (
+        <div className="integration-actions">
+          <button className="secondary" disabled={busy || !storage.driveReady} onClick={() => void move()}>
+            {busy ? 'Moving…' : `Move ${storage.inDatabase} file${storage.inDatabase === 1 ? '' : 's'} to Drive`}
+          </button>
+        </div>
+      )}
+      {!storage.driveReady && storage.inDatabase > 0 && <small>Connect Google Drive above first.</small>}
+      {message && (
+        <p role="status" className="settings-message">
+          {message}
+        </p>
+      )}
+    </div>
+  )
+}
+
 /** One shared Drive for the account, connected by an administrator through the account's Gmail OAuth client. */
 export function DriveAccountSettings() {
   const [status, setStatus] = useState<Status | null>(null),
@@ -68,8 +146,8 @@ export function DriveAccountSettings() {
         <div>
           <h2>Google Drive — team folder</h2>
           <p>
-            One shared Drive for this account. Gmail attachments saved from Work Hub go into Client / Project / Task /
-            Subtask folders that the app creates.
+            One shared Drive for this account. Gmail attachments saved from Work Hub, signed documents and task evidence
+            go into Client / Project / Task / Subtask folders that the app creates.
           </p>
         </div>
       </div>
@@ -113,6 +191,7 @@ export function DriveAccountSettings() {
             move it into a shared drive. In Google Cloud, enable the Google Drive API in the same project as Gmail. The
             app asks only for access to files and folders it creates. The redirect URI does not change.
           </small>
+          <EvidenceToDrive connected={status.connected && !status.reconnectRequired} />
         </>
       )}
       {message && (

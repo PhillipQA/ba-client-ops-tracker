@@ -239,13 +239,16 @@ export const normalizeStore = (value: unknown, fallback: Store = seedStore()): S
         : undefined,
       evidence: Array.isArray(item.evidence)
         ? item.evidence
-            .filter(entry => entry && entry.id && entry.fileName && entry.storagePath)
+            .filter(entry => entry && entry.id && entry.fileName && (entry.storagePath || entry.driveFileId))
             .map(entry => ({
               id: String(entry.id),
               fileName: String(entry.fileName),
               mimeType: String(entry.mimeType || 'application/octet-stream'),
               fileSize: Number(entry.fileSize || 0),
-              storagePath: String(entry.storagePath),
+              storagePath: String(entry.storagePath || ''),
+              ...(entry.driveFileId
+                ? { driveFileId: String(entry.driveFileId), driveUrl: String(entry.driveUrl || '') }
+                : {}),
               uploadedAt: String(entry.uploadedAt || ''),
               uploadedBy: String(entry.uploadedBy || ''),
               uploadedByName: String(entry.uploadedByName || ''),

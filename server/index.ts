@@ -282,7 +282,8 @@ docHubDeps.driveFiler = communications.driveFiler
 // Discord messages are saved through the same communications store.
 setDiscordCapture((message, organizationId) => communications.captureDiscord(message, organizationId))
 
-registerTaskRoutes(app)
+// Task evidence goes to the same shared Google Drive when it is connected.
+registerTaskRoutes(app, { drive: () => communications.driveFiler })
 
 if (!isProduction) {
   const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' })

@@ -1366,6 +1366,48 @@ button.compact {
   padding: 7px 9px;
   font-size: 11px;
 }
+.ai-plan {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ai-plan ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow: auto;
+}
+.ai-plan li {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+.ai-plan li > span {
+  padding-left: 10px;
+  color: inherit;
+}
+.ai-plan label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.ai-plan label span {
+  display: grid;
+  gap: 1px;
+}
+.ai-plan label small {
+  opacity: 0.75;
+}
+.ai-plan-subtask {
+  padding-left: 22px;
+}
+.ai-suggestion-problem {
+  color: #a82e3d;
+}
 .ai-draft {
   margin-top: 8px;
   padding: 9px 10px;
@@ -8763,4 +8805,20 @@ select option {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Settings › Google Drive: moving task evidence out of the database */
+.evidence-storage {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(127, 127, 127, 0.2);
+}
+.evidence-storage h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.evidence-storage p {
+  margin: 0;
 }
