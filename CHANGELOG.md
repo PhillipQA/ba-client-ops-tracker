@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Task evidence in Google Drive
+**No database migration.** Needs Google Drive connected in Settings › Integrations (as for Gmail attachments).
+- New evidence (screenshots and files) is saved in the task's folder in the team Drive: Client / Project / Task / Subtask, next to the email attachments and signed documents. **Open** in the app works for everyone as before; a **Drive** link opens it in Google Drive for people with access to the team folder.
+- **Tasks can have evidence too**, not only subtasks.
+- Removing evidence moves its Drive copy to the Drive trash (restorable for 30 days).
+- **Moving older files:** Settings › Integrations › Google Drive shows how many evidence files are still in the app's database, with **Move N files to Drive**. Files move in batches; each is removed from the database only after it is saved in Drive and its task points to it. Archived work is included.
+- Without Drive connected, evidence is still saved in the database, as before.
 ### AI BA Assistant: four approve-first actions
 Each is prepared as a card; nothing happens until you approve it. They are offered only to people who may do them (not Viewers).
 - **Follow-up email:** "Remind the client about the printer specs" drafts an email for the task. **Open draft** opens it in the email window, as Reply all on the task's latest email when it has one. Nothing is sent until you press Send.

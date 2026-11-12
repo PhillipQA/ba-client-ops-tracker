@@ -18,6 +18,8 @@ import { reconcileNotifications } from '../services/notification-engine'
 import { addTimeEntry, removeTimeEntry } from '../services/time-entries'
 import { seedsTimeRule } from '../../src/features/tasks/effort'
 import { visibleTask } from '../services/visibility'
+import type { DriveFiler } from '../integrations/google-drive'
+import { evidenceInDatabase, evidenceInDrive, moveEvidenceToDrive } from './evidence-storage'
 
 const TASK_EVIDENCE_BUCKET = 'task-evidence'
 
@@ -175,8 +177,33 @@ async function mutateTimeEntries(
   }
 }
 
-/** Task comments, time entries and evidence files. */
-export function registerTaskRoutes(app: Express) {
+/**
+ * Task comments, time entries and evidence files.
+ *
+ * Evidence goes to the account's shared Google Drive, in the task's Client / Project / Task / Subtask folder, when
+ * Drive is connected; otherwise it is kept in the database (tracker_evidence_files), as before Drive. Each evidence
+ * entry says where its file is (driveFileId, or storagePath), so both kinds open and remove the same way. An
+ * Administrator moves the files still in the database to Drive with /api/tasks/evidence/move-to-drive.
+ */
+export function registerTaskRoutes(app: Express, deps: { drive?: () => DriveFiler | undefined } = {}) {
+  /** The Drive filer when the account's Drive is connected and can keep evidence; null otherwise. */
+  const evidenceDrive = async (tenantId: string) => {
+    const drive = deps.drive?.()
+    if (!drive?.store || !drive.read || !drive.trash) return null
+    return (await drive.ready(tenantId).catch(() => false)) ? drive : null
+  }
+  /** The Drive filer for evidence already in Drive, or an error the person can act on. */
+  const driveForStored = async (tenantId: string) => {
+    const drive = await evidenceDrive(tenantId)
+    if (!drive)
+      throw Object.assign(
+        new Error('This evidence is in Google Drive, which is not connected right now. Ask your administrator.'),
+        { status: 409 },
+      )
+    return drive
+  }
+  const kindOf = (task: any) => (task.parentTaskId ? 'subtask' : 'task')
+
   app.post('/api/tasks/:taskId/comments', requireAuth, requireTenantWorkspace, async (req, res) => {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     if (!taskEvidenceWriteAllowed(user))
@@ -283,20 +310,27 @@ export function registerTaskRoutes(app: Express) {
       if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
       const items = Array.isArray(current.items) ? current.items : []
       const task = visibleTask(current, user, taskId, 'write')
-      if (!task) return void res.status(404).json({ error: 'Subtask was not found.' })
+      if (!task || (task.source === 'Discord' && task.externalSourceId))
+        return void res.status(404).json({ error: 'Task or subtask was not found.' })
       const locked = archivedWorkReason(current, task)
       if (locked) return void res.status(409).json({ error: locked })
-      if (!task.parentTaskId)
-        return void res.status(400).json({ error: 'Evidence uploads are currently available for subtasks only.' })
 
       const evidenceId = randomUUID()
-      const storagePath = `organizations/${tenantIdForUser(user)}/subtasks/${taskId}/${evidenceId}-${fileName}`
-      const { error: uploadError } = await db.storage.from(TASK_EVIDENCE_BUCKET).upload(storagePath, fileBuffer, {
-        contentType: mimeType,
-        cacheControl: '3600',
-        upsert: false,
-      })
-      if (uploadError) throw uploadError
+      const tenantId = String(tenantIdForUser(user))
+      // To the task's Drive folder when Drive is connected, else the database.
+      const drive = await evidenceDrive(tenantId)
+      let storagePath = ''
+      let stored: { fileId: string; url: string } | null = null
+      if (drive) stored = await drive.store!({ tenantId, taskId, name: fileName, mimeType, bytes: fileBuffer })
+      else {
+        storagePath = `organizations/${tenantId}/subtasks/${taskId}/${evidenceId}-${fileName}`
+        const { error: uploadError } = await db.storage.from(TASK_EVIDENCE_BUCKET).upload(storagePath, fileBuffer, {
+          contentType: mimeType,
+          cacheControl: '3600',
+          upsert: false,
+        })
+        if (uploadError) throw uploadError
+      }
 
       const evidence = {
         id: evidenceId,
@@ -304,6 +338,7 @@ export function registerTaskRoutes(app: Express) {
         mimeType,
         fileSize: fileBuffer.length,
         storagePath,
+        ...(stored ? { driveFileId: stored.fileId, driveUrl: stored.url } : {}),
         uploadedAt: new Date().toISOString(),
         uploadedBy: user.id,
         uploadedByName: user.name || user.username,
@@ -315,7 +350,7 @@ export function registerTaskRoutes(app: Express) {
         clientId: task.clientId || undefined,
         projectId: task.projectId || undefined,
         date: new Date().toISOString().slice(0, 10),
-        text: `Attached evidence to subtask "${task.title}": ${fileName}`,
+        text: `Attached evidence to ${kindOf(task)} "${task.title}": ${fileName}`,
       }
       const next = {
         ...current,
@@ -332,10 +367,12 @@ export function registerTaskRoutes(app: Express) {
           updatedAt: saved.updatedAt,
         })
       } catch (saveError) {
-        await db.storage
-          .from(TASK_EVIDENCE_BUCKET)
-          .remove([storagePath])
-          .catch(() => undefined)
+        if (stored) await drive!.trash!(tenantId, stored.fileId).catch(() => undefined)
+        else
+          await db.storage
+            .from(TASK_EVIDENCE_BUCKET)
+            .remove([storagePath])
+            .catch(() => undefined)
         throw saveError
       }
     } catch (error) {
@@ -360,7 +397,7 @@ export function registerTaskRoutes(app: Express) {
       if (!current) return void res.status(404).json({ error: 'Tracker data is not available.' })
       const items = Array.isArray(current.items) ? current.items : []
       const task = visibleTask(current, user, taskId, 'write')
-      if (!task || !task.parentTaskId) return void res.status(404).json({ error: 'Subtask was not found.' })
+      if (!task) return void res.status(404).json({ error: 'Task or subtask was not found.' })
       const locked = archivedWorkReason(current, task)
       if (locked) return void res.status(409).json({ error: locked })
       const evidence = (Array.isArray(task.evidence) ? task.evidence : []).find(
@@ -379,7 +416,7 @@ export function registerTaskRoutes(app: Express) {
         clientId: task.clientId || undefined,
         projectId: task.projectId || undefined,
         date: new Date().toISOString().slice(0, 10),
-        text: `Removed evidence from subtask "${task.title}": ${evidence.fileName || 'file'}`,
+        text: `Removed evidence from ${kindOf(task)} "${task.title}": ${evidence.fileName || 'file'}`,
       }
       const next = {
         ...current,
@@ -387,10 +424,20 @@ export function registerTaskRoutes(app: Express) {
         activity: [activity, ...(Array.isArray(current.activity) ? current.activity : [])],
       }
       const saved = await saveEvidenceState(current, next, user, 'task-evidence-delete')
-      const { error: removeError } = await db.storage
-        .from(TASK_EVIDENCE_BUCKET)
-        .remove([String(evidence.storagePath || '')])
-      if (removeError) console.warn('Task evidence storage cleanup warning:', removeError.message)
+      // The file goes too: to the Drive trash (restorable for 30 days), or out of the database.
+      if (evidence.driveFileId) {
+        const tenantId = String(tenantIdForUser(user))
+        const drive = await evidenceDrive(tenantId)
+        if (drive?.trash)
+          await drive
+            .trash(tenantId, String(evidence.driveFileId))
+            .catch((error: any) => console.warn('Task evidence Drive cleanup warning:', error?.message || error))
+      } else {
+        const { error: removeError } = await db.storage
+          .from(TASK_EVIDENCE_BUCKET)
+          .remove([String(evidence.storagePath || '')])
+        if (removeError) console.warn('Task evidence storage cleanup warning:', removeError.message)
+      }
       res.json({
         item: updatedTask,
         activity,
@@ -416,15 +463,23 @@ export function registerTaskRoutes(app: Express) {
       const evidenceId = String(req.params.evidenceId || '')
       const state = await loadTenantState(tenantIdForUser(user))
       const task = visibleTask(state.data, user, taskId)
-      if (!task || !task.parentTaskId) return void res.status(404).json({ error: 'Subtask was not found.' })
+      if (!task) return void res.status(404).json({ error: 'Task or subtask was not found.' })
       const evidence = (Array.isArray(task.evidence) ? task.evidence : []).find(
         (entry: any) => String(entry?.id || '') === evidenceId,
       )
-      if (!evidence?.storagePath) return void res.status(404).json({ error: 'Evidence was not found.' })
+      if (!evidence?.storagePath && !evidence?.driveFileId)
+        return void res.status(404).json({ error: 'Evidence was not found.' })
 
-      const { data, error } = await db.storage.from(TASK_EVIDENCE_BUCKET).download(String(evidence.storagePath))
-      if (error || !data) throw error || new Error('Evidence could not be downloaded.')
-      const buffer = Buffer.from(await data.arrayBuffer())
+      let buffer: Buffer
+      if (evidence.driveFileId) {
+        const tenantId = String(tenantIdForUser(user))
+        const drive = await driveForStored(tenantId)
+        buffer = await drive.read!(tenantId, String(evidence.driveFileId), TASK_EVIDENCE_MAX_BYTES + 1024)
+      } else {
+        const { data, error } = await db.storage.from(TASK_EVIDENCE_BUCKET).download(String(evidence.storagePath))
+        if (error || !data) throw error || new Error('Evidence could not be downloaded.')
+        buffer = Buffer.from(await data.arrayBuffer())
+      }
       const mimeType = String(evidence.mimeType || 'application/octet-stream')
       const inline = mimeType.startsWith('image/') || mimeType === 'application/pdf'
       const encodedName = encodeURIComponent(String(evidence.fileName || 'evidence-file')).replace(/'/g, '%27')
@@ -433,9 +488,120 @@ export function registerTaskRoutes(app: Express) {
       res.setHeader('Cache-Control', 'private, no-store')
       res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodedName}`)
       res.send(buffer)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Task evidence download failed:', error)
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Task evidence download failed.' })
+      res
+        .status(Number(error?.status) || 500)
+        .json({ error: error instanceof Error ? error.message : 'Task evidence download failed.' })
     }
   })
+
+  // Moving evidence from the database to Drive: how much is left, and a batch at a time (an Administrator's job).
+  const administrator = (req: express.Request, res: express.Response) => {
+    const user = (req as express.Request & { authUser: SessionUser }).authUser
+    if (user.role !== 'Administrator') {
+      res.status(403).json({ error: 'Only an Administrator can move evidence to Google Drive.' })
+      return null
+    }
+    if (!db) {
+      res.status(503).json({ error: 'Database is not configured.' })
+      return null
+    }
+    return user
+  }
+
+  app.get('/api/tasks/evidence/storage', requireAuth, requireTenantWorkspace, async (req, res) => {
+    const user = administrator(req, res)
+    if (!user) return
+    try {
+      const tenantId = String(tenantIdForUser(user))
+      const state = (await loadTenantState(tenantId)).data
+      res.json({
+        inDatabase: evidenceInDatabase(state).length,
+        inDrive: evidenceInDrive(state),
+        driveReady: Boolean(await evidenceDrive(tenantId)),
+      })
+    } catch (error) {
+      console.error('Evidence storage summary failed:', error)
+      res.status(500).json({ error: 'Evidence storage could not be read.' })
+    }
+  })
+
+  app.post('/api/tasks/evidence/move-to-drive', requireAuth, requireTenantWorkspace, async (req, res) => {
+    const user = administrator(req, res)
+    if (!user) return
+    const tenantId = String(tenantIdForUser(user))
+    const drive = await evidenceDrive(tenantId)
+    if (!drive) return void res.status(409).json({ error: 'Connect Google Drive in Settings › Integrations first.' })
+    try {
+      const batch = evidenceInDatabase((await loadTenantState(tenantId)).data).slice(0, EVIDENCE_MOVE_BATCH)
+      // Each file: read from the database, put in its task's Drive folder. Nothing is changed in the database yet.
+      const moved: { taskId: string; id: string; fileId: string; url: string; storagePath: string }[] = []
+      const failed: { fileName: string; error: string }[] = []
+      for (const { task, entry } of batch) {
+        try {
+          const { data, error } = await db.storage.from(TASK_EVIDENCE_BUCKET).download(String(entry.storagePath))
+          if (error || !data) throw error || new Error('The file is missing from the database.')
+          const bytes = Buffer.from(await data.arrayBuffer())
+          const stored = await drive.store!({
+            tenantId,
+            taskId: String(task.id),
+            name: String(entry.fileName || 'evidence'),
+            mimeType: String(entry.mimeType || 'application/octet-stream'),
+            bytes,
+          })
+          moved.push({
+            taskId: String(task.id),
+            id: String(entry.id),
+            fileId: stored.fileId,
+            url: stored.url,
+            storagePath: String(entry.storagePath),
+          })
+        } catch (error: any) {
+          failed.push({ fileName: String(entry.fileName || 'file'), error: error?.message || 'Not moved.' })
+        }
+      }
+      // Then each evidence entry points to Drive, as the system (archived work included), and only after that are
+      // the database copies removed. If saving fails, the Drive copies go to the trash and nothing else changes.
+      if (moved.length) {
+        try {
+          await commitEvidenceMoves(tenantId, moved)
+        } catch (error) {
+          for (const file of moved) await drive.trash!(tenantId, file.fileId).catch(() => undefined)
+          throw error
+        }
+        const { error: removeError } = await db.storage
+          .from(TASK_EVIDENCE_BUCKET)
+          .remove(moved.map(file => file.storagePath))
+        if (removeError) console.warn('Evidence database cleanup warning:', removeError.message)
+      }
+      const remaining = evidenceInDatabase((await loadTenantState(tenantId)).data).length
+      res.json({ moved: moved.length, failed, remaining })
+    } catch (error) {
+      console.error('Moving evidence to Drive failed:', error)
+      res
+        .status(error instanceof LifecycleError ? error.status : 500)
+        .json({ error: error instanceof Error ? error.message : 'Evidence could not be moved to Google Drive.' })
+    }
+  })
+}
+
+const EVIDENCE_MOVE_BATCH = 20
+
+/** Points moved evidence entries to their Drive copies, retrying when someone saved meanwhile. */
+async function commitEvidenceMoves(
+  tenantId: string,
+  moved: { taskId: string; id: string; fileId: string; url: string }[],
+) {
+  for (let attempt = 0; ; attempt++) {
+    const current = (await loadTenantState(tenantId)).data
+    if (!current) throw new Error('Tracker data is not available.')
+    const next = moveEvidenceToDrive(current, moved)
+    try {
+      await commitTenantState(tenantId, next, null, 'task-evidence-move-to-drive', current)
+      return
+    } catch (error) {
+      if (!(error instanceof LifecycleError) || attempt >= 3) throw error
+    }
+  }
 }

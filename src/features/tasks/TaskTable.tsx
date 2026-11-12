@@ -297,7 +297,7 @@ export function TaskTable({
               ))}
               <small>
                 {item.description || (isSubtask ? 'Subtask' : 'No description')}
-                {isSubtask && item.evidence?.length
+                {item.evidence?.length
                   ? ` · ${item.evidence.length} evidence file${item.evidence.length === 1 ? '' : 's'}`
                   : ''}
                 {isSubtask && item.comments?.length
@@ -400,7 +400,7 @@ export function TaskTable({
                 <Plus size={17} />
               </button>
             )}
-            {rowEditable && isSubtask && (
+            {rowEditable && (
               <button
                 className="icon-button"
                 title={item.evidence?.length ? `Evidence (${item.evidence.length})` : 'Add evidence'}

@@ -104,7 +104,11 @@ export interface TaskEvidence {
   fileName: string
   mimeType: string
   fileSize: number
+  /** Where the file is in the database (tracker_evidence_files); empty once it is in Google Drive. */
   storagePath: string
+  /** The file in the account's shared Google Drive, in the task's folder. */
+  driveFileId?: string
+  driveUrl?: string
   uploadedAt: string
   uploadedBy: string
   uploadedByName: string

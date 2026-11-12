@@ -8806,3 +8806,19 @@ select option {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Settings › Google Drive: moving task evidence out of the database */
+.evidence-storage {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(127, 127, 127, 0.2);
+}
+.evidence-storage h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.evidence-storage p {
+  margin: 0;
+}

@@ -242,10 +242,10 @@ export function assertLifecycleMutation(current: LifecycleStore, next: Lifecycle
       const old = oldMap.get(id),
         row = newMap.get(id)
       if (stableRecord(old) === stableRecord(row)) continue
-      // Remote signing history may arrive after a client/project was archived.
-      // Only the trusted server actor may append signing metadata to otherwise unchanged work.
+      // Remote signing history may arrive after a client/project was archived, and evidence files may be moved to
+      // Drive. Only the trusted server actor may change that metadata on otherwise unchanged (even archived) work.
       if (!actor && key === 'items' && old && row) {
-        const strip = (item: any) => ({ ...item, comments: undefined, docHubDocuments: undefined })
+        const strip = (item: any) => ({ ...item, comments: undefined, docHubDocuments: undefined, evidence: undefined })
         if (stableRecord(strip(old)) === stableRecord(strip(row))) continue
       }
       // An account renaming or merging statuses relabels tasks, archived ones included; that is not a task change.
