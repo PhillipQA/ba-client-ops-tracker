@@ -470,9 +470,9 @@ export function useAppState() {
   useVisiblePolling(signal => refreshWorkspace(false, signal), {
     enabled: Boolean(
       authUser &&
-      authUser.accountType !== 'platform' &&
-      (cloudStatus === 'synced' || cloudStatus === 'saving') &&
-      workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId),
+        authUser.accountType !== 'platform' &&
+        (cloudStatus === 'synced' || cloudStatus === 'saving') &&
+        workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId),
     ),
     interval: 5 * 60_000,
     scope: `${authUser?.id}:${view}:${selectedClientId || ''}:${selectedProjectId || ''}`,
@@ -821,9 +821,9 @@ export function useAppState() {
   // Tasks open from many pages, so this follows the task rights, not the page.
   const canWriteTasks = Boolean(
     currentUser &&
-    currentUser.role !== 'Viewer' &&
-    !lifecycleSaving &&
-    ((hasModule('items') && canEditModule('items')) || (hasModule('inbox') && canEditModule('inbox'))),
+      currentUser.role !== 'Viewer' &&
+      !lifecycleSaving &&
+      ((hasModule('items') && canEditModule('items')) || (hasModule('inbox') && canEditModule('inbox'))),
   )
   // Account Managers are Viewers who may still ask the AI BA Assistant about their clients.
   // A Viewer by job role (an Account Manager, say) may still ask the AI BA Assistant.
