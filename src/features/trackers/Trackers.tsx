@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { LayoutTemplate, Link2, Lock, Plus, Search, Table2, Upload } from 'lucide-react'
-import { TRACKER_LIMITS, columnTypeLabel, trackerProjectIds, type Tracker } from './trackerModel'
+import { ChevronLeft, LayoutTemplate, Link2, Plus, Search, Table2, Upload } from 'lucide-react'
+import { TRACKER_LIMITS, trackerProjectIds, type Tracker } from './trackerModel'
+import { trackerFolders, trackersInFolder } from './trackerFolders'
+import {
+  FOLDER_LAYOUTS,
+  FolderGrid,
+  Segmented,
+  TRACKER_LAYOUTS,
+  TrackerCollection,
+  useStoredChoice,
+  type FolderLayout,
+  type TrackerLayout,
+} from './TrackerCollection'
 import { templateChoices, templateRows, withDoneColumn, type TemplateChoice } from './trackerTemplates'
 import { TemplatesDialog, TemplateTag, useTrackerTemplates } from './TemplateManager'
 import { createRowTasks } from './trackerTaskActions'
 import type { TaskPatch } from './trackerTasks'
 import { trackerApi } from './trackerApi'
 import { rememberTracker, rememberedTracker } from './trackerNav'
-import { VIEW_PATHS, opensElsewhere, pathForTracker, trackerIdFromPath } from '../../app/routes'
+import { VIEW_PATHS, pathForTracker, trackerIdFromPath } from '../../app/routes'
 import TrackerClientPicker from './TrackerClientPicker'
 import TrackerProjectPicker from './TrackerProjectPicker'
 import type { TaskDraft } from './TrackerWork'
@@ -311,6 +322,12 @@ export default function Trackers(props: Props) {
   const [query, setQuery] = useState('')
   const [clientFilter, setClientFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  // Folders: My folder (the default), everyone's Folders, or All trackers; and how trackers and folders are laid out.
+  const [home, setHome] = useStoredChoice('ba.trackers.home', ['mine', 'folders', 'all'] as const, 'mine')
+  const [layout, setLayout] = useStoredChoice<TrackerLayout>('ba.trackers.layout', ['tile', 'list', 'table'], 'tile')
+  const [folderLayout, setFolderLayout] = useStoredChoice<FolderLayout>('ba.trackers.folders', ['tile', 'row'], 'tile')
+  /** The person whose folder is open under Folders. */
+  const [folderOf, setFolderOf] = useState('')
   const [creating, setCreating] = useState<string | null>(null)
   /** Said once when the new tracker opens, such as how many tasks were made. */
   const [createdNote, setCreatedNote] = useState('')
@@ -375,6 +392,20 @@ export default function Trackers(props: Props) {
     )
   }, [trackers, query, clientFilter, showArchived, clientName, projectName])
   const archivedCount = (trackers || []).filter(tracker => tracker.archived).length
+  const me = props.currentUserId || ''
+  const activeAccounts = useMemo(() => props.accounts.filter(account => account.status === 'Active'), [props.accounts])
+  const personName = useCallback(
+    (id: string) => {
+      const account = props.accounts.find(candidate => candidate.id === id)
+      return account?.name || account?.username || 'Former user'
+    },
+    [props.accounts],
+  )
+  // Folder counts follow the search, client filter and archived switch, like the trackers inside them.
+  const folders = useMemo(() => trackerFolders(activeAccounts, shown, me), [activeAccounts, shown, me])
+  const openFolder = home === 'mine' ? me : home === 'folders' ? folderOf : ''
+  const listed = home === 'all' ? shown : openFolder ? trackersInFolder(shown, openFolder) : []
+  const browsingFolders = home === 'folders' && !folderOf
   const people = useMemo(
     () =>
       props.accounts
@@ -506,61 +537,67 @@ export default function Trackers(props: Props) {
               </label>
             )}
           </div>
-          <section className="trk-list" aria-label="Trackers">
-            <div className="trk-list-row head" role="row">
-              <span role="columnheader">Name</span>
-              <span role="columnheader">Client and project</span>
-              <span role="columnheader">Rows</span>
-              <span role="columnheader">Columns</span>
-              <span role="columnheader">Updated</span>
-              <span role="columnheader">Created by</span>
-            </div>
-            {shown.map(tracker => (
-              <div className="trk-list-row" role="row" key={tracker.id}>
-                <span role="cell" className="trk-list-name">
-                  <a
-                    className="trk-link-button"
-                    href={pathForTracker(tracker.id)}
-                    onClick={event => {
-                      if (opensElsewhere(event)) return
-                      event.preventDefault()
-                      setOpenId(tracker.id)
-                    }}
-                  >
-                    {tracker.name}
-                  </a>
-                  {tracker.private && (
-                    <span className="trk-chip">
-                      <Lock size={11} aria-hidden="true" /> Only you
-                    </span>
-                  )}
-                  {tracker.archived && <span className="trk-chip warn">Archived</span>}
-                </span>
-                <span role="cell">
-                  {[
-                    clientsOf(tracker).map(clientName).join(', '),
-                    trackerProjectIds(tracker).map(projectName).filter(Boolean).join(', '),
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || <span className="trk-muted">—</span>}
-                </span>
-                <span role="cell">{tracker.rowCount.toLocaleString('en')}</span>
-                <span
-                  role="cell"
-                  title={tracker.columns.map(column => `${column.name} (${columnTypeLabel(column.type)})`).join(', ')}
-                >
-                  {tracker.columns.length}
-                </span>
-                <span role="cell">{niceTime(tracker.updatedAt)}</span>
-                <span role="cell">{tracker.createdByName || <span className="trk-muted">—</span>}</span>
-              </div>
-            ))}
-            {!shown.length && (
-              <p className="trk-empty-line">
-                No tracker matches. {plural((trackers || []).length, 'tracker')} in total.
-              </p>
+          <div className="trk-home-bar">
+            <Segmented
+              label="Show"
+              value={home}
+              options={[
+                { value: 'mine', label: 'My folder' },
+                { value: 'folders', label: 'Folders' },
+                { value: 'all', label: 'All trackers' },
+              ]}
+              onChange={next => {
+                setHome(next)
+                setFolderOf('')
+              }}
+            />
+            <span className="trk-spacer" />
+            {browsingFolders ? (
+              <Segmented
+                label="Folder layout"
+                value={folderLayout}
+                options={FOLDER_LAYOUTS}
+                onChange={setFolderLayout}
+              />
+            ) : (
+              <Segmented label="Tracker layout" value={layout} options={TRACKER_LAYOUTS} onChange={setLayout} />
             )}
-          </section>
+          </div>
+          {home === 'folders' && folderOf && (
+            <div className="trk-folder-crumb">
+              <button type="button" className="trk-button" onClick={() => setFolderOf('')}>
+                <ChevronLeft size={14} aria-hidden="true" /> Folders
+              </button>
+              <strong>
+                {folderOf === me ? 'Your folder' : `${personName(folderOf)}’s folder`} ·{' '}
+                {plural(listed.length, 'tracker')}
+              </strong>
+            </div>
+          )}
+          {browsingFolders ? (
+            <FolderGrid folders={folders} layout={folderLayout} onOpen={setFolderOf} />
+          ) : (
+            <TrackerCollection
+              trackers={listed}
+              layout={layout}
+              clientName={clientName}
+              projectName={projectName}
+              personName={personName}
+              clientsOf={clientsOf}
+              onOpen={setOpenId}
+            />
+          )}
+          {!browsingFolders && !listed.length && (
+            <p className="trk-empty-line">
+              {query || clientFilter
+                ? `No tracker matches. ${plural((trackers || []).length, 'tracker')} in total.`
+                : home === 'all'
+                  ? 'No tracker to show.'
+                  : openFolder === me
+                    ? 'Your folder is empty. Trackers you create, trackers on your projects, and trackers you are added to show here.'
+                    : `${personName(openFolder)}’s folder has no tracker you can open.`}
+            </p>
+          )}
         </>
       )}
       {!trackers && !error && <TrackerLoading label="Loading trackers…" />}

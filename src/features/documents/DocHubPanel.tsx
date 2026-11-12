@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import {
   Archive,
+  Ban,
   Bell,
   CheckCircle2,
   ChevronLeft,
@@ -13,6 +14,7 @@ import {
   List,
   Mail,
   RefreshCw,
+  Trash2,
   UserRound,
   X,
 } from 'lucide-react'
@@ -20,6 +22,8 @@ import type { Client, Project, WorkItem } from '../../shared/types'
 import { isClosedProject } from '../tasks/lifecycle'
 import {
   canNotifyDocHubSigner,
+  canRemoveDocHub,
+  canVoidDocHub,
   dochubRequest,
   docHubGuidance,
   docHubLabels,
@@ -43,6 +47,13 @@ import { taskChoices } from './documentDriveTargets'
 import { useModalDialog } from '../../shared/ui/useModalDialog'
 
 const updated = () => window.dispatchEvent(new Event('dochub-updated'))
+/** Removing only takes the document off the tracker, so say whether it is still in DocHub. */
+const confirmRemove = (doc: DocHubDocument) =>
+  window.confirm(
+    doc.status === 'MISSING'
+      ? `Remove “${doc.title}” from the tracker? It was already deleted in DocHub.`
+      : `Remove “${doc.title}” from the tracker?${doc.documentId ? ' Nothing is changed in DocHub; delete it there too if you no longer need it.' : ''}`,
+  )
 const dateTime = (value?: string) => (value ? new Date(value).toLocaleString() : 'Pending')
 
 export function useDocHubDraft(
@@ -344,11 +355,53 @@ function DocHubCard({
   doc,
   refresh,
   busy = false,
+  onRemoved,
 }: {
   doc: DocHubDocument
   refresh: () => Promise<void>
   busy?: boolean
+  /** Where the card sits in a list it can leave: shows Remove from tracker. */
+  onRemoved?: (message: string) => void
 }) {
+  const [actionBusy, setActionBusy] = useState<'' | 'void' | 'remove'>(''),
+    [actionError, setActionError] = useState(''),
+    [actionMessage, setActionMessage] = useState('')
+  const voidRequest = async () => {
+    if (
+      actionBusy ||
+      !window.confirm(
+        `Void the signature request for “${doc.title}”? Signatories who have not signed yet will no longer be able to sign it. This can’t be undone.`,
+      )
+    )
+      return
+    setActionBusy('void')
+    setActionError('')
+    setActionMessage('')
+    try {
+      const result = await dochubRequest(`/api/dochub/documents/${doc.id}/void`, 'POST')
+      setActionMessage(result.message || 'Signature request voided.')
+      await refresh()
+      updated()
+    } catch (e) {
+      setActionError((e as Error).message)
+    } finally {
+      setActionBusy('')
+    }
+  }
+  const remove = async () => {
+    if (!onRemoved || actionBusy || !confirmRemove(doc)) return
+    setActionBusy('remove')
+    setActionError('')
+    setActionMessage('')
+    try {
+      const result = await dochubRequest(`/api/dochub/documents/${doc.id}`, 'DELETE')
+      updated()
+      onRemoved(result.message || 'Removed from the tracker.')
+    } catch (e) {
+      setActionError((e as Error).message)
+      setActionBusy('')
+    }
+  }
   const [recoverId, setRecoverId] = useState(''),
     [recoverError, setRecoverError] = useState(''),
     [recoverBusy, setRecoverBusy] = useState(false)
@@ -424,7 +477,7 @@ function DocHubCard({
       )}
       {guidance && <p className="dochub-guidance">{guidance}</p>}
       <div className="dochub-actions">
-        {doc.documentUrl && (
+        {doc.documentUrl && doc.status !== 'MISSING' && (
           <a className="secondary" href={doc.documentUrl} target="_blank" rel="noopener noreferrer">
             <ExternalLink size={15} /> Open in DocHub
           </a>
@@ -478,7 +531,41 @@ function DocHubCard({
             {driveBusy ? 'Saving…' : doc.driveError ? 'Retry saving to Google Drive' : 'Save to Google Drive'}
           </button>
         )}
+        {canVoidDocHub(doc) && (
+          <button
+            type="button"
+            className="secondary danger-button"
+            title="Cancel this signature request in DocHub so no one can sign it any more"
+            disabled={busy || Boolean(actionBusy)}
+            onClick={() => void voidRequest()}
+          >
+            <Ban size={15} />
+            {actionBusy === 'void' ? 'Voiding…' : 'Void request'}
+          </button>
+        )}
+        {onRemoved && canRemoveDocHub(doc.status) && (
+          <button
+            type="button"
+            className="secondary danger-button"
+            title="Take this document off the tracker"
+            disabled={busy || Boolean(actionBusy)}
+            onClick={() => void remove()}
+          >
+            <Trash2 size={15} />
+            {actionBusy === 'remove' ? 'Removing…' : 'Remove from tracker'}
+          </button>
+        )}
       </div>
+      {actionError && (
+        <p className="dochub-error" role="alert">
+          {actionError}
+        </p>
+      )}
+      {actionMessage && (
+        <p className="dochub-notify-success" role="status">
+          {actionMessage}
+        </p>
+      )}
       {doc.driveFile?.path && <p className="dochub-guidance">Signed PDF saved to Google Drive: {doc.driveFile.path}</p>}
       {doc.driveNote && !doc.driveFile && <p className="dochub-guidance">{doc.driveNote}</p>}
       {doc.driveError && !doc.driveFile && (
@@ -593,12 +680,14 @@ function DocHubTile({
   busy,
   onRefresh,
   onOpen,
+  onRemove,
   archived,
 }: {
   doc: DocHubDocument
   busy: boolean
   onRefresh: () => Promise<void>
   onOpen: () => void
+  onRemove: () => Promise<void>
   archived: boolean
 }) {
   const signers = doc.signers.filter(s => !s.removed),
@@ -634,10 +723,21 @@ function DocHubTile({
         <button type="button" className="secondary compact" onClick={onOpen}>
           Details
         </button>
-        {doc.documentUrl && (
+        {doc.documentUrl && doc.status !== 'MISSING' && (
           <a className="secondary compact" href={doc.documentUrl} target="_blank" rel="noopener noreferrer">
             <ExternalLink size={14} /> Open
           </a>
+        )}
+        {doc.status === 'MISSING' && (
+          <button
+            type="button"
+            className="secondary compact danger-button"
+            title="This document was deleted in DocHub. Take it off the tracker."
+            disabled={busy}
+            onClick={() => void onRemove()}
+          >
+            <Trash2 size={14} /> Remove
+          </button>
         )}
         {!archived && (
           <button type="button" className="secondary compact" disabled={busy} onClick={() => void onRefresh()}>
@@ -665,12 +765,14 @@ function DocHubRow({
   busy,
   onRefresh,
   onOpen,
+  onRemove,
   archived,
 }: {
   doc: DocHubDocument
   busy: boolean
   onRefresh: () => Promise<void>
   onOpen: () => void
+  onRemove: () => Promise<void>
   archived: boolean
 }) {
   const signers = doc.signers.filter(s => !s.removed),
@@ -703,10 +805,21 @@ function DocHubRow({
         <button type="button" className="secondary compact" onClick={onOpen}>
           Details
         </button>
-        {doc.documentUrl && (
+        {doc.documentUrl && doc.status !== 'MISSING' && (
           <a className="secondary compact" href={doc.documentUrl} target="_blank" rel="noopener noreferrer">
             <ExternalLink size={14} /> Open
           </a>
+        )}
+        {doc.status === 'MISSING' && (
+          <button
+            type="button"
+            className="secondary compact danger-button"
+            title="This document was deleted in DocHub. Take it off the tracker."
+            disabled={busy}
+            onClick={() => void onRemove()}
+          >
+            <Trash2 size={14} /> Remove
+          </button>
         )}
         {!archived && (
           <button type="button" className="secondary compact" disabled={busy} onClick={() => void onRefresh()}>
@@ -734,11 +847,13 @@ function DocHubDetails({
   busy,
   refresh,
   onClose,
+  onRemoved,
 }: {
   doc: DocHubDocument
   busy: boolean
   refresh: () => Promise<void>
   onClose: () => void
+  onRemoved: (message: string) => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
@@ -782,7 +897,7 @@ function DocHubDetails({
         role="region"
         aria-label="Document information and signing activity"
       >
-        <DocHubCard doc={doc} busy={busy} refresh={refresh} />
+        <DocHubCard doc={doc} busy={busy} refresh={refresh} onRemoved={onRemoved} />
       </div>
     </dialog>
   )
@@ -810,7 +925,8 @@ export function DocHubHistory({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(''),
     [view, setView] = useState<'active' | 'archive'>('active'),
-    [selected, setSelected] = useState<DocHubDocument | null>(null)
+    [selected, setSelected] = useState<DocHubDocument | null>(null),
+    [notice, setNotice] = useState('')
   const [layout, setLayout] = useState<'row' | 'tile'>('row'),
     [pageSize, setPageSize] = useState<3 | 5 | 10>(5),
     [page, setPage] = useState(1),
@@ -835,6 +951,27 @@ export function DocHubHistory({
     setBusy(id)
     try {
       await dochubRequest(`/api/dochub/documents/${id}/refresh`, 'POST')
+      await load()
+      updated()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+  // After a document is taken off the tracker: close its details and reload the list.
+  const removed = (message: string) => {
+    setSelected(null)
+    setNotice(message)
+    void load()
+  }
+  const removeOne = async (doc: DocHubDocument) => {
+    if (busy || !confirmRemove(doc)) return
+    setBusy(doc.id)
+    setNotice('')
+    try {
+      const result = await dochubRequest(`/api/dochub/documents/${doc.id}`, 'DELETE')
+      setNotice(result.message || 'Removed from the tracker.')
       await load()
       updated()
     } catch (e) {
@@ -996,6 +1133,11 @@ export function DocHubHistory({
           {error}
         </p>
       )}
+      {notice && (
+        <p className="dochub-notify-success" role="status">
+          {notice}
+        </p>
+      )}
       {!visibleDocs.length && !error && (
         <div className="dochub-history-empty">
           {taskId
@@ -1009,7 +1151,13 @@ export function DocHubHistory({
       )}
       {taskId ? (
         pagedDocs.map(doc => (
-          <DocHubCard key={doc.id} doc={doc} busy={busy === doc.id} refresh={() => refreshOne(doc.id)} />
+          <DocHubCard
+            key={doc.id}
+            doc={doc}
+            busy={busy === doc.id}
+            refresh={() => refreshOne(doc.id)}
+            onRemoved={removed}
+          />
         ))
       ) : layout === 'tile' ? (
         <div className="dochub-history-grid">
@@ -1021,6 +1169,7 @@ export function DocHubHistory({
               busy={busy === doc.id}
               onOpen={() => setSelected(doc)}
               onRefresh={() => refreshOne(doc.id)}
+              onRemove={() => removeOne(doc)}
             />
           ))}
         </div>
@@ -1034,6 +1183,7 @@ export function DocHubHistory({
               busy={busy === doc.id}
               onOpen={() => setSelected(doc)}
               onRefresh={() => refreshOne(doc.id)}
+              onRemove={() => removeOne(doc)}
             />
           ))}
         </div>
@@ -1085,6 +1235,7 @@ export function DocHubHistory({
           busy={busy === selected.id}
           refresh={() => refreshOne(selected.id)}
           onClose={() => setSelected(null)}
+          onRemoved={removed}
         />
       )}
     </section>

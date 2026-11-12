@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import rateLimit from 'express-rate-limit'
 import type { Express, Request, RequestHandler, Response } from 'express'
 import { decryptSecret, encryptSecret, encryptionKey, IntegrationError } from '../integrations/tenant-integrations'
+import { cleanMembers, projectUsers, trackerUsers, validateMembers } from '../../src/features/trackers/trackerFolders'
 import {
   TRACKER_LIMITS,
   TrackerError,
@@ -212,7 +213,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     check(r.error)
     return Number(r.count || 0)
   }
-  const trackerOut = (row: any, user: User, count: number): Tracker => ({
+  /** users: everyone the tracker shows in the folder of (trackerFolders); worked out where the workspace is at hand. */
+  const trackerOut = (row: any, user: User, count: number, users?: string[]): Tracker => ({
     id: row.id,
     name: row.name,
     clientId: splitClientIds(row.client_id)[0] || '',
@@ -235,6 +237,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     archived: Boolean(row.archived_at),
     canEdit: !readOnly(user),
     canManage: manageable(user, row),
+    members: cleanMembers(row.members, row.created_by || ''),
+    ...(users ? { users } : {}),
   })
   const columnsOf = (row: any): TrackerColumn[] => (Array.isArray(row.columns) ? row.columns : [])
 
@@ -2390,11 +2394,16 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .order('updated_at', { ascending: false })
         .limit(TRACKER_LIMITS.trackers + 100)
       check(r.error)
-      const shown = trackerVisibleIn(await workspace(tenant), user)
+      const state = await workspace(tenant)
+      const shown = trackerVisibleIn(state, user)
       const visible = (r.data || []).filter((row: any) => (!row.private || row.created_by === user.id) && shown(row))
       const counts = await Promise.all(visible.map((row: any) => rowCount(tenant, row.id)))
+      // Each tracker's users, for the folders: its creator, the people on its projects, the people added.
+      const onProjects = projectUsers(state)
       res.json({
-        trackers: visible.map((row: any, index: number) => trackerOut(row, user, counts[index])),
+        trackers: visible.map((row: any, index: number) =>
+          trackerOut(row, user, counts[index], trackerUsers(row, state, onProjects)),
+        ),
         limits: TRACKER_LIMITS,
       })
     }),
@@ -2709,7 +2718,12 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           : false
       res.json({
         tracker: {
-          ...trackerOut(row, user, await rowCount(user.organizationId, id)),
+          ...trackerOut(
+            row,
+            user,
+            await rowCount(user.organizationId, id),
+            trackerUsers(row, await workspace(user.organizationId)),
+          ),
           source: source
             ? {
                 ...sourceOut(source),
@@ -2753,8 +2767,18 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         if (body.archived !== undefined) patch.archived_at = body.archived === true ? now() : null
       }
       if (body.stepTasks !== undefined) patch.step_tasks = body.stepTasks === true
+      // People added by hand: the tracker shows in their folders. Like who sees it, the creator's or an Admin's call.
+      const state = await workspace(tenant)
+      if (body.members !== undefined) {
+        if (!manageable(user, row))
+          throw new TrackerError('Only the creator or an Administrator can add or remove a tracker’s users.', 403)
+        const members = validateMembers(state, body.members, row.created_by || '')
+        if (!members.ok) throw new TrackerError(members.error)
+        patch.members = members.members
+      }
+      const usersAfter = (stored: any) => trackerUsers(stored, state)
       if (!Object.keys(patch).length)
-        return void res.json({ tracker: trackerOut(row, user, await rowCount(tenant, id)) })
+        return void res.json({ tracker: trackerOut(row, user, await rowCount(tenant, id), usersAfter(row)) })
       patch.updated_at = now()
       const saved = await db.from('tenant_trackers').update(patch).eq('tenant_id', tenant).eq('id', id).select('*')
       if (saved.error && 'step_tasks' in patch)
@@ -2762,10 +2786,17 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           'Turning tasks for rows and steps on or off is unavailable. Check the database connection; a new database needs database/schema.sql.',
           503,
         )
+      if (saved.error && 'members' in patch)
+        throw new TrackerError(
+          'Adding people to a tracker needs the database update database/migrations/schema-v36-tracker-members.sql. Ask your administrator to run it.',
+          503,
+        )
       check(saved.error)
       if (body.archived !== undefined)
         await record(tenant, id, '', user, body.archived === true ? 'tracker_archived' : 'tracker_restored', {})
-      res.json({ tracker: trackerOut({ ...row, ...patch }, user, await rowCount(tenant, id)) })
+      res.json({
+        tracker: trackerOut({ ...row, ...patch }, user, await rowCount(tenant, id), usersAfter({ ...row, ...patch })),
+      })
     }),
   )
 

@@ -123,6 +123,8 @@ export const trackerApi = {
       private?: boolean
       archived?: boolean
       stepTasks?: boolean
+      /** People added by hand (account ids); the creator or an Administrator only. */
+      members?: string[]
     },
   ) => call<{ tracker: Tracker }>('PATCH', `/${id}`, body),
   remove: (id: string) => call<{ ok: true }>('DELETE', `/${id}`),

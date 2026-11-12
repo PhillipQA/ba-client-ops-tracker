@@ -14,6 +14,7 @@ import {
   signingStatus,
 } from './dochub-api'
 import { archivedWorkReason, workContext, LifecycleError } from '../../src/features/tasks/lifecycle'
+import { canRemoveDocHub, canVoidDocHub } from '../../src/features/documents/dochub'
 import type { DriveFiler } from './google-drive'
 import { scopeFor } from '../../src/shared/access'
 import { canCreateWork, visibleTask, visibleTaskIds } from '../services/visibility'
@@ -28,7 +29,18 @@ type Deps = {
   /** Set once Google Drive is wired; a fully signed PDF is then filed under its task. */
   driveFiler?: DriveFiler
 }
-const terminal = new Set(['DONE', 'COMPLETE', 'COMPLETED', 'REJECTED', 'VOID', 'VOIDED', 'EXPIRED'])
+// MISSING: DocHub no longer has the document (deleted there); scans stop checking it until someone refreshes it.
+const terminal = new Set(['DONE', 'COMPLETE', 'COMPLETED', 'REJECTED', 'VOID', 'VOIDED', 'EXPIRED', 'MISSING'])
+/** DocHub answered 404 for the document or its sign request: it was deleted in DocHub. */
+class MissingInDocHub extends Error {}
+const missingOn404 = (error: unknown): never => {
+  if (error instanceof DocHubError && error.providerStatus === 404) throw new MissingInDocHub()
+  throw error
+}
+const actorName = (actor: any) =>
+  String(actor?.name || actor?.username || 'User')
+    .trim()
+    .slice(0, 120) || 'User'
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const types: Record<string, string> = {
@@ -219,6 +231,35 @@ export function applyDocumentToWorkspace(state: any, doc: any) {
     items = state.items.map((i: any) => (i.id === task.id ? updated : i))
   }
   const next = { ...state, items, notifications }
+  return { next, changed: JSON.stringify(next) !== JSON.stringify(state) }
+}
+
+/**
+ * Take a removed document off its task: drop the task's link to it and note who removed it in the task's activity.
+ * Earlier signing comments stay, as history.
+ */
+export function removeDocumentFromWorkspace(state: any, doc: any, removedByName: string, now = new Date()) {
+  const task = (state.items || []).find((i: any) => i.id === doc.taskId)
+  if (!task) return { next: state, changed: false }
+  const comment = {
+    id: `dochub:${doc.id}:removed`,
+    text: `${doc.title}: ${removedByName} removed this document from the tracker.`,
+    createdAt: now.toISOString(),
+    createdBy: 'system:dochub',
+    createdByName: 'DocHub',
+    kind: 'System',
+    eventType: 'DOCHUB',
+    documentId: doc.id,
+  }
+  const comments = (task.comments || []).some((c: any) => c.id === comment.id)
+    ? task.comments
+    : [...(task.comments || []), comment].slice(-500)
+  const updated = {
+    ...task,
+    comments,
+    docHubDocuments: (task.docHubDocuments || []).filter((d: any) => d.id !== doc.id),
+  }
+  const next = { ...state, items: state.items.map((i: any) => (i.id === task.id ? updated : i)) }
   return { next, changed: JSON.stringify(next) !== JSON.stringify(state) }
 }
 
@@ -536,7 +577,9 @@ export function createDocHubService(deps: Deps) {
           }
         }
         if (doc.documentId) {
-          const remoteDocument = await api.call(`/documents/${docHubId(doc.documentId)}`)
+          const remoteDocument = await api.call(`/documents/${docHubId(doc.documentId)}`).catch(missingOn404)
+          // Found again (for example restored in DocHub): carry on as usual.
+          if (doc.status === 'MISSING') doc.status = 'UPLOADED'
           if (remoteDocument.isTemplate)
             throw new DocHubError('A regular document is required; templates are not supported.', 409)
           doc.documentUrl =
@@ -609,7 +652,9 @@ export function createDocHubService(deps: Deps) {
             }
           }
           if (doc.signRequestId) {
-            const remote = await api.call(`/sign-requests/${docHubId(doc.signRequestId)}?include=document,signers.user`)
+            const remote = await api
+              .call(`/sign-requests/${docHubId(doc.signRequestId)}?include=document,signers.user`)
+              .catch(missingOn404)
             doc.status = signingStatus(remote)
             doc.compiledPdfId = remote.compiledPdfId || ''
             doc.remoteStatus = String(remote.status || '')
@@ -692,11 +737,21 @@ export function createDocHubService(deps: Deps) {
             addEvent(doc, `status:${doc.status}`, messages[doc.status], doc.status === 'COMPLETED')
         }
       } catch (e) {
-        doc.error =
-          e instanceof DocHubError
-            ? e.message
-            : 'Document preparation could not finish. Refresh to continue the existing preparation.'
-        if (!doc.documentId && !doc.importId) doc.status = doc.importAttemptAt ? 'REVIEW_REQUIRED' : 'UPLOAD_FAILED'
+        if (e instanceof MissingInDocHub) {
+          doc.status = 'MISSING'
+          doc.error = ''
+          addEvent(
+            doc,
+            'missing',
+            'This document was not found in DocHub; it may have been deleted there. It can be removed from the tracker.',
+          )
+        } else {
+          doc.error =
+            e instanceof DocHubError
+              ? e.message
+              : 'Document preparation could not finish. Refresh to continue the existing preparation.'
+          if (!doc.documentId && !doc.importId) doc.status = doc.importAttemptAt ? 'REVIEW_REQUIRED' : 'UPLOAD_FAILED'
+        }
       }
       // Only documents that become fully signed while this feature is on are filed automatically; older ones can be filed with the button.
       if (doc.status === 'COMPLETED' && previousStatus !== 'COMPLETED' && !doc.driveFile) doc.driveAutoSave = true
@@ -912,6 +967,99 @@ export function createDocHubService(deps: Deps) {
       return doc
     })
   }
+  /**
+   * Void a request that is out for signature but not fully signed, so its signatories can no longer sign it.
+   * The latest status is read first, so a document signed in the meantime is never voided.
+   */
+  async function voidRequest(tenant: string, id: string, actor: any) {
+    const refreshed = await refresh(tenant, id, true)
+    if (refreshed.error)
+      throw new DocHubError(
+        'The latest DocHub status could not be verified. Refresh the document successfully before voiding it.',
+        409,
+      )
+    return locked(`${tenant}:${id}`, async () => {
+      const doc = await load(tenant, id)
+      if (!canVoidDocHub(doc))
+        throw new DocHubError(
+          doc.status === 'COMPLETED'
+            ? 'This document is fully signed and cannot be voided.'
+            : 'Only a request that is out for signature can be voided. An unsent or finished document can be removed from the tracker instead.',
+          409,
+        )
+      const api = await active(tenant)
+      try {
+        await api.call(`/sign-requests/${docHubId(doc.signRequestId)}/void`, 'POST', {})
+      } catch (error) {
+        if (error instanceof DocHubError && error.providerStatus === 422)
+          throw new DocHubError(
+            'DocHub did not void this request. It may already be finished, voided or rejected; refresh to see its current status.',
+            409,
+            422,
+          )
+        if (error instanceof DocHubError && error.providerStatus === 404)
+          throw new DocHubError(
+            'This request was not found in DocHub. Refresh the document, then remove it from the tracker.',
+            409,
+            404,
+          )
+        throw error
+      }
+      const name = actorName(actor),
+        at = new Date().toISOString()
+      doc.status = 'VOIDED'
+      doc.remoteStatus = 'VOIDED'
+      doc.voidedAt = at
+      doc.voidedByName = name
+      addEvent(
+        doc,
+        `voided-by:${at}`,
+        `${name} voided the signature request from the tracker. Signatories can no longer sign it.`,
+      )
+      addEvent(doc, 'status:VOIDED', 'The signature request was voided.')
+      await save(tenant, doc)
+      try {
+        await mirror(tenant, doc)
+      } catch {
+        doc.error = 'The request was voided, but its task activity entry is pending synchronization. Refresh to retry.'
+        await save(tenant, doc)
+      }
+      return doc
+    })
+  }
+  /**
+   * Take a document off the tracker: its history row and its link on the task. Nothing is changed in DocHub, so an
+   * unsent draft stays there; a request out for signature has to be voided first, and fully signed records are kept.
+   */
+  async function remove(tenant: string, id: string, actor: any) {
+    return locked(`${tenant}:${id}`, async () => {
+      const doc = await load(tenant, id)
+      if (!canRemoveDocHub(doc.status))
+        throw new DocHubError(
+          ['COMPLETED', 'COMPLETE', 'DONE'].includes(doc.status)
+            ? 'A fully signed document is kept as the signing record.'
+            : 'This request is still out for signature. Void it first, then remove it.',
+          409,
+        )
+      const name = actorName(actor)
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const current = (await deps.load(tenant)).data
+        if (!current) break
+        const { next, changed } = removeDocumentFromWorkspace(current, doc, name)
+        if (!changed) break
+        try {
+          await deps.commit(tenant, next, null, 'dochub-remove', current)
+          break
+        } catch (e) {
+          if (!(e instanceof LifecycleError) || attempt === 3) throw e
+        }
+      }
+      const r = await database().from('tenant_dochub_documents').delete().eq('tenant_id', tenant).eq('id', id)
+      check(r.error)
+      // An unsent draft (or a voided request) still exists in DocHub; the person may want to delete it there too.
+      return { id, stillInDocHub: Boolean(doc.documentId) && doc.status !== 'MISSING' }
+    })
+  }
   return {
     account,
     active,
@@ -923,6 +1071,8 @@ export function createDocHubService(deps: Deps) {
     prepare,
     refresh,
     notifySigner,
+    voidRequest,
+    remove,
     scan,
     locked,
     check,
@@ -1221,6 +1371,32 @@ export function registerDocHubRoutes(app: Express, deps: Deps, service = createD
       if (!signerId || signerId.length > 200) throw new DocHubError('Choose a valid signatory.')
       const document = await service.notifySigner(tenant(req), String(req.params.id), signerId, actor)
       res.json({ ok: true, document: publicDocument(document), message: 'DocHub reminder sent.' })
+    }),
+  )
+  app.post(
+    '/api/dochub/documents/:id/void',
+    ...scope,
+    visibleDocument,
+    wrap(async (req, res) => {
+      const actor = write(req)
+      const document = await service.voidRequest(tenant(req), String(req.params.id), actor)
+      res.json({ ok: true, document: publicDocument(document), message: 'Signature request voided.' })
+    }),
+  )
+  app.delete(
+    '/api/dochub/documents/:id',
+    ...scope,
+    visibleDocument,
+    wrap(async (req, res) => {
+      const actor = write(req)
+      const result = await service.remove(tenant(req), String(req.params.id), actor)
+      res.json({
+        ok: true,
+        ...result,
+        message: result.stillInDocHub
+          ? 'Removed from the tracker. The document is still in DocHub; delete it there if you no longer need it.'
+          : 'Removed from the tracker.',
+      })
     }),
   )
   app.post(

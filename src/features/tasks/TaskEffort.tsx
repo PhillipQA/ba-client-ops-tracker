@@ -47,7 +47,8 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
   // Once Seeds is on: time is logged on the task as Seeds time entries (duration in hrs + mins, Seeds task, remarks).
-  // An entry can be for one of the task's subtasks; its title becomes the remarks.
+  // An entry can be for one of the task's subtasks; the remarks are then filled in as "subtask – task", and stay
+  // editable.
   const rule = seedsRule ? seedsRule(item) : null
   const [durationHours, setDurationHours] = useState('0')
   const [durationMinutes, setDurationMinutes] = useState('0')
@@ -55,7 +56,16 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [chosenSeedsTask, setChosenSeedsTask] = useState('')
   const seedsTaskId = chosenSeedsTask || (rule ? defaultSeedsTask(rule, subtaskId) : '')
   const forSubtask = rule?.subtasks.find(subtask => subtask.id === subtaskId)
-  const remarks = forSubtask ? subtaskRemarks(forSubtask.title, item.title) : note
+  const remarks = note
+  // Picking a subtask fills in "subtask – task", unless the person has typed their own remarks.
+  const chooseSubtask = (id: string) => {
+    const suggestion = (subtask?: { title: string }) => (subtask ? subtaskRemarks(subtask.title, item.title) : '')
+    const previous = suggestion(forSubtask),
+      next = suggestion(rule?.subtasks.find(subtask => subtask.id === id))
+    if (!note.trim() || note === previous) setNote(next)
+    setSubtaskId(id)
+    setChosenSeedsTask('')
+  }
   const parentTask = item.parentTaskId ? allItems.find(candidate => candidate.id === item.parentTaskId) : undefined
   const seedsTasks = rule?.tasks || []
   const seedsTaskLabel = (id: string) => `Seeds: ${seedsTasks.find(task => task.id === id)?.name || 'task'}`
@@ -92,7 +102,8 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
       setHours('')
       setDurationHours('0')
       setDurationMinutes('0')
-      setNote('')
+      // The subtask stays chosen, so its suggestion is ready for the next entry.
+      setNote(rule && forSubtask ? subtaskRemarks(forSubtask.title, item.title) : '')
       setMessage({ text: `${formatHours(checked.value.hours)} logged.`, ok: true })
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : 'The time entry could not be saved.', ok: false })
@@ -215,7 +226,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
       {canLog && rule?.logOnTaskId && (
         <p className="effort-message" role="status">
           Time is logged on the task{parentTask ? ` “${parentTask.title}”` : ''}: open it, log time and choose this
-          subtask. The remarks become “subtask – task”.
+          subtask. The remarks are filled in as “subtask – task”, and you can edit them.
         </p>
       )}
       {canLog && rule && !rule.logOnTaskId && (
@@ -264,14 +275,8 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                 {rule.subtasks.length > 0 && (
                   <label>
                     Subtask
-                    <select
-                      value={subtaskId}
-                      onChange={event => {
-                        setSubtaskId(event.target.value)
-                        setChosenSeedsTask('')
-                      }}
-                    >
-                      <option value="">None (type the remarks)</option>
+                    <select value={subtaskId} onChange={event => chooseSubtask(event.target.value)}>
+                      <option value="">None</option>
                       {rule.subtasks.map(subtask => (
                         <option key={subtask.id} value={subtask.id}>
                           {subtask.title}
@@ -298,11 +303,10 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                   value={remarks}
                   maxLength={MAX_SEEDS_REMARKS_LENGTH}
                   rows={2}
-                  readOnly={Boolean(forSubtask)}
+                  placeholder={forSubtask ? '' : 'What you worked on'}
                   onChange={event => setNote(event.target.value)}
                 />
                 <small className="effort-count">
-                  {forSubtask ? 'Subtask – task · ' : ''}
                   {remarks.length}/{MAX_SEEDS_REMARKS_LENGTH}
                 </small>
               </label>

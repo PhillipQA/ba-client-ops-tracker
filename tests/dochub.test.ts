@@ -22,7 +22,13 @@ import {
   validatePreparation,
 } from '../server/integrations/dochub'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
-import { canNotifyDocHubSigner, docHubGuidance, isDocHubSignerSigned } from '../src/features/documents/dochub'
+import {
+  canNotifyDocHubSigner,
+  canRemoveDocHub,
+  canVoidDocHub,
+  docHubGuidance,
+  isDocHubSignerSigned,
+} from '../src/features/documents/dochub'
 process.env.TENANT_INTEGRATION_MASTER_KEY = 'ab'.repeat(32)
 const tenantA = '11111111-1111-4111-8111-111111111111',
   tenantB = '22222222-2222-4222-8222-222222222222'
@@ -83,6 +89,10 @@ function database() {
           payload = v
           return q
         },
+        delete() {
+          op = 'delete'
+          return q
+        },
         then(resolve: any, reject: any) {
           try {
             queries.push({ table, columns, filters: copy(filters), op })
@@ -94,6 +104,11 @@ function database() {
               else rows[old] = copy(payload)
             }
             if (op === 'update') rows.filter(match).forEach(r => Object.assign(r, copy(payload)))
+            if (op === 'delete') {
+              const kept = rows.filter(r => !match(r))
+              tables.set(table, kept)
+              return resolve({ data: null, error: null })
+            }
             const found = rows.filter(match).slice(0, limit).map(project)
             resolve({ data: copy(single ? found[0] || null : found), error: null })
           } catch (e) {
@@ -162,6 +177,8 @@ function fixture(options: { rejectDraft?: boolean; lostImport?: boolean } = {}) 
       fields: false,
       roles: [] as any[],
       importComplete: false,
+      /** Documents deleted in DocHub: reading them answers 404. */
+      deleted: new Set<string>(),
     }
   const response = (body: any, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -215,6 +232,7 @@ function fixture(options: { rejectDraft?: boolean; lostImport?: boolean } = {}) 
     }
     if (/^\/api\/v2\/documents\/doc\d+$/.test(path)) {
       const id = path.split('/').pop()!
+      if (remote.deleted.has(id)) return response({ error: 'not found' }, 404)
       return response({
         id,
         isTemplate: false,
@@ -255,6 +273,11 @@ function fixture(options: { rejectDraft?: boolean; lostImport?: boolean } = {}) 
           },
         ],
       })
+    if (/^\/api\/v2\/sign-requests\/sr\d+\/void$/.test(path) && init.method === 'POST') {
+      if (remote.status !== 'IN_PROGRESS') return response({ error: 'not in progress' }, 422)
+      remote.status = 'VOIDED'
+      return response({ id: path.split('/')[4], status: 'VOIDED' })
+    }
     if (/^\/api\/v2\/sign-requests\/sr\d+\/resend-email$/.test(path) && init.method === 'POST') {
       assert.equal(body.signerId, 'signer1')
       return new Response(null, { status: 204 })
@@ -980,4 +1003,140 @@ test('Drive: with no filer the signing flow is unchanged, and a task removed bef
   const filed = await orphan.f.service.refresh(tenantA, orphan.doc.id, true)
   assert.equal(filed.driveFile.id, 'orphan')
   assert.equal(filed.driveError, '')
+})
+
+/** A DRF already in the tracker and linked to the task, in the given state. */
+function seedDocument(f: ReturnType<typeof fixture>, data: Record<string, any>) {
+  const id = randomUUID(),
+    createdAt = '2026-11-10T00:13:59Z'
+  const doc: any = {
+    id,
+    kind: 'DRF',
+    title: 'DRF-Primer-Group-Of-Companies-ROVING-POS.xlsx',
+    fileName: 'DRF-Primer-Group-Of-Companies-ROVING-POS.xlsx',
+    documentId: 'doc1',
+    createdAt,
+    createdBy: 'admin',
+    createdByName: 'Admin',
+    taskId: 'task',
+    clientId: 'client',
+    signers: [{ id: 'signer1', name: 'Signer', email: 'signer@example.com', status: 'CREATED' }],
+    events: [],
+    ...data,
+  }
+  f.db.tables.set('tenant_dochub_documents', [
+    ...(f.db.tables.get('tenant_dochub_documents') || []),
+    { tenant_id: tenantA, id, document_id: doc.documentId, updated_at: createdAt, data: doc },
+  ])
+  const state = f.states.get(tenantA)
+  state.items[0].docHubDocuments = [
+    ...(state.items[0].docHubDocuments || []),
+    { id, title: doc.title, status: doc.status, signed: 0, total: 1, documentUrl: 'https://dochub.com/d/doc1' },
+  ]
+  return id
+}
+const actor = {
+  id: 'admin',
+  name: 'Phillip Val R. Cabalo',
+  username: 'admin',
+  role: 'Administrator',
+  modules: ['documents'],
+}
+
+test('void and remove eligibility: only unsigned requests out for signature can be voided; signed records stay', () => {
+  for (const status of ['SENT', 'VIEWED', 'PARTIALLY_SIGNED', 'BOUNCE', 'ERROR'])
+    assert.equal(canVoidDocHub({ status, signRequestId: 'sr1' }), true, status)
+  assert.equal(canVoidDocHub({ status: 'SENT', signRequestId: '' }), false)
+  for (const status of ['SETUP_REQUIRED', 'PREPARING', 'READY_TO_REVIEW', 'COMPLETED', 'VOIDED', 'MISSING'])
+    assert.equal(canVoidDocHub({ status, signRequestId: 'sr1' }), false, status)
+  const removable = ['MISSING', 'SETUP_REQUIRED', 'PREPARING', 'READY_TO_REVIEW', 'VOIDED', 'REJECTED', 'EXPIRED']
+  for (const status of [...removable, 'IMPORT_FAILED', 'ERROR']) assert.equal(canRemoveDocHub(status), true, status)
+  for (const status of ['SENT', 'VIEWED', 'PARTIALLY_SIGNED', 'BOUNCE', 'COMPLETED', 'UNKNOWN'])
+    assert.equal(canRemoveDocHub(status), false, status)
+  assert.match(docHubGuidance({ status: 'MISSING' }), /no longer exists in DocHub/)
+})
+
+test('a document deleted in DocHub is marked so, scans stop, and it can be removed from the tracker', async () => {
+  const f = fixture()
+  const id = seedDocument(f, { status: 'SETUP_REQUIRED', rolesPrepared: true, draftAttempted: true })
+  f.remote.deleted.add('doc1')
+  let doc = await f.service.refresh(tenantA, id, true)
+  assert.equal(doc.status, 'MISSING')
+  assert.equal(doc.error, '', 'a deleted document is a state, not an error')
+  assert(doc.events.some((e: any) => /not found in DocHub/.test(e.message)))
+  assert.equal(f.states.get(tenantA).items[0].docHubDocuments[0].status, 'MISSING')
+  const before = f.calls.length
+  await f.service.scan(tenantA)
+  assert.equal(f.calls.length, before, 'scans do not keep asking DocHub about a deleted document')
+
+  // Found again (restored in DocHub): a manual refresh picks it back up.
+  f.remote.deleted.delete('doc1')
+  doc = await f.service.refresh(tenantA, id, true)
+  assert.notEqual(doc.status, 'MISSING')
+  f.remote.deleted.add('doc1')
+  doc = await f.service.refresh(tenantA, id, true)
+  assert.equal(doc.status, 'MISSING')
+
+  const result = await f.service.remove(tenantA, id, actor)
+  assert.deepEqual(result, { id, stillInDocHub: false })
+  await assert.rejects(
+    () => f.service.load(tenantA, id),
+    (e: any) => e.status === 404,
+  )
+  const task = f.states.get(tenantA).items[0]
+  assert.deepEqual(task.docHubDocuments, [])
+  assert(task.comments.some((c: any) => /Phillip Val R\. Cabalo removed this document from the tracker/.test(c.text)))
+  assert(!f.calls.some(c => c.method === 'DELETE'), 'removing never deletes anything in DocHub')
+})
+
+test('void: an unsigned request is voided in DocHub, then removable; signed and sent ones are protected', async () => {
+  const f = fixture()
+  f.remote.status = 'IN_PROGRESS'
+  f.remote.signRequestId = 'sr1'
+  const id = seedDocument(f, { status: 'SENT', signRequestId: 'sr1' })
+  await assert.rejects(
+    () => f.service.remove(tenantA, id, actor),
+    (e: any) => e.status === 409 && /Void it first/.test(e.message),
+  )
+  const doc = await f.service.voidRequest(tenantA, id, actor)
+  assert(f.calls.some(c => c.url.endsWith('/api/v2/sign-requests/sr1/void') && c.method === 'POST'))
+  assert.equal(doc.status, 'VOIDED')
+  assert.equal(doc.voidedByName, 'Phillip Val R. Cabalo')
+  const task = f.states.get(tenantA).items[0]
+  assert(task.comments.some((c: any) => /voided the signature request from the tracker/.test(c.text)))
+  assert.equal(task.docHubDocuments[0].status, 'VOIDED')
+  await assert.rejects(
+    () => f.service.voidRequest(tenantA, id, actor),
+    (e: any) => e.status === 409,
+  )
+  const result = await f.service.remove(tenantA, id, actor)
+  assert.equal(result.stillInDocHub, true)
+
+  const signed = fixture()
+  signed.remote.status = 'FINALIZED'
+  signed.remote.signed = true
+  signed.remote.signRequestId = 'sr1'
+  const signedId = seedDocument(signed, { status: 'PARTIALLY_SIGNED', signRequestId: 'sr1' })
+  await assert.rejects(
+    () => signed.service.voidRequest(tenantA, signedId, actor),
+    (e: any) => e.status === 409 && /fully signed/.test(e.message),
+    'a document signed in the meantime is never voided',
+  )
+  assert(!signed.calls.some(c => c.url.endsWith('/void')))
+  await assert.rejects(
+    () => signed.service.remove(tenantA, signedId, actor),
+    (e: any) => e.status === 409 && /signing record/.test(e.message),
+  )
+})
+
+test('an unsent draft can be removed without touching DocHub', async () => {
+  const f = fixture()
+  const id = seedDocument(f, { status: 'SETUP_REQUIRED' })
+  await assert.rejects(
+    () => f.service.voidRequest(tenantA, id, actor),
+    (e: any) => e.status === 409 && /removed from the tracker instead/.test(e.message),
+  )
+  const result = await f.service.remove(tenantA, id, actor)
+  assert.equal(result.stillInDocHub, true)
+  assert.deepEqual(f.states.get(tenantA).items[0].docHubDocuments, [])
 })

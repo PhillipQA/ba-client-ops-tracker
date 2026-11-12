@@ -972,3 +972,38 @@ test('only the tracker’s owner or an Administrator changes who can reveal a Se
     assert.equal((await save(admin, columns => columns.filter(c => c.id !== secret))).status, 200)
   })
 })
+
+test('a tracker’s users: creator, people on its project, and people its creator adds', async () => {
+  const h = harness()
+  Object.assign(h.state, {
+    accounts: [
+      { id: 'u1', name: 'Ana Reyes', status: 'Active' },
+      { id: 'u2', name: 'Ben Cruz', status: 'Active' },
+      { id: 'u3', name: 'Carla Diaz', status: 'Active' },
+      { id: 'u4', name: 'Former', status: 'Disabled' },
+    ],
+    access: { assignments: [{ userId: 'u2', role: 'BA', projectId: 'p1', source: 'manual' }] },
+  })
+  await serve(h, async ask => {
+    const tracker = await makeTracker(ask, { clientId: 'c1', projectId: 'p1' })
+    const listed = (await ask('GET', '/api/trackers')).body.trackers[0]
+    assert.deepEqual(listed.users, ['u1', 'u2'], 'the creator and the person on its project')
+    assert.deepEqual(listed.members, [])
+
+    const notOwner = await ask('PATCH', `/api/trackers/${tracker.id}`, { members: ['u3'] }, { 'x-user': 'u2' })
+    assert.equal(notOwner.status, 403)
+    assert.equal((await ask('PATCH', `/api/trackers/${tracker.id}`, { members: ['u4'] })).status, 400)
+    const added = await ask('PATCH', `/api/trackers/${tracker.id}`, { members: ['u3', 'u1'] })
+    assert.equal(added.status, 200, JSON.stringify(added.body))
+    assert.deepEqual(added.body.tracker.members, ['u3'], 'the creator is never stored as added')
+    assert.deepEqual(added.body.tracker.users, ['u1', 'u2', 'u3'])
+    assert.deepEqual((await ask('GET', `/api/trackers/${tracker.id}`)).body.tracker.users, ['u1', 'u2', 'u3'])
+    const byAdmin = await ask(
+      'PATCH',
+      `/api/trackers/${tracker.id}`,
+      { members: [] },
+      { 'x-user': 'u2', 'x-role': 'Administrator' },
+    )
+    assert.deepEqual(byAdmin.body.tracker.users, ['u1', 'u2'])
+  })
+})

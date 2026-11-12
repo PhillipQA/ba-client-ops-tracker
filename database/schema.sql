@@ -1,4 +1,4 @@
--- BA Client Ops Tracker: database schema (version 35)
+-- BA Client Ops Tracker: database schema (version 36)
 --
 -- Creates every table, constraint, index and function the app needs on an empty PostgreSQL 14+ database, plus the
 -- two starting sign-ins. Run it once, as the same database user the app connects with (DATABASE_URL):
@@ -10,7 +10,7 @@
 -- INTERNAL_ADMIN_BOOTSTRAP_PASSWORD or BXI_CORE_BOOTSTRAP_PASSWORD from the server's settings (12+ characters), and
 -- must then be changed.
 --
--- Changing the schema later: add database/migrations/schema-v36-<what>.sql (and so on), apply it to every database,
+-- Changing the schema later: add database/migrations/schema-v37-<what>.sql (and so on), apply it to every database,
 -- and fold it into this file so a new install gets it too. See database/README.md.
 
 begin;
@@ -874,6 +874,7 @@ CREATE TABLE public.tenant_trackers (
     archived_at timestamp with time zone,
     timeline jsonb DEFAULT '{}'::jsonb NOT NULL,
     step_tasks boolean,
+    members jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT tenant_trackers_name_check CHECK (((length(name) >= 1) AND (length(name) <= 120)))
 );
 
@@ -1488,4 +1489,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 35 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 36 as schema_version;

@@ -338,6 +338,10 @@ export type Tracker = {
   source?: TrackerSource | null
   /** In the list: whether the tracker follows a Google Sheet. */
   synced?: boolean
+  /** People its creator or an Administrator added by hand (see trackerFolders). Missing before schema v36. */
+  members?: string[]
+  /** Everyone it counts as a user of: creator, people on its projects, people added. It shows in their folders. */
+  users?: string[]
 }
 
 export class TrackerError extends Error {
