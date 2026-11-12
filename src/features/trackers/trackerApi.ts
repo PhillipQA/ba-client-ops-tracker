@@ -15,6 +15,7 @@ export class TrackerApiError extends Error {
       noAccess?: boolean
       /** The Google account behind the Sheet may not edit Sheets (two-way, done marks). */
       needsWrite?: boolean
+      needsExcel?: boolean
       /** Two-way: cells changed in the Sheet since the last sync. */
       conflicts?: import('./trackerTwoWay').Conflict[]
     } = {},
