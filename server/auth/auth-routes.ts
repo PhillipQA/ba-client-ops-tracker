@@ -32,6 +32,7 @@ import {
   loadLegacyTrackerState,
   loadTenantState,
   multiTenantSchemaReady,
+  organizationById,
   organizationByLoginKey,
   platformAuthSchemaReady,
   saveTenantState,
@@ -39,7 +40,15 @@ import {
 } from '../core/tenant-state'
 import type { LoginIdentity } from './login-limiter'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './password-recovery-email'
-import { loginLimiter, recoveryRequestLimiter, recoverySubmitLimiter } from './rate-limits'
+import { googleSignInLimiter, loginLimiter, recoveryRequestLimiter, recoverySubmitLimiter } from './rate-limits'
+import {
+  chooseGoogleUser,
+  createGoogleVerifier,
+  exactLike,
+  type GoogleCandidate,
+  GoogleSignInError,
+  seedsAllowsSignIn,
+} from './google-sign-in'
 import { SESSION_MAX_AGE_SECONDS } from './session-store'
 
 function loginIdentity(req: express.Request): LoginIdentity {
@@ -79,6 +88,11 @@ function clearLoginFailures(req: express.Request) {
 }
 
 const sendRecoveryEmail = recoveryMailer()
+
+const verifyGoogleIdToken = createGoogleVerifier()
+/** The Google client for sign-in: its own, else the one registered for sending time to Seeds. */
+const googleSignInClientId = () =>
+  (process.env.GOOGLE_SIGNIN_CLIENT_ID || process.env.SEEDS_GOOGLE_CLIENT_ID || '').trim()
 
 /** Sign in, sign out and password recovery. */
 export function registerAuthRoutes(app: Express) {
@@ -292,6 +306,66 @@ export function registerAuthRoutes(app: Express) {
     } catch (error) {
       console.error('Login failed:', error)
       res.status(500).json({ error: 'Login failed.' })
+    }
+  })
+
+  // Sign in with Google: the login page asks whether it is set up, then posts the person's Google ID token.
+  app.get('/api/auth/google', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ clientId: db ? googleSignInClientId() : '' })
+  })
+
+  app.post('/api/auth/google', googleSignInLimiter, async (req, res) => {
+    try {
+      const clientId = googleSignInClientId()
+      if (!clientId || !db || !(await multiTenantSchemaReady()))
+        throw new GoogleSignInError('Sign in with Google is not set up. Use your password.', 503)
+      const identity = await verifyGoogleIdToken(req.body?.credential, clientId)
+      const { data: rows, error } = await db
+        .from('app_users')
+        .select(
+          'id,organization_id,username,password_hash,name,email,phone,role,modules,status,created_on,last_login_at,deleted_at',
+        )
+        .ilike('email', exactLike(identity.email))
+        .is('deleted_at', null)
+        .limit(20)
+      if (error) throw error
+      const candidates: GoogleCandidate[] = []
+      for (const row of rows || []) {
+        if (
+          row.status === 'Disabled' ||
+          String(row.email || '')
+            .trim()
+            .toLowerCase() !== identity.email
+        )
+          continue
+        const organization = await organizationById(row.organization_id)
+        if (organization?.status === 'Active') candidates.push({ user: row, organization })
+      }
+      const account = typeof req.body?.account === 'string' ? req.body.account.trim().slice(0, 200) : ''
+      const wanted = account ? await organizationByLoginKey(account) : null
+      const choice = chooseGoogleUser(candidates, identity.email, account ? wanted?.id || 'unknown' : '')
+      if (!choice.ok)
+        return void res
+          .status(choice.status)
+          .json({ error: choice.error, ...(choice.accounts ? { accounts: choice.accounts } : {}) })
+      const { user: row, organization } = choice.candidate
+      const state = await loadTenantState(organization.id)
+      if (!seedsAllowsSignIn(state.data, identity.email))
+        throw new GoogleSignInError(
+          `${identity.email} is not an active employee in Seeds, so Google sign-in is not available for it. Ask your Administrator.`,
+          403,
+        )
+      const loggedInAt = new Date().toISOString()
+      await db.from('app_users').update({ last_login_at: loggedInAt, updated_at: loggedInAt }).eq('id', row.id)
+      const user = safeUser({ ...row, last_login_at: loggedInAt }, organization as OrganizationInfo)
+      const token = sessions.create(user)
+      res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
+      res.json({ user: withAccess(user), cloudConfigured: true, multiTenant: true })
+    } catch (error) {
+      if (error instanceof GoogleSignInError) return void res.status(error.status).json({ error: error.message })
+      console.error('Google sign-in failed:', error)
+      res.status(500).json({ error: 'Sign in with Google failed. Try again, or use your password.' })
     }
   })
 

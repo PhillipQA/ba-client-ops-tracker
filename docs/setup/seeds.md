@@ -81,6 +81,22 @@ with Google as the same email as here.
 3. Give that client ID to the SEEDS Admin to register for the app's writes.
 4. In Northflank, add the variable `SEEDS_GOOGLE_CLIENT_ID` with that client ID, then redeploy.
 
+The same Google client also puts **Continue with Google** on the login page (see below).
+
+## Sign in with Google
+
+With `SEEDS_GOOGLE_CLIENT_ID` set (or `GOOGLE_SIGNIN_CLIENT_ID`, to use a different Google client for sign-in), the
+login page shows **Continue with Google** under the password form.
+
+- The person picks their Google account; the server checks Google's signature on the answer and signs in the user
+  whose **email** (Users & Permissions) is exactly that Google email. No user is ever created this way: an email
+  nobody is registered with is refused.
+- Once Seeds is on for the account, the email must also be in Seeds' employee directory (read at each Seeds sync), so
+  someone who has left cannot sign in with Google even if their user here was not disabled.
+- An email registered in more than one account asks which account to open. Two users with the same email in one
+  account are refused until an Administrator fixes the duplicate.
+- Password sign-in is unchanged and stays as the backup. Internal Admin signs in with a password only.
+
 **Sending:** a task's time list shows each entry as *Not sent* or *In Seeds*. **Send to Seeds** on the task (your
 entries there) or **Send my time** on the Seeds page (all of yours) asks you to sign in with Google the first time
 in an hour, then sends. Each entry goes with a key made from its id, so sending again never doubles it in Seeds. An

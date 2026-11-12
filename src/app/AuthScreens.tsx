@@ -1,7 +1,90 @@
 import { ForgotPassword } from '../features/accounts/PasswordRecovery'
 import { APP_LABEL } from '../shared/version'
 import { ArrowRight, Building2, Eye, EyeOff, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type GoogleAccountChoice, googleSignInClientId } from '../features/accounts/auth'
+import { loadGoogle } from '../shared/googleIdentity'
+
+type GoogleLogin = (credential: string, account?: string) => Promise<GoogleAccountChoice[] | null>
+
+/**
+ * Sign in with Google, shown when the server has a Google client set up. The person picks their Google account; the
+ * server signs in the user registered with that email. An email registered in several accounts asks which one.
+ */
+function GoogleSignIn({ busy, onGoogleLogin }: { busy: boolean; onGoogleLogin: GoogleLogin }) {
+  const [clientId, setClientId] = useState('')
+  const [accounts, setAccounts] = useState<GoogleAccountChoice[]>([])
+  const [problem, setProblem] = useState('')
+  const credential = useRef('')
+  const holder = useRef<HTMLDivElement>(null)
+  const signIn = useRef(onGoogleLogin)
+  signIn.current = onGoogleLogin
+  useEffect(() => {
+    let alive = true
+    void googleSignInClientId().then(id => {
+      if (alive) setClientId(id)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    if (!clientId) return
+    let alive = true
+    loadGoogle()
+      .then(() => {
+        if (!alive || !holder.current) return
+        const google = (window as any).google
+        google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (response: { credential?: string }) => {
+            if (!response.credential) return
+            credential.current = response.credential
+            void signIn.current(response.credential).then(choices => setAccounts(choices || []))
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        })
+        google.accounts.id.renderButton(holder.current, {
+          theme: 'outline',
+          size: 'large',
+          text: 'continue_with',
+          width: Math.min(400, holder.current.offsetWidth || 320),
+        })
+      })
+      .catch(error => {
+        if (alive) setProblem(error instanceof Error ? error.message : 'Google sign-in could not load.')
+      })
+    return () => {
+      alive = false
+    }
+  }, [clientId])
+  if (!clientId) return null
+  return (
+    <div className="auth-google">
+      <div ref={holder} />
+      {accounts.length > 0 && (
+        <div className="auth-google-accounts" role="group" aria-label="Choose the account to open">
+          <span>Your email is in more than one account. Choose one:</span>
+          {accounts.map(account => (
+            <button
+              key={account.slug}
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                void signIn.current(credential.current, account.slug).then(choices => setAccounts(choices || []))
+              }
+            >
+              {account.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {problem && <small role="alert">{problem}</small>}
+    </div>
+  )
+}
 
 export function AuthSplash() {
   return (
@@ -21,10 +104,12 @@ export function LoginScreen({
   busy,
   error,
   onLogin,
+  onGoogleLogin,
 }: {
   busy: boolean
   error: string
   onLogin: (account: string, username: string, password: string) => Promise<void>
+  onGoogleLogin: GoogleLogin
 }) {
   const [forgot, setForgot] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -144,6 +229,7 @@ export function LoginScreen({
           <div className="auth-divider" aria-hidden="true">
             <span>OR</span>
           </div>
+          <GoogleSignIn busy={busy} onGoogleLogin={onGoogleLogin} />
           <div className="auth-security-note">
             <ShieldCheck size={21} />
             <div>

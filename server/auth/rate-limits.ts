@@ -19,3 +19,12 @@ export const recoverySubmitLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many attempts. Please try again in 15 minutes.' },
 })
+
+/** Google sign-ins from one address. Google has already checked the person, so this only stops flooding. */
+export const googleSignInLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many sign-in attempts. Please try again in 15 minutes.' },
+})

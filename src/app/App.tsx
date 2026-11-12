@@ -87,6 +87,7 @@ function App() {
     setMovingToSeeds,
     moveWorkToSeeds,
     handleLogin,
+    handleGoogleLogin,
     handleLogout,
     handleNotificationAction,
     handleReadAllNotifications,
@@ -207,7 +208,8 @@ function App() {
       />
     )
   if (authChecking) return <AuthSplash />
-  if (!authUser || !currentUser) return <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} />
+  if (!authUser || !currentUser)
+    return <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} />
 
   const currentTheme = themeForContext(currentUser)
 

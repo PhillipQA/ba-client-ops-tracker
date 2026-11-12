@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Sign in with Google
+**No database migration, no new setting:** it uses the Google client already set for sending time to Seeds (`SEEDS_GOOGLE_CLIENT_ID`).
+
+- The login page has **Continue with Google**. It signs in the user whose email (Users & Permissions) is that Google email; an email nobody is registered with is refused, and no user is created.
+- Once Seeds is on, the email must also be an employee in Seeds.
+- Password sign-in stays as it was, as the backup. Internal Admin is password only.
+
 ### Tracker folders
 **Database update:** run [database/migrations/schema-v36-tracker-members.sql](database/migrations/schema-v36-tracker-members.sql) on the live database before deploying (it adds `tenant_trackers.members`). Until it runs, everything works except adding people to a tracker.
 
