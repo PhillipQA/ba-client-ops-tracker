@@ -11,6 +11,11 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Follow Excel files kept in Google Drive
+- The Sheet picker (new tracker from a Google Sheet, and Import → Link an existing Google Sheet) now lists Excel (.xlsx) files in your Drive too, marked *Excel file · read only*. A pasted link to an .xlsx opened in Google Sheets works as well.
+- An Excel file is followed **one-way and read only**: it is downloaded and read on every sync, and the tracker never writes to it. Its columns can't be edited in the tracker; change them in the Excel file. You can still make tasks and subtasks from its rows. Two-way, the Gantt chart tab and done marks in the file are not offered (a done mark shows as not reaching the file).
+- The first time someone picks an Excel file, Google asks once more, for permission to read Drive files (`drive.readonly`). **Setup:** add `drive.readonly` to the OAuth consent screen's scopes in Google Cloud (see [docs/setup/google.md](docs/setup/google.md)). Files over 20 MB are refused.
+
 ### Link an existing Google Sheet to a tracker
 - A tracker's **Import** window has a new **Link an existing Google Sheet** button (shown when the tracker isn't following a Sheet yet). Pick the Sheet and tab, choose the task name column and what each column becomes, then **Link and sync**: the tracker follows that tab from then on, the same as a tracker made from a Sheet.
 - Rows the tracker already has are not doubled: a tracker row whose task name matches a Sheet row is linked to it and updated from the Sheet. Other Sheet rows are added; tracker rows with no match stay as they are.

@@ -185,6 +185,7 @@ export const SHEET_ISSUES = {
   no_header: 'The column is no longer in the Sheet.',
   no_key_column: 'The key column is no longer in the Sheet.',
   error: 'Google Sheets could not be reached.',
+  read_only: 'This tracker follows an Excel file, which it only reads. Mark the row done in the Excel file.',
 } as const
 export type SheetIssueCode = keyof typeof SHEET_ISSUES
 export type SheetIssue = { code: SheetIssueCode; message: string; value: Cell; at: string }

@@ -286,6 +286,8 @@ export type TrackerSource = {
   canWrite?: boolean
   /** Two-way: whether the person viewing may write to Sheets with their own Google account (edits are written as them). */
   youCanWrite?: boolean
+  /** The source is an Excel file kept in Google Drive: read on each sync, never written to (one-way only). */
+  excel?: boolean
 }
 export type SyncReport = {
   added: number
