@@ -329,7 +329,11 @@ export default function TrackerScreen(props: Props) {
   }
   const allowSheets = async () => {
     try {
-      const response = await fetch('/api/communications/gmail/connect?sheets=1', { credentials: 'same-origin' })
+      // An Excel file is downloaded to be read, which needs Google's permission to read Drive files too.
+      const response = await fetch(
+        `/api/communications/gmail/connect?sheets=1${tracker?.source?.excel ? '&excel=1' : ''}`,
+        { credentials: 'same-origin' },
+      )
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.url) throw new Error(result.error || 'Could not start the Google permission step.')
       window.location.assign(result.url)
@@ -1888,8 +1892,12 @@ export default function TrackerScreen(props: Props) {
             </a>
           </span>
           <span className="trk-muted">
-            {tracker.source.mode === 'two_way' ? 'Sheet ⇄ tracker (two-way)' : 'Sheet → tracker'} · connected by{' '}
-            {tracker.source.connectedByName || 'someone'}
+            {tracker.source.excel
+              ? 'Excel file → tracker (read only)'
+              : tracker.source.mode === 'two_way'
+                ? 'Sheet ⇄ tracker (two-way)'
+                : 'Sheet → tracker'}{' '}
+            · connected by {tracker.source.connectedByName || 'someone'}
             {tracker.source.lastSyncedAt ? ` · synced ${niceTime(tracker.source.lastSyncedAt)}` : ' · not synced yet'}
             {tracker.source.lastReport && tracker.source.lastStatus === 'ok'
               ? ` · ${describeSync(tracker.source.lastReport)}`
@@ -1905,6 +1913,7 @@ export default function TrackerScreen(props: Props) {
           ) : null}
           <span className="trk-spacer" />
           {canEdit &&
+            !tracker.source.excel &&
             sheetHasGantt(tracker.template) &&
             columns.some(column => column.type === 'date' && column.synced) && (
               <button
@@ -1928,7 +1937,7 @@ export default function TrackerScreen(props: Props) {
               Reconnect with my Google
             </button>
           )}
-          {canEdit && (
+          {canEdit && !tracker.source.excel && (
             <button
               type="button"
               className="trk-button"
@@ -2006,6 +2015,7 @@ export default function TrackerScreen(props: Props) {
       )}
       {tracker.source &&
         canEdit &&
+        !tracker.source.excel &&
         (twoWayNeedsWrite || (tracker.source.mode === 'two_way' && tracker.source.youCanWrite === false)) && (
           <div className="trk-banner trk-review-banner" role="status">
             <strong>
@@ -2026,16 +2036,19 @@ export default function TrackerScreen(props: Props) {
             </button>
           </div>
         )}
-      {tracker.source && tracker.source.canWrite === false && autoDoneColumn(columns)?.synced && (
-        <div className="trk-banner trk-review-banner" role="status">
-          <strong>Done marks may not reach the Sheet.</strong> They are written with the Google account of the person
-          who completes the task, or else {tracker.source.connectedByName || 'the person who connected the Sheet'}’s,
-          which has not allowed editing Google Sheets.
-          <button type="button" className="trk-text-button strong" onClick={() => void allowSheetEdits('done')}>
-            Allow editing with my Google
-          </button>
-        </div>
-      )}
+      {tracker.source &&
+        !tracker.source.excel &&
+        tracker.source.canWrite === false &&
+        autoDoneColumn(columns)?.synced && (
+          <div className="trk-banner trk-review-banner" role="status">
+            <strong>Done marks may not reach the Sheet.</strong> They are written with the Google account of the person
+            who completes the task, or else {tracker.source.connectedByName || 'the person who connected the Sheet'}’s,
+            which has not allowed editing Google Sheets.
+            <button type="button" className="trk-text-button strong" onClick={() => void allowSheetEdits('done')}>
+              Allow editing with my Google
+            </button>
+          </div>
+        )}
       {rows.some(row => row.sheetIssue) && (
         <div className="trk-banner trk-review-banner" role="status">
           <strong>{plural(rows.filter(row => row.sheetIssue).length, 'row')} not marked done in the Sheet.</strong>{' '}

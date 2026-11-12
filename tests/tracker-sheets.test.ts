@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
+import { readFileSync } from 'node:fs'
 import { registerTrackerRoutes } from '../server/trackers/trackers'
 import { TRACKER_TEMPLATES, templateRows } from '../src/features/trackers/trackerTemplates'
 
@@ -121,6 +122,12 @@ let grid: string[][] = []
 let dropdowns: (any | null)[] = []
 const dropdownRanges: string[] = []
 let canOpen = new Set(['u1', 'u2'])
+/** An Excel workbook kept in Drive (tab "Sites & Go-live": Site, Go-live, Status…). */
+const XLSX = readFileSync(new URL('./fixtures/sites.xlsx', import.meta.url))
+const DRIVE_READ = 'https://www.googleapis.com/auth/drive.readonly'
+/** The scopes each fake token was given, so the Drive download can check them. */
+const tokenScopes = new Map<string, string>()
+const scopeOf = (token: string) => tokenScopes.get(token) || ''
 const NEW_SHEET = '1NewSheetMadeFromATracker0123456789abcdef'
 const created: any[] = []
 const formatted: any[] = []
@@ -164,10 +171,17 @@ globalThis.fetch = (async (input: any, init?: any) => {
     return reply(400, {
       error: { message: 'This operation is not supported for this document', status: 'FAILED_PRECONDITION' },
     })
+  // Downloading it needs Drive read access.
+  if (url.includes(`/drive/v3/files/${EXCEL}?alt=media`))
+    return /drive\.readonly/.test(scopeOf(token))
+      ? new Response(new Uint8Array(XLSX).buffer, { status: 200 })
+      : reply(403, { error: { message: 'Request had insufficient authentication scopes.' } })
   if (url.includes(`/drive/v3/files/${EXCEL}`))
     return reply(200, {
       name: 'Branches.xlsx',
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      modifiedTime: '2026-11-12T00:00:00Z',
+      size: String(XLSX.length),
     })
   if (url.includes(`/spreadsheets/${PRIVATE_XLSX}`))
     return reply(403, { error: { message: 'The caller does not have permission', status: 'PERMISSION_DENIED' } })
@@ -288,13 +302,11 @@ function harness(
   const pass = (_q: any, _s: any, n: any) => n()
   const googleAccess = async (_tenant: string, userId: string) => {
     if (userId === 'nobody') throw Object.assign(new Error('Connect your Google account again'), { status: 409 })
-    return {
-      token: `token-${userId}`,
-      scope:
-        scopes[userId] ??
-        'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.metadata.readonly',
-      email: `${userId}@example.com`,
-    }
+    const scope =
+      scopes[userId] ??
+      'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.metadata.readonly'
+    tokenScopes.set(`token-${userId}`, scope)
+    return { token: `token-${userId}`, scope, email: `${userId}@example.com` }
   }
   const hooks = registerTrackerRoutes(app as any, {
     db,
@@ -347,6 +359,7 @@ test('a person lists, opens and connects a Sheet; the first sync brings every ro
       available: true,
       connected: true,
       canWrite: false,
+      canReadExcel: false,
       email: 'u1@example.com',
     })
     const files = await ask('GET', '/api/trackers/sheets/files?q=card')
@@ -546,9 +559,9 @@ test('Excel files and a switched-off Sheets API get their own messages', async (
   const h = harness()
   await serve(h, async ask => {
     const excel = await ask('GET', `/api/trackers/sheets/${EXCEL}/tabs`)
-    assert.equal(excel.status, 422)
-    assert.equal(excel.body.notASheet, true)
-    assert.match(excel.body.error, /Branches\.xlsx" is an Excel file .* Save as Google Sheets/)
+    assert.equal(excel.status, 403, 'an Excel file asks for permission to read Drive files first')
+    assert.equal(excel.body.needsExcel, true)
+    assert.match(excel.body.error, /Allow reading Excel files/)
     const privateExcel = await ask('GET', `/api/trackers/sheets/${PRIVATE_XLSX}/tabs`)
     assert.equal(privateExcel.status, 422, 'Drive still names the file when the Sheets API says no access')
     assert.match(privateExcel.body.error, /Rollout\.xlsx/)
@@ -561,6 +574,71 @@ test('Excel files and a switched-off Sheets API get their own messages', async (
     assert.equal(shared.status, 403, 'a real Google Sheet that is not shared keeps the access message')
     assert.match(shared.body.error, /cannot open/)
     canOpen = new Set(['u1', 'u2'])
+  })
+})
+
+test('an Excel file in Drive is followed one-way and read only, matching rows the tracker already has', async () => {
+  const readExcel = `https://www.googleapis.com/auth/spreadsheets.readonly ${DRIVE_READ}`
+  const h = harness({ u1: readExcel })
+  await serve(h, async ask => {
+    const files = await ask('GET', '/api/trackers/sheets/files?q=')
+    assert.equal(files.status, 200)
+    const tabs = await ask(
+      'GET',
+      `/api/trackers/sheets/${encodeURIComponent(`https://docs.google.com/spreadsheets/d/${EXCEL}/edit?rtpof=true`)}/tabs`,
+    )
+    assert.equal(tabs.status, 200, JSON.stringify(tabs.body))
+    assert.equal(tabs.body.excel, true)
+    assert.equal(tabs.body.name, 'Branches.xlsx')
+    assert.deepEqual(
+      tabs.body.tabs.map((tab: any) => tab.title),
+      ['Sites & Go-live', 'Notes'],
+    )
+    const values = await ask('GET', `/api/trackers/sheets/${EXCEL}/values?tab=${encodeURIComponent('Sites & Go-live')}`)
+    assert.deepEqual(values.body.grid[1], ['Makati branch', '2026-11-25', 'New', '25%', 'FALSE'])
+
+    const tracker = (
+      await ask('POST', '/api/trackers', {
+        name: 'Sites',
+        columns: [
+          { name: 'Site', type: 'text' },
+          { name: 'Go-live', type: 'date' },
+          { name: 'Status', type: 'text' },
+        ],
+      })
+    ).body.tracker
+    const [cSite, cLive, cStatus] = tracker.columns.map((c: any) => c.id)
+    const added = await ask('POST', `/api/trackers/${tracker.id}/rows`, {
+      rows: [{ cells: { [cSite]: 'Cebu <IT>', [cStatus]: 'Ongoing' } }],
+    })
+    assert.equal(added.status, 200, JSON.stringify(added.body))
+    const body = {
+      spreadsheetId: EXCEL,
+      tab: 'Sites & Go-live',
+      keyHeader: 'Site',
+      headerMap: { Site: cSite, 'Go-live': cLive, Status: cStatus },
+    }
+    const twoWay = await ask('POST', `/api/trackers/${tracker.id}/source`, { ...body, mode: 'two_way' })
+    assert.equal(twoWay.status, 409, 'an Excel file is never written to')
+    assert.equal(twoWay.body.excel, true)
+
+    const connected = await ask('POST', `/api/trackers/${tracker.id}/source`, body)
+    assert.equal(connected.status, 200, JSON.stringify(connected.body))
+    assert.equal(connected.body.adopted, 1, 'the Cebu row the tracker had is matched, not added again')
+    assert.equal(connected.body.report.added, 1)
+    assert.equal(connected.body.tracker.source.excel, true)
+    assert.equal(connected.body.tracker.source.spreadsheetName, 'Branches.xlsx')
+    const rows = (await ask('GET', `/api/trackers/${tracker.id}/rows?offset=0&limit=50`)).body.rows
+    assert.equal(rows.length, 2)
+    const cebu = rows.find((row: any) => row.cells[cSite] === 'Cebu <IT>')
+    assert.equal(cebu.cells[cStatus], 'Done', 'the Excel file wins on a synced column')
+    assert.equal(cebu.cells[cLive], '2026-11-26')
+
+    const mode = await ask('POST', `/api/trackers/${tracker.id}/source/mode`, { mode: 'two_way' })
+    assert.equal(mode.status, 409)
+    assert.match(mode.body.error, /Excel file/)
+    const sync = await ask('POST', `/api/trackers/${tracker.id}/source/sync`, {})
+    assert.ok([200, 429].includes(sync.status), JSON.stringify(sync.body))
   })
 })
 

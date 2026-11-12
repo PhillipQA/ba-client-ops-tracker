@@ -41,6 +41,7 @@ import {
   tabRange,
 } from '../../src/features/trackers/trackerSync'
 import { cleanTimelineSettings } from '../../src/features/trackers/timelineModel'
+import { EXCEL_MIME, XLSX_MAX_BYTES, XlsxError, readXlsx, type Workbook } from './xlsx'
 import { scopeFor } from '../../src/shared/access'
 import { sheetFormatRequests, sheetFromTracker } from '../../src/features/trackers/sheetFromTracker'
 import {
@@ -430,6 +431,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const scopesOf = (scope: unknown) => String(scope || '').split(/\s+/)
   const canReadSheets = (scope: unknown) => scopesOf(scope).some(item => item === SHEETS_READ || item === SHEETS_WRITE)
   const canWriteSheets = (scope: unknown) => scopesOf(scope).includes(SHEETS_WRITE)
+  /** Reading an Excel file kept in Drive downloads it, which needs Drive read access (asked for with ?excel=1). */
+  const DRIVE_READ = 'https://www.googleapis.com/auth/drive.readonly'
+  const canReadDriveFiles = (scope: unknown) =>
+    scopesOf(scope).some(item => item === DRIVE_READ || item === 'https://www.googleapis.com/auth/drive')
   const sourceCheck = (error: any) => {
     if (error)
       throw new TrackerError(
@@ -524,6 +529,121 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
     throw error
   }
+  // ---- Excel files kept in Google Drive ----
+  // A tracker can follow an .xlsx the same way as a Sheet, one-way only: the file is downloaded and read on each sync,
+  // and nothing is ever written back. Which ids are Excel files is remembered, so writes can be refused without a call.
+  const excelIds = new Map<string, boolean>()
+  const workbooks = new Map<string, { version: string; book: Workbook }>()
+  const needsExcel = () =>
+    new TrackerError('Allow reading Excel files in Google Drive first, so the tracker can open this .xlsx file.', 403, {
+      needsGoogle: true,
+      needsExcel: true,
+    })
+  /** What a Drive file is: name, type and version. Null when Drive cannot say (no access, or not found). */
+  async function driveFile(token: string, id: string) {
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=name,mimeType,modifiedTime,size&supportsAllDrives=true`
+    const file = await sheetsGet(token, url).catch(() => null)
+    if (!file?.mimeType) return null
+    excelIds.set(id, file.mimeType === EXCEL_MIME)
+    return {
+      name: String(file.name || 'Untitled'),
+      mimeType: String(file.mimeType),
+      version: String(file.modifiedTime || ''),
+      size: Number(file.size || 0),
+    }
+  }
+  /** Whether a source is an Excel file. Asks Drive only the first time for each file. */
+  async function isExcel(token: string, id: string) {
+    if (!excelIds.has(id)) await driveFile(token, id)
+    return excelIds.get(id) === true
+  }
+  /**
+   * Whether a connected source is an Excel file. Excel files are connected under their Drive name, which ends in .xlsx,
+   * so a Sheet never costs a Drive call here.
+   */
+  async function sourceIsExcel(token: string, source: any) {
+    const known = excelIds.get(source.spreadsheet_id)
+    if (known !== undefined) return known
+    if (!/\.xlsx$/i.test(String(source.spreadsheet_name || ''))) return false
+    return isExcel(token, source.spreadsheet_id)
+  }
+  /** Downloads and reads an Excel file; the last few are kept until the file changes. */
+  async function openWorkbook(token: string, scope: unknown, id: string): Promise<{ name: string; book: Workbook }> {
+    const file = await driveFile(token, id)
+    if (!file)
+      throw new TrackerError(
+        'The Google account used here cannot open that file. Ask its owner to share it, or reconnect with an account that can open it.',
+        403,
+        { noAccess: true },
+      )
+    if (file.mimeType !== EXCEL_MIME) throw new TrackerError('That file is not an Excel workbook (.xlsx).', 422)
+    if (file.size > XLSX_MAX_BYTES)
+      throw new TrackerError(
+        'That Excel file is larger than 20 MB, too large to follow. Save it as a Google Sheet.',
+        413,
+      )
+    const kept = workbooks.get(id)
+    if (kept && file.version && kept.version === file.version) return { name: file.name, book: kept.book }
+    if (!canReadDriveFiles(scope)) throw needsExcel()
+    let response: globalThis.Response
+    try {
+      response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`,
+        { headers: { Authorization: `Bearer ${token}` }, redirect: 'follow', signal: AbortSignal.timeout(30000) },
+      )
+    } catch {
+      throw new TrackerError('Google Drive did not answer in time. Try again in a moment.', 504)
+    }
+    if (response.status === 401 || response.status === 403) {
+      const reason = await response.text().catch(() => '')
+      if (/insufficient|scope/i.test(reason)) throw needsExcel()
+      throw new TrackerError(
+        'The Google account used here cannot download that Excel file. Ask its owner to share it, or reconnect with an account that can open it.',
+        403,
+        { noAccess: true },
+      )
+    }
+    if (response.status === 404)
+      throw new TrackerError('That Excel file was not found. It may have been deleted or moved.', 404)
+    if (!response.ok) throw new TrackerError('Google Drive returned an error. Try again in a moment.', 502)
+    const data = Buffer.from(await response.arrayBuffer())
+    let book: Workbook
+    try {
+      book = readXlsx(data)
+    } catch (error) {
+      throw new TrackerError(error instanceof XlsxError ? error.message : 'That Excel file could not be read.', 422)
+    }
+    workbooks.delete(id)
+    workbooks.set(id, { version: file.version, book })
+    for (const old of workbooks.keys()) if (workbooks.size > 5) workbooks.delete(old)
+    return { name: file.name, book }
+  }
+  /** One tab of an Excel file, as the Sheets API would give it (header row first). */
+  async function excelGrid(token: string, scope: unknown, id: string, tab: string) {
+    const { book } = await openWorkbook(token, scope, id)
+    const grid = book.grid(tab, { rows: SYNC_LIMITS.rows + 1, columns: SYNC_LIMITS.columns })
+    if (!grid) throw new TrackerError('That tab was not found in the Excel file. It may have been renamed.', 404)
+    return grid
+  }
+  /** The tab a source follows, from a Google Sheet or an Excel file. */
+  async function sourceGrid(token: string, scope: unknown, source: any): Promise<string[][]> {
+    if (await sourceIsExcel(token, source)) return excelGrid(token, scope, source.spreadsheet_id, source.tab)
+    const values = await sheetsGet(
+      token,
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}/values/${encodeURIComponent(tabRange(source.tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
+    )
+    return (Array.isArray(values.values) ? values.values : [])
+      .slice(0, SYNC_LIMITS.rows + 1)
+      .map((line: unknown[]) =>
+        (Array.isArray(line) ? line : []).slice(0, SYNC_LIMITS.columns).map(value => String(value ?? '')),
+      )
+  }
+  const excelReadOnly = () =>
+    new TrackerError(
+      'This tracker follows an Excel file, which the tracker only reads. Make the change in the Excel file; it comes in on the next sync.',
+      409,
+      { excel: true },
+    )
   const sheetId = (value: unknown) => {
     const id = sheetIdFrom(String(value ?? ''))
     if (!id) throw new TrackerError('That is not a Google Sheets link.')
@@ -543,6 +663,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     lastStatus: row.last_status === 'ok' || row.last_status === 'error' ? row.last_status : 'never',
     lastError: row.last_error || '',
     lastReport: row.last_report || null,
+    // Excel files keep their .xlsx name in Drive, so the name tells until Drive has been asked.
+    ...((excelIds.get(row.spreadsheet_id) ?? /\.xlsx$/i.test(String(row.spreadsheet_name || '')))
+      ? { excel: true }
+      : {}),
   })
   /** The tracker's Sheet connection, or null. Before schema v27 there is no table, and no tracker is connected. */
   async function sourceRow(tenant: string, trackerId: string) {
@@ -650,6 +774,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     }
     let grid: string[][]
     let token = ''
+    let excel = false
     let gantt: GanttState | null = null
     try {
       const access = await googleFor(tenant, source.connected_by)
@@ -660,21 +785,14 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           409,
           { noAccess: true },
         )
+      excel = await sourceIsExcel(access.token, source)
       // Edits made in the Gantt chart tab go to the synced tab first, so this sync brings them in. Never fails the sync.
-      if (canWriteSheets(access.scope))
+      if (!excel && canWriteSheets(access.scope))
         gantt = await ganttEditsToTab(access.token, source, tracker).catch((error: any) => {
           console.error('Reading the Gantt chart tab failed:', error?.message || error)
           return null
         })
-      const values = await sheetsGet(
-        access.token,
-        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}/values/${encodeURIComponent(tabRange(source.tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
-      )
-      grid = (Array.isArray(values.values) ? values.values : [])
-        .slice(0, SYNC_LIMITS.rows + 1)
-        .map((line: unknown[]) =>
-          (Array.isArray(line) ? line : []).slice(0, SYNC_LIMITS.columns).map(value => String(value ?? '')),
-        )
+      grid = await sourceGrid(access.token, access.scope, source)
     } catch (error) {
       await fail(error instanceof Error ? error.message : 'The Sheet could not be read.')
       throw error
@@ -713,7 +831,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     const dropdowns = mergeDropdownOptions(
       columnsOf(tracker),
       source.header_map || {},
-      await dropdownLists(token, source, grid, columnsOf(tracker)).catch(() => ({})),
+      excel ? {} : await dropdownLists(token, source, grid, columnsOf(tracker)).catch(() => ({})),
     )
     const existing = await allRows(tenant, tracker.id)
     // Text and Checkbox columns that follow a Sheet dropdown just became Choice columns: move their values to the new options
@@ -971,8 +1089,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     try {
       // The person who completed the task, when their Google account may edit Sheets; otherwise the connector's.
       access = await writeAccess(tenant, source, actor, true)
-    } catch {
-      return failAll('no_access')
+    } catch (error) {
+      return failAll(error instanceof TrackerError && error.extra?.excel ? 'read_only' : 'no_access')
     }
     let grid: string[][]
     try {
@@ -1493,6 +1611,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   ): Promise<{ token: string; email: string }> {
     if (user?.id) {
       const access = deps.googleAccess ? await deps.googleAccess(tenant, user.id).catch(() => null) : null
+      if (access && (await sourceIsExcel(access.token, source))) throw excelReadOnly()
       if (access && canWriteSheets(access.scope)) return { token: access.token, email: access.email || '' }
       if (!fallback)
         throw new TrackerError(
@@ -1504,6 +1623,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         )
     }
     const access = await googleFor(tenant, source.connected_by)
+    if (await sourceIsExcel(access.token, source)) throw excelReadOnly()
     if (!canWriteSheets(access.scope))
       throw new TrackerError(
         `${source.connected_by_name || 'The person who connected this Sheet'} has not allowed editing Google Sheets, so the Sheet could not be updated.`,
@@ -1816,6 +1936,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           available: true,
           connected: canReadSheets(access.scope),
           canWrite: canWriteSheets(access.scope),
+          canReadExcel: canReadDriveFiles(access.scope),
           email: access.email || '',
         })
       } catch {
@@ -1834,7 +1955,8 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .slice(0, 100)
         .replace(/\\/g, '\\\\')
         .replace(/'/g, "\\'")
-      const q = `mimeType='application/vnd.google-apps.spreadsheet' and trashed=false${words ? ` and name contains '${words}'` : ''}`
+      // Google Sheets, and Excel files kept in Drive (followed one-way).
+      const q = `(mimeType='application/vnd.google-apps.spreadsheet' or mimeType='${EXCEL_MIME}') and trashed=false${words ? ` and name contains '${words}'` : ''}`
       const params = new URLSearchParams({
         q,
         corpora: 'allDrives',
@@ -1842,7 +1964,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         supportsAllDrives: 'true',
         orderBy: 'modifiedTime desc',
         pageSize: '40',
-        fields: 'files(id,name,modifiedTime,owners(displayName),shared,driveId)',
+        fields: 'files(id,name,mimeType,modifiedTime,owners(displayName),shared,driveId)',
       })
       const data = await sheetsGet(access.token, `https://www.googleapis.com/drive/v3/files?${params}`)
       res.json({
@@ -1853,6 +1975,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           owner: file.owners?.[0]?.displayName || '',
           shared: Boolean(file.shared),
           sharedDrive: Boolean(file.driveId),
+          ...(file.mimeType === EXCEL_MIME ? { excel: true } : {}),
         })),
       })
     }),
@@ -1864,6 +1987,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const user = who(req),
         access = await googleFor(user.organizationId, user.id),
         id = sheetId(req.params.sheetId)
+      if (await isExcel(access.token, id)) {
+        const { name, book } = await openWorkbook(access.token, access.scope, id)
+        return void res.json({ id, name, excel: true, tabs: book.tabs })
+      }
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}?fields=properties.title,sheets.properties(title,index,gridProperties(rowCount,columnCount))`
       const data = await sheetsGet(access.token, url).catch(error => explainSheetError(access.token, id, error))
       res.json({
@@ -1886,6 +2013,15 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         id = sheetId(req.params.sheetId)
       const tab = String(req.query.tab || '').slice(0, 100)
       if (!tab) throw new TrackerError('Choose a tab.')
+      if (await isExcel(access.token, id)) {
+        const { book } = await openWorkbook(access.token, access.scope, id)
+        const grid = book.grid(tab, { rows: SYNC_LIMITS.rows + 2, columns: SYNC_LIMITS.columns })
+        if (!grid) throw new TrackerError('That tab was not found in the Excel file.', 404)
+        return void res.json({
+          grid: grid.slice(0, SYNC_LIMITS.rows + 1),
+          truncated: grid.length > SYNC_LIMITS.rows + 1,
+        })
+      }
       const data = await sheetsGet(
         access.token,
         `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/${encodeURIComponent(tabRange(tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
@@ -1936,6 +2072,9 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         throw new TrackerError('Allow Google Sheets first, so the tracker can read your Sheets.', 403, {
           needsGoogle: true,
         })
+      // An Excel file is followed one-way: it is read on each sync and never written to.
+      const excel = await isExcel(access.token, spreadsheetId)
+      if (excel && mode === 'two_way') throw excelReadOnly()
       if (mode === 'two_way' && !canWriteSheets(access.scope))
         throw new TrackerError(
           'Allow editing Google Sheets first, so tracker edits can be written to the Sheet.',
@@ -1944,10 +2083,12 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
             needsWrite: true,
           },
         )
-      const meta = await sheetsGet(
-        access.token,
-        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title`,
-      )
+      const meta = excel
+        ? { properties: { title: (await openWorkbook(access.token, access.scope, spreadsheetId)).name } }
+        : await sheetsGet(
+            access.token,
+            `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title`,
+          )
       const synced = new Set(Object.values(headerMap))
       const nextColumns = normalizeColumns(
         columns.map(column => ({ ...column, ...(synced.has(column.id) ? { synced: true } : { synced: undefined }) })),
@@ -1990,15 +2131,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const current = keyColumnId ? await allRows(tenant, id) : []
       let adopted = 0
       if (current.some(row => !row.source_key)) {
-        const values = await sheetsGet(
-          access.token,
-          `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(tabRange(tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
-        )
-        const grid = (Array.isArray(values.values) ? values.values : [])
-          .slice(0, SYNC_LIMITS.rows + 1)
-          .map((line: unknown[]) =>
-            (Array.isArray(line) ? line : []).slice(0, SYNC_LIMITS.columns).map(value => String(value ?? '')),
-          )
+        const grid = await sourceGrid(access.token, access.scope, record_)
         const matches = adoptRows({
           grid,
           keyHeader,
@@ -2270,6 +2403,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const source = await sourceRow(tenant, id)
       if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
       const access = await googleFor(tenant, user.id)
+      if (await sourceIsExcel(access.token, source)) throw excelReadOnly()
       if (!canWriteSheets(access.scope))
         throw new TrackerError('Allow editing Google Sheets first, so the chart can be added to the Sheet.', 403, {
           needsWrite: true,
@@ -2349,10 +2483,13 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         throw new TrackerError('Allow Google Sheets first, so the tracker can read your Sheets.', 403, {
           needsGoogle: true,
         })
-      await sheetsGet(
-        access.token,
-        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}?fields=properties.title`,
-      )
+      if (await sourceIsExcel(access.token, source))
+        await openWorkbook(access.token, access.scope, source.spreadsheet_id)
+      else
+        await sheetsGet(
+          access.token,
+          `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheet_id)}?fields=properties.title`,
+        )
       const saved = await db
         .from('tenant_tracker_sources')
         .update({

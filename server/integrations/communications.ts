@@ -49,6 +49,8 @@ const oauthStates = new Map<
 /** Reading Google Sheets for connected trackers: the sheets' values, and the list of sheets a person can open (theirs, shared with them, shared drives). */
 export const SHEETS_READ_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly'
 export const DRIVE_LIST_SCOPE = 'https://www.googleapis.com/auth/drive.metadata.readonly'
+/** Downloading Excel files kept in Drive, for trackers that follow one (asked for with ?sheets=1&excel=1). */
+export const DRIVE_READ_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
 /** Editing Google Sheets, for trackers that mark rows done in their Sheet. It includes reading. */
 export const SHEETS_WRITE_SCOPE = 'https://www.googleapis.com/auth/spreadsheets'
 const gmailKind = 'gmail-refresh' as const
@@ -982,13 +984,15 @@ export function registerCommunications(
       const askedSheets = req.query.sheets === '1' || req.query.sheets === 'write'
       let send = req.query.send === '1',
         sheets = askedSheets,
-        sheetsWrite = req.query.sheets === 'write'
-      if (!send || !sheets || !sheetsWrite) {
+        sheetsWrite = req.query.sheets === 'write',
+        driveRead = askedSheets && req.query.excel === '1'
+      if (!send || !sheets || !sheetsWrite || !driveRead) {
         try {
           const scope = (await accessGrant(req)).scope
           send ||= hasScope(scope, SEND_SCOPE)
           sheetsWrite ||= hasScope(scope, SHEETS_WRITE_SCOPE)
           sheets ||= sheetsWrite || hasScope(scope, SHEETS_READ_SCOPE)
+          driveRead ||= hasScope(scope, DRIVE_READ_SCOPE)
         } catch {
           /* Not connected yet, or the old token no longer works. */
         }
@@ -1016,7 +1020,7 @@ export function registerCommunications(
         client_id: config.credentials.clientId,
         redirect_uri: config.credentials.redirectUri,
         response_type: 'code',
-        scope: `${READ_SCOPE}${send ? ` ${SEND_SCOPE}` : ''}${sheets ? ` ${sheetsWrite ? SHEETS_WRITE_SCOPE : SHEETS_READ_SCOPE} ${DRIVE_LIST_SCOPE}` : ''} https://www.googleapis.com/auth/userinfo.email`,
+        scope: `${READ_SCOPE}${send ? ` ${SEND_SCOPE}` : ''}${sheets ? ` ${sheetsWrite ? SHEETS_WRITE_SCOPE : SHEETS_READ_SCOPE} ${driveRead ? DRIVE_READ_SCOPE : DRIVE_LIST_SCOPE}` : ''} https://www.googleapis.com/auth/userinfo.email`,
         access_type: 'offline',
         prompt: 'consent select_account',
         state,

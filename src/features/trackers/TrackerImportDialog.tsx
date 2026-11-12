@@ -58,7 +58,14 @@ export default function TrackerImportDialog({
   const [google, setGoogle] = useState<{ available: boolean; connected: boolean; email: string } | null>(null)
   const [query, setQuery] = useState('')
   const [files, setFiles] = useState<SheetFile[] | null>(null)
-  const [sheet, setSheet] = useState<{ id: string; name: string; tabs: { title: string; rows: number }[] } | null>(null)
+  const [sheet, setSheet] = useState<{
+    id: string
+    name: string
+    excel?: boolean
+    tabs: { title: string; rows: number }[]
+  } | null>(null)
+  // An Excel file was chosen, but Google has not yet let the tracker download Drive files.
+  const [excelAllow, setExcelAllow] = useState(false)
   const [tab, setTab] = useState('')
   // The task name column: a row with a name is a task, a row with a blank name belongs to the task above.
   const [keyHeader, setKeyHeader] = useState('')
@@ -100,9 +107,11 @@ export default function TrackerImportDialog({
     )
     return () => window.clearTimeout(timer)
   }, [following, google?.connected, query])
-  const allowSheets = async () => {
+  const allowSheets = async (excel = false) => {
     try {
-      const response = await fetch('/api/communications/gmail/connect?sheets=1', { credentials: 'same-origin' })
+      const response = await fetch(`/api/communications/gmail/connect?sheets=1${excel ? '&excel=1' : ''}`, {
+        credentials: 'same-origin',
+      })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.url) throw new Error(result.error || 'Could not start the Google permission step.')
       window.location.assign(result.url)
@@ -115,12 +124,14 @@ export default function TrackerImportDialog({
     if (!id) return setError('That is not a Google Sheets link. Copy the address of the Sheet from your browser.')
     setLooking(true)
     setError('')
+    setExcelAllow(false)
     try {
       const result = await trackerApi.sheetTabs(id)
-      setSheet({ id: result.id, name: result.name, tabs: result.tabs })
+      setSheet({ id: result.id, name: result.name, excel: result.excel, tabs: result.tabs })
       setTab(result.tabs[0]?.title || '')
-      if (!name.trim()) setName(result.name.slice(0, TRACKER_LIMITS.nameLength))
+      if (!name.trim()) setName(result.name.replace(/\.xlsx$/i, '').slice(0, TRACKER_LIMITS.nameLength))
     } catch (e) {
+      if (e instanceof TrackerApiError && e.body.needsExcel) setExcelAllow(true)
       setError(e instanceof Error ? e.message : 'That Sheet could not be opened.')
     } finally {
       setLooking(false)
@@ -442,7 +453,7 @@ export default function TrackerImportDialog({
                   Google asks you once. The tracker can then list the Sheets you can open, including ones shared with
                   you and shared drives, and read the one you choose. It cannot change them.
                 </p>
-                <button type="button" className="trk-button primary" onClick={() => void allowSheets()}>
+                <button type="button" className="trk-button primary" onClick={() => void allowSheets(false)}>
                   Allow Google Sheets
                 </button>
               </div>
@@ -459,7 +470,7 @@ export default function TrackerImportDialog({
                   autoFocus
                   value={query}
                   onChange={event => setQuery(event.target.value)}
-                  placeholder="Search your Sheets, or paste a Sheet link"
+                  placeholder="Search your Sheets and Excel files, or paste a link"
                   aria-label="Search your Sheets or paste a link"
                   onKeyDown={event => {
                     if (event.key === 'Enter' && sheetIdFrom(query)) {
@@ -489,6 +500,7 @@ export default function TrackerImportDialog({
                       <strong>{file.name}</strong>
                       <small>
                         {[
+                          file.excel ? 'Excel file · read only' : '',
                           file.sharedDrive ? 'Shared drive' : file.shared ? 'Shared' : 'My Drive',
                           file.owner,
                           file.modifiedTime
@@ -508,6 +520,27 @@ export default function TrackerImportDialog({
                     </p>
                   )}
                 </div>
+              )}
+              {excelAllow && (
+                <div className="k-notice k-notice-info">
+                  <div>
+                    <strong>Allow the tracker to read Excel files in your Google Drive</strong>
+                    <p>
+                      An Excel file is read by downloading it, so Google asks once more. The tracker only reads it and
+                      never changes it.
+                    </p>
+                    <button type="button" className="trk-button primary" onClick={() => void allowSheets(true)}>
+                      Allow reading Excel files
+                    </button>
+                  </div>
+                </div>
+              )}
+              {sheet?.excel && (
+                <p className="trk-muted-text">
+                  <strong>This is an Excel file.</strong> The tracker follows it one-way and read only: change its rows
+                  in the Excel file and they come in on each sync. The columns that follow it can’t be edited in the
+                  tracker; you can still make tasks and subtasks from its rows.
+                </p>
               )}
               {sheet && (
                 <div className="trk-sheet-chosen">

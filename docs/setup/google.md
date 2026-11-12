@@ -26,6 +26,7 @@ In [Google Cloud console](https://console.cloud.google.com/):
    | Drive filing (only files the app creates) | `drive.file`, `userinfo.email` |
    | Read connected Sheets, and list Sheets to pick from | `spreadsheets.readonly`, `drive.metadata.readonly` |
    | Write to Sheets (done marks, two-way sync, Create Google Sheet, Gantt tab) | `spreadsheets` |
+   | Follow Excel (.xlsx) files kept in Drive (downloaded to be read; asked for only when someone picks one) | `drive.readonly` |
    | Calendar | `calendar.events.readonly`, `calendar.calendarlist.readonly` |
 
    Each scope is `https://www.googleapis.com/auth/<name>`. With an **Internal** consent screen (Google Workspace), no Google review is needed. With **External**, several of these are sensitive or restricted scopes, and an unverified app works only for the test users you list.

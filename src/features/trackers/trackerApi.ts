@@ -65,6 +65,8 @@ export type SheetFile = {
   owner: string
   shared: boolean
   sharedDrive: boolean
+  /** An Excel file kept in Drive: followed one-way, read only. */
+  excel?: boolean
 }
 export type SyncResult = {
   source: TrackerSource
@@ -168,10 +170,13 @@ export const trackerApi = {
   allLinks: (signal?: AbortSignal) => call<{ links: TaskLink[] }>('GET', '/task-links', undefined, signal),
   // Connected Google Sheets
   sheetsStatus: () =>
-    call<{ available: boolean; connected: boolean; canWrite?: boolean; email: string }>('GET', '/sheets/status'),
+    call<{ available: boolean; connected: boolean; canWrite?: boolean; canReadExcel?: boolean; email: string }>(
+      'GET',
+      '/sheets/status',
+    ),
   sheetFiles: (q: string) => call<{ files: SheetFile[] }>('GET', `/sheets/files?q=${encodeURIComponent(q)}`),
   sheetTabs: (sheet: string) =>
-    call<{ id: string; name: string; tabs: { title: string; rows: number; columns: number }[] }>(
+    call<{ id: string; name: string; excel?: boolean; tabs: { title: string; rows: number; columns: number }[] }>(
       'GET',
       `/sheets/${encodeURIComponent(sheet)}/tabs`,
     ),
