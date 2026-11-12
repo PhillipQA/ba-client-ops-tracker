@@ -426,10 +426,12 @@ export function registerTaskRoutes(app: Express, deps: { drive?: () => DriveFile
       const saved = await saveEvidenceState(current, next, user, 'task-evidence-delete')
       // The file goes too: to the Drive trash (restorable for 30 days), or out of the database.
       if (evidence.driveFileId) {
-        const drive = await evidenceDrive(String(tenantIdForUser(user)))
-        await drive?.trash!(String(tenantIdForUser(user)), String(evidence.driveFileId)).catch((error: any) =>
-          console.warn('Task evidence Drive cleanup warning:', error?.message || error),
-        )
+        const tenantId = String(tenantIdForUser(user))
+        const drive = await evidenceDrive(tenantId)
+        if (drive?.trash)
+          await drive
+            .trash(tenantId, String(evidence.driveFileId))
+            .catch((error: any) => console.warn('Task evidence Drive cleanup warning:', error?.message || error))
       } else {
         const { error: removeError } = await db.storage
           .from(TASK_EVIDENCE_BUCKET)
