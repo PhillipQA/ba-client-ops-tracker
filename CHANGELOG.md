@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Close a task together with its open subtasks
+- Resolving or closing a task that still has open subtasks (Resolve button, status menu, board, or the task's edit window) no longer stops you. A window lists the open subtasks and asks you to type a word shown (for example *finish*) to confirm; then the task and those subtasks close together, with the same status.
+- Subtasks already finished keep their own status and date. Cancelling leaves everything open.
+
 ### Tour follows a working day
 - The tour now goes Action Center, Google Calendar, Work Hub, Gmail, Discord, GitLab/GitHub, Trackers, Document Creation, Reports, AI BA Assistant, then Settings (with account setup for Administrators last).
 - Each step opens its page; the Work Hub steps show their own tab.
