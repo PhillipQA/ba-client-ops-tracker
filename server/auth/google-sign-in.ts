@@ -144,11 +144,40 @@ export function chooseGoogleUser(candidates: GoogleCandidate[], email: string, a
 }
 
 /**
- * Seeds' say: once Seeds is on for the account and has given its employee directory, the email must be in it.
- * Before Seeds is on (or while the directory is empty) there is nothing to check against.
+ * Seeds decides who may sign in. Once Seeds is on for the account and has given its active-employee directory, a
+ * person must be in it, by email, whichever way they sign in (Google or password), and a signed-in session ends once
+ * they drop out of it. Administrators are let through, so the account can never be locked out by Seeds (for example
+ * when an Administrator's email differs in Seeds). Before Seeds is on, or while its directory is empty, there is
+ * nothing to check against.
  */
-export function seedsAllowsSignIn(state: any, email: string) {
+export function seedsEmployeeEmails(state: any): Set<string> | null {
   const seeds = seedsState(state)
-  if (!seeds.connected || !seeds.people.length) return true
-  return seeds.people.some(person => person.email === email.toLowerCase())
+  if (!seeds.connected || !seeds.people.length) return null
+  return new Set(
+    seeds.people
+      .map(person =>
+        String(person.email || '')
+          .trim()
+          .toLowerCase(),
+      )
+      .filter(Boolean),
+  )
+}
+
+export function seedsAdmits(user: { role?: unknown; email?: unknown }, employees: Set<string> | null) {
+  if (!employees || user.role === 'Administrator') return true
+  const email = String(user.email || '')
+    .trim()
+    .toLowerCase()
+  return Boolean(email) && employees.has(email)
+}
+
+/** Why a sign-in is refused because of Seeds, for the person to read. */
+export const notInSeeds = (email: unknown) =>
+  String(email || '').trim()
+    ? `${String(email).trim()} is not an active employee in Seeds, so it cannot sign in here. Ask your Administrator.`
+    : 'Your user has no email, so it cannot be matched to Seeds. Ask your Administrator to add your Seeds email.'
+
+export function seedsAllowsSignIn(state: any, user: { role?: unknown; email?: unknown }) {
+  return seedsAdmits(user, seedsEmployeeEmails(state))
 }

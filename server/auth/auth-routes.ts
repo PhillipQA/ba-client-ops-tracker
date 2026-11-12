@@ -47,6 +47,7 @@ import {
   exactLike,
   type GoogleCandidate,
   GoogleSignInError,
+  notInSeeds,
   seedsAllowsSignIn,
 } from './google-sign-in'
 import { SESSION_MAX_AGE_SECONDS } from './session-store'
@@ -244,6 +245,14 @@ export function registerAuthRoutes(app: Express) {
           )
         }
 
+        // The password is right; Seeds decides whether this person may come in (Administrators always may).
+        const tenantState = await loadTenantState(organization.id)
+        if (!seedsAllowsSignIn(tenantState.data, normalizedAccount)) {
+          clearLoginFailures(req)
+          res.status(403).json({ error: notInSeeds(normalizedAccount.email) })
+          return
+        }
+
         const loggedInAt = new Date().toISOString()
         await db
           .from('app_users')
@@ -351,11 +360,8 @@ export function registerAuthRoutes(app: Express) {
           .json({ error: choice.error, ...(choice.accounts ? { accounts: choice.accounts } : {}) })
       const { user: row, organization } = choice.candidate
       const state = await loadTenantState(organization.id)
-      if (!seedsAllowsSignIn(state.data, identity.email))
-        throw new GoogleSignInError(
-          `${identity.email} is not an active employee in Seeds, so Google sign-in is not available for it. Ask your Administrator.`,
-          403,
-        )
+      if (!seedsAllowsSignIn(state.data, { role: row.role, email: identity.email }))
+        throw new GoogleSignInError(notInSeeds(identity.email), 403)
       const loggedInAt = new Date().toISOString()
       await db.from('app_users').update({ last_login_at: loggedInAt, updated_at: loggedInAt }).eq('id', row.id)
       const user = safeUser({ ...row, last_login_at: loggedInAt }, organization as OrganizationInfo)

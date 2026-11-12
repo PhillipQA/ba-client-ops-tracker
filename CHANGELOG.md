@@ -11,6 +11,11 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Seeds decides who signs in
+- Once Seeds is on, **every sign-in** (Google or password) needs the user's email to be an active employee in Seeds. Others are refused with a message saying so.
+- Someone removed from Seeds is **signed out** after the next Seeds sync.
+- **Administrators are always let in**, so the account can't be locked out. People in Seeds without a user here are still added by an Administrator.
+
 ### Sign in with Google
 **No database migration, no new setting:** it uses the Google client already set for sending time to Seeds (`SEEDS_GOOGLE_CLIENT_ID`).
 

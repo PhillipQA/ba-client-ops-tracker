@@ -5,9 +5,11 @@ import {
   chooseGoogleUser,
   createGoogleVerifier,
   exactLike,
+  notInSeeds,
   seedsAllowsSignIn,
   type GoogleCandidate,
 } from '../server/auth/google-sign-in'
+import { forgetAccess, rememberAccess, seedsStillAdmits } from '../server/services/access-cache'
 
 const CLIENT = 'tracker-client.apps.googleusercontent.com'
 const google = generateKeyPairSync('rsa', { modulusLength: 2048 })
@@ -96,12 +98,40 @@ test('the email picks one user: none is refused, several accounts ask which, a d
   assert.ok(!duplicate.ok && duplicate.status === 409 && !duplicate.accounts)
 })
 
-test('once Seeds is on, the email must be in its employee directory; an exact email match only', () => {
-  const people = [{ id: '7', name: 'Phillip', email: 'phillip@iripple.com' }]
-  assert.equal(seedsAllowsSignIn({ seeds: { connected: true, people } }, 'Phillip@iripple.com'), true)
-  assert.equal(seedsAllowsSignIn({ seeds: { connected: true, people } }, 'left@iripple.com'), false)
-  assert.equal(seedsAllowsSignIn({ seeds: { connected: false, people } }, 'left@iripple.com'), true, 'Seeds is off')
-  assert.equal(seedsAllowsSignIn({ seeds: { connected: true, people: [] } }, 'a@iripple.com'), true, 'no directory')
-  assert.equal(seedsAllowsSignIn({}, 'a@iripple.com'), true)
+test('once Seeds is on, only its active employees sign in (by email); Administrators always may', () => {
+  const people = [{ id: '7', name: 'Phillip', email: 'Phillip@iripple.com' }]
+  const on = { seeds: { connected: true, people } }
+  const ba = (email: string) => ({ role: 'Contributor', email })
+  assert.equal(seedsAllowsSignIn(on, ba(' phillip@IRIPPLE.com ')), true)
+  assert.equal(seedsAllowsSignIn(on, ba('left@iripple.com')), false)
+  assert.equal(seedsAllowsSignIn(on, ba('')), false, 'a user without an email cannot be matched')
+  assert.equal(seedsAllowsSignIn(on, { role: 'Viewer', email: 'am@iripple.com' }), false)
+  assert.equal(seedsAllowsSignIn(on, { role: 'Administrator', email: 'other@iripple.com' }), true, 'no lockout')
+  assert.equal(seedsAllowsSignIn({ seeds: { connected: false, people } }, ba('left@iripple.com')), true, 'Seeds off')
+  assert.equal(seedsAllowsSignIn({ seeds: { connected: true, people: [] } }, ba('a@iripple.com')), true, 'no list')
+  assert.equal(seedsAllowsSignIn({}, ba('a@iripple.com')), true)
+  assert.match(notInSeeds('left@iripple.com'), /not an active employee in Seeds/)
+  assert.match(notInSeeds(''), /no email/)
   assert.equal(exactLike('john_doe%@x.com'), 'john\\_doe\\%@x.com')
+})
+
+test('a signed-in session ends once the person is no longer a Seeds employee', () => {
+  const people = [{ id: '7', name: 'Ana', email: 'ana@iripple.com' }]
+  const state = (list: any[]) => ({
+    accounts: [
+      { id: 'ana', role: 'Contributor', email: 'ana@iripple.com' },
+      { id: 'boss', role: 'Administrator', email: 'boss@iripple.com' },
+    ],
+    seeds: { connected: true, people: list },
+  })
+  const ana = { id: 'ana', role: 'Contributor', email: 'ana@iripple.com', organizationId: 'org-a' }
+  const boss = { id: 'boss', role: 'Administrator', email: 'boss@iripple.com', organizationId: 'org-a' }
+  forgetAccess()
+  assert.equal(seedsStillAdmits(ana), true, 'a workspace not loaded yet lets the session through')
+  rememberAccess('org-a', state(people))
+  assert.equal(seedsStillAdmits(ana), true)
+  rememberAccess('org-a', state([{ id: '9', name: 'Ben', email: 'ben@iripple.com' }]))
+  assert.equal(seedsStillAdmits(ana), false, 'removed from Seeds: signed out')
+  assert.equal(seedsStillAdmits(boss), true, 'Administrators stay in')
+  forgetAccess()
 })
