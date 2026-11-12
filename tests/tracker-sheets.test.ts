@@ -1114,7 +1114,7 @@ test('a Sheet made from a Project timeline tracker gets a Gantt chart tab, and a
 
     formatted.length = 0
     const added = await ask('POST', `/api/trackers/${tracker.id}/source/gantt`, {})
-    assert.equal(added.status, 201, JSON.stringify(added.body))
+    assert.equal(added.status, 200, JSON.stringify(added.body))
     assert.equal(added.body.replaced, false)
     assert.match(added.body.url, /#gid=\d+$/)
     assert.equal(formatted[0].requests[0].addSheet.properties.title, 'Gantt chart')

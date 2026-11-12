@@ -147,10 +147,13 @@ export function readXlsx(data: Buffer): Workbook {
     .filter(sheet => sheet.title && sheet.path && entries.has(sheet.path))
 
   let shared: string[] | null = null
-  const sharedStrings = () =>
-    (shared ??= [...part('xl/sharedStrings.xml').matchAll(/<si>([\s\S]*?)<\/si>|<si\/>/g)].map(match =>
-      textOf(match[1] || ''),
-    ))
+  const sharedStrings = () => {
+    if (!shared)
+      shared = [...part('xl/sharedStrings.xml').matchAll(/<si>([\s\S]*?)<\/si>|<si\/>/g)].map(match =>
+        textOf(match[1] || ''),
+      )
+    return shared
+  }
 
   let styles: { dates: Set<number>; percents: Set<number> } | null = null
   const styleSets = () => {
@@ -169,7 +172,8 @@ export function readXlsx(data: Buffer): Workbook {
       else if (code !== undefined ? /%/.test(code.replace(/"[^"]*"/g, '')) : PERCENT_FORMATS.has(id))
         percents.add(index)
     })
-    return (styles = { dates, percents })
+    styles = { dates, percents }
+    return styles
   }
 
   const dimension = (path: string) => {
