@@ -81,6 +81,39 @@ export async function login(account: string, username: string, password: string)
   return body.user as AuthUser
 }
 
+/** The Google client ID for Sign in with Google, or '' when it is not set up. */
+export async function googleSignInClientId(): Promise<string> {
+  try {
+    const { response, body } = await authRequest('/api/auth/google')
+    return response.ok && typeof body.clientId === 'string' ? body.clientId : ''
+  } catch {
+    return ''
+  }
+}
+
+export type GoogleAccountChoice = { name: string; slug: string }
+
+/**
+ * Signs in with a Google ID token. When the email is registered in several accounts, the answer is the accounts to
+ * choose from; call again with the chosen one.
+ */
+export async function loginWithGoogle(
+  credential: string,
+  account?: string,
+): Promise<{ user: AuthUser } | { accounts: GoogleAccountChoice[] }> {
+  const { response, body, requestId } = await authRequest('/api/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ credential, ...(account ? { account } : {}) }),
+  })
+  if (response.status === 409 && Array.isArray(body.accounts) && body.accounts.length)
+    return { accounts: body.accounts as GoogleAccountChoice[] }
+  if (!response.ok)
+    throw new Error(body.error || `Sign in with Google failed (HTTP ${response.status}). Reference: ${requestId}`)
+  if (!body.user || typeof body.user.id !== 'string')
+    throw new Error(`The server returned an incomplete login response. Please try again. Reference: ${requestId}`)
+  return { user: body.user as AuthUser }
+}
+
 export async function logout() {
   const { response, body, requestId } = await authRequest('/api/auth/logout', { method: 'POST', body: '{}' })
   // An expired/revoked session is already signed out. Show other failures.

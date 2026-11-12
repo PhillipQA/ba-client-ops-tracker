@@ -7657,6 +7657,28 @@ select option {
   height: 1px;
   background: #dbe4f0;
 }
+.auth-google {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.auth-google > div:first-child {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  min-height: 40px;
+}
+.auth-google-accounts {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  color: #6e84a6;
+  font-size: 12px;
+}
+.auth-google small {
+  color: #a82e3d;
+}
 .auth-security-note {
   display: flex;
   align-items: center;

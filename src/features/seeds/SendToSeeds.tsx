@@ -5,6 +5,7 @@
  */
 import { Send } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { loadGoogle } from '../../shared/googleIdentity'
 import { requestJson } from '../../shared/http'
 import { Dialog } from '../../shared/ui/Dialog'
 import type { WorkItem } from '../../shared/types'
@@ -45,23 +46,6 @@ const expiresAt = (token: string) => {
   } catch {
     return 0
   }
-}
-
-let script: Promise<void> | null = null
-function loadGoogle() {
-  script ||= new Promise<void>((resolve, reject) => {
-    if ((window as any).google?.accounts?.id) return resolve()
-    const tag = document.createElement('script')
-    tag.src = 'https://accounts.google.com/gsi/client'
-    tag.async = true
-    tag.onload = () => resolve()
-    tag.onerror = () => {
-      script = null
-      reject(new Error('Google sign-in could not load. Check the connection and try again.'))
-    }
-    document.head.appendChild(tag)
-  })
-  return script
 }
 
 /** The entries Seeds turned down, behind a toggle. Shown inline so no surrounding panel can clip them. */

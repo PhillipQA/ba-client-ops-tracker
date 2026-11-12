@@ -30,7 +30,7 @@ import {
 } from '../features/action-center/actionCenterScope'
 import { applySubtaskAssignmentInheritance } from '../features/tasks/subtaskAssignment'
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getAuthSession, login, logout, type AuthUser } from '../features/accounts/auth'
+import { getAuthSession, login, loginWithGoogle, logout, type AuthUser } from '../features/accounts/auth'
 import {
   loadCloudStore,
   resetCloudSession,
@@ -470,9 +470,9 @@ export function useAppState() {
   useVisiblePolling(signal => refreshWorkspace(false, signal), {
     enabled: Boolean(
       authUser &&
-        authUser.accountType !== 'platform' &&
-        (cloudStatus === 'synced' || cloudStatus === 'saving') &&
-        workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId),
+      authUser.accountType !== 'platform' &&
+      (cloudStatus === 'synced' || cloudStatus === 'saving') &&
+      workspaceAutoRefreshAllowed(view, selectedClientId, selectedProjectId),
     ),
     interval: 5 * 60_000,
     scope: `${authUser?.id}:${view}:${selectedClientId || ''}:${selectedProjectId || ''}`,
@@ -689,32 +689,53 @@ export function useAppState() {
     setCloudMessage('Time saved · Database synced')
   }
 
+  /** After a sign-in, by password or with Google: open the person's first page. */
+  const enterAs = (user: AuthUser) => {
+    void workHubSync.setSession(user, true)
+    setAuthUser(user)
+    if (user.accountType === 'platform' && user.isPlatformAdmin) {
+      setCloudStatus('synced')
+      setCloudMessage('Internal Admin · control plane')
+      setView('internal-admin')
+    } else {
+      setCloudStatus('checking')
+      setCloudMessage('Checking cloud storage…')
+      setView(
+        user.role === 'Administrator' || user.modules.includes('action')
+          ? 'action'
+          : (user.modules[0] as View) || 'reports',
+      )
+    }
+  }
+
   const handleLogin = async (account: string, username: string, password: string) => {
     setLoginBusy(true)
     setLoginError('')
     try {
-      const user = await login(account, username, password)
-      void workHubSync.setSession(user, true)
-      setAuthUser(user)
-      if (user.accountType === 'platform' && user.isPlatformAdmin) {
-        setCloudStatus('synced')
-        setCloudMessage('Internal Admin · control plane')
-        setView('internal-admin')
-      } else {
-        setCloudStatus('checking')
-        setCloudMessage('Checking cloud storage…')
-        setView(
-          user.role === 'Administrator' || user.modules.includes('action')
-            ? 'action'
-            : (user.modules[0] as View) || 'reports',
-        )
-      }
+      enterAs(await login(account, username, password))
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Login failed.')
     } finally {
       setLoginBusy(false)
       setAuthChecking(false)
     }
+  }
+
+  /** Sign in with Google. Answers the accounts to choose from when the email is registered in several. */
+  const handleGoogleLogin = async (credential: string, account?: string) => {
+    setLoginBusy(true)
+    setLoginError('')
+    try {
+      const result = await loginWithGoogle(credential, account)
+      if ('accounts' in result) return result.accounts
+      enterAs(result.user)
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Sign in with Google failed.')
+    } finally {
+      setLoginBusy(false)
+      setAuthChecking(false)
+    }
+    return null
   }
 
   const handleLogout = async () => {
@@ -800,9 +821,9 @@ export function useAppState() {
   // Tasks open from many pages, so this follows the task rights, not the page.
   const canWriteTasks = Boolean(
     currentUser &&
-      currentUser.role !== 'Viewer' &&
-      !lifecycleSaving &&
-      ((hasModule('items') && canEditModule('items')) || (hasModule('inbox') && canEditModule('inbox'))),
+    currentUser.role !== 'Viewer' &&
+    !lifecycleSaving &&
+    ((hasModule('items') && canEditModule('items')) || (hasModule('inbox') && canEditModule('inbox'))),
   )
   // Account Managers are Viewers who may still ask the AI BA Assistant about their clients.
   // A Viewer by job role (an Account Manager, say) may still ask the AI BA Assistant.
@@ -2145,6 +2166,7 @@ export function useAppState() {
     moveWorkToSeeds,
     filteredTasks,
     handleLogin,
+    handleGoogleLogin,
     handleLogout,
     handleNotificationAction,
     handleReadAllNotifications,
