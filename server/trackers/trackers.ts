@@ -30,6 +30,7 @@ import {
 } from '../../src/features/trackers/trackerModel'
 import {
   SYNC_LIMITS,
+  adoptRows,
   describeSync,
   dropdownOf,
   mergeDropdownOptions,
@@ -1980,6 +1981,44 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       await db.from('tenant_tracker_sources').delete().eq('tenant_id', tenant).eq('tracker_id', id)
       const saved = await db.from('tenant_tracker_sources').insert(record_)
       sourceCheck(saved.error)
+      // Linking a tracker that already has rows: rows whose name matches a Sheet row are recognised by it from now on,
+      // so the first sync updates them instead of adding the Sheet rows again.
+      const keyColumnId = Object.entries(headerMap).find(
+        ([header]) =>
+          header.replace(/\s+/g, ' ').trim().toLowerCase() === keyHeader.replace(/\s+/g, ' ').trim().toLowerCase(),
+      )?.[1]
+      const current = keyColumnId ? await allRows(tenant, id) : []
+      let adopted = 0
+      if (current.some(row => !row.source_key)) {
+        const values = await sheetsGet(
+          access.token,
+          `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(tabRange(tab))}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
+        )
+        const grid = (Array.isArray(values.values) ? values.values : [])
+          .slice(0, SYNC_LIMITS.rows + 1)
+          .map((line: unknown[]) =>
+            (Array.isArray(line) ? line : []).slice(0, SYNC_LIMITS.columns).map(value => String(value ?? '')),
+          )
+        const matches = adoptRows({
+          grid,
+          keyHeader,
+          keyColumn: nextColumns.find(column => column.id === keyColumnId),
+          rows: current.map(row => ({ id: row.id, data: row.data || {}, sourceKey: row.source_key || '' })),
+        })
+        for (let at = 0; at < matches.length; at += 25)
+          await Promise.all(
+            matches.slice(at, at + 25).map(async item => {
+              const keyed = await db
+                .from('tenant_tracker_rows')
+                .update({ source_key: item.key, source_missing: false })
+                .eq('tenant_id', tenant)
+                .eq('tracker_id', id)
+                .eq('id', item.rowId)
+              sourceCheck(keyed.error)
+            }),
+          )
+        adopted = matches.length
+      }
       await record(tenant, id, '', user, 'sheet_connected', { name: record_.spreadsheet_name, tab })
       const result = await runSync(
         tenant,
@@ -1990,6 +2029,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
       const fresh = await trackerRow(tenant, id, user)
       res.json({
         ...result,
+        adopted,
         tracker: { ...trackerOut(fresh, user, await rowCount(tenant, id)), source: result.source },
       })
     }),

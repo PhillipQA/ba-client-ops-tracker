@@ -445,7 +445,7 @@ export default function TrackerScreen(props: Props) {
   const stopSyncing = async () => {
     if (
       !window.confirm(
-        'Stop syncing with the Google Sheet? Every row stays in the tracker and its columns become editable here. You can connect a Sheet again later by making a new tracker from it.',
+        'Stop syncing with the Google Sheet? Every row stays in the tracker and its columns become editable here. You can link a Sheet again later from Import → Link an existing Google Sheet.',
       )
     )
       return
@@ -2831,6 +2831,17 @@ export default function TrackerScreen(props: Props) {
       {importing && (
         <TrackerImportDialog
           tracker={tracker}
+          canLink={canEdit && !tracker.source}
+          onLinked={(matched, added) => {
+            setImporting(false)
+            props.onListChanged()
+            void refresh().then(() =>
+              say(
+                'info',
+                `Linked to the Google Sheet: ${plural(matched, 'row')} matched, ${plural(added, 'row')} added.`,
+              ),
+            )
+          }}
           clients={props.clients}
           projects={props.projects}
           people={people}

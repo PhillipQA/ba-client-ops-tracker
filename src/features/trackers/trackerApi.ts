@@ -189,7 +189,7 @@ export const trackerApi = {
       keyHeader: string
       headerMap: Record<string, string>
     },
-  ) => call<SyncResult & { tracker: Tracker }>('POST', `/${id}/source`, body),
+  ) => call<SyncResult & { tracker: Tracker; adopted?: number }>('POST', `/${id}/source`, body),
   /** Makes a new Google Sheet from the tracker and connects it two-way. */
   createSheet: (id: string, title: string) =>
     call<

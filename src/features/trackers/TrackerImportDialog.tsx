@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, ExternalLink, LockKeyhole, Search, Upload } from 'lucide-react'
+import { AlertTriangle, Check, ExternalLink, Link2, LockKeyhole, Search, Upload } from 'lucide-react'
 import { COLUMN_TYPES, TRACKER_LIMITS, type ColumnType, type Tracker } from './trackerModel'
 import {
   defaultMappings,
@@ -29,6 +29,10 @@ type Props = {
   onDone: (trackerId: string, imported: number, rowIds?: string[]) => void
   /** Make a new tracker that follows a Google Sheet, instead of importing a copy. */
   fromSheet?: boolean
+  /** Offer to link this tracker to an existing Google Sheet (it has none yet, and the person can edit it). */
+  canLink?: boolean
+  /** Called once this tracker follows the Sheet: rows matched by name, and rows added from the Sheet. */
+  onLinked?: (matched: number, added: number) => void
 }
 
 const MAX_FILE = 5 * 1024 * 1024
@@ -43,8 +47,13 @@ export default function TrackerImportDialog({
   onClose,
   onDone,
   fromSheet = false,
+  canLink = false,
+  onLinked,
 }: Props) {
   const [step, setStep] = useState<'source' | 'sheet' | 'map'>(fromSheet ? 'sheet' : 'source')
+  // Linking this tracker to an existing Sheet: the same steps as a new tracker from a Sheet, without making one.
+  const [linking, setLinking] = useState(false)
+  const following = fromSheet || linking
   // Google Sheet source: who is signed in, the Sheets they can open, the chosen Sheet and tab, and the key column.
   const [google, setGoogle] = useState<{ available: boolean; connected: boolean; email: string } | null>(null)
   const [query, setQuery] = useState('')
@@ -72,14 +81,14 @@ export default function TrackerImportDialog({
   const capacity = TRACKER_LIMITS.rows - (tracker?.rowCount || 0)
 
   useEffect(() => {
-    if (!fromSheet) return
+    if (!following) return
     trackerApi
       .sheetsStatus()
       .then(setGoogle)
       .catch(() => setGoogle({ available: false, connected: false, email: '' }))
-  }, [fromSheet])
+  }, [following])
   useEffect(() => {
-    if (!fromSheet || !google?.connected) return
+    if (!following || !google?.connected) return
     const timer = window.setTimeout(
       () => {
         trackerApi
@@ -90,7 +99,7 @@ export default function TrackerImportDialog({
       query ? 300 : 0,
     )
     return () => window.clearTimeout(timer)
-  }, [fromSheet, google?.connected, query])
+  }, [following, google?.connected, query])
   const allowSheets = async () => {
     try {
       const response = await fetch('/api/communications/gmail/connect?sheets=1', { credentials: 'same-origin' })
@@ -174,7 +183,7 @@ export default function TrackerImportDialog({
   const run = async () => {
     if (!plan || plan.fatal || busy) return
     if (!tracker && !name.trim()) return setError('Enter a name for the new tracker.')
-    if (fromSheet && sheet) return void connect()
+    if (following && sheet) return void connect()
     setBusy(true)
     setError('')
     setPartial(null)
@@ -229,15 +238,18 @@ export default function TrackerImportDialog({
   }
 
   const nameChecks = useMemo(
-    () => (source && fromSheet ? checkNameColumns(source.headers, source.rows) : []),
-    [source, fromSheet],
+    () => (source && following ? checkNameColumns(source.headers, source.rows) : []),
+    [source, following],
   )
   const nameCheck = nameChecks.find(check => check.header === keyHeader)
 
-  /** A new tracker that follows the Sheet: columns from the mapping, then the connection, then the first sync. */
+  /**
+   * A tracker that follows the Sheet: columns from the mapping (a new tracker, or new columns on this one), then the
+   * connection, then the first sync.
+   */
   const connect = async () => {
     if (!plan || !sheet || busy) return
-    if (!name.trim()) return setError('Enter a name for the new tracker.')
+    if (!tracker && !name.trim()) return setError('Enter a name for the new tracker.')
     const chosen = mappings.filter(mapping => mapping.include)
     if (!chosen.length) return setError('Choose at least one column to follow.')
     if (!keyHeader || !chosen.some(mapping => source?.headers[mapping.index] === keyHeader))
@@ -247,15 +259,24 @@ export default function TrackerImportDialog({
     setBusy(true)
     setError('')
     try {
-      setProgress('Creating the tracker…')
-      const created = await trackerApi.create({
-        name: name.trim(),
-        columns: plan.columns,
-        template: 'sheet',
-        clientIds,
-        projectId,
-        private: onlyMe,
-      })
+      let created: { tracker: Tracker }
+      if (tracker) {
+        created = { tracker }
+        if (JSON.stringify(plan.columns) !== JSON.stringify(tracker.columns)) {
+          setProgress('Adding columns…')
+          created = await trackerApi.saveColumns(tracker.id, plan.columns, tracker.revision)
+        }
+      } else {
+        setProgress('Creating the tracker…')
+        created = await trackerApi.create({
+          name: name.trim(),
+          columns: plan.columns,
+          template: 'sheet',
+          clientIds,
+          projectId,
+          private: onlyMe,
+        })
+      }
       // Each chosen Sheet column goes to the tracker column made for it (new columns are made in the same order).
       const headerMap: Record<string, string> = {}
       let added = 0
@@ -276,14 +297,17 @@ export default function TrackerImportDialog({
         headerMap,
       })
       rememberReview(created.tracker.id, 'flagged')
-      onDone(created.tracker.id, result.report?.added || 0)
+      if (tracker && onLinked) onLinked(result.adopted || 0, result.report?.added || 0)
+      else onDone(created.tracker.id, result.report?.added || 0)
     } catch (e) {
       setError(
         e instanceof TrackerApiError && e.body.needsGoogle
           ? 'Allow Google Sheets first (button above), then try again.'
-          : e instanceof Error
-            ? e.message
-            : 'The Sheet could not be connected.',
+          : e instanceof TrackerApiError && e.status === 409 && e.body.tracker
+            ? 'Someone else changed this tracker while you were linking it. Close this window and try again.'
+            : e instanceof Error
+              ? e.message
+              : 'The Sheet could not be connected.',
       )
       setBusy(false)
       setProgress('')
@@ -304,11 +328,13 @@ export default function TrackerImportDialog({
       title={
         fromSheet
           ? 'New tracker from a Google Sheet'
-          : tracker
-            ? `Import into “${tracker.name}”`
-            : 'New tracker from a sheet'
+          : linking && tracker
+            ? `Link “${tracker.name}” to a Google Sheet`
+            : tracker
+              ? `Import into “${tracker.name}”`
+              : 'New tracker from a sheet'
       }
-      eyebrow={fromSheet ? 'Connect' : 'Import'}
+      eyebrow={following ? 'Connect' : 'Import'}
       onClose={onClose}
       wide
       busy={busy}
@@ -348,6 +374,19 @@ export default function TrackerImportDialog({
             <button type="button" className="trk-button" onClick={() => file.current?.click()}>
               <Upload size={14} aria-hidden="true" /> Choose a CSV file
             </button>
+            {canLink && tracker && (
+              <button
+                type="button"
+                className="trk-button"
+                onClick={() => {
+                  setLinking(true)
+                  setStep('sheet')
+                  setError('')
+                }}
+              >
+                <Link2 size={14} aria-hidden="true" /> Link an existing Google Sheet
+              </button>
+            )}
             {fileName && <span className="trk-muted-text">{fileName}</span>}
             <label className="trk-checkline">
               <input type="checkbox" checked={header} onChange={event => setHeader(event.target.checked)} /> First row
@@ -377,6 +416,13 @@ export default function TrackerImportDialog({
             The tracker follows one tab of the Sheet: new and changed rows come in on every sync (Sheet → tracker). The
             Sheet itself is never changed.
           </p>
+          {linking && tracker && (tracker.rowCount || 0) > 0 && (
+            <p className="trk-muted-text">
+              This tracker already has {plural(tracker.rowCount || 0, 'row')}. A tracker row whose name matches a Sheet
+              row in the task name column is linked to it and updated from the Sheet; other Sheet rows are added, and
+              tracker rows with no match stay as they are.
+            </p>
+          )}
           {google === null && (
             <p role="status" className="trk-muted-text">
               Checking your Google account…
@@ -502,6 +548,19 @@ export default function TrackerImportDialog({
                 Opening…
               </span>
             )}
+            {linking && (
+              <button
+                type="button"
+                className="trk-button"
+                onClick={() => {
+                  setLinking(false)
+                  setStep('source')
+                  setError('')
+                }}
+              >
+                Back
+              </button>
+            )}
             <button type="button" className="trk-button" onClick={onClose}>
               Cancel
             </button>
@@ -554,7 +613,7 @@ export default function TrackerImportDialog({
             Found <strong>{plural(source.rows.length, 'row')}</strong> and{' '}
             <strong>{plural(source.headers.length, 'column')}</strong>. Check what each column becomes.
           </p>
-          {fromSheet && (
+          {following && (
             <label className="trk-field-block trk-key-column">
               Task name column: each row with a name here is a task, and the same name may appear on several rows. A row
               with this cell blank belongs to the task above it. Every row comes into the tracker.
@@ -652,7 +711,7 @@ export default function TrackerImportDialog({
                               disabled={!mapping.include}
                               onChange={event => change(mapping.index, { type: event.target.value as ColumnType })}
                             >
-                              {IMPORT_TYPES.filter(item => !fromSheet || item.type !== 'secret').map(item => (
+                              {IMPORT_TYPES.filter(item => !following || item.type !== 'secret').map(item => (
                                 <option key={item.type} value={item.type}>
                                   {item.label}
                                 </option>
@@ -680,7 +739,9 @@ export default function TrackerImportDialog({
           )}
           {!plan.fatal && (
             <p className="trk-muted-text">
-              {plural(plan.rows.length, 'row')} will be added
+              {linking
+                ? `${plural(plan.rows.length, 'Sheet row')}: those whose task name matches a tracker row update it, the rest are added`
+                : `${plural(plan.rows.length, 'row')} will be added`}
               {plan.added.length ? ` with ${plural(plan.added.length, 'new column')}` : ''}.
             </p>
           )}
@@ -715,7 +776,7 @@ export default function TrackerImportDialog({
               className="trk-button"
               disabled={busy}
               onClick={() => {
-                setStep(fromSheet ? 'sheet' : 'source')
+                setStep(following ? 'sheet' : 'source')
                 setError('')
               }}
             >
@@ -746,12 +807,14 @@ export default function TrackerImportDialog({
               onClick={() => void run()}
             >
               {busy
-                ? fromSheet
+                ? following
                   ? 'Connecting…'
                   : 'Importing…'
-                : fromSheet
-                  ? `Connect and bring in ${plural(plan.rows.length, 'row')}`
-                  : `Import ${plural(plan.rows.length, 'row')}`}
+                : linking
+                  ? 'Link and sync'
+                  : fromSheet
+                    ? `Connect and bring in ${plural(plan.rows.length, 'row')}`
+                    : `Import ${plural(plan.rows.length, 'row')}`}
             </button>
           </div>
         </div>

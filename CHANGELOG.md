@@ -11,6 +11,11 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Link an existing Google Sheet to a tracker
+- A tracker's **Import** window has a new **Link an existing Google Sheet** button (shown when the tracker isn't following a Sheet yet). Pick the Sheet and tab, choose the task name column and what each column becomes, then **Link and sync**: the tracker follows that tab from then on, the same as a tracker made from a Sheet.
+- Rows the tracker already has are not doubled: a tracker row whose task name matches a Sheet row is linked to it and updated from the Sheet. Other Sheet rows are added; tracker rows with no match stay as they are.
+- Stopping the sync now points to this button for linking a Sheet again.
+
 ### Close a task together with its open subtasks
 - Resolving or closing a task that still has open subtasks (Resolve button, status menu, board, or the task's edit window) no longer stops you. A window lists the open subtasks and asks you to type a word shown (for example *finish*) to confirm; then the task and those subtasks close together, with the same status.
 - Subtasks already finished keep their own status and date. Cancelling leaves everything open.

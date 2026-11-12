@@ -98,6 +98,51 @@ export type SyncPlan = {
   report: SyncReport
 }
 
+/** The text a tracker cell shows, for matching it to a Sheet name. */
+function matchText(column: TrackerColumn | undefined, value: Cell | undefined) {
+  if (!column || value === undefined || isEmptyCell(value)) return ''
+  if (column.type === 'select') return column.options?.find(option => option.id === value)?.label || ''
+  return Array.isArray(value) ? '' : String(value)
+}
+
+/**
+ * When a tracker that already has rows is linked to an existing Sheet: each named Sheet row is matched to a tracker
+ * row with the same name in the key column (the 1st "EGG" in the Sheet to the 1st unmatched "EGG" row in the tracker,
+ * and so on), so the first sync updates those rows instead of adding them again. Rows already recognised by a Sheet,
+ * and unnamed rows, are left alone. `rows` must be in tracker order.
+ */
+export function adoptRows(input: {
+  grid: string[][]
+  keyHeader: string
+  keyColumn: TrackerColumn | undefined
+  rows: { id: string; data: Record<string, Cell>; sourceKey?: string }[]
+}): { rowId: string; key: string }[] {
+  const [rawHeaders = [], ...body] = input.grid
+  const keyIndex = rawHeaders.map(value => headerKey(String(value ?? ''))).indexOf(headerKey(input.keyHeader))
+  if (keyIndex < 0 || !input.keyColumn) return []
+  const lines = body
+    .map(line => rawHeaders.map((_, index) => String(line[index] ?? '')))
+    .filter(values => values.some(value => value.trim() && !/^false$/i.test(value.trim())))
+  const names = lines.map(values => values[keyIndex])
+  const keys = sheetRowKeys(names)
+  const waiting = new Map<string, string[]>()
+  for (const row of input.rows) {
+    if (row.sourceKey) continue
+    const name = matchText(input.keyColumn, row.data[input.keyColumn.id]).trim().toLowerCase()
+    if (!name) continue
+    waiting.set(name, [...(waiting.get(name) || []), row.id])
+  }
+  const adopted: { rowId: string; key: string }[] = []
+  names.forEach((raw, at) => {
+    const name = String(raw ?? '')
+      .trim()
+      .toLowerCase()
+    const rowId = name ? waiting.get(name)?.shift() : undefined
+    if (rowId) adopted.push({ rowId, key: keys[at] })
+  })
+  return adopted
+}
+
 /**
  * Works out what a sync changes. `grid` is the tab's values with the header row first.
  * Only columns in `headerMap` are written; every other column, and tasks and links, are left alone.
