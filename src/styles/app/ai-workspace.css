@@ -1,0 +1,194 @@
+/* The full AI workspace in the dark look. Part of styles.css: keep the import order there. */
+
+/* Full AI workspace in the same dark visual language */
+.ai-context-panel,
+.ai-chat {
+  background: #212121;
+  border-color: #3a3a3a;
+}
+.ai-context-form label {
+  color: #c8c8c8;
+}
+.ai-scope-head,
+.ai-scope-none,
+.ai-scope-client legend button {
+  color: #c8c8c8;
+}
+.ai-scope-client {
+  border-color: #3d3d3d;
+}
+.ai-context-summary {
+  border-color: #383838;
+}
+.ai-context-summary > div + div {
+  border-left-color: #383838;
+}
+.ai-context-summary strong {
+  color: #fff;
+}
+.ai-context-summary span {
+  color: #909090;
+}
+.ai-safety-note {
+  background: #1b2b21;
+  border-color: #34523d;
+  color: #b8f4cc;
+}
+.ai-safety-note span {
+  color: #9fcdb0;
+}
+.ai-prompts > span {
+  color: #939393;
+}
+.ai-prompts button {
+  background: #1c1c1c;
+  border-color: #3c3c3c;
+  color: #e6e6e6;
+}
+.ai-prompts button:hover {
+  background: #282828;
+  border-color: #505050;
+}
+.ai-chat-head {
+  border-bottom-color: #383838;
+}
+.ai-chat-head span {
+  color: #8f8f8f;
+}
+.ai-messages {
+  background: #191919;
+}
+.ai-empty {
+  color: #989898;
+}
+.ai-empty svg {
+  color: #9aa9e8;
+}
+.ai-empty h3 {
+  color: #fff;
+}
+.ai-message-label {
+  color: #8d8d8d;
+}
+.ai-message.user .ai-message-body {
+  background: #303744;
+  color: #fff;
+}
+.ai-message.assistant .ai-message-body {
+  background: #222;
+  color: #ededed;
+  border-color: #3c3c3c;
+}
+.ai-suggestion {
+  background: #1c1c1c;
+  border-color: #3c3c3c;
+}
+.ai-suggestion-head span {
+  color: #d8d8d8;
+}
+.ai-suggestion-head b {
+  background: #2c2c2c;
+  color: #d8d8d8;
+}
+.ai-suggestion > strong {
+  color: #fff;
+}
+.ai-suggestion p,
+.ai-suggestion small {
+  color: #aaa;
+}
+.ai-draft {
+  background: #262626;
+  color: #dedede;
+}
+.ai-thinking {
+  background: #222;
+  color: #cfcfcf;
+  border-color: #3c3c3c;
+}
+.ai-error {
+  background: #351d1f;
+  border-color: #5b3035;
+  color: #ffb1b8;
+}
+.ai-action-notice {
+  background: #1b2b21;
+  border-color: #34523d;
+  color: #b8f4cc;
+}
+.ai-composer {
+  background: #212121;
+  border-top-color: #383838;
+}
+.ai-composer-foot > span {
+  color: #969696;
+}
+
+@media (max-width: 900px) {
+  .dashboard-ai-context {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .dashboard-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dashboard-panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .dashboard-tabs {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .dashboard-activity-row {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+  .dashboard-ai-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .dashboard-ai-footer .primary {
+    width: 100%;
+  }
+  .dashboard-ai-result-head,
+  .dashboard-ai-result-footer,
+  .dashboard-action-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .dashboard-ai-result-footer .secondary {
+    width: 100%;
+  }
+  .dashboard-page-buttons {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+@media (max-width: 480px) {
+  .dashboard-metrics {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-tabs .secondary {
+    flex: 1;
+  }
+  .dashboard-activity-row {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+  .dashboard-activity-time {
+    padding-top: 0;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .dashboard-activity-time small {
+    margin: 0;
+  }
+  .dashboard-activity-top {
+    flex-direction: column;
+  }
+  .dashboard-activity-badges {
+    justify-content: flex-start;
+  }
+}

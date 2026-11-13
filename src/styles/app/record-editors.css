@@ -1,0 +1,195 @@
+/* Record editors in the browser top layer. Part of styles.css: keep the import order there. */
+
+/* Record editors use the browser's top layer, outside every clipped glass panel. */
+.record-title-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.record-title-line h1 {
+  overflow-wrap: anywhere;
+}
+.record-title-edit {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.client-card-wrap {
+  position: relative;
+  min-width: 0;
+}
+.client-card-wrap .client-card {
+  width: 100%;
+  height: 100%;
+  padding-bottom: 64px;
+}
+.client-card-edit {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+}
+.lifecycle-toolbar {
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--theme-border, #393939);
+}
+.lifecycle-toolbar-row,
+.lifecycle-availability {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lifecycle-toolbar-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.lifecycle-availability {
+  color: #eee;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.lifecycle-availability > span:last-child:not(.availability-dot) {
+  color: #abb5c5;
+  font-size: 12px;
+}
+.availability-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #60d8a2;
+}
+.availability-dot.is-archived {
+  background: #9aa3b2;
+}
+.lifecycle-toolbar .lifecycle-requirements {
+  margin-top: 9px;
+  color: #abb5c5;
+  font-size: 12px;
+}
+.lifecycle-toolbar button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.lifecycle-error,
+.record-editor-error {
+  color: #ffaaa3;
+}
+.record-edit-dialog {
+  padding: 0;
+  width: min(640px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  border: 1px solid var(--theme-border, #454545);
+  border-radius: 16px;
+  color: #f5f7fa;
+  background: #171d26;
+  box-shadow: 0 24px 100px #0009;
+  overflow: hidden;
+}
+.record-edit-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.record-edit-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.72);
+}
+.record-editor-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #384150;
+}
+.record-editor-header p {
+  color: #a8b5c8;
+  font-size: 12px;
+  margin: 0 0 4px;
+}
+.record-editor-header h2 {
+  color: #fff;
+  margin: 0;
+  font-size: 22px;
+}
+.record-editor-header .icon-button {
+  color: #d8e1ed;
+}
+.record-editor-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.record-edit-dialog .record-editor-fields {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+  gap: 18px;
+}
+.record-edit-dialog .record-editor-fields label {
+  color: #e6edf6;
+  font-size: 13px;
+}
+.record-edit-dialog .record-editor-fields small {
+  color: #a8b5c8;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.app-shell .record-edit-dialog .record-editor-fields input,
+.app-shell .record-edit-dialog .record-editor-fields select,
+.app-shell .record-edit-dialog .record-editor-fields textarea,
+.app-shell .record-edit-dialog .record-editor-fields .client-combo-input {
+  background: #0d131c;
+  color: #f5f7fa;
+  border: 1px solid #465365;
+  border-radius: 9px;
+  padding: 11px 12px;
+  font-size: 14px;
+}
+.app-shell .record-edit-dialog .record-name-field input {
+  font-size: 18px;
+  font-weight: 650;
+  min-height: 50px;
+}
+.record-editor-fields input[readonly] {
+  opacity: 0.8;
+}
+.record-editor-footer {
+  flex-shrink: 0;
+  padding: 16px 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #384150;
+  background: #171d26;
+}
+.record-editor-error {
+  margin: 0;
+  padding: 12px 24px;
+  font-size: 13px;
+}
+@media (max-width: 560px) {
+  .record-edit-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+  .record-edit-dialog .record-editor-fields {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px;
+    gap: 14px;
+  }
+  .record-edit-dialog .span-2 {
+    grid-column: auto;
+  }
+  .record-editor-header,
+  .record-editor-footer {
+    padding: 16px 18px;
+  }
+  .record-title-edit {
+    font-size: 12px;
+  }
+}

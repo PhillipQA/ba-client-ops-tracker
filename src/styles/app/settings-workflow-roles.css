@@ -1,0 +1,92 @@
+/* Settings: Workflow and Roles. Part of styles.css: keep the import order there. */
+
+/* Settings › Workflow */
+.workflow-editor .task-status-row input:not([type="checkbox"]) {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.workflow-editor .task-status-row small {
+  color: var(--ui-muted);
+  white-space: nowrap;
+}
+.workflow-move {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ui-warning-soft);
+}
+.workflow-labels {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.workflow-labels label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.workflow-editor .task-status-row {
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+}
+
+/* Settings › Roles */
+.roles-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+.role-card {
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+.role-card-head {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.role-card-head small {
+  color: var(--ui-muted);
+}
+.role-card-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+.role-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.role-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.role-modules {
+  width: 100%;
+  border-collapse: collapse;
+}
+.role-modules th,
+.role-modules td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--ui-border);
+  text-align: left;
+}
+.role-modules td:not(:first-child),
+.role-modules th:not(:first-child) {
+  text-align: center;
+  width: 80px;
+}

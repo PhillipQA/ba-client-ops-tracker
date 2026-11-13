@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 // Source-level CSS contract checks. These do not replace a browser layout test.
-const source = readFileSync(new URL('../src/styles/styles.css', import.meta.url), 'utf8').replace(
-  /\/\*[\s\S]*?\*\//g,
-  '',
-)
+// styles.css is a list of @import lines (src/styles/app/*.css); read the parts in that order, as the build does.
+const readCss = url =>
+  readFileSync(url, 'utf8').replace(/@import\s+['"]([^'"]+)['"];/g, (_, path) => readCss(new URL(path, url)))
+const source = readCss(new URL('../src/styles/styles.css', import.meta.url)).replace(/\/\*[\s\S]*?\*\//g, '')
 const rules = [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selectors, body]) => ({
   selectors: selectors.split(',').map(selector => selector.trim()),
   declarations: Object.fromEntries(

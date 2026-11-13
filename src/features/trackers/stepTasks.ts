@@ -7,7 +7,7 @@
  * Pure functions, shared by the screen and the tests.
  */
 import type { Cell, Tracker, TrackerColumn, TrackerRow } from './trackerModel'
-import { cellText } from './trackerTasks'
+import { cellText, dateOf } from './trackerTasks'
 import type { TaskDraft } from './TrackerWork'
 
 /** The templates whose trackers keep a task per row and a subtask per step. */
@@ -38,9 +38,6 @@ export function siteTaskTitle(columns: TrackerColumn[], cells: Record<string, Ce
 /** The date the site's task is due: the Go Live Date column. */
 export const goLiveColumn = (columns: TrackerColumn[]) =>
   columns.find(column => column.type === 'date' && /^go[\s-]*live/i.test(column.name.trim()))
-
-const dateOf = (value: Cell | undefined) =>
-  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
 
 export type StepPlan = {
   drafts: TaskDraft[]

@@ -1,0 +1,277 @@
+/* Tables, forms, cards and chips in the dark look, and the activity view fallback. Part of styles.css: keep the import order there. */
+
+/* General tables / forms / cards in dark mode */
+th {
+  background: #1c1c1c;
+  color: #bcbcbc;
+  border-bottom-color: #383838;
+}
+td {
+  color: #efefef;
+  border-bottom-color: #333;
+}
+td small {
+  color: #919191;
+}
+.filters,
+.quick-note,
+.modal-head {
+  border-bottom-color: #383838;
+}
+.search-box,
+.filters select,
+.form-grid select,
+.form-grid input,
+.form-grid textarea,
+.quick-note input,
+.ai-context-form select,
+.ai-composer textarea,
+.filters .client-combo-input,
+.form-grid .client-combo-input,
+.ai-context-form .client-combo-input {
+  background: #181818;
+  border-color: #3d3d3d;
+  color: #f7f7f7;
+}
+.search-box {
+  color: #8f8f8f;
+}
+.search-box input {
+  color: #f7f7f7;
+  background: transparent;
+}
+.search-box input::placeholder,
+.form-grid input::placeholder,
+.form-grid textarea::placeholder,
+.quick-note input::placeholder,
+.ai-composer textarea::placeholder {
+  color: #737373;
+}
+select option {
+  background: #181818;
+  color: #fff;
+}
+.form-grid label {
+  color: #d0d0d0;
+}
+.work-schedule-fields {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #3d3d3d;
+  border-radius: 11px;
+  background: #171717;
+}
+.work-schedule-fields legend {
+  padding: 0 7px;
+  color: #f2f2f2;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+.work-schedule-fields > p {
+  margin: 0 0 11px;
+  color: #8f8f8f;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.work-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.subtask-schedule-summary {
+  display: block;
+  margin-top: 5px;
+  color: #9cbcff;
+  font-size: 11px;
+  font-weight: 650;
+}
+@media (max-width: 760px) {
+  .work-schedule-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.icon-button {
+  color: #b4b4b4;
+}
+.icon-button:hover {
+  background: #2c2c2c;
+  color: #fff;
+}
+.client-card:hover {
+  border-color: #5a5a5a;
+  box-shadow: none;
+}
+.client-avatar {
+  background: #292929;
+  color: #fff;
+}
+.card-stats,
+.next-line {
+  color: #b8b8b8;
+}
+.card-stats b {
+  color: #fff;
+}
+.next-line,
+.mini-project,
+.quick-note {
+  border-color: #383838;
+}
+.callout {
+  background: #1c2430;
+  border-color: #34445a;
+  color: #dce9ff;
+}
+.callout p {
+  color: #b7c7dc;
+}
+.inquiry-card {
+  border-bottom-color: #383838;
+}
+.inquiry-card p,
+.row-meta {
+  color: #b1b1b1;
+}
+.back-link {
+  color: #b7c4ff;
+}
+.timeline > div {
+  border-left-color: #444;
+}
+.timeline span {
+  color: #8e8e8e;
+}
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.72);
+}
+.modal {
+  border: 1px solid #414141;
+}
+.empty {
+  color: #8d8d8d;
+}
+
+/* Chips */
+.chip {
+  border-color: #444;
+}
+.neutral {
+  background: #2a2a2a;
+  color: #ddd;
+}
+.priority-urgent {
+  background: #3b2023;
+  color: #ffb5bd;
+}
+.priority-high {
+  background: #38291f;
+  color: #ffc997;
+}
+.priority-medium {
+  background: #342f1f;
+  color: #f5d982;
+}
+.priority-low {
+  background: #25292e;
+  color: #c3cbd5;
+}
+.waiting-developer {
+  background: #222c43;
+  color: #b6c8ff;
+}
+.waiting-client {
+  background: #30243d;
+  color: #d8b8ff;
+}
+.waiting-me {
+  background: #3b291f;
+  color: #ffc19e;
+}
+.waiting-qa,
+.waiting-design {
+  background: #1f3329;
+  color: #a9e4c3;
+}
+.waiting-done {
+  background: #2b2b2b;
+  color: #aaa;
+}
+.waiting-custom {
+  background: #262a33;
+  color: #c9d2e3;
+}
+.type-inquiry {
+  background: #203141;
+  color: #b9ddff;
+}
+.type-requirement {
+  background: #222c43;
+  color: #b6c8ff;
+}
+.type-issue {
+  background: #3a2028;
+  color: #ffb7ca;
+}
+.type-decision {
+  background: #2d2440;
+  color: #cdbdff;
+}
+.type-follow-up {
+  background: #382f1f;
+  color: #f5d58c;
+}
+.health-good {
+  background: #1f3329;
+  color: #a9e4c3;
+}
+.health-watch {
+  background: #382f1f;
+  color: #f5d58c;
+}
+.health-at-risk {
+  background: #3b2023;
+  color: #ffb5bd;
+}
+
+/* Existing activity view fallback */
+.activity-column + .activity-column {
+  border-left-color: #383838;
+}
+.activity-column-head {
+  background: #1c1c1c;
+  border-bottom-color: #383838;
+}
+.activity-column-head span {
+  color: #999;
+}
+.activity-column-head b {
+  background: #2b3142;
+  color: #dbe2ff;
+}
+.activity-card {
+  border-bottom-color: #383838;
+}
+.activity-card.done {
+  background: #1b1b1b;
+}
+.activity-main > small,
+.activity-main p,
+.activity-meta {
+  color: #aaa;
+}
+.source-google {
+  background: #222c43;
+  color: #b6c8ff;
+}
+.source-local {
+  background: #1f3329;
+  color: #a9e4c3;
+}
+.readonly-notice {
+  background: #1d2430;
+  border-color: #38485e;
+  color: #dce9ff;
+}
+.readonly-notice span {
+  color: #b8c8dc;
+}

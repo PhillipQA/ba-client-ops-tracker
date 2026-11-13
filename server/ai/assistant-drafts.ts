@@ -7,10 +7,9 @@ import { TRACKER_TEMPLATES } from '../../src/features/trackers/trackerTemplates'
 import { isClosedProject } from '../../src/features/tasks/lifecycle'
 import { cleanDrfPrefill } from '../../src/features/documents/drfPrefill'
 import { places } from './assistant-emails'
+import { clip, stateList as list } from './assistant-text'
 
 const MAX_ROWS = 50
-const clip = (value: unknown, length: number) => `${value ?? ''}`.replace(/\s+/g, ' ').trim().slice(0, length)
-const list = (state: any, key: string): any[] => (Array.isArray(state?.[key]) ? state[key] : [])
 /** Templates a draft can start from: the built-in ones that have columns to fill. */
 const templates = TRACKER_TEMPLATES.filter(template => template.id !== 'blank' && template.columns.length)
 

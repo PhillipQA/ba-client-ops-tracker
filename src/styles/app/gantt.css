@@ -1,0 +1,107 @@
+/* Gantt chart. Part of styles.css: keep the import order there. */
+
+/* Gantt */
+.gantt-scroll {
+  overflow-x: auto;
+}
+.gantt-chart {
+  width: 100%;
+}
+.gantt-header,
+.gantt-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 26%) minmax(520px, 1fr);
+}
+.gantt-header {
+  min-height: 46px;
+  border-bottom: 1px solid #383838;
+  background: #1c1c1c;
+}
+.gantt-label-head {
+  padding: 14px;
+  color: #bcbcbc;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gantt-axis {
+  position: relative;
+  min-height: 46px;
+  border-left: 1px solid #383838;
+}
+.gantt-axis span {
+  position: absolute;
+  top: 15px;
+  transform: translateX(-50%);
+  color: #9d9d9d;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.gantt-axis span:first-child {
+  transform: none;
+}
+.gantt-axis span:last-child {
+  transform: translateX(-100%);
+}
+.gantt-row {
+  min-height: 58px;
+  border-bottom: 1px solid #333;
+}
+.gantt-row:last-child {
+  border-bottom: 0;
+}
+.gantt-label {
+  padding: 11px 14px;
+  min-width: 0;
+}
+.gantt-label strong,
+.gantt-label small {
+  display: block;
+}
+.gantt-label strong {
+  color: #f5f5f5;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.gantt-label small {
+  margin-top: 4px;
+  color: #8e8e8e;
+  font-size: 11px;
+}
+.gantt-track {
+  position: relative;
+  min-height: 58px;
+  border-left: 1px solid #383838;
+  background-image: linear-gradient(to right, #343434 1px, transparent 1px);
+}
+.gantt-bar {
+  position: absolute;
+  top: 17px;
+  height: 24px;
+  min-width: 8px;
+  border-radius: 6px;
+  background: #65739c;
+  border: 1px solid #7d8ab0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.gantt-bar.calendar {
+  background: #39466b;
+  border-color: #53648e;
+}
+.gantt-bar.local {
+  background: #405a4c;
+  border-color: #577563;
+}
+.gantt-bar.done {
+  opacity: 0.58;
+}
+.gantt-bar span {
+  padding: 0 7px;
+  color: #fff;
+  font-size: 10px;
+  white-space: nowrap;
+}

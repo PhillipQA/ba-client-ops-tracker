@@ -1,0 +1,149 @@
+/* Task editor folds, the Action Center task panel, the crash screen, closing with open subtasks, and Drive evidence settings. Part of styles.css: keep the import order there. */
+
+/* Task editor: every section folds; Schedule, Effort and DocHub start open (see Fold in TaskForms). */
+.task-fold {
+  border: 1px solid var(--theme-border, rgba(127, 127, 127, 0.3));
+  border-radius: 12px;
+}
+
+.task-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.task-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-fold > summary small {
+  margin-left: auto;
+  overflow: hidden;
+  max-width: 60%;
+  opacity: 0.75;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-fold-chevron {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.task-fold[open] > summary .task-fold-chevron {
+  transform: rotate(90deg);
+}
+
+.task-fold[open] > summary {
+  border-bottom: 1px solid var(--theme-border, rgba(127, 127, 127, 0.3));
+}
+
+.task-fold-body {
+  padding: 12px 14px 14px;
+}
+
+/* The fold's title is the section's heading: hide the repeated one inside. */
+.task-fold-body > fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.task-fold-body > fieldset > legend,
+.task-fold-body .effort-heading > div > strong,
+.task-fold-body .subtask-comment-heading > div > strong,
+.task-fold-body .subtask-evidence-heading > div > strong {
+  display: none;
+}
+
+.task-fold-body > .effort-panel,
+.task-fold-body > .subtask-comment-trail,
+.task-fold-body > .subtask-evidence-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-fold-chevron {
+    transition: none;
+  }
+}
+
+/* Action Center task panel: the Folder filter sits beside "View all tasks". */
+.dashboard-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dashboard-panel-actions .lifecycle-filter {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+/* Shown instead of a blank page when a screen fails to draw (src/app/CrashScreen.tsx). */
+.crash-screen {
+  max-width: 560px;
+  margin: 15vh auto;
+  padding: 24px;
+  border-radius: 16px;
+  color: #f5f7fa;
+  background: #0f141b;
+  font-family: inherit;
+}
+.crash-screen pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border-radius: 8px;
+  background: #171d26;
+  color: #ffb4a8;
+  font-size: 13px;
+}
+
+/* Closing a task with open subtasks: confirm by typing a word */
+.close-subtasks-body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 22px 22px;
+}
+.close-subtasks-body ul {
+  margin: 0;
+  padding-left: 20px;
+  max-height: 180px;
+  overflow: auto;
+}
+.close-subtasks-body label {
+  display: grid;
+  gap: 6px;
+}
+.close-subtasks-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Settings › Google Drive: moving task evidence out of the database */
+.evidence-storage {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(127, 127, 127, 0.2);
+}
+.evidence-storage h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.evidence-storage p {
+  margin: 0;
+}

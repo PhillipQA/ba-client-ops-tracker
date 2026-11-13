@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import type { Tracker, TrackerColumn, TrackerRow } from './trackerModel'
+import { trackerClientIds, type Tracker, type TrackerColumn, type TrackerRow } from './trackerModel'
 import { shown, type Lookup } from './trackerQuery'
 import { Dialog, plural } from './trackerUi'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
-import { trackerClients, type TaskDraft, type WorkTools } from './TrackerWork'
+import type { TaskDraft, WorkTools } from './TrackerWork'
 import {
   choicesFromOrder,
   choicesFromSheet,
@@ -73,7 +73,7 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
     ),
   )
   const [titles, setTitles] = useState<Record<string, string>>({})
-  const own = trackerClients(tracker).filter(id => tools.clients.some(client => client.id === id))
+  const own = trackerClientIds(tracker).filter(id => tools.clients.some(client => client.id === id))
   const [clientId, setClientId] = useState(own.length === 1 ? own[0] : '')
   const [projectId, setProjectId] = useState(tracker.projectId || '')
   const [projectName, setProjectName] = useState('')

@@ -4,6 +4,7 @@ import { isClosedStatus } from '../../src/features/trackers/trackerAutoDone'
 import { applyTaskPatches } from '../../src/features/trackers/trackerTasks'
 import { archivedWorkReason } from '../../src/features/tasks/lifecycle'
 import { defaultWaitingOn, doneWaitingOn } from '../../src/features/tasks/waitingOn'
+import { asList as list } from '../../src/shared/lists'
 
 /**
  * Tasks completed or reopened by the server for a tracker: a box ticked or unticked in the connected Google Sheet
@@ -14,8 +15,6 @@ import { defaultWaitingOn, doneWaitingOn } from '../../src/features/tasks/waitin
  * roll up as in Tasks.
  */
 export type TrackerActor = { id: string; name: string; role: string }
-
-const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 
 /** The workspace after the patches, and the tasks that were completed or reopened. Pure. */
 export function applyTrackerTaskPatches(state: any, patches: DonePatch[], options: { today: string; from: string }) {

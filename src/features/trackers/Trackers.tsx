@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ChevronLeft, LayoutTemplate, Link2, Plus, Search, Table2, Upload } from 'lucide-react'
-import { TRACKER_LIMITS, trackerProjectIds, type Tracker } from './trackerModel'
+import { TRACKER_LIMITS, trackerClientIds, trackerProjectIds, type Tracker } from './trackerModel'
 import { trackerFolders, trackersInFolder } from './trackerFolders'
 import {
   FOLDER_LAYOUTS,
@@ -23,8 +23,6 @@ import TrackerClientPicker from './TrackerClientPicker'
 import TrackerProjectPicker from './TrackerProjectPicker'
 import type { TaskDraft } from './TrackerWork'
 
-const clientsOf = (tracker: Tracker) =>
-  tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : []
 import TrackerScreen from './TrackerScreen'
 import TrackerImportDialog from './TrackerImportDialog'
 import { Dialog, Notice, TrackerLoading, niceTime, plural } from './trackerUi'
@@ -383,9 +381,9 @@ export default function Trackers(props: Props) {
     return (trackers || []).filter(
       tracker =>
         (showArchived || !tracker.archived) &&
-        (!clientFilter || clientsOf(tracker).includes(clientFilter)) &&
+        (!clientFilter || trackerClientIds(tracker).includes(clientFilter)) &&
         words.every(word =>
-          `${tracker.name} ${clientsOf(tracker).map(clientName).join(' ')} ${trackerProjectIds(tracker).map(projectName).join(' ')} ${tracker.createdByName}`
+          `${tracker.name} ${trackerClientIds(tracker).map(clientName).join(' ')} ${trackerProjectIds(tracker).map(projectName).join(' ')} ${tracker.createdByName}`
             .toLowerCase()
             .includes(word),
         ),
@@ -583,7 +581,7 @@ export default function Trackers(props: Props) {
               clientName={clientName}
               projectName={projectName}
               personName={personName}
-              clientsOf={clientsOf}
+              clientsOf={trackerClientIds}
               onOpen={setOpenId}
             />
           )}

@@ -32,7 +32,8 @@ export function cellText(column: TrackerColumn | undefined, value: Cell | undefi
   if (column.type === 'select') return column.options?.find(option => option.id === value)?.label || ''
   return typeof value === 'string' ? value.trim() : String(value)
 }
-const dateOf = (value: Cell | undefined) =>
+/** A cell's date (YYYY-MM-DD), or '' when it holds none. */
+export const dateOf = (value: Cell | undefined) =>
   typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
 
 /** Whether this tracker keeps tasks for its rows: it has a column that mirrors the task title. */

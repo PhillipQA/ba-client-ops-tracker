@@ -1,0 +1,454 @@
+/* Settings and roles, Discord settings, and cloud storage. Part of styles.css: keep the import order there. */
+
+/* Settings / roles */
+.session-card {
+  margin: 10px 8px 0;
+  padding: 10px;
+  border: 1px solid #303030;
+  border-radius: 9px;
+  background: #171717;
+}
+.session-card strong,
+.session-card span {
+  display: block;
+}
+.session-card strong {
+  color: #ededed;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.session-card span {
+  margin-top: 3px;
+  color: #929292;
+  font-size: 11px;
+}
+.top-role-pill,
+.role-badge,
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 27px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid #424242;
+  background: #222;
+  color: #d9d9d9;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.settings-current .role-badge {
+  color: #c7d2ff;
+  border-color: #46506e;
+  background: #222939;
+}
+.current-user-card {
+  padding: 17px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.settings-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background: #303744;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+.current-user-card strong,
+.current-user-card span {
+  display: block;
+}
+.current-user-card strong {
+  font-size: 12px;
+}
+.current-user-card span {
+  margin-top: 3px;
+  color: #999;
+  font-size: 11px;
+}
+.current-user-role {
+  text-align: right;
+}
+.current-user-role small,
+.current-user-role b {
+  display: block;
+}
+.current-user-role small {
+  color: #838383;
+  font-size: 11px;
+}
+.current-user-role b {
+  margin-top: 4px;
+  color: #dedede;
+  font-size: 11px;
+}
+.settings-note {
+  margin: 0 17px 17px;
+  padding: 10px 12px;
+  border: 1px solid #38485e;
+  border-radius: 8px;
+  background: #1d2430;
+  color: #c8d8ec;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.role-grid {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.role-card {
+  padding: 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #1d1d1d;
+}
+.role-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.role-card-head strong {
+  color: #fff;
+  font-size: 12px;
+}
+.role-card-head span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #303744;
+  color: #dce3ff;
+  font-size: 11px;
+}
+.role-card p {
+  margin: 7px 0 10px;
+  color: #999;
+  font-size: 11px;
+}
+.role-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.role-card li {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  color: #c8c8c8;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.role-card li svg {
+  flex: 0 0 auto;
+  color: #9fcdb0;
+  margin-top: 1px;
+}
+.settings-message {
+  margin: 12px 14px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #1a2433;
+  border: 1px solid #34465f;
+  color: #d6e4ff;
+  font-size: 12px;
+}
+.settings-message.error {
+  background: #2f1d22;
+  border-color: #6a3340;
+  color: #ffc9ce;
+}
+.account-create-form {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 180px auto;
+  gap: 9px;
+  align-items: end;
+  border-bottom: 1px solid #383838;
+}
+.account-create-form label {
+  display: grid;
+  gap: 5px;
+  color: #bdbdbd;
+  font-size: 11px;
+  font-weight: 700;
+}
+.account-create-form input,
+.account-create-form select,
+.accounts-table select,
+.account-create-form .client-combo-input,
+.accounts-table .client-combo-input {
+  min-height: 37px;
+  border: 1px solid #3d3d3d;
+  border-radius: 8px;
+  background: #181818;
+  color: #f7f7f7;
+  padding: 7px 9px;
+}
+.accounts-table {
+  min-width: 760px;
+}
+.accounts-table select,
+.accounts-table .client-combo-input {
+  min-width: 130px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.danger-button {
+  color: #ff9da5;
+}
+.danger-button:hover {
+  color: #ffc1c6;
+  background: #371f21;
+}
+.read-only-account-note {
+  margin: 0 14px 14px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  border: 1px solid #3a3a3a;
+  color: #a9a9a9;
+  font-size: 11px;
+}
+
+@media (max-width: 980px) {
+  .role-grid {
+    grid-template-columns: 1fr;
+  }
+  .account-create-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .current-user-card {
+    grid-template-columns: auto 1fr;
+  }
+  .current-user-role {
+    grid-column: 1 / -1;
+    text-align: left;
+    padding-left: 54px;
+  }
+  .account-create-form {
+    grid-template-columns: 1fr;
+  }
+  .top-role-pill {
+    display: none;
+  }
+}
+
+/* Discord integration settings */
+.settings-integration-panel .panel-heading {
+  align-items: center;
+}
+.discord-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid #454545;
+  background: #202020;
+  color: #d7d7d7;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.discord-status.discord-online {
+  border-color: #315f45;
+  background: #19271f;
+  color: #b8f4cc;
+}
+.discord-status.discord-offline {
+  border-color: #5a4242;
+  background: #2a1d1d;
+  color: #efb3b3;
+}
+.integration-grid {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.integration-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 11px;
+  background: #1b1b1b;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.integration-card > svg {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  color: #aeb9e8;
+}
+.integration-card > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.integration-card strong,
+.integration-card span,
+.integration-card small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.integration-card strong {
+  color: #f2f2f2;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.integration-card span {
+  color: #c4c4c4;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.integration-card small {
+  color: #8f8f8f;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.integration-status-card {
+  grid-column: 1 / -1;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+}
+.integration-status-card .compact {
+  align-self: center;
+  min-width: 76px;
+}
+.integration-error {
+  color: #f1a9a9 !important;
+}
+.settings-integration-panel > .settings-note {
+  margin-top: 0;
+}
+@media (max-width: 860px) {
+  .integration-grid {
+    grid-template-columns: 1fr;
+  }
+  .integration-status-card {
+    grid-column: auto;
+  }
+}
+@media (max-width: 560px) {
+  .settings-integration-panel .panel-heading {
+    align-items: flex-start;
+  }
+  .integration-status-card {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+  .integration-status-card .compact {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* Cloud storage */
+.local-note.storage-synced {
+  color: #9fcdb0;
+}
+.local-note.storage-saving,
+.local-note.storage-checking {
+  color: #d7c38a;
+}
+.local-note.storage-error {
+  color: #ffb1b8;
+}
+.storage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid #424242;
+  background: #222;
+  color: #d9d9d9;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.storage-badge.storage-synced {
+  border-color: #34523d;
+  background: #1b2b21;
+  color: #b8f4cc;
+}
+.storage-badge.storage-saving,
+.storage-badge.storage-checking {
+  border-color: #5a4d2e;
+  background: #2b2619;
+  color: #ead99f;
+}
+.storage-badge.storage-error {
+  border-color: #5b3035;
+  background: #351d1f;
+  color: #ffb1b8;
+}
+.storage-grid {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+.storage-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #1d1d1d;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.storage-card > svg {
+  flex: 0 0 auto;
+  color: #aeb9e8;
+  margin-top: 1px;
+}
+.storage-card strong,
+.storage-card span {
+  display: block;
+}
+.storage-card strong {
+  color: #f5f5f5;
+  font-size: 11px;
+}
+.storage-card span {
+  margin-top: 5px;
+  color: #969696;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.storage-sync-button {
+  align-self: stretch;
+  justify-content: center;
+  min-width: 120px;
+}
+@media (max-width: 900px) {
+  .storage-grid {
+    grid-template-columns: 1fr;
+  }
+  .storage-sync-button {
+    width: 100%;
+  }
+}

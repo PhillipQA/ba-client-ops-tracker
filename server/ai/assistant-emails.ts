@@ -9,6 +9,7 @@
  */
 import { isClosedProject } from '../../src/features/tasks/lifecycle'
 import { projectClients, requestedScope } from '../../src/features/ai/aiScope'
+import { stateList as list } from './assistant-text'
 
 /** Reads one person's own latest emails, newest first. */
 export type EmailReader = (tenant: string, userId: string) => Promise<any[]>
@@ -29,7 +30,6 @@ const clip = (value: unknown, length: number) =>
 /** Words too common to tell one client or project from another. */
 const COMMON = new Set(['the', 'and', 'for', 'from', 'inc', 'corp', 'email', 'mail', 'project', 'client', 'task'])
 const wordsOf = (text: string) => (text.toLowerCase().match(/[\p{L}\d]{3,}/gu) || []).filter(word => !COMMON.has(word))
-const list = (state: any, key: string): any[] => (Array.isArray(state?.[key]) ? state[key] : [])
 
 /** Whether a question is about email: only then are emails read. */
 export const asksAboutEmail = (message: string) => /\b(e-?mails?|mails?|inbox|gmail)\b/i.test(message)

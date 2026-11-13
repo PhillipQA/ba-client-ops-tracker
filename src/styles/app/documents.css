@@ -1,0 +1,165 @@
+/* Document Creation. Part of styles.css: keep the import order there. */
+
+/* Document Creation */
+.document-creation-page {
+  gap: 18px;
+}
+.document-module-callout {
+  align-items: flex-start;
+  background: #1b1d21;
+  border-color: #34363c;
+  color: #e5e7eb;
+}
+.document-module-callout p {
+  color: #a8adb7;
+}
+.document-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.document-flow-card {
+  min-height: 142px;
+  padding: 18px;
+  border: 1px solid #34363c;
+  border-radius: 18px;
+  background: #1b1d21;
+  color: #f3f4f6;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    transform 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.document-flow-card:hover {
+  transform: translateY(-1px);
+  border-color: #525761;
+  background: #202227;
+}
+.document-flow-card.active {
+  border-color: #5d79a8;
+  background: #202633;
+  box-shadow: inset 0 0 0 1px rgba(126, 158, 207, 0.08);
+}
+.document-flow-card > div:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.document-flow-card strong {
+  font-size: 15px;
+  color: #f4f5f7;
+}
+.document-flow-card span {
+  color: #a7adb8;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.document-flow-card small {
+  grid-column: 2;
+  justify-self: start;
+  color: #9eb8df;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.document-flow-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  background: #252b35;
+  color: #9eb8df;
+  border: 1px solid #353d49;
+}
+.document-workspace {
+  overflow: hidden;
+  background: #17191d;
+  border-color: #34363c;
+}
+.document-heading {
+  align-items: flex-start;
+  background: #1c1e22;
+  border-color: #34363c;
+}
+.document-heading h2 {
+  color: #f3f4f6;
+}
+.document-heading p {
+  color: #a8adb7;
+}
+.document-stage-pill {
+  border: 1px solid #464b54;
+  background: #23262b;
+  color: #c5c9d0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.document-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px;
+  padding: 16px;
+  background: #15171a;
+}
+.document-single-flow {
+  max-width: 840px;
+}
+.document-upload-panel,
+.document-extraction-panel {
+  border: 1px solid #34363c;
+  border-radius: 16px;
+  padding: 18px;
+  background: #1d1f23;
+  color: #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.linked-emails {
+  gap: 10px;
+}
+.linked-emails-empty {
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+.linked-email-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.linked-email-list button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border, #34363c);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.linked-email-list button.active {
+  border-color: var(--ui-accent, #60a5fa);
+}
+.linked-email-list button span {
+  opacity: 0.75;
+  font-size: 0.85em;
+}

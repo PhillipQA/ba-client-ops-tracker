@@ -6,9 +6,9 @@
 import type { WorkItem } from '../../shared/types'
 import { settleTimelineFields } from './timelineModel'
 import { trackerApi } from './trackerApi'
-import type { Tracker, TrackerRow } from './trackerModel'
+import { trackerClientIds, type Tracker, type TrackerRow } from './trackerModel'
 import { keepsTasks, planRowTasks } from './trackerTasks'
-import { trackerClients, type TaskDraft } from './TrackerWork'
+import type { TaskDraft } from './TrackerWork'
 
 export type RowTasksResult = { created: number; rows: TrackerRow[]; projectId?: string; error?: string }
 
@@ -42,7 +42,7 @@ export async function createRowTasks(input: {
       error: `Project “${own.name}” is completed, so its rows get no new tasks. Choose an open project for this tracker (More › Rename, client and project).`,
     }
   const seedsProject = input.projects?.find(project => project.id === tracker.projectId && project.seedsId)
-  const clientId = seedsProject?.clientId || trackerClients(tracker)[0] || ''
+  const clientId = seedsProject?.clientId || trackerClientIds(tracker)[0] || ''
   if (!clientId) return { created: 0, rows: [], error: 'Choose a client for this tracker so its tasks can be made.' }
   const fields = settleTimelineFields(tracker.columns, tracker.timeline?.fields || null)
   const plan = planRowTasks({

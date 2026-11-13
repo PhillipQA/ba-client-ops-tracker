@@ -14,6 +14,7 @@ import {
   type SeedsSnapshot,
   seedsState,
 } from '../../src/shared/seeds'
+import { asList as list } from '../../src/shared/lists'
 
 type Options = {
   now: string
@@ -29,7 +30,6 @@ type Options = {
 }
 
 const text = (value: unknown) => (value == null ? '' : String(value))
-const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 
 /** Seeds saves as the system, with the rights a sync needs (rename clients, add projects and tasks). */
 export const SEEDS_ACTOR = {

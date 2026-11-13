@@ -1,0 +1,80 @@
+/* The standard DRF template. Part of styles.css: keep the import order there. */
+
+/* v0.6.14 persistent standard DRF template */
+.document-standard-template {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(114, 199, 144, 0.34);
+  border-radius: 12px;
+  padding: 13px 14px;
+  background: rgba(61, 174, 102, 0.08);
+}
+.document-standard-template-status {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.document-standard-template-status > svg {
+  flex: 0 0 auto;
+  color: #72c790;
+  margin-top: 1px;
+}
+.document-standard-template-status > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.document-standard-template-status strong,
+.document-standard-template.empty strong {
+  color: #eef5f0;
+  font-size: 13px;
+}
+.document-standard-template-status span,
+.document-standard-template.empty span {
+  color: #aeb8b1;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.document-standard-template p {
+  margin: 0;
+  color: #aeb8b1;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.document-standard-template.empty {
+  flex-direction: row;
+  align-items: flex-start;
+  border-color: #3b414a;
+  background: #191c20;
+}
+.document-standard-template.empty > svg {
+  color: #91acd2;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.document-standard-template.empty > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.document-template-message {
+  border: 1px solid #3a4657;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #1c222b;
+  color: #bfd0e8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.app-shell:not(.theme-default) .document-standard-template {
+  border-color: color-mix(in srgb, var(--theme-accent) 30%, var(--theme-border));
+  background: color-mix(in srgb, var(--theme-panel) 88%, var(--theme-accent) 12%);
+}
+.app-shell:not(.theme-default) .document-standard-template.empty,
+.app-shell:not(.theme-default) .document-template-message {
+  border-color: var(--theme-border);
+  background: rgba(10, 12, 15, 0.62);
+}
