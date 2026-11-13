@@ -145,3 +145,42 @@ test('only the recipient can mutate a notification and mark-all-read is user sco
   assert.equal(all.state.notifications[0].readAt, '2026-09-23T02:00:00Z')
   assert.equal(all.state.notifications[1].readAt, undefined)
 })
+
+test('past the 1,000-per-person cap, trimmed notifications are not made again on every check', () => {
+  const events = Array.from({ length: 1005 }, (_, index) => ({
+    id: `event-${index}`,
+    action: 'assigned',
+    occurredAt: new Date(Date.UTC(2026, 10, 1, 0, 0, index)).toISOString(),
+    assignedToUserId: 'maria',
+    actorUserId: 'admin',
+    taskId: `task-${index}`,
+    summary: `Assigned ${index}`,
+  }))
+  const start = state({ workEvents: events, notificationState: { initializedAt: '2026-10-31T00:00:00.000Z' } })
+  const first = reconcileNotifications(start, { today: '2026-11-13' })
+  assert.equal(first.changed, true)
+  assert.equal(first.state.notifications.filter((n: any) => n.recipientUserId === 'maria').length, 1000)
+  assert.equal(first.state.notificationState.eventsThrough, events[1004].occurredAt)
+
+  // The next check finds nothing new: the five trimmed ones stay gone, and nothing is saved.
+  const second = reconcileNotifications(first.state, { today: '2026-11-13' })
+  assert.equal(second.changed, false)
+
+  // Read marks stay: a check after "read all" changes nothing and makes nothing unread.
+  const read = markAllNotificationsReadForUser(first.state, 'maria').state
+  const third = reconcileNotifications(read, { today: '2026-11-13' })
+  assert.equal(third.changed, false)
+  assert.ok(third.state.notifications.every((n: any) => n.recipientUserId !== 'maria' || n.readAt))
+
+  // A later event is still notified.
+  const later = {
+    ...events[0],
+    id: 'event-new',
+    occurredAt: '2026-11-13T04:00:00.000Z',
+    taskId: 'task-new',
+    summary: 'Assigned new',
+  }
+  const fourth = reconcileNotifications({ ...read, workEvents: [...events, later] }, { today: '2026-11-13' })
+  assert.equal(fourth.created.length, 1)
+  assert.equal(fourth.created[0].message, 'Assigned new')
+})
