@@ -151,6 +151,10 @@ test('the brief counts only the person’s visible work, and the AI summary is w
       assert.equal(again.body.summary.summary, 'Start with Late, three days overdue.', 'Kept for the day')
       assert.equal(calls.length, 1)
 
+      const second = await ask('POST', '/api/assistant/brief/summary', 'ana')
+      assert.equal(second.body.summary.summary, 'Start with Late, three days overdue.')
+      assert.equal(calls.length, 1, 'Asking again the same day uses no more AI')
+
       const ben = await ask('GET', '/api/assistant/brief', 'ben')
       assert.equal(ben.body.facts.overdue.total, 0)
       assert.equal(ben.body.facts.emails, null, 'No Work Hub page, no emails read')

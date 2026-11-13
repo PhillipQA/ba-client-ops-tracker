@@ -1,7 +1,7 @@
 /**
  * The morning brief and the weekly status report.
  * - GET  /api/assistant/brief: the person's brief, counted fresh, with today's AI summary when one was written.
- * - POST /api/assistant/brief/summary: writes (or writes again) today's AI summary of the brief.
+ * - POST /api/assistant/brief/summary: writes today's AI summary of the brief, once; later asks get the same one.
  * - POST /api/assistant/status-report: a project's weekly update as an email draft, for the client or the team.
  *
  * Everything comes from what the person may see (scopedState). The facts are counted in src/features/ai; the AI only
@@ -206,6 +206,11 @@ export function registerBriefRoutes(app: Express, deps: BriefDeps = {}) {
           409,
         )
       const facts = await factsFor(user)
+      const kept = summaries.get(summaryKey(user, facts.date))
+      if (kept) {
+        res.json({ summary: kept })
+        return
+      }
       const generatedAt = now().toISOString()
       let summary: BriefSummary | null
       if (briefIsClear(facts))

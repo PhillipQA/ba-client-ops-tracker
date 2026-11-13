@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Morning brief summary on request
+
+- The Action Center's morning brief no longer asks the AI by itself. A **Write my morning brief** button writes the AI summary when you want it.
+- It is written at most once a day per person: asking again, Refresh, or another tab reuses today's summary and spends no tokens.
+- Refresh now only counts your day again.
+
 ### BA Assistant: agent mode (beta)
 - Tick **Agent mode (beta)** under the assistant's message box. Before answering, the assistant can now **look things up** on its own, a few steps at a time: search tasks, open a task (subtasks, comments, time, documents), a project (contract number, completed in Seeds, Seeds time rules), a client, what is due or overdue, time logged and not yet sent to Seeds, a tracker by name, and your own emails.
 - Each answer shows **what it looked up** ("Looked up 3 things"). Everything stays approve-first: lookups only read, and actions are still drafts you approve.
