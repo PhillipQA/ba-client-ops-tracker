@@ -5,6 +5,8 @@ Start with the [README](../README.md): quick start, Northflank deployment, updat
 | Guide | Use it for |
 | --- | --- |
 | [Database](../database/README.md) | Setting up a new database, the live database, and changing the schema later |
+| [Seeds setup](setup/seeds.md) | Connecting Seeds: the token, turning it on, Before Seeds, syncing, and sending time |
+| [Seeds API reference](seeds-api.md) | The Seeds Open API endpoints, permissions and what this app reads |
 | [Google setup](setup/google.md) | Google Cloud APIs, scopes and redirect addresses for Gmail, Drive, Sheets and Calendar |
 | [Password recovery](setup/password-recovery.md) | SMTP settings and recovery emails for **Forgot password** |
 | [Sign Off document mapping](setup/signoff-requirements.md) | How the Sign Off documents are filled in |

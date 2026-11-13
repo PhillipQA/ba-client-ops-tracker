@@ -1,8 +1,17 @@
 # BA Client Ops Tracker
 
-**Version 1.6.0** · [Changelog](CHANGELOG.md)
+**Version 2.0** · each merged pull request is a build (2.0 · B01, B02…); the current one shows on the sign-in page · [Changelog](CHANGELOG.md)
 
-A workspace for business analysts: clients, projects, tasks and follow-ups, Work Hub (Gmail, Discord, GitHub, GitLab), document creation (BRD, FSD, DRF, sign-offs), requirements traceability, trackers that can follow a Google Sheet, reports, and an AI BA assistant.
+A workspace for business analysts:
+
+- **Clients, projects, tasks and follow-ups**, with notifications and an Action Center.
+- **Seeds** (the company's time and client tracker) as the source of truth for clients and projects; time logged here, with its Seeds task, product and remarks, is sent to Seeds. See [Seeds setup](docs/setup/seeds.md).
+- **Work Hub**: Gmail, Discord, GitHub and GitLab in one place.
+- **Documents**: BRD, FSD, DRF, sign-offs and test cases, with e-signatures through DocHub.
+- **Requirements traceability** (RTM).
+- **Trackers**: spreadsheet-like tables that can follow a Google Sheet (one- or two-way) or an Excel file kept in Google Drive (read only), with project timelines and site rollouts that make tasks and subtasks.
+- **Task evidence** kept in the shared Google Drive.
+- **Reports** and an **AI BA assistant** that drafts work for you to approve.
 
 It is a React + Vite frontend served by an Express server (TypeScript, Node.js), with a PostgreSQL database. In production it runs on [Northflank](https://northflank.com).
 
@@ -110,7 +119,18 @@ alter default privileges in schema public grant select, insert, update, delete o
 | Instances | **1** (sign-ins are kept in the server's memory) |
 | Secret group | the group from step 3 |
 
-**5. Open it.** Use the service's public URL, or add your own domain under **Networking**; then set `APP_BASE_URL` to that address. Sign in as in the quick start, then set up [integrations](#integrations).
+**5. Open it.** Use the service's public URL, or add your own domain (see [Use your own domain](#use-your-own-domain)). Sign in as in the quick start, then set up [integrations](#integrations).
+
+### Use your own domain
+
+1. In Northflank **Domains**, add the domain (verify it with the TXT record Northflank shows), then add the subdomain (for example `batracker`). Northflank shows a **CNAME** record: add it at your DNS provider (or ask whoever runs the domain's DNS), wait for **Verify** to pass, and link the subdomain to the service's public port.
+2. Set `APP_BASE_URL` to the new `https://` address and redeploy.
+3. In Google Cloud, add the new redirect addresses to the Gmail/Calendar client ([Google setup](docs/setup/google.md)) and upload its JSON again in the app; add the new address to the **Authorized JavaScript origins** of the sign-in / Seeds client ([Seeds setup](docs/setup/seeds.md)).
+4. Re-create the DocHub webhook from the app's DocHub settings.
+
+Everyone signs in again on the new address; saved Gmail, Drive and Seeds connections stay. Keep the old address linked until nobody uses it.
+
+Only link the **subdomain**. If the main domain (for example `phillipqa.com`) also hosts another site, such as GitHub Pages, leave its records pointing there.
 
 ## Update a deployment
 
@@ -136,8 +156,12 @@ Locally they go in `.env.local` (see [.env.example](.env.example)); on Northflan
 | `SESSION_IDLE_TIMEOUT_MINUTES` | no | Sign-out after this many idle minutes (default 120). Sessions also end 8 hours after sign-in. |
 | `FOLLOW_UP_TIME_ZONE` | no | Time zone for business dates (default `Asia/Manila`). |
 | `SMTP_*` | no | Email for **Forgot password**; see [password recovery](docs/setup/password-recovery.md). |
+| `SEEDS_API_TOKEN` | for Seeds | The Seeds application token from a SEEDS Admin. Server only: never in the browser, Git, logs or screenshots. See [Seeds setup](docs/setup/seeds.md). |
+| `SEEDS_API_URL` | no | The Seeds API address (default `https://seeds.iripple.com/api/v1`). |
+| `SEEDS_GOOGLE_CLIENT_ID` | to send time to Seeds | The Google OAuth web client ID registered with the SEEDS Admin. Each person signs in with Google when they send time. Also used for **Sign in with Google** unless `GOOGLE_SIGNIN_CLIENT_ID` is set. |
+| `GOOGLE_SIGNIN_CLIENT_ID` | no | A separate Google client for **Sign in with Google**. |
 
-Discord, DocHub, AI providers and Google credentials are entered in the app (**Settings**), not here.
+Discord, DocHub, AI providers and Google (Gmail, Drive, Sheets, Calendar) credentials are entered in the app (**Settings**), not here.
 
 ## Integrations
 
@@ -145,7 +169,9 @@ All optional; the app works without them.
 
 | Integration | Where |
 | --- | --- |
-| Gmail, Google Drive, Google Sheets, Google Calendar | One Google Cloud project; see [Google setup](docs/setup/google.md). |
+| Seeds (clients, projects, members, products; sending time) | `SEEDS_API_TOKEN` and `SEEDS_GOOGLE_CLIENT_ID`, then an Administrator turns Seeds on in Settings → Integrations; see [Seeds setup](docs/setup/seeds.md) and the [Seeds API reference](docs/seeds-api.md). |
+| Gmail, Google Drive, Google Sheets, Google Calendar | One Google Cloud project; see [Google setup](docs/setup/google.md). Following Excel files in Drive also needs the `drive.readonly` scope. |
+| Shared Google Drive (email attachments, task evidence, signed documents) | Settings → Integrations, connected once by an Administrator. |
 | Discord | Settings → Integrations (workspace bot); each user links their Discord ID in Work Hub. |
 | GitHub, GitLab | Each user, in Work Hub → integration settings. |
 | DocHub (e-signatures) | Settings → Integrations. |
@@ -177,6 +203,8 @@ GitHub Actions runs the build, Biome and the tests on every push and pull reques
 | Blank page or the old version after a deploy | The build failed (check Northflank's build log), or the browser cached the old page: hard-refresh (Ctrl+Shift+R). |
 | Pages load but nothing saves | The service runs `npm run preview` instead of `npm start`. |
 | Google says "redirect_uri_mismatch" | The redirect addresses in Google Cloud must match `APP_BASE_URL`; see [Google setup](docs/setup/google.md). |
+| Seeds sync says the token is not accepted or not allowed | `SEEDS_API_TOKEN` is wrong or missing a permission; ask the SEEDS Admin. Settings → Integrations → Seeds shows the last error. |
+| A time entry stays "Not sent" | Open the task: the entry shows Seeds' reason. Edit it (pencil) to add what Seeds requires, such as a product, then **Send to Seeds** again. |
 | Everyone was signed out | The service restarted or redeployed. Expected; nothing is lost. |
 
 ## Project structure
