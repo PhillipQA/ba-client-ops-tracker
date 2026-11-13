@@ -17,7 +17,8 @@ export type SeedsTimeBody = {
   taskId: number | null
   parentId: number | null
   productId: number | null
-  remarks: string
+  /** Left out when empty (optional unless Seeds requires remarks on the project). */
+  remarks?: string
 }
 
 const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
@@ -38,12 +39,14 @@ export function seedsTimeBody(
   const projectId = seedsNumber(project?.seedsId)
   if (!projectId) return { ok: false, error: 'Its task is not under a Seeds project.' }
   // The project's time-entry rules and defaults from Seeds: a missing task or product takes the project's default.
+  // A Seeds task, product and remarks are optional unless Seeds requires them.
   const rules = project?.seedsTimeRules || {}
   const taskId = seedsNumber(entry.seedsTaskId) ?? seedsNumber(rules.defaultTaskId)
-  if (!taskId) return { ok: false, error: 'It has no Seeds task.' }
+  if (!taskId && rules.taskRequired === true)
+    return { ok: false, error: 'Seeds requires a Seeds task on this project. Log it again with the Seeds task.' }
   // The product: chosen on the entry, else the one chosen when sending, else the task's, the project's or Seeds'
   // default; required when Seeds says so.
-  const product = seedsProductFor(state, task, String(taskId))
+  const product = seedsProductFor(state, task, taskId ? String(taskId) : '')
   const productId = seedsNumber(entry.productId) ?? seedsNumber(fallbackProductId) ?? seedsNumber(product.productId)
   if (product.required && !productId)
     return {
@@ -54,7 +57,7 @@ export function seedsTimeBody(
   const minutes = Math.round(Number(entry.hours) * 60)
   if (!(minutes >= 15 && minutes % 15 === 0)) return { ok: false, error: 'Its duration is not in 15-minute steps.' }
   const remarks = String(entry.note || '').trim()
-  if (!remarks) return { ok: false, error: 'It has no remarks.' }
+  if (!remarks && rules.remarksRequired === true) return { ok: false, error: 'Seeds requires remarks on this project.' }
   return {
     ok: true,
     body: {
@@ -64,7 +67,7 @@ export function seedsTimeBody(
       taskId,
       parentId: seedsNumber(client?.seedsId),
       productId,
-      remarks: remarks.slice(0, 120),
+      ...(remarks ? { remarks: remarks.slice(0, 120) } : {}),
     },
   }
 }

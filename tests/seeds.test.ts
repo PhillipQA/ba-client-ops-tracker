@@ -1157,3 +1157,50 @@ test('a product is chosen in Log time: kept on the entry, required where Seeds s
   assert.equal((seedsTimeBody(state, task, old, '4') as any).body.productId, 4)
   assert.equal((seedsTimeBody(state, task, { ...old, productId: '9' }, '4') as any).body.productId, 9, 'its own wins')
 })
+
+test('a Seeds task, product and remarks are optional unless Seeds requires them on the project', async () => {
+  const { seedsTimeRule, validateTimeEntryInput, unsentToSeeds } = await import('../src/features/tasks/effort')
+  const { seedsTimeBody } = await import('../server/seeds/seeds-time')
+  const project = { id: 'p1', seedsId: '20', clientId: 'c1', seedsTasks: [{ id: '31', name: 'Remote Assistance' }] }
+  const state = (rules?: any): any => ({
+    seeds: { connected: true, products: [{ id: '4', name: 'RPOS' }] },
+    clients: [{ id: 'c1', seedsId: '5' }],
+    projects: [{ ...project, ...(rules ? { seedsTimeRules: rules } : {}) }],
+  })
+  const task = { id: 't1', title: 'Issues Monitoring', projectId: 'p1' }
+  const bare = { date: '2026-11-13', hours: 1 }
+
+  const free: any = validateTimeEntryInput(bare, seedsTimeRule(state(), task))
+  assert.equal(free.ok, true, 'no Seeds task, product or remarks')
+  assert.deepEqual([free.value.seedsTaskId, free.value.note, free.value.forSeeds], [undefined, '', true])
+  const entry = { id: 'e1', userId: 'u1', userName: 'P', createdAt: '', category: 'Other', ...free.value } as any
+  assert.equal(unsentToSeeds(entry), true, 'it still goes to Seeds')
+  const body: any = seedsTimeBody(state(), task, entry)
+  assert.equal(body.ok, true)
+  assert.deepEqual(body.body, {
+    postDate: '2026-11-13',
+    projectId: 20,
+    minuteslogged: 60,
+    taskId: null,
+    parentId: 5,
+    productId: null,
+  })
+
+  const strict = state({ taskRequired: true, remarksRequired: true, productRequired: true })
+  const rule = seedsTimeRule(strict, task)
+  assert.match((validateTimeEntryInput(bare, rule) as any).error, /requires a Seeds task/)
+  assert.match((validateTimeEntryInput({ ...bare, seedsTaskId: '31' }, rule) as any).error, /requires remarks/)
+  assert.match(
+    (validateTimeEntryInput({ ...bare, seedsTaskId: '31', note: 'x' }, rule) as any).error,
+    /requires a product/,
+  )
+  assert.equal(
+    (validateTimeEntryInput({ ...bare, seedsTaskId: '31', note: 'x', productId: '4' }, rule) as any).ok,
+    true,
+  )
+  assert.match((seedsTimeBody(strict, task, entry) as any).error, /requires a Seeds task/)
+
+  // Work not under a Seeds project (Before Seeds) still takes no time once Seeds is on.
+  const local: any = validateTimeEntryInput(bare, seedsTimeRule(state(), { ...task, projectId: 'other' }))
+  assert.match(local.error, /Move this work to Seeds/)
+})

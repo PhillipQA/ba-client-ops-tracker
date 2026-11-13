@@ -56,9 +56,10 @@ test('once Seeds is on, time is logged on the task; a subtask points there', () 
   assert.equal(sub.ok, false)
   assert.match((sub as any).error, /Log time on the task/)
   assert.equal(seedsTimeRule(s, task(s, 's-printers'))?.logOnTaskId, 't-go')
-  assert.equal(log(s, 't-old', { date: '2026-11-08', hours: 1, note: 'x' }).ok, false, 'no Seeds tasks before Seeds')
+  assert.match((log(s, 't-old', { date: '2026-11-08', hours: 1, note: 'x' }) as any).error, /Move this work to Seeds/)
+  // A Seeds task is optional unless Seeds requires one: untagged time still goes to Seeds (without a task).
   const untagged = log(s, 't-untagged', { date: '2026-11-08', hours: 1, note: 'x' })
-  assert.match((untagged as any).error, /Tag a Seeds task/)
+  assert.ok(untagged.ok && !untagged.value.entry.seedsTaskId)
 })
 
 test('an entry for a subtask takes its title as remarks, and its Seeds task tag first', () => {
@@ -95,10 +96,14 @@ test('an entry for a subtask takes its title as remarks, and its Seeds task tag 
   )
 })
 
-test('without a subtask the remarks are typed and required; Seeds rules on duration and length', () => {
+test('without a subtask the remarks are typed (optional unless Seeds requires them); Seeds rules on duration', () => {
   const s = state()
   const rule = seedsTimeRule(s, task(s, 't-go'))
-  assert.match((validateTimeEntryInput({ date: '2026-11-08', hours: 1 }, rule) as any).error, /remarks/)
+  assert.equal((validateTimeEntryInput({ date: '2026-11-08', hours: 1 }, rule) as any).ok, true, 'no remarks')
+  assert.match(
+    (validateTimeEntryInput({ date: '2026-11-08', hours: 1 }, { ...rule!, remarksRequired: true }) as any).error,
+    /requires remarks/,
+  )
   const ok = log(s, 't-go', { date: '2026-11-08', hours: 2, note: 'Store visit' })
   assert.ok(ok.ok && ok.value.entry.note === 'Store visit' && ok.value.entry.category === 'Other')
   const second = addTimeEntry(ok.value.task, { date: '2026-11-10', hours: 1, note: 'Follow-up' }, actor, at, 'e2', rule)
