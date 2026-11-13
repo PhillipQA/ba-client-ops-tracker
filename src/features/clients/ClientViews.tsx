@@ -6,8 +6,9 @@ import { Empty, HealthChip, StatusChip } from '../../shared/ui/Chips'
 import type { Client, Project } from '../../shared/types'
 import { isWaitingOnDone } from '../tasks/waitingOn'
 import { TaskTable } from '../tasks/TaskTable'
-import { BriefcaseBusiness, ChevronRight, Plus, Sparkles, Table2 } from 'lucide-react'
+import { BriefcaseBusiness, ChevronRight, Mail, Plus, Sparkles, Table2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
+import { StatusReportDialog } from '../ai/StatusReportDialog'
 
 export function ClientDetail({
   onOpenRtms,
@@ -170,6 +171,7 @@ export function ProjectDetail({
     .filter(entry => entry.projectId === project.id && (!clientContextId || entry.clientId === clientContextId))
     .sort((a, b) => b.date.localeCompare(a.date))
   const [note, setNote] = useState('')
+  const [reporting, setReporting] = useState(false)
   const addNote = (event: FormEvent) => {
     event.preventDefault()
     if (!canWrite || !note.trim()) return
@@ -217,12 +219,27 @@ export function ProjectDetail({
           <p>{project.summary || 'No project summary yet.'}</p>
           <small>Target {niceDate(project.targetDate)}</small>
         </div>
-        {canEditTasks && !isArchived(project) && !isArchived(contextClient) && (
-          <button className="primary" onClick={onAddTask}>
-            <Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}
-          </button>
-        )}
+        <div className="project-hero-actions">
+          {!project.accessLimited && !isArchived(project) && (
+            <button type="button" className="secondary" onClick={() => setReporting(true)}>
+              <Mail size={16} /> Status report
+            </button>
+          )}
+          {canEditTasks && !isArchived(project) && !isArchived(contextClient) && (
+            <button className="primary" onClick={onAddTask}>
+              <Plus size={18} /> Add task{contextClient ? ` for ${contextClient.name}` : ''}
+            </button>
+          )}
+        </div>
       </div>
+      {reporting && (
+        <StatusReportDialog
+          project={project}
+          store={store}
+          clientId={clientContextId}
+          onClose={() => setReporting(false)}
+        />
+      )}
       {contextClient && (
         <div className="project-context-banner">
           <strong>{contextClient.name}</strong>

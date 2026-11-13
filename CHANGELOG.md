@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### AI: morning brief and weekly status report
+**No database change.** Both use the account's BA Assistant (Account Settings › AI Agent Manager) when it is on, and work without it. Each person sees only the work they may see, and nothing is changed or sent without them.
+- **Morning brief** at the top of the Action Center: your overdue work, what is due today, follow-ups, go-lives in the next week (and passed ones with steps still open), Gmail and Discord messages waiting on you, and the time you logged on the last working day (with entries not sent to Seeds yet). Every line opens where the work is: the task, the tracker row, or the message in Work Hub. Follow-ups have **Draft follow-up**, which opens the AI BA Assistant with the request written. With the BA Assistant on, a short summary of what matters most is written once a day; **Refresh** counts again and rewrites it. **Hide** keeps the brief folded in this browser.
+- **Weekly status report** on each project (Projects list and the project page): an email draft of the week, **for the client** (done, coming up, what needs their input, watch-outs; no hours, notes or internal waits) or **for the team** (adds work waiting on others, hours by person and the week's project notes). The counts come from the tasks, trackers and signatures; the AI only words them, and the plain version is used when the AI is off or fails. Edit it, then **Open in email** (filed under the task you choose, to the client's address for a client report) or **Copy**. A project shared by several clients asks which client a client report is for, and holds only that client's work.
+- Limits per person: 12 brief summaries an hour and 10 status reports in 10 minutes.
+
 ### Security review fixes
 **No database change.**
 - **Task files from Drive always download.** A file saved to a task folder (for example an email attachment that is a web page or an SVG picture) is now always sent as a download in a sandbox. Opened as a link, such a file could otherwise have run as the signed-in person. The app itself still opens these files as before.

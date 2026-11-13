@@ -97,6 +97,24 @@ export function registerCommunications(app: Express, deps: CommunicationsDeps) {
       if (error) throw error
       return (data || []) as any[]
     },
+    /**
+     * The person's own Gmail and Discord messages received since a time, newest first, for the morning brief (which
+     * works out the conversations still waiting on them). Only the fields it needs; at most 400.
+     */
+    async waitingEmails(tenantId: string, userId: string, since: string) {
+      const { data, error } = await db
+        .from('user_communications')
+        .select('id,source,thread_id,subject,sender,status,read_at,received_at,source_labels')
+        .eq('tenant_id', tenantId)
+        .eq('owner_user_id', userId)
+        .in('source', ['Gmail', 'Discord'])
+        .neq('status', 'Archived')
+        .gte('received_at', since)
+        .order('received_at', { ascending: false })
+        .limit(400)
+      if (error) throw error
+      return (data || []) as any[]
+    },
     /** One email, only when it belongs to that person. */
     async emailFor(tenantId: string, userId: string, id: string) {
       const { data, error } = await db

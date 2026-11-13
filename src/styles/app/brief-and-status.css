@@ -1,0 +1,328 @@
+/*
+ * The morning brief on the Action Center, and the weekly status report dialog. Part of styles.css: keep the import
+ * order there. Colours come from the shared UI tokens (--k-*, shared/ui/ui.css), so the light and gray interface
+ * modes and the wallpaper themes apply too.
+ */
+
+/* Morning brief */
+.morning-brief .dashboard-panel-heading p {
+  color: var(--k-muted);
+}
+.brief-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+.brief-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid color-mix(in srgb, var(--k-accent) 35%, transparent);
+  border-radius: 11px;
+  background: var(--k-accent-soft);
+  color: var(--k-text);
+}
+.brief-summary > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--k-accent);
+}
+.brief-summary > :not(svg) {
+  flex: 1;
+  min-width: 0;
+}
+.brief-summary p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.brief-summary ol {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--k-text);
+}
+.brief-summary small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.brief-muted {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  color: var(--k-muted);
+  font-size: 12px;
+}
+.brief-error {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--k-danger) 45%, transparent);
+  border-radius: 8px;
+  background: var(--k-danger-soft);
+  color: var(--k-danger);
+  font-size: 12px;
+}
+.brief-clear {
+  margin: 0;
+  color: var(--ui-success, #a5ddbb);
+  font-size: 13px;
+}
+.brief-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.brief-section {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--k-border);
+  border-left-width: 3px;
+  border-radius: 11px;
+  background: var(--k-soft);
+}
+.brief-section.danger {
+  border-left-color: var(--k-danger);
+}
+.brief-section.warning {
+  border-left-color: var(--k-warning);
+}
+.brief-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--k-text);
+}
+.brief-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--k-solid);
+  color: var(--k-text);
+  font-size: 11px;
+}
+.brief-section.danger .brief-count {
+  background: var(--k-danger-soft);
+  color: var(--k-danger);
+}
+.brief-section ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brief-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.brief-row-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  padding: 6px 7px;
+  margin: 0 -7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+button.brief-row-main {
+  cursor: pointer;
+}
+button.brief-row-main:hover,
+button.brief-row-main:focus-visible {
+  background: var(--k-accent-soft);
+}
+.brief-row-main strong,
+.brief-row-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brief-row-main strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--k-text);
+}
+.brief-row-main small {
+  font-size: 11px;
+  color: var(--k-muted);
+}
+.brief-link {
+  flex: none;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--k-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.brief-link:hover,
+.brief-link:focus-visible {
+  text-decoration: underline;
+}
+.brief-time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--k-border);
+  border-radius: 11px;
+  background: var(--k-soft);
+  color: var(--k-text);
+  font-size: 12px;
+}
+.brief-time.short > svg {
+  color: var(--k-warning);
+}
+.app-shell:not(.theme-default) .brief-section,
+.app-shell:not(.theme-default) .brief-time {
+  background: var(--theme-surface-strong);
+  border-color: var(--theme-border);
+}
+
+/* The project page's buttons beside its summary */
+.project-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Weekly status report dialog */
+.status-report {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px 20px;
+}
+.status-report-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+.status-report-audience {
+  display: inline-flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+/* Named for screen readers; the two buttons say it on screen. */
+.status-report-audience legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.status-report-audience .active-tab {
+  background: var(--k-accent-soft);
+  border-color: var(--k-accent);
+  color: var(--k-text);
+}
+.status-report-options label,
+.status-report-field {
+  display: grid;
+  gap: 6px;
+  color: var(--k-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.status-report-field small {
+  font-weight: 500;
+}
+.status-report input,
+.status-report select,
+.status-report textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--k-border);
+  border-radius: 8px;
+  background: var(--k-input);
+  color: var(--k-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+}
+.status-report textarea {
+  resize: vertical;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.status-report-hint,
+.status-report-meta,
+.status-report-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--k-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.status-report-meta {
+  color: var(--k-text);
+}
+.status-report-counts {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--k-soft);
+}
+.status-report-error {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--k-danger) 45%, transparent);
+  border-radius: 8px;
+  background: var(--k-danger-soft);
+  color: var(--k-danger);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .brief-sections {
+    grid-template-columns: 1fr;
+  }
+  .project-hero-actions {
+    width: 100%;
+  }
+  .project-hero-actions button {
+    flex: 1 1 100%;
+  }
+  .status-report {
+    padding: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .morning-brief .spin,
+  .status-report .spin {
+    animation: none;
+  }
+}

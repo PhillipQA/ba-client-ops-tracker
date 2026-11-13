@@ -1,10 +1,12 @@
 import type { AppState } from '../../app/useAppState'
 import { useState } from 'react'
 import { SeedsBadge, type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
-import { Pencil, Plus, Sprout } from 'lucide-react'
+import { Mail, Pencil, Plus, Sprout } from 'lucide-react'
 import { isArchived, isClosedProject } from '../tasks/lifecycle'
 import { Empty, StatusChip } from '../../shared/ui/Chips'
 import { niceDate } from '../../shared/dates'
+import type { Project } from '../../shared/types'
+import { StatusReportDialog } from '../ai/StatusReportDialog'
 
 /** Projects screen. It reads the app state; see app/useAppState. */
 export function ProjectsPage({ app }: { app: AppState }) {
@@ -24,6 +26,7 @@ export function ProjectsPage({ app }: { app: AppState }) {
     store,
   } = app
   const [source, setSource] = useState<SourceFilter>('seeds')
+  const [reportFor, setReportFor] = useState<Project | null>(null)
   const shown = store.projects.filter(
     project =>
       (!store.seeds?.cutoverAt || sourceMatches(source, project)) &&
@@ -117,6 +120,12 @@ export function ProjectsPage({ app }: { app: AppState }) {
                           <Pencil size={14} /> Edit project
                         </button>
                       )}
+                      {/* A weekly update for the client or the team, drafted from the project's work. */}
+                      {!project.accessLimited && !isArchived(project) && (
+                        <button type="button" className="secondary compact" onClick={() => setReportFor(project)}>
+                          <Mail size={14} /> Status report
+                        </button>
+                      )}
                       {/* While moving to Seeds: an Administrator moves a Before Seeds project's tasks to a Seeds project. */}
                       {currentUser?.role === 'Administrator' &&
                         store.seeds?.cutoverAt &&
@@ -137,6 +146,7 @@ export function ProjectsPage({ app }: { app: AppState }) {
           </tbody>
         </table>
       </div>
+      {reportFor && <StatusReportDialog project={reportFor} store={store} onClose={() => setReportFor(null)} />}
     </section>
   )
 }
