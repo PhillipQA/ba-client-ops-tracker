@@ -54,6 +54,45 @@ export function addTimeEntry(
   return { ok: true, value: { task: { ...task, timeEntries: [...existing, entry] }, entry } }
 }
 
+/**
+ * Changes an entry that has not gone to Seeds yet: its date, duration, Seeds task, product, subtask and remarks, by the
+ * same rules as logging it. Only its author or an Administrator may. Once it is in Seeds it is changed there instead.
+ * A failed send's reason is cleared, so the next send tries the changed entry afresh.
+ */
+export function updateTimeEntry(
+  task: any,
+  entryId: string,
+  input: unknown,
+  actor: Actor,
+  now: Date,
+  seeds: SeedsTimeRule | null = null,
+): Result<{ task: any; entry: TimeEntry }> {
+  const existing: TimeEntry[] = Array.isArray(task?.timeEntries) ? task.timeEntries : []
+  const entry = existing.find(candidate => String(candidate?.id || '') === entryId)
+  if (!entry) return { ok: false, status: 404, error: 'Time entry was not found.' }
+  if (entry.seedsEntryId) return { ok: false, status: 409, error: 'This time is already in Seeds. Change it in Seeds.' }
+  if (!canRemoveTimeEntry(entry, actor))
+    return { ok: false, status: 403, error: 'Only the person who logged this time or an Administrator can change it.' }
+  const checked = validateTimeEntryInput(input, seeds)
+  if (!checked.ok) return { ok: false, status: 400, error: checked.error }
+  const {
+    seedsError: _failed,
+    seedsTaskId: _task,
+    productId: _product,
+    subtaskId: _subtask,
+    forSeeds: _forSeeds,
+    ...kept
+  } = entry
+  const changed: TimeEntry = { ...kept, ...checked.value, updatedAt: now.toISOString() }
+  return {
+    ok: true,
+    value: {
+      task: { ...task, timeEntries: existing.map(candidate => (candidate === entry ? changed : candidate)) },
+      entry: changed,
+    },
+  }
+}
+
 export function removeTimeEntry(task: any, entryId: string, actor: Actor): Result<{ task: any; entry: TimeEntry }> {
   const existing: TimeEntry[] = Array.isArray(task?.timeEntries) ? task.timeEntries : []
   const entry = existing.find(candidate => String(candidate?.id || '') === entryId)

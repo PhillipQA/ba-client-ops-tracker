@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { seedsTimeRule, validateTimeEntryInput } from '../src/features/tasks/effort'
-import { addTimeEntry } from '../server/services/time-entries'
+import { addTimeEntry, updateTimeEntry } from '../server/services/time-entries'
 
 const state = (connected = true) => ({
   seeds: { connected },
@@ -144,4 +144,59 @@ test('a task is Before Seeds work by its project, else by its client', async () 
   assert.equal(isBeforeSeedsWork({ projectId: 'p-seeds', clientId: 'c-old' }, projects, clients), false)
   assert.equal(isBeforeSeedsWork({ clientId: 'c-old' }, projects, clients), true)
   assert.equal(isBeforeSeedsWork({}, projects, clients), false)
+})
+
+test('an entry not yet in Seeds can be changed before sending; a sent one cannot', () => {
+  const s = state()
+  const rule = seedsTimeRule(s, task(s, 't-go'))
+  const logged = log(s, 't-go', { date: '2026-11-08', hours: 1, note: 'First try', seedsTaskId: 'st-golive' })
+  assert.ok(logged.ok)
+  const failed = {
+    ...logged.value.task,
+    timeEntries: logged.value.task.timeEntries.map((entry: any) => ({ ...entry, seedsError: 'Seeds said no' })),
+  }
+  const id = logged.value.entry.id
+  const later = new Date('2026-11-10T02:00:00Z')
+  const changed = updateTimeEntry(
+    failed,
+    id,
+    { date: '2026-11-09', hours: 1.5, note: 'Fixed remarks' },
+    actor,
+    later,
+    rule,
+  )
+  assert.ok(changed.ok)
+  const entry: any = changed.value.entry
+  assert.deepEqual(
+    [entry.id, entry.date, entry.hours, entry.note, entry.userId, entry.createdAt],
+    ['e1', '2026-11-09', 1.5, 'Fixed remarks', 'u1', logged.value.entry.createdAt],
+  )
+  assert.equal(entry.seedsTaskId, 'st-golive', 'the task’s Seeds task when none is chosen')
+  assert.equal(entry.seedsError, undefined, 'a failed send’s reason is cleared')
+  assert.equal(entry.updatedAt, later.toISOString())
+  assert.equal(changed.value.task.timeEntries.length, 1)
+
+  const bad = updateTimeEntry(failed, id, { date: '2026-11-09', hours: 1.1 }, actor, later, rule)
+  assert.ok(!bad.ok && bad.status === 400 && /15-minute/.test(bad.error), 'the same rules as logging')
+  const other = updateTimeEntry(failed, id, { date: '2026-11-09', hours: 1 }, { id: 'u2', name: 'Paolo' }, later, rule)
+  assert.ok(!other.ok && other.status === 403)
+  const admin = updateTimeEntry(
+    failed,
+    id,
+    { date: '2026-11-09', hours: 1 },
+    { id: 'u9', role: 'Administrator' },
+    later,
+    rule,
+  )
+  assert.ok(admin.ok, 'an Administrator may')
+  const sent = {
+    ...failed,
+    timeEntries: failed.timeEntries.map((entry: any) => ({ ...entry, seedsEntryId: '901' })),
+  }
+  const locked = updateTimeEntry(sent, id, { date: '2026-11-09', hours: 1 }, actor, later, rule)
+  assert.ok(!locked.ok && locked.status === 409 && /Change it in Seeds/.test(locked.error))
+  assert.equal(
+    (updateTimeEntry(failed, 'nope', { date: '2026-11-09', hours: 1 }, actor, later, rule) as any).status,
+    404,
+  )
 })
