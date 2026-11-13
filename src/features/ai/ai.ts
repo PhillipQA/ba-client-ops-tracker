@@ -113,7 +113,10 @@ export interface AIMessage {
   content: string
   createdAt: string
   suggestions?: AISuggestion[]
+  /** In agent mode: what the assistant looked up before answering. */
+  steps?: AgentStep[]
 }
+export type AgentStep = { tool: string; label: string; ok: boolean }
 
 export interface AssistantContext {
   currentUser: Pick<UserAccount, 'id' | 'name' | 'role' | 'modules'>
@@ -134,9 +137,11 @@ export async function askBAAssistant(
     message: string
     context: AssistantContext
     history: AIMessage[]
+    /** Let the assistant look things up before answering. */
+    agent?: boolean
   },
   signal?: AbortSignal,
-): Promise<{ message: string; followUp: string; suggestions: AISuggestion[] }> {
+): Promise<{ message: string; followUp: string; suggestions: AISuggestion[]; steps?: AgentStep[] }> {
   const response = await fetch('/api/assistant', {
     signal,
     method: 'POST',
@@ -149,21 +154,33 @@ export async function askBAAssistant(
     message?: string
     followUp?: string
     suggestions?: AISuggestion[]
+    steps?: AgentStep[]
   } | null
   if (!response.ok) throw new Error(body?.error || 'AI assistant request failed.')
   if (!body?.message) throw new Error('AI assistant returned an empty response.')
 
-  return { message: body.message, followUp: body.followUp?.trim() || '', suggestions: body.suggestions ?? [] }
+  return {
+    message: body.message,
+    followUp: body.followUp?.trim() || '',
+    suggestions: body.suggestions ?? [],
+    ...(Array.isArray(body.steps) && body.steps.length ? { steps: body.steps.slice(0, 10) } : {}),
+  }
 }
 
 /** A reply as chat messages: the answer with its suggestions, then the "what next?" question as its own message. */
-export function assistantMessages(result: { message: string; followUp: string; suggestions: AISuggestion[] }) {
+export function assistantMessages(result: {
+  message: string
+  followUp: string
+  suggestions: AISuggestion[]
+  steps?: AgentStep[]
+}) {
   const createdAt = new Date().toISOString()
   const answer: AIMessage = {
     id: crypto.randomUUID(),
     role: 'assistant',
     content: result.message,
     suggestions: result.suggestions.map(suggestion => ({ ...suggestion, id: suggestion.id || crypto.randomUUID() })),
+    ...(result.steps?.length ? { steps: result.steps } : {}),
     createdAt,
   }
   const question: AIMessage = { id: crypto.randomUUID(), role: 'assistant', content: result.followUp, createdAt }
