@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: one-click approvals
+
+- **The assistant can change existing tasks, once you approve.** Ask "push my overdue tasks to Monday", "set the UAT task to High" or "move the follow-up on the config task to Friday": it prepares a **Task update** card showing each task as before → after, and **Approve & update** applies them all in one click. It covers due date, follow-up date, priority, an open status and waiting on. Closing, reopening and reassigning stay on the task, where their own checks are.
+- **Heads-ups come with ready changes.** An overdue task offers **Due today / Due tomorrow / Due next Monday**; a late follow-up offers **Follow up tomorrow / next Monday** (the next working day is used, so a Friday offers Monday). One click applies it, with no AI and no tokens.
+- Only tasks you may edit (your own, or any for an Administrator) are offered and changed. A task someone changed after the draft is skipped and named, not overwritten. Every change goes through the app's usual save and shows in the task's history.
+- No database change.
+
 ### BA Assistant: heads-ups (the watcher)
 
 - **A radar button beside the notification bell** shows what is at risk in your day, without being asked: a go-live within 3 days (or passed) with steps still open, an email with no reply for 2 days or more, work 3 days or more overdue, a follow-up 3 days or more late, and time entries Seeds refused.

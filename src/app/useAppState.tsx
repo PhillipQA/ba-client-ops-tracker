@@ -191,6 +191,7 @@ export function useAppState() {
     saveTaskEdit,
     updateTaskStatus,
     updateTaskWaitingOn,
+    applyTaskUpdate,
   } = taskActions
   const {
     closedStatus,
@@ -386,6 +387,7 @@ export function useAppState() {
     updateOwnProfile,
     updateTaskStatus,
     updateTaskWaitingOn,
+    applyTaskUpdate,
     view,
     visibleClients,
     visibleNavItems,

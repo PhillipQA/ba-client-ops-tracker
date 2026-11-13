@@ -8,6 +8,8 @@
  * - tracker_update: changes to rows of a tracker the person can edit, shown as before → after.
  * - time_log: one time entry on a task, with its Seeds task and remarks, checked by the same rules as the task's
  *   own time log. Sending it to Seeds stays a separate step on the task.
+ * - task_update: changes to existing tasks the person may edit (dates, priority, an open status, waiting on), shown
+ *   as before → after. Closing, reopening and reassigning stay on the task.
  *
  * The extra context each action needs goes to the model only when the question asks for that action and the person
  * may do it. Everything the model returns is checked here against what the person can see and change; anything else
@@ -20,8 +22,16 @@ import { places } from './assistant-emails'
 import { projectClients, requestedScope } from '../../src/features/ai/aiScope'
 import type { LoadedTracker } from './assistant-trackers'
 import { clip, stateList as list } from './assistant-text'
+import { draftTaskUpdates, openStatuses, TASK_UPDATE_LIMIT, taskUpdateBlock } from '../../src/features/ai/taskUpdate'
+import { openWaitingOnOptions } from '../../src/features/tasks/waitingOn'
 
-export const ACTION_LIMITS = { planTasks: 20, planPeople: 60, timeTasks: 15, trackerChanges: 30 } as const
+export const ACTION_LIMITS = {
+  planTasks: 20,
+  planPeople: 60,
+  timeTasks: 15,
+  trackerChanges: 30,
+  updateTasks: 25,
+} as const
 
 const isDate = (value: unknown): value is string =>
   typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
@@ -55,6 +65,11 @@ export const asksToUpdateTracker = (message: string) =>
 export const asksToLogTime = (message: string) =>
   /\b(log|record|book|enter|add|put)\b/i.test(message) &&
   /\b(\d+(\.\d+)?\s*(h|hrs?|hours?|m|mins?|minutes?)|time|hours?|an hour|half an hour)\b/i.test(message)
+
+/** A change to existing tasks: a date, a priority, a status, who it waits on. */
+export const asksToUpdateTasks = (message: string) =>
+  /\b(move|push|reschedule|postpone|extend|delay|bump|change|set|update|mark|raise|lower|snooze)\b/i.test(message) &&
+  /\b(tasks?|subtasks?|due|deadlines?|follow[- ]?ups?|priority|status|overdue|waiting on|in progress)\b/i.test(message)
 
 // --- Context ---------------------------------------------------------------------------------------------------------
 
@@ -124,6 +139,60 @@ export function timeLogContext(state: any, user: { id: string }, message: string
   }
 }
 
+/** Who may change a task here: an Administrator, or the person it is assigned to (as in the Action Center). */
+export const mayEditTask = (user: { id: string; role?: string }) => (item: any) =>
+  user.role === 'Administrator' || item?.assignedToUserId === user.id
+
+/** Open tasks the person may change, best match first: named in the message, overdue, then their own. */
+export function taskUpdateContext(
+  state: any,
+  user: { id: string; role?: string },
+  message: string,
+  requested: any,
+  today: string,
+) {
+  const settings = state?.taskSettings || { statuses: [] }
+  const items = list(state, 'items')
+  const terms = new Set(words(message))
+  const name = (key: string, id: unknown) =>
+    list(state, key).find(entry => entry?.id === id)?.name as string | undefined
+  const scope = requestedScope(requested, projectClients(list(state, 'projects'), items))
+  const mayEdit = mayEditTask(user)
+  const aboutLate = /\b(overdue|late|behind|past due)\b/i.test(message)
+  const score = (item: any) => {
+    const text = [item.title, name('clients', item.clientId), name('projects', item.projectId)].join(' ')
+    let points = words(text).filter(word => terms.has(word)).length * 10
+    if (item.assignedToUserId === user.id) points += 3
+    if (aboutLate && isDate(item.dueDate) && item.dueDate < today) points += 8
+    if (scope.projectIds.includes(item.projectId)) points += 5
+    else if (scope.clientIds.includes(item.clientId)) points += 2
+    return points
+  }
+  const tasks = items
+    .filter(item => item?.id && !taskUpdateBlock(items, item, settings, mayEdit))
+    .map(item => ({ item, points: score(item) }))
+    .filter(entry => entry.points > 0)
+    .sort((a, b) => b.points - a.points)
+    .slice(0, ACTION_LIMITS.updateTasks)
+    .map(({ item }) => ({
+      id: `${item.id}`,
+      title: clip(item.title, 200),
+      client: name('clients', item.clientId),
+      project: name('projects', item.projectId),
+      status: item.status,
+      priority: item.priority,
+      waitingOn: item.waitingOn,
+      dueDate: item.dueDate || '',
+      followUpDate: item.followUpDate || '',
+    }))
+  return {
+    about: 'Open tasks the user may change, with their current values.',
+    statuses: openStatuses(settings),
+    waitingOn: openWaitingOnOptions(settings).map(option => option.label),
+    tasks,
+  }
+}
+
 // --- What the model is told ------------------------------------------------------------------------------------------
 
 export const EMAIL_DRAFT_INSTRUCTIONS = `
@@ -152,6 +221,11 @@ export const TIME_LOG_FIELDS = `,
         "note": "only for time_log",
         "seedsTaskId": "only for time_log",
         "category": "only for time_log without Seeds"`
+
+export const TASK_UPDATE_INSTRUCTIONS = `
+  The context includes \`taskUpdate\`. When the user asks to change existing tasks (a due date, a follow-up date, a priority, a status, who it is waiting on), add one suggestion of kind "task_update" with "updates": at most ${TASK_UPDATE_LIMIT} objects, each with "taskId" (a task in taskUpdate.tasks) and only the fields to change: "dueDate" and "followUpDate" (YYYY-MM-DD, or "" to clear), "priority" (Low, Medium, High or Urgent), "status" (one of taskUpdate.statuses), "waitingOn" (one of taskUpdate.waitingOn). Work dates out from the date given as today. Closing, reopening and reassigning a task are done on the task itself: say so instead. If which task is meant is unclear, ask instead of guessing. Say the changes are ready for approval, never that they were made.`
+export const TASK_UPDATE_FIELDS_TEXT = `,
+        "updates": "only for task_update: [{ \\"taskId\\": \\"id\\", \\"dueDate\\": \\"YYYY-MM-DD\\" }]"`
 
 // --- Checking what the model returned ------------------------------------------------------------------------------
 
@@ -412,4 +486,25 @@ export function timeLogSuggestions(value: unknown, state: any, today: string) {
       ]
     })
     .slice(0, 3)
+}
+
+/** Changes to existing tasks, checked against what the person may edit and what each field takes. One suggestion. */
+export function taskUpdateSuggestions(value: unknown, state: any, user: { id: string; role?: string }) {
+  const settings = state?.taskSettings || { statuses: [] }
+  return ofKind(value, 'task_update')
+    .flatMap(item => {
+      const taskUpdate = draftTaskUpdates(item.updates, list(state, 'items'), settings, mayEditTask(user))
+      if (!taskUpdate.tasks.length) return []
+      const count = taskUpdate.tasks.length
+      return [
+        {
+          id: idOf(item),
+          kind: 'task_update',
+          title: clip(item.title, 180) || `Update ${count} task${count === 1 ? '' : 's'}`,
+          rationale: clip(item.rationale, 600),
+          taskUpdate,
+        },
+      ]
+    })
+    .slice(0, 1)
 }

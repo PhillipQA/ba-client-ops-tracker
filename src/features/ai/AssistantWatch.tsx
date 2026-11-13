@@ -10,7 +10,7 @@ import type { AppState, SignedInUser } from '../../app/useAppState'
 import { requestJson } from '../../shared/http'
 import { rememberTrackerRow } from '../trackers/trackerNav'
 import { rememberWorkHubMessage } from '../work-hub/workHubNav'
-import { keptDismissals, type WatchAlert } from './watch'
+import { keptDismissals, type WatchAction, type WatchAlert } from './watch'
 
 /** How often an open page checks again. The server keeps its last check for ten minutes. */
 const CHECK_EVERY_MS = 20 * 60_000
@@ -18,7 +18,7 @@ const CHECK_EVERY_MS = 20 * 60_000
 type WatchResponse = { alerts: WatchAlert[]; checkedAt: string }
 
 export default function AssistantWatch({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
-  const { canEditActionItem, canUseAI, hasModule, openTaskEditor, setAiPrompt, setView, store } = app
+  const { applyTaskUpdate, canEditActionItem, canUseAI, hasModule, openTaskEditor, setAiPrompt, setView, store } = app
   const storeKey = `ba.watch.dismissed:${currentUser.organizationId || ''}:${currentUser.id}`
   const [alerts, setAlerts] = useState<WatchAlert[]>([])
   const [dismissed, setDismissed] = useState<string[]>(() => {
@@ -32,6 +32,9 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
   const [open, setOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [fresh, setFresh] = useState(0)
+  // Heads-ups dealt with by a one-click change, hidden until the next check; and what that change did.
+  const [handled, setHandled] = useState<string[]>([])
+  const [notice, setNotice] = useState('')
   const root = useRef<HTMLDivElement>(null)
   const checkedAt = useRef(0)
   const known = useRef<Set<string> | null>(null)
@@ -60,6 +63,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
         })
         const found = Array.isArray(result.alerts) ? result.alerts : []
         setAlerts(found)
+        setHandled([])
         const still = keptDismissals(dismissedNow.current, found)
         if (still.length !== dismissedNow.current.length) keep(still)
         // Heads-ups that were not there at the last check are announced, except on the first check of the page.
@@ -104,7 +108,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
     }
   }, [open])
 
-  const live = alerts.filter(alert => !dismissed.includes(alert.key))
+  const live = alerts.filter(alert => !dismissed.includes(alert.key) && !handled.includes(alert.key))
   const urgent = live.some(alert => alert.severity === 'urgent')
 
   /** Where a heads-up opens, when this person may go there. */
@@ -125,6 +129,21 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
         setView('trackers')
       }
     return undefined
+  }
+  /** The one-click changes of a heads-up, when this person may change its task. */
+  const actionsOf = (alert: WatchAlert) => {
+    const target = alert.open
+    if (!alert.actions?.length || target.kind !== 'task') return []
+    const item = store.items.find(entry => entry.id === target.id)
+    return item && canEditActionItem(item) ? alert.actions : []
+  }
+  const approve = (alert: WatchAlert, action: WatchAction) => {
+    const result = applyTaskUpdate(action.update)
+    setNotice(result.message)
+    if (!result.ok) return
+    setHandled(keys => [...keys, alert.key])
+    // Count again once the change is saved, so the heads-up goes for good.
+    window.setTimeout(() => void check(true), 5000)
   }
   const ask = (alert: WatchAlert) => {
     setAiPrompt(alert.ask)
@@ -181,9 +200,15 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
               <X size={17} />
             </button>
           </div>
+          {notice && (
+            <p className="watch-notice" role="status">
+              {notice}
+            </p>
+          )}
           <div className="notification-list">
             {live.map(alert => {
               const go = opener(alert)
+              const actions = actionsOf(alert)
               return (
                 <article className={`notification-row severity-${alert.severity} unread`} key={alert.key}>
                   <button
@@ -219,6 +244,20 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
                       <X size={14} />
                     </button>
                   </div>
+                  {actions.length > 0 && (
+                    <div className="watch-actions">
+                      {actions.map(action => (
+                        <button
+                          type="button"
+                          key={action.label}
+                          title={`${action.update.tasks[0].changes[0].label}: ${action.update.tasks[0].changes[0].to}`}
+                          onClick={() => approve(alert, action)}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </article>
               )
             })}

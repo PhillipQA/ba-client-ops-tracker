@@ -6,7 +6,8 @@
  * A heads-up's key says what it is about and how bad it is. A dismissed heads-up stays away until it gets worse
  * (a warning that turns urgent has a new key and shows again).
  */
-import type { BriefFacts } from './brief'
+import { addDayKeys, type BriefFacts, type BriefItem, weekdayOf } from './brief'
+import type { TaskUpdate } from './taskUpdate'
 
 export type WatchSeverity = 'urgent' | 'warning'
 export type WatchAlert = {
@@ -22,6 +23,49 @@ export type WatchAlert = {
     | { kind: 'time' }
   /** A question about it for the BA Assistant, sent only if the person chooses to. */
   ask: string
+  /** Changes the person can approve with one click, without the AI (a new due or follow-up date). */
+  actions?: WatchAction[]
+}
+export type WatchAction = { label: string; update: TaskUpdate }
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+/** The next working day after this one, and the Monday after this week. */
+export function nextWorkday(day: string) {
+  let next = addDayKeys(day, 1)
+  while ([0, 6].includes(weekdayOf(next))) next = addDayKeys(next, 1)
+  return next
+}
+export function nextMonday(day: string) {
+  return addDayKeys(day, (8 - weekdayOf(day)) % 7 || 7)
+}
+
+/**
+ * New dates offered for a task's due or follow-up date: today (a due date only), the next working day, and next
+ * Monday. Each is a whole approved change, with the date it replaces, so a task changed since is left alone.
+ */
+export function dateActions(item: BriefItem, field: 'dueDate' | 'followUpDate', today: string): WatchAction[] {
+  const verb = field === 'dueDate' ? 'Due' : 'Follow up'
+  const soon = nextWorkday(today)
+  const monday = nextMonday(today)
+  const options: [string, string][] = [
+    ...(field === 'dueDate' ? ([[today, 'today']] as [string, string][]) : []),
+    [soon, soon === addDayKeys(today, 1) ? 'tomorrow' : WEEKDAYS[weekdayOf(soon)]],
+    ...(monday === soon ? [] : ([[monday, 'next Monday']] as [string, string][])),
+  ]
+  return options.map(([date, when]) => ({
+    label: `${verb} ${when}`,
+    update: {
+      tasks: [
+        {
+          taskId: item.id,
+          title: item.title,
+          changes: [
+            { field, label: field === 'dueDate' ? 'Due date' : 'Follow-up date', from: item.date || '', to: date },
+          ],
+        },
+      ],
+    },
+  }))
 }
 
 export const WATCH_RULES = {
@@ -88,6 +132,7 @@ export function watchAlerts(facts: BriefFacts): WatchAlert[] {
       detail: [where(item), item.waitingOn ? `waiting on ${item.waitingOn}` : ''].filter(Boolean).join(' · '),
       open: { kind: 'task', id: item.id },
       ask: `"${item.title}" is ${days(late)} overdue. What is blocking it and what is the next step?`,
+      actions: dateActions(item, 'dueDate', facts.date),
     })
   }
 
@@ -101,6 +146,7 @@ export function watchAlerts(facts: BriefFacts): WatchAlert[] {
       detail: [where(item), item.waitingOn ? `waiting on ${item.waitingOn}` : ''].filter(Boolean).join(' · '),
       open: { kind: 'task', id: item.id },
       ask: `Draft a short, polite follow-up about "${item.title}"${item.client ? ` for ${item.client}` : ''}. Its follow-up date passed ${days(late)} ago.`,
+      actions: dateActions(item, 'followUpDate', facts.date),
     })
   }
 

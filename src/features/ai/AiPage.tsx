@@ -11,6 +11,7 @@ export function AiPage({ app, currentUser }: { app: AppState; currentUser: Signe
     aiProjectId,
     aiPrompt,
     applyAISuggestion,
+    applyTaskUpdate,
     applyTimeEntryMutation,
     canWriteTasks,
     createPlannedTasks,
@@ -43,6 +44,7 @@ export function AiPage({ app, currentUser }: { app: AppState; currentUser: Signe
         onApplySuggestion={applyAISuggestion}
         canWriteTasks={canWriteTasks}
         onCreateTasks={createPlannedTasks}
+        onUpdateTasks={applyTaskUpdate}
         onTimeEntry={applyTimeEntryMutation}
         onWorkChanged={async () => {
           const result = await loadCloudStore<Store>()
