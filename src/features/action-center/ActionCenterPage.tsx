@@ -8,6 +8,7 @@ import { isClosedProject } from '../tasks/lifecycle'
 import { useState } from 'react'
 import { isBeforeSeedsWork } from '../../shared/seeds'
 import { type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
+import { MorningBrief } from './MorningBrief'
 
 /** Action Center screen. It reads the app state; see app/useAppState. */
 export function ActionCenterPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
@@ -64,6 +65,8 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     : actionItems
   return (
     <section className="page-stack dashboard-stack">
+      <MorningBrief key={`${currentUser.organizationId}:${currentUser.id}`} app={app} currentUser={currentUser} />
+
       <div className="metric-grid dashboard-metrics">
         <Metric
           title="Needs attention"

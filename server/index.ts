@@ -74,6 +74,7 @@ import { registerAuthRoutes } from './auth/auth-routes'
 import { registerStoreRoutes } from './workspace/store-routes'
 import { registerInternalAdminRoutes } from './platform/internal-admin'
 import { registerAssistantRoutes } from './ai/assistant-routes'
+import { registerBriefRoutes } from './ai/brief-routes'
 import { registerDrfRoutes } from './documents/drf-documents'
 import { registerTaskRoutes } from './tasks/task-routes'
 
@@ -129,6 +130,10 @@ registerAssistantRoutes(app, {
   trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick),
   emails: (tenant, userId) => communications.recentEmails(tenant, userId),
   email: (tenant, userId, id) => communications.emailFor(tenant, userId, id),
+})
+registerBriefRoutes(app, {
+  trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick),
+  waitingEmails: (tenant, userId, since) => communications.waitingEmails(tenant, userId, since),
 })
 
 registerBrdRoutes(app, {

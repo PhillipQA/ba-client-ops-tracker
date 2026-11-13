@@ -21,6 +21,7 @@ import ClientSelect, { SearchSelect, type SearchChoice } from '../../shared/ui/S
 import { EmailTemplatesManager } from '../email/EmailTemplates'
 import { requestJson, type HttpMethod } from '../../shared/http'
 import { badgeText, unreadStore, useUnreadCounts, type UnreadSource } from './unreadCount'
+import { forgetWorkHubMessage, wantedWorkHubMessage } from './workHubNav'
 
 type Message = {
   id: string
@@ -355,7 +356,8 @@ export default function WorkHub({
     [settings, setSettings] = useState<Settings | null>(null),
     [labels, setLabels] = useState<Label[]>([])
   const unread = useUnreadCounts()
-  const [tab, setTab] = useState('Gmail'),
+  // Opened from the morning brief: start on that message's source (the message itself opens below).
+  const [tab, setTab] = useState<string>(() => wantedWorkHubMessage()?.source || 'Gmail'),
     [archived, setArchived] = useState(false),
     [labelFilter, setLabelFilter] = useState(''),
     [selected, setSelected] = useState<Message | null>(null),
@@ -834,6 +836,38 @@ export default function WorkHub({
     // After it is selected, so the open message shows as read too.
     if (isUnread(item)) void markRead(item, true)
   }
+  // Opened from the morning brief: open that message. Its conversation is read from the server, since the message may
+  // not be on the first page of the list. A conversation over one page long holds the newest message on its last page.
+  const openLatest = useRef(openMessage)
+  openLatest.current = openMessage
+  useEffect(() => {
+    const wanted = wantedWorkHubMessage()
+    if (!wanted) return
+    const controller = new AbortController()
+    const page = (number: number) =>
+      request(
+        `/api/communications/${encodeURIComponent(wanted.id)}/thread?page=${number}`,
+        'GET',
+        undefined,
+        controller.signal,
+      ) as Promise<{ items?: Message[]; total?: number }>
+    const find = (result: { items?: Message[] }) => (result.items || []).find(item => item.id === wanted.id)
+    void (async () => {
+      try {
+        const first = await page(1)
+        const pages = Math.ceil((first.total || 0) / 50)
+        const found = find(first) || (pages > 1 ? find(await page(pages)) : undefined)
+        forgetWorkHubMessage()
+        if (found) openLatest.current(found)
+        else setMessage('That message is no longer in Work Hub.')
+      } catch (error) {
+        if (controller.signal.aborted) return
+        forgetWorkHubMessage()
+        setMessage(error instanceof Error ? error.message : 'That message could not be opened.')
+      }
+    })()
+    return () => controller.abort()
+  }, [])
   return (
     <section className="communications-hub page-stack">
       {templatesOpen && (
