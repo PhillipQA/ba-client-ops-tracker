@@ -342,6 +342,11 @@ export type Tracker = {
   source?: TrackerSource | null
   /** In the list: whether the tracker follows a Google Sheet. */
   synced?: boolean
+  /**
+   * New Seeds projects of its clients become rows, each with its task in that project (see seedsRows). Off unless
+   * switched on in Tracker details; missing before schema v37.
+   */
+  seedsRows?: boolean
   /** People its creator or an Administrator added by hand (see trackerFolders). Missing before schema v36. */
   members?: string[]
   /** Everyone it counts as a user of: creator, people on its projects, people added. It shows in their folders. */

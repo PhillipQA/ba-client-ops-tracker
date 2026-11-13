@@ -23,7 +23,8 @@ import { registerSeedsRoutes } from './seeds/seeds-routes'
 import { registerWorkflowRoutes } from './workspace/workflow-routes'
 import { WorkspaceRaceError } from './services/workspace-guard'
 import { registerTrackerRoutes } from './trackers/trackers'
-import { trackerTaskUpdater } from './trackers/tracker-task-updates'
+import { trackerTaskCreator, trackerTaskUpdater } from './trackers/tracker-task-updates'
+import { SEEDS_ACTOR } from './seeds/seeds-sync'
 import { LifecycleError } from '../src/features/tasks/lifecycle'
 import { registerEmailTemplateRoutes } from './integrations/email-templates'
 import { registerCustomReportRoutes } from './reports/custom-reports'
@@ -174,6 +175,14 @@ const trackers = registerTrackerRoutes(app, {
   updateTasks: trackerTaskUpdater({
     load: loadTenantState,
     commit: (id, next, actor, reason, current) => commitServerWork(id, next, actor as SessionUser, reason, current),
+    today: () => dateKeyInTimeZone(new Date(), followUpTimeZone),
+    retryable: error => error instanceof LifecycleError || (error instanceof TenantSaveError && error.status === 409),
+  }),
+  // Tasks for the rows of new Seeds projects, saved as the Seeds sync (the only caller).
+  createTasks: trackerTaskCreator({
+    load: loadTenantState,
+    commit: (id, next, actor, reason, current) =>
+      commitServerWork(id, next, (actor.id === SEEDS_ACTOR.id ? SEEDS_ACTOR : actor) as SessionUser, reason, current),
     today: () => dateKeyInTimeZone(new Date(), followUpTimeZone),
     retryable: error => error instanceof LifecycleError || (error instanceof TenantSaveError && error.status === 409),
   }),

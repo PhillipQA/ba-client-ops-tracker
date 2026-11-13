@@ -150,6 +150,24 @@ Seeds; add them to a role there.
 
 People Seeds does not list keep their hand-entered assignments (Settings › Access).
 
+## New Seeds projects on trackers
+
+A tracker can add each new Seeds project of its clients as a row: Tracker details › **Add new Seeds projects as rows**
+(offered once one of its clients comes from Seeds; needs schema v37). When a sync brings in a project the app did not
+have before, for one of that tracker's clients, the tracker gets:
+
+- the project among its projects;
+- a row named after it: in the **Branch** column, else **Terminal/Site**, else the first plain Text column (a tracker
+  with none gets no rows), with the contract number in a Contract number column;
+- the row's task in that project, assigned to the tracker's creator, and on a Site rollout tracker a subtask for each
+  step (Checkbox column), linked to its cell, with its Seeds task when one has the step's name.
+
+Projects already in the app, closed in Seeds, or without a client are left out; so are archived trackers and trackers
+that only follow their Google Sheet one way (a two-way Sheet gets the rows too). New Seeds **tasks** change no tracker:
+they stay the Seeds task pick-list on tasks, subtasks and time.
+
+The DRF's Contract Number is filled from the Seeds project of the DRF's task (when the field is empty).
+
 ## Who sees what
 
 Settings › **Access**. Visibility is off by default, so turning Seeds on changes nothing about who sees what until an

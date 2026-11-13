@@ -5,6 +5,7 @@ import TrackerClientPicker from './TrackerClientPicker'
 import TrackerProjectPicker from './TrackerProjectPicker'
 import TrackerUsersField from './TrackerUsersField'
 import { userReason, usersOf } from './trackerFolders'
+import { keepsStepTasks } from './stepTasks'
 
 type Props = {
   tracker: Tracker
@@ -20,7 +21,13 @@ type Props = {
   /** Active people on the account, for the Users list. */
   people: { id: string; name: string }[]
   onClose: () => void
-  onSave: (body: { name: string; clientIds: string[]; projectIds: string[]; members?: string[] }) => Promise<void>
+  onSave: (body: {
+    name: string
+    clientIds: string[]
+    projectIds: string[]
+    members?: string[]
+    seedsRows?: boolean
+  }) => Promise<void>
 }
 
 /**
@@ -44,6 +51,11 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, peopl
     if (picked?.seedsId && picked.clientId && !clientIds.includes(picked.clientId))
       setClientIds([...clientIds, picked.clientId])
   }
+  // New Seeds projects of its clients become rows: offered once one of its clients comes from Seeds.
+  const [seedsRows, setSeedsRows] = useState(tracker.seedsRows === true)
+  const seedsClients = projects.some(
+    project => project.seedsId && project.clientId && clientIds.includes(project.clientId),
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const submit = async (event: FormEvent) => {
@@ -56,7 +68,15 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, peopl
     try {
       // Added people go only when they changed, so other edits work before the schema v36 update is run.
       const changed = members.join() !== (tracker.members || []).join()
-      await onSave({ name: name.trim(), clientIds, projectIds, ...(tracker.canManage && changed ? { members } : {}) })
+      // Likewise the Seeds switch (schema v37).
+      const seedsChanged = seedsRows !== (tracker.seedsRows === true)
+      await onSave({
+        name: name.trim(),
+        clientIds,
+        projectIds,
+        ...(tracker.canManage && changed ? { members } : {}),
+        ...(seedsChanged ? { seedsRows } : {}),
+      })
       onClose()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The tracker could not be updated.')
@@ -89,6 +109,19 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, peopl
           project; a row with no task yet goes to the project whose contract number is in its Contract number column
           (for example SLSS #), else to the default project.
         </p>
+        {(seedsClients || tracker.seedsRows) && (
+          <>
+            <label className="trk-checkline">
+              <input type="checkbox" checked={seedsRows} onChange={event => setSeedsRows(event.target.checked)} /> Add
+              new Seeds projects as rows
+            </label>
+            <p className="trk-muted-text">
+              When Seeds gets a new project for one of these clients (a new store, say), it is added here as a row named
+              after it, with its task in that project{keepsStepTasks(tracker) ? ' and a subtask for each step' : ''},
+              assigned to the tracker’s creator. New Seeds tasks change nothing here.
+            </p>
+          </>
+        )}
         <TrackerUsersField
           people={people}
           automatic={automatic}

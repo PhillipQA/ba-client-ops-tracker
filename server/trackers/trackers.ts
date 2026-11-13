@@ -9,6 +9,7 @@
  * - tracker-sync.ts: bringing a Sheet's rows in
  * - tracker-sheet-write.ts: writing edits back to the Sheet
  * - tracker-follow.ts: keeping rows and tasks in step after workspace saves
+ * - tracker-seeds-rows.ts: rows for new Seeds projects, on trackers switched on for them
  * - tracker-source-routes.ts, tracker-routes.ts, tracker-column-routes.ts, tracker-row-routes.ts: the HTTP routes
  * - tracker-common.ts: shared types and helpers
  */
@@ -20,6 +21,7 @@ import { trackerSource } from './tracker-source'
 import { trackerSync } from './tracker-sync'
 import { trackerSheetWrite } from './tracker-sheet-write'
 import { trackerFollow } from './tracker-follow'
+import { trackerSeedsRows } from './tracker-seeds-rows'
 import { trackerSourceRoutes } from './tracker-source-routes'
 import { trackerRoutes } from './tracker-routes'
 import { trackerColumnRoutes } from './tracker-column-routes'
@@ -38,7 +40,19 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   trackerRowRoutes(app, core, sheetAccess, sheetWrite)
   const { db, check, trackerVisibleIn, workspace, trackerOut, rowOut, columnsOf } = core
   const { allRows } = sheetAccess
-  const { onWorkspaceSaved } = follow
+  const seedsRows = trackerSeedsRows(deps, core, sheetAccess, sheetWrite)
+  /** After every workspace save: rows follow their tasks, and new Seeds projects become rows where asked. */
+  async function onWorkspaceSaved(
+    tenant: string,
+    before: any,
+    after: any,
+    actor: Parameters<typeof follow.onWorkspaceSaved>[3],
+  ) {
+    await follow.onWorkspaceSaved(tenant, before, after, actor)
+    await seedsRows
+      .addSeedsRows(tenant, before, after)
+      .catch((error: any) => console.error('Adding new Seeds projects to trackers failed:', error?.message || error))
+  }
   /**
    * Trackers as data for the AI assistant: every tracker the person can open (not archived; a private one only for
    * its creator), newest first, and the rows of the ones `pick` chooses, in their order. Rows carry ordinary cells

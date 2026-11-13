@@ -122,6 +122,7 @@ export function trackerCore(deps: Deps) {
     private: Boolean(row.private),
     template: row.template || '',
     ...(typeof row.step_tasks === 'boolean' ? { stepTasks: row.step_tasks } : {}),
+    seedsRows: row.seeds_rows === true,
     columns: Array.isArray(row.columns) ? row.columns : [],
     views: Array.isArray(row.views) ? row.views : [],
     ...(row.timeline && typeof row.timeline === 'object' ? { timeline: row.timeline } : {}),

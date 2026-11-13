@@ -451,6 +451,7 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
         if (body.archived !== undefined) patch.archived_at = body.archived === true ? now() : null
       }
       if (body.stepTasks !== undefined) patch.step_tasks = body.stepTasks === true
+      if (body.seedsRows !== undefined) patch.seeds_rows = body.seedsRows === true
       // People added by hand: the tracker shows in their folders. Like who sees it, the creator's or an Admin's call.
       const state = await workspace(tenant)
       if (body.members !== undefined) {
@@ -468,6 +469,11 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
       if (saved.error && 'step_tasks' in patch)
         throw new TrackerError(
           'Turning tasks for rows and steps on or off is unavailable. Check the database connection; a new database needs database/schema.sql.',
+          503,
+        )
+      if (saved.error && 'seeds_rows' in patch)
+        throw new TrackerError(
+          'Adding new Seeds projects as rows needs the database update database/migrations/schema-v37-tracker-seeds-rows.sql. Ask your administrator to run it.',
           503,
         )
       if (saved.error && 'members' in patch)

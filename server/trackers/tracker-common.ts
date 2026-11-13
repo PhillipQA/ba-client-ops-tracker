@@ -3,6 +3,7 @@
  */
 import type { RequestHandler } from 'express'
 import type { TrackerColumn, Cell } from '../../src/features/trackers/trackerModel'
+import type { TaskDraft } from '../../src/features/trackers/TrackerWork'
 import type { DonePatch } from '../../src/features/trackers/cellSubtasks'
 
 /** What registerTrackerRoutes needs from the server. */
@@ -41,6 +42,15 @@ export type Deps = {
     actor: { id: string; name: string; role: string },
     from: string,
   ) => Promise<number>
+  /**
+   * Makes tasks and subtasks in the workspace as the given actor, in the order of the drafts (see trackerTaskDrafts).
+   * Used for the rows of new Seeds projects (tracker-seeds-rows). Returns the tasks made.
+   */
+  createTasks?: (
+    tenantId: string,
+    drafts: TaskDraft[],
+    actor: { id: string; name: string; role: string },
+  ) => Promise<{ id: string }[]>
 }
 
 /** Blank rows a new Sheet gets below the tracker's rows. */

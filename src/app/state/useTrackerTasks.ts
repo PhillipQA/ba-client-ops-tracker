@@ -5,14 +5,14 @@
 import { businessDateKey } from '../../shared/businessDate'
 import { trackerApi, type TaskLink } from '../../features/trackers/trackerApi'
 import type { TaskDraft } from '../../features/trackers/TrackerWork'
-import { seedsTaskNamed } from '../../shared/seeds'
+import { tasksFromDrafts } from '../../features/trackers/trackerTaskDrafts'
 import { type TaskPatch, applyTaskPatches } from '../../features/trackers/trackerTasks'
 import { rememberTrackerRow } from '../../features/trackers/trackerNav'
-import { isArchived, archivedWorkReason } from '../../features/tasks/lifecycle'
+import { archivedWorkReason } from '../../features/tasks/lifecycle'
 import { useCallback, useEffect } from 'react'
 import { waitForCloudSaves } from '../cloudStore'
 import { defaultWaitingOn, doneWaitingOn } from '../../features/tasks/waitingOn'
-import type { WorkItem, Project } from '../../shared/types'
+import type { WorkItem } from '../../shared/types'
 import { isTaskClosed, defaultOpenTaskStatus, defaultClosedTaskStatus } from '../store'
 import type { UiState } from './useUiState'
 import type { WorkspaceSave } from './useWorkspaceSave'
@@ -61,108 +61,11 @@ export function useTrackerTasks(ui: UiState, saving: WorkspaceSave, signIn: Sign
   const createTrackerTasks = async (drafts: TaskDraft[]): Promise<WorkItem[]> => {
     if (!canWriteTasks || !hasModule('items')) throw new Error('Your role cannot create tasks.')
     const current = storeRef.current
-    const today = businessDateKey()
-    // New projects first: one per name, reusing an existing project with the same name.
-    const projects = [...current.projects],
-      addedProjects: Project[] = []
-    const projectFor = (draft: TaskDraft) => {
-      const name = (draft.newProjectName || '').trim().slice(0, 120)
-      if (!name) return draft.projectId || undefined
-      const found = projects.find(
-        project => project.name.trim().toLowerCase() === name.toLowerCase() && !isArchived(project),
-      )
-      if (found) return found.id
-      const project: Project = {
-        id: crypto.randomUUID(),
-        name,
-        status: 'Active',
-        targetDate: '',
-        summary: 'Created from a tracker.',
-      }
-      projects.push(project)
-      addedProjects.push(project)
-      return project.id
-    }
-    // Under a Seeds project, a task or subtask gets its Seeds task: the one chosen, else the one named like it (a
-    // tracker's "GO LIVE" step becomes a GO LIVE subtask). Without either, a subtask follows its task's.
-    const seedsTaskFor = (draft: TaskDraft, projectId?: string) => {
-      const seedsTasks = projects.find(project => project.id === projectId)?.seedsTasks
-      if (!seedsTasks?.length) return {}
-      const chosen =
-        draft.seedsTaskId && seedsTasks.some(task => task.id === draft.seedsTaskId) ? draft.seedsTaskId : undefined
-      const seedsTaskId = chosen || seedsTaskNamed(seedsTasks, draft.title)
-      return seedsTaskId ? { seedsTaskId } : {}
-    }
-    const nextOrder = new Map<string, number>()
-    const made: WorkItem[] = []
-    drafts.forEach((draft, index) => {
-      const batchParent = draft.parentIndex !== undefined ? made[draft.parentIndex] : undefined
-      if (draft.parentIndex !== undefined && (!batchParent || draft.parentIndex >= index || batchParent.parentTaskId))
-        throw new Error('A subtask must come after its task in the list.')
-      const parent =
-        batchParent || (draft.parentTaskId ? current.items.find(item => item.id === draft.parentTaskId) : undefined)
-      if (draft.parentTaskId && !batchParent && (!parent || parent.parentTaskId))
-        throw new Error('The parent task was not found.')
-      if (parent && !batchParent && archivedWorkReason(current, parent))
-        throw new Error(archivedWorkReason(current, parent) || 'The parent task is archived.')
-      const clientId = parent ? parent.clientId : draft.clientId || undefined
-      if (!clientId) throw new Error('Choose the client for the task.')
-      if (!current.clients.some(client => client.id === clientId)) throw new Error('That client was not found.')
-      let order: number | undefined
-      if (parent) {
-        const base =
-          nextOrder.get(parent.id) ??
-          Math.max(
-            -1,
-            ...current.items.filter(item => item.parentTaskId === parent.id).map(item => item.subtaskOrder ?? -1),
-          ) + 1
-        order = base
-        nextOrder.set(parent.id, base + 1)
-      }
-      const assignee =
-        parent?.assignedToUserId ||
-        (draft.assignedToUserId && current.accounts.some(account => account.id === draft.assignedToUserId)
-          ? draft.assignedToUserId
-          : undefined)
-      const isoDate = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '')
-      const projectId = parent ? parent.projectId : projectFor(draft)
-      made.push({
-        id: crypto.randomUUID(),
-        clientId,
-        projectId,
-        parentTaskId: parent?.id,
-        subtaskOrder: order,
-        title: draft.title.trim().slice(0, 200) || 'Untitled',
-        type: 'Task',
-        priority: 'Medium',
-        status: defaultOpenTaskStatus(current.taskSettings),
-        waitingOn: defaultWaitingOn(current.taskSettings),
-        assignedToUserId: assignee,
-        assignmentInherited: parent?.assignedToUserId ? true : undefined,
-        owner: parent?.owner || current.accounts.find(account => account.id === assignee)?.name || '',
-        dateRaised: today,
-        startDate: isoDate(draft.startDate),
-        dueDate: isoDate(draft.dueDate),
-        followUpDate: '',
-        description: (draft.description || '').slice(0, 2000),
-        resolution: '',
-        source: 'Internal',
-        qaResult: 'Not Run',
-        ...seedsTaskFor(draft, projectId),
-      })
+    const { projects, made, activity } = tasksFromDrafts(current, drafts, {
+      today: businessDateKey(),
+      newId: () => crypto.randomUUID(),
     })
     const created = new Map(made.map(item => [item.id, item]))
-    const titleOf = (id?: string) =>
-      made.find(item => item.id === id)?.title || current.items.find(item => item.id === id)?.title || 'a task'
-    const activity = made.map(item => ({
-      id: crypto.randomUUID(),
-      clientId: item.clientId,
-      projectId: item.projectId,
-      date: today,
-      text: item.parentTaskId
-        ? `Created subtask under ${titleOf(item.parentTaskId)} from a tracker: ${item.title}`
-        : `Created task from a tracker: ${item.title}`,
-    }))
     if (
       persist({
         ...current,
@@ -173,7 +76,6 @@ export function useTrackerTasks(ui: UiState, saving: WorkspaceSave, signIn: Sign
     )
       throw new Error('The tasks could not be created.')
     if (cloudStatus !== 'local') await waitForCloudSaves()
-    void addedProjects
     return made.map(item => storeRef.current.items.find(saved => saved.id === item.id) || created.get(item.id)!)
   }
   /**
