@@ -126,7 +126,7 @@ export function SeedsSyncPage({ app }: { app: AppState }) {
               {!seeds?.connected
                 ? 'Seeds is not turned on for this account yet. An Administrator turns it on in Settings › Integrations.'
                 : mine?.connected
-                  ? `Seeds lists you on its projects. Last synced ${when(seeds.sync?.lastSuccessAt)}; syncs on its own every 30 minutes.`
+                  ? `Seeds lists you on its projects. Last synced ${when(seeds.sync?.lastSuccessAt)}; syncs on its own every 10 minutes.`
                   : seeds.sync?.lastSuccessAt
                     ? 'Seeds did not find you on any project. Your email here must be the same as in Seeds; ask your PM to add you to the project in Seeds.'
                     : 'Seeds has not synced yet.'}

@@ -313,6 +313,14 @@ export default function DocumentCreation({
     setDocumentError('')
     setDocumentMessage('Drafted from the linked email by the BA Assistant. Review every field before generating.')
   }, [launch])
+  // The DRF's task is under a Seeds project: its Seeds contract number fills an empty Contract Number field.
+  const drfTask = items.find(item => item.id === docHub.options.taskId)
+  const drfParent = drfTask?.parentTaskId ? items.find(item => item.id === drfTask.parentTaskId) : undefined
+  const seedsContract =
+    projects.find(project => project.id === (drfTask?.projectId || drfParent?.projectId))?.contractNumber || ''
+  useEffect(() => {
+    if (seedsContract) setContractNumber(current => current.trim() || seedsContract)
+  }, [seedsContract])
   const loadDrfErrors = async () => {
     const response = await fetch('/api/documents/drf/errors', { credentials: 'same-origin' })
     const payload = (await response.json().catch(() => ({}))) as { items?: typeof recentDrfErrors; error?: string }

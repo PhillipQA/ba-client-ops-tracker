@@ -4,6 +4,8 @@
  *   Seeds parent            → Client   (seedsId; name follows Seeds)
  *   Seeds project + contract → Project (seedsId, contractNumber, clientId; name follows Seeds)
  *   Seeds tasks             → the project's seedsTasks, a pick-list on subtasks (seedsTaskId)
+ *   Seeds products          → the account's product list (/products); a task picks one (productId) when its time
+ *                             must carry a product
  *   Seeds project member    → who sees which project (see access.ts)
  *
  * Subtasks, emails, trackers, documents and time stay in this app. Records keep their own ids; Seeds ids only link
@@ -31,11 +33,31 @@ export interface SeedsProject {
   contractNumber: string
   /** The Seeds product (Barter CX…), when the project names one: time entries carry it. */
   productId?: string
+  /** What a time entry on this project must carry, and its defaults, when Seeds says. */
+  timeRules?: SeedsTimeRules
   archived?: boolean
+}
+/** A Seeds project's time-entry requirements and defaults (from the Projects API). */
+export interface SeedsTimeRules {
+  productRequired?: boolean
+  taskRequired?: boolean
+  remarksRequired?: boolean
+  defaultProductId?: string
+  defaultTaskId?: string
 }
 export interface SeedsTask {
   id: string
   projectId: string
+  name: string
+  /** Seeds requires a product on time logged to this task. */
+  productRequired?: boolean
+  /** The product time on this task starts with, when Seeds names one. */
+  defaultProductId?: string
+  archived?: boolean
+}
+/** A Seeds product (Barter CX, RPOS…), from GET /products (`core.products.read`). */
+export interface SeedsProduct {
+  id: string
   name: string
   archived?: boolean
 }
@@ -53,6 +75,8 @@ export interface SeedsSnapshot {
   projects: SeedsProject[]
   tasks: SeedsTask[]
   assignments: SeedsAssignment[]
+  /** Seeds' product list, when this read fetched it (absent: keep the one from the last sync). */
+  products?: SeedsProduct[]
 }
 
 export type SeedsMatchKind = 'client' | 'project' | 'task'
@@ -104,14 +128,13 @@ export interface SeedsAccountSync {
   fields?: Record<string, string[]>
   /** Seeds projects Seeds would not give members or tasks for (skipped, not failed). */
   skipped?: number
-  /** The last sync read every open project (full, once a day) or only those that may have changed (quick). */
-  mode?: 'full' | 'quick'
+  /** The last sync read every open project (full, once a week) or only those Seeds changed (delta). */
+  mode?: 'full' | 'delta'
   /** Projects whose members the last sync read. */
   checked?: number
   lastFullAt?: string
-  /** Every Seeds project id seen, and those with someone from this app: what a quick sync reads. */
-  knownProjects?: string[]
-  memberProjects?: string[]
+  /** Where the next delta sync starts: the latest `updatedAt` Seeds sent (Seeds' clock). */
+  updatedSince?: string
 }
 
 export interface SeedsState {
@@ -119,6 +142,8 @@ export interface SeedsState {
   connected: boolean
   /** Tenant-wide people directory from the last successful /users sync; used for document signatory suggestions. */
   people: SeedsPerson[]
+  /** Seeds' product list from the last sync that read it: what a task's product is picked from. */
+  products: SeedsProduct[]
   sync: SeedsAccountSync
   users: Record<string, SeedsUserSync>
   pendingMatches: SeedsMatch[]
@@ -137,6 +162,8 @@ export interface SeedsStatus {
   mine: SeedsUserSync
   canReview: boolean
   pendingMatches: SeedsMatch[]
+  /** Seeds' products, for the product picker on tasks. */
+  products: SeedsProduct[]
   /** Administrators: how each person's part of the sync went. */
   people?: (SeedsUserSync & { userId: string })[]
 }
@@ -155,6 +182,43 @@ function userSync(raw: any): SeedsUserSync {
       ? { unknownRoles: raw.unknownRoles.map(text).slice(0, 20) }
       : {}),
   }
+}
+
+/**
+ * The Seeds product a task's time carries, and whether Seeds requires one. The product picked on the task wins, then
+ * the Seeds project's product, then the Seeds task's default, then the project's default. A product is required when
+ * the Seeds project or the Seeds task the time counts toward says so.
+ */
+export function seedsProductFor(
+  state: { projects?: any[] } | null | undefined,
+  item: { projectId?: string; productId?: string } | null | undefined,
+  seedsTaskId?: string,
+) {
+  const project = list(state?.projects).find(candidate => candidate?.id && candidate.id === item?.projectId)
+  const rules = project?.seedsTimeRules && typeof project.seedsTimeRules === 'object' ? project.seedsTimeRules : {}
+  const task = seedsTaskId ? list(project?.seedsTasks).find(candidate => candidate?.id === seedsTaskId) : undefined
+  const productId =
+    text(item?.productId) ||
+    text(project?.seedsProductId) ||
+    text(task?.defaultProductId) ||
+    text(rules.defaultProductId)
+  const required = rules.productRequired === true || task?.productRequired === true
+  return { productId, required, missing: required && !productId }
+}
+
+/** Products with an id and a name, once each, sorted by name. */
+export function cleanProducts(value: unknown): SeedsProduct[] {
+  const seen = new Set<string>()
+  return list(value)
+    .filter((product: any) => product && text(product.id).trim() && text(product.name).trim())
+    .map((product: any) => ({
+      id: text(product.id).trim(),
+      name: text(product.name).trim().slice(0, 120),
+      ...(product.archived === true ? { archived: true } : {}),
+    }))
+    .filter(product => !seen.has(product.id) && Boolean(seen.add(product.id)))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, 2000)
 }
 
 export function seedsState(state: any): SeedsState {
@@ -177,6 +241,7 @@ export function seedsState(state: any): SeedsState {
         email: text(person.email).toLowerCase(),
         ...(text(person.title) ? { title: text(person.title) } : {}),
       })),
+    products: cleanProducts(raw.products),
     sync: {
       ...(sync.lastAttemptAt ? { lastAttemptAt: text(sync.lastAttemptAt) } : {}),
       ...(sync.lastSuccessAt ? { lastSuccessAt: text(sync.lastSuccessAt) } : {}),
@@ -184,14 +249,16 @@ export function seedsState(state: any): SeedsState {
       ...(Number.isFinite(sync.matched) ? { matched: Number(sync.matched) } : {}),
       ...(Number.isFinite(sync.unmatched) ? { unmatched: Number(sync.unmatched) } : {}),
       ...(Number(sync.skipped) > 0 ? { skipped: Number(sync.skipped) } : {}),
-      ...(sync.mode === 'full' || sync.mode === 'quick' ? { mode: sync.mode } : {}),
+      // `quick` is what delta syncs were called before.
+      ...(sync.mode === 'full'
+        ? { mode: 'full' as const }
+        : sync.mode === 'delta' || sync.mode === 'quick'
+          ? { mode: 'delta' as const }
+          : {}),
       ...(Number(sync.checked) >= 0 && sync.checked != null ? { checked: Number(sync.checked) } : {}),
       ...(sync.lastFullAt ? { lastFullAt: text(sync.lastFullAt) } : {}),
-      ...(Array.isArray(sync.knownProjects)
-        ? { knownProjects: list(sync.knownProjects).map(text).slice(0, 20000) }
-        : {}),
-      ...(Array.isArray(sync.memberProjects)
-        ? { memberProjects: list(sync.memberProjects).map(text).slice(0, 5000) }
+      ...(sync.updatedSince && Number.isFinite(Date.parse(text(sync.updatedSince)))
+        ? { updatedSince: text(sync.updatedSince) }
         : {}),
       ...(Object.keys(fields).length ? { fields } : {}),
     },
@@ -250,6 +317,7 @@ export function seedsStatusFor(state: any, user: { id: string; role?: string }):
     mine: seeds.users[user.id] || { connected: false },
     canReview,
     pendingMatches: canReview ? seeds.pendingMatches.filter(sees) : [],
+    products: seeds.products,
     ...(administrator ? { people: Object.entries(seeds.users).map(([userId, sync]) => ({ userId, ...sync })) } : {}),
   }
 }
@@ -257,10 +325,27 @@ export function seedsStatusFor(state: any, user: { id: string; role?: string }):
 /** Fields Seeds owns on each kind of record. The browser cannot change them, add them or drop a linked record. */
 const SEEDS_FIELDS: Record<'clients' | 'projects' | 'items', string[]> = {
   clients: ['seedsId', 'name', 'seedsArchived'],
-  projects: ['seedsId', 'name', 'contractNumber', 'clientId', 'seedsArchived', 'seedsTasks', 'seedsProductId'],
+  projects: [
+    'seedsId',
+    'name',
+    'contractNumber',
+    'clientId',
+    'seedsArchived',
+    'seedsTasks',
+    'seedsProductId',
+    'seedsTimeRules',
+  ],
   items: ['seedsId', 'title', 'seedsArchived'],
 }
-const LINK_FIELDS = ['seedsId', 'contractNumber', 'seedsArchived', 'seedsTasks', 'beforeSeeds', 'seedsProductId']
+const LINK_FIELDS = [
+  'seedsId',
+  'contractNumber',
+  'seedsArchived',
+  'seedsTasks',
+  'beforeSeeds',
+  'seedsProductId',
+  'seedsTimeRules',
+]
 
 export function keepSeedsFields(current: any, next: any) {
   const result = { ...next }

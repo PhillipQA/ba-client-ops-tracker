@@ -7,6 +7,7 @@
  * entry in Seeds. A sent entry keeps the Seeds id; it is then changed or removed in Seeds.
  */
 import type { TimeEntry } from '../../src/features/tasks/effort'
+import { seedsProductFor } from '../../src/shared/seeds'
 import { SeedsError } from './seeds-client'
 
 export type SeedsTimeBody = {
@@ -34,8 +35,15 @@ export function seedsTimeBody(
   const project = list(state?.projects).find(candidate => candidate?.id === task?.projectId)
   const projectId = seedsNumber(project?.seedsId)
   if (!projectId) return { ok: false, error: 'Its task is not under a Seeds project.' }
-  const taskId = seedsNumber(entry.seedsTaskId)
+  // The project's time-entry rules and defaults from Seeds: a missing task or product takes the project's default.
+  const rules = project?.seedsTimeRules || {}
+  const taskId = seedsNumber(entry.seedsTaskId) ?? seedsNumber(rules.defaultTaskId)
   if (!taskId) return { ok: false, error: 'It has no Seeds task.' }
+  // The product: picked on the task, else the project's, else a default; required when Seeds says so.
+  const product = seedsProductFor(state, task, String(taskId))
+  const productId = seedsNumber(product.productId)
+  if (product.required && !productId)
+    return { ok: false, error: 'Seeds requires a product here. Pick a Seeds product on the task, then send again.' }
   const client = list(state?.clients).find(candidate => candidate?.id === project?.clientId)
   const minutes = Math.round(Number(entry.hours) * 60)
   if (!(minutes >= 15 && minutes % 15 === 0)) return { ok: false, error: 'Its duration is not in 15-minute steps.' }
@@ -49,7 +57,7 @@ export function seedsTimeBody(
       minuteslogged: minutes,
       taskId,
       parentId: seedsNumber(client?.seedsId),
-      productId: seedsNumber(project?.seedsProductId),
+      productId,
       remarks: remarks.slice(0, 120),
     },
   }

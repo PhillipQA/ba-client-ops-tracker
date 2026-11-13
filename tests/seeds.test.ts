@@ -399,9 +399,10 @@ function fakeSeeds(overrides: Record<string, any> = {}) {
 
 test('the HTTP reader sends the token, follows cursors and reads only the projects people here are on', async () => {
   const { calls, fetcher } = fakeSeeds()
-  const { snapshot: read, fields } = await httpSeedsSource('secret-token', undefined, fetcher).read(
-    new Set(['bea@company.com', 'paolo@company.com']),
-  )
+  const { snapshot: read, fields } = await httpSeedsSource('secret-token', undefined, fetcher, 1000, {
+    gapMs: 0,
+    sleep: async () => {},
+  }).read(new Set(['bea@company.com', 'paolo@company.com']))
   assert.ok(calls.every(call => call.auth === 'Bearer secret-token'))
   assert.deepEqual(
     read.people.map(p => p.name),
@@ -426,11 +427,14 @@ test('the HTTP reader sends the token, follows cursors and reads only the projec
 
   const denied = fakeSeeds({ '/parents?limit=100': { status: 403, error: { code: 'forbidden', message: 'No grant' } } })
   await assert.rejects(
-    httpSeedsSource('t', undefined, denied.fetcher).read(new Set()),
+    httpSeedsSource('t', undefined, denied.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(new Set()),
     /not allowed to read parents.*No grant/,
   )
   const odd = fakeSeeds({ '/projects?limit=100': { data: { what: 1 } } })
-  await assert.rejects(httpSeedsSource('t', undefined, odd.fetcher).read(new Set()), /unexpected answer for projects/)
+  await assert.rejects(
+    httpSeedsSource('t', undefined, odd.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(new Set()),
+    /unexpected answer for projects/,
+  )
 })
 
 // ---- Routes, with a fake Seeds and an in-memory workspace ----
@@ -700,74 +704,347 @@ test('Seeds ids: the whole-number field wins; a project Seeds turns down is skip
   )
 })
 
-test('a quick sync reads members only for new, changed and already-linked projects', async () => {
-  const projectsList = {
-    data: [
-      { id: 20, parentId: 5, name: 'Linked already', updatedAt: '2026-01-01T00:00:00Z' },
-      { id: 21, parentId: 5, name: 'Old, untouched', updated_at: '2026-01-01T00:00:00Z' },
-      { id: 23, parentId: 5, name: 'Changed today', updatedAt: '2026-11-09T01:00:00Z' },
-      { id: 24, parentId: 5, name: 'Brand new' },
-    ],
-  }
+const since = '2026-11-08T00:00:00.000Z'
+const deltaKey = `/projects?limit=100&updatedSince=${encodeURIComponent(since)}`
+
+test('a delta sync reads only the projects Seeds changed, and only their members and tasks', async () => {
   const { calls, fetcher } = fakeSeeds({
-    '/projects?limit=100': projectsList,
-    '/projects/23/members': { data: [] },
-    '/projects/24/members': { data: [] },
+    [deltaKey]: {
+      data: [
+        {
+          id: 20,
+          parentId: 5,
+          name: 'Curated Meeple OPC',
+          updatedAt: '2026-11-09T01:00:00Z',
+          contractReference: 'REF-77',
+          timeEntryRequirements: { productRequired: true, taskRequired: 'required' },
+          timeEntryDefaults: { productId: 9, taskId: 30 },
+        },
+        {
+          id: 25,
+          parentId: 6,
+          parent: { id: 6, name: 'Nimbus Bank' },
+          name: 'New store',
+          updatedAt: '2026-11-09T02:00:00Z',
+        },
+        { id: 26, parentId: 7, name: 'Under an unknown parent', updatedAt: '2026-11-09T00:30:00Z' },
+        { id: 1059, deleted: true, updatedAt: '2026-11-09T03:00:00Z' },
+      ],
+    },
+    // Members carry email and organizational role now.
+    '/projects/20/members': { data: [{ userId: 1, email: 'Bea@Company.com', organizationalRole: 'Business Analyst' }] },
+    '/projects/25/members': { data: [{ userId: 2, email: 'paolo@company.com', organizationalRole: 'PM' }] },
+    '/projects/26/members': { data: [] },
+    '/projects/25/tasks': { data: [{ id: 31, name: 'Go Live' }] },
+    '/parents/7': { data: { id: 7, name: 'Seventh Parent' } },
+  })
+  const read = await httpSeedsSource('t', undefined, fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(['bea@company.com', 'paolo@company.com']),
+    { since, parents: new Set(['5']), products: new Set(['9']) },
+  )
+  const paths = calls.map(call => call.url.replace('https://seeds.iripple.com/api/v1', ''))
+  assert.deepEqual(paths, [
+    deltaKey,
+    '/parents/7',
+    '/projects/20/members',
+    '/projects/25/members',
+    '/projects/26/members',
+    '/projects/20/tasks',
+    '/projects/25/tasks',
+  ])
+  assert.ok(!paths.some(path => /^\/(users|parents|statuses)\?/.test(path)), 'no full lists in a delta')
+  assert.ok(!paths.includes('/projects/1059/members'), 'no members for a deleted project')
+  assert.equal(read.mode, 'delta')
+  assert.deepEqual(read.projectIds, ['20', '25', '26', '1059'])
+  assert.equal(read.watermark, '2026-11-09T03:00:00.000Z', 'the next delta starts from Seeds’ latest change')
+  assert.deepEqual(read.snapshot.people, [])
+  assert.deepEqual(
+    read.snapshot.clients.map(client => client.name).sort(),
+    ['Nimbus Bank', 'Seventh Parent'],
+    'named on the project, or read by id; a linked parent is not read',
+  )
+  assert.deepEqual(read.snapshot.assignments, [
+    { personId: '1', email: 'bea@company.com', role: 'Business Analyst', projectId: '20' },
+    { personId: '2', email: 'paolo@company.com', role: 'PM', projectId: '25' },
+  ])
+  const portal = read.snapshot.projects.find(project => project.id === '20')
+  assert.equal(portal?.contractNumber, 'REF-77', 'the contract reference stands in for a number')
+  assert.deepEqual(portal?.timeRules, {
+    productRequired: true,
+    taskRequired: true,
+    defaultProductId: '9',
+    defaultTaskId: '30',
+  })
+  assert.equal(read.snapshot.projects.find(project => project.id === '1059')?.archived, true, 'deleted: closed')
+  assert.ok(read.fields.projects?.includes('timeEntryDefaults.productId'), 'nested field names are reported')
+})
+
+test('when Seeds turns down updatedSince, the delta becomes a full read', async () => {
+  const { calls, fetcher } = fakeSeeds({
+    [deltaKey]: { status: 400, error: { code: 'bad_request', message: 'Unknown parameter updatedSince' } },
   })
   const read = await httpSeedsSource('t', undefined, fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
     new Set(['bea@company.com']),
-    { since: '2026-11-08T00:00:00Z', known: new Set(['20', '21', '23']), keep: new Set(['20']) },
+    { since },
   )
-  const membersRead = calls.map(call => call.url.match(/projects\/(\d+)\/members/)?.[1]).filter(Boolean)
-  assert.deepEqual(membersRead, ['20', '23', '24'], 'not 21: known, untouched, nobody from here on it')
-  assert.equal(read.checked, 3)
-  assert.deepEqual(read.projectIds, ['20', '21', '23', '24'])
-  assert.equal(read.snapshot.assignments.length, 1, 'Bea is still on 20')
-  assert.ok(!('changedAt' in read.snapshot.projects[0]))
-
-  const full = fakeSeeds({
-    '/projects?limit=100': projectsList,
-    '/projects/23/members': { data: [] },
-    '/projects/24/members': { data: [] },
-  })
-  await httpSeedsSource('t', undefined, full.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(new Set())
-  assert.equal(full.calls.filter(call => call.url.includes('/members')).length, 4, 'a full sync reads them all')
+  assert.equal(read.mode, 'full')
+  assert.ok(calls.some(call => call.url.endsWith('/users?limit=100')))
+  assert.equal(read.snapshot.assignments.length, 1)
 })
 
-test('the first sync is full, the next quick, and Full sync forces one', async () => {
-  const { createSeedsService } = await import('../server/seeds/seeds-routes')
-  let stored: any = { ...existing(), seeds: { connected: true } }
-  const plans: any[] = []
-  const service = createSeedsService({
-    db: {},
-    requireAuth: () => {},
-    requireTenant: () => {},
-    load: async () => ({ data: stored }),
-    commit: async (_id, state) => {
-      stored = state
-    },
-    raced: () => false,
-    openStatus: () => 'Open',
-    today: () => '2026-11-09',
-    token: () => 'app-token',
-    apiUrl: () => 'https://seeds.iripple.com/api/v1',
-    source: () => ({
-      read: async (_emails, quick) => {
-        plans.push(quick)
-        return { snapshot: account(), fields: {}, projectIds: ['s-portal', 's-core', 's-internal'], checked: 3 }
+test('Seeds’ 20 requests a minute: about 3 seconds between requests', async () => {
+  const { SEEDS_GAP_MS } = await import('../server/seeds/seeds-client')
+  assert.ok(SEEDS_GAP_MS >= 3000)
+  const { fetcher } = fakeSeeds({ [deltaKey]: { data: [] } })
+  const waits: number[] = []
+  let clock = 0
+  const realNow = Date.now
+  Date.now = () => clock
+  try {
+    const source = httpSeedsSource('t', undefined, fetcher, 1000, {
+      sleep: async ms => {
+        waits.push(ms)
+        clock += ms
       },
-    }),
+    })
+    await source.read(new Set(), { since })
+    await source.read(new Set(), { since })
+  } finally {
+    Date.now = realNow
+  }
+  assert.ok(waits.length >= 1 && waits.every(ms => ms >= 3000), 'the second request waited its turn')
+})
+
+function deltaService(reads: ((plan: any) => any)[]) {
+  return import('../server/seeds/seeds-routes').then(({ createSeedsService }) => {
+    const plans: any[] = []
+    const box: { stored: any } = { stored: { ...existing(), seeds: { connected: true } } }
+    const service = createSeedsService({
+      db: {},
+      requireAuth: () => {},
+      requireTenant: () => {},
+      load: async () => ({ data: box.stored }),
+      commit: async (_id, state) => {
+        box.stored = state
+      },
+      raced: () => false,
+      openStatus: () => 'Open',
+      today: () => '2026-11-13',
+      token: () => 'app-token',
+      apiUrl: () => 'https://seeds.iripple.com/api/v1',
+      source: () => ({
+        read: async (_emails, plan) => {
+          plans.push(plan)
+          return reads[plans.length - 1](plan)
+        },
+      }),
+    })
+    return { service, plans, box }
   })
+}
+
+test('the first sync is full, the next ones delta from Seeds’ last change, and Full sync forces one', async () => {
+  const { service, plans, box } = await deltaService([
+    () => ({
+      snapshot: account(),
+      fields: { users: ['id'] },
+      mode: 'full',
+      watermark: '2026-11-13T01:00:00.000Z',
+      checked: 3,
+    }),
+    () => ({
+      snapshot: snapshot({ people: [], clients: [], projects: [], tasks: [], assignments: [] }),
+      fields: { projects: ['id'] },
+      mode: 'delta',
+      projectIds: [],
+      checked: 0,
+    }),
+    () => ({ snapshot: account(), fields: {}, mode: 'full' }),
+  ])
   await service.sync('org')
   assert.equal(plans[0], undefined, 'first: full')
-  assert.equal(stored.seeds.sync.mode, 'full')
-  assert.deepEqual(stored.seeds.sync.memberProjects.sort(), ['s-core', 's-portal'])
+  assert.equal(box.stored.seeds.sync.mode, 'full')
+  assert.equal(box.stored.seeds.sync.updatedSince, '2026-11-13T01:00:00.000Z')
+  const people = box.stored.seeds.people.length
   await service.sync('org')
-  assert.deepEqual([...plans[1].known].sort(), ['s-core', 's-internal', 's-portal'])
-  assert.deepEqual([...plans[1].keep].sort(), ['s-core', 's-portal'])
-  assert.equal(stored.seeds.sync.mode, 'quick')
+  assert.equal(plans[1].since, '2026-11-13T00:50:00.000Z', 'ten minutes of overlap')
+  assert.ok(plans[1].parents.has('s-acme'), 'linked parents are not read again')
+  assert.equal(box.stored.seeds.sync.mode, 'delta')
+  assert.equal(box.stored.seeds.sync.updatedSince, '2026-11-13T01:00:00.000Z', 'nothing changed: same start')
+  assert.equal(box.stored.seeds.people.length, people, 'a delta keeps the people directory')
+  assert.deepEqual(box.stored.seeds.sync.fields, { users: ['id'], projects: ['id'] }, 'field names add up')
+  assert.deepEqual(
+    activeAssignments(box.stored, 'u-bea').map(a => a.role),
+    ['BA'],
+    'untouched access stays',
+  )
   await service.sync('org', true)
   assert.equal(plans[2], undefined, 'Full sync asked for')
+})
+
+test('a delta replaces access only on the projects it read, and closes linked projects nobody here is on', async () => {
+  const { service, box } = await deltaService([
+    () => ({ snapshot: account(), fields: {}, mode: 'full', watermark: '2026-11-13T01:00:00.000Z' }),
+    // Seeds changed the portal (Bea taken off) and closed core banking.
+    () => ({
+      snapshot: {
+        people: [],
+        clients: [],
+        projects: [
+          { id: 's-portal', clientId: 's-acme', name: 'Customer Portal', contractNumber: 'CN-2026-014' },
+          { id: 's-core', clientId: 's-new', name: 'Core Banking', contractNumber: 'CN-2026-020', archived: true },
+        ],
+        tasks: [],
+        assignments: [],
+      },
+      fields: {},
+      mode: 'delta',
+      projectIds: ['s-portal', 's-core'],
+      watermark: '2026-11-13T02:00:00.000Z',
+    }),
+  ])
+  await service.sync('org')
+  assert.deepEqual(
+    activeAssignments(box.stored, 'u-bea').map(a => a.role),
+    ['BA'],
+  )
+  await service.sync('org')
+  assert.deepEqual(
+    activeAssignments(box.stored, 'u-bea').filter(a => a.source === 'seeds'),
+    [],
+    'Bea is off the portal in Seeds',
+  )
+  const core = box.stored.projects.find((project: any) => project.seedsId === 's-core')
+  assert.equal(core.seedsArchived, true, 'closed in Seeds, closed here, though nobody here is on it now')
+  assert.equal(box.stored.seeds.sync.updatedSince, '2026-11-13T02:00:00.000Z')
+})
+
+test('time entries take the project’s default Seeds task and product; a required product is checked', async () => {
+  const { seedsTimeBody } = await import('../server/seeds/seeds-time')
+  const entry: any = { id: 'e1', date: '2026-11-13', hours: 1, note: 'Go Live – Makati T1' }
+  const state = (rules: any, product?: string) => ({
+    clients: [{ id: 'c1', seedsId: '5' }],
+    projects: [
+      {
+        id: 'p1',
+        clientId: 'c1',
+        seedsId: '20',
+        seedsTimeRules: rules,
+        ...(product ? { seedsProductId: product } : {}),
+      },
+    ],
+  })
+  const task = { projectId: 'p1' }
+  const filled: any = seedsTimeBody(state({ defaultTaskId: '30', defaultProductId: '9' }), task, entry)
+  assert.equal(filled.ok, true)
+  assert.deepEqual([filled.body.taskId, filled.body.productId], [30, 9])
+  const defaults = { defaultTaskId: '30', defaultProductId: '9' }
+  const own: any = seedsTimeBody(state(defaults, '4'), task, { ...entry, seedsTaskId: '31' })
+  assert.deepEqual([own.body.taskId, own.body.productId], [31, 4], 'the entry’s own task and project product win')
+  const missing: any = seedsTimeBody(state({ productRequired: true }), task, { ...entry, seedsTaskId: '31' })
+  assert.equal(missing.ok, false)
+  assert.match(missing.error, /Pick a Seeds product on the task/)
+})
+
+test('Seeds products: read in a full sync, again in a delta only when a change names a new one', async () => {
+  const products = {
+    '/products?limit=100': {
+      data: [
+        { id: 9, name: 'Barter CX' },
+        { id: 4, productName: 'RPOS 5.1' },
+        { id: 8, name: 'Old one', isActive: false },
+      ],
+    },
+  }
+  const full = fakeSeeds(products)
+  const read = await httpSeedsSource('t', undefined, full.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(['bea@company.com']),
+  )
+  assert.deepEqual(read.snapshot.products, [
+    { id: '9', name: 'Barter CX' },
+    { id: '4', name: 'RPOS 5.1' },
+    { id: '8', name: 'Old one', archived: true },
+  ])
+  const noGrant = fakeSeeds({ '/products?limit=100': { status: 403, error: { code: 'forbidden', message: 'x' } } })
+  const quick = { gapMs: 0, sleep: async () => {} }
+  const without = await httpSeedsSource('t', undefined, noGrant.fetcher, 1000, quick).read(new Set(['bea@company.com']))
+  assert.deepEqual(without.snapshot.products, [], 'without core.products.read the sync still works')
+
+  const changes = (productId: number) =>
+    fakeSeeds({
+      ...products,
+      [deltaKey]: { data: [{ id: 20, parentId: 5, name: 'P', productId, updatedAt: '2026-11-09T01:00:00Z' }] },
+      '/projects/20/members': { data: [] },
+    })
+  const known = changes(9)
+  const quiet = await httpSeedsSource('t', undefined, known.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(),
+    { since, parents: new Set(['5']), products: new Set(['9', '4']) },
+  )
+  assert.equal(quiet.snapshot.products, undefined, 'known product: list not read, kept as it is')
+  assert.ok(!known.calls.some(call => call.url.includes('/products')))
+  const fresh = changes(12)
+  const reread = await httpSeedsSource('t', undefined, fresh.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(
+    new Set(),
+    { since, parents: new Set(['5']), products: new Set(['9', '4']) },
+  )
+  assert.equal(reread.snapshot.products?.length, 3, 'a new product id: list read again')
+})
+
+test('a Seeds task can require a product; the task’s pick wins; the time rule flags what is missing', async () => {
+  const { seedsProductFor, seedsStatusFor } = await import('../src/shared/seeds')
+  const { seedsTimeRule } = await import('../src/features/tasks/effort')
+  assert.deepEqual(
+    parseSeeds.task({ id: 31, name: 'Go Live', productRequired: true, defaultProductId: 9 }, '20'),
+    { id: '31', projectId: '20', name: 'Go Live', productRequired: true, defaultProductId: '9' },
+  )
+  const state: any = {
+    seeds: { connected: true, products: [{ id: '4', name: 'RPOS' }] },
+    projects: [
+      {
+        id: 'p1',
+        seedsId: '20',
+        seedsTasks: [
+          { id: '30', name: 'Meetings' },
+          { id: '31', name: 'Go Live', productRequired: true },
+          { id: '32', name: 'Training', productRequired: true, defaultProductId: '9' },
+        ],
+      },
+    ],
+  }
+  const task = { id: 't1', title: 'Makati T1', projectId: 'p1' }
+  assert.deepEqual(seedsProductFor(state, task, '30'), { productId: '', required: false, missing: false })
+  assert.deepEqual(seedsProductFor(state, task, '31'), { productId: '', required: true, missing: true })
+  assert.deepEqual(seedsProductFor(state, task, '32'), { productId: '9', required: true, missing: false })
+  assert.equal(seedsProductFor(state, { ...task, productId: '4' }, '32').productId, '4', 'picked on the task wins')
+  assert.deepEqual(seedsTimeRule(state, task)?.needsProduct, ['31'])
+  assert.equal(seedsTimeRule(state, { ...task, productId: '4' })?.needsProduct, undefined)
+
+  const { seedsTimeBody } = await import('../server/seeds/seeds-time')
+  const entry: any = { id: 'e1', date: '2026-11-13', hours: 0.5, note: 'Go Live', seedsTaskId: '31' }
+  assert.equal((seedsTimeBody(state, task, entry) as any).ok, false, 'not sent without the product')
+  const sent: any = seedsTimeBody(state, { ...task, productId: '4' }, entry)
+  assert.equal(sent.body.productId, 4)
+  assert.deepEqual(seedsStatusFor(state, { id: 'u1' }).products, [{ id: '4', name: 'RPOS' }])
+})
+
+test('a sync keeps the product list it read, and the last one when it read none', async () => {
+  const { service, box } = await deltaService([
+    () => ({
+      snapshot: { ...account(), products: [{ id: '9', name: 'Barter CX' }] },
+      fields: {},
+      mode: 'full',
+      watermark: '2026-11-13T01:00:00.000Z',
+    }),
+    (plan: any) => {
+      assert.deepEqual([...plan.products], ['9'], 'known products go to the delta')
+      return { snapshot: { ...account(), assignments: [] }, fields: {}, mode: 'delta', projectIds: [] }
+    },
+  ])
+  await service.sync('org')
+  assert.deepEqual(box.stored.seeds.products, [{ id: '9', name: 'Barter CX' }])
+  await service.sync('org')
+  assert.deepEqual(box.stored.seeds.products, [{ id: '9', name: 'Barter CX' }])
 })
 
 test('closed, resolved and completed Seeds projects count as closed, by name or by status id', async () => {

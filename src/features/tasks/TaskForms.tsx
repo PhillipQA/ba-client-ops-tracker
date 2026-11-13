@@ -8,7 +8,7 @@ import { type Store, defaultOpenTaskStatus, isTaskClosed } from '../../app/store
 import { businessDateKey } from '../../shared/businessDate'
 import { effortSummary, formatHours, normalizeEstimate, seedsTimeRule } from './effort'
 import { isArchived, isClosedProject } from './lifecycle'
-import { isBeforeSeedsWork } from '../../shared/seeds'
+import { isBeforeSeedsWork, seedsProductFor } from '../../shared/seeds'
 import type { RtmLink } from '../requirements/rtm'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { type TaskCommentMutationResult, addTaskComment } from './taskComments'
@@ -102,6 +102,46 @@ function SeedsTaskField({
   )
 }
 
+/**
+ * The Seeds product a task's time carries (Barter CX, RPOS…), from Seeds' product list. Only on top-level tasks under
+ * a Seeds project, where time is logged. Some Seeds projects and Seeds tasks require one: time is not sent without it.
+ */
+function SeedsProductField({
+  store,
+  projectId,
+  value,
+  seedsTaskId,
+}: {
+  store: Store
+  projectId?: string
+  value?: string
+  seedsTaskId?: string
+}) {
+  const project = store.projects.find(candidate => candidate.id === projectId)
+  const products = store.seeds?.products || []
+  if (!project?.seedsId || (!products.length && !value)) return null
+  const { required } = seedsProductFor(store, { projectId }, seedsTaskId)
+  const fromProject = project.seedsProductId
+    ? products.find(product => product.id === project.seedsProductId)?.name || 'the project’s product'
+    : ''
+  const shown = products.filter(product => !product.archived || product.id === value)
+  const empty = fromProject ? `Same as project (${fromProject})` : required ? 'Choose a product' : '-'
+  return (
+    <label key={projectId}>
+      Seeds product{required ? ' (required by Seeds)' : ''}
+      <select name="productId" defaultValue={value || ''}>
+        <option value="">{empty}</option>
+        {shown.map(product => (
+          <option key={product.id} value={product.id}>
+            {product.name}
+          </option>
+        ))}
+        {value && !products.some(product => product.id === value) && <option value={value}>No longer in Seeds</option>}
+      </select>
+    </label>
+  )
+}
+
 export function TaskForm({
   canLinkRtm,
   store,
@@ -156,6 +196,7 @@ export function TaskForm({
       qaResult: String(form.get('qaResult') || 'Not Run') as WorkItem['qaResult'],
       parentTaskId: parent?.id,
       seedsTaskId: String(form.get('seedsTaskId') || '') || undefined,
+      productId: parent ? undefined : String(form.get('productId') || '') || undefined,
       subtaskOrder: parent
         ? Math.max(
             -1,
@@ -299,6 +340,7 @@ export function TaskForm({
         </select>
       </label>
       <SeedsTaskField store={store} projectId={parent?.projectId || projectId} inherited={parent?.seedsTaskId} />
+      {!parent && <SeedsProductField store={store} projectId={projectId} />}
       {parent ? (
         <label>
           Assigned to
@@ -522,6 +564,7 @@ export function TaskEditForm({
       source: form.get('source') as WorkItem['source'],
       description: String(form.get('description') || ''),
       seedsTaskId: String(form.get('seedsTaskId') || '') || undefined,
+      productId: parent ? item.productId : String(form.get('productId') || '') || undefined,
     }
     setSaveError('')
     setSaving(true)
@@ -669,6 +712,14 @@ export function TaskEditForm({
           value={item.seedsTaskId}
           inherited={parent?.seedsTaskId}
         />
+        {!parent && (
+          <SeedsProductField
+            store={store}
+            projectId={editProjectId}
+            value={item.productId}
+            seedsTaskId={item.seedsTaskId}
+          />
+        )}
         <label>
           Assigned to
           <select

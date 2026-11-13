@@ -7,7 +7,13 @@ import { randomUUID } from 'node:crypto'
 import { archivedWorkReason, isArchived, stableRecord } from '../../src/features/tasks/lifecycle'
 import { type Assignment, workspaceAccess } from '../../src/shared/access'
 import { roleForSeedsTitle } from '../../src/shared/roles'
-import { type SeedsCounts, type SeedsMatch, type SeedsSnapshot, seedsState } from '../../src/shared/seeds'
+import {
+  type SeedsCounts,
+  type SeedsMatch,
+  type SeedsProject,
+  type SeedsSnapshot,
+  seedsState,
+} from '../../src/shared/seeds'
 
 type Options = {
   now: string
@@ -17,6 +23,8 @@ type Options = {
   waitingOn: string
   /** Whose part of the account sync this is. */
   userId: string
+  /** Seeds assignments of theirs this sync did not read again (a delta sync): they stay as they are. */
+  keep?: Assignment[]
   id?: () => string
 }
 
@@ -62,6 +70,43 @@ function settle(before: any, after: any) {
     })
     .filter(Boolean)
   return { ...draft, items }
+}
+
+/**
+ * The fields Seeds owns on a linked project, copied from Seeds. A deleted project may come with no name: it keeps its
+ * own. Answers whether the name changed.
+ */
+function applyProject(project: any, source: SeedsProject) {
+  const renamed = Boolean(source.name) && project.name !== source.name
+  if (renamed) project.name = source.name
+  if (source.contractNumber) project.contractNumber = source.contractNumber
+  else if (!source.archived) delete project.contractNumber
+  if (source.productId) project.seedsProductId = source.productId
+  else if (!source.archived) delete project.seedsProductId
+  if (source.timeRules) project.seedsTimeRules = source.timeRules
+  else if (!source.archived) delete project.seedsTimeRules
+  if (source.archived) project.seedsArchived = true
+  else delete project.seedsArchived
+  return renamed
+}
+
+/**
+ * Projects already linked here follow Seeds even when nobody here is on them any more: a project completed, closed
+ * or deleted in Seeds is marked closed, and renames, contract numbers, products and time-entry rules follow.
+ */
+export function refreshLinkedProjects(state: any, sources: SeedsProject[]) {
+  const bySeeds = new Map(sources.map(source => [source.id, source]))
+  let changed = false
+  const projects = list(state?.projects).map(project => {
+    const source = project?.seedsId ? bySeeds.get(text(project.seedsId)) : undefined
+    if (!source) return project
+    const next = { ...project }
+    applyProject(next, source)
+    if (stableRecord(next) === stableRecord(project)) return project
+    changed = true
+    return next
+  })
+  return changed ? settle(state, { ...state, projects }) : state
 }
 
 export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Options) {
@@ -131,18 +176,9 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
       counts.created++
       projectBySeeds.set(source.id, project)
     }
-    if (project.name !== source.name) {
-      project.name = source.name
-      counts.renamed++
-    }
+    if (applyProject(project, source)) counts.renamed++
     if (client) project.clientId = client.id
     else delete project.clientId
-    if (source.contractNumber) project.contractNumber = source.contractNumber
-    else delete project.contractNumber
-    if (source.productId) project.seedsProductId = source.productId
-    else delete project.seedsProductId
-    if (source.archived) project.seedsArchived = true
-    else delete project.seedsArchived
   }
 
   // Work under a Seeds project belongs to that project's client: when Seeds moves a project, its tasks follow.
@@ -162,10 +198,19 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
 
   // Seeds tasks (Go Live, Meetings…) are not created here: tasks and subtasks are this app's own, and each can be
   // linked to one of its project's Seeds tasks, so time goes to the right Seeds task later.
-  const tasksByProject = new Map<string, { id: string; name: string; archived?: boolean }[]>()
+  const tasksByProject = new Map<
+    string,
+    { id: string; name: string; productRequired?: boolean; defaultProductId?: string; archived?: boolean }[]
+  >()
   for (const task of snapshot.tasks) {
     const tasks = tasksByProject.get(task.projectId) || []
-    tasks.push({ id: task.id, name: task.name, ...(task.archived ? { archived: true } : {}) })
+    tasks.push({
+      id: task.id,
+      name: task.name,
+      ...(task.productRequired ? { productRequired: true } : {}),
+      ...(task.defaultProductId ? { defaultProductId: task.defaultProductId } : {}),
+      ...(task.archived ? { archived: true } : {}),
+    })
     tasksByProject.set(task.projectId, tasks)
   }
   for (const [seedsId, tasks] of tasksByProject) {
@@ -203,6 +248,11 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
       source: 'seeds',
     })
   }
+  for (const kept of options.keep || [])
+    if (!seen.has(kept.id) && (!kept.projectId || projects.some(project => project.id === kept.projectId))) {
+      seen.add(kept.id)
+      mine.push(kept)
+    }
   counts.assignments = mine.length
 
   // Matches this sync found replace the ones it found last time; others' stay. Linked ones drop out.

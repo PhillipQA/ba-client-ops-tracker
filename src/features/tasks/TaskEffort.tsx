@@ -56,6 +56,8 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [chosenSeedsTask, setChosenSeedsTask] = useState('')
   const seedsTaskId = chosenSeedsTask || (rule ? defaultSeedsTask(rule, subtaskId) : '')
   const forSubtask = rule?.subtasks.find(subtask => subtask.id === subtaskId)
+  // Seeds requires a product for this Seeds task (or its project) and none is picked on the task yet.
+  const productMissing = Boolean(seedsTaskId && rule?.needsProduct?.includes(seedsTaskId))
   const remarks = note
   // Picking a subtask fills in "subtask – task", unless the person has typed their own remarks.
   const chooseSubtask = (id: string) => {
@@ -297,6 +299,11 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                   </select>
                 </label>
               </div>
+              {productMissing && (
+                <p className="effort-message" role="status">
+                  Seeds requires a product for this time. Pick a Seeds product on the task before sending it to Seeds.
+                </p>
+              )}
               <label className="effort-note">
                 Remarks (required, max {MAX_SEEDS_REMARKS_LENGTH} characters)
                 <textarea
@@ -397,6 +404,14 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
 
       {rule && myUnsent.length > 0 && (
         <div className="effort-log-actions">
+          {entries.some(
+            ({ entry }) =>
+              myUnsent.includes(entry.id) && entry.seedsTaskId && rule.needsProduct?.includes(entry.seedsTaskId),
+          ) && (
+            <span className="effort-message" role="status">
+              Some entries need a Seeds product: pick one on the task first.
+            </span>
+          )}
           <SendToSeedsButton
             entryIds={myUnsent}
             onSent={result => {

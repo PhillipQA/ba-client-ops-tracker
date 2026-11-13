@@ -11,6 +11,21 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Seeds: delta sync with `updatedSince`, weekly full sync
+- **Delta sync every 10 minutes** (was a "quick" sync every 30): it asks Seeds only for projects created, changed or deleted since the last change it saw (`GET /projects?updatedSince=`, with 10 minutes of overlap), then reads members and tasks for just those projects. Most deltas are one request. It no longer reads /users, /parents or /statuses; a new parent is read by id.
+- **Full sync once a week** (was daily) and whenever someone clicks *Full sync*: every list and every open project's members, plus the people directory and parent renames. If Seeds ever turns down `updatedSince`, that sync reads everything instead.
+- A delta only replaces access on the projects it read; everyone's other Seeds access stays. Projects **deleted** in Seeds (deletion indicator) are closed here.
+- Linked projects that nobody here is on any more now also follow Seeds: closed, completed or deleted there means closed here (before, they could stay open).
+- Requests are paced for Seeds' **20 requests a minute** (about one every 3 seconds).
+- Projects keep Seeds' **contract number, or its contract reference** when there is no number, and the project's **time-entry requirements and defaults**. Time sent to Seeds uses the project's default task and product when an entry has none, and is stopped with a clear reason when Seeds requires a product the project doesn't name.
+- Members' **email and organizational role** come straight from the project members list.
+
+### Seeds products on tasks, and the contract number on DRFs
+- The sync reads Seeds' **product list** (`GET /products`, `core.products.read`): in every full sync, and in a delta only when a change names a product not known yet. Without the grant, the sync still works with no products.
+- Seeds tasks can **require a product** (as can a Seeds project). Each top-level task under a Seeds project has a **Seeds product** picker, marked *required by Seeds* when it is. Time carries the product picked on the task, else the Seeds project's product, else Seeds' default for that task or project.
+- Time that needs a product and has none is **not sent**: the time panel says so, and *Send to Seeds* lists it with "Pick a Seeds product on the task". Pick one, save the task, and send again.
+- A DRF opened for a task under a Seeds project fills an empty **Contract Number** with the project's Seeds contract number.
+
 ### AI Assistant: several clients, and projects per client
 - The assistant's Client and Project fields are now one **Clients and projects** picker. Type to add a client; add as many as you need (up to 20).
 - Each chosen client lists **its own projects** only. Leave *All projects* ticked to include all of them, or tick the projects you want. Each client is narrowed on its own.

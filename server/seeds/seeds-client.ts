@@ -1,14 +1,27 @@
 /**
- * Reading Seeds over its Open API (docs/seeds-api.md). Read only.
+ * Reading Seeds over its Open API (docs/seeds-api.md). Read only. Seeds allows the app 20 requests a minute, so
+ * requests go one at a time, about 3 seconds apart.
  *
  * Seeds gives one application token per app (from a SEEDS Admin), not one per person. The token lives only in the
  * server's environment (SEEDS_API_TOKEN) and goes out as `Authorization: Bearer <token>`. The address is
- * SEEDS_API_URL, by default https://seeds.iripple.com/api/v1. One read covers the whole account:
+ * SEEDS_API_URL, by default https://seeds.iripple.com/api/v1. Two kinds of read cover the whole account:
  *
+ * Full (weekly, and on request):
  *   GET /users, /parents, /projects        cursor-paged lists (`limit`, `cursor` → `nextCursor`)
  *   GET /clients                           only to find a project's parent when the project names a client instead
- *   GET /projects/{id}/members             who works on each project, and as what
+ *   GET /projects/{id}/members             who works on each open project, with email and organizational role
  *   GET /projects/{id}/tasks               only for projects someone in this app works on
+ *   GET /products                          the product list a task picks from (core.products.read)
+ *
+ * Delta (every sync in between):
+ *   GET /projects?updatedSince=…           only projects created, changed or deleted since the last sync; a change
+ *                                          to a project's members or tasks marks the project updated too
+ *   GET /projects/{id}/members, /tasks     only for those projects
+ *   GET /parents/{id}, /clients/{id}       only for a parent not yet linked here
+ *   GET /products                          only when a change names a product not known here
+ *
+ * Projects carry `updatedAt`, a deletion indicator, the contract number/reference, the product, and the project's
+ * time-entry requirements and defaults.
  *
  * A Seeds **parent** (Think Library, Inc.) is this app's client. A Seeds project (named after a store or a title) is
  * this app's project. Seeds tasks (Go Live, Meetings…) are subtask-level activities: a pick-list on subtasks.
@@ -16,36 +29,49 @@
  * Every answer is `{ data }`; Seeds does not publish the record fields, so names are read leniently (camelCase or
  * snake_case) and the field names seen are reported back so the mapping can be checked after the first sync.
  */
-import type { SeedsSnapshot } from '../../src/shared/seeds'
+import type { SeedsSnapshot, SeedsTimeRules } from '../../src/shared/seeds'
 
 export const DEFAULT_SEEDS_URL = 'https://seeds.iripple.com/api/v1'
 
-export type SeedsFields = Partial<Record<'users' | 'parents' | 'clients' | 'projects' | 'members' | 'tasks', string[]>>
+export type SeedsFields = Partial<
+  Record<'users' | 'parents' | 'clients' | 'projects' | 'members' | 'tasks' | 'products', string[]>
+>
 
 /**
- * A quick sync: members and tasks are read only for projects that are new (not in `known`), that already have
- * someone from this app (`keep`), or that Seeds shows as created or updated since `since`. Without it, every open
- * project is read (a full sync).
+ * A delta sync: only the projects Seeds changed since `since` (`GET /projects?updatedSince=`). Seeds marks a project
+ * updated when its members or tasks change, and lists deleted ones with a deletion indicator, so these are the only
+ * projects whose members and tasks can have changed. `parents` are the Seeds parents already linked here: a changed
+ * project under another parent has its parent read by id. Without a plan, everything is read (a full sync).
  */
-export type SeedsQuickPlan = { since: string; known: Set<string>; keep: Set<string> }
+export type SeedsDeltaPlan = {
+  since: string
+  parents?: Set<string>
+  /** Products already known here: the product list is read again only when a change names one that is not. */
+  products?: Set<string>
+}
 
 export type SeedsRead = {
   snapshot: SeedsSnapshot
   fields: SeedsFields
   skipped?: string[]
-  /** Every Seeds project id seen, for the next quick sync. */
+  /** `delta`: the snapshot holds only `projectIds`, the projects Seeds changed; everything else is as it was. */
+  mode?: 'full' | 'delta'
+  /** The Seeds projects this read covers: every one seen (full) or every one changed (delta). */
   projectIds?: string[]
   /** Projects whose members were read this time. */
   checked?: number
+  /** The latest `updatedAt` Seeds sent, by Seeds' clock: where the next delta sync starts. */
+  watermark?: string
 }
 
 export interface SeedsSource {
   /**
    * Everything one account sync needs. Tasks are read only for projects where someone in `emails` is a member.
-   * `linked` are the Seeds ids of this app's projects that are still open: one that Seeds no longer lists is asked
-   * for by id, to learn whether it was completed or closed there.
+   * `linked` are the Seeds ids of this app's projects that are still open: in a full sync, one that Seeds no longer
+   * lists is asked for by id, to learn whether it was completed or closed there. If Seeds turns down `updatedSince`,
+   * a delta read falls back to a full one (and says so in `mode`).
    */
-  read(emails: Set<string>, quick?: SeedsQuickPlan, linked?: Set<string>): Promise<SeedsRead>
+  read(emails: Set<string>, delta?: SeedsDeltaPlan, linked?: Set<string>): Promise<SeedsRead>
 }
 
 export class SeedsError extends Error {
@@ -62,8 +88,8 @@ export class SeedsError extends Error {
 const PAGE_SIZE = 100
 const MAX_PAGES = 200
 const MAX_RECORDS = 20000
-/** How many linked projects missing from Seeds' list a quick sync asks for by id. */
-const MISSING_PER_QUICK_SYNC = 25
+/** Seeds allows this app 20 requests a minute: one every 3 seconds, with a little room. */
+export const SEEDS_GAP_MS = 3100
 const text = (value: unknown) => (value == null ? '' : String(value).trim())
 const pick = (record: any, ...keys: string[]) => {
   for (const key of keys) {
@@ -86,7 +112,18 @@ const idOf = (record: any, ...keys: string[]) => {
 /** A Seeds id that can go in a path: a whole number of at least 1. */
 export const pathId = (id: string) => /^[1-9]\d*$/.test(id)
 
+/** Seeds' deletion indicator, under whichever name it uses: the project is gone in Seeds. */
+export const deletedInSeeds = (record: any) =>
+  record?.deleted === true ||
+  record?.isDeleted === true ||
+  record?.is_deleted === true ||
+  record?.deletedAt != null ||
+  record?.deleted_at != null ||
+  record?.deletedOn != null ||
+  /^(deleted|removed)$/i.test(text(record?.action ?? record?.changeType ?? record?.change_type ?? record?.operation))
+
 const archived = (record: any) =>
+  deletedInSeeds(record) ||
   record?.archived === true ||
   record?.isArchived === true ||
   record?.is_archived === true ||
@@ -148,10 +185,101 @@ const fullName = (record: any) =>
 const emailOf = (record: any) =>
   text(pick(record, 'email', 'emailAddress', 'email_address', 'workEmail', 'work_email', 'user.email')).toLowerCase()
 
-/** The record fields Seeds sent, names only, so the mapping can be checked. */
+/** The record fields Seeds sent, names only (one level into objects, as `parent.name`), to check the mapping. */
 const fieldNames = (rows: any[]) => [
-  ...new Set(rows.slice(0, 5).flatMap(row => (row && typeof row === 'object' ? Object.keys(row) : []))),
+  ...new Set(
+    rows
+      .slice(0, 5)
+      .flatMap(row =>
+        row && typeof row === 'object'
+          ? Object.entries(row).flatMap(([key, value]) =>
+              value && typeof value === 'object' && !Array.isArray(value)
+                ? [key, ...Object.keys(value).map(inner => `${key}.${inner}`)]
+                : [key],
+            )
+          : [],
+      ),
+  ),
 ]
+
+/** Yes, no, or not said: Seeds may send true/false, 1/0, "required"/"optional"… */
+const yesNo = (value: unknown): boolean | undefined => {
+  if (typeof value === 'boolean') return value
+  if (value === 1 || value === 0) return value === 1
+  const said = text(value).toLowerCase()
+  if (/^(true|yes|y|1|required|mandatory)$/.test(said)) return true
+  if (/^(false|no|n|0|optional|none)$/.test(said)) return false
+  return undefined
+}
+/** Each name under each of the places Seeds may group time-entry settings. */
+const under = (groups: string[], names: string[]) => groups.flatMap(group => names.map(name => `${group}${name}`))
+const RULE_GROUPS = [
+  '',
+  'timeEntry.',
+  'time_entry.',
+  'timeEntryRequirements.',
+  'time_entry_requirements.',
+  'timeEntryRules.',
+  'timeEntrySettings.',
+  'requirements.',
+]
+const DEFAULT_GROUPS = ['timeEntryDefaults.', 'time_entry_defaults.', 'timeEntry.', 'time_entry.', 'defaults.']
+const ruleOf = (record: any, names: string[]) => {
+  for (const key of under(RULE_GROUPS, names)) {
+    const value = yesNo(key.split('.').reduce((at: any, part) => (at == null ? undefined : at[part]), record))
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+const defaultIdOf = (record: any, thing: 'product' | 'task') => {
+  const Thing = thing === 'product' ? 'Product' : 'Task'
+  return idOf(
+    record,
+    `default${Thing}Id`,
+    `default_${thing}_id`,
+    `default${Thing}.id`,
+    ...under(DEFAULT_GROUPS, [`${thing}Id`, `${thing}_id`, `${thing}.id`, `default${Thing}Id`, `default_${thing}_id`]),
+  )
+}
+
+/** What a time entry on this project must carry, and what it starts with, when Seeds says. */
+export function timeRulesOf(record: any): SeedsTimeRules | undefined {
+  const rules: SeedsTimeRules = {}
+  const product = ruleOf(record, [
+    'productRequired',
+    'product_required',
+    'requiresProduct',
+    'requires_product',
+    'requireProduct',
+    'isProductRequired',
+    'is_product_required',
+  ])
+  const task = ruleOf(record, [
+    'taskRequired',
+    'task_required',
+    'requiresTask',
+    'requires_task',
+    'requireTask',
+    'isTaskRequired',
+    'is_task_required',
+  ])
+  const remarks = ruleOf(record, [
+    'remarksRequired',
+    'remarks_required',
+    'requiresRemarks',
+    'requires_remarks',
+    'requireRemarks',
+    'isRemarksRequired',
+  ])
+  if (product !== undefined) rules.productRequired = product
+  if (task !== undefined) rules.taskRequired = task
+  if (remarks !== undefined) rules.remarksRequired = remarks
+  const defaultProductId = defaultIdOf(record, 'product')
+  const defaultTaskId = defaultIdOf(record, 'task')
+  if (defaultProductId) rules.defaultProductId = defaultProductId
+  if (defaultTaskId) rules.defaultTaskId = defaultTaskId
+  return Object.keys(rules).length ? rules : undefined
+}
 
 export const parseSeeds = {
   person: (record: any) => {
@@ -196,33 +324,57 @@ export const parseSeeds = {
     parentId: text(pick(record, 'parentId', 'parent_id', 'parent.id')),
   }),
   /** `clientId` here is the Seeds parent (this app's client); `seedsClientId` is Seeds' own client, if any. */
-  project: (record: any) => ({
-    id: idOf(record, 'projectId', 'project_id', 'id'),
-    clientId: idOf(record, 'parentId', 'parent_id', 'parent.id'),
-    seedsClientId: idOf(record, 'clientId', 'client_id', 'client.id'),
-    name: text(pick(record, 'name', 'projectName', 'project_name', 'title')),
-    contractNumber: text(
-      pick(
-        record,
-        'contractNumber',
-        'contract_number',
-        'contractNo',
-        'contract_no',
-        'contract.contractNumber',
-        'contract.number',
-        'contract.contractNo',
+  project: (record: any) => {
+    const timeRules = timeRulesOf(record)
+    const parentName = text(pick(record, 'parent.name', 'parentName', 'parent_name', 'parent.parentName'))
+    return {
+      id: idOf(record, 'projectId', 'project_id', 'id'),
+      clientId: idOf(record, 'parentId', 'parent_id', 'parent.id'),
+      seedsClientId: idOf(record, 'clientId', 'client_id', 'client.id'),
+      name: text(pick(record, 'name', 'projectName', 'project_name', 'title')),
+      // The contract number, or Seeds' contract reference when a project has no number.
+      contractNumber: text(
+        pick(
+          record,
+          'contractNumber',
+          'contract_number',
+          'contractNo',
+          'contract_no',
+          'contract.contractNumber',
+          'contract.number',
+          'contract.contractNo',
+          'contractReference',
+          'contract_reference',
+          'contractRef',
+          'contract_ref',
+          'contract.reference',
+          'contract.referenceNumber',
+        ),
       ),
-    ),
-    ...(text(pick(record, 'productId', 'product_id', 'product.id'))
-      ? { productId: text(pick(record, 'productId', 'product_id', 'product.id')) }
-      : {}),
-    ...(archived(record) ? { archived: true } : {}),
-    ...(changedAt(record) ? { changedAt: changedAt(record) } : {}),
-  }),
-  task: (record: any, projectId: string) => ({
-    id: idOf(record, 'taskId', 'task_id', 'id'),
-    projectId,
-    name: text(pick(record, 'name', 'taskName', 'task_name', 'title', 'description')),
+      ...(text(pick(record, 'productId', 'product_id', 'product.id'))
+        ? { productId: text(pick(record, 'productId', 'product_id', 'product.id')) }
+        : {}),
+      ...(timeRules ? { timeRules } : {}),
+      ...(parentName ? { parentName } : {}),
+      ...(archived(record) ? { archived: true } : {}),
+      ...(changedAt(record) ? { changedAt: changedAt(record) } : {}),
+    }
+  },
+  task: (record: any, projectId: string) => {
+    const rules = timeRulesOf(record)
+    return {
+      id: idOf(record, 'taskId', 'task_id', 'id'),
+      projectId,
+      name: text(pick(record, 'name', 'taskName', 'task_name', 'title', 'description')),
+      ...(rules?.productRequired ? { productRequired: true } : {}),
+      ...(rules?.defaultProductId ? { defaultProductId: rules.defaultProductId } : {}),
+      ...(archived(record) ? { archived: true } : {}),
+    }
+  },
+  /** A Seeds product (GET /products). */
+  product: (record: any) => ({
+    id: idOf(record, 'productId', 'product_id', 'id'),
+    name: text(pick(record, 'name', 'productName', 'product_name', 'title', 'description', 'code')),
     ...(archived(record) ? { archived: true } : {}),
   }),
   /** A member names the person by user id (or carries their email) and their role on the project. */
@@ -238,6 +390,14 @@ export const parseSeeds = {
         'role.name',
         'projectRole',
         'project_role',
+        // Seeds members carry the person's organizational role (no separate project role).
+        'organizationalRole',
+        'organizational_role',
+        'organizationalRole.name',
+        'organizationRole',
+        'organization_role',
+        'orgRole',
+        'org_role',
         'position',
         'designation',
         'title',
@@ -289,6 +449,12 @@ function page(body: any) {
   return { rows, next }
 }
 
+/** The latest change time among Seeds' records, by Seeds' clock. */
+const latest = (projects: { changedAt?: string }[]) => {
+  const times = projects.map(project => Date.parse(project.changedAt || '')).filter(Number.isFinite)
+  return times.length ? new Date(Math.max(...times)).toISOString() : undefined
+}
+
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 /** Where a sync is, for the Seeds card: which step, and how far through it. */
@@ -318,7 +484,7 @@ export function httpSeedsSource(
   const base = cleanSeedsBaseUrl(baseUrl)
   const sleep = options.sleep || wait
   const retries = options.retries ?? 6
-  let gap = options.gapMs ?? 400
+  let gap = options.gapMs ?? SEEDS_GAP_MS
   let lastStart = 0
   const progress = options.onProgress || (() => {})
 
@@ -342,7 +508,7 @@ export function httpSeedsSource(
       if (response.status === 429 && attempt < retries) {
         const seconds = Number(response.headers.get('retry-after'))
         const backoff = Math.min(5000 * 2 ** attempt, 60000)
-        gap = Math.min(gap * 2 || 500, 3000)
+        gap = Math.min(Math.max(gap * 2, 500), 6000)
         await sleep(Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, 120000) : backoff)
         continue
       }
@@ -360,7 +526,7 @@ export function httpSeedsSource(
         throw new SeedsError(`The Seeds token is not allowed to read ${what}.${detail} Ask a SEEDS Admin.`, 502)
       if (response.status === 429)
         throw new SeedsError(
-          'Seeds kept saying the app reads too fast, even after slowing down. The next sync (in 30 minutes) tries again; ask the SEEDS Admin about the app’s rate limit if it keeps happening.',
+          'Seeds kept saying the app reads too fast, even after slowing down. The next sync (in 10 minutes) tries again; ask the SEEDS Admin about the app’s rate limit if it keeps happening.',
         )
       throw new SeedsError(`Seeds answered ${response.status} for ${what}.${detail}`)
     }
@@ -376,11 +542,11 @@ export function httpSeedsSource(
     }
   }
 
-  async function readAll(path: string, what: string) {
+  async function readAll(path: string, what: string, query: Record<string, string> = {}) {
     const records: any[] = []
     let cursor = ''
     for (let count = 0; count < MAX_PAGES; count++) {
-      const body = await get(path, what, { limit: String(PAGE_SIZE), ...(cursor ? { cursor } : {}) })
+      const body = await get(path, what, { limit: String(PAGE_SIZE), ...query, ...(cursor ? { cursor } : {}) })
       const { rows, next } = page(body)
       if (!rows) throw new SeedsError(`Seeds sent an unexpected answer for ${what}.`)
       records.push(...rows)
@@ -417,10 +583,10 @@ export function httpSeedsSource(
     }
   }
 
-  /** One project by id, or nothing when Seeds does not have it or will not show it. */
-  async function readProject(id: string) {
+  /** One record by id (a project, parent or client), or nothing when Seeds does not have it or will not show it. */
+  async function readRecord(path: string, what: string) {
     try {
-      const body = await get(`/projects/${encodeURIComponent(id)}`, 'project')
+      const body = await get(path, what)
       const record = body?.data ?? body
       return record && typeof record === 'object' && !Array.isArray(record) ? record : null
     } catch (error) {
@@ -428,16 +594,21 @@ export function httpSeedsSource(
       throw error
     }
   }
+  const readProject = (id: string) => readRecord(`/projects/${encodeURIComponent(id)}`, 'project')
 
   return {
-    async read(emails, quick, linked) {
+    async read(emails, delta, linked) {
       // The field names Seeds sent so far, kept on a failure too, so the mapping can be checked either way.
       const fields: SeedsFields = {}
       const note = (key: keyof SeedsFields, rows: any[]) => {
         if (rows.length) fields[key] = fieldNames(rows)
       }
       try {
-        return await readEverything(emails, fields, note, quick, linked)
+        if (delta && Number.isFinite(Date.parse(delta.since))) {
+          const changes = await readChanges(emails, fields, note, delta)
+          if (changes) return changes
+        }
+        return await readEverything(emails, fields, note, linked)
       } catch (error) {
         if (error instanceof SeedsError) error.fields = fields
         throw error
@@ -445,13 +616,151 @@ export function httpSeedsSource(
     },
   }
 
+  /** Members, then tasks for projects someone in `emails` is on: what both kinds of sync read per project. */
+  async function readMembersAndTasks<Project extends { id: string }>(
+    projects: Project[],
+    emails: Set<string>,
+    people: { emailById: Map<string, string>; titleById: Map<string, string> },
+    note: (key: keyof SeedsFields, rows: any[]) => void,
+    skipped: string[],
+  ) {
+    const rawMembers: any[] = []
+    const membersByProject: { project: Project; members: ReturnType<typeof parseSeeds.member>[] }[] = []
+    for (const [index, project] of projects.entries()) {
+      progress({ step: 'members', done: index, total: projects.length })
+      const rows = await readForProject(project.id, 'members', skipped)
+      if (!rows) continue
+      if (rawMembers.length < 5) note('members', [...rawMembers, ...rows.slice(0, 5)])
+      rawMembers.push(...rows.slice(0, 5))
+      membersByProject.push({ project, members: rows.map(parseSeeds.member) })
+    }
+    const assignments: SeedsSnapshot['assignments'] = []
+    const wantedProjects: typeof projects = []
+    for (const { project, members } of membersByProject) {
+      let wanted = false
+      for (const member of members) {
+        // Seeds members carry their email; older answers gave only a user id, found in /users.
+        const email = member.email || people.emailById.get(member.personId) || ''
+        if (!email || !emails.has(email)) continue
+        wanted = true
+        // No role on the member: fall back to the person's title, then "Member" (map it in Settings › Roles).
+        const role = member.role || people.titleById.get(member.personId) || 'Member'
+        assignments.push({ personId: member.personId, email, role, projectId: project.id })
+      }
+      if (wanted) wantedProjects.push(project)
+    }
+
+    const rawTasks: any[] = []
+    const taskLists: ReturnType<typeof parseSeeds.task>[][] = []
+    for (const [index, project] of wantedProjects.entries()) {
+      progress({ step: 'tasks', done: index, total: wantedProjects.length })
+      const rows = await readForProject(project.id, 'tasks', skipped)
+      if (!rows) continue
+      rawTasks.push(...rows.slice(0, 5))
+      taskLists.push(rows.map(row => parseSeeds.task(row, project.id)))
+    }
+    return {
+      assignments,
+      tasks: taskLists.flat().filter(task => task.id && task.name),
+      checked: membersByProject.length,
+      rawMembers,
+      rawTasks,
+    }
+  }
+
+  /**
+   * A delta read: `GET /projects?updatedSince=` gives the projects Seeds created, changed (including their members
+   * or tasks) or deleted since then. Only those are read further; /users, /parents and /statuses are not read at all
+   * (members carry email and role; projects carry status, contract and product). Answers null when Seeds turns down
+   * `updatedSince`, so the caller reads everything instead.
+   */
+  async function readChanges(
+    emails: Set<string>,
+    fields: SeedsFields,
+    note: (key: keyof SeedsFields, rows: any[]) => void,
+    delta: SeedsDeltaPlan,
+  ): Promise<SeedsRead | null> {
+    progress({ step: 'lists', done: 0, total: 1 })
+    let rawProjects: any[]
+    try {
+      rawProjects = await readAll('/projects', 'projects', { updatedSince: new Date(delta.since).toISOString() })
+    } catch (error) {
+      if (error instanceof SeedsError && /answered (400|422)/.test(error.message)) return null
+      throw error
+    }
+    note('projects', rawProjects)
+    progress({ step: 'lists', done: 1, total: 1 })
+    // A deleted project may come back with little more than its id: keep it, so it is closed here.
+    const parsed = rawProjects.map(parseProject).filter(project => project.id && (project.name || project.archived))
+
+    // Parents of changed projects: named on the project, already linked here, or read by id (once each).
+    const clients = new Map<string, { id: string; name: string; archived?: boolean }>()
+    for (const project of parsed)
+      if (project.clientId && project.parentName)
+        clients.set(project.clientId, { id: project.clientId, name: project.parentName })
+    const parentOfClient = new Map<string, string>()
+    for (const project of parsed) {
+      if (project.clientId || !project.seedsClientId || !pathId(project.seedsClientId)) continue
+      if (parentOfClient.has(project.seedsClientId)) continue
+      const record = await readRecord(`/clients/${encodeURIComponent(project.seedsClientId)}`, 'client')
+      parentOfClient.set(project.seedsClientId, record ? parseSeeds.client(record).parentId : '')
+    }
+    const projects = parsed.map(({ seedsClientId, parentName: _name, ...project }) => ({
+      ...project,
+      clientId: project.clientId || parentOfClient.get(seedsClientId) || '',
+    }))
+    const wanted = new Set(
+      projects
+        .filter(project => !project.archived && project.clientId)
+        .map(project => project.clientId)
+        .filter(id => !clients.has(id) && !delta.parents?.has(id) && pathId(id)),
+    )
+    for (const id of wanted) {
+      const record = await readRecord(`/parents/${encodeURIComponent(id)}`, 'parent')
+      const parent = record ? parseSeeds.parent(record) : null
+      if (parent?.id && parent.name) clients.set(parent.id, parent)
+    }
+
+    const skipped: string[] = []
+    const open = projects.filter(project => !project.archived)
+    const read = await readMembersAndTasks(open, emails, { emailById: new Map(), titleById: new Map() }, note, skipped)
+    // A change that names a product not known here (on the project, its defaults or a task): read the list again.
+    const named = [
+      ...projects.flatMap(project => [project.productId, project.timeRules?.defaultProductId]),
+      ...read.tasks.map(task => task.defaultProductId),
+    ].filter((id): id is string => Boolean(id))
+    const products =
+      !delta.products?.size || named.some(id => !delta.products?.has(id))
+        ? (await readAllIfAllowed('/products', 'products')).map(parseSeeds.product)
+        : undefined
+    return {
+      mode: 'delta',
+      snapshot: {
+        people: [],
+        clients: [...clients.values()],
+        projects: projects.map(({ changedAt: _changed, ...project }) => project),
+        tasks: read.tasks,
+        assignments: read.assignments,
+        ...(products ? { products: products.filter(product => product.id && product.name) } : {}),
+      },
+      projectIds: projects.map(project => project.id),
+      checked: read.checked,
+      watermark: latest(projects),
+      fields: {
+        ...fields,
+        ...(read.rawMembers.length ? { members: fieldNames(read.rawMembers) } : {}),
+        ...(read.rawTasks.length ? { tasks: fieldNames(read.rawTasks) } : {}),
+      },
+      skipped: [...new Set(skipped)],
+    }
+  }
+
   async function readEverything(
     emails: Set<string>,
     fields: SeedsFields,
     note: (key: keyof SeedsFields, rows: any[]) => void,
-    quick?: SeedsQuickPlan,
     linked?: Set<string>,
-  ) {
+  ): Promise<SeedsRead> {
     progress({ step: 'lists', done: 0, total: 3 })
     const rawUsers = await readAll('/users', 'users')
     note('users', rawUsers)
@@ -482,11 +791,9 @@ export function httpSeedsSource(
     }
     const parsed = rawProjects.map(withStatus).filter(project => project.id && project.name)
     // Seeds may leave finished projects out of its list. A project linked here that is missing from it is asked for
-    // by id, so one completed or closed in Seeds is marked closed here instead of staying open. A quick sync checks
-    // a few; the daily full sync checks them all.
+    // by id, so one completed or closed in Seeds is marked closed here instead of staying open.
     const listed = new Set(parsed.map(project => project.id))
-    const missing = [...(linked || [])].filter(id => pathId(id) && !listed.has(id))
-    for (const id of quick ? missing.slice(0, MISSING_PER_QUICK_SYNC) : missing) {
+    for (const id of [...(linked || [])].filter(id => pathId(id) && !listed.has(id))) {
       const record = await readProject(id)
       const project = record ? withStatus(record) : null
       if (project?.archived && project.id === id && project.name) parsed.push(project)
@@ -498,80 +805,45 @@ export function httpSeedsSource(
     const parentOfClient = new Map(
       rawClients.map(parseSeeds.client).map(client => [client.id, client.parentId] as const),
     )
-    const projects = parsed.map(({ seedsClientId, ...project }) => ({
+    const projects = parsed.map(({ seedsClientId, parentName: _name, ...project }) => ({
       ...project,
       clientId: project.clientId || parentOfClient.get(seedsClientId) || '',
     }))
     const clients = rawParents.map(parseSeeds.parent).filter(client => client.id && client.name)
+    // Seeds' product list (core.products.read): what tasks pick a product from. Without the grant, none.
+    const rawProducts = await readAllIfAllowed('/products', 'products')
+    note('products', rawProducts)
 
-    const rawMembers: any[] = []
-    // A quick sync reads members only where something may have changed; a full one reads every open project.
-    const since = quick ? Date.parse(quick.since) : Number.NaN
-    const open = projects.filter(
-      project =>
-        !project.archived &&
-        (!quick ||
-          !quick.known.has(project.id) ||
-          quick.keep.has(project.id) ||
-          !Number.isFinite(since) ||
-          Boolean(project.changedAt && Date.parse(project.changedAt) >= since)),
-    )
-    const membersByProject: {
-      project: (typeof projects)[number]
-      members: ReturnType<typeof parseSeeds.member>[]
-    }[] = []
     const skipped: string[] = []
-    for (const [index, project] of open.entries()) {
-      progress({ step: 'members', done: index, total: open.length })
-      const rows = await readForProject(project.id, 'members', skipped)
-      if (!rows) continue
-      if (rawMembers.length < 5) note('members', [...rawMembers, ...rows.slice(0, 5)])
-      rawMembers.push(...rows.slice(0, 5))
-      membersByProject.push({ project, members: rows.map(parseSeeds.member) })
-    }
-    const assignments: SeedsSnapshot['assignments'] = []
-    const wantedProjects: typeof projects = []
-    for (const { project, members } of membersByProject) {
-      let wanted = false
-      for (const member of members) {
-        const email = member.email || emailById.get(member.personId) || ''
-        if (!email || !emails.has(email)) continue
-        wanted = true
-        // No role on the project: fall back to the person's title, then "Member" (map it in Settings › Roles).
-        const role = member.role || titleById.get(member.personId) || 'Member'
-        assignments.push({ personId: member.personId, email, role, projectId: project.id })
-      }
-      if (wanted) wantedProjects.push(project)
-    }
-
-    const rawTasks: any[] = []
-    const taskLists: ReturnType<typeof parseSeeds.task>[][] = []
-    for (const [index, project] of wantedProjects.entries()) {
-      progress({ step: 'tasks', done: index, total: wantedProjects.length })
-      const rows = await readForProject(project.id, 'tasks', skipped)
-      if (!rows) continue
-      rawTasks.push(...rows.slice(0, 5))
-      taskLists.push(rows.map(row => parseSeeds.task(row, project.id)))
-    }
-    const tasks = taskLists.flat().filter(task => task.id && task.name)
-
+    const read = await readMembersAndTasks(
+      projects.filter(project => !project.archived),
+      emails,
+      { emailById, titleById },
+      note,
+      skipped,
+    )
     return {
+      mode: 'full',
       snapshot: {
         people,
         clients,
         projects: projects.map(({ changedAt: _changed, ...project }) => project),
-        tasks,
-        assignments,
+        tasks: read.tasks,
+        assignments: read.assignments,
+        products: rawProducts.map(parseSeeds.product).filter(product => product.id && product.name),
       },
       projectIds: projects.map(project => project.id),
-      checked: membersByProject.length,
+      checked: read.checked,
+      watermark: latest(projects),
       fields: {
         ...fields,
         ...(rawClients.length ? { clients: fieldNames(rawClients) } : {}),
-        members: fieldNames(rawMembers),
-        tasks: fieldNames(rawTasks),
+        members: fieldNames(read.rawMembers),
+        tasks: fieldNames(read.rawTasks),
       },
       skipped: [...new Set(skipped)],
     }
   }
 }
+
+const parseProject = (record: any) => parseSeeds.project(record)
