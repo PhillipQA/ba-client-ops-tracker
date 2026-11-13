@@ -8,6 +8,7 @@ import {
   validateSourceAnalysisInput,
 } from './fsd-source-analysis'
 import type { Express, RequestHandler } from 'express'
+import { documentGuard } from './document-access'
 import { readFile } from 'node:fs/promises'
 import rateLimit from 'express-rate-limit'
 import {
@@ -311,14 +312,7 @@ export function registerFsdRoutes(
     logoPath: string
   },
 ) {
-  const guard: RequestHandler = (req, res, next) => {
-    const user = (req as any).authUser
-    if (!user.modules?.includes('documents') || (req.method === 'POST' && user.role === 'Viewer'))
-      return void res.status(403).json({ error: 'Document Creation access with write permission is required.' })
-    res.setHeader('Cache-Control', 'no-store')
-    next()
-  }
-  const scope = [deps.requireAuth, deps.requireTenant, guard]
+  const scope = [deps.requireAuth, deps.requireTenant, documentGuard]
   const active = (req: any) => deps.aiAgents.active(req.authUser.organizationId, 'document')
   app.get('/api/documents/fsd/provider', ...scope, async (req, res) => {
     try {

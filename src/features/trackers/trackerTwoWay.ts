@@ -4,7 +4,7 @@
  * single cells, and adds rows at the bottom of the tab when they get a task name.
  */
 import { isEmptyCell, linkToInput, type Cell, type TrackerColumn } from './trackerModel'
-import { sheetRowKeys } from './trackerSync'
+import { headerKey, sheetRowKeys } from './trackerSync'
 import { sheetTextFor } from './trackerAutoDone'
 
 export type Person = { id: string; name: string }
@@ -54,8 +54,6 @@ export function sheetTextOf(
       return { text: String(value), input: 'RAW' }
   }
 }
-
-const headerKey = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase()
 
 /** A cell edit that could not be written because the Sheet changed since the last sync. */
 export type Conflict = { columnId: string; name: string; header: string; sheet: string; mine: string }

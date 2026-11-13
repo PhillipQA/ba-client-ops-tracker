@@ -12,6 +12,7 @@
  * them, so renames follow and nothing is matched twice.
  */
 import { rolesFor, scopeFor, type SeedsRole } from './access'
+import { asList as list } from './lists'
 
 export interface SeedsPerson {
   id: string
@@ -171,7 +172,6 @@ export interface SeedsStatus {
   people?: (SeedsUserSync & { userId: string })[]
 }
 
-const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 const text = (value: unknown) => (value == null ? '' : String(value))
 
 function userSync(raw: any): SeedsUserSync {

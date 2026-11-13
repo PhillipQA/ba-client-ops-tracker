@@ -1,6 +1,13 @@
 import { useMemo, useState, type RefObject } from 'react'
 import { ExternalLink, Plus, Search, Unlink } from 'lucide-react'
-import { taskFieldColumn, trackerProjectIds, type Tracker, type TrackerColumn, type TrackerRow } from './trackerModel'
+import {
+  taskFieldColumn,
+  trackerClientIds,
+  trackerProjectIds,
+  type Tracker,
+  type TrackerColumn,
+  type TrackerRow,
+} from './trackerModel'
 import { projectForContract } from './trackerProjects'
 import { cellText } from './trackerTasks'
 import { Dialog, Pill, Popover, plural } from './trackerUi'
@@ -49,8 +56,6 @@ export type WorkTools = {
   onOpenTask?: (taskId: string) => void
 }
 
-export const trackerClients = (tracker: Tracker) =>
-  tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : []
 const doneTone = (closed: boolean) => (closed ? ('green' as const) : ('gray' as const))
 
 /** Seeds projects (once Seeds is on, new work goes there by default), and whether there are any. */
@@ -79,7 +84,7 @@ function useTaskContext(tracker: Tracker, tools: WorkTools, row?: Pick<TrackerRo
   const [target, setTarget] = useState<'seeds' | 'before'>(
     fromSeeds.length && !(byContract && !byContract.seedsId) ? 'seeds' : 'before',
   )
-  const own = trackerClients(tracker).filter(id => tools.clients.some(client => client.id === id))
+  const own = trackerClientIds(tracker).filter(id => tools.clients.some(client => client.id === id))
   const choices = own.length ? tools.clients.filter(client => own.includes(client.id)) : tools.clients
   const [clientId, setClientId] = useState(
     byContract && !byContract.seedsId && byContract.clientId && own.includes(byContract.clientId)
@@ -286,7 +291,7 @@ export function TrackerWorkPicker(props: PickerProps) {
   const [pickedSeedsTask, setPickedSeedsTask] = useState<string | null>(null)
   const subtaskSeedsTask = pickedSeedsTask ?? (seedsTaskNamed(subtaskSeedsTasks, title) || '')
   const current = mode === 'task' ? task : props.current ? byId.get(props.current) : undefined
-  const own = trackerClients(tracker)
+  const own = trackerClientIds(tracker)
   const clientName = (id?: string) => tools.clients.find(client => client.id === id)?.name || ''
 
   const options = useMemo(() => {

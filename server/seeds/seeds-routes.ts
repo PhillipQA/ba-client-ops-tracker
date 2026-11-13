@@ -34,6 +34,7 @@ import {
 import { decideSeedsMatch, planSeedsSync, refreshLinkedProjects, SEEDS_ACTOR } from './seeds-sync'
 import { checkGoogleIdToken, postSeedsTime, seedsTimeBody, seedsTimeKey } from './seeds-time'
 import { type TimeEntry, unsentToSeeds } from '../../src/features/tasks/effort'
+import { asList as list } from '../../src/shared/lists'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
 type User = { id: string; role: string; modules: string[]; organizationId: string }
@@ -389,7 +390,6 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
   const requireAdministrator = (user: User) => {
     if (!administrator(user)) throw new SeedsError('Administrator access with Settings is required.', 403)
   }
-  const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 
   app.get(
     '/api/seeds/people',

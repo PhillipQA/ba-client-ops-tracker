@@ -9,6 +9,7 @@
 import type { TimeEntry } from '../../src/features/tasks/effort'
 import { seedsProductFor } from '../../src/shared/seeds'
 import { SeedsError } from './seeds-client'
+import { asList as list } from '../../src/shared/lists'
 
 export type SeedsTimeBody = {
   postDate: string
@@ -21,7 +22,6 @@ export type SeedsTimeBody = {
   remarks?: string
 }
 
-const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 const seedsNumber = (value: unknown) => {
   const number = Number(value)
   return Number.isSafeInteger(number) && number >= 1 ? number : null

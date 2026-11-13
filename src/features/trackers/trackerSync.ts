@@ -77,7 +77,8 @@ export function parentKeyOf(key: string): string | null {
 }
 
 /** Headers as people see them, cleaned for matching. */
-const headerKey = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase()
+/** A Sheet header compared without case or extra spaces. */
+export const headerKey = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase()
 
 export type SyncRow = {
   id: string

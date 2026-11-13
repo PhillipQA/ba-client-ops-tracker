@@ -1023,6 +1023,9 @@ export const TRACKER_CLIENTS = 20
 /** How many projects one tracker can have (each with its own contract, usually under one client). */
 export const TRACKER_PROJECTS = 50
 /** A tracker's projects, the default first. */
+/** A tracker's clients: clientIds, or the single clientId of older trackers. */
+export const trackerClientIds = (tracker: Pick<Tracker, 'clientId' | 'clientIds'>) =>
+  tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : []
 export const trackerProjectIds = (tracker: Pick<Tracker, 'projectId' | 'projectIds'>) =>
   tracker.projectIds?.length ? tracker.projectIds : tracker.projectId ? [tracker.projectId] : []
 export const splitClientIds = (value: unknown) => [

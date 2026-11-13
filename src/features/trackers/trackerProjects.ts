@@ -4,7 +4,7 @@
  * Contract number column (for example "SLSS #"), else to the tracker's default (first) project.
  */
 import { isClosedProject } from '../tasks/lifecycle'
-import { taskFieldColumn, trackerProjectIds, type Tracker, type TrackerRow } from './trackerModel'
+import { taskFieldColumn, trackerClientIds, trackerProjectIds, type Tracker, type TrackerRow } from './trackerModel'
 import { cellText } from './trackerTasks'
 
 export type ContractProject = {
@@ -21,9 +21,6 @@ export const contractKey = (value: unknown) =>
   String(value ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
-
-const clientsOf = (tracker: Pick<Tracker, 'clientId' | 'clientIds'>) =>
-  tracker.clientIds?.length ? tracker.clientIds : tracker.clientId ? [tracker.clientId] : []
 
 /**
  * The project a contract number names: one of the tracker's projects first, then an open project of one of its
@@ -44,7 +41,7 @@ export function projectForContract<P extends ContractProject>(
   // New work only: a project completed in Seeds stays on the tracker but takes no new tasks.
   const mine = matches(projects.filter(project => own.has(project.id) && !isClosedProject(project)))
   if (mine) return mine
-  const clients = new Set(clientsOf(tracker))
+  const clients = new Set(trackerClientIds(tracker))
   return matches(
     projects.filter(project => project.clientId && clients.has(project.clientId) && !isClosedProject(project)),
   )
@@ -72,7 +69,7 @@ export function rowPlace<P extends ContractProject>(
   const project = projects.find(item => item.id === projectId)
   return {
     projectId,
-    clientId: task?.clientId || project?.clientId || clientsOf(tracker)[0] || '',
+    clientId: task?.clientId || project?.clientId || trackerClientIds(tracker)[0] || '',
     byContract: Boolean(byContract),
   }
 }

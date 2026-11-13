@@ -7,6 +7,7 @@
  * Administrators edit the roles in Settings › Roles; these are the starting set.
  */
 import type { AppModule } from './types'
+import { asList as list } from './lists'
 
 export interface JobRole {
   id: string
@@ -88,7 +89,6 @@ export const DEFAULT_JOB_ROLES: JobRole[] = [
   },
 ].map(role => ({ ...role, builtIn: true }) as JobRole)
 
-const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 const text = (value: unknown) => (value == null ? '' : String(value).trim())
 export const titleKey = (value: unknown) =>
   text(value)

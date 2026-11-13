@@ -7,7 +7,7 @@
  * Pure functions, shared by the server and the tests.
  */
 import { canAutoDone, cleanCell, isEmptyCell, type Cell, type TrackerColumn } from './trackerModel'
-import { sheetRowKeys } from './trackerSync'
+import { headerKey, sheetRowKeys } from './trackerSync'
 
 export { canAutoDone, normalizeAutoDone, type AutoDone } from './trackerModel'
 
@@ -99,8 +99,6 @@ export function columnLetter(index: number) {
   }
   return letters
 }
-
-const headerKey = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase()
 
 /**
  * Finds a tracker row in a Sheet tab the same way a sync recognises it (task name and order), so a row that moved in

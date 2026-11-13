@@ -11,6 +11,7 @@
 
 import { accessForRoles, jobRoles, ROLE_MODULES, roleCanChange } from './roles'
 import type { AppModule } from './types'
+import { asList as list } from './lists'
 
 /** A job role id (shared/roles.ts): BA, PM, PO, DEV, QA, SUPPORT, AM, or one an Administrator added. */
 export type SeedsRole = string
@@ -54,7 +55,6 @@ export interface ClientAccess {
   writableProjectIds?: string[]
 }
 
-const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 const text = (value: unknown) => (typeof value === 'string' ? value : value == null ? '' : String(value))
 
 export function normalizeAssignment(value: any): Assignment | null {

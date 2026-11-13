@@ -36,6 +36,7 @@ import {
   isFrozenColumn,
   taskFieldColumn,
   trackerProjectIds,
+  trackerClientIds,
 } from './trackerModel'
 import { rowTones, settleTimelineFields, todayNumber } from './timelineModel'
 import { isClosedProject } from '../tasks/lifecycle'
@@ -49,7 +50,7 @@ import TrackerColumnSubtasks from './TrackerColumnSubtasks'
 import TrackerGrid, { NUMBER_COLUMN_WIDTH, widthOf, type Entry, type GridFocus } from './TrackerGrid'
 import TrackerToolbar, { emptyWork, type Work } from './TrackerToolbar'
 import TrackerRowPanel from './TrackerRowPanel'
-import { TrackerBulkTasks, TrackerWorkPicker, trackerClients, type TaskDraft, type WorkTools } from './TrackerWork'
+import { TrackerBulkTasks, TrackerWorkPicker, type TaskDraft, type WorkTools } from './TrackerWork'
 import TrackerColumnDialog, { type ColumnDraft } from './TrackerColumnDialog'
 import TrackerImportDialog from './TrackerImportDialog'
 import TrackerDetailsDialog from './TrackerDetailsDialog'
@@ -927,7 +928,7 @@ export default function TrackerScreen(props: Props) {
     // On a Seeds project, sites go under that project's client (the Seeds parent), whichever Before Seeds clients the
     // tracker also follows. A row whose contract number names another of the tracker's projects goes there.
     const seedsClient = props.projects.find(project => project.id === current.projectId && project.seedsId)?.clientId
-    const clientId = seedsClient || trackerClients(current)[0] || ''
+    const clientId = seedsClient || trackerClientIds(current)[0] || ''
     const placeFor = (row: Pick<TrackerRow, 'cells' | 'taskId'>) => rowPlace(current, row, props.projects)
     // A tracker whose projects are all completed in Seeds keeps them, but its rows get no new tasks there.
     const own = trackerProjectIds(current)
@@ -1642,20 +1643,20 @@ export default function TrackerScreen(props: Props) {
       <header className="trk-header">
         <div className="trk-title">
           <h2>{tracker.name}</h2>
-          {(trackerClients(tracker).length > 0 || tracker.projectId) && (
+          {(trackerClientIds(tracker).length > 0 || tracker.projectId) && (
             <span
               className="trk-chip"
               title={[
-                trackerClients(tracker).map(clientName).join(', '),
+                trackerClientIds(tracker).map(clientName).join(', '),
                 trackerProjectIds(tracker).map(projectName).filter(Boolean).join(', '),
               ]
                 .filter(Boolean)
                 .join(' · ')}
             >
               {[
-                trackerClients(tracker).length > 2
-                  ? `${clientName(trackerClients(tracker)[0])} +${trackerClients(tracker).length - 1} clients`
-                  : trackerClients(tracker).map(clientName).join(', '),
+                trackerClientIds(tracker).length > 2
+                  ? `${clientName(trackerClientIds(tracker)[0])} +${trackerClientIds(tracker).length - 1} clients`
+                  : trackerClientIds(tracker).map(clientName).join(', '),
                 trackerProjectIds(tracker).length > 1
                   ? `${projectName(tracker.projectId)} +${trackerProjectIds(tracker).length - 1} projects`
                   : projectName(tracker.projectId),
@@ -2014,10 +2015,10 @@ export default function TrackerScreen(props: Props) {
           <strong>
             {plural(sitesWithoutTask, 'site')} {sitesWithoutTask === 1 ? 'is' : 'are'} missing tasks or step subtasks.
           </strong>{' '}
-          {trackerClients(tracker).length
+          {trackerClientIds(tracker).length
             ? 'Each site gets a task, with a subtask for each step; ticking a step completes its subtask.'
             : 'Choose a client for this tracker first, so its tasks have a client.'}
-          {trackerClients(tracker).length ? (
+          {trackerClientIds(tracker).length ? (
             <button type="button" className="trk-text-button strong" onClick={() => makeStepTasks(null)}>
               Make tasks
             </button>

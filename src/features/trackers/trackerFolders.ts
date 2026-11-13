@@ -13,13 +13,13 @@
  */
 import { activeAssignments } from '../../shared/access'
 import { splitClientIds, type Tracker } from './trackerModel'
+import { asList as list } from '../../shared/lists'
 
 /** At most this many people can be added by hand to one tracker. */
 export const TRACKER_MEMBERS = 50
 
 type Account = { id: string; name?: string; username?: string; status?: string }
 
-const list = (value: unknown): any[] => (Array.isArray(value) ? value : [])
 const activeAccounts = (state: any): Account[] =>
   list(state?.accounts).filter(account => account?.id && account.status !== 'Disabled')
 

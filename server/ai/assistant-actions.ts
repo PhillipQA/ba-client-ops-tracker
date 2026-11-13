@@ -19,11 +19,10 @@ import { cleanCell, type Cell, type TrackerColumn } from '../../src/features/tra
 import { places } from './assistant-emails'
 import { projectClients, requestedScope } from '../../src/features/ai/aiScope'
 import type { LoadedTracker } from './assistant-trackers'
+import { clip, stateList as list } from './assistant-text'
 
 export const ACTION_LIMITS = { planTasks: 20, planPeople: 60, timeTasks: 15, trackerChanges: 30 } as const
 
-const clip = (value: unknown, length: number) => `${value ?? ''}`.replace(/\s+/g, ' ').trim().slice(0, length)
-const list = (state: any, key: string): any[] => (Array.isArray(state?.[key]) ? state[key] : [])
 const isDate = (value: unknown): value is string =>
   typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
 const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
