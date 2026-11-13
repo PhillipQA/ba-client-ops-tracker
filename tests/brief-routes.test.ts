@@ -233,3 +233,43 @@ test('status report: written by the AI from visible facts, else the plain versio
     },
   )
 })
+
+test('the watcher raises what is at risk from the same facts, without AI, and keeps its last check', async () => {
+  let loads = 0
+  let clock = NOW
+  await withRoutes(
+    {
+      ai: async () => {
+        throw new Error('The watcher never asks the AI')
+      },
+      load: async () => {
+        loads += 1
+        return workspace()
+      },
+      now: () => clock,
+    },
+    async ask => {
+      const first = await ask('GET', '/api/assistant/watch', 'ana')
+      assert.equal(first.status, 200)
+      assert.deepEqual(
+        first.body.alerts.map((alert: any) => alert.key),
+        ['overdue:Late:warning'],
+        'Late is three days overdue; hidden work is never raised',
+      )
+      assert.deepEqual(first.body.alerts[0].open, { kind: 'task', id: 'Late' })
+      const after = loads
+
+      await ask('GET', '/api/assistant/watch', 'ana')
+      assert.equal(loads, after, 'Asked again within ten minutes: nothing is read')
+      await ask('GET', '/api/assistant/watch?fresh=1', 'ana')
+      assert.ok(loads > after, 'Check again reads')
+      const then = loads
+      clock = new Date(NOW.getTime() + 11 * 60_000)
+      await ask('GET', '/api/assistant/watch', 'ana')
+      assert.ok(loads > then, 'After ten minutes it checks again')
+
+      assert.deepEqual((await ask('GET', '/api/assistant/watch', 'ben')).body.alerts, [])
+      assert.equal((await ask('GET', '/api/assistant/watch', 'noaction')).status, 403)
+    },
+  )
+})

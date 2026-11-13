@@ -279,3 +279,36 @@
     padding-right: 68px;
   }
 }
+
+/* The assistant's heads-ups, beside the bell (AssistantWatch). */
+.assistant-watch .notification-bell > span {
+  background: #d98a1f;
+}
+.assistant-watch .notification-bell.watch-urgent > span {
+  background: #e5485d;
+}
+.assistant-watch .notification-main:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.assistant-watch .notification-head {
+  gap: 4px;
+}
+.assistant-watch .notification-head > div {
+  flex: 1;
+}
+.watch-bubble {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  padding: 6px 10px;
+  border: 1px solid #596b8b;
+  border-radius: 999px;
+  background: #293345;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}

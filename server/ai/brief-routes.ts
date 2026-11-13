@@ -2,6 +2,7 @@
  * The morning brief and the weekly status report.
  * - GET  /api/assistant/brief: the person's brief, counted fresh, with today's AI summary when one was written.
  * - POST /api/assistant/brief/summary: writes today's AI summary of the brief, once; later asks get the same one.
+ * - GET /api/assistant/watch: the watcher's heads-ups, picked from the same facts by fixed rules (no AI).
  * - POST /api/assistant/status-report: a project's weekly update as an email draft, for the client or the team.
  *
  * Everything comes from what the person may see (scopedState). The facts are counted in src/features/ai; the AI only
@@ -25,6 +26,7 @@ import {
   briefIsClear,
   cleanBriefSummary,
 } from '../../src/features/ai/brief'
+import { type WatchAlert, watchAlerts } from '../../src/features/ai/watch'
 import {
   cleanStatusEmail,
   projectClientIds,
@@ -119,6 +121,11 @@ export function registerBriefRoutes(app: Express, deps: BriefDeps = {}) {
     })
   const summaryLimit = perPerson(12, 60 * 60_000, 'brief summaries in an hour')
   const reportLimit = perPerson(10, 10 * 60_000, 'status reports in a few minutes')
+  const watchLimit = perPerson(30, 10 * 60_000, 'checks in a few minutes')
+  // The watcher's last check per person, kept for a few minutes: an open page asks again and again, and the answer
+  // rarely changes, so most asks cost no database read at all.
+  const WATCH_KEEP_MS = 10 * 60_000
+  const watched = new Map<string, { at: number; alerts: WatchAlert[] }>()
 
   /** Today's AI summary per person, kept while the server runs (a new day writes a new one). */
   const summaries = new Map<string, BriefSummary>()
@@ -188,6 +195,25 @@ export function registerBriefRoutes(app: Express, deps: BriefDeps = {}) {
         summary: summaries.get(summaryKey(user, facts.date)) || null,
         ai: { available: Boolean(ai) },
       })
+    }),
+  )
+
+  app.get(
+    '/api/assistant/watch',
+    ...auth,
+    watchLimit,
+    wrap(async (req, res) => {
+      const user = who(req)
+      const key = `${tenantOf(user)}:${user.id}`
+      const at = now().getTime()
+      let kept = watched.get(key)
+      if (!kept || at - kept.at >= WATCH_KEEP_MS || req.query.fresh === '1') {
+        kept = { at, alerts: watchAlerts(await factsFor(user)) }
+        watched.delete(key)
+        watched.set(key, kept)
+        while (watched.size > 2000) watched.delete(watched.keys().next().value as string)
+      }
+      res.json({ alerts: kept.alerts, checkedAt: new Date(kept.at).toISOString() })
     }),
   )
 
