@@ -93,14 +93,14 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
     const away = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false)
     }
-    const escape = (event: KeyboardEvent) => {
+    const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
     }
     document.addEventListener('pointerdown', away)
-    document.addEventListener('keydown', escape)
+    document.addEventListener('keydown', onEscape)
     return () => {
       document.removeEventListener('pointerdown', away)
-      document.removeEventListener('keydown', escape)
+      document.removeEventListener('keydown', onEscape)
     }
   }, [open])
 
