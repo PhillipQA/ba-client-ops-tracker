@@ -239,10 +239,7 @@ export function createSeedsService(deps: SeedsDeps) {
     // Delta unless a full one is asked for or due (once a week, and the first time).
     const last = seedsState(before).sync
     const fullDue =
-      full ||
-      !last.lastFullAt ||
-      !last.updatedSince ||
-      Date.now() - Date.parse(last.lastFullAt) >= FULL_SYNC_EVERY_MS
+      full || !last.lastFullAt || !last.updatedSince || Date.now() - Date.parse(last.lastFullAt) >= FULL_SYNC_EVERY_MS
     const beforeProjects = Array.isArray(before.projects) ? before.projects : []
     const delta = fullDue
       ? undefined

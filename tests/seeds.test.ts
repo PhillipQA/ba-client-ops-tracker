@@ -994,10 +994,13 @@ test('Seeds products: read in a full sync, again in a delta only when a change n
 test('a Seeds task can require a product; the task’s pick wins; the time rule flags what is missing', async () => {
   const { seedsProductFor, seedsStatusFor } = await import('../src/shared/seeds')
   const { seedsTimeRule } = await import('../src/features/tasks/effort')
-  assert.deepEqual(
-    parseSeeds.task({ id: 31, name: 'Go Live', productRequired: true, defaultProductId: 9 }, '20'),
-    { id: '31', projectId: '20', name: 'Go Live', productRequired: true, defaultProductId: '9' },
-  )
+  assert.deepEqual(parseSeeds.task({ id: 31, name: 'Go Live', productRequired: true, defaultProductId: 9 }, '20'), {
+    id: '31',
+    projectId: '20',
+    name: 'Go Live',
+    productRequired: true,
+    defaultProductId: '9',
+  })
   const state: any = {
     seeds: { connected: true, products: [{ id: '4', name: 'RPOS' }] },
     projects: [
