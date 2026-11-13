@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { FolderOpen, Mail, Paperclip, Send, Undo2, X } from 'lucide-react'
+import { FolderOpen, Mail, Maximize2, Minimize2, Minus, Paperclip, Send, Undo2, X } from 'lucide-react'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
 import {
   EMAIL_LIMITS,
@@ -22,8 +22,17 @@ import { useIsClosed } from '../tasks/openWork'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { applyTemplateBody, emailStore, signatureBlock, type EmailTemplate } from './emailStore'
 import { EmailTemplatesManager } from './EmailTemplates'
-import { useModalDialog } from '../../shared/ui/useModalDialog'
 import { COMPOSE_EVENT, type ComposePrefill } from './composeEvent'
+import {
+  draftKey,
+  draftPrefill,
+  hasContent,
+  MAX_DRAFTS,
+  readDrafts,
+  removeDraft,
+  type SavedDraft,
+  saveDraft,
+} from './emailDrafts'
 
 /**
  * Send an email from the tracker, from the person's own Gmail account.
@@ -110,18 +119,56 @@ export function EmailComposerHost({
   currentUser,
   onSent,
 }: Scope & Team & { enabled: boolean; currentUser: UserAccount; onSent?: () => void | Promise<void> }) {
-  const [open, setOpen] = useState<{ prefill: ComposePrefill; key: number } | null>(null)
+  // The email windows, like Gmail's compose windows: docked at the bottom right, each can be minimized or made larger.
+  // Each is a draft, saved as it is written, so a minimized or interrupted email is never lost.
+  const storageKey = draftKey(currentUser)
+  const [windows, setWindows] = useState<ComposeWindow[]>(() =>
+    allowed
+      ? readDrafts(storage(), storageKey).map((draft, index) => ({
+          id: draft.id,
+          prefill: draftPrefill(draft),
+          mode: 'min' as const,
+          key: index,
+        }))
+      : [],
+  )
   useEffect(() => {
     setEmailEnabled(allowed)
     return () => setEmailEnabled(false)
   }, [allowed])
+  const openWindow = (prefill: ComposePrefill) =>
+    setWindows(current => {
+      if (current.length >= MAX_DRAFTS) {
+        window.alert(
+          `You already have ${MAX_DRAFTS} emails open. Send or discard one of them (at the bottom of the screen) first.`,
+        )
+        return current
+      }
+      // A new email opens in front; the others are minimized so they do not cover it.
+      return [
+        ...current.map(item => ({ ...item, mode: 'min' as const })),
+        { id: newDraftId(), prefill, mode: 'normal' as const, key: Date.now() },
+      ]
+    })
   useEffect(() => {
     if (!allowed) return
-    const listen = (event: Event) =>
-      setOpen({ prefill: (event as CustomEvent<ComposePrefill>).detail || {}, key: Date.now() })
+    const listen = (event: Event) => openWindow((event as CustomEvent<ComposePrefill>).detail || {})
     window.addEventListener(COMPOSE_EVENT, listen)
     return () => window.removeEventListener(COMPOSE_EVENT, listen)
   }, [allowed])
+  // Only one window is large at a time.
+  const setMode = (id: string, mode: WindowMode) =>
+    setWindows(current =>
+      current.map(item => {
+        if (item.id === id) return { ...item, mode }
+        return mode === 'max' && item.mode === 'max' ? { ...item, mode: 'normal' as const } : item
+      }),
+    )
+  /** Sent or discarded: the window and its draft go. */
+  const closeWindow = (id: string) => {
+    removeDraft(storage(), storageKey, id)
+    setWindows(current => current.filter(item => item.id !== id))
+  }
   const afterSent = useRef(onSent)
   afterSent.current = onSent
   useEffect(
@@ -134,25 +181,48 @@ export function EmailComposerHost({
     [],
   )
   if (!allowed) return null
-  const edit = (draft: EmailDraft) => setOpen({ prefill: { ...draft, restored: true }, key: Date.now() })
+  const edit = (draft: EmailDraft) => openWindow({ ...draft, restored: true })
+  const large = windows.find(item => item.mode === 'max')
   return (
     <>
-      {open && (
-        <EmailComposer
-          key={open.key}
-          prefill={open.prefill}
-          items={items}
-          clients={clients}
-          projects={projects}
-          accounts={accounts}
-          currentUser={currentUser}
-          onClose={() => setOpen(null)}
-        />
+      {large && (
+        <div className="email-window-backdrop" aria-hidden="true" onClick={() => setMode(large.id, 'normal')} />
+      )}
+      {windows.length > 0 && (
+        <div className="email-window-dock">
+          {windows.map(item => (
+            <EmailComposer
+              key={item.key}
+              draftId={item.id}
+              mode={item.mode}
+              onMode={mode => setMode(item.id, mode)}
+              onDraft={draft => saveDraft(storage(), storageKey, draft)}
+              prefill={item.prefill}
+              items={items}
+              clients={clients}
+              projects={projects}
+              accounts={accounts}
+              currentUser={currentUser}
+              onClose={() => closeWindow(item.id)}
+            />
+          ))}
+        </div>
       )}
       <EmailOutboxBar onEdit={edit} />
     </>
   )
 }
+
+type WindowMode = 'normal' | 'min' | 'max'
+type ComposeWindow = { id: string; prefill: ComposePrefill; mode: WindowMode; key: number }
+function storage() {
+  try {
+    return window.localStorage
+  } catch {
+    return undefined
+  }
+}
+const newDraftId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 /** Emails waiting out the undo window, being sent, just sent, or that failed. */
 function EmailOutboxBar({ onEdit }: { onEdit: (draft: EmailDraft) => void }) {
@@ -244,10 +314,25 @@ export function EmailComposer({
   accounts,
   currentUser,
   onClose,
-}: Scope & Team & { prefill: ComposePrefill; currentUser: UserAccount; onClose: () => void }) {
+  draftId,
+  mode = 'normal',
+  onMode,
+  onDraft,
+}: Scope &
+  Team & {
+    prefill: ComposePrefill
+    currentUser: UserAccount
+    onClose: () => void
+    /** The draft this window saves to as it is written. */
+    draftId?: string
+    mode?: WindowMode
+    onMode?: (mode: WindowMode) => void
+    /** Saves the draft; answers false when the browser would not keep it. */
+    onDraft?: (draft: SavedDraft) => boolean
+  }) {
   const scope: Scope = { items, clients, projects }
-  const dialog = useRef<HTMLDialogElement>(null),
-    titleId = useId()
+  const titleId = useId()
+  const windowRef = useRef<HTMLElement>(null)
   const primary = items.find(item => item.id === prefill.taskIds?.[0])
   const clientEmail = clients.find(client => client.id === primary?.clientId)?.email || ''
   // The signature lives on the person's account. The copy in this browser shows at once and is used if the server
@@ -296,7 +381,36 @@ export function EmailComposer({
     JSON.stringify([to, cc, bcc, subject, message, taskIds, driveFiles, uploads.map(file => file.name)]) !==
       initial.current
 
-  useModalDialog(dialog)
+  // A window that opens in front takes focus, so typing goes to it.
+  useEffect(() => {
+    if (mode !== 'min') windowRef.current?.querySelector<HTMLElement>('input, textarea')?.focus({ preventScroll: true })
+  }, [])
+  // Saved as a draft while it is written (half a second after the last change), once it holds anything.
+  const [draftNote, setDraftNote] = useState('')
+  const draftTimer = useRef<number | undefined>(undefined)
+  const saveNow = () => {
+    if (!draftId || !onDraft) return
+    window.clearTimeout(draftTimer.current)
+    const content = { to, cc, bcc, subject, message }
+    if (!hasContent(content, signatureBlock(signature.current)) && !driveFiles.length && !uploads.length) return
+    const saved = onDraft({
+      id: draftId,
+      updatedAt: new Date().toISOString(),
+      ...content,
+      taskIds,
+      driveFiles,
+      ...(prefill.replyToId ? { replyToId: prefill.replyToId } : {}),
+      ...(prefill.autoCc ? { autoCc: true } : {}),
+      ...(uploads.length ? { droppedUploads: uploads.map(file => file.name) } : {}),
+    })
+    setDraftNote(saved ? 'Draft saved' : 'This browser could not save the draft')
+  }
+  useEffect(() => {
+    if (!draftId || !onDraft) return
+    window.clearTimeout(draftTimer.current)
+    draftTimer.current = window.setTimeout(saveNow, 500)
+    return () => window.clearTimeout(draftTimer.current)
+  }, [to, cc, bcc, subject, message, taskIds, driveFiles, uploads])
   useEffect(() => {
     const controller = new AbortController()
     void fetch('/api/communications/send/status', { credentials: 'same-origin', signal: controller.signal })
@@ -313,8 +427,12 @@ export function EmailComposer({
     return () => controller.abort()
   }, [])
   const close = () => {
-    if (!busy && (!dirty() || window.confirm('Discard this email?'))) onClose()
+    // A restored draft is unchanged but still worth asking about before it is deleted.
+    const typed = hasContent({ to, cc, bcc, subject, message }, signatureBlock(signature.current))
+    const written = dirty() || typed || attachmentCount > 0
+    if (!busy && (!written || window.confirm('Discard this draft? It will be deleted.'))) onClose()
   }
+  const toggleMin = () => onMode?.(mode === 'min' ? 'normal' : 'min')
 
   // Load the account's signature. A signature only kept in this browser (before v0.8.0) is moved to the account once.
   useEffect(() => {
@@ -545,33 +663,52 @@ export function EmailComposer({
       startWith={saveAs ? { name: '', subject: saveAs.subject, body: saveAs.body, shared: true } : undefined}
     />
   )
+  const heading = subject.trim() || (prefill.replyToId ? 'Reply by email' : 'New email')
   return (
-    <dialog
-      ref={dialog}
-      className="modal email-composer"
+    <section
+      ref={windowRef}
+      className={`modal email-composer is-${mode}`}
+      role="dialog"
       aria-labelledby={titleId}
-      aria-modal="true"
-      onCancel={event => {
-        event.preventDefault()
-        close()
+      onKeyDown={event => {
+        // Escape makes a large window normal again, and a normal one minimized: nothing written is lost.
+        if (event.key !== 'Escape' || managing) return
+        event.stopPropagation()
+        if (mode === 'max') onMode?.('normal')
+        else if (mode === 'normal') onMode?.('min')
       }}
     >
-      <div className="modal-head">
-        <div>
-          <h2 id={titleId}>
-            <Mail size={18} aria-hidden="true" /> {prefill.replyToId ? 'Reply by email' : 'New email'}
-          </h2>
-          <p>
-            {status?.email
-              ? `Sent from ${status.email}, like any email you send from Gmail.`
-              : 'Sent from your own Gmail account.'}
-          </p>
-        </div>
-        <button className="icon-button" type="button" aria-label="Close email" onClick={close}>
-          <X size={20} />
+      <header className="email-window-bar">
+        <button
+          type="button"
+          className="email-window-title"
+          title={mode === 'min' ? 'Open' : 'Minimize'}
+          aria-expanded={mode !== 'min'}
+          onClick={toggleMin}
+        >
+          <Mail size={15} aria-hidden="true" />
+          <span id={titleId}>{heading}</span>
         </button>
-      </div>
-      <div className="email-composer-body">
+        <button type="button" aria-label={mode === 'min' ? 'Open' : 'Minimize'} onClick={toggleMin}>
+          <Minus size={15} />
+        </button>
+        <button
+          type="button"
+          aria-label={mode === 'max' ? 'Smaller' : 'Larger'}
+          onClick={() => onMode?.(mode === 'max' ? 'normal' : 'max')}
+        >
+          {mode === 'max' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
+        <button type="button" aria-label="Discard draft" title="Discard draft" onClick={close}>
+          <X size={15} />
+        </button>
+      </header>
+      <p className="email-window-from" hidden={mode === 'min'}>
+        {status?.email
+          ? `Sent from ${status.email}, like any email you send from Gmail.`
+          : 'Sent from your own Gmail account.'}
+      </p>
+      <div className="email-composer-body" hidden={mode === 'min'}>
         {!status && !statusError && <p role="status">Checking your Gmail connection…</p>}
         {statusError && (
           <p role="alert" className="email-error">
@@ -587,7 +724,8 @@ export function EmailComposer({
           <div className="email-permission" role="alert">
             <p>
               The tracker needs your permission to send email as you. You approve it once on Google’s page, then return
-              to Work Hub. This email will not be kept, so start it again after approving.
+              to Work Hub. This email is kept as a draft and comes back minimized at the bottom of the screen (files
+              from your computer need attaching again).
             </p>
             <button
               type="button"
@@ -595,6 +733,7 @@ export function EmailComposer({
               disabled={busy}
               onClick={() => {
                 setBusy(true)
+                saveNow()
                 void allowSending().catch(e => {
                   setError(e instanceof Error ? e.message : 'Could not start the Google permission step.')
                   setBusy(false)
@@ -920,13 +1059,14 @@ export function EmailComposer({
           </p>
         )}
       </div>
-      <div className="email-composer-actions">
+      <div className="email-composer-actions" hidden={mode === 'min'}>
         <small>
-          After you press Send you have {UNDO_SECONDS} seconds to undo. Keep this page open until it is sent.
+          {draftNote ? `${draftNote}. ` : ''}After you press Send you have {UNDO_SECONDS} seconds to undo. Keep this
+          page open until it is sent.
         </small>
         <div>
           <button type="button" className="secondary" disabled={busy} onClick={close}>
-            Cancel
+            Discard
           </button>
           <button type="button" className="primary" disabled={busy || !ready} onClick={submit}>
             <Send size={15} aria-hidden="true" /> Send email
@@ -934,6 +1074,6 @@ export function EmailComposer({
         </div>
       </div>
       {manager}
-    </dialog>
+    </section>
   )
 }

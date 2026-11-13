@@ -1,23 +1,124 @@
 /* Sending email from the tracker. Colors inherit from the surrounding theme; the floating bar is theme-independent like the comment popover. */
+/* The email windows dock at the bottom right like Gmail's: normal, minimized to their title bar, or large in the middle. */
+.email-window-dock {
+  position: fixed;
+  right: 16px;
+  bottom: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-end;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+.email-window-dock > * {
+  pointer-events: auto;
+}
+.email-window-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 899;
+  background: rgba(0, 0, 0, 0.5);
+}
 .modal.email-composer {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  height: min(680px, calc(100vh - 72px));
+  /* biome-ignore lint/suspicious/noDuplicateProperties: 100vh above is the fallback for browsers without dvh */
+  height: min(680px, calc(100dvh - 72px));
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+  border-bottom: 0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.modal.email-composer.is-min {
+  width: min(300px, calc(100vw - 32px));
+  height: auto;
+}
+.modal.email-composer.is-max {
   position: fixed;
   inset: 0;
   margin: auto;
-  width: min(760px, calc(100vw - 32px));
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 32px);
+  width: min(960px, calc(100vw - 48px));
+  height: calc(100vh - 64px);
   /* biome-ignore lint/suspicious/noDuplicateProperties: 100vh above is the fallback for browsers without dvh */
-  max-height: calc(100dvh - 32px);
-  padding: 0;
-  overflow: hidden;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+  height: calc(100dvh - 64px);
+  border-radius: 12px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
 }
-.email-composer[open] {
+.email-composer [hidden] {
+  display: none !important;
+}
+.email-window-bar {
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 6px 12px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
 }
-.email-composer::backdrop {
-  background: rgba(0, 0, 0, 0.64);
+.email-window-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.email-window-bar button:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.email-window-bar .email-window-title {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 8px;
+  font-weight: 600;
+}
+.email-window-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.email-window-from {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 20px 0;
+  font-size: 12px;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .email-window-dock {
+    right: 8px;
+    left: 8px;
+    max-width: none;
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .modal.email-composer,
+  .modal.email-composer.is-min {
+    width: auto;
+  }
+  .modal.email-composer:not(.is-min) {
+    height: calc(100dvh - 24px);
+  }
+}
+@media print {
+  .email-window-dock,
+  .email-window-backdrop {
+    display: none;
+  }
 }
 .email-composer .modal-head {
   flex: 0 0 auto;
