@@ -56,8 +56,13 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [chosenSeedsTask, setChosenSeedsTask] = useState('')
   const seedsTaskId = chosenSeedsTask || (rule ? defaultSeedsTask(rule, subtaskId) : '')
   const forSubtask = rule?.subtasks.find(subtask => subtask.id === subtaskId)
-  // Seeds requires a product for this Seeds task (or its project) and none is picked on the task yet.
-  const productMissing = Boolean(seedsTaskId && rule?.needsProduct?.includes(seedsTaskId))
+  // The Seeds product: the one chosen here, else what the task, its project or Seeds sets for this Seeds task.
+  const [chosenProduct, setChosenProduct] = useState('')
+  const products = rule?.products || []
+  const productId = chosenProduct || (seedsTaskId && rule?.productByTask?.[seedsTaskId]) || ''
+  const productRequired = Boolean(seedsTaskId && rule?.needsProduct?.includes(seedsTaskId))
+  // Seeds requires a product for this Seeds task (or its project) and none is chosen yet.
+  const productMissing = productRequired && !productId
   const remarks = note
   // Picking a subtask fills in "subtask – task", unless the person has typed their own remarks.
   const chooseSubtask = (id: string) => {
@@ -91,7 +96,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const save = async () => {
     if (busy) return
     const checked = rule
-      ? validateTimeEntryInput({ date, hours: duration, note, seedsTaskId, subtaskId }, rule)
+      ? validateTimeEntryInput({ date, hours: duration, note, seedsTaskId, productId, subtaskId }, rule)
       : validateTimeEntryInput({ date, hours: Number(hours), category, note })
     if (!checked.ok) {
       setMessage({ text: checked.error, ok: false })
@@ -298,10 +303,28 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                     ))}
                   </select>
                 </label>
+                {(products.length > 0 || productId) && (
+                  <label>
+                    Seeds product{productRequired ? ' (required)' : ''}
+                    <select value={productId} onChange={event => setChosenProduct(event.target.value)}>
+                      <option value="">{productRequired ? 'Choose the Seeds product' : 'None'}</option>
+                      {products.map(product => (
+                        <option key={product.id} value={product.id}>
+                          {product.name}
+                        </option>
+                      ))}
+                      {productId && !products.some(product => product.id === productId) && (
+                        <option value={productId}>Set by Seeds</option>
+                      )}
+                    </select>
+                  </label>
+                )}
               </div>
               {productMissing && (
                 <p className="effort-message" role="status">
-                  Seeds requires a product for this time. Pick a Seeds product on the task before sending it to Seeds.
+                  {products.length
+                    ? 'Seeds requires a product for this time. Choose the Seeds product above.'
+                    : 'Seeds requires a product for this time, but no Seeds products have synced yet. Run a Full sync in Settings › Integrations › Seeds.'}
                 </p>
               )}
               <label className="effort-note">
@@ -404,16 +427,21 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
 
       {rule && myUnsent.length > 0 && (
         <div className="effort-log-actions">
-          {entries.some(
-            ({ entry }) =>
-              myUnsent.includes(entry.id) && entry.seedsTaskId && rule.needsProduct?.includes(entry.seedsTaskId),
-          ) && (
-            <span className="effort-message" role="status">
-              Some entries need a Seeds product: pick one on the task first.
-            </span>
-          )}
+          {!productId &&
+            entries.some(
+              ({ entry }) =>
+                myUnsent.includes(entry.id) &&
+                !entry.productId &&
+                entry.seedsTaskId &&
+                rule.needsProduct?.includes(entry.seedsTaskId),
+            ) && (
+              <span className="effort-message" role="status">
+                Some entries need a Seeds product: choose it under Seeds product above, then send.
+              </span>
+            )}
           <SendToSeedsButton
             entryIds={myUnsent}
+            productId={productId || undefined}
             onSent={result => {
               for (const updated of result.items) onMutation({ item: updated } as TimeEntryMutationResult)
             }}

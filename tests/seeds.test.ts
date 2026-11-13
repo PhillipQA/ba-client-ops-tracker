@@ -943,7 +943,7 @@ test('time entries take the project’s default Seeds task and product; a requir
   assert.deepEqual([own.body.taskId, own.body.productId], [31, 4], 'the entry’s own task and project product win')
   const missing: any = seedsTimeBody(state({ productRequired: true }), task, { ...entry, seedsTaskId: '31' })
   assert.equal(missing.ok, false)
-  assert.match(missing.error, /Pick a Seeds product on the task/)
+  assert.match(missing.error, /Choose the Seeds product in Log time/)
 })
 
 test('Seeds products: read in a full sync, again in a delta only when a change names a new one', async () => {
@@ -1121,4 +1121,39 @@ test('closed projects are not offered for new work', async () => {
   assert.equal(isClosedProject({ seedsArchived: true }), true)
   assert.equal(isClosedProject({ archived: true }), true)
   assert.equal(isClosedProject({}), false)
+})
+
+test('a product is chosen in Log time: kept on the entry, required where Seeds says, and usable when sending', async () => {
+  const { seedsTimeRule, validateTimeEntryInput } = await import('../src/features/tasks/effort')
+  const { seedsTimeBody } = await import('../server/seeds/seeds-time')
+  const state: any = {
+    seeds: {
+      connected: true,
+      products: [
+        { id: '4', name: 'RPOS' },
+        { id: '9', name: 'Barter CX' },
+      ],
+    },
+    projects: [
+      { id: 'p1', seedsId: '20', seedsTasks: [{ id: '31', name: 'Remote Assistance', productRequired: true }] },
+    ],
+  }
+  const task = { id: 't1', title: 'Issues Monitoring', projectId: 'p1' }
+  const rule = seedsTimeRule(state, task)
+  assert.deepEqual(
+    rule?.products?.map(product => product.id),
+    ['4', '9'],
+  )
+  const input = { date: '2026-11-13', hours: 1, note: 'Remote Assistance', seedsTaskId: '31' }
+  const none: any = validateTimeEntryInput(input, rule)
+  assert.match(none.error, /Choose the Seeds product/)
+  assert.match((validateTimeEntryInput({ ...input, productId: '77' }, rule) as any).error, /from the list/)
+  const picked: any = validateTimeEntryInput({ ...input, productId: '9' }, rule)
+  assert.equal(picked.value.productId, '9')
+
+  // Entries logged before a product could be chosen: the product chosen when sending is used.
+  const old: any = { id: 'e1', date: '2026-11-11', hours: 1.5, note: 'Remote Assistance', seedsTaskId: '31' }
+  assert.equal((seedsTimeBody(state, task, old) as any).ok, false)
+  assert.equal((seedsTimeBody(state, task, old, '4') as any).body.productId, 4)
+  assert.equal((seedsTimeBody(state, task, { ...old, productId: '9' }, '4') as any).body.productId, 9, 'its own wins')
 })

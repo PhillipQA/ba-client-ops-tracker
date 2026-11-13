@@ -661,9 +661,12 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
       const todo = mineUnsent(state, user.id)
         .filter(({ entry }) => !wanted || wanted.has(entry.id))
         .slice(0, MAX_SEND)
-      const outcome = new Map<string, { seedsEntryId?: string; error?: string }>()
+      // The product chosen in Log time when sending: for entries without one of their own. Kept on those sent.
+      const asked = text(req.body?.productId)
+      const fallback = asked && seedsState(state).products.some(product => product.id === asked) ? asked : ''
+      const outcome = new Map<string, { seedsEntryId?: string; error?: string; productId?: string }>()
       for (const { item, entry } of todo) {
-        const body = seedsTimeBody(state, item, entry)
+        const body = seedsTimeBody(state, item, entry, fallback)
         if (!body.ok) {
           outcome.set(entry.id, { error: body.error })
           continue
@@ -676,7 +679,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
             key: seedsTimeKey(entry),
             body: body.body,
           })
-          outcome.set(entry.id, { seedsEntryId })
+          outcome.set(entry.id, { seedsEntryId, ...(!entry.productId && fallback ? { productId: fallback } : {}) })
         } catch (error) {
           const message = error instanceof SeedsError ? error.message : 'Seeds could not be reached.'
           outcome.set(entry.id, { error: message })
@@ -697,7 +700,12 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
                   if (!result || entry.seedsEntryId) return entry
                   if (result.seedsEntryId) {
                     const { seedsError: _dropped, ...rest } = entry
-                    return { ...rest, seedsEntryId: result.seedsEntryId, seedsSentAt: now }
+                    return {
+                      ...rest,
+                      ...(result.productId ? { productId: result.productId } : {}),
+                      seedsEntryId: result.seedsEntryId,
+                      seedsSentAt: now,
+                    }
                   }
                   return { ...entry, seedsError: result.error }
                 }),

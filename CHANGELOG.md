@@ -23,7 +23,8 @@ Released with pull request #110.
 ### Seeds products on tasks, and the contract number on DRFs
 - The sync reads Seeds' **product list** (`GET /products`, `core.products.read`): in every full sync, and in a delta only when a change names a product not known yet. Without the grant, the sync still works with no products.
 - Seeds tasks can **require a product** (as can a Seeds project). Each top-level task under a Seeds project has a **Seeds product** picker, marked *required by Seeds* when it is. Time carries the product picked on the task, else the Seeds project's product, else Seeds' default for that task or project.
-- Time that needs a product and has none is **not sent**: the time panel says so, and *Send to Seeds* lists it with "Pick a Seeds product on the task". Pick one, save the task, and send again.
+- **Log time has a Seeds product picker** (after *Seeds task*), listing the products from the last sync. It starts with the task's product, the Seeds project's, or Seeds' default; marked *required* where Seeds requires one, and an entry can't be saved without it then.
+- Entries logged before they had a product are sent with the product chosen in Log time (and keep it). Time that still has none is **not sent**: *Send to Seeds* lists it with "Choose the Seeds product in Log time".
 - A DRF opened for a task under a Seeds project fills an empty **Contract Number** with the project's Seeds contract number.
 
 ### AI Assistant: several clients, and projects per client

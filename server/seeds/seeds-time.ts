@@ -31,6 +31,8 @@ export function seedsTimeBody(
   state: any,
   task: any,
   entry: TimeEntry,
+  /** A product chosen when sending, for entries that have none of their own. */
+  fallbackProductId?: string,
 ): { ok: true; body: SeedsTimeBody } | { ok: false; error: string } {
   const project = list(state?.projects).find(candidate => candidate?.id === task?.projectId)
   const projectId = seedsNumber(project?.seedsId)
@@ -39,11 +41,15 @@ export function seedsTimeBody(
   const rules = project?.seedsTimeRules || {}
   const taskId = seedsNumber(entry.seedsTaskId) ?? seedsNumber(rules.defaultTaskId)
   if (!taskId) return { ok: false, error: 'It has no Seeds task.' }
-  // The product: picked on the task, else the project's, else a default; required when Seeds says so.
+  // The product: chosen on the entry, else the one chosen when sending, else the task's, the project's or Seeds'
+  // default; required when Seeds says so.
   const product = seedsProductFor(state, task, String(taskId))
-  const productId = seedsNumber(product.productId)
+  const productId = seedsNumber(entry.productId) ?? seedsNumber(fallbackProductId) ?? seedsNumber(product.productId)
   if (product.required && !productId)
-    return { ok: false, error: 'Seeds requires a product here. Pick a Seeds product on the task, then send again.' }
+    return {
+      ok: false,
+      error: 'Seeds requires a product here. Choose the Seeds product in Log time, then send again.',
+    }
   const client = list(state?.clients).find(candidate => candidate?.id === project?.clientId)
   const minutes = Math.round(Number(entry.hours) * 60)
   if (!(minutes >= 15 && minutes % 15 === 0)) return { ok: false, error: 'Its duration is not in 15-minute steps.' }
