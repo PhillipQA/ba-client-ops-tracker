@@ -209,3 +209,36 @@ export function buildAssistantContext(
       : '',
   }
 }
+
+/**
+ * The context agent mode starts from: who is asking, the dates, the focus and the totals, and the titles of a few of
+ * their own tasks. The task details, activity and calendar are left out: the agent looks those up when the question
+ * needs them (see assistant-agent), so each of its calls to the AI provider sends far fewer tokens.
+ */
+export function slimAssistantContext(context: any) {
+  const named = (entry: any) => (entry ? { id: entry.id, name: entry.name } : undefined)
+  return {
+    currentUser: context.currentUser,
+    pronounRule: context.pronounRule,
+    today: context.today,
+    timeZone: context.timeZone,
+    period: context.period,
+    client: named(context.client),
+    project: named(context.project),
+    focus: context.focus,
+    totals: { ...context.totals, myCompletedTaskIds: undefined },
+    myAssignments: (context.myAssignments || []).slice(0, 8).map((item: any) => ({
+      id: item.id,
+      title: item.title,
+      status: item.status,
+      priority: item.priority,
+      clientName: item.clientName,
+      projectName: item.projectName,
+      dueDate: item.dueDate,
+      followUpDate: item.followUpDate,
+    })),
+    overview:
+      'This is only an overview: totals, and a few of the current user’s tasks by title. Task details, other tasks, activity history and the calendar are not included. Look them up.',
+    coverage: context.coverage,
+  }
+}

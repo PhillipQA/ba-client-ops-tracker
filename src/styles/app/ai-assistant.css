@@ -510,6 +510,11 @@ button.compact {
   margin: 4px 0 0;
   padding-left: 18px;
 }
+.ai-usage {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.65;
+}
 .ai-step-miss {
   opacity: 0.7;
   font-style: italic;
