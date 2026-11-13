@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Email: Gmail-style windows and drafts
+- **New email** and **Reply** open in a window docked at the bottom right, like Gmail, instead of a full-screen dialog: you can keep working in the app while writing. Use **–** to minimize it to its title bar (click the bar to open it again), **⤢** to make it large in the middle of the screen, and **×** to discard it. Escape makes a large window normal and a normal one minimized.
+- Up to **3 emails** can be open at once; opening another minimizes the rest.
+- Every email is **saved as a draft** while you write (*Draft saved* shows at the bottom). Drafts come back minimized after a reload, a sign-out, or Google's *Allow sending* page. They are kept in this browser, per person; files attached from your computer are not kept in drafts (the draft says which to attach again), Drive files are.
+- Sending or discarding an email deletes its draft; **Undo** after Send opens it again.
+
 ### Edit time before it goes to Seeds
 - Time entries not yet in Seeds have an **edit** (pencil) button. It loads the entry into *Log time*: change the date, duration, subtask, Seeds task, Seeds product or remarks, then **Save changes** (or **Cancel**). The same rules as logging apply.
 - Only the person who logged it or an Administrator can change it. Entries already in Seeds are changed in Seeds. Changing an entry that failed to send clears its error, so the next *Send to Seeds* tries it afresh.
