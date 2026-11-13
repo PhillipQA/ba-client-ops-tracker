@@ -119,6 +119,9 @@ export interface AssistantContext {
   currentUser: Pick<UserAccount, 'id' | 'name' | 'role' | 'modules'>
   client?: Client
   project?: Project
+  /** Every client and project chosen; a client with none of its projects chosen means all of them. */
+  clientIds?: string[]
+  projectIds?: string[]
   openItems: WorkItem[]
   recentItems: WorkItem[]
   upcomingActivities: PlannerActivity[]

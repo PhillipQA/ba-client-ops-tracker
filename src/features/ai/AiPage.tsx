@@ -34,9 +34,10 @@ export function AiPage({ app, currentUser }: { app: AppState; currentUser: Signe
         initialClientId={aiClientId}
         initialProjectId={aiProjectId}
         initialPrompt={aiPrompt}
-        onContextChange={(clientId, projectId) => {
-          setAiClientId(clientId)
-          setAiProjectId(projectId)
+        onContextChange={() => {
+          // The assistant keeps the clients and projects chosen; clearing these lets the same client be opened again.
+          setAiClientId('')
+          setAiProjectId('')
           setAiPrompt('')
         }}
         onApplySuggestion={applyAISuggestion}
