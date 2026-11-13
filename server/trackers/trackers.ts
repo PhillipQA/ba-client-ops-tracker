@@ -39,6 +39,7 @@ import {
   planSync,
   sheetIdFrom,
   tabRange,
+  unchangedFile,
 } from '../../src/features/trackers/trackerSync'
 import { cleanTimelineSettings } from '../../src/features/trackers/timelineModel'
 import { EXCEL_MIME, XLSX_MAX_BYTES, XlsxError, readXlsx, type Workbook } from './xlsx'
@@ -758,7 +759,14 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     tracker: any,
     user: User,
     force: boolean,
-  ): Promise<{ source: TrackerSource; report: SyncReport | null; skipped?: boolean; tasks?: number }> {
+  ): Promise<{
+    source: TrackerSource
+    report: SyncReport | null
+    skipped?: boolean
+    /** Skipped because the Excel file has not changed since the last sync. */
+    unchanged?: boolean
+    tasks?: number
+  }> {
     const source = await sourceRow(tenant, tracker.id)
     if (!source) throw new TrackerError('This tracker is not connected to a Google Sheet.', 404)
     const key = `${tenant}:${tracker.id}`
@@ -775,6 +783,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     let grid: string[][]
     let token = ''
     let excel = false
+    let fileVersion = ''
     let gantt: GanttState | null = null
     try {
       const access = await googleFor(tenant, source.connected_by)
@@ -786,6 +795,13 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
           { noAccess: true },
         )
       excel = await sourceIsExcel(access.token, source)
+      // An Excel file that has not changed in Drive since the last good sync is not downloaded or read again: nothing
+      // in the tracker would change. Sync now (force) still reads it.
+      if (excel) {
+        fileVersion = (await driveFile(access.token, source.spreadsheet_id))?.version || ''
+        if (unchangedFile(source, fileVersion, force))
+          return { source: sourceOut(source), report: source.last_report || null, skipped: true, unchanged: true }
+      }
       // Edits made in the Gantt chart tab go to the synced tab first, so this sync brings them in. Never fails the sync.
       if (!excel && canWriteSheets(access.scope))
         gantt = await ganttEditsToTab(access.token, source, tracker).catch((error: any) => {
@@ -986,7 +1002,11 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
         .in('id', planned.missing)
       sourceCheck(saved.error)
     }
-    const report = { ...planned.report, ...(grown.added.length ? { addedColumns: grown.added } : {}) }
+    const report = {
+      ...planned.report,
+      ...(grown.added.length ? { addedColumns: grown.added } : {}),
+      ...(fileVersion ? { fileVersion } : {}),
+    }
     const done = await db
       .from('tenant_tracker_sources')
       .update({ last_synced_at: stamp, last_status: 'ok', last_error: '', last_report: report, updated_at: stamp })

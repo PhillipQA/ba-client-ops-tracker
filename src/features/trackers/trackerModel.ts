@@ -303,6 +303,8 @@ export type SyncReport = {
   /** Sheet columns that became tracker columns in this sync. */
   addedColumns?: string[]
   problems: number
+  /** An Excel file's Drive modified time when it was read: a sync is skipped while the file is unchanged. */
+  fileVersion?: string
 }
 
 export type Tracker = {
