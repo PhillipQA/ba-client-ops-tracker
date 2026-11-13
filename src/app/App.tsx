@@ -8,6 +8,7 @@ import { ClosedStatusContext } from '../features/tasks/openWork'
 import { WorkflowLabelsContext } from '../shared/ui/Chips'
 import { EmailComposerHost } from '../features/email/EmailComposer'
 import NotificationCenter from '../features/notifications/NotificationCenter'
+import AssistantWatch from '../features/ai/AssistantWatch'
 import RecordEditDialog from '../features/tasks/RecordEditDialog'
 import LifecycleControls from '../features/tasks/LifecycleControls'
 import { isArchived } from '../features/tasks/lifecycle'
@@ -443,6 +444,13 @@ function App() {
                     <RefreshCw size={16} />
                     {refreshingCloud || hubSyncing ? 'Refreshing…' : 'Refresh now'}
                   </button>
+                )}
+                {currentUser.accountType !== 'platform' && appState.hasModule('action') && (
+                  <AssistantWatch
+                    key={`${currentUser.organizationId}:${currentUser.id}`}
+                    app={appState}
+                    currentUser={currentUser}
+                  />
                 )}
                 {currentUser.accountType !== 'platform' && (
                   <NotificationCenter

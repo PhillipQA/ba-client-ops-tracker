@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: heads-ups (the watcher)
+
+- **A radar button beside the notification bell** shows what is at risk in your day, without being asked: a go-live within 3 days (or passed) with steps still open, an email with no reply for 2 days or more, work 3 days or more overdue, a follow-up 3 days or more late, and time entries Seeds refused.
+- Each heads-up opens where the work is (the task, the email in Work Hub, the tracker row). The sparkle button puts a ready question about it in the BA Assistant; nothing is sent until you send it.
+- **It uses no AI and no tokens.** The server picks the heads-ups by fixed rules from the morning brief's facts and keeps its last check for ten minutes; the page checks when it opens and about every 20 minutes while it is in view, so it is light on the server.
+- Dismiss a heads-up and it stays away (in this browser) until it gets worse: a warning that turns urgent shows again. New ones since the last check are announced under the button.
+- For people with the Action Center. No database change.
+
 ### BA Assistant: memory
 
 **Database change (schema v38).** Before deploying, run `database/migrations/schema-v38-assistant-memory.sql` on the live database (see the README, *Updating*). Until it is run the assistant works as before and remembers nothing; the Memory panel says what to run.
