@@ -53,9 +53,11 @@ export function PriorityChip({ value }: { value: Priority }) {
 }
 
 export function InquirySourceBadge({ source, isNew = false }: { source: WorkItem['source']; isNew?: boolean }) {
+  // Older or hand-made records can lack a source: show Other rather than stopping the whole page.
+  const label = String(source || 'Other')
   return (
-    <span className={`inquiry-source source-${source.toLowerCase().replace(/\s+/g, '-')} ${isNew ? 'is-new' : ''}`}>
-      {source}
+    <span className={`inquiry-source source-${label.toLowerCase().replace(/\s+/g, '-')} ${isNew ? 'is-new' : ''}`}>
+      {label}
       {isNew ? ' · New' : ''}
     </span>
   )

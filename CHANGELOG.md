@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Security review fixes
+**No database change.**
+- **Task files from Drive always download.** A file saved to a task folder (for example an email attachment that is a web page or an SVG picture) is now always sent as a download in a sandbox. Opened as a link, such a file could otherwise have run as the signed-in person. The app itself still opens these files as before.
+- **AI BA Assistant limits per person:** 20 questions and 10 DRF drafts a minute. Normal use never reaches them; they stop a stuck page or script from running up the AI provider's bill.
+- **Work Hub no longer stops on an inquiry without a source:** it shows *Other*.
+
 ### Code: large files split, shared helpers
 **No change in how the app works, and no database change.**
 - The largest files are split into parts named for their job: the tracker server routes (`server/trackers/`), the app's state (`src/app/state/`), the Work Hub message routes (`server/integrations/communications-*.ts`) and the main stylesheet (`src/styles/app/`). See [docs/architecture/REPOSITORY-STRUCTURE.md](docs/architecture/REPOSITORY-STRUCTURE.md).

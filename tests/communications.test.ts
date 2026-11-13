@@ -1752,6 +1752,10 @@ test('Admin connects one shared Drive; attachments save into Client/Project/Task
     assert.equal(got.status, 200)
     assert.equal(got.headers.get('content-type'), 'application/pdf')
     assert.deepEqual(Buffer.from(await got.arrayBuffer()), pdf, 'The saved file comes back from Drive unchanged')
+    // Task files can be email attachments (HTML, SVG): never shown as a page on the app's address.
+    assert.match(String(got.headers.get('content-disposition')), /^attachment;/)
+    assert.equal(got.headers.get('content-security-policy'), "sandbox; default-src 'none'")
+    assert.equal(got.headers.get('x-content-type-options'), 'nosniff')
     assert.equal(
       (await docs(`/api/documents/drive/file?taskId=sub-1&fileId=${savedFile.id}&maxBytes=3`)).status,
       413,

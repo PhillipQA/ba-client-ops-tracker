@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type { Express, Request, Response, NextFunction } from 'express'
 import { decryptSecret, encryptSecret, IntegrationError } from './tenant-integrations'
 import { archivedWorkReason, LifecycleError } from '../../src/features/tasks/lifecycle'
-import { attachmentContentType } from './gmail-content'
+import { attachmentContentType, attachmentDisposition } from './gmail-content'
 import { visibleTask, visibleTaskIds } from '../services/visibility'
 
 /**
@@ -918,6 +918,11 @@ export function registerDrive(app: Express, deps: Deps) {
       res.setHeader('Content-Type', file.mimeType)
       res.setHeader('Content-Length', String(file.bytes.length))
       res.setHeader('X-Content-Type-Options', 'nosniff')
+      // Task files can come from email attachments (HTML, SVG…). The app reads them with fetch, so they are always a
+      // download and sandboxed: opened as a link, one could otherwise run script as the signed-in person.
+      res.setHeader('Content-Disposition', attachmentDisposition(file.name))
+      res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'")
+      res.setHeader('Cache-Control', 'private, no-store')
       res.send(file.bytes)
     }),
   )
