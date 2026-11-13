@@ -16,6 +16,11 @@ Released with pull request #110.
 - Seeds' "none" (`id: 0` on client or product) is no longer read as a product, so a required product is enforced.
 - Time sent to Seeds carries the parent (client company), or Seeds' default parent when the project has no client here.
 - **Projects completed in Seeds** stay on trackers (a tracker can still be on one; the picker marks it *Completed: no new tasks*), on Projects and on Tasks, and their existing work stays editable. They **take no new tasks or subtasks**: the server refuses new work in them (or moved into them), and tracker rows place new tasks in the tracker's open projects instead, or say so when there are none.
+### Email: formatted signatures, like Gmail's
+- The signature editor now has **fonts, sizes, bold/italic/underline, text colour, highlight, links and pictures** (a logo, up to 3 pictures of 200 KB each; wide ones are made smaller). Your existing plain signature is kept and can be formatted.
+- The signature is shown **under the message as it will be sent**, with a tick box to leave it off one email. It is no longer typed into the message box.
+- Emails with a signature are sent as formatted (HTML) email with a plain-text version; pictures travel inside the email, so they show in Gmail and Outlook without "download images".
+- Signatures are cleaned on save and again on send: only formatting, links and embedded pictures are kept. **No database change.**
 
 ### Email: Gmail-style windows and drafts
 - **New email** and **Reply** open in a window docked at the bottom right, like Gmail, instead of a full-screen dialog: you can keep working in the app while writing. Use **–** to minimize it to its title bar (click the bar to open it again), **⤢** to make it large in the middle of the screen, and **×** to discard it. Escape makes a large window normal and a normal one minimized.

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { visibleTaskIds } from '../services/visibility'
 import type { Express, Request, Response, NextFunction } from 'express'
 import { IntegrationError } from './tenant-integrations'
@@ -12,6 +12,7 @@ import {
   replyRecipients,
 } from '../../src/features/email/emailCompose'
 import { activeMentions, cleanMentions, mentionHtml } from '../../src/features/email/emailMentions'
+import { inlineImages, signatureHtml, signatureText } from '../../src/features/email/signatureHtml'
 import { buildMessage, hasScope, messageIds, SEND_SCOPE, type OutgoingAttachment } from './gmail-send'
 import { driveName } from './google-drive'
 import { createContactBook } from './gmail-contacts'
@@ -46,6 +47,7 @@ export type OutboundDeps = {
 }
 
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me'
+const SIGNATURE_STYLE = 'font-family:Arial,Helvetica,sans-serif'
 const REPLAY_MS = 15 * 60_000
 const WINDOW_MS = 10 * 60_000
 const MAX_SENDS_PER_WINDOW = 20
@@ -391,14 +393,46 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
     // 5. Send. From here on, never report a failure unless Gmail confirmed that it did not send.
     // @mentions become blue links in an HTML version; without any, the email stays plain text as before.
     const mentions = activeMentions(text, cleanMentions(body.mentions))
+    // The person's signature goes under the message, formatted, with its images shown in place. It is read from their
+    // account and cleaned again here: the browser only says whether to add it.
+    let stored = ''
+    if (body.signature === true) {
+      const found = await deps.db
+        .from('user_email_signatures')
+        .select('signature')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      stored = String(found.data?.signature || '')
+    }
+    const signed = signatureHtml(stored)
+    const signedText = signed ? signatureText(signed) : ''
+    const boundId = randomBytes(8).toString('hex')
+    const placed = inlineImages(signed, index => `sig${index + 1}.${boundId}@ba-tracker`)
+    const messageHtml = mentionHtml(text, mentions)
+    const html = signed
+      ? messageHtml.replace('</body>', `<br><div style="${SIGNATURE_STYLE}">${placed.html}</div></body>`)
+      : mentions.length
+        ? messageHtml
+        : ''
+    const fullText = signedText ? (text ? `${text}\n\n-- \n${signedText}` : `-- \n${signedText}`) : text
     const raw = buildMessage({
       from: { email: fromEmail, name: String(user.name || '') },
       to: to.addresses,
       cc: cc.addresses,
       bcc: bcc.addresses,
       subject,
-      text,
-      ...(mentions.length ? { html: mentionHtml(text, mentions) } : {}),
+      text: fullText,
+      ...(html ? { html } : {}),
+      ...(placed.images.length
+        ? {
+            inline: placed.images.map(image => ({
+              cid: image.cid,
+              mimeType: image.mimeType,
+              bytes: Buffer.from(image.data, 'base64'),
+            })),
+          }
+        : {}),
       attachments,
       inReplyTo,
       references,
@@ -458,7 +492,7 @@ export function registerOutbound(app: Express, deps: OutboundDeps) {
       external_id: String(sent.id || ''),
       thread_id: String(sent.threadId || threadId || ''),
       subject,
-      body: text.slice(0, EMAIL_LIMITS.body),
+      body: fullText.slice(0, EMAIL_LIMITS.body),
       sender: `${oneLine(user.name) || fromEmail} <${fromEmail}>`.slice(0, 500),
       source_label: 'SENT',
       source_labels: ['SENT'],
