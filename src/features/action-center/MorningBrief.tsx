@@ -1,10 +1,10 @@
 /**
  * The morning brief at the top of the Action Center: the person's overdue work, what is due today, follow-ups,
  * go-lives this week, emails waiting on them and yesterday's time, counted by the server from what they may see
- * (server/ai/brief-routes.ts). With the BA Assistant on, a short AI summary is written once a day; it only words the
- * facts. Every item opens where the work is; nothing is changed from here.
+ * (server/ai/brief-routes.ts). With the BA Assistant on, a short AI summary is written only when the person asks for
+ * it, at most once a day (the server keeps it for the day); it only words the facts. Every item opens where the work is; nothing is changed from here.
  */
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Clock, ListTodo, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react'
 import type { AppState, SignedInUser } from '../../app/useAppState'
 import { requestJson } from '../../shared/http'
@@ -169,15 +169,6 @@ export function MorningBrief({ app, currentUser }: { app: AppState; currentUser:
       setWriting(false)
     }
   }
-  // The AI summary is written once a day, the first time the open brief has none (the server keeps it for the day).
-  const asked = useRef('')
-  const writeLatest = useRef(writeSummary)
-  writeLatest.current = writeSummary
-  useEffect(() => {
-    if (!open || !data?.ai.available || data.summary || asked.current === data.facts.date) return
-    asked.current = data.facts.date
-    void writeLatest.current()
-  }, [open, data])
 
   const toggle = () => {
     const next = !open
@@ -188,10 +179,8 @@ export function MorningBrief({ app, currentUser }: { app: AppState; currentUser:
       /* The choice lasts until the page reloads. */
     }
   }
-  const refresh = () => {
-    setReload(value => value + 1)
-    if (open && data?.ai.available) void writeSummary()
-  }
+  // Refresh only counts again: the AI summary is never rewritten on its own, so it costs no tokens.
+  const refresh = () => setReload(value => value + 1)
 
   const facts = data?.facts
   const workItem = (id: string) => store.items.find(item => item.id === id)
@@ -282,7 +271,7 @@ export function MorningBrief({ app, currentUser }: { app: AppState; currentUser:
             className="secondary compact"
             onClick={refresh}
             disabled={loading || writing}
-            title="Count again and rewrite the summary"
+            title="Count your day again (does not use the AI)"
           >
             <RefreshCw size={14} aria-hidden="true" /> Refresh
           </button>
@@ -320,13 +309,7 @@ export function MorningBrief({ app, currentUser }: { app: AppState; currentUser:
                       ))}
                     </ol>
                   )}
-                  {writing ? (
-                    <small className="brief-muted">
-                      <LoaderCircle size={12} className="spin" aria-hidden="true" /> Rewriting…
-                    </small>
-                  ) : (
-                    <small className="brief-muted">Written at {writtenAt(data.summary.generatedAt)}</small>
-                  )}
+                  <small className="brief-muted">Written at {writtenAt(data.summary.generatedAt)}</small>
                 </div>
               ) : writing ? (
                 <p className="brief-muted">
@@ -339,7 +322,15 @@ export function MorningBrief({ app, currentUser }: { app: AppState; currentUser:
                     Try again
                   </button>
                 </p>
-              ) : null}
+              ) : (
+                <p className="brief-muted">
+                  Would you like your morning brief?{' '}
+                  <button type="button" className="brief-link" onClick={() => void writeSummary()}>
+                    Write my morning brief
+                  </button>{' '}
+                  It uses the AI once and is kept for the rest of the day.
+                </p>
+              )}
             </div>
           )}
           {facts && clear && <p className="brief-clear">Nothing needs you right now.</p>}
