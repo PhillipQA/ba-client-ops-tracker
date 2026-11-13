@@ -67,8 +67,8 @@ export function SeedsConnectionCard() {
           <h2>Seeds</h2>
           <p>
             Reads clients, projects, tasks and project members from Seeds. Each person is matched by email and sees the
-            projects Seeds lists them on. Every 30 minutes a quick sync checks only projects that are new, changed or
-            already have people from here; once a day a full sync checks them all.
+            projects Seeds lists them on. Every 10 minutes a delta sync reads only the projects Seeds changed since the
+            last sync (members, tasks, contract, product and deletions); once a week a full sync checks them all.
           </p>
         </div>
         <span className={account?.connected ? (sync?.lastError ? 'role-badge warn' : 'role-badge ok') : 'role-badge'}>

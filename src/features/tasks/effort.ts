@@ -1,5 +1,6 @@
 // Effort tracking: optional per-task estimates and time entries.
 // Shared by the browser and the server, so this module stays free of React and Node APIs.
+import { seedsProductFor } from '../../shared/seeds'
 
 export const EFFORT_CATEGORIES = [
   'Analysis',
@@ -71,12 +72,24 @@ export type SeedsTimeRule = {
   subtasks: { id: string; title: string; seedsTaskId?: string }[]
   /** The task's title, for an entry's remarks. */
   taskTitle?: string
+  /**
+   * The Seeds tasks whose time would go without a product Seeds requires (the Seeds project or that Seeds task
+   * requires one, and none is picked on the task or set by Seeds): such time is not sent until a product is picked.
+   */
+  needsProduct?: string[]
 }
 
 /** The time rule for one task or subtask, or null when Seeds is off (time is logged as before). */
 export function seedsTimeRule(
   state: { seeds?: { connected?: boolean } | null; projects?: any[]; items?: any[] },
-  item: { id?: string; title?: string; projectId?: string; parentTaskId?: string; seedsTaskId?: string },
+  item: {
+    id?: string
+    title?: string
+    projectId?: string
+    parentTaskId?: string
+    seedsTaskId?: string
+    productId?: string
+  },
 ): SeedsTimeRule | null {
   if (state?.seeds?.connected !== true) return null
   const project = (state.projects || []).find(candidate => candidate?.id === item?.projectId)
@@ -93,9 +106,11 @@ export function seedsTimeRule(
       ...(known(candidate.seedsTaskId) ? { seedsTaskId: candidate.seedsTaskId } : {}),
     }))
   const tagged = known(item?.seedsTaskId)
+  const needsProduct = tasks.filter(task => seedsProductFor(state, item, task.id).missing).map(task => task.id)
   return {
     tasks,
     subtasks,
+    ...(needsProduct.length ? { needsProduct } : {}),
     ...(item?.title ? { taskTitle: String(item.title) } : {}),
     ...(tagged ? { taggedTaskId: tagged } : {}),
   }

@@ -94,8 +94,16 @@ export interface Project {
   beforeSeeds?: boolean
   /** The Seeds product (Barter CX…) its time entries carry, when Seeds names one. */
   seedsProductId?: string
+  /** What a time entry on this project must carry, and its defaults (Seeds Projects API). */
+  seedsTimeRules?: {
+    productRequired?: boolean
+    taskRequired?: boolean
+    remarksRequired?: boolean
+    defaultProductId?: string
+    defaultTaskId?: string
+  }
   /** This project's Seeds tasks (Go Live, Meetings…), from the sync: what its tasks and subtasks link to. */
-  seedsTasks?: { id: string; name: string; archived?: boolean }[]
+  seedsTasks?: { id: string; name: string; productRequired?: boolean; defaultProductId?: string; archived?: boolean }[]
   accessLimited?: boolean
 }
 
@@ -184,6 +192,11 @@ export interface WorkItem {
   seedsArchived?: boolean
   /** The Seeds task (from the project's list) this work counts toward. A subtask without one follows its parent. */
   seedsTaskId?: string
+  /**
+   * The Seeds product (from Seeds' product list) this task's time carries. Picked on top-level tasks, where time is
+   * logged; required before sending when the Seeds project or Seeds task requires a product.
+   */
+  productId?: string
 }
 
 export type WorkActivityAction =

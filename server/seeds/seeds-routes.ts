@@ -8,7 +8,7 @@
  *
  * Seeds gives this app one application token (docs/seeds-api.md); the server keeps it in SEEDS_API_TOKEN. One sync
  * reads the whole account: each person here is matched to Seeds by email, and the projects Seeds lists them on as a
- * member decide what they see. Only projects someone here works on come in. The account syncs every 30 minutes; if
+ * member decide what they see. Only projects someone here works on come in. The account syncs every 10 minutes; if
  * Seeds cannot be reached, the last synced access stays.
  */
 import type { Express, NextFunction, Request, Response } from 'express'
@@ -16,6 +16,7 @@ import { normalizeAssignment, rolesFor, workspaceAccess } from '../../src/shared
 import { jobRoles } from '../../src/shared/roles'
 import { defaultWaitingOn } from '../../src/features/tasks/waitingOn'
 import {
+  cleanProducts,
   moveToBeforeSeeds,
   type SeedsCounts,
   type SeedsSnapshot,
@@ -30,7 +31,7 @@ import {
   type SeedsReadOptions,
   type SeedsSource,
 } from './seeds-client'
-import { decideSeedsMatch, planSeedsSync, SEEDS_ACTOR } from './seeds-sync'
+import { decideSeedsMatch, planSeedsSync, refreshLinkedProjects, SEEDS_ACTOR } from './seeds-sync'
 import { checkGoogleIdToken, postSeedsTime, seedsTimeBody, seedsTimeKey } from './seeds-time'
 import { type TimeEntry, unsentToSeeds } from '../../src/features/tasks/effort'
 
@@ -58,9 +59,15 @@ export interface SeedsDeps {
   source?: (token: string, apiUrl: string, options: SeedsReadOptions) => SeedsSource
 }
 
-const SYNC_EVERY_MS = 30 * 60_000
-/** A full sync (every open project's members) at most once a day; quick ones in between. */
-const FULL_SYNC_EVERY_MS = 24 * 3600_000
+/** A delta sync reads only what Seeds changed (often one request), so it can run often within 20 requests a minute. */
+const SYNC_EVERY_MS = 10 * 60_000
+/**
+ * A full sync (every open project's members, the people directory, parent renames) once a week as a safety net, and
+ * whenever someone asks for one; delta syncs in between.
+ */
+const FULL_SYNC_EVERY_MS = 7 * 24 * 3600_000
+/** A delta starts this much before the last change Seeds sent, so a change saved during the last read is not missed. */
+const DELTA_OVERLAP_MS = 10 * 60_000
 const MAX_ASSIGNMENTS = 5000
 const text = (value: unknown) => (value == null ? '' : String(value))
 const emailOf = (account: any) => text(account?.email).trim().toLowerCase()
@@ -97,6 +104,11 @@ export function planAccountSync(
     id?: () => string
     /** Seeds projects Seeds would not give members or tasks for. */
     skipped?: number
+    /**
+     * A delta sync: the Seeds projects it read. Only assignments on these are replaced; everyone's other Seeds
+     * assignments, and the people directory, stay as they were.
+     */
+    changed?: Set<string>
   },
 ) {
   let next = state
@@ -113,10 +125,26 @@ export function planAccountSync(
     linked: 0,
     renamed: 0,
   }
+  const changed = options.changed
+  const seedsIdOf = new Map<string, string>(
+    (Array.isArray(state?.projects) ? state.projects : []).map((project: any): [string, string] => [
+      text(project?.id),
+      text(project?.seedsId),
+    ]),
+  )
   for (const account of active(state)) {
     const userId = text(account.id)
     const mine = personalSnapshot(snapshot, emailOf(account))
-    if (!mine.assignments.length) {
+    // A delta sync leaves alone this person's Seeds assignments on projects it did not read.
+    const keep = changed
+      ? workspaceAccess(next).assignments.filter(
+          assignment =>
+            assignment.source === 'seeds' &&
+            assignment.userId === userId &&
+            !(assignment.projectId && changed.has(seedsIdOf.get(assignment.projectId) || '')),
+        )
+      : []
+    if (!mine.assignments.length && !keep.length) {
       // Not on any Seeds project: their hand-entered assignments (if any) count instead.
       unmatched++
       const seeds = seedsState(next)
@@ -132,11 +160,13 @@ export function planAccountSync(
       continue
     }
     matched++
-    const result = planSeedsSync(next, mine, { ...options, userId })
+    const result = planSeedsSync(next, mine, { ...options, userId, keep })
     next = result.state
     pending += result.pending.length
     for (const key of ['assignments', 'created', 'linked', 'renamed'] as const) total[key] += result.counts[key]
   }
+  // Linked projects nobody here is on any more still follow Seeds: closed, deleted or renamed there.
+  next = refreshLinkedProjects(next, snapshot.projects)
   const projects = new Set(snapshot.assignments.map(a => a.projectId).filter(Boolean))
   total.projects = projects.size
   total.clients = new Set(snapshot.projects.filter(p => projects.has(p.id) && p.clientId).map(p => p.clientId)).size
@@ -147,8 +177,11 @@ export function planAccountSync(
     seeds: {
       ...seeds,
       // Keep the complete account directory, not only people assigned to projects in this app.
-      // A failed sync never reaches this point, so the last known-good directory remains available.
-      people: snapshot.people
+      // A failed sync never reaches this point, so the last known-good directory remains available. A delta sync
+      // does not read /users, so it keeps the directory it has.
+      // The product list, when this read fetched it; else the last one.
+      products: snapshot.products ? cleanProducts(snapshot.products) : seeds.products,
+      people: (changed && !snapshot.people.length ? seeds.people : snapshot.people)
         .filter(person => {
           const email = text(person.email).trim().toLowerCase()
           return Boolean(text(person.id).trim() && text(person.name).trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
@@ -165,7 +198,8 @@ export function planAccountSync(
         lastSuccessAt: options.now,
         matched,
         unmatched,
-        fields,
+        // A delta reads fewer lists: the field names seen before stay for the ones it did not read.
+        fields: changed ? { ...seeds.sync.fields, ...fields } : fields,
         ...(options.skipped ? { skipped: options.skipped } : {}),
       },
     },
@@ -202,24 +236,28 @@ export function createSeedsService(deps: SeedsDeps) {
     if (!token) throw new SeedsError('The server has no Seeds token yet (SEEDS_API_TOKEN). Ask Internal Admin.', 503)
     const now = new Date().toISOString()
     const emails = new Set<string>(active(before).map(emailOf))
-    // Quick unless a full one is asked for or due (once a day, and the first time).
+    // Delta unless a full one is asked for or due (once a week, and the first time).
     const last = seedsState(before).sync
     const fullDue =
       full ||
       !last.lastFullAt ||
-      !last.knownProjects?.length ||
+      !last.updatedSince ||
       Date.now() - Date.parse(last.lastFullAt) >= FULL_SYNC_EVERY_MS
-    const quick = fullDue
+    const beforeProjects = Array.isArray(before.projects) ? before.projects : []
+    const delta = fullDue
       ? undefined
       : {
-          // A day's margin, so a change Seeds dates a little late is still caught.
-          since: new Date(Date.parse(last.lastSuccessAt || last.lastFullAt || now) - 24 * 3600_000).toISOString(),
-          known: new Set(last.knownProjects || []),
-          keep: new Set(last.memberProjects || []),
+          since: new Date(Date.parse(last.updatedSince || now) - DELTA_OVERLAP_MS).toISOString(),
+          parents: new Set<string>(
+            (Array.isArray(before.clients) ? before.clients : [])
+              .filter((client: any) => client?.seedsId)
+              .map((client: any) => String(client.seedsId)),
+          ),
+          products: new Set<string>(seedsState(before).products.map(product => product.id)),
         }
-    // Projects from Seeds that are still open here: if Seeds stops listing one, the read asks whether it was closed.
+    // Projects from Seeds that are still open here: if Seeds stops listing one, a full read asks whether it closed.
     const linked = new Set<string>(
-      (Array.isArray(before.projects) ? before.projects : [])
+      beforeProjects
         .filter((project: any) => project?.seedsId && !project.seedsArchived && !project.archived)
         .map((project: any) => String(project.seedsId)),
     )
@@ -231,7 +269,7 @@ export function createSeedsService(deps: SeedsDeps) {
       read = await (deps.source
         ? deps.source(token, deps.apiUrl(), options)
         : httpSeedsSource(token, deps.apiUrl(), fetch, 20000, options)
-      ).read(emails, quick, linked)
+      ).read(emails, delta, linked)
     } catch (error) {
       const message = error instanceof SeedsError ? error.message : 'Seeds could not be read.'
       if (!(error instanceof SeedsError)) console.error('Seeds read failed:', error)
@@ -248,6 +286,8 @@ export function createSeedsService(deps: SeedsDeps) {
       })
       return { ok: false, error: message }
     }
+    // A delta read falls back to a full one when Seeds turns down `updatedSince`.
+    const mode: 'full' | 'delta' = read.mode || (delta ? 'delta' : 'full')
     let result: ReturnType<typeof planAccountSync> | undefined
     await update(organizationId, SEEDS_ACTOR, 'seeds-sync', state => {
       result = planAccountSync(state, read.snapshot, read.fields, {
@@ -256,21 +296,23 @@ export function createSeedsService(deps: SeedsDeps) {
         today: deps.today(),
         openStatus: deps.openStatus(state),
         waitingOn: defaultWaitingOn(state.taskSettings),
+        ...(mode === 'delta' ? { changed: new Set(read.projectIds || read.snapshot.projects.map(p => p.id)) } : {}),
       })
-      // What the next quick sync needs: every project seen, and those with someone from here on them.
       const seeds = seedsState(result.state)
-      const memberProjects = [...new Set(read.snapshot.assignments.map(a => a.projectId).filter(Boolean))] as string[]
+      // The next delta starts from the latest change Seeds sent; with none, from where this one started (a full sync
+      // with no dates from Seeds starts from now).
+      const updatedSince = read.watermark || (mode === 'full' ? now : last.updatedSince || now)
+      const { knownProjects: _known, memberProjects: _members, ...sync } = seeds.sync as any
       return {
         ...result.state,
         seeds: {
           ...seeds,
           sync: {
-            ...seeds.sync,
-            mode: fullDue ? 'full' : 'quick',
+            ...sync,
+            mode,
             checked: read.checked ?? 0,
-            lastFullAt: fullDue ? now : last.lastFullAt,
-            knownProjects: read.projectIds || last.knownProjects || [],
-            memberProjects,
+            lastFullAt: mode === 'full' ? now : last.lastFullAt,
+            updatedSince,
           },
         },
       }
@@ -498,8 +540,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         connected: seeds.connected,
         tokenReady: Boolean(deps.token()),
         apiUrl: deps.apiUrl(),
-        // The project id lists stay on the server.
-        sync: (({ knownProjects: _known, memberProjects: _members, ...rest }) => rest)(seeds.sync),
+        sync: seeds.sync,
         ...service.status(user.organizationId),
         people: (status.people || []).map(person => ({ ...person, name: names.get(person.userId) || 'Former user' })),
       })
@@ -698,7 +739,7 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
 
   return {
     service,
-    /** Syncs every account with Seeds turned on every 30 minutes. */
+    /** Syncs every account with Seeds turned on every 10 minutes. */
     start() {
       const timer = setInterval(() => void service.syncAll(), SYNC_EVERY_MS)
       timer.unref()

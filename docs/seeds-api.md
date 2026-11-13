@@ -92,6 +92,17 @@ All paths are under `/api/v1`. All list/get calls are `GET`.
 | PATCH | `/overtime-requests/{entryId}` | Update overtime request | `workforce.overtime.update` | required |
 | POST | `/overtime-requests/{entryId}/cancel` | Cancel overtime request | `workforce.overtime.cancel` | required |
 
+## Projects API additions (Seeds, 2026-11-13)
+
+- `/projects` records carry **`updatedAt`**, and `GET /projects?updatedSince=<ISO time>` returns only projects created, changed or deleted since then (still cursor-paged). Deleted projects come back with a **deletion indicator**.
+- A change to a project's **members or tasks** also marks the project updated, so a delta sync only needs members and tasks for the projects that delta returns.
+- Projects carry the **contract number/reference**, the **project status**, and **project-level time-entry requirements and defaults** (e.g. whether a product is required, default product/task). These replace the separate `/statuses` and `/contracts` permissions, which Seeds did not grant.
+- Project **members include email and organizational role**. There is no separate project-member role and no `createdAt`.
+- The app's token has `core.products.read` and is limited to **20 requests per minute**. The app reads `GET /products` in each full sync (and in a delta when a change names an unknown product). Some Seeds projects and Seeds tasks require a product on time entries: the task's picked product is sent, else the project's, else Seeds' default, and time that still has none is not sent.
+- The updated employee API documentation page has examples and synchronization guidance; field names in this app are read leniently until checked against it (Settings › Integrations › Seeds shows the names Seeds sent, including one level inside objects).
+
+How this app syncs: a **delta sync** every 10 minutes (`updatedSince` = the latest `updatedAt` from the last sync, minus 10 minutes of overlap), and a **full sync** once a week or when someone clicks Full sync. If Seeds turns down `updatedSince`, that sync reads everything instead.
+
 ## What this app needs (read only)
 
 To ask Seeds Admin for: `core.users.read`, `customers.parents.read`, `projects.projects.read`, `projects.members.read`, `projects.tasks.read`, and `customers.clients.read` (used only when a project names a Seeds client instead of its parent). Setup steps: [setup/seeds.md](setup/seeds.md).
