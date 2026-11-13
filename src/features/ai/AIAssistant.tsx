@@ -1,10 +1,13 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
   CalendarPlus,
   Clock,
   Brain,
   ListChecks,
+  Mic,
+  Square,
+  Volume2,
   PencilLine,
   Table2,
   CheckCircle2,
@@ -50,6 +53,8 @@ import { createTrackerDraft } from './trackerDraft'
 import AiScopePicker from './AiScopePicker'
 import AssistantMemory from './AssistantMemory'
 import { shownValue, type TaskUpdate } from './taskUpdate'
+import { useVoice } from './useVoice'
+import { joinDictation, VOICE_LANGS } from './voice'
 import { NO_SCOPE, cleanScope, inScope, projectClients, scopeKey, singleOf, type AiScope } from './aiScope'
 import type { TimeEntryMutationResult } from '../tasks/timeEntries'
 
@@ -285,6 +290,15 @@ export default function AIAssistant({
   // The Memory panel, and a count that goes up when an answer changed the memory, so the open panel reads it again.
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [memoryVersion, setMemoryVersion] = useState(0)
+  // Voice: the microphone adds what is said to the question box (it is never sent by itself), and answers can be
+  // read aloud. Both are the browser's own, so they use no tokens.
+  const voice = useVoice()
+  const typedBefore = useRef('')
+  const toggleMic = () => {
+    if (voice.listening) return voice.stopListening()
+    typedBefore.current = input
+    voice.listen(spoken => setInput(joinDictation(typedBefore.current, spoken)))
+  }
   const chooseAgent = (on: boolean) => {
     setAgent(on)
     try {
@@ -403,6 +417,7 @@ export default function AIAssistant({
     event.preventDefault()
     const text = input.trim()
     if (!text || busy) return
+    voice.stopListening()
 
     const job = operation.begin()
     const userMessage: AIMessage = {
@@ -427,6 +442,7 @@ export default function AIAssistant({
       )
       if (!job.isCurrent()) return
       const replies = assistantMessages(result)
+      if (voice.readAloud && replies[0]) voice.speak(replies[0].content, replies[0].id)
       if (result.memory) setMemoryVersion(value => value + 1)
       setThreads(current => ({ ...current, [threadKey]: [...(current[threadKey] || nextMessages), ...replies] }))
     } catch (requestError) {
@@ -772,6 +788,19 @@ export default function AIAssistant({
                 </details>
               ) : null}
               <div className="ai-message-body">{message.content}</div>
+              {voice.canSpeak && message.role === 'assistant' && (
+                <button
+                  type="button"
+                  className="ai-speak"
+                  onClick={() =>
+                    voice.speakingId === message.id ? voice.stopSpeaking() : voice.speak(message.content, message.id)
+                  }
+                  title={voice.speakingId === message.id ? 'Stop reading' : 'Read this answer aloud'}
+                  aria-label={voice.speakingId === message.id ? 'Stop reading' : 'Read this answer aloud'}
+                >
+                  {voice.speakingId === message.id ? <Square size={12} /> : <Volume2 size={13} />}
+                </button>
+              )}
               {message.memory?.remembered.map(note => (
                 <div className="ai-remembered" key={note.id}>
                   <Brain size={12} aria-hidden="true" /> Remembered: {note.text}
@@ -920,10 +949,63 @@ export default function AIAssistant({
               <input type="checkbox" checked={agent} onChange={event => chooseAgent(event.target.checked)} />
               Agent mode (beta)
             </label>
+            {voice.canListen && (
+              <button
+                type="button"
+                className={`secondary ai-mic${voice.listening ? ' listening' : ''}`}
+                onClick={toggleMic}
+                aria-pressed={voice.listening}
+                title={
+                  voice.listening
+                    ? 'Stop listening'
+                    : 'Speak your question: it is written in the box, and sent only when you press Assess'
+                }
+              >
+                {voice.listening ? <Square size={15} /> : <Mic size={16} />}
+                {voice.listening ? 'Stop' : 'Speak'}
+              </button>
+            )}
             <button className="primary" disabled={busy || !input.trim()}>
               <Sparkles size={17} /> Assess
             </button>
           </div>
+          {(voice.canListen || voice.canSpeak) && (
+            <div className="ai-voice-row">
+              {voice.canSpeak && (
+                <label
+                  className="ai-agent-switch"
+                  title="Each new answer is read aloud by your browser. Uses no tokens."
+                >
+                  <input
+                    type="checkbox"
+                    checked={voice.readAloud}
+                    onChange={event => voice.setReadAloud(event.target.checked)}
+                  />
+                  Read answers aloud
+                </label>
+              )}
+              <label className="ai-agent-switch">
+                Voice language
+                <select value={voice.lang} onChange={event => voice.setLang(event.target.value)}>
+                  {VOICE_LANGS.map(option => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {voice.listening && (
+                <span className="ai-voice-status" role="status">
+                  Listening…
+                </span>
+              )}
+              {voice.problem && (
+                <span className="ai-voice-status ai-voice-problem" role="alert">
+                  {voice.problem}
+                </span>
+              )}
+            </div>
+          )}
         </form>
       </div>
     </section>

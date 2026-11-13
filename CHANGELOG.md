@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: voice
+
+- **Speak your question.** A **Speak** button beside Assess writes what you say into the question box, after anything you already typed. Nothing is sent until you press Assess, so a misheard sentence never spends tokens.
+- **Hear the answers.** Each answer has a small speaker button to read it aloud (and stop), and **Read answers aloud** reads every new answer as it arrives. Markdown, links and code are left out of what is read, and long answers are read up to about 900 characters.
+- **Voice language**: English (Philippines), Filipino / Taglish, or English (US), for both listening and reading. Your choices are remembered in this browser.
+- It is all the browser's own speech: no AI tokens and no work on the server. Dictation works in Chrome, Edge and Safari (in Chrome and Edge the browser sends the audio to its speech service to turn it into text); where a browser has no dictation or no speech, that button is not shown. The browser asks for the microphone the first time.
+
 ### BA Assistant: one-click approvals
 
 - **The assistant can change existing tasks, once you approve.** Ask "push my overdue tasks to Monday", "set the UAT task to High" or "move the follow-up on the config task to Friday": it prepares a **Task update** card showing each task as before → after, and **Approve & update** applies them all in one click. It covers due date, follow-up date, priority, an open status and waiting on. Closing, reopening and reassigning stay on the task, where their own checks are.
