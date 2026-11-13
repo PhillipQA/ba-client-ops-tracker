@@ -42,3 +42,14 @@ test('dates', () => {
 test('a file that is not a workbook is refused', () => {
   assert.throws(() => readXlsx(Buffer.from('not a zip at all, just some text here')), XlsxError)
 })
+
+test('an Excel file unchanged in Drive since the last good sync is not read again, unless Sync now', async () => {
+  const { unchangedFile } = await import('../src/features/trackers/trackerSync')
+  const synced = { last_status: 'ok', last_report: { fileVersion: '2026-11-13T01:00:00.000Z' } as any }
+  assert.equal(unchangedFile(synced, '2026-11-13T01:00:00.000Z', false), true)
+  assert.equal(unchangedFile(synced, '2026-11-13T01:00:00.000Z', true), false, 'Sync now reads it')
+  assert.equal(unchangedFile(synced, '2026-11-13T02:00:00.000Z', false), false, 'changed in Drive')
+  assert.equal(unchangedFile({ ...synced, last_status: 'error' }, '2026-11-13T01:00:00.000Z', false), false)
+  assert.equal(unchangedFile(synced, '', false), false, 'no version from Drive: read it')
+  assert.equal(unchangedFile({ last_status: 'ok', last_report: null }, '2026-11-13T01:00:00.000Z', false), false)
+})

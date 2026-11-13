@@ -290,6 +290,20 @@ export function planSync(input: {
 }
 
 /** A short sentence for the sync bar and the history. */
+/**
+ * Whether a sync of a followed Excel file can be skipped: it was last read without error at this same Drive version,
+ * and the sync was not asked for by hand (Sync now). A file Drive gives no version for is always read.
+ */
+export function unchangedFile(
+  source: { last_status?: string; last_report?: Partial<SyncReport> | null },
+  fileVersion: string,
+  force: boolean,
+) {
+  return Boolean(
+    !force && fileVersion && source.last_status === 'ok' && source.last_report?.fileVersion === fileVersion,
+  )
+}
+
 export function describeSync(report: SyncReport) {
   const parts: string[] = []
   if (report.added) parts.push(`${report.added} new row${report.added === 1 ? '' : 's'}`)
