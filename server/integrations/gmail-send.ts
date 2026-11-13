@@ -65,6 +65,8 @@ export type OutgoingMessage = {
   text: string
   /** An HTML version of the text (for @mention links). Sent with the text as alternatives; mail apps show one. */
   html?: string
+  /** Images shown inside the HTML (`<img src="cid:…">`), such as a signature's logo. */
+  inline?: { cid: string; mimeType: string; bytes: Buffer }[]
   attachments?: OutgoingAttachment[]
   /** Headers that keep a reply in the same conversation. */
   inReplyTo?: string
@@ -94,6 +96,36 @@ export function buildMessage(message: OutgoingMessage): Buffer {
   ]
   // With HTML, the body is multipart/alternative: plain text first, HTML last (the one mail apps prefer).
   const alternative = `=_ba_alt_${randomBytes(18).toString('hex')}`
+  const htmlOnly = message.html
+    ? [
+        'Content-Type: text/html; charset="UTF-8"',
+        'Content-Transfer-Encoding: base64',
+        '',
+        base64Lines(message.html.replace(/\r\n|\r|\n/g, '\r\n')),
+      ]
+    : []
+  // Images shown in the HTML travel with it as multipart/related, each under its Content-ID.
+  const inline = message.html ? message.inline || [] : []
+  const related = `=_ba_rel_${randomBytes(18).toString('hex')}`
+  const htmlPart = inline.length
+    ? [
+        `Content-Type: multipart/related; boundary="${related}"`,
+        '',
+        `--${related}`,
+        ...htmlOnly,
+        ...inline.flatMap((image, index) => [
+          `--${related}`,
+          `Content-Type: ${/^image\/(png|jpeg|gif)$/.test(image.mimeType) ? image.mimeType : 'application/octet-stream'}`,
+          `Content-ID: <${image.cid.replace(/[^\w.@-]/g, '')}>`,
+          `Content-Disposition: inline; filename="image${index + 1}.${image.mimeType.split('/')[1] || 'png'}"`,
+          'Content-Transfer-Encoding: base64',
+          '',
+          base64Lines(image.bytes),
+        ]),
+        `--${related}--`,
+        '',
+      ]
+    : htmlOnly
   const textPart = message.html
     ? [
         `Content-Type: multipart/alternative; boundary="${alternative}"`,
@@ -101,10 +133,7 @@ export function buildMessage(message: OutgoingMessage): Buffer {
         `--${alternative}`,
         ...plainPart,
         `--${alternative}`,
-        'Content-Type: text/html; charset="UTF-8"',
-        'Content-Transfer-Encoding: base64',
-        '',
-        base64Lines(message.html.replace(/\r\n|\r|\n/g, '\r\n')),
+        ...htmlPart,
         `--${alternative}--`,
         '',
       ]

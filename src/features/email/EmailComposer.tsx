@@ -22,6 +22,8 @@ import { useIsClosed } from '../tasks/openWork'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
 import { applyTemplateBody, emailStore, signatureBlock, type EmailTemplate } from './emailStore'
 import { EmailTemplatesManager } from './EmailTemplates'
+import { SignatureEditor } from './SignatureEditor'
+import { sanitizeSignature, signatureHtml, storeSignature } from './signatureHtml'
 import { COMPOSE_EVENT, type ComposePrefill } from './composeEvent'
 import {
   draftKey,
@@ -335,10 +337,12 @@ export function EmailComposer({
   const windowRef = useRef<HTMLElement>(null)
   const primary = items.find(item => item.id === prefill.taskIds?.[0])
   const clientEmail = clients.find(client => client.id === primary?.clientId)?.email || ''
-  // The signature lives on the person's account. The copy in this browser shows at once and is used if the server
-  // cannot be reached or does not have the email templates migration yet.
-  const signature = useRef(readSignature(currentUser))
-  const [signatureText, setSignatureText] = useState(signature.current)
+  // The signature lives on the person's account, formatted (see signatureHtml). It is shown under the message and
+  // added when the email is sent, not typed into the message. The copy in this browser shows at once.
+  // `signature` is the text block older versions put in the message itself: none now.
+  const signature = useRef('')
+  const [signatureShown, setSignatureShown] = useState(() => signatureHtml(readSignature(currentUser)))
+  const [addSignature, setAddSignature] = useState(prefill.signature !== false)
   const [signatureNote, setSignatureNote] = useState('')
   const signatureTimer = useRef<number | undefined>(undefined)
   const [to, setTo] = useState(prefill.to ?? (isValidEmail(clientEmail) ? clientEmail : ''))
@@ -434,31 +438,20 @@ export function EmailComposer({
   }
   const toggleMin = () => onMode?.(mode === 'min' ? 'normal' : 'min')
 
-  // Load the account's signature. A signature only kept in this browser (before v0.8.0) is moved to the account once.
+  // Load the account's signature. One only kept in this browser (before v0.8.0) is moved to the account once.
   useEffect(() => {
     let live = true
     emailStore
       .signature()
       .then(async result => {
         if (!live) return
-        let next = result.signature
-        if (!result.saved && signature.current.trim()) {
-          next = (await emailStore.saveSignature(signature.current).catch(() => ({ signature: signature.current })))
-            .signature
-        }
-        if (!live || next === signature.current) return
-        const before = signatureBlock(signature.current)
-        signature.current = next
-        setSignatureText(next)
-        writeSignature(currentUser, next)
-        // Swap it into a new, untouched email only.
-        if (prefill.message === undefined)
-          setMessage(current => {
-            if (current !== before) return current
-            const swapped = signatureBlock(next)
-            initial.current = initial.current.replace(JSON.stringify(before), JSON.stringify(swapped))
-            return swapped
-          })
+        let stored = result.signature
+        const local = readSignature(currentUser)
+        if (!result.saved && local.trim())
+          stored = (await emailStore.saveSignature(local).catch(() => ({ signature: local }))).signature
+        if (!live) return
+        writeSignature(currentUser, stored)
+        setSignatureShown(signatureHtml(stored))
       })
       .catch(error => {
         if (live && error?.status === 503)
@@ -471,15 +464,16 @@ export function EmailComposer({
       window.clearTimeout(signatureTimer.current)
     }
   }, [])
-  const editSignature = (value: string) => {
-    signature.current = value
-    setSignatureText(value)
-    writeSignature(currentUser, value)
+  const signatureSafe = sanitizeSignature(signatureShown)
+  const editSignature = (html: string) => {
+    const stored = storeSignature(html)
+    setSignatureShown(signatureHtml(stored))
+    writeSignature(currentUser, stored)
     window.clearTimeout(signatureTimer.current)
     signatureTimer.current = window.setTimeout(() => {
       emailStore
-        .saveSignature(value)
-        .then(() => setSignatureNote('Saved to your account. It is added to your new emails on any device.'))
+        .saveSignature(stored)
+        .then(() => setSignatureNote('Saved to your account. It is added to your emails on any device.'))
         .catch(error =>
           setSignatureNote(
             error?.status === 503
@@ -626,6 +620,7 @@ export function EmailComposer({
       uploads,
       replyToId: prefill.replyToId,
       mentions: activeMentions(message, mentions),
+      signature: addSignature && Boolean(signatureShown),
     })
     onClose()
   }
@@ -869,19 +864,26 @@ export function EmailComposer({
               }}
             />
           </label>
+          {signatureShown && (
+            <div className="email-signature-preview">
+              <label className="email-signature-toggle">
+                <input type="checkbox" checked={addSignature} onChange={e => setAddSignature(e.target.checked)} />
+                Add my signature under the message
+              </label>
+              {addSignature && (
+                // Cleaned by sanitizeSignature: only safe formatting, links and embedded pictures are left.
+                // biome-ignore lint/security/noDangerouslySetInnerHtml: the HTML is sanitized just above
+                <div className="email-signature-shown" dangerouslySetInnerHTML={{ __html: signatureSafe }} />
+              )}
+            </div>
+          )}
           <details className="email-signature">
-            <summary>Signature</summary>
-            <textarea
-              rows={3}
-              value={signatureText}
-              maxLength={2000}
-              aria-label="Email signature"
-              onChange={e => editSignature(e.target.value)}
-              placeholder="Name, title, phone"
-            />
+            <summary>{signatureShown ? 'Edit signature' : 'Add a signature'}</summary>
+            <SignatureEditor html={signatureShown} onChange={editSignature} />
             <small>
-              Yours only, saved to your account and added to your new emails. Gmail does not add your Gmail signature to
-              emails sent by the tracker.
+              Yours only, saved to your account and added under your emails. Format it like in Gmail: fonts, colours,
+              highlight, links and pictures such as a logo. Gmail does not add your Gmail signature to emails sent by
+              the tracker.
             </small>
             {signatureNote && (
               <small className="email-signature-status" role="status">

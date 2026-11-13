@@ -12,6 +12,8 @@ export type ComposePrefill = {
   driveFiles?: DriveRef[]
   uploads?: Upload[]
   replyToId?: string
+  /** False when the person chose to leave their signature off (an email taken back with Undo). */
+  signature?: boolean
   /** A reply that copied the other people on the original email, so the composer can say so and offer to remove them. */
   autoCc?: boolean
   /** A short message shown above the form, for example when part of the prefill could not be filled in. */
