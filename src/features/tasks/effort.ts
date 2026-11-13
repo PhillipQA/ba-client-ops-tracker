@@ -39,10 +39,13 @@ export interface TimeEntry {
   seedsSentAt?: string
   /** The last try to send it failed, and why. */
   seedsError?: string
+  /** Logged on a Seeds project while Seeds was on: it goes to Seeds, with or without a Seeds task. */
+  forSeeds?: boolean
 }
 
-/** Entries that can go to Seeds and have not yet: they carry a Seeds task. */
-export const unsentToSeeds = (entry: TimeEntry) => Boolean(entry?.seedsTaskId && !entry.seedsEntryId)
+/** Entries that can go to Seeds and have not yet: logged for a Seeds project (or carrying a Seeds task). */
+export const unsentToSeeds = (entry: TimeEntry) =>
+  Boolean((entry?.forSeeds || entry?.seedsTaskId) && !entry.seedsEntryId)
 
 export interface TimeEntryInput {
   date: string
@@ -52,6 +55,7 @@ export interface TimeEntryInput {
   seedsTaskId?: string
   productId?: string
   subtaskId?: string
+  forSeeds?: boolean
 }
 
 /** Seeds limits a time entry's remarks to 120 characters. */
@@ -80,6 +84,12 @@ export type SeedsTimeRule = {
    * requires one, and none is picked on the task or set by Seeds): such time is not sent until a product is picked.
    */
   needsProduct?: string[]
+  /** The task is under a Seeds project: its time goes to Seeds. */
+  toSeeds?: boolean
+  /** Seeds requires a Seeds task on this project's time entries (otherwise one is optional). */
+  taskRequired?: boolean
+  /** Seeds requires remarks on this project's time entries (otherwise they are optional). */
+  remarksRequired?: boolean
   /** Seeds' products an entry can carry (from the last sync). */
   products?: { id: string; name: string }[]
   /** The product an entry for each Seeds task starts with: the task's pick, else the project's, else Seeds' default. */
@@ -113,18 +123,24 @@ export function seedsTimeRule(
       ...(known(candidate.seedsTaskId) ? { seedsTaskId: candidate.seedsTaskId } : {}),
     }))
   const tagged = known(item?.seedsTaskId)
-  const needsProduct = tasks.filter(task => seedsProductFor(state, item, task.id).missing).map(task => task.id)
+  // Product needs and defaults per Seeds task; '' is an entry with no Seeds task.
+  const keys = ['', ...tasks.map(task => task.id)]
+  const needsProduct = keys.filter(id => seedsProductFor(state, item, id).missing)
+  const rules = project?.seedsTimeRules && typeof project.seedsTimeRules === 'object' ? project.seedsTimeRules : {}
   const products = (Array.isArray(state.seeds?.products) ? state.seeds.products : [])
     .filter((product: any) => product?.id && product.name && !product.archived)
     .map((product: any) => ({ id: String(product.id), name: String(product.name) }))
   const productByTask: Record<string, string> = {}
-  for (const task of tasks) {
-    const productId = seedsProductFor(state, item, task.id).productId
-    if (productId) productByTask[task.id] = productId
+  for (const id of keys) {
+    const productId = seedsProductFor(state, item, id).productId
+    if (productId) productByTask[id] = productId
   }
   return {
     tasks,
     subtasks,
+    ...(project?.seedsId ? { toSeeds: true } : {}),
+    ...(rules.taskRequired === true ? { taskRequired: true } : {}),
+    ...(rules.remarksRequired === true ? { remarksRequired: true } : {}),
     ...(needsProduct.length ? { needsProduct } : {}),
     ...(products.length ? { products } : {}),
     ...(Object.keys(productByTask).length ? { productByTask } : {}),
@@ -310,7 +326,10 @@ export function canRemoveTimeEntry(entry: Pick<TimeEntry, 'userId'>, user: { id:
   return user.role === 'Administrator' || entry.userId === user.id
 }
 
-/** A time entry once Seeds is on: date, duration (15-minute steps), Seeds task and remarks, as in Seeds. */
+/**
+ * A time entry once Seeds is on: date and duration (15-minute steps), as in Seeds. A Seeds task, product and remarks
+ * are optional, unless Seeds requires them for the project (or, for a product, the Seeds task).
+ */
 function validateSeedsEntry(
   body: Record<string, unknown>,
   seeds: SeedsTimeRule,
@@ -329,12 +348,19 @@ function validateSeedsEntry(
   if (subtaskId && !subtask) return { ok: false, error: 'That subtask is not under this task.' }
   const seedsTaskId =
     typeof body.seedsTaskId === 'string' && body.seedsTaskId ? body.seedsTaskId : defaultSeedsTask(seeds, subtaskId)
-  if (!seedsTaskId) return { ok: false, error: 'Tag a Seeds task on this task (or the subtask) before logging time.' }
-  if (!seeds.tasks.some(task => task.id === seedsTaskId)) return { ok: false, error: 'Choose a Seeds task.' }
-  // Seeds requires remarks: what was typed, else "subtask – task" for an entry for a subtask.
+  // Once Seeds is on, time goes to Seeds: only on work under a Seeds project (Before Seeds work is moved first).
+  if (!seeds.toSeeds && !seedsTaskId)
+    return { ok: false, error: 'Time is logged on work under a Seeds project. Move this work to Seeds first.' }
+  // A Seeds task, product and remarks are optional unless Seeds requires them for this project.
+  if (!seedsTaskId && seeds.taskRequired)
+    return { ok: false, error: 'Seeds requires a Seeds task on this project. Choose the Seeds task.' }
+  if (seedsTaskId && !seeds.tasks.some(task => task.id === seedsTaskId))
+    return { ok: false, error: 'Choose a Seeds task.' }
+  // Remarks: what was typed, else "subtask – task" for an entry for a subtask.
   const typed = typeof body.note === 'string' ? body.note.trim() : ''
   const note = typed || (subtask ? subtaskRemarks(subtask.title, seeds.taskTitle) : '')
-  if (!note) return { ok: false, error: 'Enter the remarks, or choose a subtask (its title becomes the remarks).' }
+  if (!note && seeds.remarksRequired)
+    return { ok: false, error: 'Seeds requires remarks on this project. Enter the remarks, or choose a subtask.' }
   if (note.length > MAX_SEEDS_REMARKS_LENGTH)
     return { ok: false, error: `Remarks must be ${MAX_SEEDS_REMARKS_LENGTH} characters or fewer.` }
   const category = isEffortCategory(body.category) ? body.category : 'Other'
@@ -342,7 +368,7 @@ function validateSeedsEntry(
   const productId = typeof body.productId === 'string' && body.productId ? body.productId : undefined
   if (productId && !seeds.products?.some(product => product.id === productId))
     return { ok: false, error: 'Choose a Seeds product from the list.' }
-  if (!productId && seeds.products?.length && seeds.needsProduct?.includes(seedsTaskId))
+  if (!productId && seeds.products?.length && seeds.needsProduct?.includes(seedsTaskId || ''))
     return { ok: false, error: 'Seeds requires a product for this Seeds task. Choose the Seeds product.' }
   return {
     ok: true,
@@ -351,9 +377,10 @@ function validateSeedsEntry(
       hours,
       category,
       note,
-      seedsTaskId,
+      ...(seedsTaskId ? { seedsTaskId } : {}),
       ...(productId ? { productId } : {}),
       ...(subtask ? { subtaskId } : {}),
+      forSeeds: true,
     },
   }
 }

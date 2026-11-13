@@ -30,6 +30,8 @@ type Props = {
   seedsRule?: (target: WorkItem) => SeedsTimeRule | null
 }
 
+const NO_SEEDS_TASK = 'none'
+
 function niceEntryDate(date: string) {
   const [year, month, day] = date.split('-').map(Number)
   return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(year, month - 1, day))
@@ -54,13 +56,17 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [durationMinutes, setDurationMinutes] = useState('0')
   const [subtaskId, setSubtaskId] = useState('')
   const [chosenSeedsTask, setChosenSeedsTask] = useState('')
-  const seedsTaskId = chosenSeedsTask || (rule ? defaultSeedsTask(rule, subtaskId) : '')
+  // "None" is a choice of its own: a Seeds task is optional unless Seeds requires one on the project.
+  const seedsTaskId =
+    chosenSeedsTask === NO_SEEDS_TASK ? '' : chosenSeedsTask || (rule ? defaultSeedsTask(rule, subtaskId) : '')
+  const taskRequired = Boolean(rule?.taskRequired)
+  const remarksRequired = Boolean(rule?.remarksRequired)
   const forSubtask = rule?.subtasks.find(subtask => subtask.id === subtaskId)
   // The Seeds product: the one chosen here, else what the task, its project or Seeds sets for this Seeds task.
   const [chosenProduct, setChosenProduct] = useState('')
   const products = rule?.products || []
-  const productId = chosenProduct || (seedsTaskId && rule?.productByTask?.[seedsTaskId]) || ''
-  const productRequired = Boolean(seedsTaskId && rule?.needsProduct?.includes(seedsTaskId))
+  const productId = chosenProduct || rule?.productByTask?.[seedsTaskId] || ''
+  const productRequired = Boolean(rule?.needsProduct?.includes(seedsTaskId))
   // Seeds requires a product for this Seeds task (or its project) and none is chosen yet.
   const productMissing = productRequired && !productId
   const remarks = note
@@ -293,9 +299,16 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                   </label>
                 )}
                 <label>
-                  Seeds task
-                  <select value={seedsTaskId} onChange={event => setChosenSeedsTask(event.target.value)}>
-                    {!seedsTaskId && <option value="">Choose the Seeds task</option>}
+                  Seeds task{taskRequired ? ' (required)' : ''}
+                  <select
+                    value={seedsTaskId || (taskRequired ? '' : NO_SEEDS_TASK)}
+                    onChange={event => setChosenSeedsTask(event.target.value)}
+                  >
+                    {taskRequired ? (
+                      !seedsTaskId && <option value="">Choose the Seeds task</option>
+                    ) : (
+                      <option value={NO_SEEDS_TASK}>None</option>
+                    )}
                     {rule.tasks.map(task => (
                       <option key={task.id} value={task.id}>
                         {task.name}
@@ -328,7 +341,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                 </p>
               )}
               <label className="effort-note">
-                Remarks (required, max {MAX_SEEDS_REMARKS_LENGTH} characters)
+                Remarks ({remarksRequired ? 'required' : 'optional'}, max {MAX_SEEDS_REMARKS_LENGTH} characters)
                 <textarea
                   value={remarks}
                   maxLength={MAX_SEEDS_REMARKS_LENGTH}
@@ -352,7 +365,9 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                 <button
                   type="button"
                   className="primary"
-                  disabled={busy || duration <= 0 || !remarks.trim() || !seedsTaskId}
+                  disabled={
+                    busy || duration <= 0 || (remarksRequired && !remarks.trim()) || (taskRequired && !seedsTaskId)
+                  }
                   onClick={() => void save()}
                 >
                   {busy ? 'Saving…' : 'Save entry'}
@@ -430,10 +445,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
           {!productId &&
             entries.some(
               ({ entry }) =>
-                myUnsent.includes(entry.id) &&
-                !entry.productId &&
-                entry.seedsTaskId &&
-                rule.needsProduct?.includes(entry.seedsTaskId),
+                myUnsent.includes(entry.id) && !entry.productId && rule.needsProduct?.includes(entry.seedsTaskId || ''),
             ) && (
               <span className="effort-message" role="status">
                 Some entries need a Seeds product: choose it under Seeds product above, then send.
@@ -455,10 +467,11 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
               <time dateTime={entry.date}>{niceEntryDate(entry.date)}</time>
               <div>
                 <strong>
-                  {entry.note || (entry.seedsTaskId ? seedsTaskLabel(entry.seedsTaskId) : entry.category)}
+                  {entry.note ||
+                    (entry.seedsTaskId ? seedsTaskLabel(entry.seedsTaskId) : entry.forSeeds ? 'Time' : entry.category)}
                 </strong>
                 <small>
-                  {entry.seedsTaskId && (
+                  {(entry.seedsTaskId || entry.forSeeds) && (
                     <span
                       className={`effort-seeds ${entry.seedsEntryId ? 'sent' : entry.seedsError ? 'failed' : ''}`}
                       title={entry.seedsError || undefined}
@@ -466,7 +479,12 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                       {entry.seedsEntryId ? 'In Seeds' : entry.seedsError ? 'Not sent: retry' : 'Not sent'}
                     </span>
                   )}{' '}
-                  {entry.userName} · {entry.seedsTaskId ? seedsTaskLabel(entry.seedsTaskId) : entry.category}
+                  {entry.userName} ·{' '}
+                  {entry.seedsTaskId
+                    ? seedsTaskLabel(entry.seedsTaskId)
+                    : entry.forSeeds
+                      ? 'Seeds: no Seeds task'
+                      : entry.category}
                   {entry.subtaskId && owner.id === item.id
                     ? ` · Subtask: ${subtasks.find(subtask => subtask.id === entry.subtaskId)?.title || 'removed'}`
                     : ''}

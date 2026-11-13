@@ -52,6 +52,7 @@ const state = (seeds = false): any => ({
       id: 'p1',
       name: 'Goldwing Rollout',
       clientId: 'c1',
+      seedsId: '20',
       seedsTasks: [
         { id: 's-go', name: 'Go Live' },
         { id: 's-meet', name: 'Meetings' },
@@ -287,7 +288,7 @@ test('time logs: only matching open tasks are offered, and entries follow the ta
     state(true),
     today,
   )
-  assert.match(untagged.timeLog.problem || '', /Seeds task/)
+  assert.equal(untagged.timeLog.problem, undefined, 'a Seeds task is optional unless Seeds requires one')
   const [plain] = timeLogSuggestions(
     [{ kind: 'time_log', taskId: 'printers', date: today, hours: 0.5, category: 'Meeting' }],
     state(false),
