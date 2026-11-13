@@ -5,7 +5,7 @@
  * itself and is not counted.
  */
 export const APP_VERSION = '2.0'
-export const APP_BUILD = 40
+export const APP_BUILD = 41
 
 const build = APP_BUILD > 0 ? `B${String(APP_BUILD).padStart(2, '0')}` : ''
 /** For people: "2.0" or "2.0 · B01". */
