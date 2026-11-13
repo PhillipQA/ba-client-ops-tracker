@@ -31,10 +31,10 @@ const entryWord = (count: number) => (count === 1 ? 'entry' : 'entries')
 
 export const loadSeedsTime = () =>
   requestJson<SeedsTimeStatus>('/api/seeds/time', { fallback: 'Seeds time could not be read.' })
-const sendTime = (idToken: string, entryIds?: string[]) =>
+const sendTime = (idToken: string, entryIds?: string[], productId?: string) =>
   requestJson<SeedsSendResult>('/api/seeds/time/send', {
     method: 'POST',
-    body: { idToken, ...(entryIds ? { entryIds } : {}) },
+    body: { idToken, ...(entryIds ? { entryIds } : {}), ...(productId ? { productId } : {}) },
     fallback: 'The time could not be sent to Seeds.',
   })
 
@@ -85,11 +85,14 @@ function FailedEntries({ failed }: { failed: SeedsFailure[] }) {
 /** A button that sends the person's unsent time (all of it, or the entries given) to Seeds, signing in if needed. */
 export function SendToSeedsButton({
   entryIds,
+  productId,
   label = 'Send to Seeds',
   onSent,
   className = 'secondary',
 }: {
   entryIds?: string[]
+  /** The Seeds product for entries that have none of their own. */
+  productId?: string
   label?: string
   onSent: (result: SeedsSendResult) => void
   className?: string
@@ -114,7 +117,7 @@ export function SendToSeedsButton({
     setBusy(true)
     setMessage(null)
     try {
-      const result = await sendTime(token, entryIds)
+      const result = await sendTime(token, entryIds, productId)
       onSent(result)
       const failed = result.failed.length
       setMessage({
