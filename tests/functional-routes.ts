@@ -354,6 +354,7 @@ try {
       deps: {},
       requireAuth: pass,
       requireTenantWorkspace: pass,
+      askLimit: pass,
       moduleAllowed: (u: any, m: string) => u.modules.includes(m),
       aiAgents,
       tenantIdForUser: (u: any) => u.organizationId,

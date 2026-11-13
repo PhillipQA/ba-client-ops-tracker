@@ -1,5 +1,6 @@
 import type express from 'express'
 import type { Express } from 'express'
+import rateLimit from 'express-rate-limit'
 import { openWaitingOnOptions } from '../../src/features/tasks/waitingOn'
 import { moduleAllowed, requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
 import { followUpTimeZone } from '../core/config'
@@ -62,7 +63,24 @@ export function registerAssistantRoutes(
     email?: (tenant: string, userId: string, id: string) => Promise<any | null>
   } = {},
 ) {
-  app.post('/api/assistant', requireAuth, requireTenantWorkspace, async (req, res) => {
+  // Every question calls the account's paid AI provider. Limits are per person (an office shares one address), and
+  // generous for chatting; they stop a stuck page or script from running up the bill.
+  const perPerson = (limit: number, what: string) =>
+    rateLimit({
+      windowMs: 60_000,
+      limit,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: req => {
+        const user = (req as express.Request & { authUser?: SessionUser }).authUser
+        return `${user?.organizationId || ''}:${user?.id || ''}`
+      },
+      message: { error: `Too many ${what} in a minute. Wait a moment and try again.` },
+    })
+  const askLimit = perPerson(20, 'questions to the BA Assistant')
+  const draftLimit = perPerson(10, 'DRF drafts')
+
+  app.post('/api/assistant', requireAuth, requireTenantWorkspace, askLimit, async (req, res) => {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     // A Viewer by job role (an Account Manager, say) may still ask questions.
     const askAi = (user as { askAi?: boolean }).askAi === true
@@ -251,7 +269,7 @@ export function registerAssistantRoutes(
   })
 
   // A draft of a DRF's fields from one of the person's own emails. It fills the form for review; nothing is saved.
-  app.post('/api/assistant/drf-draft', requireAuth, requireTenantWorkspace, async (req, res) => {
+  app.post('/api/assistant/drf-draft', requireAuth, requireTenantWorkspace, draftLimit, async (req, res) => {
     const user = (req as express.Request & { authUser: SessionUser }).authUser
     const askAi = (user as { askAi?: boolean }).askAi === true
     if ((user.role === 'Viewer' && !askAi) || !moduleAllowed(user, 'ai') || !moduleAllowed(user, 'inbox'))
