@@ -37,14 +37,14 @@ export default function TrackerProjectPicker({
   const clientName = (id?: string) => (id && clients.find(client => client.id === id)?.name) || ''
   const open = useMemo(
     () =>
-      projects
-        .filter(project => !isClosedProject(project))
-        .sort(
-          (a, b) =>
-            Number(!clientIds.includes(a.clientId || '')) - Number(!clientIds.includes(b.clientId || '')) ||
-            Number(!a.seedsId) - Number(!b.seedsId) ||
-            a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }),
-        ),
+      // Projects completed in Seeds can still be followed by a tracker (they take no new tasks), listed after open ones.
+      [...projects].sort(
+        (a, b) =>
+          Number(isClosedProject(a)) - Number(isClosedProject(b)) ||
+          Number(!clientIds.includes(a.clientId || '')) - Number(!clientIds.includes(b.clientId || '')) ||
+          Number(!a.seedsId) - Number(!b.seedsId) ||
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }),
+      ),
     [projects, clientIds],
   )
   const matches = useMemo(() => {
@@ -73,7 +73,12 @@ export default function TrackerProjectPicker({
     <>
       <span>{project.name}</span>
       <small>
-        {[project.contractNumber, clientName(project.clientId), project.seedsId ? '' : 'Before Seeds']
+        {[
+          project.contractNumber,
+          clientName(project.clientId),
+          project.seedsId ? '' : 'Before Seeds',
+          isClosedProject(project) ? 'Completed: no new tasks' : '',
+        ]
           .filter(Boolean)
           .join(' · ')}
       </small>
@@ -90,6 +95,7 @@ export default function TrackerProjectPicker({
             <span key={id} className="trk-client-chip" title={project?.contractNumber || undefined}>
               {name}
               {project?.contractNumber && <small className="trk-chip-note">{project.contractNumber}</small>}
+              {isClosedProject(project) && <small className="trk-chip-note">completed</small>}
               {at === 0 && value.length > 1 && <small className="trk-chip-note">default</small>}
               {at > 0 && (
                 <button

@@ -56,8 +56,9 @@ const doneTone = (closed: boolean) => (closed ? ('green' as const) : ('gray' as 
 /** Seeds projects (once Seeds is on, new work goes there by default), and whether there are any. */
 export const seedsProjects = (projects: WorkProject[]) =>
   projects.filter(project => project.seedsId && !project.seedsArchived && !project.archived)
+/** An open Seeds project: one completed in Seeds takes no new tasks. */
 const isSeedsProject = (projects: WorkProject[], id?: string) =>
-  Boolean(id) && projects.some(project => project.id === id && project.seedsId)
+  Boolean(id) && projects.some(project => project.id === id && project.seedsId && !project.seedsArchived)
 
 /** The project a row's Contract number column names (one of the tracker's projects, or of its clients'), if any. */
 const contractProjectOf = (tracker: Tracker, projects: WorkProject[], row?: Pick<TrackerRow, 'cells'>) => {
@@ -88,7 +89,9 @@ function useTaskContext(tracker: Tracker, tools: WorkTools, row?: Pick<TrackerRo
         : '',
   )
   const [projectId, setProjectId] = useState(
-    startProject && tools.projects.some(project => project.id === startProject && !project.seedsId) ? startProject : '',
+    startProject && tools.projects.some(project => project.id === startProject && !project.seedsId && !project.archived)
+      ? startProject
+      : '',
   )
   // The tracker's own Seeds project when it has one.
   const [seedsProjectId, setSeedsProjectId] = useState(
@@ -102,7 +105,7 @@ function useTaskContext(tracker: Tracker, tools: WorkTools, row?: Pick<TrackerRo
   const seedsProject = fromSeeds.find(project => project.id === seedsProjectId)
   const seedsClient = tools.clients.find(client => client.id === seedsProject?.clientId)
   const seedsTasks = (seedsProject?.seedsTasks || []).filter(task => !task.archived)
-  const oldProjects = tools.projects.filter(project => !project.seedsId)
+  const oldProjects = tools.projects.filter(project => !project.seedsId && !project.archived)
 
   // Projects to type into: the tracker's own first, each with its contract number and client.
   const mine = new Set(trackerProjectIds(tracker))

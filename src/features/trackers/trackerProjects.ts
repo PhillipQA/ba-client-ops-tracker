@@ -41,7 +41,8 @@ export function projectForContract<P extends ContractProject>(
     return found.length === 1 ? found[0] : undefined
   }
   const own = new Set(trackerProjectIds(tracker))
-  const mine = matches(projects.filter(project => own.has(project.id)))
+  // New work only: a project completed in Seeds stays on the tracker but takes no new tasks.
+  const mine = matches(projects.filter(project => own.has(project.id) && !isClosedProject(project)))
   if (mine) return mine
   const clients = new Set(clientsOf(tracker))
   return matches(
@@ -65,7 +66,9 @@ export function rowPlace<P extends ContractProject>(
     !task?.projectId && column
       ? projectForContract(tracker, cellText(column, row.cells[column.id]), projects)
       : undefined
-  const projectId = task?.projectId || byContract?.id || trackerProjectIds(tracker)[0] || ''
+  // The tracker's first open project: one completed in Seeds stays on the tracker but takes no new tasks.
+  const open = trackerProjectIds(tracker).find(id => !isClosedProject(projects.find(project => project.id === id)))
+  const projectId = task?.projectId || byContract?.id || open || ''
   const project = projects.find(item => item.id === projectId)
   return {
     projectId,

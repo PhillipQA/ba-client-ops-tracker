@@ -42,8 +42,11 @@ export interface SeedsTimeRules {
   productRequired?: boolean
   taskRequired?: boolean
   remarksRequired?: boolean
+  /** Seeds requires the parent (the client company) on time entries. */
+  parentRequired?: boolean
   defaultProductId?: string
   defaultTaskId?: string
+  defaultParentId?: string
 }
 export interface SeedsTask {
   id: string

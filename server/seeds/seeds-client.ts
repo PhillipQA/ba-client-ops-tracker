@@ -107,6 +107,8 @@ const idOf = (record: any, ...keys: string[]) => {
     .map(key => pick(record, key))
     .filter(value => value != null && value !== '')
     .map(text)
+    // Seeds writes "none" as id 0 (a project with no client or product: { "id": 0, "name": "-" }).
+    .filter(value => value !== '0')
   return values.find(value => /^[1-9]\d*$/.test(value)) || values[0] || ''
 }
 /** A Seeds id that can go in a path: a whole number of at least 1. */
@@ -224,8 +226,11 @@ const RULE_GROUPS = [
   'requirements.',
 ]
 const DEFAULT_GROUPS = ['timeEntryDefaults.', 'time_entry_defaults.', 'timeEntry.', 'time_entry.', 'defaults.']
-const ruleOf = (record: any, names: string[]) => {
-  for (const key of under(RULE_GROUPS, names)) {
+/** Seeds' own shape: `timeEntryRequirements: { task, parent, client, product, remarks }`, each true or false. */
+const REQUIREMENT_GROUPS = ['timeEntryRequirements.', 'time_entry_requirements.', 'requirements.']
+const ruleOf = (record: any, names: string[], short?: string) => {
+  const keys = [...(short ? under(REQUIREMENT_GROUPS, [short]) : []), ...under(RULE_GROUPS, names)]
+  for (const key of keys) {
     const value = yesNo(key.split('.').reduce((at: any, part) => (at == null ? undefined : at[part]), record))
     if (value !== undefined) return value
   }
@@ -242,42 +247,51 @@ const defaultIdOf = (record: any, thing: 'product' | 'task') => {
   )
 }
 
+/** Other names a requirement may go by, besides Seeds' own short ones. */
+const PRODUCT_RULE = [
+  'productRequired',
+  'product_required',
+  'requiresProduct',
+  'requires_product',
+  'requireProduct',
+  'isProductRequired',
+  'is_product_required',
+]
+const TASK_RULE = [
+  'taskRequired',
+  'task_required',
+  'requiresTask',
+  'requires_task',
+  'requireTask',
+  'isTaskRequired',
+  'is_task_required',
+]
+const REMARKS_RULE = [
+  'remarksRequired',
+  'remarks_required',
+  'requiresRemarks',
+  'requires_remarks',
+  'requireRemarks',
+  'isRemarksRequired',
+]
+
 /** What a time entry on this project must carry, and what it starts with, when Seeds says. */
 export function timeRulesOf(record: any): SeedsTimeRules | undefined {
   const rules: SeedsTimeRules = {}
-  const product = ruleOf(record, [
-    'productRequired',
-    'product_required',
-    'requiresProduct',
-    'requires_product',
-    'requireProduct',
-    'isProductRequired',
-    'is_product_required',
-  ])
-  const task = ruleOf(record, [
-    'taskRequired',
-    'task_required',
-    'requiresTask',
-    'requires_task',
-    'requireTask',
-    'isTaskRequired',
-    'is_task_required',
-  ])
-  const remarks = ruleOf(record, [
-    'remarksRequired',
-    'remarks_required',
-    'requiresRemarks',
-    'requires_remarks',
-    'requireRemarks',
-    'isRemarksRequired',
-  ])
+  const product = ruleOf(record, PRODUCT_RULE, 'product')
+  const task = ruleOf(record, TASK_RULE, 'task')
+  const remarks = ruleOf(record, REMARKS_RULE, 'remarks')
+  const parent = ruleOf(record, ['parentRequired', 'parent_required', 'requiresParent'], 'parent')
   if (product !== undefined) rules.productRequired = product
   if (task !== undefined) rules.taskRequired = task
   if (remarks !== undefined) rules.remarksRequired = remarks
+  if (parent !== undefined) rules.parentRequired = parent
   const defaultProductId = defaultIdOf(record, 'product')
   const defaultTaskId = defaultIdOf(record, 'task')
   if (defaultProductId) rules.defaultProductId = defaultProductId
   if (defaultTaskId) rules.defaultTaskId = defaultTaskId
+  const defaultParentId = idOf(record, 'timeEntryDefaults.parentId', 'time_entry_defaults.parent_id', 'defaultParentId')
+  if (defaultParentId) rules.defaultParentId = defaultParentId
   return Object.keys(rules).length ? rules : undefined
 }
 
@@ -351,8 +365,8 @@ export const parseSeeds = {
           'contract.referenceNumber',
         ),
       ),
-      ...(text(pick(record, 'productId', 'product_id', 'product.id'))
-        ? { productId: text(pick(record, 'productId', 'product_id', 'product.id')) }
+      ...(idOf(record, 'productId', 'product_id', 'product.id')
+        ? { productId: idOf(record, 'productId', 'product_id', 'product.id') }
         : {}),
       ...(timeRules ? { timeRules } : {}),
       ...(parentName ? { parentName } : {}),

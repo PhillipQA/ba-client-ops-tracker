@@ -38,6 +38,7 @@ import {
   trackerProjectIds,
 } from './trackerModel'
 import { rowTones, settleTimelineFields, todayNumber } from './timelineModel'
+import { isClosedProject } from '../tasks/lifecycle'
 import { cellText, keepsTasks, phaseRollup, rowTaskPatch, type TaskPatch } from './trackerTasks'
 import { createRowTasks } from './trackerTaskActions'
 import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
@@ -928,6 +929,20 @@ export default function TrackerScreen(props: Props) {
     const seedsClient = props.projects.find(project => project.id === current.projectId && project.seedsId)?.clientId
     const clientId = seedsClient || trackerClients(current)[0] || ''
     const placeFor = (row: Pick<TrackerRow, 'cells' | 'taskId'>) => rowPlace(current, row, props.projects)
+    // A tracker whose projects are all completed in Seeds keeps them, but its rows get no new tasks there.
+    const own = trackerProjectIds(current)
+    const completed = own.length
+      ? own.every(id => isClosedProject(props.projects.find(project => project.id === id)))
+      : false
+    if (completed && !current.columns.some(column => column.taskField === 'contract')) {
+      if (!noClientSaid.current || rowIds === null)
+        say(
+          'error',
+          'This tracker’s project is completed in Seeds, so its rows get no new tasks. Choose an open project (More › Rename, client and project).',
+        )
+      noClientSaid.current = true
+      return
+    }
     if (!clientId && !current.columns.some(column => column.taskField === 'contract')) {
       if (!noClientSaid.current || rowIds === null)
         say(
