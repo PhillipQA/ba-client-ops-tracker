@@ -157,15 +157,12 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
     setNote(entry.note || '')
     setMessage(null)
   }
-  const editable = (owner: WorkItem, entry: TimeEntry) =>
-    Boolean(
-      canLog &&
-      rule &&
-      !rule.logOnTaskId &&
-      owner.id === item.id &&
-      !entry.seedsEntryId &&
-      canRemoveTimeEntry(entry, currentUser),
-    )
+  /** Entries this person may change: their own (or any, as Administrator), on this task, not yet in Seeds. */
+  const editable = (owner: WorkItem, entry: TimeEntry) => {
+    if (!canLog || !rule || rule.logOnTaskId) return false
+    if (owner.id !== item.id || entry.seedsEntryId) return false
+    return canRemoveTimeEntry(entry, currentUser)
+  }
 
   const remove = async (owner: WorkItem, entry: TimeEntry) => {
     if (busy || !window.confirm(`Remove ${formatHours(entry.hours)} logged on ${niceEntryDate(entry.date)}?`)) return
