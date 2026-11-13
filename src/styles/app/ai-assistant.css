@@ -510,6 +510,83 @@ button.compact {
   margin: 4px 0 0;
   padding-left: 18px;
 }
+.ai-chat-actions {
+  flex: none;
+  gap: 6px;
+}
+.ai-chat-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ai-memory {
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid #eef0f4;
+  font-size: 12px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.ai-memory-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ai-memory-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-memory-hint {
+  margin: 4px 0 6px;
+  opacity: 0.7;
+  font-size: 11px;
+}
+.ai-memory-error {
+  margin: 4px 0 6px;
+  color: #b42318;
+}
+.ai-memory ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.ai-memory li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid #f2f4f7;
+}
+.ai-memory form {
+  display: flex;
+  gap: 6px;
+}
+.ai-memory input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+.ai-memory-icon {
+  flex: none;
+  padding: 3px;
+  border: 0;
+  background: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.ai-memory-icon:hover:not(:disabled) {
+  opacity: 1;
+}
+.ai-remembered {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
 .ai-usage {
   margin-top: 6px;
   font-size: 11px;

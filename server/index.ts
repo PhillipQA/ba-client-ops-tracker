@@ -75,6 +75,7 @@ import { registerAuthRoutes } from './auth/auth-routes'
 import { registerStoreRoutes } from './workspace/store-routes'
 import { registerInternalAdminRoutes } from './platform/internal-admin'
 import { registerAssistantRoutes } from './ai/assistant-routes'
+import { createMemoryStore, registerMemoryRoutes } from './ai/assistant-memory'
 import { registerBriefRoutes } from './ai/brief-routes'
 import { registerDrfRoutes } from './documents/drf-documents'
 import { registerTaskRoutes } from './tasks/task-routes'
@@ -126,8 +127,12 @@ registerStoreRoutes(app)
 
 registerInternalAdminRoutes(app)
 
+// What each person asked the BA Assistant to remember.
+const assistantMemory = createMemoryStore(db)
+registerMemoryRoutes(app, { store: assistantMemory })
 // The assistant reads trackers through the tracker routes (registered below), with the same access rules.
 registerAssistantRoutes(app, {
+  memory: assistantMemory,
   trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick),
   emails: (tenant, userId) => communications.recentEmails(tenant, userId),
   email: (tenant, userId, id) => communications.emailFor(tenant, userId, id),

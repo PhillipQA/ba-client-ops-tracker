@@ -3,6 +3,7 @@ import {
   Bot,
   CalendarPlus,
   Clock,
+  Brain,
   ListChecks,
   PencilLine,
   Table2,
@@ -47,6 +48,7 @@ import { isWaitingOnDone } from '../tasks/waitingOn'
 import { drfPrefillCount } from '../documents/drfPrefill'
 import { createTrackerDraft } from './trackerDraft'
 import AiScopePicker from './AiScopePicker'
+import AssistantMemory from './AssistantMemory'
 import { NO_SCOPE, cleanScope, inScope, projectClients, scopeKey, singleOf, type AiScope } from './aiScope'
 import type { TimeEntryMutationResult } from '../tasks/timeEntries'
 
@@ -269,6 +271,9 @@ export default function AIAssistant({
       return false
     }
   })
+  // The Memory panel, and a count that goes up when an answer changed the memory, so the open panel reads it again.
+  const [memoryOpen, setMemoryOpen] = useState(false)
+  const [memoryVersion, setMemoryVersion] = useState(0)
   const chooseAgent = (on: boolean) => {
     setAgent(on)
     try {
@@ -411,6 +416,7 @@ export default function AIAssistant({
       )
       if (!job.isCurrent()) return
       const replies = assistantMessages(result)
+      if (result.memory) setMemoryVersion(value => value + 1)
       setThreads(current => ({ ...current, [threadKey]: [...(current[threadKey] || nextMessages), ...replies] }))
     } catch (requestError) {
       if (job.isCurrent())
@@ -696,10 +702,22 @@ export default function AIAssistant({
               <span>{context.project?.name || (context.client ? 'All client projects' : 'General workspace')}</span>
             </div>
           </div>
-          <button className="secondary compact" type="button" onClick={clearThread}>
-            Clear chat
-          </button>
+          <div className="ai-chat-actions">
+            <button
+              className="secondary compact"
+              type="button"
+              onClick={() => setMemoryOpen(open => !open)}
+              aria-expanded={memoryOpen}
+              title="What the assistant remembers for you"
+            >
+              <Brain size={13} aria-hidden="true" /> Memory
+            </button>
+            <button className="secondary compact" type="button" onClick={clearThread}>
+              Clear chat
+            </button>
+          </div>
         </div>
+        {memoryOpen && <AssistantMemory version={memoryVersion} onClose={() => setMemoryOpen(false)} />}
         <div className="ai-messages" aria-live="polite">
           {messages.length === 0 && (
             <div className="ai-empty">
@@ -730,6 +748,16 @@ export default function AIAssistant({
                 </details>
               ) : null}
               <div className="ai-message-body">{message.content}</div>
+              {message.memory?.remembered.map(note => (
+                <div className="ai-remembered" key={note.id}>
+                  <Brain size={12} aria-hidden="true" /> Remembered: {note.text}
+                </div>
+              ))}
+              {message.memory?.forgotten.map(note => (
+                <div className="ai-remembered" key={note.id}>
+                  <Brain size={12} aria-hidden="true" /> Forgot: {note.text}
+                </div>
+              ))}
               {message.usage && (
                 <div
                   className="ai-usage"
