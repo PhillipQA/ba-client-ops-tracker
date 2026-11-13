@@ -484,3 +484,33 @@ button.compact {
     flex: 1;
   }
 }
+
+/* Agent mode: the switch in the composer, and what the assistant looked up, above its answer. */
+.ai-agent-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ai-agent-switch input {
+  width: auto;
+  margin: 0;
+}
+.ai-steps {
+  margin: 0 0 6px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+.ai-steps summary {
+  cursor: pointer;
+}
+.ai-steps ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.ai-step-miss {
+  opacity: 0.7;
+  font-style: italic;
+}

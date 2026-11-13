@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: agent mode (beta)
+- Tick **Agent mode (beta)** under the assistant's message box. Before answering, the assistant can now **look things up** on its own, a few steps at a time: search tasks, open a task (subtasks, comments, time, documents), a project (contract number, completed in Seeds, Seeds time rules), a client, what is due or overdue, time logged and not yet sent to Seeds, a tracker by name, and your own emails.
+- Each answer shows **what it looked up** ("Looked up 3 things"). Everything stays approve-first: lookups only read, and actions are still drafts you approve.
+- It only sees what you can open. Lookups run on the workspace already loaded for the question, so they add almost no server load; most of the time is spent waiting for the AI provider. Answers take longer (up to about a minute) and use a few AI calls each.
+- Works with every provider; strongest with a top model (Claude Opus 5.5 or Fable 5.2) set for the BA Assistant in Account Settings → AI Agent Manager.
+
 ### Seeds phase 3: new Seeds projects become tracker rows
 **Database update: run `database/migrations/schema-v37-tracker-seeds-rows.sql` before deploying** (it adds one column to trackers; a new database gets it from `schema.sql`). Until it is run, everything else works and the new switch says what to run.
 - **Tracker details › Add new Seeds projects as rows** (shown once one of the tracker's clients comes from Seeds). When the Seeds sync brings in a new project for one of the tracker's clients (a new store, say), the tracker gets the project among its projects and a row named after it, with its contract number when the tracker has a Contract number column.

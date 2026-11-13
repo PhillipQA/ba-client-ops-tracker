@@ -9,7 +9,8 @@ import { emptyTenantData, ensureTenantFollowUpsCurrent, tenantIdForUser } from '
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { scopedState, scopeFor } from '../../src/shared/access'
 import { buildAssistantContext } from './assistant-context'
-import { addTrackers, type LoadedTracker, type TrackerReader } from './assistant-trackers'
+import { agentTools, type AgentStep, runAgent } from './assistant-agent'
+import { addTrackers, type LoadedTracker, type TrackerReader, trackerContext } from './assistant-trackers'
 import {
   actionRights,
   asksForEmailDraft,
@@ -109,6 +110,8 @@ export function registerAssistantRoutes(
     const today = dateKeyInTimeZone(new Date(), followUpTimeZone)
     const requestedContext: any = req.body?.context && typeof req.body.context === 'object' ? req.body.context : {}
     const history = Array.isArray(req.body?.history) ? req.body.history.slice(-8) : []
+    // Agent mode: the assistant may look things up before answering (see assistant-agent).
+    const agentMode = req.body?.agent === true
 
     // Resolve AI context from the authenticated tenant snapshot. The browser may request a
     // client/project focus, but it cannot supply records or impersonate another current user.
@@ -228,21 +231,39 @@ export function registerAssistantRoutes(
   Return "suggestions": [] unless the user asks you to suggest, propose, draft, link or create something, or pastes client input and asks what to do with it. Then use at most 5, only ones that follow from what they asked.
   Do not invent client commitments or technical facts. If the input is ambiguous, ask the user to clarify instead of guessing.`
 
-    try {
-      const outputText = await runTenantAi(
-        ai.secret,
-        ai.config,
-        instructions,
-        `TRACKER CONTEXT:
+    const prompt = `TRACKER CONTEXT:
   ${JSON.stringify(context, null, 2)}
 
   RECENT CHAT:
   ${JSON.stringify(history, null, 2)}
 
   USER MESSAGE:
-  ${message}`,
-      )
-      const parsed = parseModelJson(outputText)
+  ${message}`
+    try {
+      let parsed: Record<string, unknown>
+      let steps: AgentStep[] = []
+      if (agentMode) {
+        const tenant = String(tenantIdForUser(user))
+        const tools = agentTools({
+          state: scoped,
+          user,
+          today,
+          allowed: module => moduleAllowed(user, module as any),
+          readTracker: deps.trackers
+            ? name => readOneTracker(deps.trackers!, tenant, user, scoped, name, today)
+            : undefined,
+          searchEmails: deps.emails ? text => searchOwnEmails(deps.emails!, tenant, user.id, scoped, text) : undefined,
+        })
+        const ran = await runAgent({
+          call: (agentInstructions, agentPrompt, timeout) =>
+            runTenantAi(ai.secret, ai.config, agentInstructions, agentPrompt, timeout),
+          instructions,
+          prompt,
+          tools,
+        })
+        parsed = ran.output
+        steps = ran.steps
+      } else parsed = parseModelJson(await runTenantAi(ai.secret, ai.config, instructions, prompt))
       const responseMessage = String(parsed.message || '').trim()
       if (!responseMessage) throw new Error('The model returned no assessment.')
       res.json({
@@ -258,6 +279,7 @@ export function registerAssistantRoutes(
           ...sanitizeSuggestions(parsed.suggestions, taskSettings),
         ],
         contextCoverage: context.coverage,
+        ...(agentMode ? { steps } : {}),
       })
     } catch (error) {
       console.error('Account AI request failed.')
@@ -289,4 +311,72 @@ export function registerAssistantRoutes(
       res.status(502).json({ error: 'The DRF could not be drafted from the email. Fill it in by hand.' })
     }
   })
+}
+
+/** One tracker by name, read for the agent as the assistant's tracker context (see assistant-trackers). */
+async function readOneTracker(
+  read: TrackerReader,
+  tenant: string,
+  user: { id: string; name: string; role: string },
+  state: any,
+  name: string,
+  today: string,
+) {
+  const wanted = name.toLowerCase()
+  const words = wanted.match(/[\p{L}\d]+/gu) || []
+  const { trackers, loaded } = await read(tenant, user, all => {
+    const exact = all.find(tracker => tracker.name.toLowerCase() === wanted)
+    const match = exact || all.find(tracker => words.every(word => tracker.name.toLowerCase().includes(word)))
+    return match ? [match.id] : []
+  })
+  if (!loaded.length)
+    return { error: `No tracker you can open matches “${name}”.`, trackers: trackers.slice(0, 30).map(t => t.name) }
+  const list = (key: string): any[] => (Array.isArray(state?.[key]) ? state[key] : [])
+  const named = (key: string, id: string) => list(key).find(entry => entry?.id === id)?.name as string | undefined
+  return trackerContext({
+    trackers: loaded.map(entry => entry.tracker),
+    loaded,
+    accounts: list('accounts').map(account => ({ id: String(account?.id || ''), name: String(account?.name || '') })),
+    items: list('items'),
+    clientName: id => named('clients', id),
+    projectName: id => named('projects', id),
+    today,
+  }).context
+}
+
+/** The person's own recent emails matching some words, for the agent. */
+async function searchOwnEmails(read: EmailReader, tenant: string, userId: string, state: any, text: string) {
+  const words = text.toLowerCase().match(/[\p{L}\d@.]{2,}/gu) || []
+  const titles = new Map<unknown, string>(
+    (Array.isArray(state?.items) ? state.items : []).map((item: any): [string, string] => [
+      String(item?.id),
+      String(item?.title || ''),
+    ]),
+  )
+  const rows = await read(tenant, userId)
+  const clip = (value: unknown, length: number) =>
+    String(value || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, length)
+  const found = rows.filter(row => {
+    const hay = `${row.sender || ''} ${row.subject || ''} ${row.body || ''}`.toLowerCase()
+    return words.every(word => hay.includes(word))
+  })
+  return {
+    found: found.length,
+    emails: found.slice(0, 10).map(row => ({
+      from: clip(row.sender, 160),
+      subject: clip(row.subject, 180),
+      received: String(row.received_at || '').slice(0, 16),
+      preview: clip(row.body, 600),
+      linkedTasks: linkedTitles(row, titles),
+    })),
+  }
+}
+
+function linkedTitles(row: any, titles: Map<unknown, string>) {
+  const ids = [...(Array.isArray(row.linked_task_ids) ? row.linked_task_ids : []), row.linked_task_id]
+  const names = [...new Set(ids.map(id => titles.get(String(id))).filter(Boolean))]
+  return names.length ? names : undefined
 }

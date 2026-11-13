@@ -258,6 +258,23 @@ export default function AIAssistant({
   const [input, setInput] = useState('')
   const operation = useDocumentOperation()
   const [busy, setBusy] = useState(false)
+  // Agent mode: the assistant looks things up (tasks, projects, trackers, emails, time) before answering. Slower, and
+  // more calls to the AI provider, so it is the person's choice; remembered in this browser.
+  const [agent, setAgent] = useState(() => {
+    try {
+      return window.localStorage.getItem(AGENT_KEY) === 'on'
+    } catch {
+      return false
+    }
+  })
+  const chooseAgent = (on: boolean) => {
+    setAgent(on)
+    try {
+      window.localStorage.setItem(AGENT_KEY, on ? 'on' : 'off')
+    } catch {
+      /* Only a preference. */
+    }
+  }
   const [error, setError] = useState('')
   const [actionNotice, setActionNotice] = useState('')
   // An email suggestion being carried out, and those already done (so one is not linked twice).
@@ -385,7 +402,10 @@ export default function AIAssistant({
     setActionNotice('')
 
     try {
-      const result = await askBAAssistant({ message: text, context, history: messages.slice(-8) }, job.signal)
+      const result = await askBAAssistant(
+        { message: text, context, history: messages.slice(-8), ...(agent ? { agent: true } : {}) },
+        job.signal,
+      )
       if (!job.isCurrent()) return
       const replies = assistantMessages(result)
       setThreads(current => ({ ...current, [threadKey]: [...(current[threadKey] || nextMessages), ...replies] }))
@@ -691,6 +711,21 @@ export default function AIAssistant({
           {messages.map(message => (
             <div key={message.id} className={`ai-message ${message.role}`}>
               <div className="ai-message-label">{message.role === 'user' ? 'You' : 'BA Assistant'}</div>
+              {message.steps?.length ? (
+                <details className="ai-steps">
+                  <summary>
+                    Looked up {message.steps.length} thing{message.steps.length === 1 ? '' : 's'}
+                  </summary>
+                  <ul>
+                    {message.steps.map((step, index) => (
+                      <li key={`${message.id}-${index}`} className={step.ok ? undefined : 'ai-step-miss'}>
+                        {step.label}
+                        {step.ok ? '' : ' (nothing found)'}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
               <div className="ai-message-body">{message.content}</div>
               {message.suggestions?.length ? (
                 <div className="ai-suggestions">
@@ -780,7 +815,8 @@ export default function AIAssistant({
           ))}
           {busy && (
             <div className="ai-thinking">
-              <Loader2 className="spin" size={18} /> Assessing the context…
+              <Loader2 className="spin" size={18} />{' '}
+              {agent ? 'Looking things up and thinking… (can take up to a minute)' : 'Assessing the context…'}
             </div>
           )}
         </div>
@@ -795,6 +831,13 @@ export default function AIAssistant({
           />
           <div className="ai-composer-foot">
             <span>AI suggestions are not saved until you approve them.</span>
+            <label
+              className="ai-agent-switch"
+              title="Agent mode: before answering, the assistant looks up tasks, projects, trackers, your emails and time. Slower, and uses more AI calls."
+            >
+              <input type="checkbox" checked={agent} onChange={event => chooseAgent(event.target.checked)} />
+              Agent mode (beta)
+            </label>
             <button className="primary" disabled={busy || !input.trim()}>
               <Sparkles size={17} /> Assess
             </button>
@@ -804,6 +847,8 @@ export default function AIAssistant({
     </section>
   )
 }
+
+const AGENT_KEY = 'ba-assistant-agent'
 
 /** The tasks of a plan, each with a tick box; subtasks under their task. */
 function PlanList({
