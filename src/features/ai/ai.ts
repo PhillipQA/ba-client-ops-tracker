@@ -17,6 +17,7 @@ import { trackerApi } from '../trackers/trackerApi'
 import type { Cell } from '../trackers/trackerModel'
 import { addTimeEntry } from '../tasks/timeEntries'
 import type { EffortCategory } from '../tasks/effort'
+import { cleanNotes, type MemoryNote } from './memory'
 
 export type AISuggestionKind =
   | 'issue'
@@ -117,6 +118,14 @@ export interface AIMessage {
   steps?: AgentStep[]
   /** What the answer cost at the AI provider. */
   usage?: AiUsage
+  /** Notes the answer added to or dropped from the assistant's memory, because the person asked. */
+  memory?: MemoryChange
+}
+export type MemoryChange = { remembered: MemoryNote[]; forgotten: MemoryNote[] }
+function cleanMemoryChange(value: unknown): MemoryChange | undefined {
+  const given = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const change = { remembered: cleanNotes(given.remembered), forgotten: cleanNotes(given.forgotten) }
+  return change.remembered.length || change.forgotten.length ? change : undefined
 }
 export type AgentStep = { tool: string; label: string; ok: boolean }
 /** Tokens sent and received, over every call the question made. `estimated` when the provider gave no count. */
@@ -163,7 +172,14 @@ export async function askBAAssistant(
     agent?: boolean
   },
   signal?: AbortSignal,
-): Promise<{ message: string; followUp: string; suggestions: AISuggestion[]; steps?: AgentStep[]; usage?: AiUsage }> {
+): Promise<{
+  message: string
+  followUp: string
+  suggestions: AISuggestion[]
+  steps?: AgentStep[]
+  usage?: AiUsage
+  memory?: MemoryChange
+}> {
   const response = await fetch('/api/assistant', {
     signal,
     method: 'POST',
@@ -178,6 +194,7 @@ export async function askBAAssistant(
     suggestions?: AISuggestion[]
     steps?: AgentStep[]
     usage?: unknown
+    memory?: unknown
   } | null
   if (!response.ok) throw new Error(body?.error || 'AI assistant request failed.')
   if (!body?.message) throw new Error('AI assistant returned an empty response.')
@@ -188,6 +205,7 @@ export async function askBAAssistant(
     suggestions: body.suggestions ?? [],
     ...(Array.isArray(body.steps) && body.steps.length ? { steps: body.steps.slice(0, 10) } : {}),
     usage: cleanUsage(body.usage),
+    memory: cleanMemoryChange(body.memory),
   }
 }
 
@@ -198,6 +216,7 @@ export function assistantMessages(result: {
   suggestions: AISuggestion[]
   steps?: AgentStep[]
   usage?: AiUsage
+  memory?: MemoryChange
 }) {
   const createdAt = new Date().toISOString()
   const answer: AIMessage = {
@@ -207,6 +226,7 @@ export function assistantMessages(result: {
     suggestions: result.suggestions.map(suggestion => ({ ...suggestion, id: suggestion.id || crypto.randomUUID() })),
     ...(result.steps?.length ? { steps: result.steps } : {}),
     ...(result.usage ? { usage: result.usage } : {}),
+    ...(result.memory ? { memory: result.memory } : {}),
     createdAt,
   }
   const question: AIMessage = { id: crypto.randomUUID(), role: 'assistant', content: result.followUp, createdAt }

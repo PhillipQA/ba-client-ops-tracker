@@ -11,6 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: memory
+
+**Database change (schema v38).** Before deploying, run `database/migrations/schema-v38-assistant-memory.sql` on the live database (see the README, *Updating*). Until it is run the assistant works as before and remembers nothing; the Memory panel says what to run.
+
+- **The assistant remembers what you ask it to.** Say "remember that Goldwing always needs Product POS on time entries" or "from now on answer in Taglish", and it keeps a short note and uses it in later chats. Say "forget …" to drop one. The answer shows **Remembered: …** or **Forgot: …**.
+- **Memory panel** (the Memory button in the chat header): see every note, add one by hand, delete any.
+- Notes are private to each person, at most 40 notes of 240 characters, so they add little to the tokens of a question.
+- A note is added only when your own message asks for it. Text the assistant reads (emails, tracker cells, lookups) cannot write to memory, and notes cannot change the assistant's rules or what you may see.
+
 ### BA Assistant: lighter agent mode and a token counter
 
 - **Agent mode sends far less.** It now starts from a short overview (who you are, the dates, totals and a few of your own tasks by title) and looks the details up, instead of sending the whole workspace context on every lookup round. In the test workspace the starting context is over ten times smaller.
