@@ -188,7 +188,7 @@
 }
 .effort-entries li {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) auto 34px;
+  grid-template-columns: 54px minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   padding: 9px 12px;
@@ -596,4 +596,11 @@
 .effort-seeds.failed {
   background: color-mix(in srgb, #f04438 14%, transparent);
   color: #b42318;
+}
+
+.effort-entry-actions {
+  display: inline-flex;
+  gap: 2px;
+  min-width: 34px;
+  justify-content: flex-end;
 }

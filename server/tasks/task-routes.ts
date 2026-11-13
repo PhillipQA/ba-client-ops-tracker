@@ -15,7 +15,7 @@ import {
 } from '../core/tenant-state'
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { reconcileNotifications } from '../services/notification-engine'
-import { addTimeEntry, removeTimeEntry } from '../services/time-entries'
+import { addTimeEntry, removeTimeEntry, updateTimeEntry } from '../services/time-entries'
 import { seedsTimeRule } from '../../src/features/tasks/effort'
 import { visibleTask } from '../services/visibility'
 import type { DriveFiler } from '../integrations/google-drive'
@@ -144,7 +144,7 @@ async function mutateTimeEntries(
     task: any,
     user: SessionUser,
     state: any,
-  ) => ReturnType<typeof addTimeEntry> | ReturnType<typeof removeTimeEntry>,
+  ) => ReturnType<typeof addTimeEntry> | ReturnType<typeof removeTimeEntry> | ReturnType<typeof updateTimeEntry>,
 ) {
   const user = (req as express.Request & { authUser: SessionUser }).authUser
   if (!taskEvidenceWriteAllowed(user))
@@ -276,6 +276,13 @@ export function registerTaskRoutes(app: Express, deps: { drive?: () => DriveFile
   app.post('/api/tasks/:taskId/time-entries', requireAuth, requireTenantWorkspace, (req, res) =>
     mutateTimeEntries(req, res, (task, user, state) =>
       addTimeEntry(task, req.body, user, new Date(), randomUUID(), seedsTimeRule(state, task)),
+    ),
+  )
+
+  // An entry not yet in Seeds can be changed before it is sent.
+  app.patch('/api/tasks/:taskId/time-entries/:entryId', requireAuth, requireTenantWorkspace, (req, res) =>
+    mutateTimeEntries(req, res, (task, user, state) =>
+      updateTimeEntry(task, String(req.params.entryId || ''), req.body, user, new Date(), seedsTimeRule(state, task)),
     ),
   )
 

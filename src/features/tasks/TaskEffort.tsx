@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent } from 'react'
-import { Clock3, Trash2 } from 'lucide-react'
+import { Clock3, Pencil, Trash2 } from 'lucide-react'
 import {
   canRemoveTimeEntry,
   EFFORT_CATEGORIES,
@@ -14,7 +14,7 @@ import {
   type EffortCategory,
   type TimeEntry,
 } from './effort'
-import { addTimeEntry, deleteTimeEntry, type TimeEntryMutationResult } from './timeEntries'
+import { addTimeEntry, deleteTimeEntry, type TimeEntryMutationResult, updateTimeEntry } from './timeEntries'
 import type { WorkItem } from '../../shared/types'
 import { SendToSeedsButton } from '../seeds/SendToSeeds'
 import './effort.css'
@@ -48,6 +48,8 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
+  // The unsent entry being changed in Log time, if any (only entries not yet in Seeds).
+  const [editingId, setEditingId] = useState('')
   // Once Seeds is on: time is logged on the task as Seeds time entries (duration in hrs + mins, Seeds task, remarks).
   // An entry can be for one of the task's subtasks; the remarks are then filled in as "subtask – task", and stay
   // editable.
@@ -111,6 +113,12 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
     setBusy(true)
     setMessage(null)
     try {
+      if (editingId) {
+        onMutation(await updateTimeEntry(item.id, editingId, checked.value))
+        resetForm()
+        setMessage({ text: 'Time entry changed.', ok: true })
+        return
+      }
       onMutation(await addTimeEntry(rule ? item.id : targetId, checked.value))
       setHours('')
       setDurationHours('0')
@@ -125,12 +133,47 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
     }
   }
 
+  /** Back to logging a new entry. */
+  const resetForm = () => {
+    setEditingId('')
+    setDate(today)
+    setDurationHours('0')
+    setDurationMinutes('0')
+    setSubtaskId('')
+    setChosenSeedsTask('')
+    setChosenProduct('')
+    setNote('')
+  }
+  /** Loads an unsent entry into Log time to change it before it goes to Seeds. */
+  const startEdit = (entry: TimeEntry) => {
+    const minutes = Math.round(Number(entry.hours) * 60)
+    setEditingId(entry.id)
+    setDate(entry.date)
+    setDurationHours(String(Math.floor(minutes / 60)))
+    setDurationMinutes(String(minutes % 60))
+    setSubtaskId(entry.subtaskId || '')
+    setChosenSeedsTask(entry.seedsTaskId || NO_SEEDS_TASK)
+    setChosenProduct(entry.productId || '')
+    setNote(entry.note || '')
+    setMessage(null)
+  }
+  const editable = (owner: WorkItem, entry: TimeEntry) =>
+    Boolean(
+      canLog &&
+      rule &&
+      !rule.logOnTaskId &&
+      owner.id === item.id &&
+      !entry.seedsEntryId &&
+      canRemoveTimeEntry(entry, currentUser),
+    )
+
   const remove = async (owner: WorkItem, entry: TimeEntry) => {
     if (busy || !window.confirm(`Remove ${formatHours(entry.hours)} logged on ${niceEntryDate(entry.date)}?`)) return
     setBusy(true)
     setMessage(null)
     try {
       onMutation(await deleteTimeEntry(owner.id, entry.id))
+      if (entry.id === editingId) resetForm()
       setMessage({ text: 'Time entry removed.', ok: true })
     } catch (error) {
       setMessage({ text: error instanceof Error ? error.message : 'The time entry could not be removed.', ok: false })
@@ -245,7 +288,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
       {canLog && rule && !rule.logOnTaskId && (
         <div className="effort-log" onKeyDown={blockEnter}>
           <div className="effort-log-head">
-            <strong>Log time</strong>
+            <strong>{editingId ? 'Edit time entry (not yet in Seeds)' : 'Log time'}</strong>
           </div>
           {!rule.tasks.length ? (
             <p className="effort-message" role="status">
@@ -370,8 +413,13 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                   }
                   onClick={() => void save()}
                 >
-                  {busy ? 'Saving…' : 'Save entry'}
+                  {busy ? 'Saving…' : editingId ? 'Save changes' : 'Save entry'}
                 </button>
+                {editingId && (
+                  <button type="button" className="secondary" disabled={busy} onClick={resetForm}>
+                    Cancel
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -492,19 +540,31 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
                 </small>
               </div>
               <b>{formatHours(entry.hours)}</b>
-              {canLog && canRemoveTimeEntry(entry, currentUser) && !entry.seedsEntryId ? (
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Remove ${formatHours(entry.hours)} logged on ${niceEntryDate(entry.date)}`}
-                  disabled={busy}
-                  onClick={() => void remove(owner, entry)}
-                >
-                  <Trash2 size={15} />
-                </button>
-              ) : (
-                <span />
-              )}
+              <span className="effort-entry-actions">
+                {editable(owner, entry) && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Edit ${formatHours(entry.hours)} logged on ${niceEntryDate(entry.date)}`}
+                    aria-pressed={entry.id === editingId}
+                    disabled={busy}
+                    onClick={() => startEdit(entry)}
+                  >
+                    <Pencil size={15} />
+                  </button>
+                )}
+                {canLog && canRemoveTimeEntry(entry, currentUser) && !entry.seedsEntryId && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Remove ${formatHours(entry.hours)} logged on ${niceEntryDate(entry.date)}`}
+                    disabled={busy}
+                    onClick={() => void remove(owner, entry)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </span>
             </li>
           ))}
         </ul>

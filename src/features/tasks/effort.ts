@@ -41,6 +41,8 @@ export interface TimeEntry {
   seedsError?: string
   /** Logged on a Seeds project while Seeds was on: it goes to Seeds, with or without a Seeds task. */
   forSeeds?: boolean
+  /** When it was last changed (only before it went to Seeds). */
+  updatedAt?: string
 }
 
 /** Entries that can go to Seeds and have not yet: logged for a Seeds project (or carrying a Seeds task). */

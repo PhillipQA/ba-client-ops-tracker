@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Edit time before it goes to Seeds
+- Time entries not yet in Seeds have an **edit** (pencil) button. It loads the entry into *Log time*: change the date, duration, subtask, Seeds task, Seeds product or remarks, then **Save changes** (or **Cancel**). The same rules as logging apply.
+- Only the person who logged it or an Administrator can change it. Entries already in Seeds are changed in Seeds. Changing an entry that failed to send clears its error, so the next *Send to Seeds* tries it afresh.
+
 ### Notifications: *Read all* sticks, and no more endless refreshing
 - Past 1,000 notifications per person, the oldest were re-made from their events on every check and trimmed again, so the workspace was re-saved constantly (the stuck *Refreshing…*). Each work event now becomes a notification once.
 - *Read all*, *Mark read* and *Dismiss* were refused as out of date whenever that check had just saved, so notifications came back unread. They now save on top of the copy just written.
