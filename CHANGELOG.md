@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: lighter agent mode and a token counter
+
+- **Agent mode sends far less.** It now starts from a short overview (who you are, the dates, totals and a few of your own tasks by title) and looks the details up, instead of sending the whole workspace context on every lookup round. In the test workspace the starting context is over ten times smaller.
+- Two more lookups, so nothing is lost: **recent activity** (what was done on tasks in a date range; other people's only for an Administrator) and **the calendar** (planned activities).
+- **Token counter.** Every answer shows what it cost under it ("3,412 tokens · 2 AI calls"; hover for sent and received), and the composer shows the chat's total. The count is the AI provider's own; when a provider gives none it is estimated and marked "About".
+- Normal mode (agent mode off) is unchanged apart from the counter.
+
 ### Morning brief summary on request
 
 - The Action Center's morning brief no longer asks the AI by itself. A **Write my morning brief** button writes the AI summary when you want it.

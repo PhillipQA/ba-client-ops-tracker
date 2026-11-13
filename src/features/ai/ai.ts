@@ -115,8 +115,30 @@ export interface AIMessage {
   suggestions?: AISuggestion[]
   /** In agent mode: what the assistant looked up before answering. */
   steps?: AgentStep[]
+  /** What the answer cost at the AI provider. */
+  usage?: AiUsage
 }
 export type AgentStep = { tool: string; label: string; ok: boolean }
+/** Tokens sent and received, over every call the question made. `estimated` when the provider gave no count. */
+export type AiUsage = { input: number; output: number; calls: number; estimated?: boolean }
+
+const whole = (value: unknown) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Math.round(Number(value)) : 0)
+export function cleanUsage(value: unknown): AiUsage | undefined {
+  const given = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const usage = { input: whole(given.input), output: whole(given.output), calls: whole(given.calls) }
+  if (!usage.input && !usage.output) return undefined
+  return given.estimated === true ? { ...usage, estimated: true } : usage
+}
+/** “3,412 tokens · 2 AI calls”, for under an answer. */
+export function usageLabel(usage: AiUsage) {
+  const total = (usage.input + usage.output).toLocaleString('en-US')
+  const calls = usage.calls > 1 ? ` · ${usage.calls} AI calls` : ''
+  return `${usage.estimated ? 'About ' : ''}${total} tokens${calls}`
+}
+/** The tokens of a chat's answers, added up. */
+export function usageTotal(messages: AIMessage[]) {
+  return messages.reduce((sum, message) => sum + (message.usage ? message.usage.input + message.usage.output : 0), 0)
+}
 
 export interface AssistantContext {
   currentUser: Pick<UserAccount, 'id' | 'name' | 'role' | 'modules'>
@@ -141,7 +163,7 @@ export async function askBAAssistant(
     agent?: boolean
   },
   signal?: AbortSignal,
-): Promise<{ message: string; followUp: string; suggestions: AISuggestion[]; steps?: AgentStep[] }> {
+): Promise<{ message: string; followUp: string; suggestions: AISuggestion[]; steps?: AgentStep[]; usage?: AiUsage }> {
   const response = await fetch('/api/assistant', {
     signal,
     method: 'POST',
@@ -155,6 +177,7 @@ export async function askBAAssistant(
     followUp?: string
     suggestions?: AISuggestion[]
     steps?: AgentStep[]
+    usage?: unknown
   } | null
   if (!response.ok) throw new Error(body?.error || 'AI assistant request failed.')
   if (!body?.message) throw new Error('AI assistant returned an empty response.')
@@ -164,6 +187,7 @@ export async function askBAAssistant(
     followUp: body.followUp?.trim() || '',
     suggestions: body.suggestions ?? [],
     ...(Array.isArray(body.steps) && body.steps.length ? { steps: body.steps.slice(0, 10) } : {}),
+    usage: cleanUsage(body.usage),
   }
 }
 
@@ -173,6 +197,7 @@ export function assistantMessages(result: {
   followUp: string
   suggestions: AISuggestion[]
   steps?: AgentStep[]
+  usage?: AiUsage
 }) {
   const createdAt = new Date().toISOString()
   const answer: AIMessage = {
@@ -181,6 +206,7 @@ export function assistantMessages(result: {
     content: result.message,
     suggestions: result.suggestions.map(suggestion => ({ ...suggestion, id: suggestion.id || crypto.randomUUID() })),
     ...(result.steps?.length ? { steps: result.steps } : {}),
+    ...(result.usage ? { usage: result.usage } : {}),
     createdAt,
   }
   const question: AIMessage = { id: crypto.randomUUID(), role: 'assistant', content: result.followUp, createdAt }

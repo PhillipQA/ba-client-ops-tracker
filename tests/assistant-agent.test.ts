@@ -235,3 +235,109 @@ test('the loop stops looking things up after the step limit or near the time bud
     /kept looking things up/,
   )
 })
+
+test('recent activity and the calendar are looked up, each person seeing only what the context would give them', async () => {
+  const data: any = {
+    ...state(),
+    workEvents: [
+      {
+        id: 'e1',
+        occurredAt: '2026-11-12T02:00:00Z',
+        date: '2026-11-12',
+        actorUserId: 'u1',
+        actorName: 'Phillip',
+        action: 'completed',
+        itemTitle: 'Mine',
+        summary: 'Completed',
+      },
+      {
+        id: 'e2',
+        occurredAt: '2026-11-12T03:00:00Z',
+        date: '2026-11-12',
+        actorUserId: 'u2',
+        actorName: 'Bea',
+        action: 'updated',
+        itemTitle: 'Hers',
+        summary: 'Updated',
+      },
+      {
+        id: 'e3',
+        occurredAt: '2026-10-01T03:00:00Z',
+        date: '2026-10-01',
+        actorUserId: 'u1',
+        actorName: 'Phillip',
+        action: 'created',
+        itemTitle: 'Old',
+        summary: 'Created',
+      },
+    ],
+    planner: [
+      {
+        id: 'a1',
+        title: 'Go-live call',
+        date: '2026-11-16',
+        startTime: '09:00',
+        endTime: '10:00',
+        status: 'Planned',
+        clientId: 'c1',
+        notes: '',
+      },
+      {
+        id: 'a2',
+        title: 'Done visit',
+        date: '2026-11-15',
+        startTime: '09:00',
+        endTime: '10:00',
+        status: 'Done',
+        notes: '',
+      },
+      {
+        id: 'a3',
+        title: 'Far away',
+        date: '2027-03-01',
+        startTime: '09:00',
+        endTime: '10:00',
+        status: 'Planned',
+        notes: '',
+      },
+    ],
+  }
+  const toolsFor = (role: string) =>
+    agentTools({ state: data, user: { id: 'u1', name: 'Phillip', role }, allowed: () => true, today: '2026-11-14' })
+  const run = (role: string, name: string, args = {}) =>
+    toolsFor(role)
+      .find(tool => tool.name === name)!
+      .run(args)
+
+  const mine: any = await run('BA', 'recent_activity')
+  assert.deepEqual(
+    mine.events.map((event: any) => event.task),
+    ['Mine'],
+  )
+  assert.deepEqual(mine.byAction, { completed: 1 })
+  const asked: any = await run('BA', 'recent_activity', { mine: false })
+  assert.equal(asked.total, 1, 'Only an Administrator sees other people’s activity')
+  const admin: any = await run('Administrator', 'recent_activity', { mine: false })
+  assert.deepEqual(
+    admin.events.map((event: any) => event.task),
+    ['Hers', 'Mine'],
+  )
+
+  const calendar: any = await run('BA', 'upcoming_activities')
+  assert.deepEqual(
+    calendar.activities.map((entry: any) => entry.title),
+    ['Go-live call'],
+  )
+  assert.equal(calendar.activities[0].client, 'Goldwing Retail Group Inc.')
+
+  const noCalendar = agentTools({
+    state: data,
+    user: { id: 'u1', name: 'Phillip' },
+    allowed: module => module !== 'action',
+    today: '2026-11-14',
+  })
+  assert.equal(
+    noCalendar.some(tool => tool.name === 'upcoming_activities'),
+    false,
+  )
+})

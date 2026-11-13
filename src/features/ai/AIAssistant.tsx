@@ -28,6 +28,8 @@ import {
   askBAAssistant,
   draftDrfFromEmail,
   assistantMessages,
+  usageLabel,
+  usageTotal,
   type AIMessage,
   type AISuggestion,
   type AISuggestionKind,
@@ -314,6 +316,7 @@ export default function AIAssistant({
   const { clientId, projectId: resolvedProjectId } = singleOf(shown)
   const threadKey = scopeKey(currentUser.id, shown)
   const messages = threads[threadKey] ?? []
+  const chatTokens = usageTotal(messages)
   useEffect(() => {
     operation.cancel()
     setBusy(false)
@@ -727,6 +730,14 @@ export default function AIAssistant({
                 </details>
               ) : null}
               <div className="ai-message-body">{message.content}</div>
+              {message.usage && (
+                <div
+                  className="ai-usage"
+                  title={`${message.usage.input.toLocaleString('en-US')} tokens sent, ${message.usage.output.toLocaleString('en-US')} received`}
+                >
+                  {usageLabel(message.usage)}
+                </div>
+              )}
               {message.suggestions?.length ? (
                 <div className="ai-suggestions">
                   {message.suggestions.map(suggestion => (
@@ -830,7 +841,10 @@ export default function AIAssistant({
             placeholder="Paste a client inquiry, meeting notes, requirement, or document excerpt…"
           />
           <div className="ai-composer-foot">
-            <span>AI suggestions are not saved until you approve them.</span>
+            <span>
+              AI suggestions are not saved until you approve them.
+              {chatTokens > 0 && ` This chat: ${chatTokens.toLocaleString('en-US')} tokens.`}
+            </span>
             <label
               className="ai-agent-switch"
               title="Agent mode: before answering, the assistant looks up tasks, projects, trackers, your emails and time. Slower, and uses more AI calls."

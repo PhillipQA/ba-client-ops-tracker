@@ -8,7 +8,7 @@ import { aiAgents, type integrations } from '../core/services'
 import { emptyTenantData, ensureTenantFollowUpsCurrent, tenantIdForUser } from '../core/tenant-state'
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { scopedState, scopeFor } from '../../src/shared/access'
-import { buildAssistantContext } from './assistant-context'
+import { buildAssistantContext, slimAssistantContext } from './assistant-context'
 import { agentTools, type AgentStep, runAgent } from './assistant-agent'
 import { addTrackers, type LoadedTracker, type TrackerReader, trackerContext } from './assistant-trackers'
 import {
@@ -50,7 +50,7 @@ import {
   trackerSuggestions,
 } from './assistant-drafts'
 import { parseModelJson, sanitizeSuggestions } from './suggestions'
-import { runTenantAi } from './tenant-ai'
+import { runTenantAi, runTenantAiMetered } from './tenant-ai'
 
 /** The AI BA assistant. */
 export function registerAssistantRoutes(
@@ -136,6 +136,8 @@ export function registerAssistantRoutes(
       context = buildAssistantContext(state, user, requestedContext, message, today, followUpTimeZone, module =>
         moduleAllowed(user, module as any),
       )
+      // Agent mode starts from an overview and looks the details up, so each AI call sends far fewer tokens.
+      if (agentMode) context = slimAssistantContext(context)
       // Trackers the person can open, as data: all of them by name, and the ones the question is about in full.
       // The trackers read for this question are kept, to check changes the assistant proposes to their rows.
       const readTrackers: TrackerReader | undefined = deps.trackers
@@ -239,6 +241,16 @@ export function registerAssistantRoutes(
 
   USER MESSAGE:
   ${message}`
+    // What this question cost: every call to the AI provider it made, added up.
+    const usage = { input: 0, output: 0, calls: 0, estimated: false }
+    const callAi = async (callInstructions: string, callPrompt: string, timeout?: number) => {
+      const answer = await runTenantAiMetered(ai.secret, ai.config, callInstructions, callPrompt, timeout)
+      usage.input += answer.usage.input
+      usage.output += answer.usage.output
+      usage.calls += 1
+      if (answer.usage.estimated) usage.estimated = true
+      return answer.text
+    }
     try {
       let parsed: Record<string, unknown>
       let steps: AgentStep[] = []
@@ -255,15 +267,14 @@ export function registerAssistantRoutes(
           searchEmails: deps.emails ? text => searchOwnEmails(deps.emails!, tenant, user.id, scoped, text) : undefined,
         })
         const ran = await runAgent({
-          call: (agentInstructions, agentPrompt, timeout) =>
-            runTenantAi(ai.secret, ai.config, agentInstructions, agentPrompt, timeout),
+          call: callAi,
           instructions,
           prompt,
           tools,
         })
         parsed = ran.output
         steps = ran.steps
-      } else parsed = parseModelJson(await runTenantAi(ai.secret, ai.config, instructions, prompt))
+      } else parsed = parseModelJson(await callAi(instructions, prompt))
       const responseMessage = String(parsed.message || '').trim()
       if (!responseMessage) throw new Error('The model returned no assessment.')
       res.json({
@@ -280,6 +291,7 @@ export function registerAssistantRoutes(
         ],
         contextCoverage: context.coverage,
         ...(agentMode ? { steps } : {}),
+        usage: { ...usage, estimated: usage.estimated || undefined },
       })
     } catch (error) {
       console.error('Account AI request failed.')
