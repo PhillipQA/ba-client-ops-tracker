@@ -78,3 +78,31 @@ test('one Contract number column per tracker, Text only; several project ids', (
   assert.deepEqual(trackerProjectIds({ projectId: 'p1' }), ['p1'])
   assert.deepEqual(trackerProjectIds({ projectId: '' }), [])
 })
+
+test('a tracker keeps a project completed in Seeds, but its rows get new tasks only in open projects', async () => {
+  const { rowPlace, projectForContract } = await import('../src/features/trackers/trackerProjects')
+  const projects = [
+    {
+      id: 'done',
+      name: 'GOLDWING BALABALA',
+      clientId: 'c1',
+      contractNumber: 'CONTRACT-2026-04-1660',
+      seedsArchived: true,
+    },
+    { id: 'open', name: 'Makati rollout', clientId: 'c1', contractNumber: 'CN-2' },
+  ]
+  const tracker: any = { projectId: 'done', projectIds: ['done', 'open'], clientIds: ['c1'], columns: [] }
+  assert.equal(rowPlace(tracker, { cells: {} }, projects).projectId, 'open', 'the first open project')
+  assert.equal(projectForContract(tracker, 'CONTRACT-2026-04-1660', projects), undefined, 'not by its contract')
+  assert.equal(projectForContract(tracker, 'CN-2', projects)?.id, 'open')
+  assert.equal(
+    rowPlace({ ...tracker, projectIds: ['done'] }, { cells: {} }, projects).projectId,
+    '',
+    'only completed projects: no place for new tasks',
+  )
+  // A row already linked to a task there keeps it.
+  assert.equal(
+    rowPlace(tracker, { cells: {}, taskId: 't' }, projects, [{ id: 't', projectId: 'done' }]).projectId,
+    'done',
+  )
+})

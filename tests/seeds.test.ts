@@ -1204,3 +1204,64 @@ test('a Seeds task, product and remarks are optional unless Seeds requires them 
   const local: any = validateTimeEntryInput(bare, seedsTimeRule(state(), { ...task, projectId: 'other' }))
   assert.match(local.error, /Move this work to Seeds/)
 })
+
+test('the real Seeds project shape: contract number, id 0 as none, short requirement names', async () => {
+  const { seedsTimeBody } = await import('../server/seeds/seeds-time')
+  // GET /projects/1059, as Seeds sent it (2026-11-13).
+  const record = {
+    id: 1059,
+    name: 'GOLDWING BALABALA',
+    description: 'BALABALA',
+    isDeleted: false,
+    updatedAt: '2026-11-13T02:09:02.672Z',
+    accessScope: 2,
+    isPmoTracking: true,
+    isBillable: true,
+    isNoOvertime: false,
+    allotedManHours: 24,
+    estCompletionDate: '2026-04-30T10:45:56.000Z',
+    completionDateActual: '2026-05-25T00:56:37.062Z',
+    remainingManHours: '7.5',
+    workClassification: 'CLIENT_BILLABLE',
+    user: { id: '145', email: 'mangeles@iripple.com' },
+    department: { id: 6, name: 'Client Engagement' },
+    projectStatus: { id: 4, name: 'Completed' },
+    parent: { id: 223, name: 'Goldwing Retail Group Inc.' },
+    client: { id: 0, name: '-' },
+    product: { id: 0, name: '' },
+    contractId: 1660,
+    contractLineItemId: 1850,
+    contractNumber: 'CONTRACT-2026-04-1660',
+    timeEntryRequirements: { task: true, parent: true, client: false, product: true, remarks: true },
+    timeEntryDefaults: { parentId: 223, clientId: null, productId: null },
+  }
+  const project = parseSeeds.project(record)
+  assert.equal(project.contractNumber, 'CONTRACT-2026-04-1660')
+  assert.equal(project.clientId, '223', 'the parent is the client here')
+  assert.equal(project.seedsClientId, '', 'Seeds client id 0 means none')
+  assert.equal(project.productId, undefined, 'product id 0 means none')
+  assert.equal(project.archived, true, 'Completed')
+  assert.deepEqual(project.timeRules, {
+    productRequired: true,
+    taskRequired: true,
+    remarksRequired: true,
+    parentRequired: true,
+    defaultParentId: '223',
+  })
+
+  const state: any = {
+    projects: [{ id: 'p1', seedsId: '1059', clientId: 'c1', seedsTimeRules: project.timeRules }],
+    clients: [{ id: 'c1', seedsId: '223' }],
+  }
+  const entry: any = { id: 'e1', date: '2026-11-13', hours: 1, note: 'Go Live', seedsTaskId: '31' }
+  const noProduct: any = seedsTimeBody(state, { projectId: 'p1' }, entry)
+  assert.match(noProduct.error, /requires a product/, 'product 0 no longer passes as a product')
+  const sent: any = seedsTimeBody(state, { projectId: 'p1', productId: '9' }, entry)
+  assert.deepEqual([sent.body.parentId, sent.body.productId], [223, 9])
+  const noClient: any = seedsTimeBody(
+    { ...state, clients: [], projects: [{ ...state.projects[0], clientId: '' }] },
+    { projectId: 'p1', productId: '9' },
+    entry,
+  )
+  assert.equal(noClient.body.parentId, 223, 'Seeds’ default parent when the project has no client here')
+})

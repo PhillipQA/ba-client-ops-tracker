@@ -99,8 +99,10 @@ export interface Project {
     productRequired?: boolean
     taskRequired?: boolean
     remarksRequired?: boolean
+    parentRequired?: boolean
     defaultProductId?: string
     defaultTaskId?: string
+    defaultParentId?: string
   }
   /** This project's Seeds tasks (Go Live, Meetings…), from the sync: what its tasks and subtasks link to. */
   seedsTasks?: { id: string; name: string; productRequired?: boolean; defaultProductId?: string; archived?: boolean }[]

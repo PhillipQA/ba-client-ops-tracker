@@ -286,3 +286,37 @@ test('guard reload checks completion and does not persist failed saves; independ
     /Complete/,
   )
 })
+
+test('a project completed in Seeds keeps its work but takes no new tasks or subtasks', () => {
+  const before = state()
+  before.projects = [
+    ...before.projects,
+    {
+      id: 'done',
+      name: 'GOLDWING BALABALA',
+      status: 'Active',
+      targetDate: '',
+      summary: '',
+      seedsArchived: true,
+    } as any,
+  ]
+  const template = before.items[0]
+  const fresh = (id: string, extra: object) => ({ ...copy(template), id, title: id, status: 'Open', ...extra })
+  // Existing work there stays editable.
+  before.items = [...before.items, fresh('kept', { projectId: 'done', parentTaskId: undefined })]
+  const edited = copy(before)
+  edited.items = edited.items.map(item => (item.id === 'kept' ? { ...item, title: 'Renamed' } : item))
+  assertLifecycleMutation(before, edited, admin)
+
+  const added = copy(before)
+  added.items = [...added.items, fresh('new', { projectId: 'done', parentTaskId: undefined })]
+  assert.throws(() => assertLifecycleMutation(before, added, admin), /completed in Seeds, so no new tasks/)
+  const subtask = copy(before)
+  subtask.items = [...subtask.items, fresh('sub', { projectId: 'done', parentTaskId: 'kept' })]
+  assert.throws(() => assertLifecycleMutation(before, subtask, admin), /completed in Seeds/)
+  const moved = copy(before)
+  moved.items = moved.items.map(item =>
+    item.id === template.id ? { ...item, projectId: 'done', status: 'Open' } : item,
+  )
+  assert.throws(() => assertLifecycleMutation(before, moved, admin), /completed in Seeds/, 'nor moved into it')
+})

@@ -104,6 +104,21 @@ export function archivedWorkReason(
 }
 
 /**
+ * Why no new task or subtask can go to this work's project: it is completed (or closed) in Seeds. Such a project still
+ * shows on trackers, Projects and Tasks, and its existing work can still be changed; it just takes nothing new.
+ */
+export function closedProjectReason(
+  state: LifecycleStore,
+  item: { clientId?: string; projectId?: string; parentTaskId?: string },
+) {
+  const projectId = workContext(state, item as WorkItem).projectId
+  const project = state.projects.find(candidate => candidate.id === projectId)
+  return project?.seedsArchived === true
+    ? `Project “${project.name}” is completed in Seeds, so no new tasks can be added to it. Choose an open project.`
+    : ''
+}
+
+/**
  * True when a task changed only because the account's workflow changed: its status or waiting-on name now points
  * at the renamed (or, for a removed status, the replacement) entry, and it is exactly as done as before.
  */
@@ -252,6 +267,13 @@ export function assertLifecycleMutation(current: LifecycleStore, next: Lifecycle
       if (key === 'items' && old && row && relabeledOnly(current, next, old as WorkItem, row as WorkItem)) continue
       const reason = (old && archivedWorkReason(current, old)) || (row && archivedWorkReason(next, row))
       if (reason) throw new LifecycleError(reason)
+      if (key === 'items' && row) {
+        const closed = closedProjectReason(next, row as WorkItem)
+        // Work already there stays editable; only new work, or work moved there, is refused.
+        const moved =
+          !old || workContext(current, old as WorkItem).projectId !== workContext(next, row as WorkItem).projectId
+        if (closed && moved) throw new LifecycleError(closed)
+      }
       if (key === 'items') assertTaskLifecycle(current, next, old as WorkItem | undefined, row as WorkItem | undefined)
       if (row && key !== 'activity') {
         const ctx = workContext(next, row)

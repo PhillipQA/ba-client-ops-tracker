@@ -54,6 +54,10 @@ export function seedsTimeBody(
       error: 'Seeds requires a product here. Choose the Seeds product in Log time, then send again.',
     }
   const client = list(state?.clients).find(candidate => candidate?.id === project?.clientId)
+  // The parent (client company): the project's client, else Seeds' default for the project.
+  const parentId = seedsNumber(client?.seedsId) ?? seedsNumber(rules.defaultParentId)
+  if (!parentId && rules.parentRequired === true)
+    return { ok: false, error: 'Seeds requires the client (parent) on this project, and none is linked.' }
   const minutes = Math.round(Number(entry.hours) * 60)
   if (!(minutes >= 15 && minutes % 15 === 0)) return { ok: false, error: 'Its duration is not in 15-minute steps.' }
   const remarks = String(entry.note || '').trim()
@@ -65,7 +69,7 @@ export function seedsTimeBody(
       projectId,
       minuteslogged: minutes,
       taskId,
-      parentId: seedsNumber(client?.seedsId),
+      parentId,
       productId,
       ...(remarks ? { remarks: remarks.slice(0, 120) } : {}),
     },

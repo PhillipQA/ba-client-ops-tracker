@@ -21,12 +21,26 @@ export async function createRowTasks(input: {
   /** Only these rows get tasks; all rows are still read to find each phase's task. */
   onlyRowIds?: string[]
   /** To find the client of the tracker's project when it comes from Seeds. */
-  projects?: { id: string; clientId?: string; seedsId?: string }[]
+  projects?: {
+    id: string
+    name: string
+    clientId?: string
+    seedsId?: string
+    seedsArchived?: boolean
+    archived?: boolean
+  }[]
 }): Promise<RowTasksResult> {
   const { tracker } = input
   if (!keepsTasks(tracker.columns)) return { created: 0, rows: [] }
   // A tracker on a Seeds project makes its tasks under that project's client (the Seeds parent), whichever other
   // (Before Seeds) clients the tracker also follows.
+  const own = input.projects?.find(project => project.id === tracker.projectId)
+  if (own?.seedsArchived || own?.archived)
+    return {
+      created: 0,
+      rows: [],
+      error: `Project “${own.name}” is completed, so its rows get no new tasks. Choose an open project for this tracker (More › Rename, client and project).`,
+    }
   const seedsProject = input.projects?.find(project => project.id === tracker.projectId && project.seedsId)
   const clientId = seedsProject?.clientId || trackerClients(tracker)[0] || ''
   if (!clientId) return { created: 0, rows: [], error: 'Choose a client for this tracker so its tasks can be made.' }

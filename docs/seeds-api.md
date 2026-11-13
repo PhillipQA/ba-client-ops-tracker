@@ -103,6 +103,29 @@ All paths are under `/api/v1`. All list/get calls are `GET`.
 
 How this app syncs: a **delta sync** every 10 minutes (`updatedSince` = the latest `updatedAt` from the last sync, minus 10 minutes of overlap), and a **full sync** once a week or when someone clicks Full sync. If Seeds turns down `updatedSince`, that sync reads everything instead.
 
+### A project as Seeds sends it (`GET /projects/{id}`, 2026-11-13)
+
+```json
+{
+  "id": 1059, "name": "GOLDWING BALABALA", "isDeleted": false, "updatedAt": "2026-11-13T02:09:02.672Z",
+  "projectStatus": { "id": 4, "name": "Completed" },
+  "parent": { "id": 223, "name": "Goldwing Retail Group Inc." },
+  "client": { "id": 0, "name": "-" },
+  "product": { "id": 0, "name": "" },
+  "contractId": 1660, "contractLineItemId": 1850, "contractNumber": "CONTRACT-2026-04-1660",
+  "timeEntryRequirements": { "task": true, "parent": true, "client": false, "product": true, "remarks": true },
+  "timeEntryDefaults": { "parentId": 223, "clientId": null, "productId": null }
+}
+```
+
+Also sent: `description`, `accessScope`, `isPmoTracking`, `isBillable`, `isNoOvertime`, `allotedManHours`, `remainingManHours`, `estCompletionDate`, `completionDateActual`, `workClassification`, `user` (`id`, `email`) and `department` (`id`, `name`).
+
+How the app reads it:
+- **`id: 0` means none.** A project with no client or product sends `{ "id": 0 }`.
+- **`parent`** is the app's client. **`contractNumber`** goes on the project and fills tracker contract columns and the DRF's Contract Number.
+- **`projectStatus.name`** of Completed, Closed, Cancelled and similar closes the project here. **`isDeleted: true`** does too.
+- **`timeEntryRequirements`** says what a time entry must carry. **`timeEntryDefaults.parentId`** is the parent sent when the project has no client linked here.
+
 ## What this app needs (read only)
 
 To ask Seeds Admin for: `core.users.read`, `customers.parents.read`, `projects.projects.read`, `projects.members.read`, `projects.tasks.read`, and `customers.clients.read` (used only when a project names a Seeds client instead of its parent). Setup steps: [setup/seeds.md](setup/seeds.md).
