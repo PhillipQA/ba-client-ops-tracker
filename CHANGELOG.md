@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Seeds phase 3: new Seeds projects become tracker rows
+**Database update: run `database/migrations/schema-v37-tracker-seeds-rows.sql` before deploying** (it adds one column to trackers; a new database gets it from `schema.sql`). Until it is run, everything else works and the new switch says what to run.
+- **Tracker details › Add new Seeds projects as rows** (shown once one of the tracker's clients comes from Seeds). When the Seeds sync brings in a new project for one of the tracker's clients (a new store, say), the tracker gets the project among its projects and a row named after it, with its contract number when the tracker has a Contract number column.
+- The row's **task is made in that project**, assigned to the tracker's creator; on a Site rollout tracker each step gets its subtask, linked to its box, as when a person names a site. Subtasks take the project's Seeds task with the same name.
+- Projects that were already in the app, closed in Seeds or without a client, archived trackers, and trackers that only follow a Google Sheet one way are left alone. A two-way Sheet gets the new rows too.
+- New Seeds tasks change no tracker: they stay the Seeds task list on subtasks and time.
+- The DRF's Contract Number already comes from the Seeds project of its task (phase 3's other part, shipped with the Seeds delta sync).
+
 ### AI: morning brief and weekly status report
 **No database change.** Both use the account's BA Assistant (Account Settings › AI Agent Manager) when it is on, and work without it. Each person sees only the work they may see, and nothing is changed or sent without them.
 - **Morning brief** at the top of the Action Center: your overdue work, what is due today, follow-ups, go-lives in the next week (and passed ones with steps still open), Gmail and Discord messages waiting on you, and the time you logged on the last working day (with entries not sent to Seeds yet). Every line opens where the work is: the task, the tracker row, or the message in Work Hub. Follow-ups have **Draft follow-up**, which opens the AI BA Assistant with the request written. With the BA Assistant on, a short summary of what matters most is written once a day; **Refresh** counts again and rewrites it. **Hide** keeps the brief folded in this browser.

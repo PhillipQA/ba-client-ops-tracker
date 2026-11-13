@@ -5,6 +5,9 @@ import { applyTaskPatches } from '../../src/features/trackers/trackerTasks'
 import { archivedWorkReason } from '../../src/features/tasks/lifecycle'
 import { defaultWaitingOn, doneWaitingOn } from '../../src/features/tasks/waitingOn'
 import { asList as list } from '../../src/shared/lists'
+import { tasksFromDrafts } from '../../src/features/trackers/trackerTaskDrafts'
+import type { TaskDraft } from '../../src/features/trackers/TrackerWork'
+import type { WorkItem } from '../../src/shared/types'
 
 /**
  * Tasks completed or reopened by the server for a tracker: a box ticked or unticked in the connected Google Sheet
@@ -97,5 +100,52 @@ export function trackerTaskUpdater(deps: {
       }
     }
     return 0
+  }
+}
+
+/**
+ * Makes tasks and subtasks for a tracker in the workspace, as the given actor, with one retry when the workspace
+ * changed in between. The records are the ones a person's tracker edit makes (tasksFromDrafts). Returns the tasks made,
+ * in the order of the drafts.
+ */
+export function trackerTaskCreator(deps: {
+  load: (tenantId: string) => Promise<{ data: any }>
+  commit: (tenantId: string, next: any, actor: TrackerActor, reason: string, current: any) => Promise<unknown>
+  today: () => string
+  retryable: (error: unknown) => boolean
+}) {
+  return async function createTasks(tenantId: string, drafts: TaskDraft[], actor: TrackerActor): Promise<WorkItem[]> {
+    if (!drafts.length) return []
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const current = await deps.load(tenantId)
+      if (!current?.data) return []
+      const data = current.data
+      const workspace = {
+        clients: list(data.clients),
+        projects: list(data.projects),
+        items: list(data.items),
+        accounts: list(data.accounts),
+        // Missing settings fall back as in Tasks: the first open status is Open, waiting-on the built-in options.
+        taskSettings: { ...data.taskSettings, statuses: list(data.taskSettings?.statuses) },
+      }
+      const { projects, made, activity } = tasksFromDrafts(workspace, drafts, {
+        today: deps.today(),
+        newId: randomUUID,
+      })
+      const next = {
+        ...data,
+        projects,
+        items: [...made, ...workspace.items],
+        activity: [...activity, ...list(data.activity)],
+      }
+      try {
+        await deps.commit(tenantId, next, actor, 'tracker-tasks', data)
+        return made
+      } catch (error) {
+        if (attempt === 0 && deps.retryable(error)) continue
+        throw error
+      }
+    }
+    return []
   }
 }

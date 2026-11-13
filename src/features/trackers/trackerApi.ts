@@ -126,6 +126,8 @@ export const trackerApi = {
       private?: boolean
       archived?: boolean
       stepTasks?: boolean
+      /** New Seeds projects of its clients become rows (see seedsRows). */
+      seedsRows?: boolean
       /** People added by hand (account ids); the creator or an Administrator only. */
       members?: string[]
     },

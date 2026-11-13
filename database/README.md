@@ -34,7 +34,7 @@ drop function if exists public.request_organization_id();
 
 ## Changing the schema later
 
-1. Add a migration file, `database/migrations/schema-v37-<what-it-does>.sql`, written so it can run once on an existing database (for example `alter table … add column if not exists …`).
+1. Add a migration file, `database/migrations/schema-v38-<what-it-does>.sql`, written so it can run once on an existing database (for example `alter table … add column if not exists …`).
 2. Apply it to every existing database (the live one, and any test copies).
 3. Fold the same change into `schema.sql` and bump its version number, so a new install gets it too.
 4. Note it in [CHANGELOG.md](../CHANGELOG.md), saying what to run before deploying.

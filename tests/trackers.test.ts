@@ -135,7 +135,7 @@ function memoryDb(options: { failChanges?: boolean } = {}) {
   return { from: (table: string) => new Query(table), tables }
 }
 
-function harness(options: { failChanges?: boolean } = {}) {
+function harness(options: { failChanges?: boolean; createTasks?: any } = {}) {
   const db = memoryDb(options)
   const state = {
     clients: [{ id: 'c1', name: 'Acme' }],
@@ -169,6 +169,7 @@ function harness(options: { failChanges?: boolean } = {}) {
     requireTenant: pass,
     load: async () => ({ data: state }),
     key: Buffer.alloc(32, 7),
+    ...(options.createTasks ? { createTasks: options.createTasks } : {}),
   })
   return { app, db, state, hooks }
 }
@@ -1005,5 +1006,76 @@ test('a tracker’s users: creator, people on its project, and people its creato
       { 'x-user': 'u2', 'x-role': 'Administrator' },
     )
     assert.deepEqual(byAdmin.body.tracker.users, ['u1', 'u2'])
+  })
+})
+
+test('new Seeds projects of a tracker’s client become rows with their task, on trackers switched on for it', async () => {
+  const made: any[] = []
+  const h = harness({
+    createTasks: async (_tenant: string, drafts: any[], actor: any) => {
+      assert.equal(actor.id, 'system:seeds')
+      made.push(...drafts)
+      return drafts.map((_draft, at) => ({ id: `new-${made.length - drafts.length + at}` }))
+    },
+  })
+  const tenant = '11111111-1111-4111-8111-111111111111'
+  await serve(h, async ask => {
+    const columns = [...sample(), { name: 'Hardware', type: 'checkbox' }]
+    const on = (
+      await ask('POST', '/api/trackers', {
+        name: 'PCI rollout',
+        columns,
+        clientId: 'c1',
+        projectId: 'p1',
+        template: 'site-rollout',
+      })
+    ).body.tracker
+    const off = await makeTracker(ask, { clientId: 'c1', projectId: 'p1', template: 'site-rollout' })
+    const switched = await ask('PATCH', `/api/trackers/${on.id}`, { seedsRows: true })
+    assert.equal(switched.status, 200, JSON.stringify(switched.body))
+    assert.equal(switched.body.tracker.seedsRows, true)
+
+    const before = { projects: [{ id: 'p1', name: 'Rollout' }] }
+    const after = {
+      projects: [
+        ...before.projects,
+        {
+          id: 'p9',
+          name: 'PCI - SM Tarlac',
+          seedsId: '77',
+          clientId: 'c1',
+          status: 'Active',
+          contractNumber: 'SLSS-9',
+        },
+        { id: 'p8', name: 'Other client store', seedsId: '78', clientId: 'c2', status: 'Active' },
+        { id: 'p7', name: 'Made here', clientId: 'c1', status: 'Active' },
+      ],
+      accounts: [{ id: 'u1', name: 'Ana Reyes', status: 'Active' }],
+    }
+    await h.hooks.onWorkspaceSaved(tenant, before, after, null)
+
+    const rows = (await ask('GET', `/api/trackers/${on.id}/rows`)).body.rows
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].cells[idOf(on, 'Site')], 'PCI - SM Tarlac')
+    assert.equal(rows[0].taskId, 'new-0')
+    assert.deepEqual(
+      made.map(draft => [draft.title, draft.projectId, draft.clientId, draft.parentIndex, draft.assignedToUserId]),
+      [
+        ['PCI - SM Tarlac', 'p9', 'c1', undefined, 'u1'],
+        ['Hardware', 'p9', 'c1', 0, 'u1'],
+      ],
+    )
+    const links = h.db.tables.tenant_tracker_task_links.filter((link: any) => link.tracker_id === on.id)
+    assert.deepEqual(
+      links.map((link: any) => [link.column_id, link.task_id]),
+      [[idOf(on, 'Hardware'), 'new-1']],
+    )
+    const tracker = (await ask('GET', `/api/trackers/${on.id}`)).body.tracker
+    assert.deepEqual(tracker.projectIds, ['p1', 'p9'], 'The project joins the tracker; the default stays first')
+    assert.equal((await ask('GET', `/api/trackers/${off.id}/rows`)).body.rows.length, 0, 'Not switched on')
+
+    // The same save seen again adds nothing twice.
+    await h.hooks.onWorkspaceSaved(tenant, before, after, null)
+    assert.equal((await ask('GET', `/api/trackers/${on.id}/rows`)).body.rows.length, 1)
   })
 })
