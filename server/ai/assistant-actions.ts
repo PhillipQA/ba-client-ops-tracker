@@ -17,6 +17,7 @@ import { isArchived, isClosedProject, isWorkDone } from '../../src/features/task
 import { EFFORT_CATEGORIES, seedsTimeRule, validateTimeEntryInput } from '../../src/features/tasks/effort'
 import { cleanCell, type Cell, type TrackerColumn } from '../../src/features/trackers/trackerModel'
 import { places } from './assistant-emails'
+import { projectClients, requestedScope } from '../../src/features/ai/aiScope'
 import type { LoadedTracker } from './assistant-trackers'
 
 export const ACTION_LIMITS = { planTasks: 20, planPeople: 60, timeTasks: 15, trackerChanges: 30 } as const
@@ -85,7 +86,7 @@ export function timeLogContext(state: any, user: { id: string }, message: string
   const name = (key: string, id: unknown) =>
     list(state, key).find(entry => entry?.id === id)?.name as string | undefined
   const subtasksOf = (id: string) => items.filter(item => item?.parentTaskId === id && !isArchived(item))
-  const focus = { client: `${requested?.client?.id || ''}`, project: `${requested?.project?.id || ''}` }
+  const scope = requestedScope(requested, projectClients(list(state, 'projects'), items))
   const open = items.filter(item => item?.id && !item.parentTaskId && !isArchived(item) && !isWorkDone(item, settings))
   const score = (item: any) => {
     const text = [item.title, name('clients', item.clientId), name('projects', item.projectId)]
@@ -93,8 +94,8 @@ export function timeLogContext(state: any, user: { id: string }, message: string
       .join(' ')
     let points = words(text).filter(word => terms.has(word)).length * 10
     if (item.assignedToUserId === user.id) points += 3
-    if (focus.project && item.projectId === focus.project) points += 5
-    else if (focus.client && item.clientId === focus.client) points += 2
+    if (scope.projectIds.includes(item.projectId)) points += 5
+    else if (scope.clientIds.includes(item.clientId)) points += 2
     return points
   }
   const tasks = open

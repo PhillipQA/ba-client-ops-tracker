@@ -6,6 +6,7 @@ import {
   type Rec,
 } from '../../src/features/reports/custom/reportData'
 import type { Tracker, TrackerColumn, TrackerRow } from '../../src/features/trackers/trackerModel'
+import { projectClients, requestedScope } from '../../src/features/ai/aiScope'
 
 /**
  * Trackers as data for the AI BA assistant. The assistant gets a list of every tracker the person can open, and the
@@ -91,8 +92,18 @@ const clientIdsOf = (tracker: Tracker) =>
  */
 export function pickTrackers(
   trackers: Tracker[],
-  input: { message: string; clientId?: string; projectId?: string; clientName: (id: string) => string | undefined },
+  input: {
+    message: string
+    clientId?: string
+    projectId?: string
+    /** Several clients or projects in focus. */
+    clientIds?: string[]
+    projectIds?: string[]
+    clientName: (id: string) => string | undefined
+  },
 ): string[] {
+  const focusProjects = new Set([...(input.projectIds || []), input.projectId || ''].filter(Boolean))
+  const focusClients = new Set([...(input.clientIds || []), input.clientId || ''].filter(Boolean))
   const message = input.message.toLowerCase()
   const terms = termsOf(input.message)
   const scored = trackers.map((tracker, order) => {
@@ -104,8 +115,8 @@ export function pickTrackers(
       .map(id => (input.clientName(id) || '').toLowerCase())
       .filter(Boolean)
     for (const term of terms) if (clients.some(client => client.includes(term))) score += 50
-    if (input.projectId && tracker.projectId === input.projectId) score += 80
-    if (input.clientId && clientIdsOf(tracker).includes(input.clientId)) score += 60
+    if (tracker.projectId && focusProjects.has(tracker.projectId)) score += 80
+    if (clientIdsOf(tracker).some(id => focusClients.has(id))) score += 60
     return { id: tracker.id, score, order }
   })
   const matched = scored.filter(entry => entry.score > 0)
@@ -327,8 +338,7 @@ export async function addTrackers(
     const { trackers, loaded } = await input.read(input.tenant, input.user, all =>
       pickTrackers(all, {
         message: input.message,
-        clientId: String(input.requested?.client?.id || ''),
-        projectId: String(input.requested?.project?.id || ''),
+        ...requestedScope(input.requested, projectClients(list('projects'), list('items'))),
         clientName: id => named('clients', id),
       }),
     )

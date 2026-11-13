@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### AI Assistant: several clients, and projects per client
+- The assistant's Client and Project fields are now one **Clients and projects** picker. Type to add a client; add as many as you need (up to 20).
+- Each chosen client lists **its own projects** only. Leave *All projects* ticked to include all of them, or tick the projects you want. Each client is narrowed on its own.
+- The assistant then answers from just those clients and projects: tasks, activities, history, trackers, time logs and new-task places. With nothing chosen it looks at all clients, as before.
+- Your choice is kept for next time. Opening the assistant from a task or a client still focuses on that one, and conversations saved for one client or project are still there.
+- A suggested task is placed under the client (and project) only when exactly one client is chosen.
+
 ### Follow Excel files kept in Google Drive
 - The Sheet picker (new tracker from a Google Sheet, and Import → Link an existing Google Sheet) now lists Excel (.xlsx) files in your Drive too, marked *Excel file · read only*. A pasted link to an .xlsx opened in Google Sheets works as well.
 - An Excel file is followed **one-way and read only**: it is downloaded and read on every sync, and the tracker never writes to it. Its columns can't be edited in the tracker; change them in the Excel file. You can still make tasks and subtasks from its rows. Two-way, the Gantt chart tab and done marks in the file are not offered (a done mark shows as not reaching the file).

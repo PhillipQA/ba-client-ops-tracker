@@ -1127,6 +1127,63 @@ td small {
 .ai-context-form .client-combo-input {
   width: 100%;
 }
+.ai-scope {
+  display: grid;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+.ai-scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #667085;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.ai-scope-clear {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ai-scope-client {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+}
+.ai-scope-client legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 12.5px;
+}
+.ai-scope-client legend button {
+  display: inline-flex;
+  border: 0;
+  background: none;
+  color: #667085;
+  padding: 2px;
+  cursor: pointer;
+}
+.ai-context-form .ai-scope-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: inherit;
+}
+.ai-scope-none {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+}
 .ai-context-summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -2283,6 +2340,14 @@ select option {
 }
 .ai-context-form label {
   color: #c8c8c8;
+}
+.ai-scope-head,
+.ai-scope-none,
+.ai-scope-client legend button {
+  color: #c8c8c8;
+}
+.ai-scope-client {
+  border-color: #3d3d3d;
 }
 .ai-context-summary {
   border-color: #383838;

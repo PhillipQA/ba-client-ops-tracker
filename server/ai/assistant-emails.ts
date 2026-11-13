@@ -8,6 +8,7 @@
  * people, never instructions. Nothing is linked or created until the person approves the suggestion.
  */
 import { isClosedProject } from '../../src/features/tasks/lifecycle'
+import { projectClients, requestedScope } from '../../src/features/ai/aiScope'
 
 /** Reads one person's own latest emails, newest first. */
 export type EmailReader = (tenant: string, userId: string) => Promise<any[]>
@@ -37,18 +38,21 @@ export const asksAboutEmail = (message: string) => /\b(e-?mails?|mails?|inbox|gm
 export function places(state: any, message: string, requested: any) {
   const words = new Set(wordsOf(message))
   const named = (name: unknown) => wordsOf(`${name || ''}`).some(word => words.has(word))
-  const chosenClient = String(requested?.client?.id || '')
-  const chosenProject = String(requested?.project?.id || '')
+  const scope = requestedScope(requested, projectClients(list(state, 'projects'), list(state, 'items')))
+  const chosenClients = new Set(scope.clientIds)
+  const chosenProjects = new Set(scope.projectIds)
   const clients = list(state, 'clients')
-    .filter(client => !client?.archived && (client.id === chosenClient || named(client.name)))
+    .filter(client => !client?.archived && (chosenClients.has(client.id) || named(client.name)))
+    .sort((a, b) => Number(chosenClients.has(b.id)) - Number(chosenClients.has(a.id)))
     .slice(0, PLACES)
   const clientIds = new Set(clients.map(client => client.id))
   const projects = list(state, 'projects')
     .filter(
       project =>
         !isClosedProject(project) &&
-        (project.id === chosenProject || named(project.name) || clientIds.has(project.clientId)),
+        (chosenProjects.has(project.id) || named(project.name) || clientIds.has(project.clientId)),
     )
+    .sort((a, b) => Number(chosenProjects.has(b.id)) - Number(chosenProjects.has(a.id)))
     .slice(0, PLACES * 2)
   return {
     clients: clients.map(client => ({ id: String(client.id), name: clip(client.name, 120) })),

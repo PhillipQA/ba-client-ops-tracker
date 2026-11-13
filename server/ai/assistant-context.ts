@@ -1,5 +1,6 @@
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { isWaitingOnDone } from '../../src/features/tasks/waitingOn'
+import { inScope as scopeTest, projectClients, requestedScope } from '../../src/features/ai/aiScope'
 
 const dayOffset = (date: string, days: number) =>
   new Date(Date.parse(date + 'T12:00:00Z') + days * 86400000).toISOString().slice(0, 10)
@@ -28,10 +29,10 @@ export function buildAssistantContext(
   allowed: (module: string) => boolean,
 ) {
   const list = (key: string): any[] => (Array.isArray(state[key]) ? state[key] : [])
-  const clientId = String(requested?.client?.id || ''),
-    projectId = String(requested?.project?.id || '')
-  const inScope = (entry: any) =>
-    (!clientId || entry.clientId === clientId) && (!projectId || entry.projectId === projectId)
+  // The clients chosen, each with all its projects or only some of them.
+  const owner = projectClients(list('projects'), list('items'))
+  const scope = requestedScope(requested, owner)
+  const inScope = scopeTest(scope, owner)
   const items =
     allowed('items') || allowed('inbox')
       ? list('items')
@@ -165,8 +166,26 @@ export function buildAssistantContext(
     today,
     timeZone,
     period,
-    client: allowed('clients') ? list('clients').find(c => c.id === clientId) : undefined,
-    project: allowed('projects') ? list('projects').find(p => p.id === projectId) : undefined,
+    client:
+      allowed('clients') && scope.clientIds.length === 1
+        ? list('clients').find(c => c.id === scope.clientIds[0])
+        : undefined,
+    project:
+      allowed('projects') && scope.projectIds.length === 1
+        ? list('projects').find(p => p.id === scope.projectIds[0])
+        : undefined,
+    // Several clients or projects chosen: what the question is about. A client with no project listed means all of its projects.
+    focus:
+      scope.clientIds.length > 1 || scope.projectIds.length > 1
+        ? scope.clientIds.map(id => ({
+            client: allowed('clients') ? list('clients').find(c => c.id === id)?.name || id : id,
+            projects: scope.projectIds
+              .filter(projectId => owner.get(projectId) === id)
+              .map(projectId =>
+                allowed('projects') ? list('projects').find(p => p.id === projectId)?.name || projectId : projectId,
+              ),
+          }))
+        : undefined,
     totals: {
       items: items.length,
       open: open.length,

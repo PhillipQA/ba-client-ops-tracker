@@ -44,7 +44,8 @@ import type {
 import { isWaitingOnDone } from '../tasks/waitingOn'
 import { drfPrefillCount } from '../documents/drfPrefill'
 import { createTrackerDraft } from './trackerDraft'
-import ClientSelect from '../../shared/ui/SearchSelect'
+import AiScopePicker from './AiScopePicker'
+import { NO_SCOPE, cleanScope, inScope, projectClients, scopeKey, singleOf, type AiScope } from './aiScope'
 import type { TimeEntryMutationResult } from '../tasks/timeEntries'
 
 const THREAD_STORAGE_KEY = 'ba-client-ops-ai-threads-v1'
@@ -177,6 +178,30 @@ function applyLabel(suggestion: AISuggestion, done: boolean, count = 0) {
   )
 }
 
+const SCOPE_KEY = 'ba-client-ops-ai-scope-v1'
+/** The last clients and projects chosen, per person, so the choice is still there next time. */
+function loadScope(userId: string): AiScope {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SCOPE_KEY) || '{}')?.[userId]
+    if (saved && Array.isArray(saved.clientIds) && Array.isArray(saved.projectIds))
+      return {
+        clientIds: saved.clientIds.filter((id: unknown) => typeof id === 'string'),
+        projectIds: saved.projectIds.filter((id: unknown) => typeof id === 'string'),
+      }
+  } catch {
+    // Storage may be blocked or hold something else: start with all clients.
+  }
+  return NO_SCOPE
+}
+function saveScope(userId: string, scope: AiScope) {
+  try {
+    const all = JSON.parse(localStorage.getItem(SCOPE_KEY) || '{}')
+    localStorage.setItem(SCOPE_KEY, JSON.stringify({ ...(all && typeof all === 'object' ? all : {}), [userId]: scope }))
+  } catch {
+    // Not kept: the choice still works for this visit.
+  }
+}
+
 export default function AIAssistant({
   clients,
   projects,
@@ -207,7 +232,8 @@ export default function AIAssistant({
   initialClientId?: string
   initialProjectId?: string
   initialPrompt?: string
-  onContextChange?: (clientId: string, projectId: string) => void
+  /** The chosen clients or projects changed (the assistant keeps the choice itself). */
+  onContextChange?: () => void
   onApplySuggestion: (suggestion: AISuggestion, clientId: string, projectId: string) => string
   /** The server made a task (from an email): reload the workspace so it shows. */
   onWorkChanged?: () => Promise<void>
@@ -218,8 +244,16 @@ export default function AIAssistant({
   /** A time entry was logged on a task: put it in the workspace. */
   onTimeEntry?: (result: TimeEntryMutationResult) => void
 }) {
-  const [clientId, setClientId] = useState(initialClientId)
-  const [projectId, setProjectId] = useState(initialProjectId)
+  // Projects belong to a client: older ones take it from their tasks.
+  const owner = useMemo(() => projectClients(projects, items), [projects, items])
+  const [scope, setScope] = useState<AiScope>(() =>
+    initialClientId || initialProjectId
+      ? cleanScope(
+          { clientIds: [initialClientId].filter(Boolean), projectIds: [initialProjectId].filter(Boolean) },
+          owner,
+        )
+      : loadScope(currentUser.id),
+  )
   const [threads, setThreads] = useState<Record<string, AIMessage[]>>(loadThreads)
   const [input, setInput] = useState('')
   const operation = useDocumentOperation()
@@ -234,19 +268,34 @@ export default function AIAssistant({
   const tickedOf = (suggestion: AISuggestion) =>
     ticked[suggestion.id] ?? suggestion.plan?.tasks.map(task => task.ref) ?? []
 
+  // Opened for one client or project (from a task, the client page…): look at that one.
   useEffect(() => {
-    setClientId(initialClientId)
-  }, [initialClientId])
-  useEffect(() => {
-    setProjectId(initialProjectId)
-  }, [initialProjectId])
+    if (initialClientId || initialProjectId)
+      setScope(
+        cleanScope(
+          { clientIds: [initialClientId].filter(Boolean), projectIds: [initialProjectId].filter(Boolean) },
+          owner,
+        ),
+      )
+  }, [initialClientId, initialProjectId])
   useEffect(() => {
     if (initialPrompt) setInput(initialPrompt)
   }, [initialPrompt])
 
-  const linkedProjects = useMemo(() => projects, [projects])
-  const resolvedProjectId = linkedProjects.some(project => project.id === projectId) ? projectId : ''
-  const threadKey = `${currentUser.id}:${clientId || 'global'}:${resolvedProjectId || 'all'}`
+  // Only clients and open projects that still exist count.
+  const shown = useMemo(
+    () =>
+      cleanScope(
+        {
+          clientIds: scope.clientIds.filter(id => clients.some(client => client.id === id)),
+          projectIds: scope.projectIds.filter(id => projects.some(project => project.id === id)),
+        },
+        owner,
+      ),
+    [scope, clients, projects, owner],
+  )
+  const { clientId, projectId: resolvedProjectId } = singleOf(shown)
+  const threadKey = scopeKey(currentUser.id, shown)
   const messages = threads[threadKey] ?? []
   useEffect(() => {
     operation.cancel()
@@ -260,19 +309,13 @@ export default function AIAssistant({
   const context = useMemo(() => {
     const client = clients.find(value => value.id === clientId)
     const project = projects.find(value => value.id === resolvedProjectId)
-    const scopedItems = items.filter(
-      item => (!clientId || item.clientId === clientId) && (!resolvedProjectId || item.projectId === resolvedProjectId),
-    )
+    const matches = inScope(shown, owner)
+    const scopedItems = items.filter(matches)
     const closedStatuses = new Set(taskSettings.statuses.filter(status => status.closed).map(status => status.label))
     const openItems = scopedItems.filter(
       item => !closedStatuses.has(item.status) && !isWaitingOnDone(item.waitingOn, taskSettings),
     )
-    const upcomingActivities = planner.filter(
-      activity =>
-        (!clientId || activity.clientId === clientId) &&
-        (!resolvedProjectId || activity.projectId === resolvedProjectId) &&
-        activity.status === 'Planned',
-    )
+    const upcomingActivities = planner.filter(activity => matches(activity) && activity.status === 'Planned')
     const myAssignments = scopedItems.filter(item => item.assignedToUserId === currentUser.id)
     const myRecentActivity = workEvents
       .filter(
@@ -280,30 +323,44 @@ export default function AIAssistant({
           (event.actorUserId === currentUser.id ||
             event.assignedToUserId === currentUser.id ||
             (event.field === 'assignedToUserId' && event.oldValue === currentUser.id)) &&
-          (!clientId || event.clientId === clientId) &&
-          (!resolvedProjectId || event.projectId === resolvedProjectId),
+          matches(event),
       )
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     return {
       currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role, modules: currentUser.modules },
       client,
       project,
+      clientIds: shown.clientIds,
+      projectIds: shown.projectIds,
       openItems,
       recentItems: scopedItems,
       upcomingActivities,
       myAssignments,
       myRecentActivity,
     }
-  }, [clientId, resolvedProjectId, clients, projects, items, planner, taskSettings, currentUser, workEvents, accounts])
+  }, [
+    shown,
+    owner,
+    clientId,
+    resolvedProjectId,
+    clients,
+    projects,
+    items,
+    planner,
+    taskSettings,
+    currentUser,
+    workEvents,
+  ])
 
-  const updateContext = (nextClientId: string, nextProjectId: string) => {
+  const updateScope = (next: AiScope) => {
     operation.cancel()
     setBusy(false)
-    setClientId(nextClientId)
-    setProjectId(nextProjectId)
+    const cleaned = cleanScope(next, owner)
+    setScope(cleaned)
+    saveScope(currentUser.id, cleaned)
     setError('')
     setActionNotice('')
-    onContextChange?.(nextClientId, nextProjectId)
+    onContextChange?.()
   }
 
   const submit = async (event: FormEvent) => {
@@ -494,26 +551,7 @@ export default function AIAssistant({
           <Sparkles size={20} />
         </div>
         <div className="ai-context-form">
-          <label>
-            Client
-            <ClientSelect
-              clients={clients}
-              value={clientId}
-              onChange={value => updateContext(value, '')}
-              extra={[{ value: '', label: 'All clients / general' }]}
-            />
-          </label>
-          <label>
-            Project
-            <select value={resolvedProjectId} onChange={e => updateContext(clientId, e.target.value)}>
-              <option value="">All projects</option>
-              {linkedProjects.map(project => (
-                <option value={project.id} key={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <AiScopePicker clients={clients} projects={projects} owner={owner} scope={shown} onChange={updateScope} />
         </div>
         <div className="ai-user-context">
           <strong>{currentUser.name}</strong>
@@ -533,7 +571,13 @@ export default function AIAssistant({
             <span>planned activities</span>
           </div>
           <div>
-            <strong>{context.client ? context.client.status : 'Global'}</strong>
+            <strong>
+              {shown.clientIds.length > 1
+                ? `${shown.clientIds.length} clients`
+                : context.client
+                  ? context.client.status
+                  : 'Global'}
+            </strong>
             <span>context</span>
           </div>
         </div>
