@@ -1,0 +1,88 @@
+/* Version badge and update controls. Part of styles.css: keep the import order there. */
+
+/* --------------------------------------------------------------------------
+   Patch update controls
+   -------------------------------------------------------------------------- */
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid #3b465e;
+  background: #202632;
+  color: #cbd5ff;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.update-grid {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.update-card,
+.update-protection {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #1d1d1d;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.update-card > svg,
+.update-protection > svg {
+  flex: 0 0 auto;
+  color: #aeb9e8;
+  margin-top: 1px;
+}
+.update-card strong,
+.update-card span,
+.update-protection strong,
+.update-protection span {
+  display: block;
+}
+.update-card strong,
+.update-protection strong {
+  color: #f5f5f5;
+  font-size: 11px;
+}
+.update-card span,
+.update-protection span {
+  margin-top: 5px;
+  color: #969696;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.update-card code {
+  display: block;
+  margin-top: 10px;
+  padding: 9px 10px;
+  overflow-wrap: anywhere;
+  border: 1px solid #343b4b;
+  border-radius: 8px;
+  background: #12151b;
+  color: #cbd5ff;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.update-protection {
+  grid-column: 1 / -1;
+  background: #19231d;
+  border-color: #30483a;
+}
+.update-protection > svg {
+  color: #9fcdb0;
+}
+@media (max-width: 760px) {
+  .update-grid {
+    grid-template-columns: 1fr;
+  }
+  .update-protection {
+    grid-column: auto;
+  }
+}

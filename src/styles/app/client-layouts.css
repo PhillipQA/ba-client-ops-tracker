@@ -1,0 +1,203 @@
+/* Client layouts and discovery. Part of styles.css: keep the import order there. */
+
+/* v0.6.31 — client layouts and discovery */
+.client-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 14px;
+}
+.client-controls .lifecycle-filter {
+  gap: 7px;
+  font-size: 12px;
+}
+.client-controls .lifecycle-filter select,
+.client-controls .lifecycle-filter .client-combo-input {
+  min-width: 140px;
+  min-height: 38px;
+}
+.client-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 230px;
+  min-width: 180px;
+  max-width: 390px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid #414958;
+  border-radius: 10px;
+  background: #20252d;
+  color: #aebbd0;
+}
+.client-search:focus-within {
+  border-color: #8aa1ff;
+}
+.client-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #f6f6f6;
+  font-size: 12px;
+}
+.client-search input::placeholder {
+  color: #9ba8b8;
+}
+.client-layout-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #414958;
+  border-radius: 10px;
+  background: #20252d;
+  margin-left: auto;
+}
+.client-layout-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #b9c4d5;
+  font-size: 11px;
+  font-weight: 700;
+}
+.client-layout-switch button:hover {
+  color: #fff;
+  background: #313a47;
+}
+.client-layout-switch button[aria-pressed="true"] {
+  color: #fff;
+  background: #344c6a;
+}
+.client-result-count {
+  margin: -6px 0 0;
+  color: #abb5c5;
+  font-size: 11px;
+}
+.client-identity {
+  min-width: 0;
+}
+.client-identity p {
+  margin: 0;
+  color: #b8b8b8;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.ui-refresh .client-grid.client-grid-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ui-refresh .client-grid-list .client-card {
+  display: grid;
+  grid-template-columns: 110px minmax(150px, 1.1fr) minmax(160px, 0.8fr) minmax(200px, 1.2fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 102px;
+  padding: 14px 155px 14px 16px;
+}
+.client-grid-list .client-card h3 {
+  margin: 0 0 4px;
+}
+.client-grid-list .card-top .chip {
+  margin-left: 0;
+}
+.client-grid-list .card-top > svg {
+  display: none;
+}
+.client-grid-list .card-top {
+  flex-wrap: wrap;
+}
+.client-grid-list .card-stats {
+  margin: 0;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.client-grid-list .next-line {
+  border: 0;
+  padding: 0;
+}
+.client-grid-list .client-card-edit {
+  bottom: 50%;
+  transform: translateY(50%);
+}
+.client-table-panel {
+  overflow-x: auto;
+}
+.client-table-panel table {
+  min-width: 850px;
+}
+.client-table-panel table td:first-child {
+  width: auto;
+}
+.client-table-panel td {
+  vertical-align: middle;
+}
+.client-table-panel .client-table-email {
+  max-width: 235px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.client-table-panel .table-link {
+  text-align: left;
+}
+.app-shell:not(.theme-default) .client-search,
+.app-shell:not(.theme-default) .client-layout-switch {
+  background: var(--theme-surface, #20252d);
+  border-color: var(--theme-border, #414958);
+}
+.app-shell:not(.theme-default) .client-layout-switch button[aria-pressed="true"] {
+  background: var(--theme-accent-soft, #344c6a);
+}
+@media (max-width: 1250px) {
+  .ui-refresh .client-grid-list .client-card {
+    grid-template-columns: 100px minmax(140px, 1fr) minmax(150px, 1fr);
+  }
+  .client-grid-list .next-line {
+    grid-column: 2 / -1;
+  }
+}
+@media (max-width: 700px) {
+  .client-controls .lifecycle-filter {
+    flex: 1 1 140px;
+    align-items: start;
+    flex-direction: column;
+  }
+  .client-controls .lifecycle-filter select,
+  .client-controls .lifecycle-filter .client-combo-input {
+    width: 100%;
+  }
+  .client-search {
+    max-width: none;
+    flex-basis: 100%;
+    order: -1;
+  }
+  .client-layout-switch {
+    width: 100%;
+    margin-left: 0;
+  }
+  .client-layout-switch button {
+    flex: 1;
+  }
+  .ui-refresh .client-grid-list .client-card {
+    grid-template-columns: 1fr;
+    gap: 9px;
+    padding: 16px 16px 60px;
+  }
+  .client-grid-list .next-line {
+    grid-column: auto;
+    border-top: 1px solid #39404a;
+    padding-top: 9px;
+  }
+  .client-grid-list .client-card-edit {
+    bottom: 14px;
+    transform: none;
+  }
+}

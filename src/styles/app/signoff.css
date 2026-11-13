@@ -1,0 +1,145 @@
+/* Sign Off creation. Part of styles.css: keep the import order there. */
+
+/* Sign Off creation follows the existing document workspace. */
+.signoff-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 20px;
+}
+.signoff-approval-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.signoff-person {
+  display: grid;
+  gap: 10px;
+  padding: 16px 0;
+  border-bottom: 1px solid #555;
+}
+.signoff-person label,
+.signoff-attachment label {
+  display: grid;
+  gap: 6px;
+}
+.signoff-header-preview {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  overflow-wrap: anywhere;
+}
+.signoff-retained {
+  padding: 12px 0;
+}
+.signoff-retained summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.signoff-retained p {
+  white-space: pre-line;
+  line-height: 1.6;
+}
+.signoff-attachments {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0;
+}
+.signoff-attachment {
+  display: flex;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid #555;
+  border-radius: 8px;
+}
+.signoff-attachment > div {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.signoff-attachment img {
+  width: 150px;
+  height: 110px;
+  object-fit: contain;
+  background: #eee;
+  border-radius: 4px;
+}
+.signoff-attachment-actions {
+  display: flex;
+  gap: 8px;
+}
+.document-creation-page [hidden] {
+  display: none !important;
+}
+@media (max-width: 750px) {
+  .signoff-approval-grid {
+    grid-template-columns: 1fr;
+  }
+  .signoff-attachment {
+    flex-direction: column;
+  }
+}
+
+.lifecycle-panel {
+  padding: 20px;
+}
+.lifecycle-panel .section-actions {
+  align-items: flex-start;
+  gap: 20px;
+}
+.lifecycle-panel p {
+  margin: 6px 0;
+  color: var(--muted, #64748b);
+  max-width: 720px;
+}
+.lifecycle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.lifecycle-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+}
+.lifecycle-filter select,
+.lifecycle-filter .client-combo-input {
+  width: auto;
+  min-width: 180px;
+}
+.lifecycle-requirements {
+  margin-top: 14px;
+  font-size: 13px;
+}
+.lifecycle-requirements summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.lifecycle-requirements ul {
+  padding-left: 22px;
+  line-height: 1.7;
+}
+.lifecycle-fields {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+.lifecycle-panel p.lifecycle-error {
+  color: #b42318;
+}
+.lifecycle-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+@media (max-width: 800px) {
+  .lifecycle-panel .section-actions {
+    flex-direction: column;
+  }
+}
