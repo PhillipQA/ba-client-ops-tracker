@@ -13,6 +13,7 @@ import { waitForCloudSaves, queueCloudStoreSave } from '../cloudStore'
 import { doneWaitingOn, defaultWaitingOn, isWaitingOnDone, findWaitingOn } from '../../features/tasks/waitingOn'
 import { openSubtasks as findOpenSubtasks, closeOpenSubtasks } from '../../features/tasks/closeSubtasks'
 import type { WaitingOn, WorkItem } from '../../shared/types'
+import { applyTaskUpdates, type TaskUpdate, taskUpdateMessage } from '../../features/ai/taskUpdate'
 import {
   defaultClosedTaskStatus,
   defaultOpenTaskStatus,
@@ -221,6 +222,35 @@ export function useTaskActions(ui: UiState, saving: WorkspaceSave, signIn: SignI
     })
   }
 
+  /**
+   * Applies changes the person approved with one click (from the BA Assistant or a heads-up): dates, priority, an open
+   * status, waiting on. Only on tasks they may edit; a task changed since the draft is skipped and said so.
+   */
+  const applyTaskUpdate = (update: TaskUpdate): { ok: boolean; message: string } => {
+    if (!canWriteTasks) return { ok: false, message: 'Task write access is required to change tasks.' }
+    const current = storeRef.current
+    const mayEdit = (item: WorkItem) => authUser?.role === 'Administrator' || item.assignedToUserId === authUser?.id
+    const result = applyTaskUpdates(current.items, current.taskSettings, update, mayEdit, today)
+    const message = taskUpdateMessage(result)
+    if (!result.done.length) return { ok: false, message: message || 'Nothing to change.' }
+    const changed = result.items.filter((item, index) => item !== current.items[index])
+    const saved = persist({
+      ...current,
+      items: result.items,
+      activity: [
+        ...changed.map(item => ({
+          id: crypto.randomUUID(),
+          clientId: item.clientId,
+          projectId: item.projectId,
+          date: today,
+          text: `Updated task: ${item.title}`,
+        })),
+        ...current.activity,
+      ],
+    })
+    return saved === false ? { ok: false, message: 'That change is not allowed.' } : { ok: true, message }
+  }
+
   const saveTaskEdit = async (updated: WorkItem) => {
     if (!canWriteTasks) throw new Error('You do not have permission to edit this task.')
     setTaskEditSaving(true)
@@ -414,6 +444,7 @@ export function useTaskActions(ui: UiState, saving: WorkspaceSave, signIn: SignI
   }
 
   return {
+    applyTaskUpdate,
     deleteTask,
     moveWorkToSeeds,
     resolveItem,

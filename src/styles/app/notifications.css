@@ -312,3 +312,31 @@
   white-space: nowrap;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
+.watch-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 10px 46px;
+}
+.watch-actions button {
+  padding: 4px 9px;
+  border: 1px solid var(--ui-border, #3a4658);
+  border-radius: 999px;
+  background: var(--ui-soft, #1d2430);
+  color: var(--ui-text, #d5dbe6);
+  font-size: 11px;
+  font-weight: 650;
+}
+.watch-actions button:hover {
+  border-color: #596b8b;
+  background: #293345;
+  color: #fff;
+}
+.watch-notice {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--ui-border, #2b3443);
+  color: var(--ui-muted, #b7c3d6);
+  font-size: 12px;
+}

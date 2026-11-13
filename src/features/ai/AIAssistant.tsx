@@ -49,6 +49,7 @@ import { drfPrefillCount } from '../documents/drfPrefill'
 import { createTrackerDraft } from './trackerDraft'
 import AiScopePicker from './AiScopePicker'
 import AssistantMemory from './AssistantMemory'
+import { shownValue, type TaskUpdate } from './taskUpdate'
 import { NO_SCOPE, cleanScope, inScope, projectClients, scopeKey, singleOf, type AiScope } from './aiScope'
 import type { TimeEntryMutationResult } from '../tasks/timeEntries'
 
@@ -75,6 +76,7 @@ function suggestionIcon(kind: AISuggestionKind) {
   if (kind === 'task_plan') return <ListChecks size={16} />
   if (kind === 'tracker_update') return <PencilLine size={16} />
   if (kind === 'time_log') return <Clock size={16} />
+  if (kind === 'task_update') return <PencilLine size={16} />
   if (kind === 'issue') return <TicketCheck size={16} />
   if (kind === 'requirement') return <FileText size={16} />
   return <PlusCircle size={16} />
@@ -89,6 +91,7 @@ function suggestionLabel(kind: AISuggestionKind) {
   if (kind === 'task_plan') return 'Tasks from notes'
   if (kind === 'tracker_update') return 'Tracker update'
   if (kind === 'time_log') return 'Time log'
+  if (kind === 'task_update') return 'Task update'
   return kind.charAt(0).toUpperCase() + kind.slice(1)
 }
 
@@ -146,6 +149,12 @@ function applyLabel(suggestion: AISuggestion, done: boolean, count = 0) {
       </>
     )
   if (suggestion.kind === 'tracker_update')
+    return (
+      <>
+        <PencilLine size={15} /> {done ? 'Updated' : 'Approve & update'}
+      </>
+    )
+  if (suggestion.kind === 'task_update')
     return (
       <>
         <PencilLine size={15} /> {done ? 'Updated' : 'Approve & update'}
@@ -223,6 +232,7 @@ export default function AIAssistant({
   onWorkChanged,
   canWriteTasks = false,
   onCreateTasks,
+  onUpdateTasks,
   onTimeEntry,
 }: {
   clients: Client[]
@@ -245,6 +255,7 @@ export default function AIAssistant({
   canWriteTasks?: boolean
   /** Creates the ticked tasks of a plan drafted from notes. */
   onCreateTasks?: (plan: TaskPlan, refs: string[]) => { ok: boolean; message: string }
+  onUpdateTasks?: (update: TaskUpdate) => { ok: boolean; message: string }
   /** A time entry was logged on a task: put it in the workspace. */
   onTimeEntry?: (result: TimeEntryMutationResult) => void
 }) {
@@ -538,7 +549,20 @@ export default function AIAssistant({
       'The time could not be logged.',
     )
 
+  const applyTaskChanges = (suggestion: AISuggestion) =>
+    run(
+      suggestion,
+      async () => {
+        if (!suggestion.taskUpdate || !onUpdateTasks) throw new Error('Tasks cannot be changed here.')
+        const result = onUpdateTasks(suggestion.taskUpdate)
+        if (!result.ok) throw new Error(result.message)
+        return result.message
+      },
+      'The tasks could not be updated.',
+    )
+
   const applySuggestion = (suggestion: AISuggestion) => {
+    if (suggestion.kind === 'task_update') return void applyTaskChanges(suggestion)
     if (suggestion.kind === 'email_document') return void applyEmail(suggestion)
     if (suggestion.kind === 'email_draft') return void applyEmailDraft(suggestion)
     if (suggestion.kind === 'task_plan') return void applyPlan(suggestion)
@@ -819,6 +843,22 @@ export default function AIAssistant({
                           </ul>
                         </div>
                       )}
+                      {suggestion.kind === 'task_update' && suggestion.taskUpdate && (
+                        <div className="ai-tracker-changes">
+                          <ul>
+                            {suggestion.taskUpdate.tasks.map(task => (
+                              <li key={task.taskId}>
+                                <b>{task.title}</b>
+                                {task.changes.map(change => (
+                                  <span key={change.field}>
+                                    {change.label}: {shownValue(change.from)} → <strong>{shownValue(change.to)}</strong>
+                                  </span>
+                                ))}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       {suggestion.kind === 'time_log' && suggestion.timeLog && (
                         <>
                           <small>{timeLogPlan(suggestion)}</small>
@@ -833,7 +873,7 @@ export default function AIAssistant({
                         disabled={
                           applying === suggestion.id ||
                           applied.includes(suggestion.id) ||
-                          ((suggestion.kind === 'task_plan' || suggestion.kind === 'time_log') && !canWriteTasks) ||
+                          (['task_plan', 'time_log', 'task_update'].includes(suggestion.kind) && !canWriteTasks) ||
                           (suggestion.kind === 'time_log' && Boolean(suggestion.timeLog?.problem)) ||
                           (suggestion.kind === 'task_plan' &&
                             !plannedRefs(suggestion.plan!, tickedOf(suggestion)).length)

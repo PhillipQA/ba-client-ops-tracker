@@ -18,6 +18,7 @@ import type { Cell } from '../trackers/trackerModel'
 import { addTimeEntry } from '../tasks/timeEntries'
 import type { EffortCategory } from '../tasks/effort'
 import { cleanNotes, type MemoryNote } from './memory'
+import type { TaskUpdate } from './taskUpdate'
 
 export type AISuggestionKind =
   | 'issue'
@@ -31,6 +32,7 @@ export type AISuggestionKind =
   | 'task_plan'
   | 'tracker_update'
   | 'time_log'
+  | 'task_update'
 
 /** task_plan: tasks from notes, under one client and project. A subtask names a task of the plan or an open task. */
 export type PlannedTask = {
@@ -106,6 +108,8 @@ export interface AISuggestion {
   trackerChange?: TrackerChange
   /** time_log: the entry to log. */
   timeLog?: TimeLogDraft
+  /** task_update: the changes to make to existing tasks. */
+  taskUpdate?: TaskUpdate
 }
 
 export interface AIMessage {
