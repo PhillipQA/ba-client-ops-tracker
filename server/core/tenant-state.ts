@@ -612,18 +612,14 @@ export async function ensureTenantFollowUpsCurrent(organizationId: string): Prom
     if (!rollover.changed && !notifications.changed) return { ...current, changes: [], notificationCount: 0 }
     try {
       const reason = rollover.changed ? 'follow-up-auto-rollover' : 'notification-reconcile'
-      const saved = await commitTenantState(
-        organizationId,
-        notifications.state,
-        null,
-        reason,
-        current.data,
-        rollover.changed,
-      )
+      await commitTenantState(organizationId, notifications.state, null, reason, current.data, rollover.changed)
+      // Read the saved workspace back: a save that follows (read all, dismiss, time entry) must start from a copy the
+      // server knows the revision of, or it is refused as out of date ("Reload the workspace before saving").
+      const fresh = await loadTenantState(organizationId)
       return {
         configured: true,
-        data: notifications.state,
-        updatedAt: saved.syncedAt,
+        data: fresh.data,
+        updatedAt: fresh.updatedAt,
         changes: rollover.changes,
         notificationCount: notifications.created.length,
       }

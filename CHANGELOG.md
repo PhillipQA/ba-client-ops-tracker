@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Notifications: *Read all* sticks, and no more endless refreshing
+- Past 1,000 notifications per person, the oldest were re-made from their events on every check and trimmed again, so the workspace was re-saved constantly (the stuck *Refreshing…*). Each work event now becomes a notification once.
+- *Read all*, *Mark read* and *Dismiss* were refused as out of date whenever that check had just saved, so notifications came back unread. They now save on top of the copy just written.
+
 ### Seeds: delta sync with `updatedSince`, weekly full sync
 - **Delta sync every 10 minutes** (was a "quick" sync every 30): it asks Seeds only for projects created, changed or deleted since the last change it saw (`GET /projects?updatedSince=`, with 10 minutes of overlap), then reads members and tasks for just those projects. Most deltas are one request. It no longer reads /users, /parents or /statuses; a new parent is read by id.
 - **Full sync once a week** (was daily) and whenever someone clicks *Full sync*: every list and every open project's members, plus the people directory and parent renames. If Seeds ever turns down `updatedSince`, that sync reads everything instead.

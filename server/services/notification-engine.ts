@@ -65,6 +65,11 @@ export function reconcileNotifications(
   const existing = Array.isArray(state?.notifications) ? state.notifications : []
   const dedupe = new Set(existing.map((notification: any) => String(notification?.dedupeKey || '')).filter(Boolean))
   const initializedAt = String(state?.notificationState?.initializedAt || '')
+  // Work events are turned into notifications once: those after the last reconcile (or just saved). Without this, a
+  // notification trimmed at the 1,000-per-person cap was made again from its event on every check, and trimmed again,
+  // so the workspace was re-saved on every check and read or dismissed marks were refused as out of date.
+  const eventsThrough = String(state?.notificationState?.eventsThrough || '') || initializedAt
+  let latestEvent = eventsThrough
   const newEventIds = new Set(options.newEventIds || [])
   const created: any[] = []
 
@@ -109,15 +114,16 @@ export function reconcileNotifications(
           event?.action === 'follow_up_auto_moved' &&
           String(event.date || '') === options.today &&
           (newEventIds.has(String(event?.id || '')) ||
-            (initializedAt && String(event?.occurredAt || '') >= initializedAt)),
+            (eventsThrough && String(event?.occurredAt || '') >= eventsThrough)),
       )
       .map((event: any) => String(event.taskId || '')),
   )
   for (const event of events) {
     const eventId = String(event?.id || '')
     if (!eventId) continue
-    const isNew = newEventIds.has(eventId) || (initializedAt && String(event.occurredAt || '') >= initializedAt)
+    const isNew = newEventIds.has(eventId) || (eventsThrough && String(event.occurredAt || '') >= eventsThrough)
     if (!isNew) continue
+    if (String(event.occurredAt || '') > latestEvent) latestEvent = String(event.occurredAt)
     const assigneeId = event.assignedToUserId ? String(event.assignedToUserId) : undefined
     const actorId = event.actorUserId ? String(event.actorUserId) : undefined
     const base = {
@@ -260,9 +266,11 @@ export function reconcileNotifications(
       })
   }
 
-  const notificationState = initializedAt
-    ? state.notificationState
-    : { ...(state?.notificationState || {}), initializedAt: occurredAt }
+  const notificationState = {
+    ...(state?.notificationState || {}),
+    initializedAt: initializedAt || occurredAt,
+    ...(latestEvent ? { eventsThrough: latestEvent } : {}),
+  }
   const changed = created.length > 0 || !initializedAt
   if (!changed) return { state, changed: false, created }
   return {
