@@ -5,11 +5,12 @@
 | Path | Contents |
 | --- | --- |
 | `src/main.tsx` | Entry point: loads the global styles and renders the app |
-| `src/app/` | `App.tsx` (sign-in checks, the menu, which page shows), `useAppState.tsx` (all app state and actions), `store.ts` (store types, storage and normalising), cloud sync, polling, sign-in screens, profile dialog, navigation |
+| `src/app/` | `App.tsx` (sign-in checks, the menu, which page shows), `useAppState.tsx` (all app state and actions, built from the hooks in `src/app/state/`), `store.ts` (store types, storage and normalising), cloud sync, polling, sign-in screens, profile dialog, navigation |
+| `src/app/state/` | The hooks `useAppState` calls, in this order: `useUiState` (screen state), `useCloudSync`, `useWorkspaceSave` (`persist`), `useSignIn` (the signed-in person and their rights), `useAccountAndRoutes` (notifications, page address, profile), `useWorkViews` (filtered lists, Action Center), `useTaskActions`, `useTrackerTasks`, `usePlanner`. Each takes what it needs from the ones before it; keep that order so hooks and effects run the same way |
 | `src/features/<area>/` | One folder per part of the app: `action-center`, `clients`, `inbox`, `tasks`, `trackers`, `email`, `work-hub`, `integrations` (Gmail, Drive, Calendar, Git), `documents` (BRD, FSD, test cases, sign-offs, DocHub, Drive), `requirements`, `notifications`, `reports`, `ai`, `settings`, `accounts`, `admin`. A feature keeps its components, model code and CSS together |
 | `src/shared/` | Used by several features: `types.ts`, `dates.ts`, `businessDate.ts`, `version.ts`, contact search, and `http.ts` (`requestJson`, the one way to call the API) |
 | `src/shared/ui/` | The UI kit: `Dialog`, `Popover`, `Notice`, `SearchSelect`/`ClientSelect`, `Chips`, person and recipient inputs, `useModalDialog`, and `ui.css` (the `--k-*` tokens and `k-` classes) |
-| `src/styles/` | Global styles, interface modes, the sidebar and the bundled Inter font |
+| `src/styles/` | Global styles, interface modes, the sidebar and the bundled Inter font. `styles.css` lists its parts in `src/styles/app/` in the order they apply: add rules to the part they belong to, and a new part where it belongs in that list |
 
 Pages receive the app state as one `app` prop (`AppState` from `src/app/useAppState.tsx`) and take the values they need from it.
 
@@ -21,6 +22,8 @@ Pages receive the app state as one `app` prop (`AppState` from `src/app/useAppSt
 | `server/index.ts` | Wires middleware and registers every route group, in order |
 | `server/core/` | `env.ts` (loads `.env` files first), `config.ts`, `database.ts` (the PostgreSQL client, `db`), `constants.ts`, `services.ts` (integration settings and AI agents), `auth.ts` (sessions, passwords, `requireAuth`, `requireTenantWorkspace`), `tenant-state.ts` (loading and saving each organisation's workspace) |
 | `server/<area>/` | Route modules, each exporting `register…Routes(app)` or taking its dependencies: `auth`, `workspace`, `platform` (internal admin, settings, static site), `ai`, `documents`, `integrations`, `trackers`, `tasks`, `accounts`, plus `services` for shared business rules |
+| `server/trackers/` | `trackers.ts` registers the tracker routes from its parts: `tracker-core` (access, shaping trackers and rows, history), `tracker-source` (the connected Sheet or Excel file), `tracker-sync`, `tracker-sheet-write`, `tracker-follow` (rows and tasks kept in step), and the route groups `tracker-source-routes`, `tracker-routes`, `tracker-column-routes`, `tracker-row-routes` |
+| `server/integrations/communications*.ts` | Work Hub messages: `communications.ts` registers `communications-core` (access, Gmail settings, Google access), `-gmail-settings`, `-messages`, `-tasks` (message to task) and `-gmail` (connect and sync) |
 
 ## Other paths
 

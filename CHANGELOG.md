@@ -11,6 +11,11 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Code: large files split, shared helpers
+**No change in how the app works, and no database change.**
+- The largest files are split into parts named for their job: the tracker server routes (`server/trackers/`), the app's state (`src/app/state/`), the Work Hub message routes (`server/integrations/communications-*.ts`) and the main stylesheet (`src/styles/app/`). See [docs/architecture/REPOSITORY-STRUCTURE.md](docs/architecture/REPOSITORY-STRUCTURE.md).
+- Helpers that had been copied between files now have one copy each.
+
 ### Seeds: real project fields, and completed projects
 - The sync now reads Seeds' project record as Seeds actually sends it: `contractNumber`, the parent, `timeEntryRequirements` (`task`, `parent`, `product`, `remarks`) and `timeEntryDefaults`. A **Full sync** (Settings › Integrations › Seeds) fills in every linked project's contract number and time-entry rules.
 - Seeds' "none" (`id: 0` on client or product) is no longer read as a product, so a required product is enforced.
