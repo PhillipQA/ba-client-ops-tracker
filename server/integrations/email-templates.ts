@@ -6,10 +6,12 @@ import type { Express, Request, RequestHandler, Response } from 'express'
  * - A signature belongs to one person and follows them on every device.
  * - A template is a ready-made subject and message. Shared templates are visible to the whole account and anyone who
  *   can send email may change them; a template kept to oneself is visible and editable only by its creator.
- * Everything is plain text, as the emails are.
+ * Templates are plain text. A signature can be formatted (see signatureHtml): it is cleaned to safe formatting here.
  */
 type Deps = { db: any; requireAuth: RequestHandler; requireTenant: RequestHandler; now?: () => Date }
 type User = { id: string; name: string; role: string; organizationId: string; modules?: string[]; accountType?: string }
+
+import { isRichSignature, RICH_MARK, SIGNATURE_LIMITS, storeSignature } from '../../src/features/email/signatureHtml'
 
 export const EMAIL_LIMITS = { signature: 2000, name: 120, subject: 200, body: 30000, templates: 500 } as const
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -133,7 +135,11 @@ export function registerEmailTemplateRoutes(app: Express, deps: Deps) {
     ...scope,
     route(async (req, res) => {
       const user = who(req)
-      const signature = clean(req.body?.signature, 'The signature', EMAIL_LIMITS.signature, true)
+      // A formatted signature is cleaned to safe formatting before it is kept; a plain one is kept as text.
+      const given = clean(req.body?.signature, 'The signature', SIGNATURE_LIMITS.chars, true)
+      const signature = isRichSignature(given) ? storeSignature(given.slice(RICH_MARK.length)) : given
+      if (!isRichSignature(given) && given.length > EMAIL_LIMITS.signature)
+        throw new EmailError(`The signature can be at most ${EMAIL_LIMITS.signature} characters.`)
       const r = await db
         .from('user_email_signatures')
         .upsert(

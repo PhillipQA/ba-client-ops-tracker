@@ -710,3 +710,88 @@
   font-size: 12px;
   font-weight: 400;
 }
+
+/* The signature: shown under the message as it will be sent, and its Gmail-like editor. */
+.email-signature-preview {
+  display: grid;
+  gap: 6px;
+}
+.email-signature-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.email-signature-shown,
+.signature-box {
+  padding: 10px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.email-signature-shown {
+  max-height: 180px;
+  overflow: auto;
+}
+.email-signature-shown img,
+.signature-box img {
+  max-width: 100%;
+  height: auto;
+}
+.signature-editor {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.signature-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.signature-toolbar button,
+.signature-color {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.signature-toolbar button:hover,
+.signature-color:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.signature-color input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.signature-toolbar select {
+  height: 30px;
+  width: auto;
+  max-width: 130px;
+}
+.signature-box {
+  min-height: 110px;
+  max-height: 260px;
+  overflow: auto;
+  outline: none;
+}
+.signature-box:focus {
+  border-color: #1a73e8;
+}

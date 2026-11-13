@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Email: formatted signatures, like Gmail's
+- The signature editor now has **fonts, sizes, bold/italic/underline, text colour, highlight, links and pictures** (a logo, up to 3 pictures of 200 KB each; wide ones are made smaller). Your existing plain signature is kept and can be formatted.
+- The signature is shown **under the message as it will be sent**, with a tick box to leave it off one email. It is no longer typed into the message box.
+- Emails with a signature are sent as formatted (HTML) email with a plain-text version; pictures travel inside the email, so they show in Gmail and Outlook without "download images".
+- Signatures are cleaned on save and again on send: only formatting, links and embedded pictures are kept. **No database change.**
+
 ### Email: Gmail-style windows and drafts
 - **New email** and **Reply** open in a window docked at the bottom right, like Gmail, instead of a full-screen dialog: you can keep working in the app while writing. Use **–** to minimize it to its title bar (click the bar to open it again), **⤢** to make it large in the middle of the screen, and **×** to discard it. Escape makes a large window normal and a normal one minimized.
 - Up to **3 emails** can be open at once; opening another minimizes the rest.
