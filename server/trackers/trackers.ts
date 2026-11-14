@@ -41,6 +41,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const { db, check, trackerVisibleIn, workspace, trackerOut, rowOut, columnsOf } = core
   const { allRows } = sheetAccess
   const seedsRows = trackerSeedsRows(deps, core, sheetAccess, sheetWrite)
+  seedsRows.routes(app)
   /** After every workspace save: rows follow their tasks, and new Seeds projects become rows where asked. */
   async function onWorkspaceSaved(
     tenant: string,

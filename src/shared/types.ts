@@ -88,6 +88,8 @@ export interface Project {
   /** The client this project belongs to (from Seeds). Older projects take their client from their tasks. */
   clientId?: string
   seedsId?: string
+  /** When the Seeds sync first brought the project in. */
+  seedsAddedAt?: string
   contractNumber?: string
   seedsArchived?: boolean
   /** Existed before Seeds was turned on: kept in the Before Seeds folder, still editable. */

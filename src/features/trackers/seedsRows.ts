@@ -78,3 +78,64 @@ export function seedsRowCells(columns: TrackerColumn[], project: SeedsRowProject
   if (contract && project.contractNumber) cells[contract.id] = project.contractNumber.slice(0, 500)
   return cells
 }
+
+/** How long a project counts as new, and how many are offered at once. */
+export const SEEDS_NEW_DAYS = 14
+export const SEEDS_NEW_LISTED = 10
+
+export type NewSeedsProject = SeedsRowProject & { addedAt: string }
+/**
+ * Seeds projects that came in lately and are on no tracker yet: these are offered to the person, who chooses the
+ * tracker (or none). `trackers` are the trackers they can open; `visible` says which projects they may see.
+ */
+export function unplacedSeedsProjects(
+  state: any,
+  trackers: SeedsRowTracker[],
+  nowMs: number,
+  visible: (project: any) => boolean = () => true,
+): NewSeedsProject[] {
+  const placed = new Set(trackers.flatMap(tracker => splitClientIds(tracker.project_id)))
+  const since = nowMs - SEEDS_NEW_DAYS * 86_400_000
+  return list(state?.projects)
+    .filter(
+      project =>
+        project?.id &&
+        project.seedsId &&
+        text(project.clientId) &&
+        !project.beforeSeeds &&
+        !isClosedProject(project) &&
+        Date.parse(text(project.seedsAddedAt)) >= since &&
+        !placed.has(text(project.id)) &&
+        visible(project),
+    )
+    .sort((a, b) => text(b.seedsAddedAt).localeCompare(text(a.seedsAddedAt)))
+    .slice(0, SEEDS_NEW_LISTED)
+    .map(project => ({
+      id: text(project.id),
+      name: text(project.name).trim() || 'Seeds project',
+      clientId: text(project.clientId),
+      ...(text(project.contractNumber).trim() ? { contractNumber: text(project.contractNumber).trim() } : {}),
+      addedAt: text(project.seedsAddedAt),
+    }))
+}
+
+/**
+ * The trackers a project could be a row on: not archived, for the project's client, with a column for a name. Site
+ * rollout trackers come first: a new Seeds project is most often a new site.
+ */
+export function trackersForProject<T extends SeedsRowTracker & { template?: string; columns?: unknown }>(
+  trackers: T[],
+  project: { id: string; clientId: string },
+  columnsOf: (tracker: T) => TrackerColumn[],
+) {
+  const rollout = (tracker: T) => (/rollout/i.test(text(tracker.template)) ? 0 : 1)
+  return trackers
+    .filter(
+      tracker =>
+        !tracker.archived_at &&
+        splitClientIds(tracker.client_id).includes(project.clientId) &&
+        !splitClientIds(tracker.project_id).includes(project.id) &&
+        Boolean(nameColumn(columnsOf(tracker))),
+    )
+    .sort((a, b) => rollout(a) - rollout(b))
+}

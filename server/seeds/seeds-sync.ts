@@ -171,6 +171,8 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
         targetDate: '',
         summary: '',
         seedsId: source.id,
+        // When the sync first brought it in: new projects are offered to trackers for a while (see seedsRows).
+        seedsAddedAt: new Date().toISOString(),
       }
       projects.push(project)
       counts.created++

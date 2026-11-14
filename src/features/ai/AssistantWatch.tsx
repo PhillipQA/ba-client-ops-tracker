@@ -10,7 +10,7 @@ import type { AppState, SignedInUser } from '../../app/useAppState'
 import { requestJson } from '../../shared/http'
 import { rememberTrackerRow } from '../trackers/trackerNav'
 import { rememberWorkHubMessage } from '../work-hub/workHubNav'
-import { keptDismissals, type WatchAction, type WatchAlert } from './watch'
+import { keptDismissals, type NewProject, newProjectAlerts, type WatchAction, type WatchAlert } from './watch'
 import { clockText, elapsedMs, forgottenTimer } from '../tasks/timer'
 import { timerDayOf, timerNow, useTimers } from '../tasks/timerStore'
 
@@ -34,6 +34,11 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
   const [open, setOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [fresh, setFresh] = useState(0)
+  // New Seeds projects that are on no tracker yet (for people with Trackers).
+  const [projectAlerts, setProjectAlerts] = useState<WatchAlert[]>([])
+  const projectAlertsNow = useRef<WatchAlert[]>([])
+  projectAlertsNow.current = projectAlerts
+  const withTrackers = hasModule('trackers')
   // Heads-ups dealt with by a one-click change, hidden until the next check; and what that change did.
   const [handled, setHandled] = useState<string[]>([])
   const [notice, setNotice] = useState('')
@@ -64,7 +69,13 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
         const result = await requestJson<WatchResponse>(`/api/assistant/watch${force ? '?fresh=1' : ''}`, {
           noStore: true,
         })
-        const found = Array.isArray(result.alerts) ? result.alerts : []
+        const projects = withTrackers
+          ? await requestJson<{ projects: NewProject[] }>('/api/tracker-seeds-projects', { noStore: true })
+              .then(body => newProjectAlerts(Array.isArray(body.projects) ? body.projects : []))
+              .catch(() => projectAlertsNow.current)
+          : []
+        setProjectAlerts(projects)
+        const found = [...projects, ...(Array.isArray(result.alerts) ? result.alerts : [])]
         setAlerts(found)
         setHandled([])
         const still = keptDismissals(dismissedNow.current, [...found, ...timerAlertsNow.current])
@@ -79,7 +90,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
         setChecking(false)
       }
     },
-    [keep],
+    [keep, withTrackers],
   )
 
   useEffect(() => {
@@ -152,11 +163,34 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
   /** The one-click changes of a heads-up, when this person may change its task. */
   const actionsOf = (alert: WatchAlert) => {
     const target = alert.open
-    if (!alert.actions?.length || target.kind !== 'task') return []
+    if (!alert.actions?.length) return []
+    if (alert.actions[0].addToTracker) return alert.actions
+    if (target.kind !== 'task') return []
     const item = store.items.find(entry => entry.id === target.id)
     return item && canEditActionItem(item) ? alert.actions : []
   }
+  /** Adds a new Seeds project to the chosen tracker: a row with its task, as when a person names a site. */
+  const addProject = async (alert: WatchAlert, action: WatchAction) => {
+    const target = action.addToTracker
+    if (!target) return
+    setChecking(true)
+    try {
+      const done = await requestJson<{ tracker: { name: string } }>(
+        `/api/trackers/${encodeURIComponent(target.trackerId)}/seeds-project`,
+        { body: { projectId: target.projectId }, fallback: 'The project could not be added to the tracker.' },
+      )
+      setNotice(`Added to ${done.tracker?.name || 'the tracker'}, with its task.`)
+      setHandled(keys => [...keys, alert.key])
+      await app.refreshWorkspace(true).catch(() => undefined)
+    } catch (failure) {
+      setNotice(failure instanceof Error ? failure.message : 'The project could not be added to the tracker.')
+    } finally {
+      setChecking(false)
+    }
+  }
   const approve = (alert: WatchAlert, action: WatchAction) => {
+    if (action.addToTracker) return void addProject(alert, action)
+    if (!action.update) return
     const result = applyTaskUpdate(action.update)
     setNotice(result.message)
     if (!result.ok) return
@@ -269,7 +303,12 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
                         <button
                           type="button"
                           key={action.label}
-                          title={`${action.update.tasks[0].changes[0].label}: ${action.update.tasks[0].changes[0].to}`}
+                          disabled={checking}
+                          title={
+                            action.update
+                              ? `${action.update.tasks[0].changes[0].label}: ${action.update.tasks[0].changes[0].to}`
+                              : 'Adds a row for this project, with its task'
+                          }
                           onClick={() => approve(alert, action)}
                         >
                           {action.label}
