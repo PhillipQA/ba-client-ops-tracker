@@ -579,6 +579,50 @@ button.compact {
 .ai-memory-icon:hover:not(:disabled) {
   opacity: 1;
 }
+.ai-memory-learn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ai-memory-learn input {
+  width: auto;
+  margin-top: 2px;
+}
+.ai-memory-tag {
+  margin-left: 6px;
+  font-size: 10px;
+  font-style: normal;
+  opacity: 0.6;
+}
+.ai-memory-chats {
+  margin-top: 10px;
+}
+.ai-memory-chats summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.ai-memory-chats .ai-memory-tag {
+  margin-left: 0;
+}
+.ai-memory-forget-all,
+.ai-unlearn {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.ai-memory-forget-all:hover,
+.ai-unlearn:hover {
+  opacity: 1;
+}
 .ai-remembered {
   margin-top: 6px;
   font-size: 11px;

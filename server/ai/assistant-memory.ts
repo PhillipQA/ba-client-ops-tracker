@@ -1,16 +1,36 @@
 // The BA Assistant's memory, kept per person (see src/features/ai/memory.ts for what a note is and when one is added).
-// One row per person in user_assistant_memory, holding their notes as JSON: a read is one small query by primary key.
+// One row per person in user_assistant_memory, as JSON: a read is one small query by primary key. The row's `notes`
+// column held only the list of notes at first; it now holds { notes, chats } (the conversation recaps too), and a row
+// still holding the plain list is read as notes with no recaps, so no database change is needed.
 import { randomBytes } from 'node:crypto'
 import type express from 'express'
 import type { Express, RequestHandler } from 'express'
 import rateLimit from 'express-rate-limit'
 import { moduleAllowed, requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
 import { tenantIdForUser } from '../core/tenant-state'
-import { addNote, cleanNotes, type MemoryNote } from '../../src/features/ai/memory'
+import { addNote, cleanChats, cleanNotes, type ChatRecap, type MemoryNote } from '../../src/features/ai/memory'
 
+export type Memory = { notes: MemoryNote[]; chats: ChatRecap[] }
 export type MemoryStore = {
   read: (tenant: string, userId: string) => Promise<MemoryNote[]>
   write: (tenant: string, userId: string, notes: MemoryNote[]) => Promise<void>
+  /** Notes and conversation recaps together. A store without these keeps no recaps. */
+  recall?: (tenant: string, userId: string) => Promise<Memory>
+  keep?: (tenant: string, userId: string, memory: Memory) => Promise<void>
+}
+/** Everything a store holds for a person. */
+export async function recallAll(store: MemoryStore, tenant: string, userId: string): Promise<Memory> {
+  return store.recall ? store.recall(tenant, userId) : { notes: await store.read(tenant, userId), chats: [] }
+}
+export async function keepAll(store: MemoryStore, tenant: string, userId: string, memory: Memory) {
+  if (store.keep) await store.keep(tenant, userId, memory)
+  else await store.write(tenant, userId, memory.notes)
+}
+/** The stored column as memory: the first shape was the list of notes alone. */
+export function memoryOf(stored: unknown): Memory {
+  if (Array.isArray(stored)) return { notes: cleanNotes(stored), chats: [] }
+  const held = stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {}
+  return { notes: cleanNotes(held.notes), chats: cleanChats(held.chats) }
 }
 
 export class MemoryError extends Error {
@@ -31,23 +51,29 @@ export function createMemoryStore(db: any): MemoryStore {
     if (!db) throw new MemoryError(UNAVAILABLE, 503)
     return db.from('user_assistant_memory')
   }
+  const recall = async (tenant: string, userId: string) => {
+    const r = await table().select('notes').eq('tenant_id', tenant).eq('user_id', userId).maybeSingle()
+    if (r.error) throw new MemoryError(UNAVAILABLE, 503)
+    return memoryOf(r.data?.notes)
+  }
+  const keep = async (tenant: string, userId: string, memory: Memory) => {
+    const held = { notes: cleanNotes(memory.notes), chats: cleanChats(memory.chats) }
+    const r = await table().upsert(
+      { tenant_id: tenant, user_id: userId, notes: held, updated_at: new Date().toISOString() },
+      { onConflict: 'tenant_id,user_id' },
+    )
+    if (r.error) throw new MemoryError(UNAVAILABLE, 503)
+  }
   return {
-    async read(tenant, userId) {
-      const r = await table().select('notes').eq('tenant_id', tenant).eq('user_id', userId).maybeSingle()
-      if (r.error) throw new MemoryError(UNAVAILABLE, 503)
-      return cleanNotes(r.data?.notes)
-    },
-    async write(tenant, userId, notes) {
-      const r = await table().upsert(
-        { tenant_id: tenant, user_id: userId, notes: cleanNotes(notes), updated_at: new Date().toISOString() },
-        { onConflict: 'tenant_id,user_id' },
-      )
-      if (r.error) throw new MemoryError(UNAVAILABLE, 503)
-    },
+    recall,
+    keep,
+    read: async (tenant, userId) => (await recall(tenant, userId)).notes,
+    // Changing the notes leaves the conversation recaps as they are.
+    write: async (tenant, userId, notes) => keep(tenant, userId, { ...(await recall(tenant, userId)), notes }),
   }
 }
 
-/** The Memory panel: a person's own notes, to read, add to and delete from. */
+/** The Memory panel: a person's own notes and conversation recaps, to read, add to and delete from. */
 export function registerMemoryRoutes(
   app: Express,
   deps: { store: MemoryStore; auth?: RequestHandler[]; now?: () => Date },
@@ -86,7 +112,7 @@ export function registerMemoryRoutes(
     limit,
     wrap(async (req, res) => {
       const user = who(req)
-      res.json({ notes: await deps.store.read(tenantOf(user), user.id) })
+      res.json(await recallAll(deps.store, tenantOf(user), user.id))
     }),
   )
   app.post(
@@ -100,6 +126,19 @@ export function registerMemoryRoutes(
       if (!result.added) throw new MemoryError(result.problem || 'That could not be remembered.')
       await deps.store.write(tenantOf(user), user.id, result.notes)
       res.json({ notes: result.notes })
+    }),
+  )
+  // Forgets the conversation recaps: one, or all of them.
+  app.delete(
+    '/api/assistant/memory/chats/:id',
+    ...auth,
+    limit,
+    wrap(async (req, res) => {
+      const user = who(req)
+      const memory = await recallAll(deps.store, tenantOf(user), user.id)
+      const chats = req.params.id === 'all' ? [] : memory.chats.filter(chat => chat.id !== req.params.id)
+      if (chats.length !== memory.chats.length) await keepAll(deps.store, tenantOf(user), user.id, { ...memory, chats })
+      res.json({ notes: memory.notes, chats })
     }),
   )
   app.delete(

@@ -11,6 +11,16 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: it learns, and remembers conversations
+
+**No database change** (it uses the memory table from schema v38; if that migration was never run, run it now).
+
+- **It learns from what you write.** When your message states a lasting preference ("keep answers short", "I work on Goldwing in the mornings") or a standing fact about your work, the assistant saves it as a note without being asked. The answer shows **Learned: …** with **Undo**, and learned notes are marked in the Memory panel.
+- **It remembers conversations.** After each answer it keeps one line on what you asked and what was concluded. The latest ten go with your next questions, so it can pick up where you left off after **Clear chat**, in another chat, or on another computer. In Agent mode it can also look further back ("what did we decide about the Goldwing rollout?"). Up to 60 are kept.
+- **Memory panel:** a **Learn from my chats** switch (on by default; off stops both learning and conversation notes), and an **Earlier conversations** list where you can forget one or all.
+- **Safe by design:** a learned note must be made of your own words in that message, checked by the server, so text in an email or a tracker cell cannot be learned. Notes and conversation lines are private to you and never change the assistant's rules or what you may see.
+- **Token cost:** no extra AI calls. Each question sends a few more instructions and up to ten short conversation lines, roughly 300 to 600 tokens more.
+
 ### Minimize tasks
 
 - **A task window can be minimized**, like an email draft. The task editor has a **Minimize** button beside Close: the task goes to a dock at the bottom left of every page, and clicking it there opens it again. The email drafts keep their own dock at the bottom right.

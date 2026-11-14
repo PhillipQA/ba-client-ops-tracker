@@ -56,8 +56,15 @@ import {
 } from './assistant-drafts'
 import { parseModelJson, sanitizeSuggestions } from './suggestions'
 import { runTenantAi, runTenantAiMetered } from './tenant-ai'
-import { type MemoryStore, newNoteId } from './assistant-memory'
-import { applyMemoryAnswer, memoryInstructions, memoryPrompt, type MemoryNote } from '../../src/features/ai/memory'
+import { keepAll, type MemoryStore, newNoteId, recallAll } from './assistant-memory'
+import {
+  addChat,
+  applyMemoryAnswer,
+  type ChatRecap,
+  memoryInstructions,
+  memoryPrompt,
+  type MemoryNote,
+} from '../../src/features/ai/memory'
 
 /** The AI BA assistant. */
 export function registerAssistantRoutes(
@@ -208,13 +215,18 @@ export function registerAssistantRoutes(
 
     // What this person asked the assistant to keep. Memory that cannot be read is left out; the question still goes.
     let notes: MemoryNote[] | null = null
+    let chats: ChatRecap[] = []
     if (deps.memory)
       try {
-        notes = await deps.memory.read(String(tenantIdForUser(user)), user.id)
+        const held = await recallAll(deps.memory, String(tenantIdForUser(user)), user.id)
+        notes = held.notes
+        chats = held.chats
       } catch {
         notes = null
       }
-    const memoryRules = notes ? memoryInstructions(notes, message) : ''
+    // Learning (notes it picks up by itself, and a line on each conversation) is on unless the person turned it off.
+    const learn = Boolean(notes) && req.body?.learn !== false
+    const memoryRules = notes ? memoryInstructions(notes, message, { learn, chats }) : ''
 
     // One "taskId" field, for every action that names a task.
     const taskKinds = [emails && 'email_document', actions.email && 'email_draft', actions.time && 'time_log'].filter(
@@ -257,7 +269,7 @@ export function registerAssistantRoutes(
   Return "suggestions": [] unless the user asks you to suggest, propose, draft, link or create something, or pastes client input and asks what to do with it. Then use at most 5, only ones that follow from what they asked.
   Do not invent client commitments or technical facts. If the input is ambiguous, ask the user to clarify instead of guessing.`
 
-    const prompt = `${memoryPrompt(notes || [])}TRACKER CONTEXT:
+    const prompt = `${memoryPrompt(notes || [], chats)}TRACKER CONTEXT:
   ${JSON.stringify(context, null, 2)}
 
   RECENT CHAT:
@@ -289,6 +301,7 @@ export function registerAssistantRoutes(
             ? name => readOneTracker(deps.trackers!, tenant, user, scoped, name, today)
             : undefined,
           searchEmails: deps.emails ? text => searchOwnEmails(deps.emails!, tenant, user.id, scoped, text) : undefined,
+          chats,
         })
         const ran = await runAgent({
           call: callAi,
@@ -302,13 +315,19 @@ export function registerAssistantRoutes(
       const responseMessage = String(parsed.message || '').trim()
       if (!responseMessage) throw new Error('The model returned no assessment.')
       // Notes the person asked to keep or drop in this message. A failed save is not said to have been remembered.
-      let memory: { remembered: MemoryNote[]; forgotten: MemoryNote[] } | undefined
+      let memory: { remembered: MemoryNote[]; forgotten: MemoryNote[]; learned: MemoryNote[] } | undefined
       if (deps.memory && notes) {
-        const change = applyMemoryAnswer(notes, parsed, message, new Date().toISOString(), newNoteId)
-        if (change.changed)
+        const at = new Date().toISOString()
+        const change = applyMemoryAnswer(notes, parsed, message, at, newNoteId, { learn })
+        const nextChats = learn ? addChat(chats, parsed.recap, at, newNoteId()) : chats
+        if (change.changed || nextChats !== chats)
           try {
-            await deps.memory.write(String(tenantIdForUser(user)), user.id, change.notes)
-            memory = { remembered: change.remembered, forgotten: change.forgotten }
+            await keepAll(deps.memory, String(tenantIdForUser(user)), user.id, {
+              notes: change.notes,
+              chats: nextChats,
+            })
+            if (change.changed)
+              memory = { remembered: change.remembered, forgotten: change.forgotten, learned: change.learned }
           } catch {
             console.error('Assistant memory could not be saved.')
           }
