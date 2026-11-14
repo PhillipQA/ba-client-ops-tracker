@@ -68,6 +68,11 @@ dialog.k-dialog::backdrop {
   font-size: 18px;
   line-height: 26px;
 }
+.k-dialog-head-actions {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
 .k-dialog-close {
   display: inline-grid;
   place-items: center;

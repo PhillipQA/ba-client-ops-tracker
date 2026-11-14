@@ -1,6 +1,6 @@
 import { useId, useRef, type ReactNode } from 'react'
 import { useModalDialog } from './useModalDialog'
-import { X } from 'lucide-react'
+import { Minus, X } from 'lucide-react'
 
 /** A modal on the browser's top layer, so themed panels and clipping never hide it. */
 export function Dialog({
@@ -13,6 +13,7 @@ export function Dialog({
   busy,
   className = '',
   bodyClassName,
+  onMinimize,
 }: {
   title: string
   eyebrow?: string
@@ -26,6 +27,8 @@ export function Dialog({
   className?: string
   /** Wraps the content, for callers whose content has no padding of its own. */
   bodyClassName?: string
+  /** Shows a Minimize button beside Close (task windows, which can be put aside in a dock). */
+  onMinimize?: () => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
@@ -45,9 +48,23 @@ export function Dialog({
           {eyebrow && <p>{eyebrow}</p>}
           <h2 id={titleId}>{title}</h2>
         </div>
-        <button type="button" className="k-dialog-close" aria-label="Close" disabled={busy} onClick={onClose}>
-          <X size={18} />
-        </button>
+        <span className="k-dialog-head-actions">
+          {onMinimize && (
+            <button
+              type="button"
+              className="k-dialog-close"
+              aria-label="Minimize"
+              title="Minimize: keep it at the bottom of the screen"
+              disabled={busy}
+              onClick={onMinimize}
+            >
+              <Minus size={18} />
+            </button>
+          )}
+          <button type="button" className="k-dialog-close" aria-label="Close" disabled={busy} onClick={onClose}>
+            <X size={18} />
+          </button>
+        </span>
       </header>
       {bodyClassName ? <div className={bodyClassName}>{children}</div> : children}
     </dialog>
