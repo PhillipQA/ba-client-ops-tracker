@@ -18,6 +18,7 @@ import { isBeforeSeedsWork } from '../../shared/seeds'
 import { composeEmail, useEmailEnabled } from '../email/EmailComposer'
 import { replyAllPrefill } from '../email/replyAll'
 import ClientSelect, { SearchSelect, type SearchChoice } from '../../shared/ui/SearchSelect'
+import { clientOfProject, projectChoices } from '../tasks/projectChoices'
 import { EmailTemplatesManager } from '../email/EmailTemplates'
 import { requestJson, type HttpMethod } from '../../shared/http'
 import { badgeText, unreadStore, useUnreadCounts, type UnreadSource } from './unreadCount'
@@ -308,32 +309,6 @@ const request = (url: string, method = 'GET', body?: unknown, signal?: AbortSign
     fallback: 'Communication request failed.',
     error: (message, _status, data) => new CommunicationRequestError(message, data.code),
   })
-
-const byName = (a: { name: string }, b: { name: string }) =>
-  a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
-/**
- * Projects for a new task, grouped From Seeds then Before Seeds. Closed projects are left out. With a Seeds client
- * chosen, only its Seeds projects are offered; each shows its contract number and client.
- */
-function projectChoices(projects: Project[], clients: Client[], clientId: string): SearchChoice[] {
-  const open = projects.filter(project => !isClosedProject(project)).sort(byName)
-  const clientName = (id?: string) => clients.find(client => client.id === id)?.name || ''
-  const seedsClient = clients.some(client => client.id === clientId && client.seedsId)
-  const fromSeeds = open.filter(project => project.seedsId && (!seedsClient || project.clientId === clientId))
-  const grouped = open.some(project => project.seedsId)
-  return [
-    { value: '', label: 'Select project' },
-    ...fromSeeds.map(project => ({
-      value: project.id,
-      label: project.name,
-      hint: [project.contractNumber, clientName(project.clientId)].filter(Boolean).join(' · '),
-      group: 'From Seeds',
-    })),
-    ...open
-      .filter(project => !project.seedsId)
-      .map(project => ({ value: project.id, label: project.name, group: grouped ? 'Before Seeds' : undefined })),
-  ]
-}
 
 export default function WorkHub({
   clients,
@@ -1641,36 +1616,32 @@ export default function WorkHub({
                     </label>
                     {taskKind === 'task' && (
                       <label>
-                        Client
-                        <ClientSelect
-                          clients={clients.filter(x => !x.archived && !x.seedsArchived)}
-                          value={clientId}
-                          onChange={value => {
-                            setClientId(value)
-                            // A Seeds project belongs to one client: picking another client lets go of it.
-                            const project = projects.find(x => x.id === projectId)
-                            if (project?.seedsId && project.clientId && project.clientId !== value) setProjectId('')
-                          }}
-                          extra={[{ value: '', label: 'Select client' }]}
+                        Project
+                        <SearchSelect
+                          value={projectId}
                           disabled={busy}
+                          placeholder="Type a project, client or contract number"
+                          empty="No open project matches"
+                          onChange={value => {
+                            setProjectId(value)
+                            // The project brings its client (for a Seeds project, the Seeds parent).
+                            const owner = clientOfProject(projects, value)
+                            if (owner) setClientId(owner)
+                          }}
+                          choices={projectChoices(projects, clients)}
                         />
                       </label>
                     )}
                     {taskKind === 'task' && (
                       <label>
-                        Project
-                        <SearchSelect
-                          value={projectId}
-                          disabled={busy}
-                          placeholder="Type a project or contract number"
-                          empty="No open project matches"
-                          onChange={value => {
-                            setProjectId(value)
-                            // A Seeds project brings its client (the Seeds parent).
-                            const project = projects.find(x => x.id === value)
-                            if (project?.seedsId && project.clientId) setClientId(project.clientId)
-                          }}
-                          choices={projectChoices(projects, clients, clientId)}
+                        Client
+                        <ClientSelect
+                          clients={clients.filter(x => (!x.archived && !x.seedsArchived) || x.id === clientId)}
+                          value={clientId}
+                          onChange={setClientId}
+                          extra={[{ value: '', label: 'Select client' }]}
+                          // A project that names its client decides it; only a project without one asks.
+                          disabled={busy || Boolean(clientOfProject(projects, projectId))}
                         />
                       </label>
                     )}

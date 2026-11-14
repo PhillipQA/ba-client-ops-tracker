@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Pick the project first: DRF and Work Hub
+- **DRF → Linked email:** the **Client** picker is now **Project**. Type a project, a client name or a contract number. The project brings its client, lists its tasks and subtasks, and fills the **Contract Number** from Seeds right away, even before a task is chosen.
+- A task chosen elsewhere (in DocHub or by the assistant) sets the project picker to that task's project. Choosing another project lets go of a task from a different project.
+- **DocHub panel:** picking a project in **Filter by project** sets its client; picking another client lets go of a project from a different client.
+- **Work Hub → email → New task:** **Project** now comes first and brings the client. The Client field is locked to the project's client, and is only asked for when a project has none. The task gets the right project, so a DRF made from it gets the right contract number.
+- No database migration.
+
 ### DRF: the Contract Number always matches the chosen task or project
 - Before, the Seeds contract number filled the field only when it was empty, so picking one task and then another kept the first task's number, and choosing a project without a task filled nothing.
 - Now the field follows the selection: the chosen task's Seeds project, its parent task's project for a subtask, or the project picked in **Filter by project** when no task is chosen. Changing the selection changes the number.
