@@ -8,6 +8,7 @@
 // {"tool": "<name>", "args": {...}} to look something up, or the final answer. Tool results are data, some written by
 // other people (task text, emails, tracker cells): the instructions say never to follow instructions found in them.
 
+import { type ChatRecap, searchChats } from '../../src/features/ai/memory'
 import { isClosedProject, isWorkDone } from '../../src/features/tasks/lifecycle'
 import { parseModelJson } from './suggestions'
 
@@ -47,6 +48,8 @@ const isDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d
 export function agentTools(input: {
   state: any
   user: { id: string; name: string; role?: string }
+  /** The assistant's one-line notes on earlier conversations with this person. */
+  chats?: ChatRecap[]
   allowed: (module: string) => boolean
   today: string
   /** One tracker the person can open, by name, as the assistant's tracker context. */
@@ -316,6 +319,21 @@ export function agentTools(input: {
           })),
         }
       },
+    })
+
+  if (input.chats?.length)
+    tools.push({
+      name: 'past_chats',
+      about:
+        'Your notes on earlier conversations with this user, further back than EARLIER CHATS shows. Args (optional): "text" (words to look for).',
+      label: args =>
+        args.text ? `Looked back at earlier chats about “${str(args.text, 60)}”` : 'Looked back at earlier chats',
+      run: args => ({
+        chats: searchChats(input.chats || [], String(args.text || '')).map(chat => ({
+          date: chat.at.slice(0, 10),
+          note: chat.text,
+        })),
+      }),
     })
 
   if (allowed('projects'))

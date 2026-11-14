@@ -51,7 +51,7 @@ import { isWaitingOnDone } from '../tasks/waitingOn'
 import { drfPrefillCount } from '../documents/drfPrefill'
 import { createTrackerDraft } from './trackerDraft'
 import AiScopePicker from './AiScopePicker'
-import AssistantMemory from './AssistantMemory'
+import AssistantMemory, { memoryApi } from './AssistantMemory'
 import { shownValue, type TaskUpdate } from './taskUpdate'
 import { useVoice } from './useVoice'
 import { joinDictation, VOICE_LANGS } from './voice'
@@ -299,6 +299,34 @@ export default function AIAssistant({
     typedBefore.current = input
     voice.listen(spoken => setInput(joinDictation(typedBefore.current, spoken)))
   }
+  // Learning: the assistant picks up lasting preferences and facts from what the person writes, and keeps a line on
+  // each conversation. On unless they turn it off (in the Memory panel).
+  const [learn, setLearn] = useState(() => {
+    try {
+      return window.localStorage.getItem(LEARN_KEY) !== 'off'
+    } catch {
+      return true
+    }
+  })
+  const chooseLearn = (on: boolean) => {
+    setLearn(on)
+    try {
+      window.localStorage.setItem(LEARN_KEY, on ? 'on' : 'off')
+    } catch {
+      /* Only a preference. */
+    }
+  }
+  // Learned notes the person took back with Undo.
+  const [unlearned, setUnlearned] = useState<string[]>([])
+  const unlearn = async (id: string) => {
+    try {
+      await memoryApi.remove(id)
+      setUnlearned(ids => [...ids, id])
+      setMemoryVersion(value => value + 1)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'That could not be undone.')
+    }
+  }
   const chooseAgent = (on: boolean) => {
     setAgent(on)
     try {
@@ -437,7 +465,13 @@ export default function AIAssistant({
 
     try {
       const result = await askBAAssistant(
-        { message: text, context, history: messages.slice(-8), ...(agent ? { agent: true } : {}) },
+        {
+          message: text,
+          context,
+          history: messages.slice(-8),
+          ...(agent ? { agent: true } : {}),
+          ...(learn ? {} : { learn: false }),
+        },
         job.signal,
       )
       if (!job.isCurrent()) return
@@ -757,7 +791,14 @@ export default function AIAssistant({
             </button>
           </div>
         </div>
-        {memoryOpen && <AssistantMemory version={memoryVersion} onClose={() => setMemoryOpen(false)} />}
+        {memoryOpen && (
+          <AssistantMemory
+            version={memoryVersion}
+            learn={learn}
+            onLearn={chooseLearn}
+            onClose={() => setMemoryOpen(false)}
+          />
+        )}
         <div className="ai-messages" aria-live="polite">
           {messages.length === 0 && (
             <div className="ai-empty">
@@ -804,6 +845,21 @@ export default function AIAssistant({
               {message.memory?.remembered.map(note => (
                 <div className="ai-remembered" key={note.id}>
                   <Brain size={12} aria-hidden="true" /> Remembered: {note.text}
+                </div>
+              ))}
+              {message.memory?.learned?.map(note => (
+                <div className="ai-remembered" key={note.id}>
+                  <Brain size={12} aria-hidden="true" />
+                  {unlearned.includes(note.id) ? (
+                    <s>Learned: {note.text}</s>
+                  ) : (
+                    <>
+                      Learned: {note.text}
+                      <button type="button" className="ai-unlearn" onClick={() => void unlearn(note.id)}>
+                        Undo
+                      </button>
+                    </>
+                  )}
                 </div>
               ))}
               {message.memory?.forgotten.map(note => (
@@ -1013,6 +1069,7 @@ export default function AIAssistant({
 }
 
 const AGENT_KEY = 'ba-assistant-agent'
+const LEARN_KEY = 'ba-assistant-learn'
 
 /** The tasks of a plan, each with a tick box; subtasks under their task. */
 function PlanList({

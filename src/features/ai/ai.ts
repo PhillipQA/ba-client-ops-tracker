@@ -125,11 +125,15 @@ export interface AIMessage {
   /** Notes the answer added to or dropped from the assistant's memory, because the person asked. */
   memory?: MemoryChange
 }
-export type MemoryChange = { remembered: MemoryNote[]; forgotten: MemoryNote[] }
+export type MemoryChange = { remembered: MemoryNote[]; forgotten: MemoryNote[]; learned: MemoryNote[] }
 function cleanMemoryChange(value: unknown): MemoryChange | undefined {
   const given = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-  const change = { remembered: cleanNotes(given.remembered), forgotten: cleanNotes(given.forgotten) }
-  return change.remembered.length || change.forgotten.length ? change : undefined
+  const change = {
+    remembered: cleanNotes(given.remembered),
+    forgotten: cleanNotes(given.forgotten),
+    learned: cleanNotes(given.learned),
+  }
+  return change.remembered.length || change.forgotten.length || change.learned.length ? change : undefined
 }
 export type AgentStep = { tool: string; label: string; ok: boolean }
 /** Tokens sent and received, over every call the question made. `estimated` when the provider gave no count. */
@@ -174,6 +178,8 @@ export async function askBAAssistant(
     history: AIMessage[]
     /** Let the assistant look things up before answering. */
     agent?: boolean
+    /** False when the person turned learning off: nothing is learned or noted from this question. */
+    learn?: boolean
   },
   signal?: AbortSignal,
 ): Promise<{

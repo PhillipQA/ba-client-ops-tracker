@@ -84,3 +84,39 @@ test('a database without the memory table says what to run', async () => {
     assert.match(answer.body.error, /schema-v38-assistant-memory/)
   })
 })
+
+test('conversation recaps are read with the notes and forgotten one at a time or all at once', async () => {
+  const { memoryOf } = await import('../server/ai/assistant-memory')
+  assert.deepEqual(memoryOf([{ id: 'n', text: 'Old shape' }]).chats, [], 'A row from before recaps is notes only')
+  assert.equal(
+    memoryOf({ notes: [{ id: 'n', text: 'New' }], chats: [{ id: 'c', at: '2026-11-14T01:00:00Z', text: 'Hi' }] }).chats
+      .length,
+    1,
+  )
+
+  let memory: any = {
+    notes: [{ id: 'n1', text: 'Keep me', createdAt: '', source: 'you' }],
+    chats: [
+      { id: 'c1', at: '2026-11-13T01:00:00.000Z', text: 'First chat' },
+      { id: 'c2', at: '2026-11-14T01:00:00.000Z', text: 'Second chat' },
+    ],
+  }
+  const store: MemoryStore = {
+    read: async () => memory.notes,
+    write: async (_tenant, _user, notes) => void (memory = { ...memory, notes }),
+    recall: async () => memory,
+    keep: async (_tenant, _user, next) => void (memory = next),
+  }
+  await withRoutes(store, async ask => {
+    const all = await ask('GET', '/api/assistant/memory', 'ana')
+    assert.equal(all.body.chats.length, 2)
+    assert.equal(all.body.notes.length, 1)
+    const one = await ask('DELETE', '/api/assistant/memory/chats/c1', 'ana')
+    assert.deepEqual(
+      one.body.chats.map((chat: any) => chat.id),
+      ['c2'],
+    )
+    assert.deepEqual((await ask('DELETE', '/api/assistant/memory/chats/all', 'ana')).body.chats, [])
+    assert.equal(memory.notes.length, 1, 'The notes are kept')
+  })
+})
