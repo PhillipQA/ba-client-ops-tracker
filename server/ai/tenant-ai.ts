@@ -1,4 +1,5 @@
 import { createAiClient, IntegrationError } from '../integrations/tenant-integrations'
+import { retryOnce } from './ai-failure'
 import { type AiUsage, aiUsage } from './ai-usage'
 
 export type { AiUsage }
@@ -15,7 +16,7 @@ export async function runTenantAi(
   return (await runTenantAiMetered(secret, config, instructions, input, timeout, maxTokens)).text
 }
 
-/** The same call, with the tokens it used. */
+/** The same call, with the tokens it used. A busy or unreachable provider is tried once more. */
 export async function runTenantAiMetered(
   secret: string,
   config: unknown,
@@ -23,6 +24,17 @@ export async function runTenantAiMetered(
   input: string,
   timeout = 30000,
   maxTokens = 8000,
+): Promise<{ text: string; usage: AiUsage }> {
+  return retryOnce(() => callTenantAi(secret, config, instructions, input, timeout, maxTokens))
+}
+
+async function callTenantAi(
+  secret: string,
+  config: unknown,
+  instructions: string,
+  input: string,
+  timeout: number,
+  maxTokens: number,
 ): Promise<{ text: string; usage: AiUsage }> {
   const sent = instructions + input
   const ai = createAiClient(secret, config, timeout)

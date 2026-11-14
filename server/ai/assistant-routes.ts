@@ -9,7 +9,8 @@ import { emptyTenantData, ensureTenantFollowUpsCurrent, tenantIdForUser } from '
 import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { scopedState, scopeFor } from '../../src/shared/access'
 import { buildAssistantContext, slimAssistantContext } from './assistant-context'
-import { agentTools, type AgentStep, runAgent } from './assistant-agent'
+import { agentTools, type AgentStep, askJson, runAgent } from './assistant-agent'
+import { describeAiFailure } from './ai-failure'
 import { addTrackers, type LoadedTracker, type TrackerReader, trackerContext } from './assistant-trackers'
 import {
   actionRights,
@@ -311,7 +312,7 @@ export function registerAssistantRoutes(
         })
         parsed = ran.output
         steps = ran.steps
-      } else parsed = parseModelJson(await callAi(instructions, prompt))
+      } else parsed = await askJson(callAi, instructions, prompt)
       const responseMessage = String(parsed.message || '').trim()
       if (!responseMessage) throw new Error('The model returned no assessment.')
       // Notes the person asked to keep or drop in this message. A failed save is not said to have been remembered.
@@ -351,11 +352,9 @@ export function registerAssistantRoutes(
         ...(memory ? { memory } : {}),
       })
     } catch (error) {
-      console.error('Account AI request failed.')
-      res.status(502).json({
-        error:
-          'BA Assistant request failed. Check this account’s BA Assistant provider, key, selected model, quota, and connection.',
-      })
+      const failure = describeAiFailure(error)
+      console.error(failure.log)
+      res.status(502).json({ error: failure.message, reason: failure.kind })
     }
   })
 
@@ -376,7 +375,7 @@ export function registerAssistantRoutes(
       const output = await runTenantAi(ai.secret, ai.config, DRF_DRAFT_INSTRUCTIONS, drfDraftInput(email))
       res.json({ fields: cleanDrfPrefill(parseModelJson(output)) })
     } catch (error) {
-      console.error('DRF draft from email failed.')
+      console.error(describeAiFailure(error, 'DRF draft from email').log)
       res.status(502).json({ error: 'The DRF could not be drafted from the email. Fill it in by hand.' })
     }
   })

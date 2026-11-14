@@ -125,6 +125,12 @@ export interface AIMessage {
   /** Notes the answer added to or dropped from the assistant's memory, because the person asked. */
   memory?: MemoryChange
 }
+
+/** The last message, when it is the person's and got no answer (the request failed): what Try again sends. */
+export function unanswered(messages: AIMessage[]) {
+  const last = messages[messages.length - 1]
+  return last?.role === 'user' && last.content.trim() ? last : undefined
+}
 export type MemoryChange = { remembered: MemoryNote[]; forgotten: MemoryNote[]; learned: MemoryNote[] }
 function cleanMemoryChange(value: unknown): MemoryChange | undefined {
   const given = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}

@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: says why a request failed, and tries again
+- The red "BA Assistant request failed. Check this account's provider, key…" message hid every cause. Now it says which one: the provider is busy or limiting requests (quota), the key or model was rejected, the answer took too long, or the answer came back in a form the app could not read.
+- A busy, rate-limited or unreachable provider is tried once more after 2 seconds, for every AI call in the app.
+- An answer in plain words instead of JSON is shown as the answer; broken JSON is asked for once more.
+- A **Try again** button under the error resends the last message without adding it to the chat twice.
+- The server log now names the cause (for example `BA Assistant request failed: limited (429): …`), with keys hidden, so Northflank's logs show what went wrong.
+- No database migration.
+
 ### Heads-up for new Seeds projects: you choose the tracker
 
 **No database change.**
