@@ -313,7 +313,12 @@ export function registerAssistantRoutes(
         parsed = ran.output
         steps = ran.steps
       } else parsed = await askJson(callAi, instructions, prompt)
-      const responseMessage = String(parsed.message || '').trim()
+      // Suggestions with no words around them still get a line, so a prepared action is not lost.
+      const responseMessage =
+        String(parsed.message || '').trim() ||
+        (Array.isArray(parsed.suggestions) && parsed.suggestions.length
+          ? 'Here is what I prepared for you to approve.'
+          : '')
       if (!responseMessage) throw new Error('The model returned no assessment.')
       // Notes the person asked to keep or drop in this message. A failed save is not said to have been remembered.
       let memory: { remembered: MemoryNote[]; forgotten: MemoryNote[]; learned: MemoryNote[] } | undefined
