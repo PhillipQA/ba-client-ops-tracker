@@ -610,3 +610,33 @@
   background: rgba(34, 160, 90, 0.08);
   font-size: 12px;
 }
+
+/* DRF Contract Number: where it came from, or why it may be wrong. */
+.drf-contract-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.drf-contract-hint.ok {
+  color: var(--success, #2f7d4f);
+}
+.drf-contract-hint.warn {
+  color: var(--warning, #a15c00);
+}
+.drf-contract-hint.info {
+  color: var(--muted, #6b7280);
+}
+.drf-contract-hint button {
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}

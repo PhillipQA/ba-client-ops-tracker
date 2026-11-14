@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### DRF: the Contract Number always matches the chosen task or project
+- Before, the Seeds contract number filled the field only when it was empty, so picking one task and then another kept the first task's number, and choosing a project without a task filled nothing.
+- Now the field follows the selection: the chosen task's Seeds project, its parent task's project for a subtask, or the project picked in **Filter by project** when no task is chosen. Changing the selection changes the number.
+- A number you type by hand is kept. If it differs from Seeds, a warning under the field shows the Seeds number with a **Use** button.
+- A number the assistant drafted from an email gives way to the Seeds one, with a note of what the email said. If Seeds has no number for that project, the email's number is used.
+- Under the field: **From Seeds: <project>**, or a note when Seeds has no number for the project.
+- No database migration.
+
 ### Gemini: answers no longer come back empty ("The AI stopped before finishing")
 - Gemini counts its thinking against the answer's token cap, and by default its thinking budget (about 8,000 tokens) is as large as the whole cap. On some questions it used it all up and returned nothing, so even "What's the latest update for Milano?" failed.
 - Gemini is now asked for low thinking (about 1,000 tokens), and its cap has 2,048 extra tokens for that thinking, so the answer keeps its full room. Less thinking also means faster answers and a lower bill.

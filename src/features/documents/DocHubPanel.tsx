@@ -68,6 +68,8 @@ export function useDocHubDraft(
     [error, setError] = useState('')
   const [doc, setDoc] = useState<DocHubDocument | null>(null)
   const [options, setOptions] = useState({ clientId: '', taskId: '', sequential: false, followUpDays: 3 })
+  // The project filter: kept here so the DRF can read the contract number of a project picked without a task.
+  const [projectId, setProjectId] = useState('')
   const pending = useRef<any>(null)
   const operation = useDocumentOperation()
   const pageActive = usePageActive()
@@ -112,6 +114,7 @@ export function useDocHubDraft(
     setBusy(false)
     setEnabled(false)
     setOptions({ clientId: '', taskId: '', sequential: false, followUpDays: 3 })
+    setProjectId('')
     setResetVersion(resetCount.current)
   }
   const submit = async (input: any) => {
@@ -181,6 +184,8 @@ export function useDocHubDraft(
     doc,
     options,
     setOptions,
+    projectId,
+    setProjectId,
     prepare,
     refresh,
     reset,
@@ -206,7 +211,7 @@ export function DocHubOptions({
   items: WorkItem[]
   disabled?: boolean
 }) {
-  const [projectId, setProjectId] = useState('')
+  const { projectId, setProjectId } = draft
   const selected = items.find(i => i.id === draft.options.taskId)
   useEffect(() => {
     if (selected?.projectId) setProjectId(selected.projectId)
