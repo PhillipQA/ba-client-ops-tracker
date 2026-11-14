@@ -124,8 +124,11 @@ function memoryDb(options: { failChanges?: boolean } = {}) {
         return { data: this.returning ? matched : null, error: null, count: null }
       }
       let result = matched.map(row => structuredClone(row))
-      for (const [column, asc] of [...this.sorts].reverse())
+      // Rows written in the same millisecond tie on created_at: newest first keeps the later write first.
+      for (const [column, asc] of [...this.sorts].reverse()) {
+        if (!asc) result.reverse()
         result.sort((a, b) => (a[column] < b[column] ? -1 : a[column] > b[column] ? 1 : 0) * (asc ? 1 : -1))
+      }
       const total = result.length
       result = result.slice(this.skip, this.take === undefined ? undefined : this.skip + this.take)
       if (this.head) return { data: null, error: null, count: total }
