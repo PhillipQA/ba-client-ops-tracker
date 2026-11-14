@@ -344,7 +344,7 @@
   cursor: pointer;
   width: 100%;
 }
-.board-card[draggable='true'] {
+.board-card[draggable="true"] {
   cursor: grab;
 }
 .board-card:hover,

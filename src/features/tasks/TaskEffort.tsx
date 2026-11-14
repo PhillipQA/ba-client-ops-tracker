@@ -106,7 +106,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   }
 
   /** Puts a timed day's time into Log time, to review and save. */
-  const useTimed = (day: TimerDay) => {
+  const takeTimed = (day: TimerDay) => {
     const minutes = Math.round(day.hours * 60)
     setEditingId('')
     setDate(day.date)
@@ -308,7 +308,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
         </p>
       )}
       {canLog && !editingId && (!rule || (!rule.logOnTaskId && rule.tasks.length > 0)) && (
-        <TaskTimerBar taskId={item.id} usedDate={timedDate} onUse={useTimed} />
+        <TaskTimerBar taskId={item.id} usedDate={timedDate} onUse={takeTimed} />
       )}
       {canLog && rule && !rule.logOnTaskId && (
         <div className="effort-log" onKeyDown={blockEnter}>
