@@ -604,3 +604,82 @@
   min-width: 34px;
   justify-content: flex-end;
 }
+
+/* The task timer, above Log time (TaskTimerBar). */
+.effort-timer {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ef-border);
+  border-radius: 10px;
+  background: var(--ef-surface);
+}
+.effort-timer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.effort-timer-row strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.effort-timer-clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--ef-muted);
+}
+.effort-timer-clock.running {
+  color: var(--ef-accent);
+  font-weight: 650;
+}
+.effort-timer-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+.effort-timer-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.effort-timer-hint,
+.effort-timer-days small {
+  color: var(--ef-muted);
+}
+.effort-timer-problem {
+  color: #e5485d;
+}
+.effort-timer-days ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.effort-timer-days li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--ef-soft);
+}
+.effort-timer-days li span {
+  flex: 1;
+}
+.effort-timer-days li.active {
+  outline: 1px solid var(--ef-accent);
+}
+.effort-timer-delete {
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.effort-timer-delete:hover:not(:disabled) {
+  opacity: 1;
+}

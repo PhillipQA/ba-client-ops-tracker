@@ -9,6 +9,7 @@ import { WorkflowLabelsContext } from '../shared/ui/Chips'
 import { EmailComposerHost } from '../features/email/EmailComposer'
 import NotificationCenter from '../features/notifications/NotificationCenter'
 import AssistantWatch from '../features/ai/AssistantWatch'
+import TimerChip from '../features/tasks/TimerChip'
 import RecordEditDialog from '../features/tasks/RecordEditDialog'
 import LifecycleControls from '../features/tasks/LifecycleControls'
 import { isArchived } from '../features/tasks/lifecycle'
@@ -848,6 +849,12 @@ function App() {
           {profileOpen && currentUser.accountType !== 'platform' && (
             <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />
           )}
+          <TimerChip
+            key={`timers:${currentUser.organizationId}:${currentUser.id}`}
+            enabled={currentUser.accountType !== 'platform' && currentUser.role !== 'Viewer'}
+            items={store.items}
+            onOpenTask={appState.openTaskEditor}
+          />
           <EmailComposerHost
             enabled={hasModule('inbox') && currentUser.role !== 'Viewer'}
             items={store.items}

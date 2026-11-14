@@ -11,6 +11,8 @@ import { requestJson } from '../../shared/http'
 import { rememberTrackerRow } from '../trackers/trackerNav'
 import { rememberWorkHubMessage } from '../work-hub/workHubNav'
 import { keptDismissals, type WatchAction, type WatchAlert } from './watch'
+import { clockText, elapsedMs, forgottenTimer } from '../tasks/timer'
+import { timerDayOf, timerNow, useTimers } from '../tasks/timerStore'
 
 /** How often an open page checks again. The server keeps its last check for ten minutes. */
 const CHECK_EVERY_MS = 20 * 60_000
@@ -40,6 +42,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
   const known = useRef<Set<string> | null>(null)
   const dismissedNow = useRef(dismissed)
   dismissedNow.current = dismissed
+  const timerAlertsNow = useRef<WatchAlert[]>([])
 
   const keep = useCallback(
     (keys: string[]) => {
@@ -64,7 +67,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
         const found = Array.isArray(result.alerts) ? result.alerts : []
         setAlerts(found)
         setHandled([])
-        const still = keptDismissals(dismissedNow.current, found)
+        const still = keptDismissals(dismissedNow.current, [...found, ...timerAlertsNow.current])
         if (still.length !== dismissedNow.current.length) keep(still)
         // Heads-ups that were not there at the last check are announced, except on the first check of the page.
         const live = found.filter(alert => !still.includes(alert.key))
@@ -108,7 +111,23 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
     }
   }, [open])
 
-  const live = alerts.filter(alert => !dismissed.includes(alert.key) && !handled.includes(alert.key))
+  // A timer left running for hours, or since an earlier day: a reminder only, it is never stopped for the person.
+  const { timers } = useTimers()
+  const nowMs = timerNow()
+  const timerAlerts: WatchAlert[] = timers
+    .filter(timer => forgottenTimer(timer, nowMs, timerDayOf))
+    .map(timer => ({
+      key: `timer:${timer.taskId}:${timer.pieces[timer.pieces.length - 1]?.start}`,
+      severity: 'warning' as const,
+      title: `Timer still running: ${store.items.find(item => item.id === timer.taskId)?.title || 'a task'}`,
+      detail: `${clockText(elapsedMs(timer, nowMs))} so far. Still working on it? Stop it to log the time.`,
+      open: { kind: 'task' as const, id: timer.taskId },
+      ask: '',
+    }))
+  timerAlertsNow.current = timerAlerts
+  const live = [...timerAlerts, ...alerts].filter(
+    alert => !dismissed.includes(alert.key) && !handled.includes(alert.key),
+  )
   const urgent = live.some(alert => alert.severity === 'urgent')
 
   /** Where a heads-up opens, when this person may go there. */
@@ -231,7 +250,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
                     </span>
                   </button>
                   <div className="notification-actions">
-                    {canUseAI && (
+                    {canUseAI && alert.ask && (
                       <button type="button" title="Ask the BA Assistant about this" onClick={() => ask(alert)}>
                         <Sparkles size={14} />
                       </button>

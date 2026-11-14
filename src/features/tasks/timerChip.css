@@ -1,0 +1,85 @@
+/* The running timer chip, bottom left on every page (the email drafts dock sits bottom right). */
+.timer-chip-dock {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 880;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.timer-chip-dock > * {
+  pointer-events: auto;
+}
+.timer-chip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--ui-border, #3a4658);
+  border-radius: 999px;
+  background: var(--ui-surface, #1d2430);
+  color: var(--ui-text, #f1f4f9);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+.timer-chip.running {
+  border-color: var(--ui-accent, #8aa1ff);
+}
+.timer-chip.late {
+  border-color: #d98a1f;
+}
+.timer-chip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.timer-chip button:hover:not(:disabled) {
+  background: var(--ui-soft, rgba(255, 255, 255, 0.08));
+}
+.timer-chip-main {
+  flex: 1;
+}
+.timer-chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+  font-weight: 650;
+}
+.timer-chip-clock {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+.timer-chip-todo,
+.timer-chip-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--ui-border, #3a4658);
+  border-radius: 999px;
+  background: var(--ui-surface, #1d2430);
+  color: var(--ui-muted, #c4ccd8);
+  font-size: 11px;
+}
+.timer-chip-todo {
+  cursor: pointer;
+  border-color: #d98a1f;
+}
+@media print {
+  .timer-chip-dock {
+    display: none;
+  }
+}
