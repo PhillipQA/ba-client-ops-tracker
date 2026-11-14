@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { askJson, JSON_AGAIN } from '../server/ai/assistant-agent'
-import { aiFailureKind, aiFailureRetryable, describeAiFailure, hideKeys, retryOnce } from '../server/ai/ai-failure'
+import {
+  aiFailureKind,
+  aiFailureRetryable,
+  describeAiFailure,
+  hideKeys,
+  rejectsReasoning,
+  retryOnce,
+} from '../server/ai/ai-failure'
 import { unanswered } from '../src/features/ai/ai'
 
 const apiError = (status: number, message = '') =>
@@ -120,4 +127,24 @@ test('Try again finds the message that got no answer', () => {
   assert.equal(unanswered([asked]), asked)
   assert.equal(unanswered([asked, answered]), undefined)
   assert.equal(unanswered([]), undefined)
+})
+
+test('a Gemini model with no thinking settings is asked again without them; other errors are not', () => {
+  assert.ok(rejectsReasoning(apiError(400, '400 Thinking is not supported for this model.')))
+  assert.ok(rejectsReasoning(apiError(400, 'Unknown name "reasoning_effort"')))
+  assert.ok(!rejectsReasoning(apiError(400, 'API key not valid')))
+  assert.ok(!rejectsReasoning(apiError(503, 'thinking overloaded')))
+})
+
+test('an answer cut off by thinking is reported as incomplete, with where the tokens went in the log', () => {
+  const failure = describeAiFailure(
+    Object.assign(
+      new Error(
+        'The AI response was incomplete. Reduce the scope and try again. (finish: length, in 9000, out 0, thinking 8000)',
+      ),
+      { status: 502 },
+    ),
+  )
+  assert.equal(failure.kind, 'incomplete')
+  assert.match(failure.log, /finish: length, in 9000, out 0, thinking 8000/)
 })

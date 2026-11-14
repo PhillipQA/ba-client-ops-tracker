@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Gemini: answers no longer come back empty ("The AI stopped before finishing")
+- Gemini counts its thinking against the answer's token cap, and by default its thinking budget (about 8,000 tokens) is as large as the whole cap. On some questions it used it all up and returned nothing, so even "What's the latest update for Milano?" failed.
+- Gemini is now asked for low thinking (about 1,000 tokens), and its cap has 2,048 extra tokens for that thinking, so the answer keeps its full room. Less thinking also means faster answers and a lower bill.
+- A Gemini model that has no thinking settings is asked again without them.
+- When an answer is still cut off, the server log shows the finish reason and where the tokens went (input, output, thinking).
+- Applies to every AI call in the app on Gemini (assistant, morning brief, documents). No database migration.
+
 ### BA Assistant: asking it to create a task no longer ends in an error
 - In Agent mode, "create a task…" or "make a task from this email" could fail: the assistant went looking for a tool to create the task, but its tools only read. It kept trying until it ran out of lookups, and the request failed.
 - It is now told that creating, linking, drafting, logging and changing are never tools: they are suggestions you approve. If it still tries a made-up tool like `create_task`, it is told the tools only read and answers on the next turn, with a firmer reminder if needed.
