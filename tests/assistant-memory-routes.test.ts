@@ -103,9 +103,13 @@ test('conversation recaps are read with the notes and forgotten one at a time or
   }
   const store: MemoryStore = {
     read: async () => memory.notes,
-    write: async (_tenant, _user, notes) => void (memory = { ...memory, notes }),
+    write: async (_tenant, _user, notes) => {
+      memory = { ...memory, notes }
+    },
     recall: async () => memory,
-    keep: async (_tenant, _user, next) => void (memory = next),
+    keep: async (_tenant, _user, next) => {
+      memory = next
+    },
   }
   await withRoutes(store, async ask => {
     const all = await ask('GET', '/api/assistant/memory', 'ana')
