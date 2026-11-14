@@ -1,7 +1,8 @@
-/* The running timer chip, bottom left on every page (the email drafts dock sits bottom right). */
+/* The running timer chip, at the bottom of every page just right of the left menu (the email drafts dock sits bottom
+   right). */
 .timer-chip-dock {
   position: fixed;
-  left: 16px;
+  left: calc(var(--sidebar-w, 252px) + 16px);
   bottom: 16px;
   z-index: 880;
   display: flex;
@@ -77,6 +78,11 @@
 .timer-chip-todo {
   cursor: pointer;
   border-color: #d98a1f;
+}
+@media (max-width: 820px) {
+  .timer-chip-dock {
+    left: 16px;
+  }
 }
 @media print {
   .timer-chip-dock {
