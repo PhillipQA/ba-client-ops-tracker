@@ -74,7 +74,7 @@ export default function TaskDock({
             title={`Open: ${item.title}`}
           >
             <SquarePen size={13} aria-hidden="true" />
-            <span>{item.title || 'Untitled task'}</span>
+            <span>Task: {item.title || 'Untitled task'}</span>
           </button>
           <button
             type="button"

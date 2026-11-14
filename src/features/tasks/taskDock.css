@@ -1,20 +1,22 @@
-/* Minimized task windows, bottom left (TaskDock). The running timer chip sits just above them. */
+/* Minimized task windows, at the bottom of the page just right of the left menu (TaskDock), so they never sit on the
+   menu. The running timer chip sits just above them. */
 .task-dock {
   position: fixed;
-  left: 16px;
+  left: calc(var(--sidebar-w, 252px) + 16px);
   bottom: 0;
   z-index: 880;
   display: flex;
   flex-wrap: wrap-reverse;
   align-items: flex-end;
   gap: 6px;
-  max-width: calc(100vw - 32px - min(560px, 40vw));
+  max-width: calc(100vw - var(--sidebar-w, 252px) - 32px - min(560px, 40vw));
 }
 .task-dock-tab {
   display: flex;
   align-items: center;
-  max-width: 220px;
-  border: 1px solid var(--ui-border, #3a4658);
+  max-width: 240px;
+  border: 1px solid var(--ui-accent, #8aa1ff);
+  border-top-width: 3px;
   border-bottom: 0;
   border-radius: 10px 10px 0 0;
   background: var(--ui-surface, #1d2430);
@@ -32,8 +34,8 @@
 }
 .task-dock-open {
   min-width: 0;
-  padding: 9px 4px 9px 12px;
-  font-size: 12px;
+  padding: 10px 4px 10px 12px;
+  font-size: 13px;
   font-weight: 650;
 }
 .task-dock-open span {
@@ -54,8 +56,9 @@
 body:has(.task-dock) .timer-chip-dock {
   bottom: 56px;
 }
-@media (max-width: 760px) {
+@media (max-width: 820px) {
   .task-dock {
+    left: 16px;
     max-width: calc(100vw - 32px);
   }
   .task-dock-tab {
