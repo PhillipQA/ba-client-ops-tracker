@@ -128,7 +128,7 @@ export interface AIMessage {
 
 /** The last message, when it is the person's and got no answer (the request failed): what Try again sends. */
 export function unanswered(messages: AIMessage[]) {
-  const last = messages.at(-1)
+  const last = messages[messages.length - 1]
   return last?.role === 'user' && last.content.trim() ? last : undefined
 }
 export type MemoryChange = { remembered: MemoryNote[]; forgotten: MemoryNote[]; learned: MemoryNote[] }
