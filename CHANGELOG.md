@@ -11,6 +11,17 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Task timer
+
+**Database change (schema v39).** Before deploying, run `database/migrations/schema-v39-task-timers.sql` on the live database (see the README, *Updating*). Until it is run, the timer is hidden and everything else works as before.
+
+- **Time your work instead of typing it.** A task's Effort section has **Start timer**, then **Pause / Resume** and **Stop**, with a running clock. Manual Log time stays exactly as it was.
+- **One timer runs at a time.** Starting another task's timer pauses the first. Timers are kept on the server, so closing the tab, refreshing or switching computers loses nothing.
+- **The running timer shows on every page**, bottom left: the task, the clock, Pause and Stop. Click it to open the task.
+- **Stopping never logs by itself.** The timed time is listed a day at a time (split at midnight, rounded to the nearest 15 minutes, at least 15 minutes). **Use** puts a day's time into Log time, where you pick the Seeds task, product and remarks as usual, change the hours if you like, and save. **Delete** throws a day's time away. Stopped time waiting to be logged stays as a "Time to log" reminder until you deal with it.
+- **Forgotten timers:** a timer running 4 hours or more, or since an earlier day, shows a reminder on the chip and in the heads-ups. It is only a reminder: the timer keeps running until you stop it.
+- Where time cannot be logged on the item (a subtask once Seeds is on, where time goes on its task), there is no timer either.
+
 ### BA Assistant: voice
 
 - **Speak your question.** A **Speak** button beside Assess writes what you say into the question box, after anything you already typed. Nothing is sent until you press Assess, so a misheard sentence never spends tokens.

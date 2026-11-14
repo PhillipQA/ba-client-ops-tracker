@@ -77,6 +77,7 @@ import { registerInternalAdminRoutes } from './platform/internal-admin'
 import { registerAssistantRoutes } from './ai/assistant-routes'
 import { createMemoryStore, registerMemoryRoutes } from './ai/assistant-memory'
 import { registerBriefRoutes } from './ai/brief-routes'
+import { createTimerStore, registerTimerRoutes } from './tasks/task-timers'
 import { registerDrfRoutes } from './documents/drf-documents'
 import { registerTaskRoutes } from './tasks/task-routes'
 
@@ -137,6 +138,9 @@ registerAssistantRoutes(app, {
   emails: (tenant, userId) => communications.recentEmails(tenant, userId),
   email: (tenant, userId, id) => communications.emailFor(tenant, userId, id),
 })
+// Each person's task timers.
+const taskTimers = createTimerStore(db)
+registerTimerRoutes(app, { store: taskTimers })
 registerBriefRoutes(app, {
   trackers: (tenant, user, pick) => trackers.trackersFor(tenant, user, pick),
   waitingEmails: (tenant, userId, since) => communications.waitingEmails(tenant, userId, since),

@@ -17,6 +17,8 @@ import {
 import { addTimeEntry, deleteTimeEntry, type TimeEntryMutationResult, updateTimeEntry } from './timeEntries'
 import type { WorkItem } from '../../shared/types'
 import { SendToSeedsButton } from '../seeds/SendToSeeds'
+import TaskTimerBar, { type TimerDay } from './TaskTimerBar'
+import { timersApi } from './timerStore'
 import './effort.css'
 
 type Props = {
@@ -58,6 +60,8 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   const [durationMinutes, setDurationMinutes] = useState('0')
   const [subtaskId, setSubtaskId] = useState('')
   const [chosenSeedsTask, setChosenSeedsTask] = useState('')
+  // The timed day whose time was put into Log time: saving the entry takes that day off the timer.
+  const [timedDate, setTimedDate] = useState('')
   // "None" is a choice of its own: a Seeds task is optional unless Seeds requires one on the project.
   const seedsTaskId =
     chosenSeedsTask === NO_SEEDS_TASK ? '' : chosenSeedsTask || (rule ? defaultSeedsTask(rule, subtaskId) : '')
@@ -101,6 +105,25 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
     if (event.key === 'Enter') event.preventDefault()
   }
 
+  /** Puts a timed day's time into Log time, to review and save. */
+  const useTimed = (day: TimerDay) => {
+    const minutes = Math.round(day.hours * 60)
+    setEditingId('')
+    setDate(day.date)
+    setHours(String(day.hours))
+    setDurationHours(String(Math.min(24, Math.floor(minutes / 60))))
+    setDurationMinutes(String(minutes % 60))
+    setTimedDate(day.date)
+    setMessage({ text: `Timed ${formatHours(day.hours)} on ${day.date}: check the entry, then save it.`, ok: true })
+  }
+  /** After a timed day is logged, it comes off the timer. A failure there leaves the time to delete by hand. */
+  const takeOffTimer = async (loggedDate: string) => {
+    const day = timedDate
+    setTimedDate('')
+    if (!day || day !== loggedDate) return
+    await timersApi.clearDay(item.id, day).catch(() => undefined)
+  }
+
   const save = async () => {
     if (busy) return
     const checked = rule
@@ -120,6 +143,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
         return
       }
       onMutation(await addTimeEntry(rule ? item.id : targetId, checked.value))
+      await takeOffTimer(checked.value.date)
       setHours('')
       setDurationHours('0')
       setDurationMinutes('0')
@@ -136,6 +160,7 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
   /** Back to logging a new entry. */
   const resetForm = () => {
     setEditingId('')
+    setTimedDate('')
     setDate(today)
     setDurationHours('0')
     setDurationMinutes('0')
@@ -281,6 +306,9 @@ export default function TaskEffort({ item, allItems, currentUser, canLog, today,
           Time is logged on the task{parentTask ? ` “${parentTask.title}”` : ''}: open it, log time and choose this
           subtask. The remarks are filled in as “subtask – task”, and you can edit them.
         </p>
+      )}
+      {canLog && !editingId && (!rule || (!rule.logOnTaskId && rule.tasks.length > 0)) && (
+        <TaskTimerBar taskId={item.id} usedDate={timedDate} onUse={useTimed} />
       )}
       {canLog && rule && !rule.logOnTaskId && (
         <div className="effort-log" onKeyDown={blockEnter}>
