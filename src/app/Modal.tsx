@@ -5,15 +5,24 @@ export function Modal({
   title,
   onClose,
   closeDisabled = false,
+  onMinimize,
   children,
 }: {
   title: string
   onClose: () => void
   closeDisabled?: boolean
+  onMinimize?: () => void
   children: React.ReactNode
 }) {
   return (
-    <Dialog title={title} onClose={onClose} busy={closeDisabled} size="medium" className="modal app-modal">
+    <Dialog
+      title={title}
+      onClose={onClose}
+      busy={closeDisabled}
+      size="medium"
+      className="modal app-modal"
+      onMinimize={onMinimize}
+    >
       {children}
     </Dialog>
   )

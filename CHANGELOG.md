@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Minimize tasks
+
+- **A task window can be minimized**, like an email draft. The task editor has a **Minimize** button beside Close: the task goes to a dock at the bottom left of every page, and clicking it there opens it again. The email drafts keep their own dock at the bottom right.
+- Up to **4** tasks can be minimized at once. Opening a minimized task while another is open minimizes that one in its place. A task opened any other way leaves the dock, and **×** on a tab takes it off without opening it.
+- Minimizing keeps the task, not unsaved typing: if the task has changes you have not saved, you are asked first. (A time entry typed in Log time but not saved is not counted as a change; a running timer is never affected.)
+- The dock is kept per person in this browser. With tasks minimized, the running timer chip sits just above them.
+- No database change.
+
 ### Task timer
 
 **Database change (schema v39).** Before deploying, run `database/migrations/schema-v39-task-timers.sql` on the live database (see the README, *Updating*). Until it is run, the timer is hidden and everything else works as before.

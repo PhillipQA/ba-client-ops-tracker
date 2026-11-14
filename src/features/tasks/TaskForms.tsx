@@ -22,6 +22,7 @@ import {
 import type { TimeEntryMutationResult } from './timeEntries'
 import type { ItemType, Priority, TaskEvidence, WaitingOn, WorkItem } from '../../shared/types'
 import { defaultWaitingOn, findWaitingOn, isWaitingOnDone, waitingOnOptions } from './waitingOn'
+import { formSnapshot } from './taskDock'
 import {
   ChevronRight,
   CircleDot,
@@ -482,6 +483,7 @@ export function TaskEditForm({
   currentUser,
   today,
   onMoveToSeeds,
+  dirtyCheck,
 }: {
   autoRefreshDocuments?: boolean
   canLinkRtm: boolean
@@ -496,6 +498,8 @@ export function TaskEditForm({
   today: string
   /** Administrators, once Seeds is on: moves this Before Seeds task (with its subtasks) to a Seeds project. */
   onMoveToSeeds?: () => void
+  /** Filled in with a check of whether the form was changed since it opened (before minimizing it). */
+  dirtyCheck?: { current: () => boolean }
 }) {
   const [rtmLinks, setRtmLinks] = useState<RtmLink[]>(item.rtmLinks || [])
   const [editProjectId, setEditProjectId] = useState(item.projectId || '')
@@ -503,6 +507,14 @@ export function TaskEditForm({
   const [status, setStatus] = useState(item.status)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  // What the form held when it opened (or was last saved), to tell unsaved changes apart before minimizing.
+  const formRef = useRef<HTMLFormElement>(null)
+  const opened = useRef('')
+  const snapshot = () => formSnapshot(formRef.current, [rtmLinks, editProjectId, type, status])
+  useEffect(() => {
+    opened.current = formSnapshot(formRef.current, [item.rtmLinks || [], item.projectId || '', item.type, item.status])
+  }, [item])
+  if (dirtyCheck) dirtyCheck.current = () => Boolean(opened.current) && snapshot() !== opened.current
   const parent = item.parentTaskId ? store.items.find(candidate => candidate.id === item.parentTaskId) : undefined
   const inheritAssignmentValue = '__inherit_parent_assignment__'
   const inheritsParentAssignment = Boolean(
@@ -594,7 +606,7 @@ export function TaskEditForm({
   const moreMeta = `QA ${item.qaResult || 'Not Run'}${item.estimateHours ? ` · Est. ${formatHours(item.estimateHours)}` : ''}`
   const descriptionMeta = item.description?.trim() ? item.description.trim().slice(0, 60) : 'Empty'
   return (
-    <form className="form-grid task-edit-folds" onSubmit={event => void submit(event)}>
+    <form ref={formRef} className="form-grid task-edit-folds" onSubmit={event => void submit(event)}>
       <label className="span-2">
         {parent ? 'Subtask title' : 'Task title'}
         <input value={item.title} readOnly disabled />

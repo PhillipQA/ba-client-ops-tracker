@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { workspaceAutoRefreshAllowed } from './activePolling'
 import { workHubSync } from '../features/work-hub/workHubSync'
 import { badgeText, useUnreadCounts, useUnreadPolling } from '../features/work-hub/unreadCount'
@@ -10,6 +10,7 @@ import { EmailComposerHost } from '../features/email/EmailComposer'
 import NotificationCenter from '../features/notifications/NotificationCenter'
 import AssistantWatch from '../features/ai/AssistantWatch'
 import TimerChip from '../features/tasks/TimerChip'
+import TaskDock, { useTaskDock } from '../features/tasks/TaskDock'
 import RecordEditDialog from '../features/tasks/RecordEditDialog'
 import LifecycleControls from '../features/tasks/LifecycleControls'
 import { isArchived } from '../features/tasks/lifecycle'
@@ -169,6 +170,41 @@ function App() {
   ]
     .filter(Boolean)
     .join(', ')
+
+  // Minimized task windows (their own dock, bottom left; email drafts have theirs, bottom right). Up to four.
+  const taskDock = useTaskDock(`ba.taskDock:${currentUser?.organizationId || ''}:${currentUser?.id || ''}`)
+  const taskDirty = useRef<() => boolean>(() => false)
+  /** Puts the open task aside on the dock. Unsaved changes would be dropped, so the person is asked first. */
+  const minimizeTask = () => {
+    if (!editingTask) return true
+    if (
+      taskDirty.current() &&
+      !window.confirm('This task has changes you have not saved. Minimizing drops them. Minimize anyway?')
+    )
+      return false
+    const problem = taskDock.add(editingTask.id)
+    if (problem) {
+      window.alert(problem)
+      return false
+    }
+    setModal(null)
+    setEditingTaskId(null)
+    return true
+  }
+  // A task opened from anywhere is no longer minimized.
+  const openTaskId = modal === 'taskEdit' ? editingTask?.id : undefined
+  useEffect(() => {
+    if (openTaskId && taskDock.docked.includes(openTaskId)) taskDock.remove(openTaskId)
+  }, [openTaskId])
+  /** Opens a minimized task; a task open now is minimized in its place. */
+  const openDockedTask = (id: string) => {
+    taskDock.remove(id)
+    if (modal === 'taskEdit' && editingTask && editingTask.id !== id && !minimizeTask()) {
+      taskDock.add(id)
+      return
+    }
+    openTaskEditor(id)
+  }
 
   // Guided tour: starts by itself at a person's first sign-in in this browser, and from Tour in the top bar.
   const [tourOpen, setTourOpen] = useState(false)
@@ -719,6 +755,7 @@ function App() {
                           : 'Add activity'
               }
               closeDisabled={modal === 'taskEdit' && taskEditSaving}
+              onMinimize={modal === 'taskEdit' && editingTask ? () => void minimizeTask() : undefined}
               onClose={() => {
                 setModal(null)
                 setEditingActivityId(null)
@@ -769,6 +806,7 @@ function App() {
                   onTimeEntryMutation={applyTimeEntryMutation}
                   currentUser={currentUser}
                   today={today}
+                  dirtyCheck={taskDirty}
                   onMoveToSeeds={
                     currentUser.role === 'Administrator' && store.seeds?.cutoverAt
                       ? () => {
@@ -848,6 +886,9 @@ function App() {
           )}
           {profileOpen && currentUser.accountType !== 'platform' && (
             <ProfileModal user={currentUser} onClose={() => setProfileOpen(false)} onSave={updateOwnProfile} />
+          )}
+          {currentUser.accountType !== 'platform' && canWriteTasks && (
+            <TaskDock docked={taskDock.docked} items={store.items} onOpen={openDockedTask} onRemove={taskDock.remove} />
           )}
           <TimerChip
             key={`timers:${currentUser.organizationId}:${currentUser.id}`}

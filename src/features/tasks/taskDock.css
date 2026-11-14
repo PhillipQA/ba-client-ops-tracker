@@ -1,0 +1,69 @@
+/* Minimized task windows, bottom left (TaskDock). The running timer chip sits just above them. */
+.task-dock {
+  position: fixed;
+  left: 16px;
+  bottom: 0;
+  z-index: 880;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: calc(100vw - 32px - min(560px, 40vw));
+}
+.task-dock-tab {
+  display: flex;
+  align-items: center;
+  max-width: 220px;
+  border: 1px solid var(--ui-border, #3a4658);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  background: var(--ui-surface, #1d2430);
+  color: var(--ui-text, #f1f4f9);
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.25);
+}
+.task-dock-tab button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.task-dock-open {
+  min-width: 0;
+  padding: 9px 4px 9px 12px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.task-dock-open span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-dock-close {
+  flex: none;
+  padding: 9px 10px 9px 6px;
+  opacity: 0.6;
+}
+.task-dock-close:hover,
+.task-dock-open:hover {
+  opacity: 1;
+}
+/* With minimized tasks at the bottom, the timer chip moves up above them. */
+body:has(.task-dock) .timer-chip-dock {
+  bottom: 56px;
+}
+@media (max-width: 760px) {
+  .task-dock {
+    max-width: calc(100vw - 32px);
+  }
+  .task-dock-tab {
+    max-width: 46vw;
+  }
+}
+@media print {
+  .task-dock {
+    display: none;
+  }
+}
