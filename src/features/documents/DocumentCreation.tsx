@@ -13,6 +13,7 @@ import { LinkedEmails } from './LinkedEmails'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { SIGNOFF_FORM_TYPES, SIGNOFF_TEMPLATE_KIND, type SignoffFormType, type SignoffTemplateKind } from './signoff'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { contractHint, drfContractProject, nextContract } from './drfContract'
 import type { DrfPrefill } from './drfPrefill'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
 import { DriveFilePicker, SaveToDriveBar, useDocumentDrive } from './documentDrive'
@@ -277,6 +278,9 @@ export default function DocumentCreation({
   const [requestDate, setRequestDate] = useState(todayMmDdYyyy)
   const [goLiveDate, setGoLiveDate] = useState('TBA')
   const [contractNumber, setContractNumber] = useState('')
+  const [emailContract, setEmailContract] = useState('')
+  const contractAuto = useRef('')
+  const emailContractRef = useRef('')
   const [notes, setNotes] = useState('')
   const [requestFor, setRequestFor] = useState(REQUEST_FOR_OPTIONS[0])
   const [dongle, setDongle] = useState('n/a')
@@ -306,21 +310,29 @@ export default function DocumentCreation({
     if (draft.address) setAddress(draft.address)
     if (draft.branchName) setBranchName(draft.branchName)
     if (draft.goLiveDate) setGoLiveDate(draft.goLiveDate)
-    if (draft.contractNumber) setContractNumber(draft.contractNumber)
+    if (draft.contractNumber) {
+      setContractNumber(draft.contractNumber)
+      contractAuto.current = draft.contractNumber
+    }
+    emailContractRef.current = draft.contractNumber || ''
+    setEmailContract(draft.contractNumber || '')
     if (draft.notes) setNotes(draft.notes)
     const machines = draft.posRows?.slice(0, MAX_POS_ROWS).map(row => ({ ...newPosRow(), ...row }))
     if (machines?.length) setPosRows(machines)
     setDocumentError('')
     setDocumentMessage('Drafted from the linked email by the BA Assistant. Review every field before generating.')
   }, [launch])
-  // The DRF's task is under a Seeds project: its Seeds contract number fills an empty Contract Number field.
-  const drfTask = items.find(item => item.id === docHub.options.taskId)
-  const drfParent = drfTask?.parentTaskId ? items.find(item => item.id === drfTask.parentTaskId) : undefined
-  const seedsContract =
-    projects.find(project => project.id === (drfTask?.projectId || drfParent?.projectId))?.contractNumber || ''
+  // The Contract Number follows the Seeds project of the chosen task (or project): see drfContract.ts.
+  const contractProject = drfContractProject(projects, items, docHub.options.taskId, docHub.projectId)
+  const seedsContract = String(contractProject?.contractNumber || '').trim()
   useEffect(() => {
-    if (seedsContract) setContractNumber(current => current.trim() || seedsContract)
-  }, [seedsContract])
+    setContractNumber(current => {
+      const next = nextContract(current, contractAuto.current, seedsContract, emailContractRef.current)
+      contractAuto.current = next.auto
+      return next.value
+    })
+  }, [seedsContract, contractProject?.id])
+  const contractNote = contractHint({ value: contractNumber, project: contractProject, fromEmail: emailContract })
   const loadDrfErrors = async () => {
     const response = await fetch('/api/documents/drf/errors', { credentials: 'same-origin' })
     const payload = (await response.json().catch(() => ({}))) as { items?: typeof recentDrfErrors; error?: string }
@@ -384,6 +396,9 @@ export default function DocumentCreation({
     setRequestDate(todayMmDdYyyy())
     setGoLiveDate('TBA')
     setContractNumber('')
+    setEmailContract('')
+    emailContractRef.current = ''
+    contractAuto.current = ''
     setNotes('')
     setRequestFor(REQUEST_FOR_OPTIONS[0])
     setDongle('n/a')
@@ -1008,6 +1023,22 @@ export default function DocumentCreation({
                         onChange={event => setContractNumber(event.target.value)}
                         placeholder="Contract / SLSS-DRF reference"
                       />
+                      {contractNote && (
+                        <small className={`drf-contract-hint ${contractNote.tone}`}>
+                          {contractNote.text}
+                          {contractNote.useSeeds && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setContractNumber(contractNote.useSeeds || '')
+                                contractAuto.current = contractNote.useSeeds || ''
+                              }}
+                            >
+                              Use {contractNote.useSeeds}
+                            </button>
+                          )}
+                        </small>
+                      )}
                     </label>
                     <label>
                       Request For
