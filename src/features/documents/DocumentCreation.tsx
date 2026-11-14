@@ -13,6 +13,7 @@ import { LinkedEmails } from './LinkedEmails'
 import { documentOutputName, suggestedDocumentStem } from './documentFilename'
 import { SIGNOFF_FORM_TYPES, SIGNOFF_TEMPLATE_KIND, type SignoffFormType, type SignoffTemplateKind } from './signoff'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { clientOfProject, projectOfTask } from '../tasks/projectChoices'
 import { contractHint, drfContractProject, nextContract } from './drfContract'
 import type { DrfPrefill } from './drfPrefill'
 import { extractCorLocally, extractCorTextLocally } from './corOcr'
@@ -322,6 +323,11 @@ export default function DocumentCreation({
     setDocumentError('')
     setDocumentMessage('Drafted from the linked email by the BA Assistant. Review every field before generating.')
   }, [launch])
+  // A chosen task sets the project picker to its project, wherever the task was chosen (here, DocHub, the assistant).
+  const taskProject = projectOfTask(items, docHub.options.taskId)
+  useEffect(() => {
+    if (taskProject) docHub.setProjectId(taskProject)
+  }, [taskProject])
   // The Contract Number follows the Seeds project of the chosen task (or project): see drfContract.ts.
   const contractProject = drfContractProject(projects, items, docHub.options.taskId, docHub.projectId)
   const seedsContract = String(contractProject?.contractNumber || '').trim()
@@ -853,7 +859,7 @@ export default function DocumentCreation({
               {canUseInbox ? (
                 <LinkedEmails
                   taskId={docHub.options.taskId}
-                  clientId={docHub.options.clientId}
+                  projectId={docHub.projectId}
                   items={items}
                   clients={clients}
                   projects={projects}
@@ -866,9 +872,15 @@ export default function DocumentCreation({
                       clientId: items.find(item => item.id === id)?.clientId || o.clientId,
                     }))
                   }
-                  onClientChange={id =>
-                    docHub.setOptions(o => (o.clientId === id ? o : { ...o, clientId: id, taskId: '' }))
-                  }
+                  onProjectChange={id => {
+                    // The project brings its client; a task from another project is let go.
+                    docHub.setProjectId(id)
+                    docHub.setOptions(o => ({
+                      ...o,
+                      clientId: clientOfProject(projects, id) || (id ? o.clientId : ''),
+                      taskId: o.taskId && projectOfTask(items, o.taskId) === id ? o.taskId : '',
+                    }))
+                  }}
                 >
                   {!drfTemplate?.active && (
                     <div className="document-standard-template empty">

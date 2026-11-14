@@ -34,6 +34,7 @@ import {
   type DocHubSigner,
   type GeneratedDocument,
 } from './dochub'
+import { clientOfProject } from '../tasks/projectChoices'
 import './dochub.css'
 import { useDocumentOperation } from './useDocumentOperation'
 import { useDocumentDrive } from './documentDrive'
@@ -248,7 +249,12 @@ export function DocHubOptions({
             <ClientSelect
               clients={clients.filter(c => !c.archived)}
               value={draft.options.clientId}
-              onChange={value => draft.setOptions(o => ({ ...o, clientId: value, taskId: '' }))}
+              onChange={value => {
+                draft.setOptions(o => ({ ...o, clientId: value, taskId: '' }))
+                // A project of another client is let go, so the DRF's contract number follows the new client.
+                const owner = clientOfProject(projects, projectId)
+                if (owner && owner !== value) setProjectId('')
+              }}
               extra={[{ value: '', label: 'No client selected' }]}
               disabled={disabled || draft.busy}
             />
@@ -259,8 +265,10 @@ export function DocHubOptions({
               disabled={disabled || draft.busy}
               value={projectId}
               onChange={e => {
-                setProjectId(e.target.value)
-                draft.setOptions(o => ({ ...o, taskId: '' }))
+                const id = e.target.value
+                setProjectId(id)
+                // The project brings its client.
+                draft.setOptions(o => ({ ...o, taskId: '', clientId: clientOfProject(projects, id) || o.clientId }))
               }}
             >
               <option value="">All projects</option>
