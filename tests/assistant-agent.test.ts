@@ -341,3 +341,39 @@ test('recent activity and the calendar are looked up, each person seeing only wh
     false,
   )
 })
+
+test('asked to create something, the agent answers with a suggestion instead of hunting for a tool', async () => {
+  // It tries a tool that does not exist: told the tools only read, it answers next round.
+  const prompts: string[] = []
+  const created = await runAgent({
+    call: async (_instructions, prompt) => {
+      prompts.push(prompt)
+      return prompts.length === 1
+        ? '{"tool":"create_task","args":{"title":"BPI Partner Store Transactions"}}'
+        : '{"message":"Planned for approval.","suggestions":[{"kind":"task_plan","title":"BPI"}]}'
+    },
+    instructions: '',
+    prompt: 'create task',
+    tools: tools(),
+  })
+  assert.equal(created.output.message, 'Planned for approval.')
+  assert.equal(created.steps.length, 1)
+  assert.equal(created.steps[0].ok, false)
+  assert.match(prompts[1], /The tools only read/)
+  assert.match(prompts[1], /No more lookups/)
+
+  // Told to answer and still asking for a tool, one firmer reminder gets the answer.
+  let calls = 0
+  const nudged = await runAgent({
+    call: async (_instructions, prompt) => {
+      calls += 1
+      if (prompt.includes('Do not call a tool')) return '{"message":"done"}'
+      return '{"tool":"create_task","args":{}}'
+    },
+    instructions: '',
+    prompt: 'create task',
+    tools: tools(),
+  })
+  assert.equal(nudged.output.message, 'done')
+  assert.equal(calls, 3)
+})

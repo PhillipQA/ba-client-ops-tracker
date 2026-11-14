@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### BA Assistant: asking it to create a task no longer ends in an error
+- In Agent mode, "create a task…" or "make a task from this email" could fail: the assistant went looking for a tool to create the task, but its tools only read. It kept trying until it ran out of lookups, and the request failed.
+- It is now told that creating, linking, drafting, logging and changing are never tools: they are suggestions you approve. If it still tries a made-up tool like `create_task`, it is told the tools only read and answers on the next turn, with a firmer reminder if needed.
+- An answer that has suggestions but no message now shows the suggestions instead of an error.
+- No database migration.
+
 ### BA Assistant: says why a request failed, and tries again
 - The red "BA Assistant request failed. Check this account's provider, key…" message hid every cause. Now it says which one: the provider is busy or limiting requests (quota), the key or model was rejected, the answer took too long, or the answer came back in a form the app could not read.
 - A busy, rate-limited or unreachable provider is tried once more after 2 seconds, for every AI call in the app.
