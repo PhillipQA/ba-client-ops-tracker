@@ -17,6 +17,7 @@ import {
   Mail,
   MessageSquareText,
   PlusCircle,
+  RotateCcw,
   Sparkles,
   TicketCheck,
 } from 'lucide-react'
@@ -34,6 +35,7 @@ import {
   assistantMessages,
   usageLabel,
   usageTotal,
+  unanswered,
   type AIMessage,
   type AISuggestion,
   type AISuggestionKind,
@@ -446,8 +448,6 @@ export default function AIAssistant({
     const text = input.trim()
     if (!text || busy) return
     voice.stopListening()
-
-    const job = operation.begin()
     const userMessage: AIMessage = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -459,6 +459,18 @@ export default function AIAssistant({
     setThreads(nextThreads)
     saveThreads(nextThreads)
     setInput('')
+    await ask(text, messages, nextMessages)
+  }
+
+  /** Asks again for the last message that got no answer, without adding it to the chat a second time. */
+  const tryAgain = async () => {
+    const last = unanswered(messages)
+    if (!last || busy) return
+    await ask(last.content, messages.slice(0, -1), messages)
+  }
+
+  const ask = async (text: string, before: AIMessage[], nextMessages: AIMessage[]) => {
+    const job = operation.begin()
     setBusy(true)
     setError('')
     setActionNotice('')
@@ -468,7 +480,7 @@ export default function AIAssistant({
         {
           message: text,
           context,
-          history: messages.slice(-8),
+          history: before.slice(-8),
           ...(agent ? { agent: true } : {}),
           ...(learn ? {} : { learn: false }),
         },
@@ -984,7 +996,16 @@ export default function AIAssistant({
             </div>
           )}
         </div>
-        {error && <div className="ai-error">{error}</div>}
+        {error && (
+          <div className="ai-error">
+            <span>{error}</span>
+            {!busy && unanswered(messages) && (
+              <button type="button" className="ai-error-retry" onClick={tryAgain}>
+                <RotateCcw size={13} /> Try again
+              </button>
+            )}
+          </div>
+        )}
         {actionNotice && <div className="ai-action-notice">{actionNotice}</div>}
         <form className="ai-composer" onSubmit={submit}>
           <textarea
