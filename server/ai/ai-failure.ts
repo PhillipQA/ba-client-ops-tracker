@@ -108,3 +108,9 @@ export async function retryOnce<T>(
     return run()
   }
 }
+
+/** Whether a provider error is about the thinking setting (a model that has none). */
+export function rejectsReasoning(error: unknown) {
+  const status = Number((error as any)?.status)
+  return status === 400 && /reasoning|thinking/i.test(String((error as any)?.message || ''))
+}
