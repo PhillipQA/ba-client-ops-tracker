@@ -21,12 +21,52 @@ export type WatchAlert = {
     | { kind: 'email'; id: string; source: string }
     | { kind: 'tracker'; trackerId: string; rowId: string }
     | { kind: 'time' }
+    | { kind: 'none' }
   /** A question about it for the BA Assistant, sent only if the person chooses to. */
   ask: string
   /** Changes the person can approve with one click, without the AI (a new due or follow-up date). */
   actions?: WatchAction[]
 }
-export type WatchAction = { label: string; update: TaskUpdate }
+export type WatchAction = {
+  label: string
+  /** A change to a task. */
+  update?: TaskUpdate
+  /** Adds a new Seeds project to a tracker, as a row with its task. */
+  addToTracker?: { trackerId: string; projectId: string }
+}
+
+/** A Seeds project that came in lately and is on no tracker yet, with the trackers it could go on. */
+export type NewProject = {
+  id: string
+  name: string
+  clientName?: string
+  contractNumber?: string
+  addedAt: string
+  trackers: { id: string; name: string }[]
+}
+/** New Seeds projects as heads-ups: the person picks the tracker (one click), or dismisses it. No AI. */
+export function newProjectAlerts(projects: NewProject[]): WatchAlert[] {
+  return projects.map(project => {
+    const client = project.clientName ? ` for ${project.clientName}` : ''
+    const where = project.trackers.length
+      ? 'Add it to a tracker, or dismiss it.'
+      : 'No tracker for this client can take it yet.'
+    return {
+      key: `seeds-project:${project.id}`,
+      severity: 'warning' as const,
+      title: `New Seeds project${client}: ${project.name}`,
+      detail: [project.contractNumber ? `Contract ${project.contractNumber}` : '', where].filter(Boolean).join(' · '),
+      open: { kind: 'none' as const },
+      ask: project.trackers.length
+        ? `A new Seeds project "${project.name}"${client} came in. Which of my trackers should it go on, and what should I set up for it?`
+        : `Create a Site rollout tracker${client} that includes the new Seeds project "${project.name}".`,
+      actions: project.trackers.map(tracker => ({
+        label: `Add to ${tracker.name}`,
+        addToTracker: { trackerId: tracker.id, projectId: project.id },
+      })),
+    }
+  })
+}
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 /** The next working day after this one, and the Monday after this week. */

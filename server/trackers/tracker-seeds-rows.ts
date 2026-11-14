@@ -10,9 +10,23 @@
  * make its task. See src/features/trackers/seedsRows.ts for the rules.
  */
 import { randomUUID } from 'node:crypto'
-import { newSeedsProjects, projectsForTracker, seedsRowCells } from '../../src/features/trackers/seedsRows'
+import type { Express } from 'express'
+import {
+  newSeedsProjects,
+  projectsForTracker,
+  seedsRowCells,
+  trackersForProject,
+  unplacedSeedsProjects,
+} from '../../src/features/trackers/seedsRows'
+import { scopeFor } from '../../src/shared/access'
+import { isClosedProject } from '../../src/features/tasks/lifecycle'
 import { keepsStepTasks, planStepTasks, type StepPlan } from '../../src/features/trackers/stepTasks'
-import { splitClientIds, TRACKER_LIMITS, TRACKER_PROJECTS } from '../../src/features/trackers/trackerModel'
+import {
+  splitClientIds,
+  TrackerError,
+  TRACKER_LIMITS,
+  TRACKER_PROJECTS,
+} from '../../src/features/trackers/trackerModel'
 import type { TaskDraft } from '../../src/features/trackers/TrackerWork'
 import type { Deps } from './tracker-common'
 import type { TrackerCore } from './tracker-core'
@@ -29,6 +43,7 @@ export function trackerSeedsRows(
   sheetWrite: TrackerSheetWrite,
 ) {
   const { db, check, columnsOf, cleanRowInput, mergeCells, now, record, touch, rowCount } = core
+  const { scope, route, who, idParam, trackerRow, workspace, trackerVisibleIn } = core
   const { sourceRow } = sheetAccess
   const { appendRowsToSheet } = sheetWrite
 
@@ -49,9 +64,19 @@ export function trackerSeedsRows(
     }
   }
 
-  async function addTo(tenant: string, tracker: any, wanted: ReturnType<typeof projectsForTracker>, state: any) {
+  /**
+   * Adds the projects to a tracker as rows, with their tasks. Says why not when it cannot (nothing is then changed).
+   * `by` is the person who chose the tracker; without one it is the Seeds sync.
+   */
+  async function addTo(
+    tenant: string,
+    tracker: any,
+    wanted: ReturnType<typeof projectsForTracker>,
+    state: any,
+    by?: { id: string; name: string; role: string },
+  ): Promise<string> {
     const columns = columnsOf(tracker)
-    const actor = { ...SEEDS_ROWS_ACTOR, organizationId: tenant }
+    const actor = by ? { ...by, organizationId: tenant } : { ...SEEDS_ROWS_ACTOR, organizationId: tenant }
     const rows = wanted
       .map(project => ({ project, cells: seedsRowCells(columns, project) }))
       .filter((entry): entry is { project: (typeof wanted)[number]; cells: NonNullable<typeof entry.cells> } =>
@@ -59,12 +84,13 @@ export function trackerSeedsRows(
       )
       .slice(0, TRACKER_LIMITS.importBatch)
       .map(entry => ({ ...entry, id: randomUUID(), cells: cleanRowInput(columns, { cells: entry.cells }, '').cells }))
-    if (!rows.length) return
+    if (!rows.length) return 'This tracker has no text column for the project’s name.'
     const total = await rowCount(tenant, tracker.id)
-    if (total + rows.length > TRACKER_LIMITS.rows) return
+    if (total + rows.length > TRACKER_LIMITS.rows) return 'This tracker is full.'
     // A tracker that only follows its Google Sheet (one-way) takes its rows from the Sheet alone.
     const source = await sourceRow(tenant, tracker.id).catch(() => null)
-    if (source && source.mode !== 'two_way') return
+    if (source && source.mode !== 'two_way')
+      return 'This tracker takes its rows from its Google Sheet: add the project there.'
 
     // The projects join the tracker's own (at most TRACKER_PROJECTS; the default stays first).
     const projectIds = [...new Set([...splitClientIds(tracker.project_id), ...rows.map(row => row.project.id)])]
@@ -172,7 +198,77 @@ export function trackerSeedsRows(
           ),
       )
     await touch(tenant, tracker.id)
+    return ''
   }
 
-  return { addSeedsRows }
+  /**
+   * New Seeds projects for the person to place: projects the sync brought in lately that are on none of the trackers
+   * they can open, each with the trackers it could go on. Choosing one adds the row and its task, as the switch does.
+   */
+  function routes(app: Express) {
+    const visibleTrackers = async (tenant: string, user: any, state: any) => {
+      const found = await db.from('tenant_trackers').select('*').eq('tenant_id', tenant)
+      check(found.error)
+      const shown = trackerVisibleIn(state, user)
+      return (found.data || []).filter((row: any) => (!row.private || row.created_by === user.id) && shown(row))
+    }
+    const seesProject = (state: any, user: any) => {
+      const reach = scopeFor(state, user.id)
+      return (project: any) => reach.all || reach.fullProjects.has(String(project.id))
+    }
+
+    app.get(
+      '/api/tracker-seeds-projects',
+      ...scope,
+      route(async (req, res) => {
+        const user = who(req),
+          tenant = user.organizationId
+        const state = await workspace(tenant)
+        const trackers = await visibleTrackers(tenant, user, state)
+        const clientName = (id: string) =>
+          (Array.isArray(state?.clients) ? state.clients : []).find((client: any) => client?.id === id)?.name || ''
+        const projects = unplacedSeedsProjects(state, trackers, Date.now(), seesProject(state, user)).map(project => ({
+          ...project,
+          clientName: clientName(project.clientId),
+          trackers: trackersForProject(trackers, project, columnsOf)
+            .slice(0, 3)
+            .map((tracker: any) => ({ id: tracker.id, name: tracker.name })),
+        }))
+        res.json({ projects })
+      }),
+    )
+
+    app.post(
+      '/api/trackers/:id/seeds-project',
+      ...scope,
+      route(async (req, res) => {
+        const user = who(req),
+          tenant = user.organizationId,
+          id = idParam(req)
+        const tracker = await trackerRow(tenant, id, user)
+        if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it to add rows.', 409)
+        const state = await workspace(tenant)
+        const projectId = String(req.body?.projectId || '')
+        const project = (Array.isArray(state?.projects) ? state.projects : []).find(
+          (entry: any) => entry?.id === projectId,
+        )
+        if (!project?.seedsId || !seesProject(state, user)(project)) throw new TrackerError('Project not found.', 404)
+        if (isClosedProject(project))
+          throw new TrackerError('This project is completed in Seeds: it takes no new tasks.', 409)
+        const wanted = { id: project.id, name: project.name, clientId: String(project.clientId || '') }
+        if (!trackersForProject([tracker], wanted, columnsOf).length)
+          throw new TrackerError(
+            'This project cannot go on this tracker: it is there already, or it is for another client.',
+            409,
+          )
+        const [row] = newSeedsProjects({ projects: [] }, { projects: [project] })
+        if (!row) throw new TrackerError('This project cannot be added as a row.', 409)
+        const problem = await addTo(tenant, tracker, [row], state, user)
+        if (problem) throw new TrackerError(problem, 409)
+        res.json({ ok: true, tracker: { id: tracker.id, name: tracker.name } })
+      }),
+    )
+  }
+
+  return { addSeedsRows, routes }
 }

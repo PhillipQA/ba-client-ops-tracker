@@ -11,6 +11,17 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Heads-up for new Seeds projects: you choose the tracker
+
+**No database change.**
+
+- When the Seeds sync brings in a **new project** that is on none of your trackers, the heads-ups (the radar button) show **New Seeds project for <client>: <name>**, with its contract number.
+- It comes with a button for each tracker it could go on (**Add to <tracker>**, up to three, Site rollout trackers first). One click adds the row with its task, and on a Site rollout tracker a subtask per step, exactly as the automatic switch does. Or dismiss it if it does not belong on a tracker.
+- A tracker is offered when it is for the project's client, is not archived, and has a text column for the name. When no tracker fits, the sparkle button drafts a request to the BA Assistant to create one.
+- The **Add new Seeds projects as rows** switch still works: a project it places automatically is not offered again. Leave the switch off on a tracker to decide project by project.
+- Projects are offered for 14 days after the sync first brings them in, to people who can see the project and have Trackers. Only projects that arrive from now on are offered; projects already synced are not flagged.
+- No AI and no tokens.
+
 ### Minimize tasks
 
 - **A task window can be minimized**, like an email draft. The task editor has a **Minimize** button beside Close: the task goes to a dock at the bottom left of every page, and clicking it there opens it again. The email drafts keep their own dock at the bottom right.
