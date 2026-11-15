@@ -4,8 +4,10 @@
  *
  * - counts: which tiles show, in order; built-in ones can be renamed and recoloured, and a person can build their own
  *   count of tasks with up to three filters (the same filters as Reports).
+ * - custom: a widget built with the Reports builder (number, chart or table), kept in full with the layout.
+ * - pinned: a widget of a saved report, by report and widget id; it follows the report.
  */
-import { cleanFilter, type WidgetFilter } from '../features/reports/custom/reportModel'
+import { cleanFilter, cleanWidget, type Widget, type WidgetFilter } from '../features/reports/custom/reportModel'
 
 export type BuiltinCount =
   | 'attention'
@@ -114,10 +116,26 @@ export function cleanSettings(id: string, raw: unknown): Record<string, unknown>
       const tiles = cleanTiles(input.tiles)
       return tiles ? { tiles } : undefined
     }
+    case 'custom': {
+      const widget = cleanWidget(input.widget)
+      if (!widget || !BUILDABLE.includes(widget.kind)) return undefined
+      return { widget: { ...widget, x: 0, y: 0 } }
+    }
+    case 'pinned': {
+      const reportId = typeof input.reportId === 'string' && REF.test(input.reportId) ? input.reportId : ''
+      const widgetId = typeof input.widgetId === 'string' && REF.test(input.widgetId) ? input.widgetId : ''
+      return reportId && widgetId ? { reportId, widgetId } : undefined
+    }
     default:
       return undefined
   }
 }
+
+/** What the Action Center's own builder makes: numbers, charts and tables and timelines (not headings, notes or queries). */
+export const BUILDABLE: Widget['kind'][] = ['metric', 'bar', 'column', 'line', 'pie', 'table', 'gantt']
+const REF = /^[A-Za-z0-9_:.$-]{1,80}$/
+export type CustomSettings = { widget: Widget }
+export type PinnedSettings = { reportId: string; widgetId: string }
 
 /** The tiles a counts widget shows: its own, or the four it always had. */
 export const tilesOf = (settings?: Record<string, unknown>) => cleanTiles(settings?.tiles) ?? DEFAULT_TILES

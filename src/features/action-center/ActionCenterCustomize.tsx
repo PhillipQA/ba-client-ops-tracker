@@ -131,6 +131,7 @@ export function CustomizeBar({
   onSaveForRole,
   onCancel,
   onSave,
+  onBuild,
   note,
 }: {
   draft: ActionCenterLayout
@@ -144,6 +145,8 @@ export function CustomizeBar({
   onSaveForRole: (roleId: string) => Promise<void>
   onCancel: () => void
   onSave: () => void
+  /** Opens the Reports builder for a widget of the person's own. */
+  onBuild?: () => void
   note: string
 }) {
   const [roleId, setRoleId] = useState('')
@@ -167,9 +170,19 @@ export function CustomizeBar({
           </button>
         </div>
       </div>
-      {addable.length > 0 && (
+      {(addable.length > 0 || onBuild) && (
         <div className="ac-add">
           <span>Add:</span>
+          {onBuild && (
+            <button
+              type="button"
+              className="primary"
+              title="A number, chart or table you build, like in Reports"
+              onClick={onBuild}
+            >
+              <Plus size={14} /> Build your own widget
+            </button>
+          )}
           {addable.map(widget => (
             <button
               type="button"

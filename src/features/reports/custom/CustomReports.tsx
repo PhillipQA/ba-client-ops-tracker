@@ -41,6 +41,7 @@ import {
   BarChartHorizontal,
   Pencil,
   Database,
+  Pin,
 } from 'lucide-react'
 import { businessDateKey, useBusinessDate } from '../../../shared/businessDate'
 import type {
@@ -53,8 +54,6 @@ import type {
   WorkItem,
 } from '../../../shared/types'
 import { Dialog, Notice, Popover } from '../../../shared/ui'
-import { loadAllRows, trackerApi } from '../../trackers/trackerApi'
-import type { Tracker, TrackerRow } from '../../trackers/trackerModel'
 import { conflictItem, needsUpgrade, reportApi } from './reportApi'
 import {
   computeWidget,
@@ -100,6 +99,8 @@ import { resultCsv } from '../explorer/resultView'
 import type { SqlValue } from '../explorer/sqlEngine'
 import { useExplorerData } from '../explorer/useExplorerData'
 import { ShareImage } from './ShareImage'
+import { useTrackerData } from './useReportSources'
+import { pinReportWidget } from '../../action-center/useActionCenterLayout'
 import './customReports.css'
 import '../explorer/dataExplorer.css'
 
@@ -153,35 +154,6 @@ function queryFilterWarnings(sql: string, filters: ReportFilterValues): string[]
   return reportFiltersIgnored(where, filters)
 }
 
-/** Trackers for the "Tracker rows" source: the list, and each tracker's rows once a widget needs them. */
-function useTrackerData(enabled: boolean) {
-  const [list, setList] = useState<Tracker[] | null>(null)
-  const [loaded, setLoaded] = useState<Record<string, { tracker: Tracker; rows: TrackerRow[] } | undefined>>({})
-  const [failed, setFailed] = useState<Record<string, string>>({})
-  const asked = useRef(new Set<string>())
-  const loadList = useCallback(() => {
-    if (!enabled || asked.current.has('__list')) return
-    asked.current.add('__list')
-    trackerApi
-      .list()
-      .then(result => setList(result.trackers.filter(tracker => !tracker.archived)))
-      .catch(() => setList([]))
-  }, [enabled])
-  const ensure = useCallback(
-    (id: string | undefined) => {
-      if (!enabled || !id || asked.current.has(id)) return
-      asked.current.add(id)
-      Promise.all([trackerApi.get(id), loadAllRows(id)])
-        .then(([result, rows]) => setLoaded(current => ({ ...current, [id]: { tracker: result.tracker, rows } })))
-        .catch(error =>
-          setFailed(current => ({ ...current, [id]: error?.message || 'This tracker could not be loaded.' })),
-        )
-    },
-    [enabled],
-  )
-  return { list, loaded, failed, loadList, ensure }
-}
-
 type Props = {
   clients: Client[]
   projects: Project[]
@@ -212,6 +184,7 @@ export default function CustomReports(props: Props) {
   const [items, setItems] = useState<ReportItem[] | null>(null)
   const [problem, setProblem] = useState<{ message: string; upgrade?: boolean } | null>(null)
   const [notice, setNotice] = useState('')
+  const [pinNote, setPinNote] = useState('')
   const [selectedId, setSelectedId] = useState(() => readStore(SELECTED_KEY, ''))
   const [draft, setDraft] = useState<ReportDefinition | null>(null)
   const [viewFilters, setViewFilters] = useState<ReportFilters | null>(null)
@@ -819,6 +792,11 @@ export default function CustomReports(props: Props) {
             {notice}
           </Notice>
         )}
+        {pinNote && (
+          <Notice kind="info" onClose={() => setPinNote('')}>
+            {pinNote}
+          </Notice>
+        )}
         {problem && !problem.upgrade && <Notice kind="error">{problem.message}</Notice>}
         {!report && items && (
           <div className="crp-welcome">
@@ -1144,6 +1122,20 @@ export default function CustomReports(props: Props) {
                         saveCell={explorer.saveCell}
                         refresh={data}
                         filters={filterValues}
+                        onPin={
+                          !editing && report && report.kind === 'report' && !isTemplate
+                            ? () =>
+                                pinReportWidget(report.id, widget.id)
+                                  .then(result =>
+                                    setPinNote(
+                                      result === 'already'
+                                        ? `“${widget.title || 'This widget'}” is already on your Action Center.`
+                                        : `Pinned “${widget.title || 'this widget'}” to your Action Center. It follows this report.`,
+                                    ),
+                                  )
+                                  .catch(error => setNotice(error instanceof Error ? error.message : 'Could not pin.'))
+                            : undefined
+                        }
                         onEdit={() => setEditingWidget(widget)}
                         onDuplicate={() => duplicateWidget(widget)}
                         onRemove={() => setWidgets(definition.widgets.filter(item => item.id !== widget.id))}
@@ -1163,6 +1155,20 @@ export default function CustomReports(props: Props) {
                               : trackers.failed[widget.trackerId] ||
                                 (trackers.loaded[widget.trackerId] ? '' : 'Loading the tracker…')
                             : ''
+                        }
+                        onPin={
+                          !editing && report && report.kind === 'report' && !isTemplate
+                            ? () =>
+                                pinReportWidget(report.id, widget.id)
+                                  .then(result =>
+                                    setPinNote(
+                                      result === 'already'
+                                        ? `“${widget.title || 'This widget'}” is already on your Action Center.`
+                                        : `Pinned “${widget.title || 'this widget'}” to your Action Center. It follows this report.`,
+                                    ),
+                                  )
+                                  .catch(error => setNotice(error instanceof Error ? error.message : 'Could not pin.'))
+                            : undefined
                         }
                         onEdit={() => setEditingWidget(widget)}
                         onDuplicate={() => duplicateWidget(widget)}
@@ -1514,6 +1520,7 @@ function WidgetCard({
   fieldsFor,
   recordsFor,
   trackerProblem,
+  onPin,
   onEdit,
   onDuplicate,
   onRemove,
@@ -1525,6 +1532,8 @@ function WidgetCard({
   fieldsFor: (source: SourceId, trackerId?: string) => Field[]
   recordsFor: (source: SourceId, trackerId?: string) => Rec[]
   trackerProblem: string
+  /** Pins the widget to the person's Action Center (saved reports, not while editing). */
+  onPin?: () => void
   onEdit?: () => void
   onDuplicate?: () => void
   onRemove?: () => void
@@ -1555,6 +1564,17 @@ function WidgetCard({
               onClick={() => downloadCsv(title || 'widget', widgetCsv(widget, computed, fields))}
             >
               <Download size={13} />
+            </button>
+          )}
+          {!isText && !editing && onPin && (
+            <button
+              type="button"
+              className="crp-icon small no-print"
+              aria-label={`Pin ${title} to the Action Center`}
+              title="Pin to Action Center"
+              onClick={onPin}
+            >
+              <Pin size={13} />
             </button>
           )}
           {editing && (

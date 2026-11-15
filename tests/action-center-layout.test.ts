@@ -230,3 +230,34 @@ test('custom counts and built-in counts', () => {
     detail: '1 entry to send',
   })
 })
+
+test('your own widgets and pinned widgets can repeat, each with its own key and settings', () => {
+  let layout = addWidget(DEFAULT_ACTION_CENTER, 'custom', {
+    widget: { id: 'w1', kind: 'bar', title: 'Open by client', source: 'tasks', groupBy: 'client', x: 4, y: 9 },
+  })
+  layout = addWidget(layout, 'custom', { widget: { id: 'w2', kind: 'metric', title: 'Open', source: 'tasks' } })
+  layout = addWidget(layout, 'pinned', { reportId: 'r1', widgetId: 'w9' })
+  assert.equal(addWidget(layout, 'custom'), layout, 'a repeating widget needs its settings')
+  const customs = layout.filter(item => item.id === 'custom')
+  assert.equal(customs.length, 2)
+  assert.notEqual(customs[0].key, customs[1].key)
+  const cleaned = cleanLayout(JSON.parse(JSON.stringify(layout)))!
+  assert.equal(cleaned.length, layout.length)
+  assert.equal((cleaned.find(item => item.id === 'custom')!.settings as any).widget.x, 0, 'placed by the layout')
+  assert.deepEqual(cleaned.at(-1)!.settings, { reportId: 'r1', widgetId: 'w9' })
+  assert.equal(
+    cleanLayout([{ id: 'custom', key: 'c1', settings: { widget: { kind: 'note', text: 'hi' } } }])!.length,
+    0,
+    'only numbers, charts, tables and timelines',
+  )
+  assert.equal(cleanLayout([{ id: 'pinned', settings: { reportId: 'r', widgetId: 'w' } }])!.length, 0, 'needs a key')
+  assert.equal(cleanLayout([{ id: 'custom', key: 'bad key!', settings: {} }])!.length, 0)
+  const key = customs[0].key!
+  assert.equal(removeWidget(layout, key).filter(item => item.id === 'custom').length, 1, 'removed by key')
+  assert.equal(moveWidget(layout, key, 0)[0].key, key)
+  assert.ok(!widgetsToAdd(layout, () => true).some(widget => widget.id === 'custom' || widget.id === 'pinned'))
+  assert.ok(
+    !layoutToShow({ own: layout }, module => module !== 'reports').some(item => item.id === 'custom'),
+    'needs Reports',
+  )
+})
