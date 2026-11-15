@@ -98,7 +98,7 @@ const addDays = (iso: string, days: number) => {
   return date.toISOString().slice(0, 10)
 }
 
-function conditionHolds(
+export function conditionHolds(
   condition: RuleCondition,
   row: TrackerRow,
   column: TrackerColumn,

@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  BellRing,
   CalendarDays,
   CalendarRange,
   ChevronDown,
@@ -51,6 +52,8 @@ import TrackerBulkSet from './TrackerBulkSet'
 import TrackerBoard from './TrackerBoard'
 import TrackerCalendar from './TrackerCalendar'
 import TrackerHighlightRules from './TrackerHighlightRules'
+import TrackerRemindersDialog from './TrackerRemindersDialog'
+import { describeReminder, type TrackerReminder } from './trackerReminders'
 import { describeRule, type HighlightRule, ruleTones } from './highlightRules'
 import { exportCsv, exportFileName } from './trackerExport'
 import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type TaskLink } from './trackerApi'
@@ -1203,6 +1206,15 @@ export default function TrackerScreen(props: Props) {
   // A row's colour: its own highlight, else the first highlight rule that matches, else Colour by status.
   const rules = useMemo(() => tracker?.timeline?.rules || [], [tracker?.timeline?.rules])
   const [rulesOpen, setRulesOpen] = useState(false)
+  const reminders = useMemo(() => tracker?.timeline?.reminders || [], [tracker?.timeline?.reminders])
+  const [remindersOpen, setRemindersOpen] = useState(false)
+  const saveReminders = async (next: TrackerReminder[]) => {
+    const current = trackerRef.current
+    if (!current) return
+    const settings = { ...(current.timeline || {}), reminders: next.length ? next : undefined }
+    const result = await trackerApi.saveTimeline(current.id, settings)
+    if (alive.current && trackerRef.current) setTracker({ ...trackerRef.current, timeline: result.timeline })
+  }
   const saveRules = async (next: HighlightRule[]) => {
     const current = trackerRef.current
     if (!current) return
@@ -2379,6 +2391,25 @@ export default function TrackerScreen(props: Props) {
             <Palette size={14} aria-hidden="true" /> Highlight rules{rules.length ? ` · ${rules.length}` : ''}
           </button>
         )}
+        {(canEdit || reminders.length > 0) && (
+          <button
+            type="button"
+            className={`trk-button${reminders.some(item => !item.off) ? ' on' : ''}`}
+            onClick={() => setRemindersOpen(true)}
+            disabled={!canEdit}
+            title={
+              canEdit
+                ? 'Remind people before, on or after a row’s date'
+                : reminders
+                    .map(item =>
+                      describeReminder(item, columns, id => people.find(person => person.id === id)?.name || ''),
+                    )
+                    .join('\n')
+            }
+          >
+            <BellRing size={14} aria-hidden="true" /> Reminders{reminders.length ? ` · ${reminders.length}` : ''}
+          </button>
+        )}
         <span className="trk-spacer" />
         <span className="trk-save-state" role="status">
           <span className={`trk-dot${saving > 0 ? ' busy' : ''}`} aria-hidden="true" />
@@ -2709,6 +2740,15 @@ export default function TrackerScreen(props: Props) {
           )
         })()}
 
+      {remindersOpen && tracker && (
+        <TrackerRemindersDialog
+          columns={columns}
+          people={people}
+          reminders={reminders}
+          onSave={saveReminders}
+          onClose={() => setRemindersOpen(false)}
+        />
+      )}
       {rulesOpen && tracker && (
         <TrackerHighlightRules
           columns={columns}

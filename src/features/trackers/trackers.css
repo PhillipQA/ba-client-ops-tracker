@@ -3771,3 +3771,18 @@ a.trk-link-button {
   fill: color-mix(in srgb, var(--k-text) 60%, transparent);
   stroke: none;
 }
+
+/* Date reminders dialog. */
+.trk-rule-num {
+  width: 64px;
+}
+.trk-chip-button {
+  padding: 2px 8px;
+  border: 1px solid var(--k-border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}

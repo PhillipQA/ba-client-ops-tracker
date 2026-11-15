@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Bell, Check, CheckCheck, CircleAlert, Clock3, Trash2, Users, X } from 'lucide-react'
+import {
+  AlarmClockOff,
+  AlertTriangle,
+  Bell,
+  Check,
+  CheckCheck,
+  CircleAlert,
+  Clock3,
+  Trash2,
+  Users,
+  X,
+} from 'lucide-react'
 import type { AppNotification, Client, Project } from '../../shared/types'
 
 function notificationTime(value: string) {
@@ -24,6 +35,7 @@ export default function NotificationCenter({
   onAction,
   onReadAll,
   onRefresh,
+  onSnooze,
 }: {
   notifications: AppNotification[]
   clients: Client[]
@@ -34,6 +46,8 @@ export default function NotificationCenter({
   onAction: (notification: AppNotification, action: 'read' | 'unread' | 'dismiss') => void
   onReadAll: () => void
   onRefresh?: () => void
+  /** Snoozes a tracker date reminder for a day (for this person). */
+  onSnooze?: (notification: AppNotification) => void
 }) {
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | 'unread' | 'team'>('all')
@@ -138,6 +152,17 @@ export default function NotificationCenter({
                     </span>
                   </button>
                   <div className="notification-actions">
+                    {onSnooze && notification.trackerReminderId && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        title="Snooze this reminder for a day"
+                        aria-label="Snooze this reminder for a day"
+                        onClick={() => onSnooze(notification)}
+                      >
+                        <AlarmClockOff size={14} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={busy}

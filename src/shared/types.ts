@@ -252,6 +252,7 @@ export type NotificationType =
   | 'reopened'
   | 'evidence_uploaded'
   | 'comment_added'
+  | 'tracker_reminder'
 export type NotificationSeverity = 'info' | 'warning' | 'urgent' | 'success'
 
 export interface AppNotification {
@@ -269,9 +270,11 @@ export interface AppNotification {
   parentTaskId?: string
   clientId?: string
   projectId?: string
-  /** A mention in a tracker row's comments: opens that row. */
+  /** A mention in a tracker row's comments, or a date reminder: opens that row. */
   trackerId?: string
   trackerRowId?: string
+  /** A tracker date reminder: what Snooze snoozes. */
+  trackerReminderId?: string
   actorUserId?: string
   actorName?: string
   readAt?: string

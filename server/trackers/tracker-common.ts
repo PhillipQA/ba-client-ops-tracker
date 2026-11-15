@@ -21,6 +21,10 @@ export type Deps = {
     reason: string,
     current: any,
   ) => Promise<unknown>
+  /** The business time zone (date reminders are sent after 8:00 AM there). */
+  timeZone?: string
+  /** false: no reminder timer (tests run the check by hand). */
+  reminderTimer?: boolean
   /** Encryption key override for tests. */
   key?: Buffer
   now?: () => Date
