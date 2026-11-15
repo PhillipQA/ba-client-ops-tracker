@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: date reminders
+- **Reminders** (button beside Highlight rules): a tracker reminds people about its rows' dates. Each reminder is **N days before**, **on the day of**, or **every working day after** a Date column, with an optional condition, for example *3 days before Go-live, if Status is not Live*. It goes to the people in a Person column of the row, people you name, and/or the tracker's creator.
+- Checked once every morning after **8:00 AM** business time (the `FOLLOW_UP_TIME_ZONE`, Asia/Manila by default). Plain comparisons, no AI. Each reminder becomes a bell notification ("Festival Mall: Go-live in 3 days"); clicking it opens the row.
+- At most one notification per reminder, row and person a day, even across restarts. Only people who are active and can see the tracker are reminded. A reminder stops by itself once its condition no longer holds (the row went Live, the date moved).
+- **Snooze:** the clock button on a reminder notification snoozes that row's reminder for a day, for you only.
+- No database migration: reminders are kept with the tracker's shared view settings, snoozes with its history records.
+
 ### Trackers: dependencies on the Timeline
 - The **Predecessor** column now links rows on the Timeline. Type the WBS (or the name) of the row it waits for: `1.2`, several with `&` (`2.2 & 2.3`), and a gap in working days with `+2d`. Arrows run from the end of one bar to the start of the next.
 - **Critical path:** the chain of linked rows that decides the last end date is outlined in the accent colour. A slip anywhere on it moves the end.

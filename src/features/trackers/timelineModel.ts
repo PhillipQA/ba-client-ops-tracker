@@ -4,6 +4,7 @@
  * days in UTC, so a bar never shifts with the viewer's time zone.
  */
 import { cleanRules, type HighlightRule } from './highlightRules'
+import { cleanReminders, type TrackerReminder } from './trackerReminders'
 import type { OptionColor, TrackerColumn, TrackerRow } from './trackerModel'
 
 /** Which columns the timeline reads. Empty means "not used". */
@@ -258,6 +259,8 @@ export type TimelineSettings = {
   statusColors?: boolean
   /** Highlight rules: rows coloured by their values, first match wins (see highlightRules). */
   rules?: HighlightRule[]
+  /** Date reminders (see trackerReminders). */
+  reminders?: TrackerReminder[]
 }
 
 const FIELD_TYPES: Record<keyof TimelineFields, string[]> = {
@@ -281,6 +284,8 @@ export function cleanTimelineSettings(raw: unknown, columns: TrackerColumn[]): T
   if (input.statusColors === true) out.statusColors = true
   const rules = cleanRules(input.rules, columns)
   if (rules.length) out.rules = rules
+  const reminders = cleanReminders(input.reminders, columns)
+  if (reminders.length) out.reminders = reminders
   const fields: Partial<TimelineFields> = {}
   const given = input.fields && typeof input.fields === 'object' ? input.fields : {}
   for (const key of Object.keys(FIELD_TYPES) as (keyof TimelineFields)[]) {

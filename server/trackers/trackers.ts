@@ -12,6 +12,7 @@
  * - tracker-seeds-rows.ts: rows for new Seeds projects, on trackers switched on for them
  * - tracker-source-routes.ts, tracker-routes.ts, tracker-column-routes.ts, tracker-row-routes.ts: the HTTP routes
  * - tracker-comments.ts: comments on rows, with @mentions
+ * - tracker-reminders.ts: date reminders, checked every morning
  * - tracker-common.ts: shared types and helpers
  */
 import type { Express } from 'express'
@@ -28,6 +29,7 @@ import { trackerRoutes } from './tracker-routes'
 import { trackerColumnRoutes } from './tracker-column-routes'
 import { trackerRowRoutes } from './tracker-row-routes'
 import { trackerCommentRoutes } from './tracker-comments'
+import { trackerReminders } from './tracker-reminders'
 export { secretRuleChanges } from './tracker-common'
 
 export function registerTrackerRoutes(app: Express, deps: Deps) {
@@ -45,6 +47,14 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const { allRows } = sheetAccess
   const seedsRows = trackerSeedsRows(deps, core, sheetAccess, sheetWrite)
   seedsRows.routes(app)
+  const reminders = trackerReminders(deps, core, allRows, deps.timeZone || 'Asia/Manila')
+  reminders.routes(app)
+  // Date reminders: looked at every 15 minutes, sent once a day after 8:00 AM business time.
+  if (deps.reminderTimer !== false) {
+    const timer = setInterval(() => void reminders.runDue().catch(() => undefined), 15 * 60_000)
+    timer.unref()
+    setTimeout(() => void reminders.runDue().catch(() => undefined), 30_000).unref()
+  }
   /** After every workspace save: rows follow their tasks, and new Seeds projects become rows where asked. */
   async function onWorkspaceSaved(
     tenant: string,
@@ -90,5 +100,5 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
     return { trackers, loaded }
   }
 
-  return { onWorkspaceSaved, trackersFor }
+  return { onWorkspaceSaved, trackersFor, reminders }
 }

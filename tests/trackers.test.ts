@@ -172,6 +172,7 @@ function harness(options: { failChanges?: boolean; createTasks?: any; commit?: a
     requireTenant: pass,
     load: async () => ({ data: state }),
     key: Buffer.alloc(32, 7),
+    reminderTimer: false,
     ...(options.createTasks ? { createTasks: options.createTasks } : {}),
     ...(options.commit ? { commit: options.commit } : {}),
   })
@@ -1136,5 +1137,67 @@ test('row comments: posted, listed apart from history, edited and deleted by the
     assert.equal((await ask('DELETE', one, undefined, { 'x-user': 'u2' })).status, 403)
     assert.equal((await ask('DELETE', one, undefined, { 'x-user': 'u2', 'x-role': 'Administrator' })).status, 200)
     assert.deepEqual((await ask('GET', url)).body.comments, [])
+  })
+})
+
+test('date reminders: the morning check adds each due reminder once, to people who can see the tracker; snooze holds it', async () => {
+  const saved: any[] = []
+  const h = harness({
+    commit: async (_tenant: string, next: any) => {
+      saved.push(next)
+      Object.assign(h.state, next)
+    },
+  })
+  ;(h.state as any).accounts = [
+    { id: 'u1', name: 'Ana Reyes', status: 'Active', role: 'Contributor' },
+    { id: 'u2', name: 'Jun Perez', status: 'Active', role: 'Contributor' },
+    { id: 'u3', name: 'Gone Person', status: 'Inactive', role: 'Contributor' },
+  ]
+  await serve(h, async ask => {
+    const t = await makeTracker(ask)
+    const goId = idOf(t, 'Go-live')
+    const added = await ask('POST', `/api/trackers/${t.id}/rows`, {
+      rows: [
+        { cells: { [idOf(t, 'Site')]: 'Festival Mall', [goId]: '2026-11-19' } },
+        { cells: { [idOf(t, 'Site')]: 'Later', [goId]: '2026-12-19' } },
+      ],
+    })
+    const festival = added.body.rows[0]
+    const timeline = await ask('PUT', `/api/trackers/${t.id}/timeline`, {
+      timeline: {
+        reminders: [
+          { id: 'm_soon', dateId: goId, when: 'before', days: 3, to: { people: ['u2', 'u3'], creator: true } },
+        ],
+      },
+    })
+    assert.equal(timeline.status, 200, JSON.stringify(timeline.body))
+    const tenant = '11111111-1111-4111-8111-111111111111'
+    assert.equal(
+      await h.hooks.reminders.runTenant(tenant, '2026-11-16'),
+      2,
+      'The creator and Jun; not the inactive person',
+    )
+    const notes = saved[0].notifications
+    assert.deepEqual(notes.map((note: any) => note.recipientUserId).sort(), ['u1', 'u2'])
+    assert.equal(notes[0].title, 'Festival Mall: Go-live in 3 days')
+    assert.equal(notes[0].trackerRowId, festival.id)
+    assert.equal(notes[0].trackerReminderId, 'm_soon')
+    assert.equal(await h.hooks.reminders.runTenant(tenant, '2026-11-16'), 0, 'Never twice the same day')
+    assert.equal(await h.hooks.reminders.runTenant(tenant, '2026-11-17'), 0, 'Not due the next day')
+
+    // Snoozed by Jun: the next due day skips him only.
+    const snooze = await ask(
+      'POST',
+      `/api/trackers/${t.id}/reminders/snooze`,
+      { rowId: festival.id, reminderId: 'm_soon', days: 30 },
+      { 'x-user': 'u2' },
+    )
+    assert.equal(snooze.status, 200, JSON.stringify(snooze.body))
+    await ask('PATCH', `/api/trackers/${t.id}/rows/${festival.id}`, {
+      cells: { [goId]: '2026-11-20' },
+      version: festival.version,
+    })
+    const added2 = await h.hooks.reminders.runTenant(tenant, '2026-11-17')
+    assert.equal(added2, 1, 'Only the creator: Jun snoozed it')
   })
 })

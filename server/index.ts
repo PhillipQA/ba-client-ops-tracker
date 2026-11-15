@@ -168,6 +168,7 @@ registerRtmAiRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, a
 // Connected Google Sheets read as the person who connected them, through the same Google sign-in as Gmail (registered below).
 const trackers = registerTrackerRoutes(app, {
   db,
+  timeZone: followUpTimeZone,
   requireAuth,
   requireTenant: requireTenantWorkspace,
   load: loadTenantState,

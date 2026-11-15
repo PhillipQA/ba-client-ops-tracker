@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { requestJson } from '../shared/http'
 import { workspaceAutoRefreshAllowed } from './activePolling'
 import { workHubSync } from '../features/work-hub/workHubSync'
 import { badgeText, useUnreadCounts, useUnreadPolling } from '../features/work-hub/unreadCount'
@@ -500,6 +501,19 @@ function App() {
                     onAction={handleNotificationAction}
                     onReadAll={handleReadAllNotifications}
                     onRefresh={() => void refreshNotifications()}
+                    onSnooze={notification => {
+                      if (!notification.trackerId || !notification.trackerRowId || !notification.trackerReminderId)
+                        return
+                      void requestJson(`/api/trackers/${encodeURIComponent(notification.trackerId)}/reminders/snooze`, {
+                        method: 'POST',
+                        body: { rowId: notification.trackerRowId, reminderId: notification.trackerReminderId, days: 1 },
+                        fallback: 'The reminder could not be snoozed.',
+                      })
+                        .then(() => handleNotificationAction(notification, 'dismiss'))
+                        .catch(error =>
+                          window.alert(error instanceof Error ? error.message : 'The reminder could not be snoozed.'),
+                        )
+                    }}
                   />
                 )}
                 {currentUser.accountType !== 'platform' && (
