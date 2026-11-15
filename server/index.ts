@@ -171,6 +171,7 @@ const trackers = registerTrackerRoutes(app, {
   requireAuth,
   requireTenant: requireTenantWorkspace,
   load: loadTenantState,
+  commit: (id, next, actor, reason, current) => commitServerWork(id, next, actor as SessionUser, reason, current),
   googleAccess: (tenantId, userId) => communications.googleAccess(tenantId, userId),
   // Looked up when a Sheet is made: the Drive is set up further down, with the rest of communications.
   drive: {

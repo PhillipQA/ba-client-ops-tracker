@@ -269,6 +269,9 @@ export interface AppNotification {
   parentTaskId?: string
   clientId?: string
   projectId?: string
+  /** A mention in a tracker row's comments: opens that row. */
+  trackerId?: string
+  trackerRowId?: string
   actorUserId?: string
   actorName?: string
   readAt?: string

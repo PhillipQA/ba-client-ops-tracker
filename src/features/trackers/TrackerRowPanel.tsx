@@ -1,3 +1,4 @@
+import TrackerComments from './TrackerComments'
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Copy, ExternalLink, Eye, EyeOff, ListChecks, LockKeyhole, Search, Trash2, X } from 'lucide-react'
 import type { Cell, Tracker, TrackerColumn, TrackerRow } from './trackerModel'
@@ -32,6 +33,10 @@ type Props = {
   onDismissSheetIssue?: (row: TrackerRow) => void
   /** Gives the row a highlight colour ('' clears it). */
   onHighlight?: (row: TrackerRow, color: string) => void
+  /** The signed-in person: their own comments can be edited and deleted. */
+  currentUserId?: string
+  /** Tells the grid how many comments a row has now. */
+  onCommentCount?: (rowId: string, count: number) => void
 }
 
 /** What the history says happened, in words. Person cells hold account ids, which are shown as names. */
@@ -829,6 +834,15 @@ export default function TrackerRowPanel(props: Props) {
             {secretNote}
           </p>
         )}
+
+        <TrackerComments
+          trackerId={tracker.id}
+          rowId={row.id}
+          currentUserId={props.currentUserId || ''}
+          isAdmin={props.isAdmin}
+          canComment={canEdit}
+          onCount={props.onCommentCount}
+        />
 
         <section className="trk-card" aria-label="History">
           <h3>History</h3>

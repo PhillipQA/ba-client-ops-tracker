@@ -1345,6 +1345,17 @@ export default function TrackerScreen(props: Props) {
     return map
   }, [shownColumns, entries, columns, lookup, canEdit])
   const progress = useMemo(() => progressOf(columns, rows), [columns, rows])
+  // How many comments each row has, shown beside the row number. Loaded once; kept up to date as comments are added.
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
+  useEffect(() => {
+    const controller = new AbortController()
+    setCommentCounts({})
+    trackerApi
+      .commentCounts(trackerId, controller.signal)
+      .then(result => setCommentCounts(result.counts || {}))
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [trackerId])
   const totalAnchor = useRef<HTMLElement | null>(null)
   const [totalFor, setTotalFor] = useState('')
   const setTotal = async (column: TrackerColumn, kind: TotalKind | null) => {
@@ -2478,6 +2489,7 @@ export default function TrackerScreen(props: Props) {
           taskTitle={row => lookup.task(row.taskId)?.title || 'a deleted task'}
           links={linkMap}
           totals={totals}
+          commentCounts={commentCounts}
           onPickTotal={
             canEdit
               ? (column, anchor) => {
@@ -2936,6 +2948,8 @@ export default function TrackerScreen(props: Props) {
           onReveal={reveal}
           onDismissSheetIssue={row => void dismissSheetIssues([row.id])}
           onHighlight={(row, color) => void highlight([row.id], color)}
+          currentUserId={props.currentUserId}
+          onCommentCount={(rowId, count) => setCommentCounts(current => ({ ...current, [rowId]: count }))}
         />
       )}
 

@@ -138,7 +138,7 @@ function memoryDb(options: { failChanges?: boolean } = {}) {
   return { from: (table: string) => new Query(table), tables }
 }
 
-function harness(options: { failChanges?: boolean; createTasks?: any } = {}) {
+function harness(options: { failChanges?: boolean; createTasks?: any; commit?: any } = {}) {
   const db = memoryDb(options)
   const state = {
     clients: [{ id: 'c1', name: 'Acme' }],
@@ -173,6 +173,7 @@ function harness(options: { failChanges?: boolean; createTasks?: any } = {}) {
     load: async () => ({ data: state }),
     key: Buffer.alloc(32, 7),
     ...(options.createTasks ? { createTasks: options.createTasks } : {}),
+    ...(options.commit ? { commit: options.commit } : {}),
   })
   return { app, db, state, hooks }
 }
@@ -1080,5 +1081,60 @@ test('new Seeds projects of a tracker’s client become rows with their task, on
     // The same save seen again adds nothing twice.
     await h.hooks.onWorkspaceSaved(tenant, before, after, null)
     assert.equal((await ask('GET', `/api/trackers/${on.id}/rows`)).body.rows.length, 1)
+  })
+})
+
+test('row comments: posted, listed apart from history, edited and deleted by their author, mentions notify', async () => {
+  const saved: any[] = []
+  const h = harness({
+    commit: async (_tenant: string, next: any) => {
+      saved.push(next)
+    },
+  })
+  ;(h.state as any).accounts = [
+    { id: 'u1', name: 'Ana Reyes', status: 'Active', role: 'Contributor' },
+    { id: 'u2', name: 'Jun Perez', status: 'Active', role: 'Contributor' },
+    { id: 'u3', name: 'Gone Person', status: 'Inactive', role: 'Contributor' },
+  ]
+  await serve(h, async ask => {
+    const t = await makeTracker(ask)
+    const row = (
+      await ask('POST', `/api/trackers/${t.id}/rows`, { rows: [{ cells: { [idOf(t, 'Site')]: 'Makati T1' } }] })
+    ).body.rows[0]
+    const url = `/api/trackers/${t.id}/rows/${row.id}/comments`
+    const empty = await ask('GET', url)
+    assert.deepEqual(empty.body.comments, [])
+    assert.deepEqual(empty.body.mentionable, [{ id: 'u2', name: 'Jun Perez' }], 'Active people, without yourself')
+    assert.equal((await ask('POST', url, { text: '   ' })).status, 400)
+
+    const posted = await ask('POST', url, {
+      text: 'Permit is out. @Jun Perez please book the crew',
+      mentions: ['u2', 'u3'],
+    })
+    assert.equal(posted.status, 201, JSON.stringify(posted.body))
+    assert.deepEqual(posted.body.comment.mentions, ['u2'])
+    assert.equal(saved.length, 1, 'The mention was saved as a notification')
+    const note = saved[0].notifications[0]
+    assert.equal(note.recipientUserId, 'u2')
+    assert.equal(note.trackerId, t.id)
+    assert.equal(note.trackerRowId, row.id)
+    assert.match(note.message, /^Makati T1: Permit is out/)
+
+    assert.equal((await ask('GET', url)).body.comments.length, 1)
+    assert.deepEqual((await ask('GET', `/api/trackers/${t.id}/comment-counts`)).body.counts, { [row.id]: 1 })
+    const history = (await ask('GET', `/api/trackers/${t.id}/rows/${row.id}/history`)).body.changes
+    assert.ok(!history.some((change: any) => change.kind === 'comment'), 'Comments are not in the history list')
+
+    // Only the author edits; the author or an Administrator deletes; a viewer cannot comment.
+    const one = `/api/trackers/${t.id}/comments/${posted.body.comment.id}`
+    assert.equal((await ask('PATCH', one, { text: 'mine now' }, { 'x-user': 'u2' })).status, 403)
+    const edited = await ask('PATCH', one, { text: 'Permit is out.' })
+    assert.equal(edited.body.comment.text, 'Permit is out.')
+    assert.ok(edited.body.comment.editedAt)
+    assert.deepEqual(edited.body.comment.mentions, [])
+    assert.equal((await ask('POST', url, { text: 'hi' }, { 'x-role': 'Viewer' })).status, 403)
+    assert.equal((await ask('DELETE', one, undefined, { 'x-user': 'u2' })).status, 403)
+    assert.equal((await ask('DELETE', one, undefined, { 'x-user': 'u2', 'x-role': 'Administrator' })).status, 200)
+    assert.deepEqual((await ask('GET', url)).body.comments, [])
   })
 })

@@ -404,16 +404,20 @@ export function trackerRowRoutes(
         .eq('tracker_id', id)
         .eq('row_id', rowId)
         .order('created_at', { ascending: false })
-        .limit(HISTORY)
+        .limit(HISTORY + 200)
       check(r.error)
       res.json({
-        changes: (r.data || []).map((entry: any) => ({
-          id: entry.id,
-          actorName: entry.actor_name || '',
-          kind: entry.kind,
-          detail: entry.detail || {},
-          at: entry.created_at,
-        })),
+        // Comments are kept in the same table and have their own list.
+        changes: (r.data || [])
+          .filter((entry: any) => entry.kind !== 'comment')
+          .slice(0, HISTORY)
+          .map((entry: any) => ({
+            id: entry.id,
+            actorName: entry.actor_name || '',
+            kind: entry.kind,
+            detail: entry.detail || {},
+            at: entry.created_at,
+          })),
       })
     }),
   )
