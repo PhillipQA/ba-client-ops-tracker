@@ -330,7 +330,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         })
       : customValue(tile, taskRecords, taskFields, today, currentUser.id)
   const renderItem = (item: LayoutItem): ReactNode => {
-    if (item.id === 'counts') return <CountTiles tiles={tilesOf(item.settings)} valueOf={tileValue} />
+    if (item.id === 'counts') return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} />
     return widgets[item.id]
   }
   const editAction = (item: LayoutItem) =>

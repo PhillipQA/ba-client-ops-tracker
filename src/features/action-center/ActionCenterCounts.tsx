@@ -59,12 +59,12 @@ const DETAIL_NAMES: Record<TileDetail, string> = {
   none: 'Nothing',
 }
 
-export function CountTiles({ tiles, valueOf }: { tiles: CountTile[]; valueOf: (tile: CountTile) => TileValue }) {
+export function CountTiles({ tiles, readValue }: { tiles: CountTile[]; readValue: (tile: CountTile) => TileValue }) {
   if (!tiles.length) return <p className="ac-widget-note">No count tiles. Add some under Customize.</p>
   return (
     <div className="metric-grid dashboard-metrics ac-tiles">
       {tiles.map(tile => {
-        const shown = valueOf(tile)
+        const shown = readValue(tile)
         return (
           <div key={tile.id} className={`metric-card${tile.color ? ` ac-tile-${tile.color}` : ''}`}>
             <div className="metric-icon">{tile.builtin ? ICONS[tile.builtin] : <Hash size={18} />}</div>
