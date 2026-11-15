@@ -2,7 +2,7 @@
 
 The app uses **PostgreSQL** (on Northflank in production), reached through `DATABASE_URL`.
 
-- [`schema.sql`](schema.sql) creates everything the app needs on an **empty** database, at schema version **40**, plus the two starting sign-ins. It contains no data and no passwords.
+- [`schema.sql`](schema.sql) creates everything the app needs on an **empty** database, at schema version **41**, plus the two starting sign-ins. It contains no data and no passwords.
 
 ## Set up a new database
 
@@ -12,7 +12,7 @@ Run `schema.sql` once, as the same database user the app connects with, so that 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql
 ```
 
-It should end with `BA Client Ops Tracker database ready | 40`. No `psql`? Open the file in DBeaver (or any SQL client) connected to the database and run the whole script.
+It should end with `BA Client Ops Tracker database ready | 41`. No `psql`? Open the file in DBeaver (or any SQL client) connected to the database and run the whole script.
 
 `schema.sql` stops without changing anything if the app's tables already exist, so running it against the live database by mistake is harmless. **Never run it to "reset" a database**: it does not copy, keep or remove data.
 
@@ -34,7 +34,7 @@ drop function if exists public.request_organization_id();
 
 ## Changing the schema later
 
-1. Add a migration file, `database/migrations/schema-v41-<what-it-does>.sql`, written so it can run once on an existing database (for example `alter table … add column if not exists …`).
+1. Add a migration file, `database/migrations/schema-v42-<what-it-does>.sql`, written so it can run once on an existing database (for example `alter table … add column if not exists …`).
 2. Apply it to every existing database (the live one, and any test copies).
 3. Fold the same change into `schema.sql` and bump its version number, so a new install gets it too.
 4. Note it in [CHANGELOG.md](../CHANGELOG.md), saying what to run before deploying.

@@ -30,8 +30,28 @@ export type GithubTicket = {
   updated_at: string
   created_by_me: boolean
   assigned_to_me: boolean
+  /** GitLab: the person commented on the issue. */
+  commented_by_me?: boolean
+  /** GitLab: YYYY-MM-DD, or null. */
+  due_date?: string | null
+  /** GitLab: more about the issue (see gitlabDetails.ts). */
+  details?: GitlabTicketDetails
   qa_status: GithubQaStatus
   linked_task_id: string | null
+}
+export type GitlabTicketDetails = {
+  weight?: number
+  timeEstimate?: number
+  timeSpent?: number
+  tasksDone?: number
+  tasksTotal?: number
+  confidential?: boolean
+  iteration?: string
+  mergeRequests?: number
+  type?: string
+  severity?: string
+  closedAt?: string
+  closedBy?: string
 }
 export type GithubComment = { author: string; body: string; updatedAt: string; url: string }
 export type GithubSyncResult = {

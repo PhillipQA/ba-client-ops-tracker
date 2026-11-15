@@ -204,7 +204,7 @@ export function gitlabIssue(value: any, repository: string, login: string, baseU
     repository,
     title: value.title.slice(0, 500),
     body: String(value.description || '').slice(0, 60000),
-    html_url: `${gitlabBaseUrl(baseUrl)}/${gitlabRepositoryName(repository)}/-/issues/${value.iid}`,
+    html_url: issueUrl(value, repository, baseUrl),
     state: (value.state === 'opened' ? 'open' : 'closed') as 'open' | 'closed',
     state_reason: null,
     creator: value.author.username as string,
@@ -217,5 +217,93 @@ export function gitlabIssue(value: any, repository: string, login: string, baseU
     created_by_me: value.author.username.toLowerCase() === login.toLowerCase(),
     assigned_to_me: assignees.some(a => a.toLowerCase() === login.toLowerCase()),
     available: true,
+    due_date: typeof value.due_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.due_date) ? value.due_date : null,
+    details: gitlabIssueDetails(value),
   }
+}
+
+/** The issue's own GitLab address when it is on this instance; otherwise one built from the project and number. */
+function issueUrl(value: any, repository: string, baseUrl: string) {
+  const base = gitlabBaseUrl(baseUrl),
+    built = `${base}/${gitlabRepositoryName(repository)}/-/issues/${value.iid}`
+  const own = typeof value.web_url === 'string' ? value.web_url : ''
+  return own.startsWith(`${base}/`) && own.length <= 1000 && !/[\s"<>]/.test(own) ? own : built
+}
+
+export type GitlabIssueDetails = {
+  weight?: number
+  /** Seconds. */
+  timeEstimate?: number
+  timeSpent?: number
+  tasksDone?: number
+  tasksTotal?: number
+  confidential?: boolean
+  iteration?: string
+  mergeRequests?: number
+  type?: string
+  severity?: string
+  closedAt?: string
+  closedBy?: string
+}
+const count = (value: unknown, max = 1_000_000_000) => {
+  const number = Number(value)
+  return Number.isFinite(number) && number >= 0 ? Math.min(max, Math.round(number)) : undefined
+}
+/** What else Work Hub shows about an issue. Only values GitLab sent; nothing is guessed. */
+export function gitlabIssueDetails(value: any): GitlabIssueDetails {
+  const details: GitlabIssueDetails = {}
+  const weight = count(value?.weight, 10_000)
+  if (value?.weight !== null && value?.weight !== undefined && weight !== undefined) details.weight = weight
+  const estimate = count(value?.time_stats?.time_estimate),
+    spent = count(value?.time_stats?.total_time_spent)
+  if (estimate) details.timeEstimate = estimate
+  if (spent) details.timeSpent = spent
+  const total = count(value?.task_completion_status?.count, 10_000),
+    done = count(value?.task_completion_status?.completed_count, 10_000)
+  if (total) {
+    details.tasksTotal = total
+    details.tasksDone = Math.min(done || 0, total)
+  }
+  if (value?.confidential === true) details.confidential = true
+  if (typeof value?.iteration?.title === 'string' && value.iteration.title)
+    details.iteration = value.iteration.title.slice(0, 200)
+  else if (value?.iteration?.start_date && value?.iteration?.due_date)
+    details.iteration = `${String(value.iteration.start_date).slice(0, 10)} – ${String(value.iteration.due_date).slice(0, 10)}`
+  const requests = count(value?.merge_requests_count, 10_000)
+  if (requests) details.mergeRequests = requests
+  const type = String(value?.issue_type || value?.type || '').toLowerCase()
+  if (type && type !== 'issue') details.type = type.slice(0, 40)
+  if (typeof value?.severity === 'string' && value.severity && value.severity !== 'UNKNOWN')
+    details.severity = value.severity.toLowerCase().slice(0, 40)
+  if (typeof value?.closed_at === 'string' && Number.isFinite(Date.parse(value.closed_at)))
+    details.closedAt = value.closed_at
+  if (typeof value?.closed_by?.username === 'string') details.closedBy = value.closed_by.username.slice(0, 100)
+  return details
+}
+
+/**
+ * The project of an issue from GitLab's issue lists, which cover every project ("group/sub/project#12" in
+ * references.full, else its web address). Null when it cannot be read.
+ */
+export function gitlabIssueRepository(value: any, baseUrl: string): string | null {
+  const full = typeof value?.references?.full === 'string' ? value.references.full : ''
+  const fromReference = full.includes('#') ? full.slice(0, full.lastIndexOf('#')) : ''
+  let fromUrl = ''
+  if (typeof value?.web_url === 'string')
+    try {
+      const url = new URL(value.web_url),
+        base = new URL(gitlabBaseUrl(baseUrl))
+      const path = url.pathname.slice(base.pathname.replace(/\/$/, '').length)
+      const match = /^\/(.+?)\/-\/(?:issues|work_items)\/\d+\/?$/.exec(path)
+      if (url.host === base.host && match) fromUrl = decodeURIComponent(match[1])
+    } catch {
+      fromUrl = ''
+    }
+  for (const candidate of [fromReference, fromUrl])
+    try {
+      if (candidate) return gitlabRepositoryName(candidate)
+    } catch {
+      /* try the next one */
+    }
+  return null
 }

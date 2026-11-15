@@ -398,3 +398,31 @@
   color: var(--muted);
   font-size: 0.9rem;
 }
+
+/* GitLab: due date, priority and checklist chips, and Clear filters. */
+.gitlab-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.gitlab-chips em {
+  display: inline-flex;
+  padding: 1px 7px;
+  border: 1px solid var(--comm-border);
+  border-radius: 999px;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--comm-text);
+}
+.gitlab-chips .gitlab-due--late {
+  border-color: #d64545;
+  color: #d64545;
+  font-weight: 600;
+}
+.gitlab-chips .gitlab-due--soon {
+  border-color: #c98a16;
+  color: #b07812;
+}
+.github-clear-filters {
+  align-self: end;
+}
