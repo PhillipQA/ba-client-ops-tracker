@@ -509,3 +509,27 @@ button.ac-swatch[aria-pressed="true"] {
 .link-button.danger {
   color: #cf4b4b;
 }
+
+/* Report widgets on the Action Center (built here or pinned from Reports). */
+.panel.ac-report.crp-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.ac-crp.crp-page {
+  display: contents;
+}
+.ac-report-body {
+  height: 260px;
+  padding: 0;
+}
+.ac-report-body.crp-kind-metric {
+  height: 110px;
+}
+.ac-report-body.crp-kind-table,
+.ac-report-body.crp-kind-gantt {
+  height: auto;
+  max-height: 340px;
+  overflow: auto;
+}

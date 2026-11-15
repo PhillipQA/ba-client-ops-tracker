@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Action Center: build your own widgets, and pin widgets from Reports
+- **Customize → Build your own widget** opens the Reports builder on the Action Center: choose the data (tasks, time, activities, events or a tracker), filters, grouping and measure, and show it as a number, bar, column, line or pie chart, table or timeline. A live preview shows your own data. Add as many as you like; each has **Edit widget** while customizing.
+- **Pin to Action Center** (pin button on each widget of a saved report): the widget appears at the end of your Action Center and **follows the report**, so editing it in the report changes it there too, with the report's own filters. **Open report** goes straight to it. If the report is deleted or no longer shared with you, the widget says so and offers to remove itself.
+- Both need the Reports page. They read only what you can see, the same as Reports. Pinning needs schema v40 (`user_preferences`).
+- No new database migration.
+
 ### Action Center: count tiles you choose and build
 - **Customize → Edit tiles** on the counts strip: tick which built-in tiles show and put them in order. Built-in counts: Needs attention, Waiting on developer, **Waiting on client**, **Overdue**, **Due today**, Activities today, Open inquiries and **Time not sent to Seeds**.
 - **Rename** any tile and give it a **colour**.

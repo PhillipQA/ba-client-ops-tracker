@@ -3,7 +3,13 @@
  * role's starting layout, else the built-in one. Saving is immediate; a failed save keeps the layout in this browser.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { type ActionCenterLayout, cleanLayout, layoutToShow } from '../../shared/actionCenterLayout'
+import {
+  type ActionCenterLayout,
+  addWidget,
+  cleanLayout,
+  DEFAULT_ACTION_CENTER,
+  layoutToShow,
+} from '../../shared/actionCenterLayout'
 import { HttpError, requestJson } from '../../shared/http'
 import type { AppModule } from '../../shared/types'
 
@@ -87,4 +93,27 @@ export function useActionCenterLayout(
     save,
     saveForRole,
   }
+}
+
+/**
+ * Pins a widget of a saved report to the person's Action Center (Reports' Pin button). It is added at the end of the
+ * layout they see: their own, else their role's, else the built-in one. Needs the account's database at schema v40.
+ */
+export async function pinReportWidget(reportId: string, widgetId: string): Promise<'pinned' | 'already'> {
+  const loaded = await requestJson<Loaded>('/api/me/action-center', { noStore: true })
+  if (!loaded.stored)
+    throw new Error('Pinning needs your account’s database to be updated (schema v40). Ask an Administrator.')
+  const base = cleanLayout(loaded.own) ?? cleanLayout(loaded.role?.layout) ?? DEFAULT_ACTION_CENTER
+  const pinned = base.some(
+    item => item.id === 'pinned' && item.settings?.reportId === reportId && item.settings?.widgetId === widgetId,
+  )
+  if (pinned) return 'already'
+  const next = addWidget(base, 'pinned', { reportId, widgetId })
+  if (next === base) throw new Error('Your Action Center is full. Remove a widget there first.')
+  await requestJson('/api/me/action-center', {
+    method: 'PUT',
+    body: { layout: next },
+    fallback: 'The widget could not be pinned.',
+  })
+  return 'pinned'
 }

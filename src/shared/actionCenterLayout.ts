@@ -19,6 +19,8 @@ export type WidgetId =
   | 'workhub'
   | 'dochub'
   | 'rollouts'
+  | 'custom'
+  | 'pinned'
 export type WidgetWidth = 'full' | 'half'
 export type LayoutItem = {
   id: WidgetId
@@ -95,6 +97,22 @@ export const ACTION_CENTER_WIDGETS: WidgetDefinition[] = [
     description: 'Site rollout rows going live in the next seven days, and any overdue.',
     width: 'half',
     module: 'trackers',
+  },
+  {
+    id: 'custom',
+    label: 'Your own widget',
+    description: 'A number, chart or table you build, like in Reports.',
+    width: 'half',
+    module: 'reports',
+    multi: true,
+  },
+  {
+    id: 'pinned',
+    label: 'Pinned from Reports',
+    description: 'A widget of a saved report; it follows the report.',
+    width: 'half',
+    module: 'reports',
+    multi: true,
   },
 ]
 

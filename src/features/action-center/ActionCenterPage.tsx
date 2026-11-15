@@ -12,7 +12,9 @@ import { MorningBrief } from './MorningBrief'
 import {
   type ActionCenterLayout,
   type LayoutItem,
+  addWidget,
   keyOf,
+  removeWidget,
   setWidgetSettings,
   type WidgetId,
   widgetLabel,
@@ -23,6 +25,8 @@ import { businessDateKey } from '../../shared/businessDate'
 import type { UserAccount } from '../../shared/types'
 import { fieldValues, type ReportData, sourceFields, sourceRecords } from '../reports/custom/reportData'
 import { CountTiles, CountTilesDialog } from './ActionCenterCounts'
+import { BuildWidgetDialog, CustomWidget, PinnedWidget, useReportEngine, useSavedReports } from './ActionCenterReports'
+import type { Widget } from '../reports/custom/reportModel'
 import { builtinValue, customValue } from './countTiles'
 import { requestJson } from '../../shared/http'
 import { CustomizeBar, WidgetFrame } from './ActionCenterCustomize'
@@ -84,6 +88,8 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
   const [draft, setDraft] = useState<ActionCenterLayout>([])
   const [dragging, setDragging] = useState('')
   const [editingTiles, setEditingTiles] = useState('')
+  /** The Reports builder: a new widget ('new') or the key of the one being changed. */
+  const [building, setBuilding] = useState('')
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([])
   const startCustomizing = () => {
     setDraft(layout.layout)
@@ -329,12 +335,53 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           waitingDev: actionCenterWaitingDev,
         })
       : customValue(tile, taskRecords, taskFields, today, currentUser.id)
+  // Report widgets: built here, or pinned from a saved report.
+  const engine = useReportEngine(app, currentUser, hasModule('trackers'))
+  const visible = editing ? draft : layout.layout
+  const reports = useSavedReports(visible.some(item => item.id === 'pinned'))
+  const removeNow = (key: string) => {
+    if (editing) setDraft(current => removeWidget(current, key))
+    else void layout.save(removeWidget(layout.layout, key))
+  }
+  const openReport = (reportId: string) => {
+    try {
+      window.localStorage.setItem('ba.reports.custom.selected', reportId)
+      window.localStorage.setItem('ba.reports.custom.mode', 'reports')
+    } catch {
+      /* Reports opens on its last report. */
+    }
+    setView('reports')
+  }
   const renderItem = (item: LayoutItem): ReactNode => {
     if (item.id === 'counts') return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} />
+    if (item.id === 'custom' && item.settings?.widget)
+      return <CustomWidget widget={item.settings.widget as Widget} engine={engine} />
+    if (item.id === 'pinned' && item.settings) {
+      const { reportId, widgetId } = item.settings as { reportId: string; widgetId: string }
+      return (
+        <PinnedWidget
+          reportId={reportId}
+          widgetId={widgetId}
+          reports={reports}
+          engine={engine}
+          onOpenReport={() => openReport(reportId)}
+          onRemove={() => removeNow(keyOf(item))}
+        />
+      )
+    }
     return widgets[item.id]
   }
   const editAction = (item: LayoutItem) =>
-    item.id === 'counts' ? { label: 'Edit tiles', run: () => setEditingTiles(keyOf(item)) } : undefined
+    item.id === 'counts'
+      ? { label: 'Edit tiles', run: () => setEditingTiles(keyOf(item)) }
+      : item.id === 'custom'
+        ? { label: 'Edit widget', run: () => setBuilding(keyOf(item)) }
+        : undefined
+  const frameLabel = (item: LayoutItem) =>
+    item.id === 'custom'
+      ? (item.settings?.widget as Widget | undefined)?.title || widgetLabel(item.id)
+      : widgetLabel(item.id)
+  const buildingItem = building && building !== 'new' ? draft.find(item => keyOf(item) === building) : undefined
   const tilesItem = editingTiles ? draft.find(item => keyOf(item) === editingTiles) : undefined
   const shown = editing ? draft : layout.layout
   return (
@@ -376,6 +423,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           hasOwn={Boolean(layout.own)}
           isAdmin={currentUser.role === 'Administrator'}
           roles={roles}
+          onBuild={hasModule('reports') ? () => setBuilding('new') : undefined}
           onReset={() => {
             void layout.save(null)
             setEditing(false)
@@ -400,7 +448,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
               {editing ? (
                 <WidgetFrame
                   id={keyOf(item)}
-                  label={widgetLabel(item.id)}
+                  label={frameLabel(item)}
                   onEdit={edit?.run}
                   editLabel={edit?.label}
                   index={index}
@@ -421,6 +469,22 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           <p className="ac-widget-note">Nothing on your Action Center. Add widgets above.</p>
         )}
       </div>
+      {building && (building === 'new' || buildingItem) && (
+        <BuildWidgetDialog
+          initial={buildingItem?.settings?.widget as Widget | undefined}
+          engine={engine}
+          onClose={() => setBuilding('')}
+          onSave={widget => {
+            const settings = { widget: { ...widget, x: 0, y: 0 } }
+            setDraft(current =>
+              building === 'new'
+                ? addWidget(current, 'custom', settings)
+                : setWidgetSettings(current, building, settings),
+            )
+            setBuilding('')
+          }}
+        />
+      )}
       {tilesItem && (
         <CountTilesDialog
           tiles={tilesOf(tilesItem.settings)}
