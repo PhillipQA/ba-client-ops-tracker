@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: highlight rules
+- **Highlight rules** (button beside Colour by status): rows colour themselves from their values. A rule is "When <column> <comparison> <value>", with up to three conditions joined by "and", and a colour. Example: *Go-live is before today and Status is not Live → red*.
+- Date columns get three extra comparisons: **is before today**, **is today**, and **is within the next N days**. Linked-task columns (status, due date, owner) can be used too.
+- Rules are checked top to bottom; the first that matches colours the row. A colour set by hand on a row still wins, and a rule wins over Colour by status. A rule can be switched off without deleting it.
+- The footer explains each active rule's colour. Rules are shared with everyone on the tracker and colour the Timeline too.
+- Plain comparisons, re-checked as rows change: no AI, nothing extra on the server. No database migration.
+
 ### Trackers: comments and @mentions on rows
 - Open a row: a **Comments** card sits above History. Write a comment; type **@** to mention someone who can see the tracker (arrow keys and Enter pick a name). Ctrl+Enter posts.
 - The people you mention get a notification in the bell: "<you> mentioned you in <tracker>", with the row's name and the start of the comment. Clicking it opens the tracker at that row.

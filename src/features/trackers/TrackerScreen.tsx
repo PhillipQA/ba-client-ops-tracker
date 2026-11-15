@@ -28,6 +28,7 @@ import {
   type Cell,
   type ColumnAlign,
   type ColumnType,
+  type OptionColor,
   type Tracker,
   type TrackerColumn,
   type TrackerRow,
@@ -45,6 +46,8 @@ import { groupRows, makeLookup, rowTitle, shown, visibleRows } from './trackerQu
 import { TOTAL_LABELS, type TotalKind, type TotalShown, progressOf, totalKindsFor, totalOf } from './trackerTotals'
 import { type BulkPlan, bulkColumns, bulkUndo } from './trackerBulk'
 import TrackerBulkSet from './TrackerBulkSet'
+import TrackerHighlightRules from './TrackerHighlightRules'
+import { describeRule, type HighlightRule, ruleTones } from './highlightRules'
 import { exportCsv, exportFileName } from './trackerExport'
 import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type TaskLink } from './trackerApi'
 import TrackerTimeline from './TrackerTimeline'
@@ -1186,19 +1189,32 @@ export default function TrackerScreen(props: Props) {
       void trackerApi.saveTimeline(current.id, settings).catch(() => undefined)
     }
   }
-  const tones = useMemo(
-    () =>
-      tracker
-        ? rowTones(
-            rows,
-            columns,
-            settleTimelineFields(columns, tracker.timeline?.fields || null),
-            statusColors,
-            todayNumber(),
-          )
-        : new Map(),
-    [rows, columns, tracker, statusColors],
-  )
+  // A row's colour: its own highlight, else the first highlight rule that matches, else Colour by status.
+  const rules = useMemo(() => tracker?.timeline?.rules || [], [tracker?.timeline?.rules])
+  const [rulesOpen, setRulesOpen] = useState(false)
+  const saveRules = async (next: HighlightRule[]) => {
+    const current = trackerRef.current
+    if (!current) return
+    const settings = { ...(current.timeline || {}), rules: next.length ? next : undefined }
+    const result = await trackerApi.saveTimeline(current.id, settings)
+    if (alive.current && trackerRef.current) setTracker({ ...trackerRef.current, timeline: result.timeline })
+  }
+  const tones = useMemo(() => {
+    if (!tracker) return new Map<string, OptionColor>()
+    const tones = rowTones(
+      rows,
+      columns,
+      settleTimelineFields(columns, tracker.timeline?.fields || null),
+      statusColors,
+      todayNumber(),
+    )
+    const byRule = ruleTones(rules, rows, columns, lookup, props.today)
+    for (const row of rows) {
+      const tone = byRule.get(row.id)
+      if (tone && !row.highlight) tones.set(row.id, tone)
+    }
+    return tones
+  }, [rows, columns, tracker, statusColors, rules, lookup, props.today])
   // ---- columns that came over from the Sheet: offer a subtask per column under each row's task ----
   const newColumnsKey = `ba.tracker.newColumns.${props.trackerId}`
   const [newColumnIds, setNewColumnIds] = useState<string[]>(() => {
@@ -2319,6 +2335,21 @@ export default function TrackerScreen(props: Props) {
         >
           <Palette size={14} aria-hidden="true" /> Colour by status
         </button>
+        {(canEdit || rules.length > 0) && (
+          <button
+            type="button"
+            className={`trk-button${rules.some(rule => !rule.off) ? ' on' : ''}`}
+            onClick={() => setRulesOpen(true)}
+            disabled={!canEdit}
+            title={
+              canEdit
+                ? 'Colour rows by their values, such as a date that has passed'
+                : 'Rows are coloured by this tracker’s highlight rules'
+            }
+          >
+            <Palette size={14} aria-hidden="true" /> Highlight rules{rules.length ? ` · ${rules.length}` : ''}
+          </button>
+        )}
         <span className="trk-spacer" />
         <span className="trk-save-state" role="status">
           <span className={`trk-dot${saving > 0 ? ' busy' : ''}`} aria-hidden="true" />
@@ -2617,6 +2648,16 @@ export default function TrackerScreen(props: Props) {
           )
         })()}
 
+      {rulesOpen && tracker && (
+        <TrackerHighlightRules
+          columns={columns}
+          people={people}
+          rules={rules}
+          onSave={saveRules}
+          onClose={() => setRulesOpen(false)}
+        />
+      )}
+
       <footer className="trk-legend">
         <span>
           {filtered
@@ -2638,6 +2679,14 @@ export default function TrackerScreen(props: Props) {
         <span>
           <i className="trk-key secret" aria-hidden="true" /> Amber headers are protected
         </span>
+        {rules
+          .filter(rule => !rule.off)
+          .map(rule => (
+            <span key={rule.id}>
+              <i className={`trk-key trk-tone-${rule.color}`} aria-hidden="true" />{' '}
+              {describeRule(rule, columns, id => people.find(person => person.id === id)?.name || '')}
+            </span>
+          ))}
         {columns.some(column => column.type === 'formula') && (
           <span>
             <i className="trk-key computed" aria-hidden="true" /> Purple headers are calculated

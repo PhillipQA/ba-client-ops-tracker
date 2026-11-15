@@ -3,6 +3,7 @@
  * Pure functions, so the view and tests share them. Dates are ISO `YYYY-MM-DD` strings and are worked on as whole
  * days in UTC, so a bar never shifts with the viewer's time zone.
  */
+import { cleanRules, type HighlightRule } from './highlightRules'
 import type { OptionColor, TrackerColumn, TrackerRow } from './trackerModel'
 
 /** Which columns the timeline reads. Empty means "not used". */
@@ -255,6 +256,8 @@ export type TimelineSettings = {
   zoom?: TimelineZoom
   /** Rows are tinted by their state: done green, late red, under way blue (a highlight colour wins). */
   statusColors?: boolean
+  /** Highlight rules: rows coloured by their values, first match wins (see highlightRules). */
+  rules?: HighlightRule[]
 }
 
 const FIELD_TYPES: Record<keyof TimelineFields, string[]> = {
@@ -276,6 +279,8 @@ export function cleanTimelineSettings(raw: unknown, columns: TrackerColumn[]): T
   const input = raw as Record<string, any>
   if (input.zoom === 'day' || input.zoom === 'week' || input.zoom === 'month') out.zoom = input.zoom
   if (input.statusColors === true) out.statusColors = true
+  const rules = cleanRules(input.rules, columns)
+  if (rules.length) out.rules = rules
   const fields: Partial<TimelineFields> = {}
   const given = input.fields && typeof input.fields === 'object' ? input.fields : {}
   for (const key of Object.keys(FIELD_TYPES) as (keyof TimelineFields)[]) {
