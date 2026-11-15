@@ -8,6 +8,7 @@ import {
   GitlabError,
   gitlabIdentity,
   gitlabIssue,
+  gitlabIssueRepository,
   gitlabRepoPath,
   gitlabRepositoryName,
   gitlabRequest,
@@ -15,19 +16,36 @@ import {
 } from './gitlab-api'
 
 type Middleware = (req: Request, res: Response, next: NextFunction) => any
+// Sync runs in steps across requests, so it can stop and pick up again:
+//   collect   issues created by me and assigned to me, from every project (open, then closed in the last 30 days)
+//   events    my comments in the last 90 days, to find issues I commented on
+//   comments  each of those issues
+//   reconcile open tickets not seen again: closed, reassigned or gone
 type Cursor = {
+  v: 2
   startedAt: string
-  repository: number
   stage: number
   page: number
   seen: string[]
-  phase: 'collect' | 'reconcile'
-  missing: { id: string; repository: string; number: number }[]
+  phase: 'collect' | 'events' | 'comments' | 'reconcile'
+  commented: { project: number; iid: number }[]
+  commentIndex: number
+  missing: { id: string; repository: string; number: number; commented: boolean }[]
   index: number
 }
+const STAGES = [
+  { scope: 'created_by_me', closed: false },
+  { scope: 'assigned_to_me', closed: false },
+  { scope: 'created_by_me', closed: true },
+  { scope: 'assigned_to_me', closed: true },
+] as const
+const COMMENT_DAYS = 90,
+  CLOSED_DAYS = 30,
+  COMMENTED_LIMIT = 300
+const involved = 'created_by_me.eq.true,assigned_to_me.eq.true,commented_by_me.eq.true'
 const PREFIX = '/api/work-hub/gitlab'
 const publicTicketFields =
-  'id,gitlab_id,number,repository,title,body,html_url,state,state_reason,creator,assignees,labels,milestone,comments_count,created_at,updated_at,created_by_me,assigned_to_me,qa_status,linked_task_id'
+  'id,gitlab_id,number,repository,title,body,html_url,state,state_reason,creator,assignees,labels,milestone,comments_count,created_at,updated_at,created_by_me,assigned_to_me,commented_by_me,due_date,details,qa_status,linked_task_id'
 
 export function registerGitlab(
   app: Express,
@@ -57,11 +75,14 @@ export function registerGitlab(
         await fn(req, res)
       } catch (e) {
         if (e instanceof GitlabError && e.retryAfterSeconds) res.setHeader('Retry-After', String(e.retryAfterSeconds))
+        const missingColumn = (e as any)?.code === '42703'
         res.status(e instanceof IntegrationError ? e.status : 503).json({
           error:
             e instanceof IntegrationError
               ? e.message
-              : 'GitLab storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
+              : missingColumn
+                ? 'GitLab tickets need a database update: run database/migrations/schema-v41-gitlab-involvement.sql.'
+                : 'GitLab storage is unavailable. Check the database connection; a new database needs database/schema.sql.',
           ...(e instanceof GitlabError && e.retryAfterSeconds ? { retryAfterSeconds: e.retryAfterSeconds } : {}),
         })
       }
@@ -135,10 +156,6 @@ export function registerGitlab(
       .eq('owner_user_id', u.id)
       .eq('gitlab_user_id', row.gitlab_user_id)
       .eq('instance_url', row.instance_url)
-      .in(
-        'repository',
-        (row.repositories || []).map((r: GithubRepository) => r.fullName),
-      )
   const own = async (u: any, id: string) => {
     const row = await connection(u)
     if (!row) throw new IntegrationError('Ticket not found.', 404)
@@ -297,10 +314,7 @@ export function registerGitlab(
     wrap(async (req, res) =>
       locked(user(req), async () => {
         const u = user(req),
-          { row, token } = await connected(u),
-          repositories: GithubRepository[] = row.repositories || []
-        if (!repositories.length)
-          throw new IntegrationError('Select and save at least one repository in My GitLab settings.')
+          { row, token } = await connected(u)
         const retry = Date.parse(row.retry_after || '') - Date.now()
         if (retry > 0)
           throw new GitlabError('GitLab requests are paused until the limit resets.', 429, Math.ceil(retry / 1000))
@@ -312,32 +326,61 @@ export function registerGitlab(
           res.json({ imported: 0, updated: 0, requests: 0, hasMore: false, lastSyncedAt: row.last_synced_at })
           return
         }
-        const cursor: Cursor = row.sync_cursor || {
-          startedAt: new Date().toISOString(),
-          repository: 0,
-          stage: 0,
-          page: 1,
-          seen: [],
-          phase: 'collect',
-          missing: [],
-          index: 0,
-        }
+        // A sync left over from before tickets came from every project starts again.
+        const cursor: Cursor =
+          row.sync_cursor?.v === 2
+            ? row.sync_cursor
+            : {
+                v: 2,
+                startedAt: new Date().toISOString(),
+                stage: 0,
+                page: 1,
+                seen: [],
+                phase: 'collect',
+                commented: [],
+                commentIndex: 0,
+                missing: [],
+                index: 0,
+              }
         const seen = new Set(cursor.seen),
           counted = new Set<number>(),
           counts = { imported: 0, updated: 0, requests: 0 },
           started = Date.now()
+        const since = (days: number) => new Date(Date.parse(cursor.startedAt) - days * 86400000).toISOString()
         const persist = async () => {
           cursor.seen = [...seen]
           await saveConnection(u, { sync_cursor: cursor }, row.revision)
         }
-        const importIssues = async (values: any[], repository: string, personalOnly = true) => {
+        const call = async (path: string) => {
+          const value = await api(token, path, row.instance_url)
+          counts.requests++
+          return value
+        }
+        /**
+         * Saves issues the person is part of. "mine": only ones they created or are assigned to (their comment flag is
+         * left as it was). "commented": issues they commented on. Closed issues count only if updated in the last 30
+         * days, the same as before.
+         */
+        const importIssues = async (
+          values: any[],
+          mode: 'mine' | 'commented',
+          repositoryOf?: (v: any) => string | null,
+        ) => {
           const fresh = await connection(u)
           if (fresh?.revision !== row.revision)
             throw new IntegrationError('GitLab settings changed during sync. Retry with current settings.', 409)
+          const oldest = since(CLOSED_DAYS)
           const issues = values
-            .map(v => gitlabIssue(v, repository, row.gitlab_login, row.instance_url))
+            .map(v => {
+              const repository = repositoryOf ? repositoryOf(v) : gitlabIssueRepository(v, row.instance_url)
+              return repository ? gitlabIssue(v, repository, row.gitlab_login, row.instance_url) : null
+            })
             .filter((i): i is NonNullable<typeof i> =>
-              Boolean(i && (!personalOnly || i.created_by_me || i.assigned_to_me)),
+              Boolean(
+                i &&
+                (mode === 'commented' || i.created_by_me || i.assigned_to_me) &&
+                (i.state === 'open' || i.updated_at >= oldest),
+              ),
             )
           if (!issues.length) return
           const existing = await ticketQuery(u, row, 'gitlab_id').in(
@@ -349,6 +392,7 @@ export function registerGitlab(
           const result = await db.from('user_gitlab_issues').upsert(
             issues.map(i => ({
               ...i,
+              ...(mode === 'commented' ? { commented_by_me: true } : {}),
               tenant_id: u.organizationId,
               owner_user_id: u.id,
               instance_url: row.instance_url,
@@ -363,19 +407,79 @@ export function registerGitlab(
               else counts.imported++
               counted.add(issue.gitlab_id)
             }
-            if (issue.state === 'open') seen.add(`${repository}:${issue.gitlab_id}`)
+            if (issue.state === 'open') seen.add(`${issue.repository}:${issue.gitlab_id}`)
           }
         }
         try {
           while (counts.requests < (deps.requestBudget || 12) && Date.now() - started < 45000) {
             if (cursor.phase === 'collect') {
-              if (cursor.repository >= repositories.length) {
+              if (cursor.stage >= STAGES.length) {
+                cursor.phase = 'events'
+                cursor.page = 1
+                await persist()
+                continue
+              }
+              const stage = STAGES[cursor.stage]
+              const params = new URLSearchParams({
+                scope: stage.scope,
+                state: stage.closed ? 'closed' : 'opened',
+                per_page: '100',
+                page: String(cursor.page),
+                order_by: 'updated_at',
+                sort: 'desc',
+              })
+              if (stage.closed) params.set('updated_after', since(CLOSED_DAYS))
+              const values = await call(`/issues?${params}`)
+              if (!Array.isArray(values)) throw new IntegrationError('GitLab returned an invalid issue list.', 502)
+              await importIssues(values, 'mine')
+              if (values.length === 100) cursor.page++
+              else {
+                cursor.page = 1
+                cursor.stage++
+              }
+              await persist()
+            } else if (cursor.phase === 'events') {
+              const params = new URLSearchParams({
+                action: 'commented',
+                target_type: 'note',
+                after: since(COMMENT_DAYS + 1).slice(0, 10),
+                per_page: '100',
+                page: String(cursor.page),
+              })
+              const values = await call(`/events?${params}`)
+              if (!Array.isArray(values)) throw new IntegrationError('GitLab returned an invalid event list.', 502)
+              const known = new Set(cursor.commented.map(c => `${c.project}:${c.iid}`))
+              for (const event of values) {
+                const project = Number(event?.project_id),
+                  iid = Number(event?.note?.noteable_iid)
+                if (
+                  event?.note?.noteable_type !== 'Issue' ||
+                  !Number.isSafeInteger(project) ||
+                  project < 1 ||
+                  !Number.isSafeInteger(iid) ||
+                  iid < 1 ||
+                  known.has(`${project}:${iid}`) ||
+                  cursor.commented.length >= COMMENTED_LIMIT
+                )
+                  continue
+                known.add(`${project}:${iid}`)
+                cursor.commented.push({ project, iid })
+              }
+              if (values.length === 100 && cursor.commented.length < COMMENTED_LIMIT) cursor.page++
+              else {
+                cursor.page = 1
+                cursor.phase = 'comments'
+                cursor.commentIndex = 0
+              }
+              await persist()
+            } else if (cursor.phase === 'comments') {
+              if (cursor.commentIndex >= cursor.commented.length) {
                 cursor.phase = 'reconcile'
                 cursor.missing = []
                 cursor.index = 0
-                // Reconcile disappeared open tickets so reassignment and closure do not leave stale rows.
+                // Open tickets not seen again: closed, reassigned or gone. Look each one up once.
                 for (let page = 0; ; page++) {
-                  const result = await ticketQuery(u, row, 'id,gitlab_id,repository,number')
+                  const result = await ticketQuery(u, row, 'id,gitlab_id,repository,number,commented_by_me')
                     .eq('state', 'open')
                     .eq('available', true)
                     .order('id', { ascending: true })
@@ -383,54 +487,38 @@ export function registerGitlab(
                   if (result.error && result.error.code !== 'PGRST103') throw result.error
                   for (const item of result.data || [])
                     if (!seen.has(`${item.repository}:${item.gitlab_id}`))
-                      cursor.missing.push({ id: item.id, repository: item.repository, number: item.number })
+                      cursor.missing.push({
+                        id: item.id,
+                        repository: item.repository,
+                        number: item.number,
+                        commented: Boolean(item.commented_by_me),
+                      })
                   if (!result.data || result.data.length < 1000) break
                 }
                 await persist()
                 continue
               }
-              const repository = repositories[cursor.repository].fullName,
-                closed = cursor.stage >= 2,
-                assigned = cursor.stage % 2 === 1
-              const params = new URLSearchParams({
-                scope: 'all',
-                state: closed ? 'closed' : 'opened',
-                per_page: '100',
-                page: String(cursor.page),
-                order_by: 'updated_at',
-                sort: 'desc',
-                [assigned ? 'assignee_id' : 'author_id']: String(row.gitlab_user_id),
-              })
-              if (closed)
-                params.set('updated_after', new Date(Date.parse(cursor.startedAt) - 30 * 86400000).toISOString())
-              const values = await api(token, `${gitlabRepoPath(repository)}/issues?${params}`, row.instance_url)
-              counts.requests++
-              if (!Array.isArray(values)) throw new IntegrationError('GitLab returned an invalid issue list.', 502)
-              await importIssues(values, repository)
-              if (values.length === 100) cursor.page++
-              else {
-                cursor.page = 1
-                cursor.stage++
-                if (cursor.stage === 4) {
-                  cursor.repository++
-                  cursor.stage = 0
-                }
+              const item = cursor.commented[cursor.commentIndex]
+              try {
+                await importIssues([await call(`/projects/${item.project}/issues/${item.iid}`)], 'commented')
+              } catch (e) {
+                // An issue that was deleted or moved out of reach is skipped.
+                if (!(e instanceof GitlabError) || ![403, 404].includes(e.status)) throw e
               }
+              cursor.commentIndex++
               await persist()
             } else {
               if (cursor.index >= cursor.missing.length) break
               const item = cursor.missing[cursor.index]
               try {
-                const value = await api(
-                  token,
-                  `${gitlabRepoPath(item.repository)}/issues/${item.number}`,
-                  row.instance_url,
-                )
-                counts.requests++
-                await importIssues([value], item.repository, false)
+                const value = await call(`${gitlabRepoPath(item.repository)}/issues/${item.number}`)
+                const issue = gitlabIssue(value, item.repository, row.gitlab_login, row.instance_url)
+                // Still mine if I created it, am assigned, or commented on it; otherwise it leaves my list.
+                if (issue && (issue.created_by_me || issue.assigned_to_me || item.commented))
+                  await importIssues([value], item.commented ? 'commented' : 'mine', () => item.repository)
+                else await writeTicket(u, row, item.id, { available: false })
               } catch (e) {
-                if (!(e instanceof GitlabError) || e.status !== 404) throw e
-                counts.requests++
+                if (!(e instanceof GitlabError) || ![403, 404].includes(e.status)) throw e
                 await writeTicket(u, row, item.id, { available: false })
               }
               cursor.index++
@@ -457,7 +545,8 @@ export function registerGitlab(
       }),
     ),
   )
-
+  // Filters: view (all, assigned, created, commented), state, project, QA status, label, title search, milestone,
+  // due (overdue, week, set, none), and sort (updated or due date). Only tickets the person is part of are listed.
   app.get(
     `${PREFIX}/tickets`,
     ...auth,
@@ -471,37 +560,54 @@ export function registerGitlab(
         repo = String(req.query.repository || ''),
         qa = String(req.query.qa || ''),
         q = String(req.query.q || '').trim(),
-        label = String(req.query.label || '').trim()
+        label = String(req.query.label || '').trim(),
+        milestone = String(req.query.milestone || '').trim(),
+        due = String(req.query.due || ''),
+        sort = String(req.query.sort || 'updated'),
+        today = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.today || ''))
+          ? String(req.query.today)
+          : new Date().toISOString().slice(0, 10)
       if (
         !Number.isSafeInteger(page) ||
         page < 1 ||
         page > 1000000 ||
         ![5, 10, 15].includes(pageSize) ||
-        !['all', 'assigned', 'created'].includes(view) ||
+        !['all', 'assigned', 'created', 'commented'].includes(view) ||
         !['all', 'open', 'closed'].includes(state) ||
+        !['', 'overdue', 'week', 'set', 'none'].includes(due) ||
+        !['updated', 'due'].includes(sort) ||
         q.length > 200 ||
         label.length > 100 ||
+        milestone.length > 300 ||
+        repo.length > 200 ||
         (qa && !GITHUB_QA_STATUSES.includes(qa as any))
       )
         throw new IntegrationError('Choose valid GitLab ticket filters.')
-      if (!row || !row.repositories?.length) {
+      if (!row?.gitlab_user_id) {
         res.json({ items: [], total: 0, page, pageSize })
         return
       }
+      const week = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10)
       const filtered = (head = false) => {
-        let query = ticketQuery(u, row, publicTicketFields, { count: 'exact', head })
-          .eq('available', true)
-          .or('created_by_me.eq.true,assigned_to_me.eq.true')
+        let query = ticketQuery(u, row, publicTicketFields, { count: 'exact', head }).eq('available', true).or(involved)
         if (view === 'assigned') query = query.eq('assigned_to_me', true)
         if (view === 'created') query = query.eq('created_by_me', true)
+        if (view === 'commented') query = query.eq('commented_by_me', true)
         if (state !== 'all') query = query.eq('state', state)
         if (repo) query = query.eq('repository', repo)
         if (qa) query = query.eq('qa_status', qa)
         if (q) query = query.ilike('title', `%${q.replace(/[\\%_]/g, '\\$&')}%`)
         if (label) query = query.contains('labels', [label])
+        if (milestone) query = query.eq('milestone', milestone)
+        if (due === 'overdue') query = query.lt('due_date', today)
+        if (due === 'week') query = query.gte('due_date', today).lte('due_date', week)
+        if (due === 'set') query = query.gte('due_date', '1900-01-01')
+        if (due === 'none') query = query.is('due_date', null)
         return query
       }
-      let result = await filtered()
+      let ordered = filtered()
+      if (sort === 'due') ordered = ordered.order('due_date', { ascending: true })
+      let result = await ordered
         .order('updated_at', { ascending: false })
         .order('id', { ascending: true })
         .range((page - 1) * pageSize, page * pageSize - 1)
@@ -512,6 +618,33 @@ export function registerGitlab(
       }
       if (result.error) throw result.error
       res.json({ items: result.data || [], total: result.count || 0, page, pageSize })
+    }),
+  )
+  // The choices for the Project, Milestone and Label filters, from the person's own tickets.
+  app.get(
+    `${PREFIX}/tickets/facets`,
+    ...auth,
+    wrap(async (req, res) => {
+      const u = user(req),
+        row = await connection(u)
+      if (!row?.gitlab_user_id) {
+        res.json({ repositories: [], milestones: [], labels: [] })
+        return
+      }
+      const result = await ticketQuery(u, row, 'repository,milestone,labels')
+        .eq('available', true)
+        .or(involved)
+        .order('updated_at', { ascending: false })
+        .limit(3000)
+      if (result.error) throw result.error
+      const sorted = (values: Iterable<string>) =>
+        [...new Set([...values].filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, 300)
+      const rows = result.data || []
+      res.json({
+        repositories: sorted(rows.map((r: any) => r.repository)),
+        milestones: sorted(rows.map((r: any) => r.milestone)),
+        labels: sorted(rows.flatMap((r: any) => (Array.isArray(r.labels) ? r.labels : []))),
+      })
     }),
   )
   app.get(

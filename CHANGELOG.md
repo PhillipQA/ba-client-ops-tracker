@@ -11,6 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Work Hub GitLab: your tickets from every project, with more details and filters
+- **Every project:** GitLab tickets now come from every project you can see, not only the ones picked in settings. Work Hub pulls only tickets **you're part of**: ones you created, ones assigned to you, and ones you **commented on** (found from your comments in the last 90 days). Nothing else is pulled. Open tickets have no age limit; closed ones updated in the last 30 days are included, as before.
+- If you're unassigned from a ticket you didn't create or comment on, it leaves your list at the next sync.
+- Picking projects in **My GitLab settings** is now optional: it only maps a project to a client and project, to prefill task creation.
+- **New view:** Commented by me.
+- **More details** on each ticket, when GitLab has them: due date (overdue in red, due within a week in amber), priority and severity (from labels like `priority::high` or `P1`), type, iteration, weight, time spent vs estimate, checklist progress, linked merge requests, confidential, and when and by whom it was closed.
+- **New filters:** project (from your own tickets), label and milestone lists, due date (overdue, next 7 days, has one, none), sort by due date, and **Clear filters**.
+- **Needs database migration v41** (`schema-v41-gitlab-involvement.sql`). Until it's run, GitLab sync and the ticket list say so.
+
 ### Trackers: roll-up across rollouts
 - **Roll-up** (button on the Trackers page, at `/trackers/rollup`): every Site rollout tracker you can open, in one list. You can also choose your own set of trackers; the choice is kept in your browser. A tracker can take part when it has a Status or a Go-live column.
 - Trackers are lined up by four columns, matched by name: **Site**, **Status**, **Go-live** and **Owner**. With no Owner column, the owner is whoever the row's task is assigned to.

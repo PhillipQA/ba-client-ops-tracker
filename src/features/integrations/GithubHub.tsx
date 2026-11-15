@@ -13,6 +13,8 @@ import { workHubSync } from '../work-hub/workHubSync'
 import { useWorkHubSync } from '../work-hub/useWorkHubSync'
 import { useIsClosed } from '../tasks/openWork'
 import ClientSelect from '../../shared/ui/SearchSelect'
+import { businessDateKey } from '../../shared/businessDate'
+import { dueText, duration, involvement, priorityLabels } from './gitlabDetails'
 
 class ApiError extends Error {
   constructor(
@@ -91,7 +93,17 @@ export default function GithubHub({
     [qa, setQa] = useState(''),
     [label, setLabel] = useState(''),
     [search, setSearch] = useState(''),
-    [query, setQuery] = useState('')
+    [query, setQuery] = useState(''),
+    [milestone, setMilestone] = useState(''),
+    [due, setDue] = useState(''),
+    [sort, setSort] = useState('updated'),
+    [facets, setFacets] = useState<{ repositories: string[]; milestones: string[]; labels: string[] }>({
+      repositories: [],
+      milestones: [],
+      labels: [],
+    })
+  const gitlab = provider === 'gitlab'
+  const today = businessDateKey()
   const [selected, setSelected] = useState<GithubTicket | null>(null),
     [comments, setComments] = useState<GithubComment[]>([]),
     [commentError, setCommentError] = useState(''),
@@ -131,7 +143,7 @@ export default function GithubHub({
         setConnection(result)
         setBaseUrl(result.baseUrl || 'https://gitlab.com')
         setRepositoryDraft(result.repositories)
-        if (!result.connected || !result.repositories.length) setSettingsOpen(true)
+        if (!result.connected || (provider !== 'gitlab' && !result.repositories.length)) setSettingsOpen(true)
       })
       .catch(e => {
         if (e.name !== 'AbortError') {
@@ -173,7 +185,7 @@ export default function GithubHub({
     setPage(1)
     setSelected(null)
     setForm(null)
-  }, [view, repository, state, qa, label, pageSize])
+  }, [view, repository, state, qa, label, milestone, due, sort, pageSize])
   useEffect(() => {
     if (!connection) return
     const controller = new AbortController()
@@ -188,6 +200,7 @@ export default function GithubHub({
       qa,
       label,
       q: query,
+      ...(gitlab ? { milestone, due, sort, today } : {}),
     })
     void request(`/tickets?${params}`, 'GET', undefined, controller.signal)
       .then(result => {
@@ -223,9 +236,21 @@ export default function GithubHub({
     qa,
     label,
     query,
+    milestone,
+    due,
+    sort,
     refresh,
     syncStatus.revision,
   ])
+  // GitLab: the Project, Milestone and Label choices come from the person's own tickets, from every project.
+  useEffect(() => {
+    if (!gitlab || !connection?.connected) return
+    const controller = new AbortController()
+    void apiRequest('/api/work-hub/gitlab', '/tickets/facets', 'GET', undefined, controller.signal)
+      .then(result => setFacets(result))
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [gitlab, connection?.connected, refresh, syncStatus.revision])
   useEffect(() => {
     if (!selected) {
       setComments([])
@@ -549,7 +574,7 @@ export default function GithubHub({
           {connection?.connected && (
             <>
               <div className="github-repository-heading">
-                <h4>{provider === 'gitlab' ? 'Projects to monitor' : 'Repositories to monitor'}</h4>
+                <h4>{provider === 'gitlab' ? 'Project mappings (optional)' : 'Repositories to monitor'}</h4>
                 <button className="secondary" disabled={working} onClick={() => void act(() => loadRepositories())}>
                   {provider === 'gitlab' ? 'Load projects' : 'Load repositories'}
                 </button>
@@ -666,11 +691,20 @@ export default function GithubHub({
                   </div>
                 ))}
               </div>
-              <p className="github-help">
-                Select up to 20 repositories. Client/project mapping is optional and prefills task creation. Open
-                tickets have no age limit; recently updated closed tickets from the last 30 days are also imported.
-                Removing a repository hides its cached tickets.
-              </p>
+              {gitlab ? (
+                <p className="github-help">
+                  Your tickets come from every project you can see: issues you created, issues assigned to you, and
+                  issues you commented on in the last 90 days. Nothing else is pulled. Open tickets have no age limit;
+                  closed ones updated in the last 30 days are included. Projects here are optional: choose up to 20 to
+                  map them to a client and project, which prefills task creation.
+                </p>
+              ) : (
+                <p className="github-help">
+                  Select up to 20 repositories. Client/project mapping is optional and prefills task creation. Open
+                  tickets have no age limit; recently updated closed tickets from the last 30 days are also imported.
+                  Removing a repository hides its cached tickets.
+                </p>
+              )}
               <button className="primary" disabled={working} onClick={saveRepositories}>
                 {provider === 'gitlab' ? 'Save my projects' : 'Save my repositories'}
               </button>
@@ -690,6 +724,7 @@ export default function GithubHub({
                 { id: 'all', label: 'All my tickets' },
                 { id: 'assigned', label: 'Assigned to me' },
                 { id: 'created', label: 'Created by me' },
+                ...(gitlab ? [{ id: 'commented', label: 'Commented by me' }] : []),
               ].map(v => (
                 <button
                   className={view === v.id ? 'active' : ''}
@@ -714,10 +749,10 @@ export default function GithubHub({
               <label>
                 Repository
                 <select value={repository} onChange={e => setRepository(e.target.value)}>
-                  <option value="">All repositories</option>
-                  {maps.map(r => (
-                    <option key={r.fullName} value={r.fullName}>
-                      {r.fullName}
+                  <option value="">{gitlab ? 'All projects' : 'All repositories'}</option>
+                  {(gitlab ? facets.repositories : maps.map(r => r.fullName)).map(name => (
+                    <option key={name} value={name}>
+                      {name}
                     </option>
                   ))}
                 </select>
@@ -741,8 +776,75 @@ export default function GithubHub({
               </label>
               <label>
                 Label
-                <input value={label} maxLength={100} onChange={e => setLabel(e.target.value)} placeholder="e.g. bug" />
+                {gitlab ? (
+                  <select value={label} onChange={e => setLabel(e.target.value)}>
+                    <option value="">All labels</option>
+                    {label && !facets.labels.includes(label) && <option value={label}>{label}</option>}
+                    {facets.labels.map(l => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={label}
+                    maxLength={100}
+                    onChange={e => setLabel(e.target.value)}
+                    placeholder="e.g. bug"
+                  />
+                )}
               </label>
+              {gitlab && (
+                <>
+                  <label>
+                    Milestone
+                    <select value={milestone} onChange={e => setMilestone(e.target.value)}>
+                      <option value="">All milestones</option>
+                      {facets.milestones.map(m => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Due date
+                    <select value={due} onChange={e => setDue(e.target.value)}>
+                      <option value="">Any</option>
+                      <option value="overdue">Overdue</option>
+                      <option value="week">Due in the next 7 days</option>
+                      <option value="set">Has a due date</option>
+                      <option value="none">No due date</option>
+                    </select>
+                  </label>
+                  <label>
+                    Sort by
+                    <select value={sort} onChange={e => setSort(e.target.value)}>
+                      <option value="updated">Last updated</option>
+                      <option value="due">Due date</option>
+                    </select>
+                  </label>
+                  {(view !== 'all' || repository || qa || label || milestone || due || state !== 'open' || query) && (
+                    <button
+                      type="button"
+                      className="secondary github-clear-filters"
+                      onClick={() => {
+                        setView('all')
+                        setRepository('')
+                        setQa('')
+                        setLabel('')
+                        setMilestone('')
+                        setDue('')
+                        setState('open')
+                        setSearch('')
+                      }}
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                </>
+              )}
             </div>
             <div aria-busy={loading} className="github-table-wrap">
               {loading ? (
@@ -780,11 +882,10 @@ export default function GithubHub({
                               #{ticket.number} {ticket.title}
                             </strong>
                             <span>
-                              {ticket.created_by_me ? 'Created by me' : ''}
-                              {ticket.created_by_me && ticket.assigned_to_me ? ' · ' : ''}
-                              {ticket.assigned_to_me ? 'Assigned to me' : ''}
+                              {involvement(ticket)}
                               {ticket.linked_task_id ? ' · Task linked' : ''}
                             </span>
+                            {gitlab && <TicketChips ticket={ticket} today={today} />}
                           </button>
                         </td>
                         <td>
@@ -810,7 +911,7 @@ export default function GithubHub({
                 <p className="communication-empty">
                   {!connection?.connected
                     ? `Connect ${providerLabel} to pull your tickets.`
-                    : !maps.length
+                    : !gitlab && !maps.length
                       ? `Select repositories in My ${providerLabel} settings.`
                       : `No tickets match these filters. Sync ${providerLabel} or adjust your filters.`}
                 </p>
@@ -900,6 +1001,7 @@ export default function GithubHub({
                     <dd>{selected.milestone}</dd>
                   </>
                 )}
+                {gitlab && <GitlabMeta ticket={selected} today={today} />}
               </dl>
               <h4>Description</h4>
               <div className="github-description">{selected.body || 'No description supplied.'}</div>
@@ -1126,5 +1228,65 @@ export default function GithubHub({
         </div>
       )}
     </div>
+  )
+}
+
+/** GitLab list chips: due date, priority and severity, checklist progress. */
+function TicketChips({ ticket, today }: { ticket: GithubTicket; today: string }) {
+  const due = dueText(ticket.due_date, today, ticket.state === 'open')
+  const { priority, severity } = priorityLabels(ticket.labels)
+  const d = ticket.details || {}
+  if (!due && !priority && !severity && !d.tasksTotal && !d.confidential) return null
+  return (
+    <span className="gitlab-chips">
+      {due && <em className={`gitlab-due gitlab-due--${due.tone}`}>{due.text}</em>}
+      {priority && <em>Priority {priority}</em>}
+      {(severity || d.severity) && <em>Severity {severity || d.severity}</em>}
+      {d.tasksTotal ? (
+        <em>
+          {d.tasksDone || 0}/{d.tasksTotal} checklist
+        </em>
+      ) : null}
+      {d.confidential && <em>Confidential</em>}
+    </span>
+  )
+}
+
+/** GitLab details in the ticket panel. Only what GitLab gave is shown. */
+function GitlabMeta({ ticket, today }: { ticket: GithubTicket; today: string }) {
+  const d = ticket.details || {}
+  const due = dueText(ticket.due_date, today, ticket.state === 'open')
+  const { priority, severity } = priorityLabels(ticket.labels)
+  const rows: [string, string][] = []
+  rows.push(['I am', involvement(ticket) || 'Not involved'])
+  if (ticket.due_date)
+    rows.push(['Due date', `${ticket.due_date}${due && due.tone !== 'plain' ? ` (${due.text})` : ''}`])
+  if (priority) rows.push(['Priority', priority])
+  if (severity || d.severity) rows.push(['Severity', severity || String(d.severity)])
+  if (d.type) rows.push(['Type', d.type.replace(/_/g, ' ')])
+  if (d.iteration) rows.push(['Iteration', d.iteration])
+  if (d.weight !== undefined) rows.push(['Weight', String(d.weight)])
+  if (d.timeEstimate || d.timeSpent)
+    rows.push(['Time', `${duration(d.timeSpent) || '0m'} spent of ${duration(d.timeEstimate) || 'no estimate'}`])
+  if (d.tasksTotal) rows.push(['Checklist', `${d.tasksDone || 0} of ${d.tasksTotal} done`])
+  if (d.mergeRequests) rows.push(['Merge requests', `${d.mergeRequests} linked`])
+  if (d.confidential) rows.push(['Confidential', 'Yes'])
+  if (ticket.comments_count) rows.push(['Comments', String(ticket.comments_count)])
+  if (ticket.state === 'closed' && (d.closedAt || d.closedBy))
+    rows.push([
+      'Closed',
+      [d.closedAt && new Date(d.closedAt).toLocaleDateString(), d.closedBy && `by ${d.closedBy}`]
+        .filter(Boolean)
+        .join(' '),
+    ])
+  return (
+    <>
+      {rows.map(([term, value]) => (
+        <React.Fragment key={term}>
+          <dt>{term}</dt>
+          <dd>{value}</dd>
+        </React.Fragment>
+      ))}
+    </>
   )
 }

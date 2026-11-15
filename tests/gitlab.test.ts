@@ -78,6 +78,10 @@ async function fixture(run: (f: any) => Promise<void>, budget = 12) {
     missingTable = false
   const provider: any[] = []
   const repositories: Record<string, any[]> = { 'acme/pos': [issue(1)], 'acme/reports': [] }
+  // My comment events (GitLab's /events), newest first.
+  const events: any[] = []
+  const projectId = (repo: string) => Object.keys(repositories).indexOf(repo) + 1
+  const projectName = (id: string) => (/^\d+$/.test(id) ? Object.keys(repositories)[Number(id) - 1] : id)
   let repositoryCatalog: any[] = [
     { path_with_namespace: 'acme/pos', issues_enabled: true, visibility: 'private' },
     { path_with_namespace: 'acme/reports', issues_enabled: true, visibility: 'public' },
@@ -121,8 +125,25 @@ async function fixture(run: (f: any) => Promise<void>, budget = 12) {
       this.checks.push(r => v.every(x => (r[k] || []).includes(x)))
       return this
     }
-    or(_value: string) {
-      this.checks.push(r => r.created_by_me || r.assigned_to_me)
+    or(value: string) {
+      const fields = value.split(',').map(part => part.split('.')[0])
+      this.checks.push(r => fields.some(k => r[k] === true))
+      return this
+    }
+    lt(k: string, v: any) {
+      this.checks.push(r => r[k] !== null && r[k] !== undefined && r[k] < v)
+      return this
+    }
+    lte(k: string, v: any) {
+      this.checks.push(r => r[k] !== null && r[k] !== undefined && r[k] <= v)
+      return this
+    }
+    gte(k: string, v: any) {
+      this.checks.push(r => r[k] !== null && r[k] !== undefined && r[k] >= v)
+      return this
+    }
+    limit(n: number) {
+      this.end = n - 1
       return this
     }
     ilike(k: string, pattern: string) {
@@ -280,10 +301,42 @@ async function fixture(run: (f: any) => Promise<void>, budget = 12) {
       const p = Number(url.searchParams.get('page') || 1)
       return json(repositoryCatalog.slice((p - 1) * 100, p * 100))
     }
+    const served = (repo: string, i: any) => ({
+      ...i,
+      project_id: projectId(repo),
+      references: { full: `${repo}#${i.iid}` },
+      web_url: `${url.origin}/${repo}/-/issues/${i.iid}`,
+    })
+    if (url.pathname === '/api/v4/issues') {
+      const scope = url.searchParams.get('scope'),
+        state = url.searchParams.get('state'),
+        since = url.searchParams.get('updated_after'),
+        page = Number(url.searchParams.get('page') || 1)
+      const all = Object.entries(repositories).flatMap(([repo, values]) =>
+        values
+          .filter(
+            i =>
+              (!state || i.state === state) &&
+              (!since || i.updated_at >= since) &&
+              (scope === 'created_by_me'
+                ? i.author.username === login
+                : scope === 'assigned_to_me'
+                  ? i.assignees.some((a: any) => a.username === login)
+                  : false),
+          )
+          .map(i => served(repo, i)),
+      )
+      all.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id - b.id)
+      return json(all.slice((page - 1) * 100, page * 100))
+    }
+    if (url.pathname === '/api/v4/events') {
+      const page = Number(url.searchParams.get('page') || 1)
+      return json(login === 'alice' ? events.slice((page - 1) * 100, page * 100) : [])
+    }
     const route = url.pathname.match(/^\/api\/v4\/projects\/([^/]+)(?:\/issues(?:\/(\d+)(?:\/(notes))?)?)?$/)
     if (!route) return json({}, 404)
-    const repo = decodeURIComponent(route[1])
-    if (!(repo in repositories)) return json({}, 404)
+    const repo = projectName(decodeURIComponent(route[1]))
+    if (!repo || !(repo in repositories)) return json({}, 404)
     if (!url.pathname.includes('/issues')) return json({ path_with_namespace: repo, issues_enabled: true })
     const number = Number(route[2]),
       values = repositories[repo]
@@ -294,7 +347,7 @@ async function fixture(run: (f: any) => Promise<void>, budget = 12) {
         const page = Number(url.searchParams.get('page') || 1)
         return json([...comments].sort((a, b) => b.id - a.id).slice((page - 1) * 20, page * 20))
       }
-      return json(found)
+      return json(served(repo, found))
     }
     const state = url.searchParams.get('state'),
       creator = url.searchParams.get('author_id'),
@@ -342,6 +395,8 @@ async function fixture(run: (f: any) => Promise<void>, budget = 12) {
       tables,
       states,
       repositories,
+      events,
+      projectId,
       provider,
       comments,
       setRemoteFailure: (v: number) => {
@@ -697,6 +752,7 @@ test('provider dropdown and GitLab settings use the selected provider without mi
 
 test('GitLab custom instances, nested groups and account caches remain independent', async () =>
   fixture(async (f: any) => {
+    f.repositories['acme/pos'] = []
     f.repositories['acme/team/pos'] = [issue(1)]
     await f.connect()
     await f.select(['acme/team/pos'])
@@ -768,3 +824,70 @@ test('GitLab provider errors do not echo tokens, redirects or unreadable pages',
     /unreadable response/,
   )
 })
+
+test('tickets come from every project: created, assigned or commented on by me, and nothing else', async () =>
+  fixture(async (f: any) => {
+    f.repositories['acme/pos'] = [
+      issue(1, { due_date: '2000-01-01', milestone: { title: 'Sprint 9' }, labels: ['bug', 'priority::high'] }),
+      issue(2, { author: { username: 'dev' }, assignees: [{ username: 'dev' }] }),
+      issue(3, { author: { username: 'dev' }, assignees: [{ username: 'dev' }] }),
+    ]
+    // Not chosen in settings, and still pulled: assigned to me.
+    f.repositories['other/billing'] = [
+      issue(7, {
+        author: { username: 'dev' },
+        assignees: [{ username: 'alice' }],
+        due_date: '2999-12-31',
+        weight: 3,
+        time_stats: { time_estimate: 7200, total_time_spent: 5400 },
+        task_completion_status: { count: 5, completed_count: 2 },
+        confidential: true,
+        merge_requests_count: 2,
+        iteration: { title: 'Iteration 4' },
+      }),
+    ]
+    // I commented on #2 only; #3 is someone else's and I never touched it.
+    f.events.push(
+      { project_id: f.projectId('acme/pos'), note: { noteable_type: 'Issue', noteable_iid: 2 } },
+      { project_id: f.projectId('acme/pos'), note: { noteable_type: 'Issue', noteable_iid: 2 } },
+      { project_id: f.projectId('acme/pos'), note: { noteable_type: 'MergeRequest', noteable_iid: 3 } },
+    )
+    await f.connect()
+    await f.sync()
+    const numbers = f.tables.user_gitlab_issues.map((i: any) => `${i.repository}#${i.number}`).sort()
+    assert.deepEqual(numbers, ['acme/pos#1', 'acme/pos#2', 'other/billing#7'], 'no repository selection needed')
+    const billing = f.tables.user_gitlab_issues.find((i: any) => i.number === 7)
+    assert.equal(billing.html_url, 'https://gitlab.com/other/billing/-/issues/7')
+    assert.equal(billing.due_date, '2999-12-31')
+    assert.deepEqual(billing.details, {
+      weight: 3,
+      timeEstimate: 7200,
+      timeSpent: 5400,
+      tasksTotal: 5,
+      tasksDone: 2,
+      confidential: true,
+      iteration: 'Iteration 4',
+      mergeRequests: 2,
+    })
+    assert.equal(f.tables.user_gitlab_issues.find((i: any) => i.number === 2).commented_by_me, true)
+    assert.equal((await f.ask('/tickets?view=commented')).body.total, 1)
+    assert.equal((await f.ask('/tickets?view=assigned')).body.total, 2)
+    assert.equal((await f.ask('/tickets?due=overdue&today=2026-11-15')).body.items[0].number, 1)
+    assert.equal((await f.ask('/tickets?due=none')).body.total, 1)
+    assert.equal((await f.ask('/tickets?due=set')).body.total, 2)
+    assert.equal((await f.ask('/tickets?milestone=Sprint%209')).body.total, 1)
+    assert.equal((await f.ask('/tickets?repository=other/billing')).body.total, 1)
+    assert.equal((await f.ask('/tickets?due=soon')).status, 400)
+    const facets = await f.ask('/tickets/facets')
+    assert.deepEqual(facets.body.repositories, ['acme/pos', 'other/billing'])
+    assert.deepEqual(facets.body.milestones, ['Sprint 9'])
+    assert.deepEqual(facets.body.labels, ['bug', 'priority::high'])
+    // A later sync keeps my comment flag, even though the issue lists don't include it.
+    await f.sync()
+    assert.equal(f.tables.user_gitlab_issues.find((i: any) => i.number === 2).commented_by_me, true)
+    // Unassigned from #7 and never commented: it leaves my list.
+    f.repositories['other/billing'][0].assignees = []
+    await f.sync()
+    assert.equal((await f.ask('/tickets?repository=other/billing')).body.total, 0)
+    assert.ok(f.provider.every((r: any) => r.method === 'GET'))
+  }))

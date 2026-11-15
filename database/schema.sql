@@ -1,4 +1,4 @@
--- BA Client Ops Tracker: database schema (version 40)
+-- BA Client Ops Tracker: database schema (version 41)
 --
 -- Creates every table, constraint, index and function the app needs on an empty PostgreSQL 14+ database, plus the
 -- two starting sign-ins. Run it once, as the same database user the app connects with (DATABASE_URL):
@@ -10,7 +10,7 @@
 -- INTERNAL_ADMIN_BOOTSTRAP_PASSWORD or BXI_CORE_BOOTSTRAP_PASSWORD from the server's settings (12+ characters), and
 -- must then be changed.
 --
--- Changing the schema later: add database/migrations/schema-v40-<what>.sql (and so on), apply it to every database,
+-- Changing the schema later: add database/migrations/schema-v42-<what>.sql (and so on), apply it to every database,
 -- and fold it into this file so a new install gets it too. See database/README.md.
 
 begin;
@@ -1027,6 +1027,9 @@ CREATE TABLE public.user_gitlab_issues (
     available boolean DEFAULT true NOT NULL,
     qa_status text DEFAULT 'Not started'::text NOT NULL,
     linked_task_id text,
+    commented_by_me boolean DEFAULT false NOT NULL,
+    due_date date,
+    details jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT user_gitlab_issues_qa_status_check CHECK ((qa_status = ANY (ARRAY['Not started'::text, 'In progress'::text, 'Needs retest'::text, 'Passed'::text, 'Failed'::text, 'Blocked'::text]))),
     CONSTRAINT user_gitlab_issues_state_check CHECK ((state = ANY (ARRAY['open'::text, 'closed'::text])))
 );
@@ -1298,6 +1301,8 @@ CREATE INDEX user_github_issues_owner_recent ON public.user_github_issues USING 
 
 CREATE INDEX user_gitlab_issues_owner_recent ON public.user_gitlab_issues USING btree (tenant_id, owner_user_id, instance_url, gitlab_user_id, updated_at DESC);
 
+CREATE INDEX user_gitlab_issues_owner_due ON public.user_gitlab_issues USING btree (tenant_id, owner_user_id, instance_url, gitlab_user_id, due_date);
+
 
 -- ----------------------------------------------------------------------------------------------------
 -- Triggers
@@ -1520,4 +1525,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 40 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 41 as schema_version;
