@@ -19,7 +19,6 @@ import {
   X,
 } from 'lucide-react'
 import {
-  columnTotal,
   TRACKER_LIMITS,
   emptyCell,
   filterOpsFor,
@@ -42,7 +41,10 @@ import { rowTones, settleTimelineFields, todayNumber } from './timelineModel'
 import { isClosedProject } from '../tasks/lifecycle'
 import { cellText, keepsTasks, phaseRollup, rowTaskPatch, type TaskPatch } from './trackerTasks'
 import { createRowTasks } from './trackerTaskActions'
-import { groupRows, makeLookup, rowTitle, visibleRows } from './trackerQuery'
+import { groupRows, makeLookup, rowTitle, shown, visibleRows } from './trackerQuery'
+import { TOTAL_LABELS, type TotalKind, type TotalShown, progressOf, totalKindsFor, totalOf } from './trackerTotals'
+import { type BulkPlan, bulkColumns, bulkUndo } from './trackerBulk'
+import TrackerBulkSet from './TrackerBulkSet'
 import { exportCsv, exportFileName } from './trackerExport'
 import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type TaskLink } from './trackerApi'
 import TrackerTimeline from './TrackerTimeline'
@@ -127,7 +129,7 @@ export default function TrackerScreen(props: Props) {
   }
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [loadError, setLoadError] = useState('')
-  const [notice, setNotice] = useState<{ kind: 'error' | 'info'; text: string } | null>(null)
+  const [notice, setNotice] = useState<{ kind: 'error' | 'info'; text: string; undo?: () => void } | null>(null)
   const [saving, setSaving] = useState(0)
   const [work, setWork] = useState<Work>(emptyWork)
   const [activeViewId, setActiveViewId] = useState('')
@@ -224,7 +226,8 @@ export default function TrackerScreen(props: Props) {
   }, [])
   useEffect(() => {
     if (!notice || notice.kind === 'error') return
-    const timer = window.setTimeout(() => setNotice(null), 7000)
+    // A notice with Undo stays a little longer, so there is time to press it.
+    const timer = window.setTimeout(() => setNotice(null), notice.undo ? 12000 : 7000)
     return () => window.clearTimeout(timer)
   }, [notice])
 
@@ -1325,15 +1328,57 @@ export default function TrackerScreen(props: Props) {
     await trackerApi.removeLink(trackerId, link.id)
     setLinks(current => current.filter(item => item.id !== link.id))
   }
-  // The totals row adds up the rows shown (after search and filters), like a SUM over a filtered range.
+  // The totals row summarizes the rows shown (after search and filters), like a SUM over a filtered range.
   const totals = useMemo(() => {
-    const summed = shownColumns.filter(
-      column => column.total === 'sum' && (column.type === 'number' || column.type === 'formula'),
-    )
-    if (!summed.length) return undefined
     const shownRows = entries.flatMap(entry => (entry.kind === 'row' ? [entry.row] : []))
-    return new Map(summed.map(column => [column.id, columnTotal(column, shownRows, columns)]))
-  }, [shownColumns, entries, columns])
+    // Shown when a column has a total, or (for people who can set one) whenever there are rows to total.
+    if (!shownColumns.some(column => column.total) && !(canEdit && shownRows.length)) return undefined
+    const map = new Map<string, TotalShown>()
+    for (const column of shownColumns) {
+      const kind = column.total && totalKindsFor(column).includes(column.total) ? column.total : undefined
+      if (kind)
+        map.set(
+          column.id,
+          totalOf(column, kind, shownRows, columns, row => shown(column, row as TrackerRow, lookup).text),
+        )
+    }
+    return map
+  }, [shownColumns, entries, columns, lookup, canEdit])
+  const progress = useMemo(() => progressOf(columns, rows), [columns, rows])
+  const totalAnchor = useRef<HTMLElement | null>(null)
+  const [totalFor, setTotalFor] = useState('')
+  const setTotal = async (column: TrackerColumn, kind: TotalKind | null) => {
+    setTotalFor('')
+    try {
+      await applyColumns(
+        columns.map(item => {
+          if (item.id !== column.id) return item
+          const { total: _old, ...rest } = item
+          return kind ? { ...rest, total: kind } : rest
+        }),
+      )
+    } catch (error) {
+      say('error', error instanceof Error ? error.message : 'The total could not be saved.')
+    }
+  }
+  // ---- bulk edit: one value for every selected row ----
+  const [bulkSetOpen, setBulkSetOpen] = useState(false)
+  const bulkSetButton = useRef<HTMLButtonElement>(null)
+  const applyBulk = (column: TrackerColumn, value: Cell, plan: BulkPlan) => {
+    setBulkSetOpen(false)
+    const before = bulkUndo(plan, column)
+    for (const row of plan.change) editCell(row, column, value)
+    setNotice({
+      kind: 'info',
+      text: `${column.name} set for ${plural(plan.change.length, 'row')}${plan.locked.length ? `; ${plural(plan.locked.length, 'row')} skipped (from the Google Sheet)` : ''}.`,
+      undo: () => {
+        for (const item of before) {
+          const row = rowsRef.current.find(current => current.id === item.rowId)
+          if (row) editCell(row, column, item.value)
+        }
+      },
+    })
+  }
   const linkMap = useMemo(() => {
     const map = new Map<string, { count: number; cells: Set<string> }>()
     for (const link of links) {
@@ -2111,6 +2156,18 @@ export default function TrackerScreen(props: Props) {
       {notice && (
         <Notice kind={notice.kind} onClose={() => setNotice(null)}>
           {notice.text}
+          {notice.undo && (
+            <button
+              type="button"
+              className="trk-text-button trk-undo"
+              onClick={() => {
+                notice.undo?.()
+                setNotice(null)
+              }}
+            >
+              Undo
+            </button>
+          )}
         </Notice>
       )}
 
@@ -2307,6 +2364,35 @@ export default function TrackerScreen(props: Props) {
               </button>
             </span>
           )}
+          {canEdit && bulkColumns(columns).length > 0 && (
+            <button
+              ref={bulkSetButton}
+              type="button"
+              className="trk-button primary"
+              aria-expanded={bulkSetOpen}
+              onClick={() => setBulkSetOpen(open => !open)}
+              title="Set one column to the same value for every selected row"
+            >
+              Set value
+            </button>
+          )}
+          {bulkSetOpen && canEdit && (
+            <Popover
+              anchor={bulkSetButton}
+              onClose={() => setBulkSetOpen(false)}
+              className="trk-panel-pop"
+              minWidth={320}
+            >
+              <TrackerBulkSet
+                rows={rows.filter(row => selected.has(row.id))}
+                columns={columns}
+                people={people}
+                isLocked={cellLocked}
+                onApply={applyBulk}
+                onClose={() => setBulkSetOpen(false)}
+              />
+            </Popover>
+          )}
           {canEdit && props.onCreateTasks && (
             <button
               type="button"
@@ -2392,6 +2478,14 @@ export default function TrackerScreen(props: Props) {
           taskTitle={row => lookup.task(row.taskId)?.title || 'a deleted task'}
           links={linkMap}
           totals={totals}
+          onPickTotal={
+            canEdit
+              ? (column, anchor) => {
+                  totalAnchor.current = anchor
+                  setTotalFor(column.id)
+                }
+              : undefined
+          }
           onWork={(row, column, element) => {
             workAnchor.current = element
             setWorkCell({ rowId: row.id, columnId: column.id })
@@ -2482,6 +2576,35 @@ export default function TrackerScreen(props: Props) {
         )}
       </section>
 
+      {totalFor &&
+        (() => {
+          const column = columns.find(item => item.id === totalFor)
+          if (!column) return null
+          return (
+            <Popover anchor={totalAnchor} onClose={() => setTotalFor('')} className="trk-panel-pop" label="Total">
+              <p className="trk-muted-text">Total for {column.name}, over the rows shown:</p>
+              <div className="trk-total-kinds">
+                {totalKindsFor(column).map(kind => (
+                  <button
+                    type="button"
+                    key={kind}
+                    className={`trk-button${column.total === kind ? ' primary' : ''}`}
+                    aria-pressed={column.total === kind}
+                    onClick={() => void setTotal(column, kind)}
+                  >
+                    {TOTAL_LABELS[kind]}
+                  </button>
+                ))}
+                {column.total && (
+                  <button type="button" className="trk-button" onClick={() => void setTotal(column, null)}>
+                    None
+                  </button>
+                )}
+              </div>
+            </Popover>
+          )
+        })()}
+
       <footer className="trk-legend">
         <span>
           {filtered
@@ -2489,6 +2612,14 @@ export default function TrackerScreen(props: Props) {
             : plural(rows.length, 'row')}{' '}
           · {plural(columns.length, 'column')}
         </span>
+        {progress && progress.total > 0 && (
+          <span className="trk-progress" title={`Rows where ${progress.column.name} says done`}>
+            <i aria-hidden="true">
+              <b style={{ width: `${progress.percent}%` }} />
+            </i>
+            {progress.done} of {progress.total} done · {progress.percent}%
+          </span>
+        )}
         <span>
           <i className="trk-key connected" aria-hidden="true" /> Blue headers fill themselves from the linked task
         </span>

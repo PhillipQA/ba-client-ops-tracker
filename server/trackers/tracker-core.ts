@@ -24,6 +24,7 @@ import {
 } from '../../src/features/trackers/trackerModel'
 import { scopeFor } from '../../src/shared/access'
 import type { SheetIssue } from '../../src/features/trackers/trackerAutoDone'
+import { progressColumn } from '../../src/features/trackers/trackerTotals'
 import { type Deps, type User, UUID } from './tracker-common'
 
 export function trackerCore(deps: Deps) {
@@ -109,6 +110,25 @@ export function trackerCore(deps: Deps) {
       .eq('tracker_id', trackerId)
     check(r.error)
     return Number(r.count || 0)
+  }
+  /**
+   * How many rows are done, for the progress bar in the tracker list: a count on the column that says done
+   * (progressColumn). Undefined when the tracker has no such column, or the count fails; the list never fails for it.
+   */
+  async function doneCount(tenant: string, row: any): Promise<number | undefined> {
+    const progress = progressColumn(Array.isArray(row?.columns) ? row.columns : [])
+    if (!progress || !/^[a-z_][a-z0-9_]*$/i.test(progress.column.id)) return undefined
+    try {
+      const r = await db
+        .from('tenant_tracker_rows')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenant)
+        .eq('tracker_id', row.id)
+        .eq(`cells->>${progress.column.id}`, progress.done === true ? 'true' : progress.done)
+      return r.error ? undefined : Number(r.count || 0)
+    } catch {
+      return undefined
+    }
   }
   /** users: everyone the tracker shows in the folder of (trackerFolders); worked out where the workspace is at hand. */
   const trackerOut = (row: any, user: User, count: number, users?: string[]): Tracker => ({
@@ -349,6 +369,7 @@ export function trackerCore(deps: Deps) {
     trackerRow,
     trackerOut,
     rowCount,
+    doneCount,
     readOnly,
     trackerVisibleIn,
     validateLinks,

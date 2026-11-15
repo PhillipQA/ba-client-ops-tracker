@@ -18,6 +18,7 @@ import {
   type OptionColor,
   type RevealBy,
   type SelectOption,
+  type TotalKind,
   type TrackerColumn,
 } from './trackerModel'
 import { ColumnIcon, Dialog, Pill } from './trackerUi'
@@ -28,7 +29,7 @@ export type ColumnDraft = {
   options?: SelectOption[]
   revealBy?: RevealBy
   formula?: string
-  total?: 'sum' | null
+  total?: TotalKind | null
   /** Done when its tasks are done: the setting, or null to turn it off. Left out when unchanged. */
   autoDone?: AutoDone | null
   /** Text columns: show the contract number of the row's project ('contract'), or null to stop. Left out when unchanged. */
@@ -77,7 +78,7 @@ export default function TrackerColumnDialog({
   const [revealBy, setRevealBy] = useState<RevealBy>(column?.revealBy || 'editors')
   const [query, setQuery] = useState('')
   const [formula, setFormula] = useState(() => (column?.formula ? formulaToText(column.formula, columns) : ''))
-  const [total, setTotal] = useState(column?.total === 'sum')
+  const [total, setTotal] = useState(Boolean(column?.total))
   const [autoOn, setAutoOn] = useState(Boolean(column?.autoDone))
   const [autoDoneOption, setAutoDoneOption] = useState(column?.autoDone?.done || '')
   const [autoUndoneOption, setAutoUndoneOption] = useState(column?.autoDone?.undone || '')
@@ -210,7 +211,7 @@ export default function TrackerColumnDialog({
         ...(column?.type === 'select' || column?.type === 'multiselect' ? { options: cleaned } : {}),
         ...(column?.type === 'secret' ? { revealBy } : {}),
         ...(column?.type === 'formula' ? { formula } : {}),
-        ...(summable ? { total: total ? ('sum' as const) : null } : {}),
+        ...(summable ? { total: total ? column?.total || ('sum' as const) : null } : {}),
         ...(autoChanged ? { autoDone } : {}),
         ...(contractAllowed && contractOn !== (column?.taskField === 'contract') ? { contract: contractOn } : {}),
       }
@@ -220,7 +221,7 @@ export default function TrackerColumnDialog({
           (sameType.options && JSON.stringify(sameType.options) !== JSON.stringify(column.options || [])) ||
           (column.type === 'secret' && revealBy !== (column.revealBy || 'editors')) ||
           (column.type === 'formula' && formula !== formulaToText(column.formula || '', columns)) ||
-          (summable && total !== (column.total === 'sum')) ||
+          (summable && total !== Boolean(column.total)) ||
           autoChanged)
       if (converting && onConvert) {
         if (renamed) await onSave(sameType as ColumnDraft)
@@ -469,8 +470,8 @@ export default function TrackerColumnDialog({
           )}
           {(type === 'number' || type === 'formula') && !converting && (
             <label className="trk-checkline">
-              <input type="checkbox" checked={total} onChange={event => setTotal(event.target.checked)} /> Show the SUM
-              in the totals row
+              <input type="checkbox" checked={total} onChange={event => setTotal(event.target.checked)} /> Show a total
+              in the totals row (Sum, unless you picked another there)
             </label>
           )}
           {autoAllowed && (

@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: bulk edit, totals for every column, progress
+- **Bulk edit:** select rows, then **Set value** in the selection bar. Pick a column (Choice, Person, Checkbox, Date, Text or Number) and a value. Before anything is saved you see how many rows will change, how many already have the value, and how many are skipped because that column comes from the Google Sheet. Each row is saved the same way as editing its cell by hand, so its history, linked task and the Sheet follow. **Undo** in the notice puts the old values back.
+- **Totals row for every column:** click a cell in the totals row to pick a total. Numbers: sum, average, smallest, largest. Choice, Person and task columns: count by value ("3 Not started · 2 Live"). Dates: earliest – latest. Checkboxes: ticked and %. Any column: filled or empty. Totals count only the rows shown after search and filters, and are shared with everyone on the tracker. The old SUM setting keeps working.
+- **Progress:** a tracker with a "done when its tasks are done" column, or a Status column with an option like Done, Completed or Live, shows how many rows are done: in the tracker's footer, and as a bar on its tile in the tracker list and folders.
+- No database migration.
+
 ### Action Center: choose your own widgets
 - **Customize** (top right of the Action Center) lets each person pick their widgets, drag them into order (or use the arrows), choose half or full width, and hide what they don't use. Save keeps it; Cancel puts it back.
 - Two new widgets: **Work Hub emails** (your latest client emails, unread first; click one to open it in Work Hub) and **Awaiting signature** (DocHub documents still out for signing, who hasn't signed yet, oldest first).

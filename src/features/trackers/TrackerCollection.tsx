@@ -1,3 +1,4 @@
+import { progressLabel } from './trackerTotals'
 import { useState, type MouseEvent } from 'react'
 import { Folder, FolderOpen, LayoutGrid, List, Lock, Table2, Users } from 'lucide-react'
 import { columnTypeLabel, trackerProjectIds, type Tracker } from './trackerModel'
@@ -167,6 +168,14 @@ export function TrackerCollection(props: CollectionProps) {
                 <Users size={12} aria-hidden="true" /> {usersOf(tracker).length}
               </span>
             </div>
+            {tracker.doneCount !== undefined && tracker.rowCount > 0 && (
+              <div className="trk-tile-progress">
+                <i aria-hidden="true">
+                  <b style={{ width: `${Math.round((tracker.doneCount * 100) / tracker.rowCount)}%` }} />
+                </i>
+                <span>{progressLabel(tracker.doneCount, tracker.rowCount)}</span>
+              </div>
+            )}
             <small className="trk-muted">
               Updated {niceTime(tracker.updatedAt)} · {tracker.createdByName || 'Unknown'}
             </small>
@@ -211,7 +220,15 @@ export function TrackerCollection(props: CollectionProps) {
             {chips(tracker)}
           </span>
           <span role="cell">{where(tracker) || <span className="trk-muted">—</span>}</span>
-          <span role="cell">{tracker.rowCount.toLocaleString('en')}</span>
+          <span
+            role="cell"
+            title={tracker.doneCount === undefined ? undefined : progressLabel(tracker.doneCount, tracker.rowCount)}
+          >
+            {tracker.rowCount.toLocaleString('en')}
+            {tracker.doneCount !== undefined && tracker.rowCount > 0 && (
+              <small className="trk-muted"> · {Math.round((tracker.doneCount * 100) / tracker.rowCount)}% done</small>
+            )}
+          </span>
           <span
             role="cell"
             title={tracker.columns.map(column => `${column.name} (${columnTypeLabel(column.type)})`).join(', ')}

@@ -29,6 +29,7 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
     workspace,
     trackerVisibleIn,
     rowCount,
+    doneCount,
     trackerOut,
     validateLinks,
     now,
@@ -82,12 +83,15 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
       const shown = trackerVisibleIn(state, user)
       const visible = (r.data || []).filter((row: any) => (!row.private || row.created_by === user.id) && shown(row))
       const counts = await Promise.all(visible.map((row: any) => rowCount(tenant, row.id)))
+      // Progress for the list: done rows, for trackers with a column that says done.
+      const done = await Promise.all(visible.map((row: any) => doneCount(tenant, row)))
       // Each tracker's users, for the folders: its creator, the people on its projects, the people added.
       const onProjects = projectUsers(state)
       res.json({
-        trackers: visible.map((row: any, index: number) =>
-          trackerOut(row, user, counts[index], trackerUsers(row, state, onProjects)),
-        ),
+        trackers: visible.map((row: any, index: number) => ({
+          ...trackerOut(row, user, counts[index], trackerUsers(row, state, onProjects)),
+          ...(done[index] === undefined ? {} : { doneCount: done[index] }),
+        })),
         limits: TRACKER_LIMITS,
       })
     }),
