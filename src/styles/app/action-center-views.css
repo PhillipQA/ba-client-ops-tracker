@@ -100,3 +100,231 @@
     font-size: 21px;
   }
 }
+
+/* Customizable Action Center: widgets in a two-column grid, full or half width. */
+.ac-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.ac-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.ac-cell {
+  min-width: 0;
+}
+.ac-cell.full {
+  grid-column: 1 / -1;
+}
+@media (max-width: 900px) {
+  .ac-cell.half {
+    grid-column: 1 / -1;
+  }
+}
+.ac-widget-note {
+  margin: 0;
+  padding: 10px 2px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+/* Widget lists (Work Hub emails, Awaiting signature). */
+.ac-widget-list h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ac-widget-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.ac-widget-list li > button,
+.ac-widget-list li > a {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 4px;
+  border: 0;
+  border-top: 1px solid var(--theme-border, rgba(128, 128, 128, 0.25));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ac-widget-list li:first-child > * {
+  border-top: 0;
+}
+.ac-widget-list li > *:hover {
+  background: var(--theme-accent-soft, rgba(128, 128, 128, 0.08));
+}
+.ac-row-main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.ac-row-main strong,
+.ac-row-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-row-main span {
+  font-size: 12.5px;
+  opacity: 0.8;
+}
+.ac-widget-list button:not(.unread) .ac-row-main strong {
+  font-weight: 500;
+}
+.ac-widget-list button.unread .ac-row-main strong::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--theme-accent, #3b82f6);
+  vertical-align: middle;
+}
+.ac-row-side {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+.ac-row-side em {
+  font-style: normal;
+  padding: 1px 7px;
+  border: 1px solid var(--theme-border, rgba(128, 128, 128, 0.35));
+  border-radius: 999px;
+}
+.secondary.icon-only {
+  padding-inline: 8px;
+}
+
+/* Customizing: the bar on top, and a frame around each widget. */
+.ac-customize-bar {
+  display: grid;
+  gap: 12px;
+}
+.ac-customize-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ac-customize-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.ac-customize-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  opacity: 0.8;
+}
+.ac-customize-actions,
+.ac-add,
+.ac-customize-foot,
+.ac-role-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ac-add > span,
+.ac-role-save > span {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ac-customize-foot {
+  justify-content: space-between;
+}
+.ac-customize-foot .link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ac-frame {
+  border: 2px dashed var(--theme-accent, #3b82f6);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ac-frame.dragging {
+  opacity: 0.5;
+}
+.ac-frame-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--theme-accent-soft, rgba(59, 130, 246, 0.12));
+  cursor: grab;
+}
+.ac-frame-bar strong {
+  flex: 1;
+  font-size: 13px;
+}
+.ac-frame-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ac-frame-actions button {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border: 1px solid var(--theme-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ac-frame-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ac-frame-actions button[aria-pressed="true"] {
+  background: var(--theme-accent, #3b82f6);
+  border-color: var(--theme-accent, #3b82f6);
+  color: #fff;
+}
+.ac-width {
+  display: inline-flex;
+}
+.ac-width button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.ac-width button:last-child {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
+}
+.ac-frame-body {
+  max-height: 260px;
+  overflow: hidden;
+  opacity: 0.6;
+  pointer-events: none;
+}

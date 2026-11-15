@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Action Center: choose your own widgets
+- **Customize** (top right of the Action Center) lets each person pick their widgets, drag them into order (or use the arrows), choose half or full width, and hide what they don't use. Save keeps it; Cancel puts it back.
+- Two new widgets: **Work Hub emails** (your latest client emails, unread first; click one to open it in Work Hub) and **Awaiting signature** (DocHub documents still out for signing, who hasn't signed yet, oldest first).
+- **Starting layouts per role:** an Administrator arranges the page, then saves it as the starting layout for a role (QA, Support, PM…). People with that role who haven't made their own layout get it. Anyone can go back to their role's layout.
+- Widgets for pages a person can't open (the assistant, Work Hub, Documents) are left out for them automatically.
+- Without changes, the page looks as it did. The **Work view** picker moved to the top, next to Customize, so it stays when Activities is hidden.
+- **Database:** run `database/migrations/schema-v40-user-preferences.sql` so layouts follow people across browsers and devices. Until then, each person's layout is kept in their browser, and role layouts still work.
+
 ### Pick the project first: DRF and Work Hub
 - **DRF → Linked email:** the **Client** picker is now **Project**. Type a project, a client name or a contract number. The project brings its client, lists its tasks and subtasks, and fills the **Contract Number** from Seeds right away, even before a task is chosen.
 - A task chosen elsewhere (in DocHub or by the assistant) sets the project picker to that task's project. Choosing another project lets go of a task from a different project.

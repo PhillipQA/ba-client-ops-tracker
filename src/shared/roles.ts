@@ -6,6 +6,7 @@
  * another). Roles add up. A person with no job role keeps the modules picked for them by hand, as before.
  * Administrators edit the roles in Settings › Roles; these are the starting set.
  */
+import { type ActionCenterLayout, cleanLayout } from './actionCenterLayout'
 import type { AppModule } from './types'
 import { asList as list } from './lists'
 
@@ -20,6 +21,8 @@ export interface JobRole {
   seedsTitles: string[]
   /** Built-in roles can be edited but not deleted. */
   builtIn?: boolean
+  /** The Action Center layout people with this role start from (saved by an Administrator). */
+  actionCenter?: ActionCenterLayout
 }
 
 export const ROLE_MODULES: AppModule[] = [
@@ -109,7 +112,16 @@ export function cleanJobRole(raw: any): JobRole | null {
   const seedsTitles = [...new Set(list(raw?.seedsTitles).map(text).filter(Boolean))]
     .slice(0, 12)
     .map(t => t.slice(0, 40))
-  return { id, name, modules, edit, seedsTitles, ...(raw?.builtIn ? { builtIn: true } : {}) }
+  const actionCenter = cleanLayout(raw?.actionCenter)
+  return {
+    id,
+    name,
+    modules,
+    edit,
+    seedsTitles,
+    ...(raw?.builtIn ? { builtIn: true } : {}),
+    ...(actionCenter ? { actionCenter } : {}),
+  }
 }
 
 /** The account's roles: its own edits and additions over the starting set. Built-in roles cannot go missing. */
