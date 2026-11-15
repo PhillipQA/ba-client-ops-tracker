@@ -3712,3 +3712,62 @@ a.trk-link-button {
     font-size: 10.5px;
   }
 }
+
+/* Timeline dependencies: links between bars, the critical path, rows that start too early. */
+.trk-tl-links {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: visible;
+}
+.trk-tl-links path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--k-text) 45%, transparent);
+  stroke-width: 1.25;
+}
+.trk-tl-links path.critical {
+  stroke: var(--k-primary);
+  stroke-width: 2;
+}
+.trk-tl-links path.early {
+  stroke: #dc2626;
+  stroke-dasharray: 4 3;
+}
+.trk-tl-bar.critical {
+  box-shadow: 0 0 0 2px var(--k-primary);
+}
+.trk-tl-bar.early {
+  outline: 2px dashed #dc2626;
+  outline-offset: 1px;
+}
+.trk-tl-key.critical {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--k-primary);
+}
+.trk-tl-key.early {
+  background: transparent;
+  outline: 2px dashed #dc2626;
+  outline-offset: -2px;
+}
+.trk-tl-pending {
+  display: grid;
+  gap: 6px;
+  margin: 0 12px 10px;
+  padding: 12px 14px;
+  border: 1px solid #d9a441;
+  border-radius: 10px;
+  background: color-mix(in srgb, #d9a441 12%, var(--k-solid));
+  font-size: 13px;
+  line-height: 1.45;
+}
+.trk-tl-pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.trk-tl-links .trk-tl-arrowhead {
+  fill: color-mix(in srgb, var(--k-text) 60%, transparent);
+  stroke: none;
+}

@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: dependencies on the Timeline
+- The **Predecessor** column now links rows on the Timeline. Type the WBS (or the name) of the row it waits for: `1.2`, several with `&` (`2.2 & 2.3`), and a gap in working days with `+2d`. Arrows run from the end of one bar to the start of the next.
+- **Critical path:** the chain of linked rows that decides the last end date is outlined in the accent colour. A slip anywhere on it moves the end.
+- **Moving a bar with rows after it:** if the rows that wait for it would now start too early, a box shows which ones would move and the new last end date. Choose **Move all**, **Move only this row**, or **Cancel**. Rows are only pushed later, keep their length in working days, and skip weekends; a row with room to spare stays.
+- A row that starts before a row it waits for is finished is outlined red with a dashed arrow. A Predecessor that matches no row is reported under the chart.
+- The Predecessor text stays as typed, so links travel to a connected Google Sheet as before. The Project timeline template already has WBS and Predecessor columns. No database migration.
+
 ### Trackers: Board and Calendar views
 - The layout switch now reads **Grid · Board · Calendar · Timeline**. Search, filters and highlight colours apply in every view; your choice is remembered per tracker on your device.
 - **Board:** each row is a card, in columns by a Choice or Person column (Status by default; change it with **Columns by**). Drag a card to another column to change that value: it saves the same way as editing the cell, so history, the linked task and the Google Sheet follow. Click a card to open the row.

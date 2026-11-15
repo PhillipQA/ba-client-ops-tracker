@@ -27,6 +27,17 @@ import {
   type TimelineSettings,
   type TimelineZoom,
 } from './timelineModel'
+import {
+  buildLinks,
+  cascade,
+  conflicts,
+  criticalPath,
+  type Dates,
+  dependencyFields,
+  earliestStart,
+  lastEnd,
+  rowDates,
+} from './trackerDependencies'
 
 type Zoom = TimelineZoom
 /** Width of one day, in pixels, for each zoom. */
@@ -181,6 +192,21 @@ export default function TrackerTimeline(props: Props) {
   }, [zoom, from, timeline.to])
 
   const dateColumns = columns.filter(column => column.type === 'date')
+  // ---- dependencies: arrows from the Predecessor column, and rows pushed when one slips ----
+  const depFields = useMemo(() => dependencyFields(columns), [columns])
+  const links = useMemo(() => buildLinks(rows, depFields), [rows, depFields])
+  const dates = useMemo(
+    () => (fields.startId ? rowDates(rows, fields.startId, fields.endId) : new Map<string, Dates>()),
+    [rows, fields.startId, fields.endId],
+  )
+  const critical = useMemo(() => criticalPath(dates, links), [dates, links])
+  const early = useMemo(() => conflicts(dates, links), [dates, links])
+  const unknownRefs = useMemo(
+    () => [...links.unknown.values()].reduce((total, refs) => total + refs.length, 0),
+    [links],
+  )
+  /** A change waiting for an answer: the rows after it would have to move too. */
+  const [pending, setPending] = useState<{ row: TrackerRow; next: Dates; moves: Map<string, Dates> } | null>(null)
   if (!dateColumns.length)
     return (
       <div className="trk-empty trk-tl-empty">
@@ -244,12 +270,30 @@ export default function TrackerTimeline(props: Props) {
     dragRef.current = next
     setDrag(next)
   }
+  const writeDates = (row: TrackerRow, next: Dates) => {
+    const cells: Record<string, string> = { [fields.startId]: isoOf(next.start) }
+    if (fields.endId) cells[fields.endId] = isoOf(next.end)
+    onDates(row, cells)
+  }
   const commit = (item: TimelineItem, start: number, end: number) => {
     if (start === item.start && end === item.end) return
-    const cells: Record<string, string> = { [fields.startId]: isoOf(start) }
-    if (fields.endId) cells[fields.endId] = isoOf(end)
-    onDates(item.row, cells)
+    const next = { start, end }
+    // Rows that wait for this one and would now start too early: ask before moving them.
+    const moves = links.outOf.has(item.row.id) ? cascade(dates, links, item.row.id, next) : new Map<string, Dates>()
+    if (moves.size) setPending({ row: item.row, next, moves })
+    else writeDates(item.row, next)
   }
+  const applyPending = (all: boolean) => {
+    if (!pending) return
+    writeDates(pending.row, pending.next)
+    if (all)
+      for (const [id, next] of pending.moves) {
+        const row = rows.find(item => item.id === id)
+        if (row && canDrag(row)) writeDates(row, next)
+      }
+    setPending(null)
+  }
+  const nameOf = (row: TrackerRow) => (title && String(row.cells[title.id] || '')) || 'Untitled row'
   const startDrag = (event: ReactPointerEvent<HTMLElement>, item: TimelineItem, mode: DragMode) => {
     if (event.button !== 0 || item.start === null || item.end === null || !canDrag(item.row)) return
     event.stopPropagation()
@@ -382,6 +426,42 @@ export default function TrackerTimeline(props: Props) {
     />
   )
 
+  // Where each shown row sits, top to bottom, so links can be drawn between bars. Rows are one --tl-row high.
+  const ROW = 38
+  let lines = 0
+  const lineOf = new Map<string, number>()
+  for (const group of timeline.groups) {
+    if (group.label) lines++
+    if (collapsed.has(group.key)) continue
+    for (const item of group.items) lineOf.set(item.row.id, lines++)
+  }
+  const arrowsHeight = lines * ROW
+  const arrows = links.all.flatMap(link => {
+    const a = dates.get(link.from),
+      b = dates.get(link.to),
+      la = lineOf.get(link.from),
+      lb = lineOf.get(link.to)
+    if (!a || !b || la === undefined || lb === undefined || from === null) return []
+    const x1 = x(a.end) + width,
+      y1 = la * ROW + ROW / 2,
+      x2 = x(b.start),
+      y2 = lb * ROW + ROW / 2
+    // Out of the end of one bar, down (or up) the gap, into the start of the other. When the second bar starts
+    // before the first ends, the line goes round between the two rows.
+    const d =
+      x2 >= x1 + 12
+        ? `M${x1} ${y1}H${x1 + 6}V${y2}H${x2 - 1}`
+        : `M${x1} ${y1}H${x1 + 6}V${y2 > y1 ? y2 - ROW / 2 : y2 + ROW / 2}H${x2 - 8}V${y2}H${x2 - 1}`
+    return [
+      {
+        key: `${link.from}>${link.to}`,
+        d,
+        early: early.has(link.to) && b.start < earliestStart(a.end, link.lag),
+        critical: critical.has(link.from) && critical.has(link.to),
+      },
+    ]
+  })
+
   /** Every row of the list carries the borders, so they can be dragged anywhere, not only in the header. */
   const edges = (header = false) => [
     resizer('task', 'Task', 'task', header),
@@ -405,6 +485,8 @@ export default function TrackerTimeline(props: Props) {
       item.status?.label || '',
       item.lead ? `Lead: ${item.lead}` : '',
       item.late ? 'Past its end date' : '',
+      early.has(item.row.id) ? 'Starts before a row it waits for is finished' : '',
+      critical.has(item.row.id) ? 'On the critical path: a slip here moves the end date' : '',
       draggable ? 'Drag to move, drag an edge to change a date, or use the arrow keys (Shift for the end)' : '',
     ]
       .filter(Boolean)
@@ -414,7 +496,7 @@ export default function TrackerTimeline(props: Props) {
       <>
         <button
           type="button"
-          className={`trk-tl-bar trk-tone-${tone}${item.late ? ' late' : ''}${item.progress >= 100 ? ' done' : ''}${draggable ? ' draggable' : ''}${dragging?.moved ? ' dragging' : ''}`}
+          className={`trk-tl-bar trk-tone-${tone}${item.late ? ' late' : ''}${item.progress >= 100 ? ' done' : ''}${draggable ? ' draggable' : ''}${dragging?.moved ? ' dragging' : ''}${critical.has(item.row.id) ? ' critical' : ''}${early.has(item.row.id) ? ' early' : ''}`}
           style={{ left: x(shown.start!), width: pixels }}
           title={dragging ? undefined : tip}
           aria-label={tip}
@@ -490,6 +572,54 @@ export default function TrackerTimeline(props: Props) {
           Today
         </button>
       </div>
+      {pending &&
+        (() => {
+          const blocked = [...pending.moves.keys()].filter(id => {
+            const row = rows.find(item => item.id === id)
+            return !row || !canDrag(row)
+          }).length
+          const names = [...pending.moves.keys()]
+            .map(id => rows.find(item => item.id === id))
+            .filter((row): row is TrackerRow => Boolean(row))
+            .map(nameOf)
+          const before = lastEnd(dates),
+            after = lastEnd(new Map(dates).set(pending.row.id, pending.next), pending.moves)
+          return (
+            <div className="trk-tl-pending" role="alertdialog" aria-label="Move the rows that follow?">
+              <strong>
+                {nameOf(pending.row)} now runs {shortDate(pending.next.start, true)} –{' '}
+                {shortDate(pending.next.end, true)}.
+              </strong>
+              <span>
+                {pending.moves.size === 1 ? '1 row that waits' : `${pending.moves.size} rows that wait`} for it would
+                start too early: {names.slice(0, 4).join(', ')}
+                {names.length > 4 ? ` and ${names.length - 4} more` : ''}.
+                {after !== null && before !== null && after !== before
+                  ? ` Moving them puts the last end date at ${shortDate(after, true)}.`
+                  : ' The last end date stays the same.'}
+                {blocked > 0 ? ` ${blocked} of them can’t be moved from here and will stay.` : ''}
+              </span>
+              <span className="trk-tl-pending-actions">
+                <button type="button" className="trk-button" onClick={() => setPending(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="trk-button" onClick={() => applyPending(false)}>
+                  Move only this row
+                </button>
+                <button type="button" className="trk-button primary" onClick={() => applyPending(true)}>
+                  Move all {pending.moves.size + 1}
+                </button>
+              </span>
+            </div>
+          )
+        })()}
+      {unknownRefs > 0 && (
+        <p className="trk-tl-note" role="status">
+          <AlertTriangle size={13} aria-hidden="true" /> {unknownRefs} predecessor
+          {unknownRefs === 1 ? ' reference matches' : ' references match'} no row. Check the{' '}
+          {columns.find(column => column.id === depFields?.predecessorId)?.name || 'Predecessor'} column.
+        </p>
+      )}
       {timeline.unscheduled > 0 && (
         <p className="trk-tl-note" role="status">
           <AlertTriangle size={13} aria-hidden="true" /> {timeline.unscheduled} row
@@ -554,6 +684,37 @@ export default function TrackerTimeline(props: Props) {
                 style={{ left: `calc(var(--tl-left) + ${x(today) + width / 2}px)` }}
                 title={`Today, ${shortDate(today, true)}`}
               />
+            )}
+            {arrows.length > 0 && (
+              <svg
+                className="trk-tl-links"
+                aria-hidden="true"
+                style={{ left: 'var(--tl-left)', width: days * width, height: arrowsHeight }}
+                width={days * width}
+                height={arrowsHeight}
+              >
+                <defs>
+                  <marker
+                    id={`tl-arrow-${trackerId}`}
+                    viewBox="0 0 8 8"
+                    refX="7"
+                    refY="4"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto"
+                  >
+                    <path d="M0 0L8 4L0 8z" className="trk-tl-arrowhead" />
+                  </marker>
+                </defs>
+                {arrows.map(arrow => (
+                  <path
+                    key={arrow.key}
+                    d={arrow.d}
+                    className={`${arrow.early ? 'early' : ''}${arrow.critical ? ' critical' : ''}`}
+                    markerEnd={`url(#tl-arrow-${trackerId})`}
+                  />
+                ))}
+              </svg>
             )}
             {timeline.groups.map(group => {
               const closed = collapsed.has(group.key)
@@ -664,6 +825,17 @@ export default function TrackerTimeline(props: Props) {
         Bars fill in by % done. <span className="trk-tl-key late" /> past the end date and not finished.{' '}
         <span className="trk-tl-key today" /> today. Click a bar or task to open the row
         {rows.some(canDrag) ? '; drag a bar to change its dates.' : '.'}{' '}
+        {links.all.length > 0 ? (
+          <>
+            Arrows show which row waits for which. <span className="trk-tl-key critical" /> the critical path: the chain
+            that sets the last end date. <span className="trk-tl-key early" /> starts before a row it waits for is
+            finished.{' '}
+          </>
+        ) : depFields ? (
+          `To link rows, type the ${depFields.keyId ? 'WBS' : 'name'} of the row it waits for in the ${columns.find(column => column.id === depFields.predecessorId)?.name} column (for a gap, add +2d). `
+        ) : (
+          'To link rows, add a Text column named Predecessor. '
+        )}
         {shared && onShare
           ? 'These settings are shared with everyone who opens this tracker.'
           : 'These settings are kept in this browser only.'}
