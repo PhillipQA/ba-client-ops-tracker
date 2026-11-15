@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Action Center: count tiles you choose and build
+- **Customize → Edit tiles** on the counts strip: tick which built-in tiles show and put them in order. Built-in counts: Needs attention, Waiting on developer, **Waiting on client**, **Overdue**, **Due today**, Activities today, Open inquiries and **Time not sent to Seeds**.
+- **Rename** any tile and give it a **colour**.
+- **Add your own count:** tasks with up to three filters (the same filters as Reports, for example *Priority is High* and *Waiting on is Client*), optionally only tasks assigned to you and with or without done tasks. Choose the small line under the number: how many are overdue, how many clients, or nothing.
+- Up to eight tiles. Saved with your layout; an Administrator can save tiles as part of a role's starting layout. Without changes, the strip shows the same four tiles as before.
+- No database migration.
+
 ### Trackers: roll-up across rollouts
 - **Roll-up** (button on the Trackers page, at `/trackers/rollup`): every Site rollout tracker you can open, in one list. You can also choose your own set of trackers; the choice is kept in your browser. A tracker can take part when it has a Status or a Go-live column.
 - Trackers are lined up by four columns, matched by name: **Site**, **Status**, **Go-live** and **Owner**. With no Owner column, the owner is whoever the row's task is assigned to.
