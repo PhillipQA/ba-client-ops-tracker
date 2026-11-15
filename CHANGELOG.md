@@ -11,6 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: roll-up across rollouts
+- **Roll-up** (button on the Trackers page, at `/trackers/rollup`): every Site rollout tracker you can open, in one list. You can also choose your own set of trackers; the choice is kept in your browser. A tracker can take part when it has a Status or a Go-live column.
+- Trackers are lined up by four columns, matched by name: **Site**, **Status**, **Go-live** and **Owner**. With no Owner column, the owner is whoever the row's task is assigned to.
+- **Summary tiles:** total, live, due in 14 days, overdue and blocked. Click a tile to filter by it. **Filters:** search, client, status, owner and a go-live range. **Group** by tracker or client, each group with a progress bar (rows live). **Export CSV** of what you see.
+- **Edit in place:** Status, Go-live and a Person owner can be changed right in the list. The change is saved to the row's own tracker, so its history, linked task, connected Sheet and automations follow, the same as an edit made there. Click a site to open it in its tracker; Back returns to the roll-up.
+- Nothing is copied. Rows are read live, only trackers you can open are shown, and only the four columns are sent (never Secret values).
+- **Action Center widget "Rollouts due this week"**: rows going live in the next seven days, plus overdue ones, using your roll-up choice. Add it under Customize.
+- No database migration.
+
 ### Trackers: when → then automations
 - **Automations** (button beside Reminders): small rules the tracker runs on the server right after a row is saved from the app. **When** a row is added, or a column changes (to anything, or to one value), **and if** up to two conditions hold, **then** up to three actions: **set** a column (a date can be set to *today*), **create its task** (on trackers that don't make tasks by themselves; assigned to the row's person or whoever saved), **notify** people (named, or the row's Person column), or **add a comment**.
 - Examples: *Status changes to Live → set Done date to today and tick Signed off*; *A row is added → create its task for the row's Owner*; *Status changes to Blocked → notify the PM and add a comment*.

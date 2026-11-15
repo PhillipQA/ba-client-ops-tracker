@@ -81,3 +81,22 @@ export const takeSheetEdits = (trackerId: string): SheetEditsFor | '' => {
     return ''
   }
 }
+
+const ROLLUP_KEY = 'ba.trackers.rollup'
+/** The trackers a person chose for the roll-up, kept in this browser. Empty means every Site rollout tracker. */
+export const rememberedRollup = (): string[] => {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(ROLLUP_KEY) || '[]')
+    return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+export const rememberRollup = (ids: string[]) => {
+  try {
+    if (ids.length) window.localStorage.setItem(ROLLUP_KEY, JSON.stringify(ids))
+    else window.localStorage.removeItem(ROLLUP_KEY)
+  } catch {
+    /* Without storage the roll-up shows every Site rollout tracker. */
+  }
+}

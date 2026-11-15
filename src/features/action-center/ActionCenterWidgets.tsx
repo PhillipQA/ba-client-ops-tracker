@@ -1,11 +1,16 @@
 /**
- * Action Center widgets that read other pages: the latest Work Hub client emails, and DocHub documents still out for
- * signature. Each loads when shown and on Refresh; nothing polls, so a hidden widget costs nothing.
+ * Action Center widgets that read other pages: the latest Work Hub client emails, DocHub documents still out for
+ * signature, and rollouts going live this week (from the tracker roll-up). Each loads when shown and on Refresh; nothing polls, so a hidden widget costs nothing.
  */
-import { ExternalLink, FileSignature, Mail, RefreshCw } from 'lucide-react'
+import { CalendarClock, ExternalLink, FileSignature, Mail, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { requestJson } from '../../shared/http'
-import type { Client } from '../../shared/types'
+import { businessDateKey } from '../../shared/businessDate'
+import type { Client, UserAccount, WorkItem } from '../../shared/types'
+import { loadRollup } from '../trackers/trackerApi'
+import { rememberedRollup, rememberTracker, rememberTrackerRow } from '../trackers/trackerNav'
+import { makeLookup } from '../trackers/trackerQuery'
+import { ROLLUP_ID, STATE_LABEL, dueThisWeek, rollupItems } from '../trackers/trackerRollup'
 import { type DocHubDocument, docHubLabels } from '../documents/dochub'
 import { rememberWorkHubMessage } from '../work-hub/workHubNav'
 import { awaitingSignature, type Email, emailsToShow } from './widgetLists'
@@ -184,6 +189,102 @@ export function DocHubWidget({ setView }: { setView: View }) {
               </li>
             )
           })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** "2026-11-18" → "Nov 18". */
+const shortDay = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  return match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+      })
+    : value
+}
+
+export function RolloutsWidget({
+  items,
+  accounts,
+  setView,
+}: {
+  items: WorkItem[]
+  accounts: UserAccount[]
+  setView: View
+}) {
+  const load = useCallback(() => loadRollup(rememberedRollup()).then(result => result.sets), [])
+  const { data, error, busy, refresh } = useLoad(load)
+  const today = businessDateKey()
+  const due = data ? dueThisWeek(rollupItems(data, makeLookup(items, accounts, today)), today) : []
+  const overdue = due.filter(item => item.state === 'overdue').length
+  const openRollup = () => {
+    rememberTracker(ROLLUP_ID)
+    setView('trackers')
+  }
+  return (
+    <div className="panel dashboard-panel ac-widget-list">
+      <div className="panel-heading dashboard-panel-heading">
+        <div>
+          <h2>
+            <CalendarClock size={17} /> Rollouts due this week
+          </h2>
+          <p>
+            {data
+              ? due.length
+                ? `${due.length - overdue} this week${overdue ? ` · ${overdue} overdue` : ''}`
+                : 'Nothing goes live this week'
+              : 'Site rollout rows going live soon'}
+          </p>
+        </div>
+        <div className="dashboard-panel-actions">
+          <button
+            type="button"
+            className="secondary icon-only"
+            aria-label="Refresh rollouts"
+            onClick={refresh}
+            disabled={busy}
+          >
+            <RefreshCw size={15} />
+          </button>
+          <button type="button" className="secondary" onClick={openRollup}>
+            Open roll-up
+          </button>
+        </div>
+      </div>
+      {error ? (
+        <p className="ac-widget-note">{error}</p>
+      ) : !data ? (
+        <p className="ac-widget-note">Loading…</p>
+      ) : !data.length ? (
+        <p className="ac-widget-note">No rollout trackers yet. Site rollout trackers show here.</p>
+      ) : !due.length ? (
+        <p className="ac-widget-note">No site goes live in the next seven days.</p>
+      ) : (
+        <ul>
+          {due.slice(0, 8).map(item => (
+            <li key={`${item.trackerId}:${item.rowId}`}>
+              <button
+                type="button"
+                className={item.state === 'overdue' ? 'unread' : ''}
+                onClick={() => {
+                  rememberTrackerRow(item.trackerId, item.rowId)
+                  setView('trackers')
+                }}
+              >
+                <span className="ac-row-main">
+                  <strong>{item.site || 'Untitled row'}</strong>
+                  <span>{[item.trackerName, item.status, item.owner].filter(Boolean).join(' · ')}</span>
+                </span>
+                <span className="ac-row-side">
+                  {item.state === 'overdue' && <em>{STATE_LABEL.overdue}</em>}
+                  <time>{shortDay(item.goLive)}</time>
+                </span>
+              </button>
+            </li>
+          ))}
         </ul>
       )}
     </div>

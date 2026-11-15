@@ -8,7 +8,16 @@
  */
 import type { AppModule } from './types'
 
-export type WidgetId = 'brief' | 'counts' | 'activities' | 'calendar' | 'assistant' | 'attention' | 'workhub' | 'dochub'
+export type WidgetId =
+  | 'brief'
+  | 'counts'
+  | 'activities'
+  | 'calendar'
+  | 'assistant'
+  | 'attention'
+  | 'workhub'
+  | 'dochub'
+  | 'rollouts'
 export type WidgetWidth = 'full' | 'half'
 export type LayoutItem = { id: WidgetId; width: WidgetWidth }
 export type ActionCenterLayout = LayoutItem[]
@@ -69,6 +78,13 @@ export const ACTION_CENTER_WIDGETS: WidgetDefinition[] = [
     description: 'DocHub documents still out for signing.',
     width: 'half',
     module: 'documents',
+  },
+  {
+    id: 'rollouts',
+    label: 'Rollouts due this week',
+    description: 'Site rollout rows going live in the next seven days, and any overdue.',
+    width: 'half',
+    module: 'trackers',
   },
 ]
 

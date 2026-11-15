@@ -2,6 +2,7 @@ import type { Mentionable, RowComment } from './trackerComments'
 import { requestJson, type HttpMethod } from '../../shared/http'
 import type { TimelineSettings } from './timelineModel'
 import type { SavedTemplate } from './trackerTemplates'
+import type { RollupSet } from './trackerRollup'
 import type { Cell, SyncReport, Tracker, TrackerColumn, TrackerRow, TrackerSource, TrackerView } from './trackerModel'
 
 /** What automations did after a save (see trackerAutomations). */
@@ -261,6 +262,22 @@ export const trackerApi = {
 }
 
 /** Loads every row, one page at a time. */
+/** The roll-up: trackers that can take part, the ones shown, and their rows (only the roll-up's columns). */
+export type RollupData = {
+  trackers: { id: string; name: string; template: string; clientIds: string[] }[]
+  chosen: string[]
+  sets: RollupSet[]
+  warning?: string
+}
+export const loadRollup = (ids: string[], signal?: AbortSignal) =>
+  requestJson<RollupData>(`/api/tracker-rollup${ids.length ? `?ids=${ids.map(encodeURIComponent).join(',')}` : ''}`, {
+    signal,
+    noStore: true,
+    offline: 'The connection was interrupted. Check your connection and try again.',
+    statusFallback: { 403: 'You do not have access to Trackers.' },
+    fallback: 'The roll-up could not be loaded. Try again in a moment.',
+  })
+
 export async function loadAllRows(id: string, signal?: AbortSignal): Promise<TrackerRow[]> {
   const rows: TrackerRow[] = []
   const page = 1000

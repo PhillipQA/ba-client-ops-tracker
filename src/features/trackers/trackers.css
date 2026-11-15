@@ -3811,3 +3811,120 @@ a.trk-link-button {
   flex: none;
   font-size: 11.5px;
 }
+
+/* Roll-up: rows across several trackers. */
+.trk-rollup-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.trk-rollup-tile {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--k-border);
+  border-radius: 12px;
+  background: var(--k-soft);
+  text-align: left;
+  cursor: pointer;
+}
+.trk-rollup-tile strong {
+  font-size: 22px;
+  line-height: 28px;
+}
+.trk-rollup-tile span {
+  font-size: 12.5px;
+  color: var(--k-muted);
+}
+.trk-rollup-tile:hover,
+.trk-rollup-tile.active {
+  border-color: var(--k-accent);
+}
+.trk-rollup-tile.active {
+  box-shadow: inset 0 0 0 1px var(--k-accent);
+}
+.trk-rollup-filters select {
+  width: auto;
+  max-width: 200px;
+}
+.trk-rollup-filters .trk-tool input[type="date"] {
+  width: 150px;
+}
+.trk-rollup-group {
+  display: grid;
+  gap: 8px;
+}
+.trk-rollup-group > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+}
+.trk-rollup-group h3 {
+  font-size: 15px;
+}
+.trk-rollup-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--k-border);
+  border-radius: 12px;
+}
+.trk-rollup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.trk-rollup-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--k-muted);
+  background: var(--k-soft);
+  border-bottom: 1px solid var(--k-border);
+}
+.trk-rollup-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--k-border);
+  vertical-align: middle;
+}
+.trk-rollup-table tr:last-child td {
+  border-bottom: 0;
+}
+.trk-rollup-table select,
+.trk-rollup-table input[type="date"] {
+  min-height: 30px;
+  padding: 4px 8px;
+  max-width: 190px;
+}
+.trk-rollup-overdue td:first-child {
+  box-shadow: inset 3px 0 0 var(--k-danger);
+}
+.trk-rollup-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.trk-rollup-choices {
+  display: grid;
+  gap: 6px;
+  max-height: 50vh;
+  margin: 12px 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.trk-rollup-choices label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--k-border);
+  border-radius: 9px;
+  cursor: pointer;
+}
+.trk-rollup-choices label > span {
+  display: grid;
+  gap: 2px;
+}
