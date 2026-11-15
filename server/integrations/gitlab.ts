@@ -365,23 +365,21 @@ export function registerGitlab(
           values: any[],
           mode: 'mine' | 'commented',
           repositoryOf?: (v: any) => string | null,
+          /** Reconcile: a ticket already in my list is updated whatever its age, so a closure is never missed. */
+          known = false,
         ) => {
           const fresh = await connection(u)
           if (fresh?.revision !== row.revision)
             throw new IntegrationError('GitLab settings changed during sync. Retry with current settings.', 409)
           const oldest = since(CLOSED_DAYS)
+          const mine = (i: any) => mode === 'commented' || i.created_by_me || i.assigned_to_me
+          const recent = (i: any) => known || i.state === 'open' || i.updated_at >= oldest
           const issues = values
             .map(v => {
               const repository = repositoryOf ? repositoryOf(v) : gitlabIssueRepository(v, row.instance_url)
               return repository ? gitlabIssue(v, repository, row.gitlab_login, row.instance_url) : null
             })
-            .filter((i): i is NonNullable<typeof i> =>
-              Boolean(
-                i &&
-                (mode === 'commented' || i.created_by_me || i.assigned_to_me) &&
-                (i.state === 'open' || i.updated_at >= oldest),
-              ),
-            )
+            .filter((i): i is NonNullable<typeof i> => Boolean(i && mine(i) && recent(i)))
           if (!issues.length) return
           const existing = await ticketQuery(u, row, 'gitlab_id').in(
             'gitlab_id',
@@ -515,7 +513,7 @@ export function registerGitlab(
                 const issue = gitlabIssue(value, item.repository, row.gitlab_login, row.instance_url)
                 // Still mine if I created it, am assigned, or commented on it; otherwise it leaves my list.
                 if (issue && (issue.created_by_me || issue.assigned_to_me || item.commented))
-                  await importIssues([value], item.commented ? 'commented' : 'mine', () => item.repository)
+                  await importIssues([value], item.commented ? 'commented' : 'mine', () => item.repository, true)
                 else await writeTicket(u, row, item.id, { available: false })
               } catch (e) {
                 if (!(e instanceof GitlabError) || ![403, 404].includes(e.status)) throw e
