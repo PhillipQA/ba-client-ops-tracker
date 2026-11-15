@@ -19,6 +19,26 @@ Released with pull request #110.
 - **More details** on each ticket, when GitLab has them: due date (overdue in red, due within a week in amber), priority and severity (from labels like `priority::high` or `P1`), type, iteration, weight, time spent vs estimate, checklist progress, linked merge requests, confidential, and when and by whom it was closed.
 - **New filters:** project (from your own tickets), label and milestone lists, due date (overdue, next 7 days, has one, none), sort by due date, and **Clear filters**.
 - **Needs database migration v41** (`schema-v41-gitlab-involvement.sql`). Until it's run, GitLab sync and the ticket list say so.
+### Action Center: four new widgets
+Add them under **Customize → Add**.
+- **My time this week:** hours you logged each day (Monday to Sunday) against your **weekly target, 40 hours unless you change it** (Target button; it's kept with your layout, so it's yours alone). Working days show the daily share (8 hours for 40) as a dashed line; days that meet it are filled in. Says how many entries are still to send to Seeds, with a **Send to Seeds** button.
+- **Follow-ups due:** open work to follow up today or earlier, oldest first. Tick one to mark the follow-up done (it clears the follow-up date, the same as the task's own field). Follows the Action Center's work view.
+- **Recent tracker changes:** edits, comments, task links and automation runs on the trackers you can open, newest first; click one to open the row. Secret values, reveals and snoozes are never listed.
+- **Quick links and note:** your own links (web addresses only) and a short note, only for you.
+- No database migration.
+
+### Action Center: build your own widgets, and pin widgets from Reports
+- **Customize → Build your own widget** opens the Reports builder on the Action Center: choose the data (tasks, time, activities, events or a tracker), filters, grouping and measure, and show it as a number, bar, column, line or pie chart, table or timeline. A live preview shows your own data. Add as many as you like; each has **Edit widget** while customizing.
+- **Pin to Action Center** (pin button on each widget of a saved report): the widget appears at the end of your Action Center and **follows the report**, so editing it in the report changes it there too, with the report's own filters. **Open report** goes straight to it. If the report is deleted or no longer shared with you, the widget says so and offers to remove itself.
+- Both need the Reports page. They read only what you can see, the same as Reports. Pinning needs schema v40 (`user_preferences`).
+- No new database migration.
+
+### Action Center: count tiles you choose and build
+- **Customize → Edit tiles** on the counts strip: tick which built-in tiles show and put them in order. Built-in counts: Needs attention, Waiting on developer, **Waiting on client**, **Overdue**, **Due today**, Activities today, Open inquiries and **Time not sent to Seeds**.
+- **Rename** any tile and give it a **colour**.
+- **Add your own count:** tasks with up to three filters (the same filters as Reports, for example *Priority is High* and *Waiting on is Client*), optionally only tasks assigned to you and with or without done tasks. Choose the small line under the number: how many are overdue, how many clients, or nothing.
+- Up to eight tiles. Saved with your layout; an Administrator can save tiles as part of a role's starting layout. Without changes, the strip shows the same four tiles as before.
+- No database migration.
 
 ### Trackers: roll-up across rollouts
 - **Roll-up** (button on the Trackers page, at `/trackers/rollup`): every Site rollout tracker you can open, in one list. You can also choose your own set of trackers; the choice is kept in your browser. A tracker can take part when it has a Status or a Go-live column.

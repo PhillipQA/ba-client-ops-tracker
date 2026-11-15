@@ -1,25 +1,34 @@
 import type { AppState, SignedInUser } from '../../app/useAppState'
-import { DashboardActionTable, DashboardActivityTimeline, Metric } from './ActionCenterParts'
-import {
-  AlertTriangle,
-  CalendarDays,
-  ChevronRight,
-  Inbox,
-  LayoutGrid,
-  Plus,
-  Settings2,
-  Sparkles,
-  Users,
-} from 'lucide-react'
+import { DashboardActionTable, DashboardActivityTimeline } from './ActionCenterParts'
+import { ChevronRight, LayoutGrid, Plus, Sparkles, Users } from 'lucide-react'
 import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from './actionCenterScope'
 import GoogleCalendarPanel from '../integrations/GoogleCalendarPanel'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { isClosedProject } from '../tasks/lifecycle'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import { isBeforeSeedsWork } from '../../shared/seeds'
 import { type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 import { MorningBrief } from './MorningBrief'
-import { type ActionCenterLayout, type WidgetId, widgetsToAdd } from '../../shared/actionCenterLayout'
+import {
+  type ActionCenterLayout,
+  type LayoutItem,
+  addWidget,
+  keyOf,
+  removeWidget,
+  setWidgetSettings,
+  type WidgetId,
+  widgetLabel,
+  widgetsToAdd,
+} from '../../shared/actionCenterLayout'
+import { type CountTile, type QuickLink, tilesOf, weeklyHoursOf } from '../../shared/actionCenterSettings'
+import { businessDateKey } from '../../shared/businessDate'
+import type { UserAccount } from '../../shared/types'
+import { fieldValues, type ReportData, sourceFields, sourceRecords } from '../reports/custom/reportData'
+import { CountTiles, CountTilesDialog } from './ActionCenterCounts'
+import { FollowUpsWidget, LinksWidget, TimeWidget, TrackerChangesWidget } from './ActionCenterMore'
+import { BuildWidgetDialog, CustomWidget, PinnedWidget, useReportEngine, useSavedReports } from './ActionCenterReports'
+import type { Widget } from '../reports/custom/reportModel'
+import { builtinValue, customValue } from './countTiles'
 import { requestJson } from '../../shared/http'
 import { CustomizeBar, WidgetFrame } from './ActionCenterCustomize'
 import { DocHubWidget, RolloutsWidget, WorkHubWidget } from './ActionCenterWidgets'
@@ -28,13 +37,10 @@ import { useActionCenterLayout } from './useActionCenterLayout'
 /** Action Center screen. It reads the app state; see app/useAppState. */
 export function ActionCenterPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
   const {
-    actionCenterClientCount,
-    actionCenterInquiryCount,
     actionCenterScope,
     actionCenterScopeLabel,
     actionCenterUsers,
     actionCenterWaitingDev,
-    actionCenterWaitingDevOverdue,
     actionCenterWaitingTitle,
     actionCenterWorkItems,
     actionItems,
@@ -42,6 +48,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     aiClientId,
     aiProjectId,
     assessDashboardAI,
+    applyTaskUpdate,
     canEditActionItem,
     canUseAI,
     canWrite,
@@ -81,7 +88,10 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
   const layout = useActionCenterLayout(currentUser, hasModule)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<ActionCenterLayout>([])
-  const [dragging, setDragging] = useState<WidgetId | ''>('')
+  const [dragging, setDragging] = useState('')
+  const [editingTiles, setEditingTiles] = useState('')
+  /** The Reports builder: a new widget ('new') or the key of the one being changed. */
+  const [building, setBuilding] = useState('')
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([])
   const startCustomizing = () => {
     setDraft(layout.layout)
@@ -92,36 +102,8 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         .then(result => setRoles((result.roles || []).map(role => ({ id: role.id, name: role.name }))))
         .catch(() => setRoles([]))
   }
-  const widgets: Record<WidgetId, ReactNode> = {
+  const widgets: Partial<Record<WidgetId, ReactNode>> = {
     brief: <MorningBrief key={`${currentUser.organizationId}:${currentUser.id}`} app={app} currentUser={currentUser} />,
-    counts: (
-      <div className="metric-grid dashboard-metrics">
-        <Metric
-          title="Needs attention"
-          value={actionCenterWorkItems.length}
-          detail={`Across ${actionCenterClientCount} client${actionCenterClientCount === 1 ? '' : 's'}`}
-          icon={<AlertTriangle size={18} />}
-        />
-        <Metric
-          title={actionCenterWaitingTitle}
-          value={actionCenterWaitingDev.length}
-          detail={`${actionCenterWaitingDevOverdue} overdue`}
-          icon={<Settings2 size={18} />}
-        />
-        <Metric
-          title="Activities today"
-          value={todayActivities.length + todayFollowUps.length}
-          detail={`${todayActivities.filter(item => item.source === 'Google Calendar').length} meetings · ${todayActivities.filter(item => item.source === 'Local').length} tracker activities · ${todayFollowUps.length} follow-ups`}
-          icon={<CalendarDays size={18} />}
-        />
-        <Metric
-          title="Open inquiries"
-          value={actionCenterInquiryCount}
-          detail="Need classification"
-          icon={<Inbox size={18} />}
-        />
-      </div>
-    ),
     activities: (
       <div className="panel planner-panel dashboard-panel">
         <div className="panel-heading planner-heading dashboard-panel-heading">
@@ -312,6 +294,143 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     dochub: <DocHubWidget setView={setView} />,
     rollouts: <RolloutsWidget items={store.items} accounts={store.accounts} setView={setView} />,
   }
+  // Count tiles: built-in ones read the work view; a person's own count reads the Tasks records Reports uses.
+  const today = businessDateKey()
+  const me: UserAccount = useMemo(
+    () =>
+      store.accounts.find(account => account.id === currentUser.id) ||
+      ({ id: currentUser.id, name: currentUser.name || '', role: currentUser.role } as unknown as UserAccount),
+    [store.accounts, currentUser.id, currentUser.name, currentUser.role],
+  )
+  const reportData: ReportData = useMemo(
+    () => ({
+      clients: store.clients,
+      projects: store.projects,
+      items: store.items,
+      planner: store.planner,
+      workEvents: [],
+      accounts: store.accounts,
+      taskSettings: store.taskSettings,
+      today,
+      currentUser: me,
+      trackers: {},
+      dateOf: iso => businessDateKey(iso),
+    }),
+    [store.clients, store.projects, store.items, store.planner, store.accounts, store.taskSettings, today, me],
+  )
+  const taskFields = useMemo(() => sourceFields('tasks'), [])
+  const taskRecords = useMemo(() => sourceRecords('tasks', reportData), [reportData])
+  const tileValue = (tile: CountTile) =>
+    tile.builtin
+      ? builtinValue(tile.builtin, {
+          open: actionCenterWorkItems,
+          allItems: store.items,
+          taskSettings: store.taskSettings,
+          today,
+          meId: currentUser.id,
+          activitiesToday: {
+            meetings: todayActivities.filter(item => item.source === 'Google Calendar').length,
+            tracker: todayActivities.filter(item => item.source === 'Local').length,
+            followUps: todayFollowUps.length,
+          },
+          waitingTitle: actionCenterWaitingTitle,
+          waitingDev: actionCenterWaitingDev,
+        })
+      : customValue(tile, taskRecords, taskFields, today, currentUser.id)
+  // Report widgets: built here, or pinned from a saved report.
+  const engine = useReportEngine(app, currentUser, hasModule('trackers'))
+  const visible = editing ? draft : layout.layout
+  const reports = useSavedReports(visible.some(item => item.id === 'pinned'))
+  const removeNow = (key: string) => {
+    if (editing) setDraft(current => removeWidget(current, key))
+    else void layout.save(removeWidget(layout.layout, key))
+  }
+  const openReport = (reportId: string) => {
+    try {
+      window.localStorage.setItem('ba.reports.custom.selected', reportId)
+      window.localStorage.setItem('ba.reports.custom.mode', 'reports')
+    } catch {
+      /* Reports opens on its last report. */
+    }
+    setView('reports')
+  }
+  /** A widget's own settings changed on the page (a target, links): saved at once, or into the draft while customizing. */
+  const saveSettings = (key: string, settings: Record<string, unknown> | undefined) => {
+    if (editing) setDraft(current => setWidgetSettings(current, key, settings))
+    else void layout.save(setWidgetSettings(layout.layout, key, settings))
+  }
+  const renderItem = (item: LayoutItem): ReactNode => {
+    if (item.id === 'counts') return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} />
+    if (item.id === 'time')
+      return (
+        <TimeWidget
+          items={store.items}
+          meId={currentUser.id}
+          today={today}
+          weeklyHours={weeklyHoursOf(item.settings)}
+          onTarget={hours => saveSettings(keyOf(item), hours === 40 ? undefined : { weeklyHours: hours })}
+          setView={setView}
+        />
+      )
+    if (item.id === 'followups')
+      return (
+        <FollowUpsWidget
+          open={actionCenterWorkItems}
+          today={today}
+          clients={store.clients}
+          canDone={canEditActionItem}
+          onDone={task =>
+            applyTaskUpdate({
+              tasks: [
+                {
+                  taskId: task.id,
+                  title: task.title,
+                  changes: [{ field: 'followUpDate', label: 'Follow-up date', from: task.followUpDate, to: '' }],
+                },
+              ],
+            })
+          }
+          onOpenTask={task => (canEditActionItem(task) ? openTaskEditor(task.id) : setView('items'))}
+        />
+      )
+    if (item.id === 'trackerChanges') return <TrackerChangesWidget setView={setView} />
+    if (item.id === 'links')
+      return (
+        <LinksWidget
+          links={(item.settings?.links as QuickLink[] | undefined) || []}
+          note={String(item.settings?.note || '')}
+          onSave={settings => saveSettings(keyOf(item), settings)}
+        />
+      )
+    if (item.id === 'custom' && item.settings?.widget)
+      return <CustomWidget widget={item.settings.widget as Widget} engine={engine} />
+    if (item.id === 'pinned' && item.settings) {
+      const { reportId, widgetId } = item.settings as { reportId: string; widgetId: string }
+      return (
+        <PinnedWidget
+          reportId={reportId}
+          widgetId={widgetId}
+          reports={reports}
+          engine={engine}
+          onOpenReport={() => openReport(reportId)}
+          onRemove={() => removeNow(keyOf(item))}
+        />
+      )
+    }
+    return widgets[item.id]
+  }
+  const editAction = (item: LayoutItem) =>
+    item.id === 'counts'
+      ? { label: 'Edit tiles', run: () => setEditingTiles(keyOf(item)) }
+      : item.id === 'custom'
+        ? { label: 'Edit widget', run: () => setBuilding(keyOf(item)) }
+        : undefined
+  const frameLabel = (item: LayoutItem) =>
+    item.id === 'custom'
+      ? (item.settings?.widget as Widget | undefined)?.title || widgetLabel(item.id)
+      : widgetLabel(item.id)
+  const buildingItem = building && building !== 'new' ? draft.find(item => keyOf(item) === building) : undefined
+  const tilesItem = editingTiles ? draft.find(item => keyOf(item) === editingTiles) : undefined
   const shown = editing ? draft : layout.layout
   return (
     <section className="page-stack dashboard-stack">
@@ -352,6 +471,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           hasOwn={Boolean(layout.own)}
           isAdmin={currentUser.role === 'Administrator'}
           roles={roles}
+          onBuild={hasModule('reports') ? () => setBuilding('new') : undefined}
           onReset={() => {
             void layout.save(null)
             setEditing(false)
@@ -368,13 +488,17 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
       {!editing && layout.error && <p className="ac-widget-note">{layout.error}</p>}
       <div className={`ac-grid${editing ? ' editing' : ''}`}>
         {shown.map((item, index) => {
-          const content = widgets[item.id]
+          const content = renderItem(item)
           if (!content) return null
+          const edit = editAction(item)
           return (
-            <div key={item.id} className={`ac-cell ${item.width}`}>
+            <div key={keyOf(item)} className={`ac-cell ${item.width}`}>
               {editing ? (
                 <WidgetFrame
-                  id={item.id}
+                  id={keyOf(item)}
+                  label={frameLabel(item)}
+                  onEdit={edit?.run}
+                  editLabel={edit?.label}
                   index={index}
                   layout={draft}
                   onChange={setDraft}
@@ -393,6 +517,37 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           <p className="ac-widget-note">Nothing on your Action Center. Add widgets above.</p>
         )}
       </div>
+      {building && (building === 'new' || buildingItem) && (
+        <BuildWidgetDialog
+          initial={buildingItem?.settings?.widget as Widget | undefined}
+          engine={engine}
+          onClose={() => setBuilding('')}
+          onSave={widget => {
+            const settings = { widget: { ...widget, x: 0, y: 0 } }
+            setDraft(current =>
+              building === 'new'
+                ? addWidget(current, 'custom', settings)
+                : setWidgetSettings(current, building, settings),
+            )
+            setBuilding('')
+          }}
+        />
+      )}
+      {tilesItem && (
+        <CountTilesDialog
+          tiles={tilesOf(tilesItem.settings)}
+          fields={taskFields}
+          valuesFor={key => {
+            const field = taskFields.find(entry => entry.key === key)
+            return field ? fieldValues(taskRecords, field) : []
+          }}
+          onClose={() => setEditingTiles('')}
+          onSave={tiles => {
+            setDraft(current => setWidgetSettings(current, editingTiles, { tiles }))
+            setEditingTiles('')
+          }}
+        />
+      )}
     </section>
   )
 }

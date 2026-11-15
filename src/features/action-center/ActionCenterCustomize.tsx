@@ -2,41 +2,46 @@
  * Customizing the Action Center: a toolbar to start and finish, a frame around each widget to drag, resize or hide it,
  * and a list of widgets to add. Changes are a draft until Save; Cancel puts the page back as it was.
  */
-import { ArrowDown, ArrowUp, Check, GripVertical, LayoutGrid, Plus, RotateCcw, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, GripVertical, LayoutGrid, Pencil, Plus, RotateCcw, X } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import {
-  ACTION_CENTER_WIDGETS,
   type ActionCenterLayout,
   addWidget,
+  keyOf,
   moveWidget,
   removeWidget,
   setWidgetWidth,
   type WidgetDefinition,
-  type WidgetId,
 } from '../../shared/actionCenterLayout'
 import type { RoleLayout } from './useActionCenterLayout'
-
-const labelOf = (id: WidgetId) => ACTION_CENTER_WIDGETS.find(widget => widget.id === id)?.label || id
 
 /** The frame around a widget while customizing: drag handle, name, move, width, hide. The widget below is inert. */
 export function WidgetFrame({
   id,
+  label,
   index,
   layout,
   onChange,
   dragging,
   setDragging,
+  onEdit,
+  editLabel = 'Edit',
   children,
 }: {
-  id: WidgetId
+  /** The widget's key in the layout (its id, or its own key for widgets that repeat). */
+  id: string
+  label: string
   index: number
   layout: ActionCenterLayout
   onChange: (layout: ActionCenterLayout) => void
-  dragging: WidgetId | ''
-  setDragging: (id: WidgetId | '') => void
+  dragging: string
+  setDragging: (id: string) => void
+  /** Widgets with settings: opens their editor. */
+  onEdit?: () => void
+  editLabel?: string
   children: ReactNode
 }) {
-  const width = layout.find(item => item.id === id)?.width || 'full'
+  const width = layout.find(item => keyOf(item) === id)?.width || 'full'
   return (
     <div
       className={`ac-frame${dragging === id ? ' dragging' : ''}`}
@@ -62,11 +67,16 @@ export function WidgetFrame({
         onDragEnd={() => setDragging('')}
       >
         <GripVertical size={16} aria-hidden="true" className="ac-grip" />
-        <strong>{labelOf(id)}</strong>
+        <strong>{label}</strong>
         <div className="ac-frame-actions">
+          {onEdit && (
+            <button type="button" className="ac-frame-edit" onClick={onEdit}>
+              <Pencil size={13} /> {editLabel}
+            </button>
+          )}
           <button
             type="button"
-            aria-label={`Move ${labelOf(id)} up`}
+            aria-label={`Move ${label} up`}
             disabled={index === 0}
             onClick={() => onChange(moveWidget(layout, id, index - 1))}
           >
@@ -74,13 +84,13 @@ export function WidgetFrame({
           </button>
           <button
             type="button"
-            aria-label={`Move ${labelOf(id)} down`}
+            aria-label={`Move ${label} down`}
             disabled={index === layout.length - 1}
             onClick={() => onChange(moveWidget(layout, id, index + 1))}
           >
             <ArrowDown size={14} />
           </button>
-          <div className="ac-width" role="group" aria-label={`Width of ${labelOf(id)}`}>
+          <div className="ac-width" role="group" aria-label={`Width of ${label}`}>
             <button
               type="button"
               aria-pressed={width === 'half'}
@@ -96,7 +106,7 @@ export function WidgetFrame({
               Full
             </button>
           </div>
-          <button type="button" aria-label={`Hide ${labelOf(id)}`} onClick={() => onChange(removeWidget(layout, id))}>
+          <button type="button" aria-label={`Hide ${label}`} onClick={() => onChange(removeWidget(layout, id))}>
             <X size={14} />
           </button>
         </div>
@@ -121,6 +131,7 @@ export function CustomizeBar({
   onSaveForRole,
   onCancel,
   onSave,
+  onBuild,
   note,
 }: {
   draft: ActionCenterLayout
@@ -134,6 +145,8 @@ export function CustomizeBar({
   onSaveForRole: (roleId: string) => Promise<void>
   onCancel: () => void
   onSave: () => void
+  /** Opens the Reports builder for a widget of the person's own. */
+  onBuild?: () => void
   note: string
 }) {
   const [roleId, setRoleId] = useState('')
@@ -157,9 +170,19 @@ export function CustomizeBar({
           </button>
         </div>
       </div>
-      {addable.length > 0 && (
+      {(addable.length > 0 || onBuild) && (
         <div className="ac-add">
           <span>Add:</span>
+          {onBuild && (
+            <button
+              type="button"
+              className="primary"
+              title="A number, chart or table you build, like in Reports"
+              onClick={onBuild}
+            >
+              <Plus size={14} /> Build your own widget
+            </button>
+          )}
           {addable.map(widget => (
             <button
               type="button"

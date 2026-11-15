@@ -7,9 +7,12 @@ import {
   layoutToShow,
   moveWidget,
   removeWidget,
+  setWidgetSettings,
   setWidgetWidth,
   widgetsToAdd,
 } from '../src/shared/actionCenterLayout'
+import { tilesOf } from '../src/shared/actionCenterSettings'
+import { builtinValue, customValue } from '../src/features/action-center/countTiles'
 import { cleanJobRole } from '../src/shared/roles'
 import { awaitingSignature, emailsToShow } from '../src/features/action-center/widgetLists'
 
@@ -124,5 +127,137 @@ test('emails show unread first, then newest; documents show those out for signin
       doc('draft', 'READY_TO_REVIEW', '2026-11-09T00:00:00Z'),
     ]).map(item => item.id),
     ['old', 'new'],
+  )
+})
+
+test('count tiles: kept with the counts widget, cleaned on every save', () => {
+  const layout = cleanLayout([
+    {
+      id: 'counts',
+      width: 'full',
+      settings: {
+        tiles: [
+          { builtin: 'waitingClient', title: '  Client owes us  ', color: 'amber' },
+          { builtin: 'waitingClient' },
+          { builtin: 'nope' },
+          {
+            id: 'mine1',
+            title: 'High, waiting on client',
+            color: 'pink',
+            mine: true,
+            filters: [
+              { field: 'priority', op: 'is', value: 'High' },
+              { field: 'waitingOn', op: 'is', value: 'Client' },
+              { field: 'type', op: 'is', value: 'Issue' },
+              { field: 'status', op: 'is', value: 'Open' },
+            ],
+          },
+          { id: 'untitled', filters: [] },
+        ],
+      },
+    },
+  ])!
+  const tiles = (layout[0].settings as any).tiles
+  assert.deepEqual(tiles[0], { id: 'waitingClient', builtin: 'waitingClient', title: 'Client owes us', color: 'amber' })
+  assert.equal(tiles.length, 2, 'a built-in once, unknown ones and untitled custom counts dropped')
+  assert.equal(tiles[1].color, undefined, 'only known colours')
+  assert.equal(tiles[1].filters.length, 3, 'at most three filters')
+  assert.equal(tiles[1].mine, true)
+  assert.equal(tiles[1].detail, 'overdue')
+  assert.deepEqual(
+    tilesOf(undefined).map(tile => tile.builtin),
+    ['attention', 'waitingDev', 'activities', 'inquiries'],
+  )
+  const edited = setWidgetSettings(layout, 'counts', undefined)
+  assert.equal(edited[0].settings, undefined, 'back to the built-in tiles')
+})
+
+test('custom counts and built-in counts', () => {
+  const today = '2026-11-15'
+  const records = [
+    { $user: 'u1', $client: 'c1', done: false, overdue: true, priority: 'High', waitingOn: 'Client' },
+    { $user: 'u2', $client: 'c2', done: false, overdue: false, priority: 'High', waitingOn: 'Client' },
+    { $user: 'u1', $client: 'c1', done: true, overdue: false, priority: 'High', waitingOn: 'Client' },
+    { $user: 'u1', $client: 'c3', done: false, overdue: false, priority: 'Low', waitingOn: 'Client' },
+  ]
+  const fields = [
+    { key: 'priority', label: 'Priority', type: 'text' as const },
+    { key: 'waitingOn', label: 'Waiting on', type: 'text' as const },
+  ]
+  const tile = {
+    id: 'x',
+    title: 'Mine',
+    mine: true,
+    filters: [{ field: 'priority', op: 'is' as const, value: 'high' }],
+  }
+  assert.deepEqual(customValue(tile, records, fields, today, 'u1'), { title: 'Mine', value: '1', detail: '1 overdue' })
+  assert.equal(customValue({ ...tile, mine: false, all: true }, records, fields, today, 'u1').value, '3')
+  assert.equal(
+    customValue({ ...tile, mine: false, detail: 'clients' }, records, fields, today, 'u1').detail,
+    'Across 2 clients',
+  )
+  const open = [
+    { id: '1', clientId: 'c1', dueDate: '2026-11-10', followUpDate: '', waitingOn: 'Client', type: 'Task' },
+    { id: '2', clientId: 'c1', dueDate: today, followUpDate: '', waitingOn: 'Developer', type: 'Inquiry' },
+    { id: '3', clientId: 'c2', dueDate: '', followUpDate: today, waitingOn: 'Client', type: 'Task' },
+  ] as any[]
+  const input = {
+    open,
+    allItems: [
+      {
+        timeEntries: [
+          { userId: 'u1', hours: 2.5, forSeeds: true },
+          { userId: 'u1', hours: 1, seedsEntryId: 's1', forSeeds: true },
+        ],
+      },
+    ] as any[],
+    taskSettings: {} as any,
+    today,
+    meId: 'u1',
+    activitiesToday: { meetings: 1, tracker: 0, followUps: 2 },
+    waitingTitle: 'Waiting on Developer',
+    waitingDev: [open[1]],
+  }
+  assert.equal(builtinValue('attention', input).detail, 'Across 2 clients')
+  assert.equal(builtinValue('waitingClient', input).value, '2')
+  assert.equal(builtinValue('overdue', input).value, '1')
+  assert.deepEqual(builtinValue('dueToday', input), { title: 'Due today', value: '2', detail: '1 due · 1 follow-up' })
+  assert.equal(builtinValue('activities', input).value, '3')
+  assert.equal(builtinValue('inquiries', input).value, '1')
+  assert.deepEqual(builtinValue('unsentTime', input), {
+    title: 'Time not sent to Seeds',
+    value: '2.5h',
+    detail: '1 entry to send',
+  })
+})
+
+test('your own widgets and pinned widgets can repeat, each with its own key and settings', () => {
+  let layout = addWidget(DEFAULT_ACTION_CENTER, 'custom', {
+    widget: { id: 'w1', kind: 'bar', title: 'Open by client', source: 'tasks', groupBy: 'client', x: 4, y: 9 },
+  })
+  layout = addWidget(layout, 'custom', { widget: { id: 'w2', kind: 'metric', title: 'Open', source: 'tasks' } })
+  layout = addWidget(layout, 'pinned', { reportId: 'r1', widgetId: 'w9' })
+  assert.equal(addWidget(layout, 'custom'), layout, 'a repeating widget needs its settings')
+  const customs = layout.filter(item => item.id === 'custom')
+  assert.equal(customs.length, 2)
+  assert.notEqual(customs[0].key, customs[1].key)
+  const cleaned = cleanLayout(JSON.parse(JSON.stringify(layout)))!
+  assert.equal(cleaned.length, layout.length)
+  assert.equal((cleaned.find(item => item.id === 'custom')!.settings as any).widget.x, 0, 'placed by the layout')
+  assert.deepEqual(cleaned.at(-1)!.settings, { reportId: 'r1', widgetId: 'w9' })
+  assert.equal(
+    cleanLayout([{ id: 'custom', key: 'c1', settings: { widget: { kind: 'note', text: 'hi' } } }])!.length,
+    0,
+    'only numbers, charts, tables and timelines',
+  )
+  assert.equal(cleanLayout([{ id: 'pinned', settings: { reportId: 'r', widgetId: 'w' } }])!.length, 0, 'needs a key')
+  assert.equal(cleanLayout([{ id: 'custom', key: 'bad key!', settings: {} }])!.length, 0)
+  const key = customs[0].key!
+  assert.equal(removeWidget(layout, key).filter(item => item.id === 'custom').length, 1, 'removed by key')
+  assert.equal(moveWidget(layout, key, 0)[0].key, key)
+  assert.ok(!widgetsToAdd(layout, () => true).some(widget => widget.id === 'custom' || widget.id === 'pinned'))
+  assert.ok(
+    !layoutToShow({ own: layout }, module => module !== 'reports').some(item => item.id === 'custom'),
+    'needs Reports',
   )
 })

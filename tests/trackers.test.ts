@@ -1310,3 +1310,34 @@ test('the roll-up lists Site rollout trackers the person can open, with only its
     assert.equal((await ask('GET', '/api/tracker-rollup', undefined, { 'x-modules': 'none' })).status, 403)
   })
 })
+
+test('recent tracker changes: newest first, only trackers the person can open, no Secret values or reveals', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const t = await makeTracker(ask, { name: 'SM rollout' })
+    const theirs = await makeTracker(ask, { name: 'Ben private', private: true }, { 'x-user': 'u2' })
+    const site = idOf(t, 'Site')
+    const row = (
+      await ask('POST', `/api/trackers/${t.id}/rows`, {
+        rows: [{ cells: { [site]: 'SM North' }, secrets: { [idOf(t, 'Admin login')]: 'hunter2' } }],
+      })
+    ).body.rows[0]
+    const patched = await ask('PATCH', `/api/trackers/${t.id}/rows/${row.id}`, {
+      cells: { [idOf(t, 'Go-live')]: '2026-12-01' },
+      version: row.version,
+    })
+    assert.equal(patched.status, 200, JSON.stringify(patched.body))
+    await ask('POST', `/api/trackers/${theirs.id}/rows`, { rows: [{ cells: {} }] }, { 'x-user': 'u2' })
+    const recent = await ask('GET', '/api/tracker-changes/recent')
+    assert.equal(recent.status, 200, JSON.stringify(recent.body))
+    const changes = recent.body.changes
+    assert.ok(changes.length >= 1)
+    assert.ok(
+      changes.every((change: any) => change.trackerId === t.id),
+      'not someone else’s private tracker',
+    )
+    assert.ok(changes.some((change: any) => change.kind === 'cells' && change.row === 'SM North'))
+    assert.ok(!changes.some((change: any) => change.kind === 'secrets' || change.kind === 'reveal'))
+    assert.ok(!JSON.stringify(recent.body).includes('hunter2'))
+  })
+})
