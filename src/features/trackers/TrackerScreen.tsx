@@ -4,8 +4,10 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  CalendarDays,
   CalendarRange,
   ChevronDown,
+  Columns3,
   Palette,
   Download,
   Lock,
@@ -46,6 +48,8 @@ import { groupRows, makeLookup, rowTitle, shown, visibleRows } from './trackerQu
 import { TOTAL_LABELS, type TotalKind, type TotalShown, progressOf, totalKindsFor, totalOf } from './trackerTotals'
 import { type BulkPlan, bulkColumns, bulkUndo } from './trackerBulk'
 import TrackerBulkSet from './TrackerBulkSet'
+import TrackerBoard from './TrackerBoard'
+import TrackerCalendar from './TrackerCalendar'
 import TrackerHighlightRules from './TrackerHighlightRules'
 import { describeRule, type HighlightRule, ruleTones } from './highlightRules'
 import { exportCsv, exportFileName } from './trackerExport'
@@ -173,20 +177,27 @@ export default function TrackerScreen(props: Props) {
       return false
     }
   })
-  // Grid or Timeline, remembered per tracker on this device.
-  const [layout, setLayoutState] = useState<'grid' | 'timeline'>('grid')
+  // Grid, Board, Calendar or Timeline, remembered per tracker on this device.
+  type Layout = 'grid' | 'board' | 'calendar' | 'timeline'
+  const [layout, setLayoutState] = useState<Layout>('grid')
   const layoutKey = `ba.tracker.layout.${props.trackerId}`
   // A tracker made from the Project timeline template opens on the timeline until someone picks the grid.
   const timelineFirst = tracker?.template === 'project-timeline'
   useEffect(() => {
     try {
       const chosen = localStorage.getItem(layoutKey)
-      setLayoutState(chosen === 'timeline' || (!chosen && timelineFirst) ? 'timeline' : 'grid')
+      setLayoutState(
+        chosen === 'board' || chosen === 'calendar'
+          ? chosen
+          : chosen === 'timeline' || (!chosen && timelineFirst)
+            ? 'timeline'
+            : 'grid',
+      )
     } catch {
       setLayoutState(timelineFirst ? 'timeline' : 'grid')
     }
   }, [layoutKey, timelineFirst])
-  const setLayout = (next: 'grid' | 'timeline') => {
+  const setLayout = (next: Layout) => {
     setLayoutState(next)
     try {
       localStorage.setItem(layoutKey, next)
@@ -1428,12 +1439,13 @@ export default function TrackerScreen(props: Props) {
     }
   }
 
-  const addRow = async () => {
+  /** Adds a row. With cells (a calendar day, say), the row opens so it can be named. */
+  const addRow = async (cells?: Record<string, Cell>) => {
     if (!canEdit || !tracker) return
     if (rowsRef.current.length >= TRACKER_LIMITS.rows)
       return say('error', `A tracker can have at most ${TRACKER_LIMITS.rows.toLocaleString('en')} rows.`)
     try {
-      const { rows: created, warning } = await trackerApi.addRows(trackerId, [{}])
+      const { rows: created, warning } = await trackerApi.addRows(trackerId, [cells ? { cells } : {}])
       if (!alive.current) return
       if (warning) say('error', warning)
       setRows([...rowsRef.current, ...created])
@@ -1447,7 +1459,8 @@ export default function TrackerScreen(props: Props) {
           { search: work.search, filters: work.filters, sort: null, hidden: work.hidden },
           lookup,
         ).length > 0
-      if (hiddenByFilters && !stillShown)
+      if (cells) setDrawerId(created[0].id)
+      else if (hiddenByFilters && !stillShown)
         say('info', 'Row added. It is hidden by the current filters or search, so clear them to see it.')
       else setFocus({ rowId: created[0].id, columnId: shownColumns[0].id, edit: true, nonce: ++focusNonce.current })
     } catch (error) {
@@ -2319,6 +2332,22 @@ export default function TrackerScreen(props: Props) {
           </button>
           <button
             type="button"
+            className={layout === 'board' ? 'on' : ''}
+            aria-pressed={layout === 'board'}
+            onClick={() => setLayout('board')}
+          >
+            <Columns3 size={14} aria-hidden="true" /> Board
+          </button>
+          <button
+            type="button"
+            className={layout === 'calendar' ? 'on' : ''}
+            aria-pressed={layout === 'calendar'}
+            onClick={() => setLayout('calendar')}
+          >
+            <CalendarDays size={14} aria-hidden="true" /> Calendar
+          </button>
+          <button
+            type="button"
             className={layout === 'timeline' ? 'on' : ''}
             aria-pressed={layout === 'timeline'}
             onClick={() => setLayout('timeline')}
@@ -2503,7 +2532,39 @@ export default function TrackerScreen(props: Props) {
           />
         </section>
       )}
-      <section className="trk-grid-panel" aria-label={`${tracker.name} rows`} hidden={layout === 'timeline'}>
+      {layout === 'board' && (
+        <section aria-label={`${tracker.name} board`}>
+          <TrackerBoard
+            trackerId={tracker.id}
+            columns={columns}
+            rows={visible}
+            lookup={lookup}
+            tones={tones}
+            canEdit={canEdit}
+            isLocked={cellLocked}
+            onEdit={editCell}
+            onOpenRow={row => setDrawerId(row.id)}
+            commentCounts={commentCounts}
+          />
+        </section>
+      )}
+      {layout === 'calendar' && (
+        <section aria-label={`${tracker.name} calendar`}>
+          <TrackerCalendar
+            trackerId={tracker.id}
+            columns={columns}
+            rows={visible}
+            tones={tones}
+            today={props.today}
+            canEdit={canEdit}
+            isLocked={cellLocked}
+            onEdit={editCell}
+            onOpenRow={row => setDrawerId(row.id)}
+            onAdd={(column, day) => void addRow({ [column.id]: day })}
+          />
+        </section>
+      )}
+      <section className="trk-grid-panel" aria-label={`${tracker.name} rows`} hidden={layout !== 'grid'}>
         <TrackerGrid
           columns={shownColumns}
           frozen={frozenIds}

@@ -3462,3 +3462,253 @@ a.trk-link-button {
   align-items: center;
   gap: 6px;
 }
+
+/* Board and Calendar views. */
+.trk-view-empty {
+  margin: 0;
+  padding: 28px;
+  text-align: center;
+  color: var(--k-muted);
+}
+.trk-view-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 2px;
+  font-size: 13px;
+}
+.trk-view-bar select {
+  width: auto;
+}
+.trk-board {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+}
+.trk-lane {
+  flex: 1 0 220px;
+  max-width: 320px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--k-border);
+  border-radius: 12px;
+  background: var(--k-solid);
+}
+.trk-lane.over {
+  border-color: var(--k-primary);
+  box-shadow: inset 0 0 0 1px var(--k-primary);
+}
+.trk-lane header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.trk-lane-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+}
+.trk-lane-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone, var(--k-muted));
+}
+.trk-lane-cards {
+  display: grid;
+  gap: 8px;
+  min-height: 48px;
+}
+.trk-lane-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--k-border);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--k-muted);
+}
+.trk-card-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--k-border);
+  border-radius: 10px;
+  background: var(--k-soft, rgba(128, 128, 128, 0.06));
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.trk-card-row[draggable="true"] {
+  cursor: grab;
+}
+.trk-card-row.dragging,
+.trk-cal-chip.dragging {
+  opacity: 0.45;
+}
+.trk-card-row.trk-hl,
+.trk-cal-chip.trk-hl {
+  border-color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 22%, transparent);
+}
+.trk-card-fact {
+  font-size: 12px;
+  color: var(--k-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trk-card-fact small {
+  font-weight: 600;
+}
+.trk-cal-nav,
+.trk-cal-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.trk-cal-nav strong {
+  min-width: 150px;
+  text-align: center;
+  font-size: 15px;
+}
+.trk-cal {
+  border: 1px solid var(--k-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--k-solid);
+}
+.trk-cal-head,
+.trk-cal-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.trk-cal-head span {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--k-border);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--k-muted);
+}
+.trk-cal-day {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  min-height: 92px;
+  padding: 6px;
+  border-right: 1px solid var(--k-border);
+  border-bottom: 1px solid var(--k-border);
+}
+.trk-cal.week .trk-cal-day {
+  min-height: 260px;
+}
+.trk-cal-day:nth-child(7n) {
+  border-right: 0;
+}
+.trk-cal-week:last-child .trk-cal-day {
+  border-bottom: 0;
+}
+.trk-cal-day.other {
+  opacity: 0.5;
+}
+.trk-cal-day.over {
+  box-shadow: inset 0 0 0 2px var(--k-primary);
+}
+.trk-cal-date {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.trk-cal-day.today .trk-cal-date b {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--k-primary);
+  color: #fff;
+}
+.trk-cal-add {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--k-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.trk-cal-day:hover .trk-cal-add,
+.trk-cal-add:focus-visible {
+  opacity: 1;
+}
+.trk-cal-chip {
+  display: block;
+  width: 100%;
+  padding: 2px 6px;
+  border: 1px solid var(--k-border);
+  border-radius: 6px;
+  background: var(--k-soft, rgba(128, 128, 128, 0.08));
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.trk-cal-chip[draggable="true"] {
+  cursor: grab;
+}
+.trk-cal-more {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--k-muted);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.trk-cal-undated {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--k-border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.trk-cal-undated.over {
+  border-color: var(--k-primary);
+}
+.trk-cal-undated-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.trk-cal-foot {
+  margin: 8px 2px 0;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .trk-cal-day {
+    min-height: 64px;
+    padding: 3px;
+  }
+  .trk-cal-chip {
+    padding: 1px 3px;
+    font-size: 10.5px;
+  }
+}
