@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: Board and Calendar views
+- The layout switch now reads **Grid · Board · Calendar · Timeline**. Search, filters and highlight colours apply in every view; your choice is remembered per tracker on your device.
+- **Board:** each row is a card, in columns by a Choice or Person column (Status by default; change it with **Columns by**). Drag a card to another column to change that value: it saves the same way as editing the cell, so history, the linked task and the Google Sheet follow. Click a card to open the row.
+- **Calendar:** rows on a month or week by a Date column (Go-live or due date by default; change it with **Dates from**). Drag a row to another day to change its date. Rows without a date wait below the calendar to be dragged on. The **+** on a day adds a row with that date.
+- Rows whose value comes from a one-way Google Sheet can't be dragged, and say why.
+- No database migration.
+
 ### Trackers: highlight rules
 - **Highlight rules** (button beside Colour by status): rows colour themselves from their values. A rule is "When <column> <comparison> <value>", with up to three conditions joined by "and", and a colour. Example: *Go-live is before today and Status is not Live → red*.
 - Date columns get three extra comparisons: **is before today**, **is today**, and **is within the next N days**. Linked-task columns (status, due date, owner) can be used too.
