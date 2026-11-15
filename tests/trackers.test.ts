@@ -1247,7 +1247,7 @@ test('automations run after a save, return the final row, log the run, and never
     assert.equal(patched.status, 200, JSON.stringify(patched.body))
     assert.equal(patched.body.row.cells[go], '2026-12-01', 'The response carries the automation’s change')
     assert.equal(patched.body.row.version, row.version + 2)
-    assert.deepEqual(patched.body.automation.done, ['set Go-live', 'notified Jun Perez', 'added a comment'])
+    assert.deepEqual(patched.body.automation.done, ['set Go-live', 'added a comment', 'notified Jun Perez'])
     const comments = (await ask('GET', `/api/trackers/${t.id}/rows/${row.id}/comments`)).body.comments
     assert.deepEqual(
       comments.map((comment: any) => [comment.authorName, comment.text]),
