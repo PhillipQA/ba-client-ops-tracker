@@ -1,6 +1,8 @@
 /**
  * Routes for rows: read, add, edit, link tasks, delete, reveal a Secret cell, and a row's history.
  */
+import { AUTOMATION_LIMITS } from '../../src/features/trackers/trackerAutomations'
+import type { AutomationResult, TrackerAutomations } from './tracker-automations'
 import { randomUUID } from 'node:crypto'
 import rateLimit from 'express-rate-limit'
 import type { Express } from 'express'
@@ -11,11 +13,19 @@ import type { TrackerCore } from './tracker-core'
 import type { TrackerSheetAccess } from './tracker-source'
 import type { TrackerSheetWrite } from './tracker-sheet-write'
 
+/** What the automations did, for the person who saved: one line each, and whether a task was made. */
+const summarize = (results: AutomationResult[]) => ({
+  done: [...new Set(results.flatMap(result => result.done))],
+  skipped: [...new Set(results.flatMap(result => result.skipped))],
+  taskMade: results.some(result => Boolean(result.taskId)),
+})
+
 export function trackerRowRoutes(
   app: Express,
   core: TrackerCore,
   sheetAccess: TrackerSheetAccess,
   sheetWrite: TrackerSheetWrite,
+  automations?: TrackerAutomations,
 ) {
   const {
     scope,
@@ -134,8 +144,24 @@ export function trackerRowRoutes(
         })
         for (const entry of records) Object.assign(entry, added.get(entry.id) || {})
       }
+      // Automations for new rows: small batches only, so a big import never makes hundreds of tasks at once.
+      const ran: AutomationResult[] = []
+      if (automations && records.length <= AUTOMATION_LIMITS.rowsAdded)
+        for (let at = 0; at < records.length; at++) {
+          const result = await automations.run(tenant, tracker, user, null, records[at]).catch((error: any) => {
+            console.error('Tracker automation failed:', error?.message || error)
+            return null
+          })
+          if (!result) continue
+          records[at] = result.record
+          if (result.done.length || result.skipped.length) ran.push(result)
+        }
       await touch(tenant, id)
-      res.status(201).json({ rows: records.map(entry => rowOut(entry, columns)), ...(warning ? { warning } : {}) })
+      res.status(201).json({
+        rows: records.map(entry => rowOut(entry, columns)),
+        ...(warning ? { warning } : {}),
+        ...(ran.length ? { automation: summarize(ran) } : {}),
+      })
     }),
   )
 
@@ -259,8 +285,21 @@ export function trackerRowRoutes(
           : ''
         await record(tenant, id, current.id, user, taskId ? 'task_linked' : 'task_unlinked', { taskId, title })
       }
+      // Automations run after the person's own change is saved; they never fail it.
+      let finalRow = next
+      let automation: ReturnType<typeof summarize> | undefined
+      if (automations && changed.length) {
+        const result = await automations.run(tenant, tracker, user, current, next).catch((error: any) => {
+          console.error('Tracker automation failed:', error?.message || error)
+          return null
+        })
+        if (result) {
+          finalRow = result.record
+          if (result.done.length || result.skipped.length) automation = summarize([result])
+        }
+      }
       await touch(tenant, id)
-      res.json({ row: rowOut(next, columns) })
+      res.json({ row: rowOut(finalRow, columns), ...(automation ? { automation } : {}) })
     }),
   )
 

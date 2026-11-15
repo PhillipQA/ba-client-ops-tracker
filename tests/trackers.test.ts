@@ -1201,3 +1201,70 @@ test('date reminders: the morning check adds each due reminder once, to people w
     assert.equal(added2, 1, 'Only the creator: Jun snoozed it')
   })
 })
+
+test('automations run after a save, return the final row, log the run, and never start each other', async () => {
+  const saved: any[] = []
+  const h = harness({
+    commit: async (_tenant: string, next: any) => {
+      saved.push(next)
+      Object.assign(h.state, next)
+    },
+  })
+  ;(h.state as any).accounts = [
+    { id: 'u1', name: 'Ana Reyes', status: 'Active', role: 'Contributor' },
+    { id: 'u2', name: 'Jun Perez', status: 'Active', role: 'Contributor' },
+  ]
+  await serve(h, async ask => {
+    const t = await makeTracker(ask)
+    const status = t.columns.find((column: any) => column.name === 'Status')
+    const live = status.options.find((option: any) => option.label === 'Live').id
+    const go = idOf(t, 'Go-live')
+    const timeline = await ask('PUT', `/api/trackers/${t.id}/timeline`, {
+      timeline: {
+        automations: [
+          {
+            id: 'a_live',
+            when: { kind: 'changed', columnId: status.id, to: live },
+            then: [
+              { kind: 'set', columnId: go, value: '2026-12-01' },
+              { kind: 'comment', text: 'Live!' },
+              { kind: 'notify', people: ['u2'] },
+            ],
+          },
+          // Would fire if the first automation's change were fed back in.
+          { id: 'a_loop', when: { kind: 'changed', columnId: go }, then: [{ kind: 'comment', text: 'loop' }] },
+        ],
+      },
+    })
+    assert.equal(timeline.status, 200, JSON.stringify(timeline.body))
+    const row = (
+      await ask('POST', `/api/trackers/${t.id}/rows`, { rows: [{ cells: { [idOf(t, 'Site')]: 'Makati T1' } }] })
+    ).body.rows[0]
+    const patched = await ask('PATCH', `/api/trackers/${t.id}/rows/${row.id}`, {
+      cells: { [status.id]: live },
+      version: row.version,
+    })
+    assert.equal(patched.status, 200, JSON.stringify(patched.body))
+    assert.equal(patched.body.row.cells[go], '2026-12-01', 'The response carries the automation’s change')
+    assert.equal(patched.body.row.version, row.version + 2)
+    assert.deepEqual(patched.body.automation.done, ['set Go-live', 'added a comment', 'notified Jun Perez'])
+    const comments = (await ask('GET', `/api/trackers/${t.id}/rows/${row.id}/comments`)).body.comments
+    assert.deepEqual(
+      comments.map((comment: any) => [comment.authorName, comment.text]),
+      [['Automation', 'Live!']],
+    )
+    assert.equal(saved.at(-1).notifications[0].recipientUserId, 'u2')
+    assert.equal(saved.at(-1).notifications[0].type, 'tracker_automation')
+    const runs = (await ask('GET', `/api/trackers/${t.id}/automation-runs`)).body.runs
+    assert.equal(runs.length, 1, 'Only the first automation ran')
+    assert.equal(runs[0].row, 'Makati T1')
+    const history = (await ask('GET', `/api/trackers/${t.id}/rows/${row.id}/history`)).body.changes
+    assert.ok(history.some((change: any) => change.kind === 'automation'))
+    // The person's next edit uses the version the response gave: no conflict.
+    const next = await ask('PATCH', `/api/trackers/${t.id}/rows/${row.id}`, {
+      cells: { [idOf(t, 'Site')]: 'Makati Tower 1' },
+      version: patched.body.row.version,
+    })
+    assert.equal(next.status, 200, JSON.stringify(next.body))
+  })
+})

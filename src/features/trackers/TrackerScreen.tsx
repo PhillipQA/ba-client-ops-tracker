@@ -20,6 +20,7 @@ import {
   Table2,
   Upload,
   X,
+  Zap,
 } from 'lucide-react'
 import {
   TRACKER_LIMITS,
@@ -53,10 +54,19 @@ import TrackerBoard from './TrackerBoard'
 import TrackerCalendar from './TrackerCalendar'
 import TrackerHighlightRules from './TrackerHighlightRules'
 import TrackerRemindersDialog from './TrackerRemindersDialog'
+import TrackerAutomationsDialog from './TrackerAutomationsDialog'
+import type { Automation } from './trackerAutomations'
 import { describeReminder, type TrackerReminder } from './trackerReminders'
 import { describeRule, type HighlightRule, ruleTones } from './highlightRules'
 import { exportCsv, exportFileName } from './trackerExport'
-import { TrackerApiError, loadAllRows, trackerApi, type ConvertReport, type TaskLink } from './trackerApi'
+import {
+  type AutomationSummary,
+  TrackerApiError,
+  loadAllRows,
+  trackerApi,
+  type ConvertReport,
+  type TaskLink,
+} from './trackerApi'
 import TrackerTimeline from './TrackerTimeline'
 import TrackerColumnSubtasks from './TrackerColumnSubtasks'
 import TrackerGrid, { NUMBER_COLUMN_WIDTH, widthOf, type Entry, type GridFocus } from './TrackerGrid'
@@ -704,6 +714,14 @@ export default function TrackerScreen(props: Props) {
         }
       })
   }
+  /** Says what the tracker's automations did after a save, and picks up a task one of them made. */
+  const tellAutomation = (automation: AutomationSummary) => {
+    if (!alive.current) return
+    const done = automation.done.join(', ')
+    const skipped = automation.skipped.length ? ` Skipped: ${automation.skipped.join('; ')}.` : ''
+    say('info', `${done ? `Automation: ${done}.` : 'Automation ran.'}${skipped}`)
+    if (automation.taskMade) void props.onTasksChanged?.()
+  }
   const replaceRow = (next: TrackerRow, keepCells: boolean) =>
     setRows(
       rowsRef.current.map(row =>
@@ -740,9 +758,10 @@ export default function TrackerScreen(props: Props) {
       const latest = rowsRef.current.find(row => row.id === rowId)
       if (!latest) return
       try {
-        const { row } = await trackerApi.updateRow(trackerId, rowId, { version: latest.version, ...body })
+        const { row, automation } = await trackerApi.updateRow(trackerId, rowId, { version: latest.version, ...body })
         if (alive.current) replaceRow(row, behind())
         onSaved?.()
+        if (automation) tellAutomation(automation)
       } catch (error) {
         // Two-way: the Sheet cell changed since the last sync. Show both values and let the person choose.
         if (error instanceof TrackerApiError && Array.isArray(error.body.conflicts) && alive.current) {
@@ -1208,6 +1227,15 @@ export default function TrackerScreen(props: Props) {
   const [rulesOpen, setRulesOpen] = useState(false)
   const reminders = useMemo(() => tracker?.timeline?.reminders || [], [tracker?.timeline?.reminders])
   const [remindersOpen, setRemindersOpen] = useState(false)
+  const automationList = useMemo(() => tracker?.timeline?.automations || [], [tracker?.timeline?.automations])
+  const [automationsOpen, setAutomationsOpen] = useState(false)
+  const saveAutomations = async (next: Automation[]) => {
+    const current = trackerRef.current
+    if (!current) return
+    const settings = { ...(current.timeline || {}), automations: next.length ? next : undefined }
+    const result = await trackerApi.saveTimeline(current.id, settings)
+    if (alive.current && trackerRef.current) setTracker({ ...trackerRef.current, timeline: result.timeline })
+  }
   const saveReminders = async (next: TrackerReminder[]) => {
     const current = trackerRef.current
     if (!current) return
@@ -1457,9 +1485,10 @@ export default function TrackerScreen(props: Props) {
     if (rowsRef.current.length >= TRACKER_LIMITS.rows)
       return say('error', `A tracker can have at most ${TRACKER_LIMITS.rows.toLocaleString('en')} rows.`)
     try {
-      const { rows: created, warning } = await trackerApi.addRows(trackerId, [cells ? { cells } : {}])
+      const { rows: created, warning, automation } = await trackerApi.addRows(trackerId, [cells ? { cells } : {}])
       if (!alive.current) return
       if (warning) say('error', warning)
+      else if (automation) tellAutomation(automation)
       setRows([...rowsRef.current, ...created])
       setTracker({ ...trackerRef.current!, rowCount: trackerRef.current!.rowCount + created.length })
       props.onListChanged()
@@ -2410,6 +2439,16 @@ export default function TrackerScreen(props: Props) {
             <BellRing size={14} aria-hidden="true" /> Reminders{reminders.length ? ` · ${reminders.length}` : ''}
           </button>
         )}
+        {canEdit && (
+          <button
+            type="button"
+            className={`trk-button${automationList.some(item => !item.off) ? ' on' : ''}`}
+            onClick={() => setAutomationsOpen(true)}
+            title="When → then: let the tracker do the routine step after a row is saved"
+          >
+            <Zap size={14} aria-hidden="true" /> Automations{automationList.length ? ` · ${automationList.length}` : ''}
+          </button>
+        )}
         <span className="trk-spacer" />
         <span className="trk-save-state" role="status">
           <span className={`trk-dot${saving > 0 ? ' busy' : ''}`} aria-hidden="true" />
@@ -2740,6 +2779,17 @@ export default function TrackerScreen(props: Props) {
           )
         })()}
 
+      {automationsOpen && tracker && (
+        <TrackerAutomationsDialog
+          trackerId={tracker.id}
+          columns={columns}
+          people={people}
+          automations={automationList}
+          tasksByTemplate={keepsTasks(columns) || keepsStepTasks(tracker)}
+          onSave={saveAutomations}
+          onClose={() => setAutomationsOpen(false)}
+        />
+      )}
       {remindersOpen && tracker && (
         <TrackerRemindersDialog
           columns={columns}

@@ -5,6 +5,7 @@
  */
 import { cleanRules, type HighlightRule } from './highlightRules'
 import { cleanReminders, type TrackerReminder } from './trackerReminders'
+import { type Automation, cleanAutomations } from './trackerAutomations'
 import type { OptionColor, TrackerColumn, TrackerRow } from './trackerModel'
 
 /** Which columns the timeline reads. Empty means "not used". */
@@ -261,6 +262,8 @@ export type TimelineSettings = {
   rules?: HighlightRule[]
   /** Date reminders (see trackerReminders). */
   reminders?: TrackerReminder[]
+  /** When → then automations (see trackerAutomations). */
+  automations?: Automation[]
 }
 
 const FIELD_TYPES: Record<keyof TimelineFields, string[]> = {
@@ -286,6 +289,8 @@ export function cleanTimelineSettings(raw: unknown, columns: TrackerColumn[]): T
   if (rules.length) out.rules = rules
   const reminders = cleanReminders(input.reminders, columns)
   if (reminders.length) out.reminders = reminders
+  const automations = cleanAutomations(input.automations, columns)
+  if (automations.length) out.automations = automations
   const fields: Partial<TimelineFields> = {}
   const given = input.fields && typeof input.fields === 'object' ? input.fields : {}
   for (const key of Object.keys(FIELD_TYPES) as (keyof TimelineFields)[]) {

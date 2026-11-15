@@ -253,6 +253,7 @@ export type NotificationType =
   | 'evidence_uploaded'
   | 'comment_added'
   | 'tracker_reminder'
+  | 'tracker_automation'
 export type NotificationSeverity = 'info' | 'warning' | 'urgent' | 'success'
 
 export interface AppNotification {
