@@ -1,4 +1,4 @@
--- BA Client Ops Tracker: database schema (version 39)
+-- BA Client Ops Tracker: database schema (version 40)
 --
 -- Creates every table, constraint, index and function the app needs on an empty PostgreSQL 14+ database, plus the
 -- two starting sign-ins. Run it once, as the same database user the app connects with (DATABASE_URL):
@@ -29,7 +29,7 @@ begin
     ve_accounts','tenant_email_templates','tenant_integrations','tenant_reports','tenant_state','tenant_templates'
     ,'tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_t
     racker_templates','tenant_trackers','tracker_evidence_files','tracker_state','user_communication_settings','us
-    er_communications','user_assistant_memory','user_email_signatures','user_task_timers','user_github_connections','user_github_issues','user_gitlab_connect
+    er_communications','user_assistant_memory','user_email_signatures','user_task_timers','user_preferences','user_github_connections','user_github_issues','user_gitlab_connect
     ions','user_gitlab_issues'
   ] loop
     if to_regclass(format('public.%I', name)) is not null then
@@ -1490,6 +1490,16 @@ CREATE TABLE public.user_task_timers (
 );
 
 
+-- Per-person preferences that follow them across devices, such as their Action Center layout (schema v40).
+CREATE TABLE public.user_preferences (
+    tenant_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    user_id text NOT NULL,
+    prefs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (tenant_id, user_id)
+);
+
+
 -- ----------------------------------------------------------------------------------------------------
 -- Starting sign-ins
 -- ----------------------------------------------------------------------------------------------------
@@ -1510,4 +1520,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 39 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 40 as schema_version;

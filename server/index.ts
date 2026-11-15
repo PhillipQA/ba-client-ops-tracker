@@ -78,6 +78,7 @@ import { registerAssistantRoutes } from './ai/assistant-routes'
 import { createMemoryStore, registerMemoryRoutes } from './ai/assistant-memory'
 import { registerBriefRoutes } from './ai/brief-routes'
 import { createTimerStore, registerTimerRoutes } from './tasks/task-timers'
+import { createPreferenceStore, registerActionCenterRoutes } from './workspace/action-center-routes'
 import { registerDrfRoutes } from './documents/drf-documents'
 import { registerTaskRoutes } from './tasks/task-routes'
 
@@ -200,6 +201,12 @@ const trackers = registerTrackerRoutes(app, {
 onTenantCommitted((tenantId, before, after, actor) => trackers.onWorkspaceSaved(tenantId, before, after, actor))
 registerEmailTemplateRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
 registerCustomReportRoutes(app, { db, requireAuth, requireTenant: requireTenantWorkspace })
+// Each person's Action Center layout, and a job role's starting layout.
+registerActionCenterRoutes(app, {
+  store: createPreferenceStore(db),
+  load: loadTenantState,
+  commit: commitTenantState,
+})
 registerWorkflowRoutes(app, {
   requireAuth,
   requireTenant: requireTenantWorkspace,
