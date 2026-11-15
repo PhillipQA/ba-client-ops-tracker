@@ -42,6 +42,7 @@ import {
   Pencil,
   Database,
   Pin,
+  Sparkles,
 } from 'lucide-react'
 import { businessDateKey, useBusinessDate } from '../../../shared/businessDate'
 import type {
@@ -100,6 +101,7 @@ import type { SqlValue } from '../explorer/sqlEngine'
 import { useExplorerData } from '../explorer/useExplorerData'
 import { ShareImage } from './ShareImage'
 import { useTrackerData } from './useReportSources'
+import { JarvisReportDialog } from '../explorer/Jarvis'
 import { pinReportWidget } from '../../action-center/useActionCenterLayout'
 import './customReports.css'
 import '../explorer/dataExplorer.css'
@@ -166,6 +168,8 @@ type Props = {
   canUseTrackers: boolean
   /** Data explorer: Administrators, and people given the Data explorer module. */
   canExplore: boolean
+  /** Jarvis (the BA Assistant) may write queries and build reports here. */
+  canAskJarvis?: boolean
   /** Work Hub, whose messages the Data explorer can read. */
   canUseInbox: boolean
 }
@@ -174,6 +178,9 @@ export default function CustomReports(props: Props) {
   const { currentUser, canUseTrackers, canExplore } = props
   const today = useBusinessDate()
   const canChange = currentUser.role !== 'Viewer'
+  // Jarvis builds reports of SQL widgets, so it needs the right to write SQL.
+  const jarvisReports = canChange && Boolean(props.canAskJarvis) && (currentUser.role === 'Administrator' || canExplore)
+  const [jarvisOpen, setJarvisOpen] = useState(false)
   const [mode, setModeState] = useState<'reports' | 'explorer'>(() =>
     readStore(MODE_KEY, '') === 'explorer' ? 'explorer' : 'reports',
   )
@@ -628,6 +635,7 @@ export default function CustomReports(props: Props) {
   if (canExplore && mode === 'explorer')
     return (
       <DataExplorer
+        canAskJarvis={Boolean(props.canAskJarvis)}
         switcher={switcher}
         explorer={explorer}
         queries={queries}
@@ -679,6 +687,22 @@ export default function CustomReports(props: Props) {
 
   return (
     <section className={`crp-page${editing ? ' is-editing' : ''}`}>
+      {jarvisOpen && (
+        <JarvisReportDialog
+          explorer={explorer}
+          onClose={() => setJarvisOpen(false)}
+          onCreate={async (name, widgets) => {
+            const made = await create({
+              kind: 'report',
+              name,
+              description: 'Built with Jarvis',
+              definition: { widgets, filters: { range: 'all' } },
+            })
+            if (made) setSelectedId(made.id)
+            return Boolean(made)
+          }}
+        />
+      )}
       <aside className="crp-side" aria-label="Your reports">
         {switcher}
         <div className="crp-side-actions">
@@ -687,6 +711,11 @@ export default function CustomReports(props: Props) {
               <button type="button" className="crp-btn primary" onClick={() => setDialog({ kind: 'new-report' })}>
                 <Plus size={15} /> New report
               </button>
+              {jarvisReports && (
+                <button type="button" className="crp-btn" onClick={() => setJarvisOpen(true)}>
+                  <Sparkles size={15} /> Build with Jarvis
+                </button>
+              )}
               <button
                 type="button"
                 className="crp-icon"

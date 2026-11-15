@@ -11,6 +11,17 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Jarvis in Reports: write SQL, and build whole reports
+- **Data explorer → Ask Jarvis:** type a question in plain words and Jarvis writes the SQL, puts it in the editor and runs it. If it fails, Jarvis fixes it once by itself.
+  - **Change current query:** tick it and say what to change ("only SM Prime", "group by project", "add a total").
+  - **Explain:** what the query in the editor does, in plain words.
+  - **Fix with Jarvis:** shown when a query fails; rewrites it and says what was wrong.
+- **Reports → Build with Jarvis:** describe the report and Jarvis plans it like a data analyst: headline numbers, charts (pie, bar, column, line) and detail tables, each a SQL widget. Every query runs in your browser and failing ones are fixed or left out. Change the plan in words, rename it, then **Create report** — it opens like any report you can edit.
+  - **Add analyst notes** (optional): a "What this shows" section of findings at the top. This is the only step that sends results to the AI (up to 40 rows per widget).
+- Jarvis only gets table and column names to write SQL; rows stay in your browser. Every query it writes is checked to be one read-only SELECT or WITH statement.
+- Needs the AI BA Assistant turned on and the Reports page; building reports also needs the right to write SQL (Administrator or Data explorer).
+- No database migration.
+
 ### Work Hub GitLab: your tickets from every project, with more details and filters
 - **Every project:** GitLab tickets now come from every project you can see, not only the ones picked in settings. Work Hub pulls only tickets **you're part of**: ones you created, ones assigned to you, and ones you **commented on** (found from your comments in the last 90 days). Nothing else is pulled. Open tickets have no age limit; closed ones updated in the last 30 days are included, as before.
 - If you're unassigned from a ticket you didn't create or comment on, it leaves your list at the next sync.

@@ -638,6 +638,10 @@ function App() {
               <CustomReports
                 canUseTrackers={hasModule('trackers')}
                 canExplore={hasModule('explorer')}
+                canAskJarvis={
+                  hasModule('ai') &&
+                  (currentUser.role !== 'Viewer' || Boolean((currentUser as { askAi?: boolean }).askAi))
+                }
                 canUseInbox={hasModule('inbox')}
                 clients={store.clients}
                 projects={store.projects}
