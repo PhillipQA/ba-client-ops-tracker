@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Action Center: four new widgets
+Add them under **Customize → Add**.
+- **My time this week:** hours you logged each day (Monday to Sunday) against your **weekly target, 40 hours unless you change it** (Target button; it's kept with your layout, so it's yours alone). Working days show the daily share (8 hours for 40) as a dashed line; days that meet it are filled in. Says how many entries are still to send to Seeds, with a **Send to Seeds** button.
+- **Follow-ups due:** open work to follow up today or earlier, oldest first. Tick one to mark the follow-up done (it clears the follow-up date, the same as the task's own field). Follows the Action Center's work view.
+- **Recent tracker changes:** edits, comments, task links and automation runs on the trackers you can open, newest first; click one to open the row. Secret values, reveals and snoozes are never listed.
+- **Quick links and note:** your own links (web addresses only) and a short note, only for you.
+- No database migration.
+
 ### Action Center: build your own widgets, and pin widgets from Reports
 - **Customize → Build your own widget** opens the Reports builder on the Action Center: choose the data (tasks, time, activities, events or a tracker), filters, grouping and measure, and show it as a number, bar, column, line or pie chart, table or timeline. A live preview shows your own data. Add as many as you like; each has **Edit widget** while customizing.
 - **Pin to Action Center** (pin button on each widget of a saved report): the widget appears at the end of your Action Center and **follows the report**, so editing it in the report changes it there too, with the report's own filters. **Open report** goes straight to it. If the report is deleted or no longer shared with you, the widget says so and offers to remove itself.

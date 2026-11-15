@@ -20,11 +20,12 @@ import {
   widgetLabel,
   widgetsToAdd,
 } from '../../shared/actionCenterLayout'
-import { type CountTile, tilesOf } from '../../shared/actionCenterSettings'
+import { type CountTile, type QuickLink, tilesOf, weeklyHoursOf } from '../../shared/actionCenterSettings'
 import { businessDateKey } from '../../shared/businessDate'
 import type { UserAccount } from '../../shared/types'
 import { fieldValues, type ReportData, sourceFields, sourceRecords } from '../reports/custom/reportData'
 import { CountTiles, CountTilesDialog } from './ActionCenterCounts'
+import { FollowUpsWidget, LinksWidget, TimeWidget, TrackerChangesWidget } from './ActionCenterMore'
 import { BuildWidgetDialog, CustomWidget, PinnedWidget, useReportEngine, useSavedReports } from './ActionCenterReports'
 import type { Widget } from '../reports/custom/reportModel'
 import { builtinValue, customValue } from './countTiles'
@@ -47,6 +48,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     aiClientId,
     aiProjectId,
     assessDashboardAI,
+    applyTaskUpdate,
     canEditActionItem,
     canUseAI,
     canWrite,
@@ -352,8 +354,54 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     }
     setView('reports')
   }
+  /** A widget's own settings changed on the page (a target, links): saved at once, or into the draft while customizing. */
+  const saveSettings = (key: string, settings: Record<string, unknown> | undefined) => {
+    if (editing) setDraft(current => setWidgetSettings(current, key, settings))
+    else void layout.save(setWidgetSettings(layout.layout, key, settings))
+  }
   const renderItem = (item: LayoutItem): ReactNode => {
     if (item.id === 'counts') return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} />
+    if (item.id === 'time')
+      return (
+        <TimeWidget
+          items={store.items}
+          meId={currentUser.id}
+          today={today}
+          weeklyHours={weeklyHoursOf(item.settings)}
+          onTarget={hours => saveSettings(keyOf(item), hours === 40 ? undefined : { weeklyHours: hours })}
+          setView={setView}
+        />
+      )
+    if (item.id === 'followups')
+      return (
+        <FollowUpsWidget
+          open={actionCenterWorkItems}
+          today={today}
+          clients={store.clients}
+          canDone={canEditActionItem}
+          onDone={task =>
+            applyTaskUpdate({
+              tasks: [
+                {
+                  taskId: task.id,
+                  title: task.title,
+                  changes: [{ field: 'followUpDate', label: 'Follow-up date', from: task.followUpDate, to: '' }],
+                },
+              ],
+            })
+          }
+          onOpenTask={task => (canEditActionItem(task) ? openTaskEditor(task.id) : setView('items'))}
+        />
+      )
+    if (item.id === 'trackerChanges') return <TrackerChangesWidget setView={setView} />
+    if (item.id === 'links')
+      return (
+        <LinksWidget
+          links={(item.settings?.links as QuickLink[] | undefined) || []}
+          note={String(item.settings?.note || '')}
+          onSave={settings => saveSettings(keyOf(item), settings)}
+        />
+      )
     if (item.id === 'custom' && item.settings?.widget)
       return <CustomWidget widget={item.settings.widget as Widget} engine={engine} />
     if (item.id === 'pinned' && item.settings) {

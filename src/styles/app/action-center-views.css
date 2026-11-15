@@ -533,3 +533,138 @@ button.ac-swatch[aria-pressed="true"] {
   max-height: 340px;
   overflow: auto;
 }
+
+/* My time this week, follow-ups, links and note. */
+.ac-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.ac-inline-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.ac-inline-form input {
+  width: 110px;
+}
+.ac-time-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--theme-border, rgba(128, 128, 128, 0.25));
+  overflow: hidden;
+}
+.ac-time-bar span {
+  display: block;
+  height: 100%;
+  background: var(--theme-accent, #3b82f6);
+}
+.ac-time-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ac-time-days li {
+  display: grid;
+  grid-template-rows: auto 120px auto;
+  justify-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+}
+.ac-time-days li.today .ac-time-label {
+  font-weight: 700;
+}
+.ac-time-value,
+.ac-time-label {
+  opacity: 0.8;
+}
+.ac-time-column {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  max-width: 34px;
+  height: 120px;
+}
+.ac-time-column b {
+  display: block;
+  width: 100%;
+  border-radius: 5px 5px 0 0;
+  background: color-mix(in srgb, var(--theme-accent, #3b82f6) 55%, transparent);
+}
+.ac-time-column b.met {
+  background: var(--theme-accent, #3b82f6);
+}
+.ac-time-target {
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  border-top: 2px dashed #c98a16;
+}
+.ac-widget-list li.ac-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ac-widget-list li.ac-check-row > button {
+  flex: 1;
+  min-width: 0;
+}
+.ac-check-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.ac-links-editor {
+  display: grid;
+  gap: 8px;
+}
+.ac-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto;
+  gap: 6px;
+}
+.ac-link-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ac-link-list a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-border, rgba(128, 128, 128, 0.3));
+  border-radius: 8px;
+  color: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-link-list a:hover {
+  border-color: var(--theme-accent, #3b82f6);
+}
+.ac-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(201, 138, 22, 0.12);
+  border: 1px solid rgba(201, 138, 22, 0.35);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.ac-inline-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
