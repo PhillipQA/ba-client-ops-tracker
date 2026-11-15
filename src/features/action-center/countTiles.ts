@@ -52,15 +52,14 @@ export function builtinValue(id: BuiltinCount, input: BuiltinInput): TileValue {
     }
     case 'overdue': {
       const overdue = open.filter(item => late(item, today))
-      const oldest = overdue.reduce(
-        (min, item) =>
-          [item.dueDate, item.followUpDate].filter(day => day && day < today).reduce((a, b) => (b < a ? b : a), min),
-        today,
-      )
+      let oldest = today
+      for (const item of overdue)
+        for (const day of [item.dueDate || '', item.followUpDate || '']) if (day && day < oldest) oldest = day
+      const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${oldest}T00:00:00Z`)) / 86_400_000)
       return {
         title: builtinLabel(id),
         value: String(overdue.length),
-        detail: overdue.length ? `Oldest from ${oldest}` : 'Nothing late',
+        detail: overdue.length ? `Oldest ${plural(days, 'day')} late` : 'Nothing late',
       }
     }
     case 'dueToday': {
