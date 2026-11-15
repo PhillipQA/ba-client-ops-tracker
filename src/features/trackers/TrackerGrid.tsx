@@ -19,7 +19,8 @@ import {
   type TrackerView,
 } from './trackerModel'
 import type { Lookup } from './trackerQuery'
-import { CellEditor, CellView, editable, numberFormat, type Person } from './TrackerCells'
+import { CellEditor, CellView, editable, type Person } from './TrackerCells'
+import { type TotalShown, totalKindsFor } from './trackerTotals'
 import { ColumnIcon } from './trackerUi'
 
 export const ROW_HEIGHT = 44
@@ -78,8 +79,10 @@ type Props = {
   ) => { label: string; title: string; done: boolean; task: boolean } | null
   /** Present when tasks and subtasks can be picked from cells. */
   onWork?: (row: TrackerRow, column: TrackerColumn, element: HTMLElement) => void
-  /** SUMs for the totals row, by column id. Absent when no column asks for a total. */
-  totals?: ReadonlyMap<string, number | null>
+  /** What each column shows in the totals row, by column id. Absent: no totals row. */
+  totals?: ReadonlyMap<string, TotalShown>
+  /** Opens the list of totals for a column (people who can change the columns). */
+  onPickTotal?: (column: TrackerColumn, anchor: HTMLElement) => void
   /** Every column of the tracker, shown or not, for reading formulas. */
   allColumns?: TrackerColumn[]
   /** Per row: how many tasks are linked, and which cells have their own. */
@@ -687,31 +690,40 @@ export default function TrackerGrid(props: Props) {
             </div>
             {columns.map((column, at) => {
               const place = stick.get(column.id),
-                has = props.totals!.has(column.id),
-                value = props.totals!.get(column.id)
+                total = props.totals!.get(column.id),
+                canPick = Boolean(props.onPickTotal) && totalKindsFor(column).length > 0
+              const inner = total ? (
+                <>
+                  {total.label && <small>{total.label.toUpperCase()}</small>}
+                  <span className="trk-number">{total.text}</span>
+                </>
+              ) : at === 0 && !canPick ? (
+                <span className="trk-muted">Total</span>
+              ) : null
               return (
                 <div
                   key={column.id}
                   role="gridcell"
                   aria-colindex={at + 2}
-                  className={`trk-cell${place ? ' trk-frozen' : ''}${place?.edge ? ' trk-edge' : ''}${has ? ' trk-sum' : ''}${column.align ? ` trk-al-${column.align}` : ''}`}
+                  className={`trk-cell${place ? ' trk-frozen' : ''}${place?.edge ? ' trk-edge' : ''}${total ? ' trk-sum' : ''}${column.align ? ` trk-al-${column.align}` : ''}`}
                   style={place ? { left: place.left } : undefined}
-                  title={
-                    has
-                      ? `SUM of ${column.name} for the ${entries.filter(entry => entry.kind === 'row').length} rows shown`
-                      : undefined
-                  }
+                  title={canPick ? undefined : total?.title}
                 >
-                  {has ? (
-                    <>
-                      <small>SUM</small>
-                      <span className="trk-number">
-                        {value === null || value === undefined ? '—' : numberFormat.format(value)}
-                      </span>
-                    </>
-                  ) : at === 0 ? (
-                    <span className="trk-muted">Total</span>
-                  ) : null}
+                  {canPick ? (
+                    <button
+                      type="button"
+                      className={`trk-total-pick${total ? '' : ' empty'}`}
+                      title={total ? `${total.title}. Click to change.` : `Add a total for ${column.name}`}
+                      aria-label={
+                        total ? `${column.name} total: ${total.text}. Change` : `Add a total for ${column.name}`
+                      }
+                      onClick={event => props.onPickTotal?.(column, event.currentTarget)}
+                    >
+                      {inner || <span className="trk-total-add">+ Total</span>}
+                    </button>
+                  ) : (
+                    inner
+                  )}
                 </div>
               )
             })}

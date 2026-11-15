@@ -136,6 +136,31 @@ export type ColumnAlign = 'left' | 'center' | 'right'
 export const COLUMN_WIDTH = { min: 60, max: 800 }
 /** The first column stays in view unless it was explicitly unfrozen; any other column only when it was frozen. */
 export const isFrozenColumn = (column: TrackerColumn, all: TrackerColumn[]) => column.frozen ?? all[0]?.id === column.id
+export type TotalKind = 'sum' | 'avg' | 'min' | 'max' | 'filled' | 'empty' | 'checked' | 'options' | 'range'
+const NUMBER_TOTALS: TotalKind[] = ['sum', 'avg', 'min', 'max', 'filled', 'empty']
+const CHOICE_TOTALS: TotalKind[] = ['options', 'filled', 'empty']
+const DATE_TOTALS: TotalKind[] = ['range', 'filled', 'empty']
+const PLAIN_TOTALS: TotalKind[] = ['filled', 'empty']
+/** The totals each column type can show, the most useful first. Protected columns have none. */
+export const TOTAL_KINDS: Record<ColumnType, TotalKind[]> = {
+  text: PLAIN_TOTALS,
+  longtext: PLAIN_TOTALS,
+  link: PLAIN_TOTALS,
+  number: NUMBER_TOTALS,
+  formula: NUMBER_TOTALS,
+  checkbox: ['checked'],
+  select: CHOICE_TOTALS,
+  multiselect: CHOICE_TOTALS,
+  person: CHOICE_TOTALS,
+  date: DATE_TOTALS,
+  secret: [],
+  task_status: CHOICE_TOTALS,
+  task_owner: CHOICE_TOTALS,
+  task_due: DATE_TOTALS,
+  signoff: [],
+  drive_files: [],
+}
+
 export type TrackerColumn = {
   id: string
   name: string
@@ -148,8 +173,8 @@ export type TrackerColumn = {
   revealBy?: RevealBy
   /** Calculated columns: the formula, with other columns referenced as {columnId}. */
   formula?: string
-  /** Number and Calculated columns: show a SUM in the totals row. */
-  total?: 'sum'
+  /** What the column shows in the totals row (see trackerTotals). Unset: nothing. */
+  total?: TotalKind
   /** Filled from the connected Google Sheet. In one-way sync it is read-only for rows that came from the Sheet. */
   synced?: boolean
   /**
@@ -331,6 +356,8 @@ export type Tracker = {
   timeline?: TimelineSettings
   revision: number
   rowCount: number
+  /** In the list: how many rows are done, when the tracker has a column that says so (see progressColumn). */
+  doneCount?: number
   createdBy: string
   createdByName: string
   createdAt: string
@@ -445,7 +472,8 @@ export function normalizeColumns(input: unknown, previous: TrackerColumn[] = [])
       column.options = normalizeOptions(raw.options, known?.options)
     if (raw.type === 'secret') column.revealBy = raw.revealBy === 'admins' ? 'admins' : 'editors'
     if (raw.type === 'formula') column.formula = typeof raw.formula === 'string' ? raw.formula.slice(0, 1000) : ''
-    if ((raw.type === 'number' || raw.type === 'formula') && raw.total === 'sum') column.total = 'sum'
+    const total = TOTAL_KINDS[raw.type as ColumnType]?.find(kind => kind === raw.total)
+    if (total) column.total = total
     if (raw.synced === true && isBasicType(raw.type)) column.synced = true
     const autoDone = normalizeAutoDone(raw.autoDone, column)
     if (autoDone) column.autoDone = autoDone
