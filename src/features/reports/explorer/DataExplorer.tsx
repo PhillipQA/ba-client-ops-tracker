@@ -41,6 +41,7 @@ import {
   type BuilderFilterOp,
   type BuilderSummary,
 } from './queryBuilder'
+import { JarvisBar } from './Jarvis'
 import { QueryResultView } from './QueryResult'
 import { resultCsv } from './resultView'
 import { isKeyword, queryParams, tableIdentifierParams, SQL_FUNCTIONS, SqlError, type SqlResult } from './sqlEngine'
@@ -152,7 +153,10 @@ export function DataExplorer({
   update,
   remove,
   openReport,
+  canAskJarvis = false,
 }: {
+  /** Jarvis can write, change, fix and explain queries. */
+  canAskJarvis?: boolean
   /** The Reports | Data explorer switch, at the top of the sidebar. */
   switcher: ReactNode
   explorer: Explorer
@@ -203,9 +207,11 @@ export function DataExplorer({
 
   // --- Running ---
 
-  const run = async (text = sql, given = params) => {
+  /** Runs a query; resolves with its error message, or '' when it ran. */
+  const run = async (text = sql, given = params): Promise<string> => {
     setRunning(true)
     setError('')
+    let message = ''
     try {
       const values = Object.fromEntries(queryParams(text).map(name => [name, given[name] ?? '']))
       setResult(await explorer.run(text, values))
@@ -213,11 +219,13 @@ export function DataExplorer({
       setResult(null)
       if (problem instanceof SqlError) {
         const line = problem.position >= 0 ? text.slice(0, problem.position).split('\n').length : 0
-        setError(line ? `Line ${line}: ${problem.message}` : problem.message)
-      } else setError('The query could not run. Try again.')
+        message = line ? `Line ${line}: ${problem.message}` : problem.message
+      } else message = 'The query could not run. Try again.'
+      setError(message)
     } finally {
       setRunning(false)
     }
+    return message
   }
 
   // --- Builder ---
@@ -758,6 +766,18 @@ export function DataExplorer({
           )}
         </div>
 
+        {canAskJarvis && (
+          <JarvisBar
+            explorer={explorer}
+            sql={sql}
+            setSql={next => {
+              setSql(next)
+              if (builder) setBuilder(null)
+            }}
+            run={text => run(text)}
+            error={error}
+          />
+        )}
         <div className="dx-panel dx-editor">
           <textarea
             ref={editor}
