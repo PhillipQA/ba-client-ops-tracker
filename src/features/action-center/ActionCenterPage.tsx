@@ -22,7 +22,7 @@ import { MorningBrief } from './MorningBrief'
 import { type ActionCenterLayout, type WidgetId, widgetsToAdd } from '../../shared/actionCenterLayout'
 import { requestJson } from '../../shared/http'
 import { CustomizeBar, WidgetFrame } from './ActionCenterCustomize'
-import { DocHubWidget, WorkHubWidget } from './ActionCenterWidgets'
+import { DocHubWidget, RolloutsWidget, WorkHubWidget } from './ActionCenterWidgets'
 import { useActionCenterLayout } from './useActionCenterLayout'
 
 /** Action Center screen. It reads the app state; see app/useAppState. */
@@ -310,6 +310,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     ),
     workhub: <WorkHubWidget clients={store.clients} setView={setView} />,
     dochub: <DocHubWidget setView={setView} />,
+    rollouts: <RolloutsWidget items={store.items} accounts={store.accounts} setView={setView} />,
   }
   const shown = editing ? draft : layout.layout
   return (

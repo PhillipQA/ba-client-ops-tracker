@@ -14,6 +14,7 @@
  * - tracker-comments.ts: comments on rows, with @mentions
  * - tracker-reminders.ts: date reminders, checked every morning
  * - tracker-automations.ts: when → then automations, run after a row is saved
+ * - tracker-rollup.ts: the roll-up, rows of several trackers in one list
  * - tracker-common.ts: shared types and helpers
  */
 import type { Express } from 'express'
@@ -32,6 +33,7 @@ import { trackerRowRoutes } from './tracker-row-routes'
 import { trackerCommentRoutes } from './tracker-comments'
 import { trackerReminders } from './tracker-reminders'
 import { trackerAutomations } from './tracker-automations'
+import { trackerRollupRoutes } from './tracker-rollup'
 export { secretRuleChanges } from './tracker-common'
 
 export function registerTrackerRoutes(app: Express, deps: Deps) {
@@ -53,6 +55,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   seedsRows.routes(app)
   const reminders = trackerReminders(deps, core, allRows, deps.timeZone || 'Asia/Manila')
   reminders.routes(app)
+  trackerRollupRoutes(app, core, allRows)
   // Date reminders: looked at every 15 minutes, sent once a day after 8:00 AM business time.
   if (deps.reminderTimer !== false) {
     const timer = setInterval(() => void reminders.runDue().catch(() => undefined), 15 * 60_000)

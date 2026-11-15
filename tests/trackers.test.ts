@@ -1268,3 +1268,45 @@ test('automations run after a save, return the final row, log the run, and never
     assert.equal(next.status, 200, JSON.stringify(next.body))
   })
 })
+
+test('the roll-up lists Site rollout trackers the person can open, with only its four columns', async () => {
+  const h = harness()
+  await serve(h, async ask => {
+    const rollout = await makeTracker(ask, { name: 'SM rollout', template: 'site-rollout' })
+    const other = await makeTracker(ask, { name: 'Ayala sites' })
+    const theirs = await makeTracker(
+      ask,
+      { name: 'Ben rollout', template: 'site-rollout', private: true },
+      { 'x-user': 'u2' },
+    )
+    const old = await makeTracker(ask, { name: 'Old rollout', template: 'site-rollout' })
+    assert.equal((await ask('PATCH', `/api/trackers/${old.id}`, { archived: true })).status, 200)
+    const site = idOf(rollout, 'Site'),
+      login = idOf(rollout, 'Admin login')
+    const added = await ask('POST', `/api/trackers/${rollout.id}/rows`, {
+      rows: [
+        { cells: { [site]: 'SM North', [idOf(rollout, 'Go-live')]: '2026-11-20' }, secrets: { [login]: 'hunter2' } },
+      ],
+    })
+    assert.equal(added.status, 201, JSON.stringify(added.body))
+
+    const first = await ask('GET', '/api/tracker-rollup')
+    assert.equal(first.status, 200, JSON.stringify(first.body))
+    assert.deepEqual(first.body.chosen, [rollout.id], 'by default, every Site rollout tracker the person can open')
+    assert.deepEqual(
+      first.body.trackers.map((tracker: any) => tracker.name).sort(),
+      ['Ayala sites', 'SM rollout'],
+      'not archived, not someone else’s private one',
+    )
+    const [set] = first.body.sets
+    assert.deepEqual(set.tracker.columns.map((column: any) => column.name).sort(), ['Go-live', 'Site', 'Status'])
+    assert.equal(set.rows[0].cells[site], 'SM North')
+    assert.ok(!JSON.stringify(first.body).includes('hunter2'), 'Secret values never leave the server')
+    assert.equal(set.rows[0].cells[login], undefined)
+
+    const chosen = await ask('GET', `/api/tracker-rollup?ids=${other.id},${theirs.id},${old.id}`)
+    assert.deepEqual(chosen.body.chosen, [other.id], 'only trackers the person can open')
+    assert.equal(chosen.body.sets[0].rows.length, 0)
+    assert.equal((await ask('GET', '/api/tracker-rollup', undefined, { 'x-modules': 'none' })).status, 403)
+  })
+})

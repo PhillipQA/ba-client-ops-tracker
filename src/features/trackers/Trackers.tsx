@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { ChevronLeft, LayoutTemplate, Link2, Plus, Search, Table2, Upload } from 'lucide-react'
+import { ChevronLeft, Layers, LayoutTemplate, Link2, Plus, Search, Table2, Upload } from 'lucide-react'
 import { TRACKER_LIMITS, trackerClientIds, trackerProjectIds, type Tracker } from './trackerModel'
 import { trackerFolders, trackersInFolder } from './trackerFolders'
 import {
@@ -24,6 +24,8 @@ import TrackerProjectPicker from './TrackerProjectPicker'
 import type { TaskDraft } from './TrackerWork'
 
 import TrackerScreen from './TrackerScreen'
+import TrackerRollup from './TrackerRollup'
+import { ROLLUP_ID } from './trackerRollup'
 import TrackerImportDialog from './TrackerImportDialog'
 import { Dialog, Notice, TrackerLoading, niceTime, plural } from './trackerUi'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
@@ -279,6 +281,8 @@ export default function Trackers(props: Props) {
   const firstAddress = useRef(true)
   // Set when a tracker was opened from the list in this tab, so its Back button can step back in the history.
   const openedFromList = useRef(false)
+  // Set when a tracker was opened from the roll-up, so its Back button returns there.
+  const fromRollup = useRef(false)
   useEffect(() => {
     const { pathname, hash } = window.location
     const target = pathForTracker(openId)
@@ -302,6 +306,7 @@ export default function Trackers(props: Props) {
       if (pathname !== VIEW_PATHS.trackers && !pathname.startsWith(`${VIEW_PATHS.trackers}/`)) return
       const id = trackerIdFromPath(pathname)
       openedFromList.current = false
+      fromRollup.current = false
       remember(id)
       setOpenIdState(id)
     }
@@ -310,8 +315,9 @@ export default function Trackers(props: Props) {
   }, [])
   /** Back to the list: a step back in the history when the tracker was opened from the list, so Back and Forward agree. */
   const closeTracker = () => {
-    if (openedFromList.current) {
+    if (openedFromList.current || fromRollup.current) {
       openedFromList.current = false
+      fromRollup.current = false
       window.history.back()
     } else setOpenId('')
   }
@@ -412,6 +418,21 @@ export default function Trackers(props: Props) {
     [props.accounts],
   )
 
+  if (openId === ROLLUP_ID)
+    return (
+      <TrackerRollup
+        items={props.items}
+        clients={props.clients}
+        accounts={props.accounts}
+        today={props.today}
+        onBack={closeTracker}
+        onOpenTracker={id => {
+          fromRollup.current = true
+          setOpenId(id)
+        }}
+        onTasksChanged={props.onTasksChanged}
+      />
+    )
   if (openId)
     return (
       <TrackerScreen
@@ -451,29 +472,39 @@ export default function Trackers(props: Props) {
             </p>
           </div>
         </div>
-        {props.canCreate && (
-          <div className="trk-header-actions">
-            <button type="button" className="trk-button" onClick={() => setImporting(true)}>
-              <Upload size={14} aria-hidden="true" /> Import a sheet
-            </button>
-            {props.canCreate && (
-              <button
-                type="button"
-                className="trk-button"
-                onClick={() => setConnecting(true)}
-                title="Make a tracker that follows a Google Sheet and keeps up with it"
-              >
-                <Link2 size={14} aria-hidden="true" /> From Google Sheet
+        <div className="trk-header-actions">
+          <button
+            type="button"
+            className="trk-button"
+            onClick={() => setOpenId(ROLLUP_ID)}
+            title="Rows across your Site rollout trackers in one list"
+          >
+            <Layers size={14} aria-hidden="true" /> Roll-up
+          </button>
+          {props.canCreate && (
+            <>
+              <button type="button" className="trk-button" onClick={() => setImporting(true)}>
+                <Upload size={14} aria-hidden="true" /> Import a sheet
               </button>
-            )}
-            <button type="button" className="trk-button" onClick={() => setManaging(true)}>
-              <LayoutTemplate size={14} aria-hidden="true" /> Templates
-            </button>
-            <button type="button" className="trk-button primary" onClick={() => setCreating('blank')}>
-              <Plus size={14} aria-hidden="true" /> New tracker
-            </button>
-          </div>
-        )}
+              {props.canCreate && (
+                <button
+                  type="button"
+                  className="trk-button"
+                  onClick={() => setConnecting(true)}
+                  title="Make a tracker that follows a Google Sheet and keeps up with it"
+                >
+                  <Link2 size={14} aria-hidden="true" /> From Google Sheet
+                </button>
+              )}
+              <button type="button" className="trk-button" onClick={() => setManaging(true)}>
+                <LayoutTemplate size={14} aria-hidden="true" /> Templates
+              </button>
+              <button type="button" className="trk-button primary" onClick={() => setCreating('blank')}>
+                <Plus size={14} aria-hidden="true" /> New tracker
+              </button>
+            </>
+          )}
+        </div>
       </header>
       {error && <Notice kind="error">{error}</Notice>}
 
