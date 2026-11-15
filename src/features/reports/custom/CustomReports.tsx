@@ -1122,20 +1122,6 @@ export default function CustomReports(props: Props) {
                         saveCell={explorer.saveCell}
                         refresh={data}
                         filters={filterValues}
-                        onPin={
-                          !editing && report && report.kind === 'report' && !isTemplate
-                            ? () =>
-                                pinReportWidget(report.id, widget.id)
-                                  .then(result =>
-                                    setPinNote(
-                                      result === 'already'
-                                        ? `“${widget.title || 'This widget'}” is already on your Action Center.`
-                                        : `Pinned “${widget.title || 'this widget'}” to your Action Center. It follows this report.`,
-                                    ),
-                                  )
-                                  .catch(error => setNotice(error instanceof Error ? error.message : 'Could not pin.'))
-                            : undefined
-                        }
                         onEdit={() => setEditingWidget(widget)}
                         onDuplicate={() => duplicateWidget(widget)}
                         onRemove={() => setWidgets(definition.widgets.filter(item => item.id !== widget.id))}
