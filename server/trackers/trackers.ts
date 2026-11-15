@@ -13,6 +13,7 @@
  * - tracker-source-routes.ts, tracker-routes.ts, tracker-column-routes.ts, tracker-row-routes.ts: the HTTP routes
  * - tracker-comments.ts: comments on rows, with @mentions
  * - tracker-reminders.ts: date reminders, checked every morning
+ * - tracker-automations.ts: when → then automations, run after a row is saved
  * - tracker-common.ts: shared types and helpers
  */
 import type { Express } from 'express'
@@ -30,6 +31,7 @@ import { trackerColumnRoutes } from './tracker-column-routes'
 import { trackerRowRoutes } from './tracker-row-routes'
 import { trackerCommentRoutes } from './tracker-comments'
 import { trackerReminders } from './tracker-reminders'
+import { trackerAutomations } from './tracker-automations'
 export { secretRuleChanges } from './tracker-common'
 
 export function registerTrackerRoutes(app: Express, deps: Deps) {
@@ -41,7 +43,9 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   trackerSourceRoutes(app, deps, core, sheetAccess, sync, sheetWrite, follow)
   trackerRoutes(app, deps, core, sheetAccess)
   trackerColumnRoutes(app, core)
-  trackerRowRoutes(app, core, sheetAccess, sheetWrite)
+  const automations = trackerAutomations(deps, core, deps.timeZone || 'Asia/Manila')
+  automations.routes(app)
+  trackerRowRoutes(app, core, sheetAccess, sheetWrite, automations)
   trackerCommentRoutes(app, deps, core)
   const { db, check, trackerVisibleIn, workspace, trackerOut, rowOut, columnsOf } = core
   const { allRows } = sheetAccess

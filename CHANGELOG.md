@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: when → then automations
+- **Automations** (button beside Reminders): small rules the tracker runs on the server right after a row is saved from the app. **When** a row is added, or a column changes (to anything, or to one value), **and if** up to two conditions hold, **then** up to three actions: **set** a column (a date can be set to *today*), **create its task** (on trackers that don't make tasks by themselves; assigned to the row's person or whoever saved), **notify** people (named, or the row's Person column), or **add a comment**.
+- Examples: *Status changes to Live → set Done date to today and tick Signed off*; *A row is added → create its task for the row's Owner*; *Status changes to Blocked → notify the PM and add a comment*.
+- A change made by an automation never starts another automation, so rules can't set each other off. Automations never delete anything and never set a cell that comes from the Google Sheet. Imports of more than 20 rows are left alone.
+- After a save, a notice says what ran; the row on screen already shows the result. Each run is in the row's History ("ran an automation"), and the dialog shows the **Recent runs** log with what was done and what was skipped and why.
+- A failed automation never fails the save. No database migration: automations are kept with the tracker's shared view settings.
+
 ### Trackers: date reminders
 - **Reminders** (button beside Highlight rules): a tracker reminds people about its rows' dates. Each reminder is **N days before**, **on the day of**, or **every working day after** a Date column, with an optional condition, for example *3 days before Go-live, if Status is not Live*. It goes to the people in a Person column of the row, people you name, and/or the tracker's creator.
 - Checked once every morning after **8:00 AM** business time (the `FOLLOW_UP_TIME_ZONE`, Asia/Manila by default). Plain comparisons, no AI. Each reminder becomes a bell notification ("Festival Mall: Go-live in 3 days"); clicking it opens the row.

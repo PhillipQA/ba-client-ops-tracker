@@ -79,6 +79,12 @@ function describe(change: TrackerChange, columns: TrackerColumn[], people: Perso
             : `every linked task was completed${tasks}`
       return `${detail.to ? `set ${detail.name} to “${detail.to}”` : `cleared ${detail.name}`} because ${why}${detail.sheet ? ', and in the Sheet' : ''}`
     }
+    case 'automation': {
+      const done = Array.isArray(detail.done) && detail.done.length ? detail.done.join(', ') : 'did nothing'
+      const skipped =
+        Array.isArray(detail.skipped) && detail.skipped.length ? ` (skipped: ${detail.skipped.join('; ')})` : ''
+      return `ran an automation (${detail.trigger || 'a rule'}): ${done}${skipped}`
+    }
     case 'auto_done_sheet_failed':
       return `could not mark ${detail.name || 'the row'} ${detail.to ? `“${detail.to}”` : 'empty'} in the Sheet: ${detail.message || 'the Sheet was not updated.'}`
     default:

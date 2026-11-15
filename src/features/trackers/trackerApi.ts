@@ -4,6 +4,19 @@ import type { TimelineSettings } from './timelineModel'
 import type { SavedTemplate } from './trackerTemplates'
 import type { Cell, SyncReport, Tracker, TrackerColumn, TrackerRow, TrackerSource, TrackerView } from './trackerModel'
 
+/** What automations did after a save (see trackerAutomations). */
+export type AutomationSummary = { done: string[]; skipped: string[]; taskMade: boolean }
+export type AutomationRun = {
+  id: string
+  rowId: string
+  row: string
+  by: string
+  trigger: string
+  done: string[]
+  skipped: string[]
+  at: string
+}
+
 /** An error from the trackers API. A 409 carries the current copy of whatever was edited, so the screen can reload it. */
 export class TrackerApiError extends Error {
   constructor(
@@ -151,9 +164,11 @@ export const trackerApi = {
       signal,
     ),
   addRows: (id: string, rows: NewRow[]) =>
-    call<{ rows: TrackerRow[]; warning?: string }>('POST', `/${id}/rows`, { rows }),
+    call<{ rows: TrackerRow[]; warning?: string; automation?: AutomationSummary }>('POST', `/${id}/rows`, { rows }),
   updateRow: (id: string, rowId: string, patch: RowPatch) =>
-    call<{ row: TrackerRow }>('PATCH', `/${id}/rows/${rowId}`, patch),
+    call<{ row: TrackerRow; automation?: AutomationSummary }>('PATCH', `/${id}/rows/${rowId}`, patch),
+  automationRuns: (id: string, signal?: AbortSignal) =>
+    call<{ runs: AutomationRun[] }>('GET', `/${id}/automation-runs`, undefined, signal),
   linkRowTasks: (id: string, links: { rowId: string; taskId: string }[]) =>
     call<{ rows: TrackerRow[] }>('POST', `/${id}/rows/tasks`, { links }),
   deleteRows: (id: string, ids: string[]) => call<{ deleted: number }>('POST', `/${id}/rows/delete`, { ids }),
