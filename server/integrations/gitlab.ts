@@ -366,14 +366,14 @@ export function registerGitlab(
           mode: 'mine' | 'commented',
           repositoryOf?: (v: any) => string | null,
           /** Reconcile: a ticket already in my list is updated whatever its age, so a closure is never missed. */
-          known = false,
+          alreadyListed = false,
         ) => {
           const fresh = await connection(u)
           if (fresh?.revision !== row.revision)
             throw new IntegrationError('GitLab settings changed during sync. Retry with current settings.', 409)
           const oldest = since(CLOSED_DAYS)
           const mine = (i: any) => mode === 'commented' || i.created_by_me || i.assigned_to_me
-          const recent = (i: any) => known || i.state === 'open' || i.updated_at >= oldest
+          const recent = (i: any) => alreadyListed || i.state === 'open' || i.updated_at >= oldest
           const issues = values
             .map(v => {
               const repository = repositoryOf ? repositoryOf(v) : gitlabIssueRepository(v, row.instance_url)
