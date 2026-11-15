@@ -6,6 +6,8 @@
  *   count of tasks with up to three filters (the same filters as Reports).
  * - custom: a widget built with the Reports builder (number, chart or table), kept in full with the layout.
  * - pinned: a widget of a saved report, by report and widget id; it follows the report.
+ * - time: the person's weekly hours target (40 unless they change it).
+ * - links: the person's own links and a short note.
  */
 import { cleanFilter, cleanWidget, type Widget, type WidgetFilter } from '../features/reports/custom/reportModel'
 
@@ -126,9 +128,53 @@ export function cleanSettings(id: string, raw: unknown): Record<string, unknown>
       const widgetId = typeof input.widgetId === 'string' && REF.test(input.widgetId) ? input.widgetId : ''
       return reportId && widgetId ? { reportId, widgetId } : undefined
     }
+    case 'time': {
+      const hours = Number(input.weeklyHours)
+      return Number.isFinite(hours) && hours >= 1 && hours <= 100
+        ? { weeklyHours: Math.round(hours * 2) / 2 }
+        : undefined
+    }
+    case 'links': {
+      const links = (Array.isArray(input.links) ? input.links : [])
+        .map(cleanLink)
+        .filter((item): item is QuickLink => Boolean(item))
+        .slice(0, LINK_LIMITS.links)
+      const note =
+        typeof input.note === 'string'
+          ? input.note
+              .replace(/\r\n?/g, '\n')
+              .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+              .trim()
+              .slice(0, LINK_LIMITS.note)
+          : ''
+      return links.length || note ? { links, note } : undefined
+    }
     default:
       return undefined
   }
+}
+
+export const DEFAULT_WEEKLY_HOURS = 40
+export const weeklyHoursOf = (settings?: Record<string, unknown>) =>
+  (cleanSettings('time', settings)?.weeklyHours as number | undefined) ?? DEFAULT_WEEKLY_HOURS
+
+export type QuickLink = { label: string; url: string }
+export const LINK_LIMITS = { links: 10, label: 60, url: 500, note: 1000 }
+/** A link the person added: http or https only, with a label (the address's host when none is given). */
+export function cleanLink(raw: unknown): QuickLink | null {
+  if (!raw || typeof raw !== 'object') return null
+  const input = raw as Record<string, unknown>
+  const address = typeof input.url === 'string' ? input.url.trim() : ''
+  if (!address || address.length > LINK_LIMITS.url) return null
+  let url: URL
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(address) ? address : `https://${address}`)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+  const label = title(input.label).slice(0, LINK_LIMITS.label) || url.hostname
+  return { label, url: url.toString() }
 }
 
 /** What the Action Center's own builder makes: numbers, charts and tables and timelines (not headings, notes or queries). */

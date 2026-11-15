@@ -21,6 +21,10 @@ export type WidgetId =
   | 'rollouts'
   | 'custom'
   | 'pinned'
+  | 'time'
+  | 'followups'
+  | 'trackerChanges'
+  | 'links'
 export type WidgetWidth = 'full' | 'half'
 export type LayoutItem = {
   id: WidgetId
@@ -97,6 +101,33 @@ export const ACTION_CENTER_WIDGETS: WidgetDefinition[] = [
     description: 'Site rollout rows going live in the next seven days, and any overdue.',
     width: 'half',
     module: 'trackers',
+  },
+  {
+    id: 'time',
+    label: 'My time this week',
+    description: 'Hours logged each day against your weekly target, and time still to send to Seeds.',
+    width: 'half',
+    module: 'items',
+  },
+  {
+    id: 'followups',
+    label: 'Follow-ups due',
+    description: 'Follow-ups due today and overdue; tick one to mark it done.',
+    width: 'half',
+    module: 'items',
+  },
+  {
+    id: 'trackerChanges',
+    label: 'Recent tracker changes',
+    description: 'Edits, comments and automation runs on the trackers you can open.',
+    width: 'half',
+    module: 'trackers',
+  },
+  {
+    id: 'links',
+    label: 'Quick links and note',
+    description: 'Your own links and a short note, only for you.',
+    width: 'half',
   },
   {
     id: 'custom',
