@@ -26,7 +26,9 @@ async function serve(store: PreferenceStore, workspace: { data: any }) {
     store,
     auth,
     load: async () => workspace,
-    commit: async (_org, next) => void (workspace.data = next),
+    commit: async (_org, next) => {
+      workspace.data = next
+    },
   })
   const server = app.listen(0)
   const address = server.address()
