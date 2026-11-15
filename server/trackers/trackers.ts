@@ -11,6 +11,7 @@
  * - tracker-follow.ts: keeping rows and tasks in step after workspace saves
  * - tracker-seeds-rows.ts: rows for new Seeds projects, on trackers switched on for them
  * - tracker-source-routes.ts, tracker-routes.ts, tracker-column-routes.ts, tracker-row-routes.ts: the HTTP routes
+ * - tracker-comments.ts: comments on rows, with @mentions
  * - tracker-common.ts: shared types and helpers
  */
 import type { Express } from 'express'
@@ -26,6 +27,7 @@ import { trackerSourceRoutes } from './tracker-source-routes'
 import { trackerRoutes } from './tracker-routes'
 import { trackerColumnRoutes } from './tracker-column-routes'
 import { trackerRowRoutes } from './tracker-row-routes'
+import { trackerCommentRoutes } from './tracker-comments'
 export { secretRuleChanges } from './tracker-common'
 
 export function registerTrackerRoutes(app: Express, deps: Deps) {
@@ -38,6 +40,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   trackerRoutes(app, deps, core, sheetAccess)
   trackerColumnRoutes(app, core)
   trackerRowRoutes(app, core, sheetAccess, sheetWrite)
+  trackerCommentRoutes(app, deps, core)
   const { db, check, trackerVisibleIn, workspace, trackerOut, rowOut, columnsOf } = core
   const { allRows } = sheetAccess
   const seedsRows = trackerSeedsRows(deps, core, sheetAccess, sheetWrite)

@@ -79,6 +79,8 @@ type Props = {
   ) => { label: string; title: string; done: boolean; task: boolean } | null
   /** Present when tasks and subtasks can be picked from cells. */
   onWork?: (row: TrackerRow, column: TrackerColumn, element: HTMLElement) => void
+  /** How many comments each row has; a row with some shows the count beside its number. */
+  commentCounts?: Readonly<Record<string, number>>
   /** What each column shows in the totals row, by column id. Absent: no totals row. */
   totals?: ReadonlyMap<string, TotalShown>
   /** Opens the list of totals for a column (people who can change the columns). */
@@ -421,6 +423,15 @@ export default function TrackerGrid(props: Props) {
               aria-label={`${props.links.get(row.id)!.count} linked tasks`}
             >
               {props.links.get(row.id)!.count}
+            </span>
+          )}
+          {(props.commentCounts?.[row.id] || 0) > 0 && (
+            <span
+              className="trk-commentcount"
+              title={`${props.commentCounts![row.id]} comment${props.commentCounts![row.id] === 1 ? '' : 's'}: open the row to read`}
+              aria-label={`${props.commentCounts![row.id]} comments`}
+            >
+              {props.commentCounts![row.id]}
             </span>
           )}
           <input

@@ -1,3 +1,4 @@
+import type { Mentionable, RowComment } from './trackerComments'
 import { requestJson, type HttpMethod } from '../../shared/http'
 import type { TimelineSettings } from './timelineModel'
 import type { SavedTemplate } from './trackerTemplates'
@@ -224,6 +225,20 @@ export const trackerApi = {
   history: (id: string, rowId: string, signal?: AbortSignal) =>
     call<{ changes: TrackerChange[] }>('GET', `/${id}/rows/${rowId}/history`, undefined, signal),
   /** Rows whose done mark did not reach the Sheet. No ids means every such row. */
+  comments: (id: string, rowId: string, signal?: AbortSignal) =>
+    call<{ comments: RowComment[]; mentionable: Mentionable[] }>(
+      'GET',
+      `/${id}/rows/${rowId}/comments`,
+      undefined,
+      signal,
+    ),
+  addComment: (id: string, rowId: string, body: { text: string; mentions: string[] }) =>
+    call<{ comment: RowComment }>('POST', `/${id}/rows/${rowId}/comments`, body),
+  editComment: (id: string, commentId: string, body: { text: string; mentions: string[] }) =>
+    call<{ comment: RowComment }>('PATCH', `/${id}/comments/${commentId}`, body),
+  deleteComment: (id: string, commentId: string) => call<{ deleted: true }>('DELETE', `/${id}/comments/${commentId}`),
+  commentCounts: (id: string, signal?: AbortSignal) =>
+    call<{ counts: Record<string, number> }>('GET', `/${id}/comment-counts`, undefined, signal),
   retrySheetIssues: (id: string, ids: string[] = []) =>
     call<{ written: number; failed: number }>('POST', `/${id}/sheet-issues/retry`, { ids }),
   dismissSheetIssues: (id: string, ids: string[] = []) =>

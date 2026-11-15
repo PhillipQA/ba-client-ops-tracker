@@ -1,6 +1,7 @@
 /**
  * Notifications, the page address (back and forward), and the person's own preferences and profile.
  */
+import { rememberTrackerRow } from '../../features/trackers/trackerNav'
 import { SEEDS_PAGES } from '../navigation'
 import { pathForRoute, atRoute, routeFromLocation } from '../routes'
 import { useVisiblePolling } from '../useVisiblePolling'
@@ -82,6 +83,14 @@ export function useAccountAndRoutes(ui: UiState, saving: WorkspaceSave, signIn: 
   }, [authUser?.id, setModal, setView, setSelectedProjectId, setDocumentLaunch, setSelectedClientId])
   const openNotification = (notification: AppNotification) => {
     if (!notification.readAt) void handleNotificationAction(notification, 'read')
+    // A mention in a tracker row's comments opens that row.
+    if (notification.trackerId && hasModule('trackers')) {
+      rememberTrackerRow(notification.trackerId, notification.trackerRowId || '')
+      setSelectedClientId(null)
+      setSelectedProjectId(null)
+      setView('trackers')
+      return
+    }
     const item = notification.taskId
       ? storeRef.current.items.find(candidate => candidate.id === notification.taskId)
       : undefined

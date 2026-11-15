@@ -13,6 +13,14 @@ export type Deps = {
   requireTenant: RequestHandler
   /** The tenant workspace, used to check that a linked task, client or project exists. */
   load: (tenantId: string) => Promise<{ data: any }>
+  /** Saves the workspace: used to add a notification for people mentioned in a row comment. Optional. */
+  commit?: (
+    tenantId: string,
+    next: any,
+    actor: { id: string; name: string; role: string; organizationId: string },
+    reason: string,
+    current: any,
+  ) => Promise<unknown>
   /** Encryption key override for tests. */
   key?: Buffer
   now?: () => Date

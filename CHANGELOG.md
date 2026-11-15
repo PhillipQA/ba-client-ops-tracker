@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: comments and @mentions on rows
+- Open a row: a **Comments** card sits above History. Write a comment; type **@** to mention someone who can see the tracker (arrow keys and Enter pick a name). Ctrl+Enter posts.
+- The people you mention get a notification in the bell: "<you> mentioned you in <tracker>", with the row's name and the start of the comment. Clicking it opens the tracker at that row.
+- Your own comments can be edited (marked "edited") or deleted; Administrators can delete any comment. Viewers can read but not comment.
+- Rows with comments show a small count beside the row number in the grid.
+- Comments stay in the app: they are not written to a connected Google Sheet, and they are not mixed into the row's History.
+- No database migration: comments are kept with the tracker's history records.
+
 ### Trackers: bulk edit, totals for every column, progress
 - **Bulk edit:** select rows, then **Set value** in the selection bar. Pick a column (Choice, Person, Checkbox, Date, Text or Number) and a value. Before anything is saved you see how many rows will change, how many already have the value, and how many are skipped because that column comes from the Google Sheet. Each row is saved the same way as editing its cell by hand, so its history, linked task and the Sheet follow. **Undo** in the notice puts the old values back.
 - **Totals row for every column:** click a cell in the totals row to pick a total. Numbers: sum, average, smallest, largest. Choice, Person and task columns: count by value ("3 Not started · 2 Live"). Dates: earliest – latest. Checkboxes: ticked and %. Any column: filled or empty. Totals count only the rows shown after search and filters, and are shared with everyone on the tracker. The old SUM setting keeps working.
