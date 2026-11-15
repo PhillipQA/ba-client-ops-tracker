@@ -1,25 +1,29 @@
 import type { AppState, SignedInUser } from '../../app/useAppState'
-import { DashboardActionTable, DashboardActivityTimeline, Metric } from './ActionCenterParts'
-import {
-  AlertTriangle,
-  CalendarDays,
-  ChevronRight,
-  Inbox,
-  LayoutGrid,
-  Plus,
-  Settings2,
-  Sparkles,
-  Users,
-} from 'lucide-react'
+import { DashboardActionTable, DashboardActivityTimeline } from './ActionCenterParts'
+import { ChevronRight, LayoutGrid, Plus, Sparkles, Users } from 'lucide-react'
 import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from './actionCenterScope'
 import GoogleCalendarPanel from '../integrations/GoogleCalendarPanel'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { isClosedProject } from '../tasks/lifecycle'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import { isBeforeSeedsWork } from '../../shared/seeds'
 import { type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 import { MorningBrief } from './MorningBrief'
-import { type ActionCenterLayout, type WidgetId, widgetsToAdd } from '../../shared/actionCenterLayout'
+import {
+  type ActionCenterLayout,
+  type LayoutItem,
+  keyOf,
+  setWidgetSettings,
+  type WidgetId,
+  widgetLabel,
+  widgetsToAdd,
+} from '../../shared/actionCenterLayout'
+import { type CountTile, tilesOf } from '../../shared/actionCenterSettings'
+import { businessDateKey } from '../../shared/businessDate'
+import type { UserAccount } from '../../shared/types'
+import { fieldValues, type ReportData, sourceFields, sourceRecords } from '../reports/custom/reportData'
+import { CountTiles, CountTilesDialog } from './ActionCenterCounts'
+import { builtinValue, customValue } from './countTiles'
 import { requestJson } from '../../shared/http'
 import { CustomizeBar, WidgetFrame } from './ActionCenterCustomize'
 import { DocHubWidget, RolloutsWidget, WorkHubWidget } from './ActionCenterWidgets'
@@ -28,13 +32,10 @@ import { useActionCenterLayout } from './useActionCenterLayout'
 /** Action Center screen. It reads the app state; see app/useAppState. */
 export function ActionCenterPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
   const {
-    actionCenterClientCount,
-    actionCenterInquiryCount,
     actionCenterScope,
     actionCenterScopeLabel,
     actionCenterUsers,
     actionCenterWaitingDev,
-    actionCenterWaitingDevOverdue,
     actionCenterWaitingTitle,
     actionCenterWorkItems,
     actionItems,
@@ -81,7 +82,8 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
   const layout = useActionCenterLayout(currentUser, hasModule)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<ActionCenterLayout>([])
-  const [dragging, setDragging] = useState<WidgetId | ''>('')
+  const [dragging, setDragging] = useState('')
+  const [editingTiles, setEditingTiles] = useState('')
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([])
   const startCustomizing = () => {
     setDraft(layout.layout)
@@ -92,36 +94,8 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         .then(result => setRoles((result.roles || []).map(role => ({ id: role.id, name: role.name }))))
         .catch(() => setRoles([]))
   }
-  const widgets: Record<WidgetId, ReactNode> = {
+  const widgets: Partial<Record<WidgetId, ReactNode>> = {
     brief: <MorningBrief key={`${currentUser.organizationId}:${currentUser.id}`} app={app} currentUser={currentUser} />,
-    counts: (
-      <div className="metric-grid dashboard-metrics">
-        <Metric
-          title="Needs attention"
-          value={actionCenterWorkItems.length}
-          detail={`Across ${actionCenterClientCount} client${actionCenterClientCount === 1 ? '' : 's'}`}
-          icon={<AlertTriangle size={18} />}
-        />
-        <Metric
-          title={actionCenterWaitingTitle}
-          value={actionCenterWaitingDev.length}
-          detail={`${actionCenterWaitingDevOverdue} overdue`}
-          icon={<Settings2 size={18} />}
-        />
-        <Metric
-          title="Activities today"
-          value={todayActivities.length + todayFollowUps.length}
-          detail={`${todayActivities.filter(item => item.source === 'Google Calendar').length} meetings · ${todayActivities.filter(item => item.source === 'Local').length} tracker activities · ${todayFollowUps.length} follow-ups`}
-          icon={<CalendarDays size={18} />}
-        />
-        <Metric
-          title="Open inquiries"
-          value={actionCenterInquiryCount}
-          detail="Need classification"
-          icon={<Inbox size={18} />}
-        />
-      </div>
-    ),
     activities: (
       <div className="panel planner-panel dashboard-panel">
         <div className="panel-heading planner-heading dashboard-panel-heading">
@@ -312,6 +286,56 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     dochub: <DocHubWidget setView={setView} />,
     rollouts: <RolloutsWidget items={store.items} accounts={store.accounts} setView={setView} />,
   }
+  // Count tiles: built-in ones read the work view; a person's own count reads the Tasks records Reports uses.
+  const today = businessDateKey()
+  const me: UserAccount = useMemo(
+    () =>
+      store.accounts.find(account => account.id === currentUser.id) ||
+      ({ id: currentUser.id, name: currentUser.name || '', role: currentUser.role } as unknown as UserAccount),
+    [store.accounts, currentUser.id, currentUser.name, currentUser.role],
+  )
+  const reportData: ReportData = useMemo(
+    () => ({
+      clients: store.clients,
+      projects: store.projects,
+      items: store.items,
+      planner: store.planner,
+      workEvents: [],
+      accounts: store.accounts,
+      taskSettings: store.taskSettings,
+      today,
+      currentUser: me,
+      trackers: {},
+      dateOf: iso => businessDateKey(iso),
+    }),
+    [store.clients, store.projects, store.items, store.planner, store.accounts, store.taskSettings, today, me],
+  )
+  const taskFields = useMemo(() => sourceFields('tasks'), [])
+  const taskRecords = useMemo(() => sourceRecords('tasks', reportData), [reportData])
+  const tileValue = (tile: CountTile) =>
+    tile.builtin
+      ? builtinValue(tile.builtin, {
+          open: actionCenterWorkItems,
+          allItems: store.items,
+          taskSettings: store.taskSettings,
+          today,
+          meId: currentUser.id,
+          activitiesToday: {
+            meetings: todayActivities.filter(item => item.source === 'Google Calendar').length,
+            tracker: todayActivities.filter(item => item.source === 'Local').length,
+            followUps: todayFollowUps.length,
+          },
+          waitingTitle: actionCenterWaitingTitle,
+          waitingDev: actionCenterWaitingDev,
+        })
+      : customValue(tile, taskRecords, taskFields, today, currentUser.id)
+  const renderItem = (item: LayoutItem): ReactNode => {
+    if (item.id === 'counts') return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} />
+    return widgets[item.id]
+  }
+  const editAction = (item: LayoutItem) =>
+    item.id === 'counts' ? { label: 'Edit tiles', run: () => setEditingTiles(keyOf(item)) } : undefined
+  const tilesItem = editingTiles ? draft.find(item => keyOf(item) === editingTiles) : undefined
   const shown = editing ? draft : layout.layout
   return (
     <section className="page-stack dashboard-stack">
@@ -368,13 +392,17 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
       {!editing && layout.error && <p className="ac-widget-note">{layout.error}</p>}
       <div className={`ac-grid${editing ? ' editing' : ''}`}>
         {shown.map((item, index) => {
-          const content = widgets[item.id]
+          const content = renderItem(item)
           if (!content) return null
+          const edit = editAction(item)
           return (
-            <div key={item.id} className={`ac-cell ${item.width}`}>
+            <div key={keyOf(item)} className={`ac-cell ${item.width}`}>
               {editing ? (
                 <WidgetFrame
-                  id={item.id}
+                  id={keyOf(item)}
+                  label={widgetLabel(item.id)}
+                  onEdit={edit?.run}
+                  editLabel={edit?.label}
                   index={index}
                   layout={draft}
                   onChange={setDraft}
@@ -393,6 +421,21 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           <p className="ac-widget-note">Nothing on your Action Center. Add widgets above.</p>
         )}
       </div>
+      {tilesItem && (
+        <CountTilesDialog
+          tiles={tilesOf(tilesItem.settings)}
+          fields={taskFields}
+          valuesFor={key => {
+            const field = taskFields.find(entry => entry.key === key)
+            return field ? fieldValues(taskRecords, field) : []
+          }}
+          onClose={() => setEditingTiles('')}
+          onSave={tiles => {
+            setDraft(current => setWidgetSettings(current, editingTiles, { tiles }))
+            setEditingTiles('')
+          }}
+        />
+      )}
     </section>
   )
 }

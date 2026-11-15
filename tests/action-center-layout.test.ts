@@ -7,9 +7,12 @@ import {
   layoutToShow,
   moveWidget,
   removeWidget,
+  setWidgetSettings,
   setWidgetWidth,
   widgetsToAdd,
 } from '../src/shared/actionCenterLayout'
+import { tilesOf } from '../src/shared/actionCenterSettings'
+import { builtinValue, customValue } from '../src/features/action-center/countTiles'
 import { cleanJobRole } from '../src/shared/roles'
 import { awaitingSignature, emailsToShow } from '../src/features/action-center/widgetLists'
 
@@ -125,4 +128,105 @@ test('emails show unread first, then newest; documents show those out for signin
     ]).map(item => item.id),
     ['old', 'new'],
   )
+})
+
+test('count tiles: kept with the counts widget, cleaned on every save', () => {
+  const layout = cleanLayout([
+    {
+      id: 'counts',
+      width: 'full',
+      settings: {
+        tiles: [
+          { builtin: 'waitingClient', title: '  Client owes us  ', color: 'amber' },
+          { builtin: 'waitingClient' },
+          { builtin: 'nope' },
+          {
+            id: 'mine1',
+            title: 'High, waiting on client',
+            color: 'pink',
+            mine: true,
+            filters: [
+              { field: 'priority', op: 'is', value: 'High' },
+              { field: 'waitingOn', op: 'is', value: 'Client' },
+              { field: 'type', op: 'is', value: 'Issue' },
+              { field: 'status', op: 'is', value: 'Open' },
+            ],
+          },
+          { id: 'untitled', filters: [] },
+        ],
+      },
+    },
+  ])!
+  const tiles = (layout[0].settings as any).tiles
+  assert.deepEqual(tiles[0], { id: 'waitingClient', builtin: 'waitingClient', title: 'Client owes us', color: 'amber' })
+  assert.equal(tiles.length, 2, 'a built-in once, unknown ones and untitled custom counts dropped')
+  assert.equal(tiles[1].color, undefined, 'only known colours')
+  assert.equal(tiles[1].filters.length, 3, 'at most three filters')
+  assert.equal(tiles[1].mine, true)
+  assert.equal(tiles[1].detail, 'overdue')
+  assert.deepEqual(
+    tilesOf(undefined).map(tile => tile.builtin),
+    ['attention', 'waitingDev', 'activities', 'inquiries'],
+  )
+  const edited = setWidgetSettings(layout, 'counts', undefined)
+  assert.equal(edited[0].settings, undefined, 'back to the built-in tiles')
+})
+
+test('custom counts and built-in counts', () => {
+  const today = '2026-11-15'
+  const records = [
+    { $user: 'u1', $client: 'c1', done: false, overdue: true, priority: 'High', waitingOn: 'Client' },
+    { $user: 'u2', $client: 'c2', done: false, overdue: false, priority: 'High', waitingOn: 'Client' },
+    { $user: 'u1', $client: 'c1', done: true, overdue: false, priority: 'High', waitingOn: 'Client' },
+    { $user: 'u1', $client: 'c3', done: false, overdue: false, priority: 'Low', waitingOn: 'Client' },
+  ]
+  const fields = [
+    { key: 'priority', label: 'Priority', type: 'text' as const },
+    { key: 'waitingOn', label: 'Waiting on', type: 'text' as const },
+  ]
+  const tile = {
+    id: 'x',
+    title: 'Mine',
+    mine: true,
+    filters: [{ field: 'priority', op: 'is' as const, value: 'high' }],
+  }
+  assert.deepEqual(customValue(tile, records, fields, today, 'u1'), { title: 'Mine', value: '1', detail: '1 overdue' })
+  assert.equal(customValue({ ...tile, mine: false, all: true }, records, fields, today, 'u1').value, '3')
+  assert.equal(
+    customValue({ ...tile, mine: false, detail: 'clients' }, records, fields, today, 'u1').detail,
+    'Across 2 clients',
+  )
+  const open = [
+    { id: '1', clientId: 'c1', dueDate: '2026-11-10', followUpDate: '', waitingOn: 'Client', type: 'Task' },
+    { id: '2', clientId: 'c1', dueDate: today, followUpDate: '', waitingOn: 'Developer', type: 'Inquiry' },
+    { id: '3', clientId: 'c2', dueDate: '', followUpDate: today, waitingOn: 'Client', type: 'Task' },
+  ] as any[]
+  const input = {
+    open,
+    allItems: [
+      {
+        timeEntries: [
+          { userId: 'u1', hours: 2.5, forSeeds: true },
+          { userId: 'u1', hours: 1, seedsEntryId: 's1', forSeeds: true },
+        ],
+      },
+    ] as any[],
+    taskSettings: {} as any,
+    today,
+    meId: 'u1',
+    activitiesToday: { meetings: 1, tracker: 0, followUps: 2 },
+    waitingTitle: 'Waiting on Developer',
+    waitingDev: [open[1]],
+  }
+  assert.equal(builtinValue('attention', input).detail, 'Across 2 clients')
+  assert.equal(builtinValue('waitingClient', input).value, '2')
+  assert.equal(builtinValue('overdue', input).value, '1')
+  assert.deepEqual(builtinValue('dueToday', input), { title: 'Due today', value: '2', detail: '1 due · 1 follow-up' })
+  assert.equal(builtinValue('activities', input).value, '3')
+  assert.equal(builtinValue('inquiries', input).value, '1')
+  assert.deepEqual(builtinValue('unsentTime', input), {
+    title: 'Time not sent to Seeds',
+    value: '2.5h',
+    detail: '1 entry to send',
+  })
 })
