@@ -11,6 +11,11 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Tour: Action Center customizing, Jarvis in Reports, GitLab
+- New step **Make the Action Center yours**: Customize, count tiles, your own widgets and pinned report widgets, and the new built-in widgets (My time this week, Follow-ups due, Recent tracker changes, Quick links and note).
+- New step **Jarvis in Reports**: Build with Jarvis, analyst notes, and Ask Jarvis in Data explorer. Shown to people with Reports and the AI BA Assistant who can make changes.
+- The GitLab step now says tickets come from every project (created, assigned or commented) with the new filters; the Reports and AI steps mention pinning and Jarvis.
+
 ### Jarvis in Reports: write SQL, and build whole reports
 - **Data explorer → Ask Jarvis:** type a question in plain words and Jarvis writes the SQL, puts it in the editor and runs it. If it fails, Jarvis fixes it once by itself.
   - **Change current query:** tick it and say what to change ("only SM Prime", "group by project", "add a total").
