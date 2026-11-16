@@ -1,6 +1,7 @@
 // DRF creation: the Work Hub emails linked to the DRF's task (or its subtasks), to read while filling the form.
 // Panel 2 picks the task and lists its emails; the open email shows in a dock at the bottom of the window (like a
 // Gmail draft) that stays in view while scrolling down the form. Read-only: reply, attach or archive in Work Hub.
+import { splitQuoted } from '../email/quotedText'
 import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Mail, Maximize2, Minimize2, Minus, X } from 'lucide-react'
@@ -144,7 +145,15 @@ export function LinkedEmails({
           <p className="linked-email-dock-meta">
             {opened.sender} · {new Date(opened.received_at).toLocaleString()}
           </p>
-          <div className="linked-email-body">{opened.body || 'No plain text body available.'}</div>
+          <div className="linked-email-body">
+            {opened.body ? splitQuoted(opened.body).main : 'No plain text body available.'}
+            {opened.body && splitQuoted(opened.body).quoted && (
+              <details className="communication-quoted">
+                <summary>Show quoted text</summary>
+                {splitQuoted(opened.body).quoted}
+              </details>
+            )}
+          </div>
         </div>
       )}
     </section>

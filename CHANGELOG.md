@@ -11,6 +11,11 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Email threads: newest first, quoted text folded
+- Work Hub shows a conversation **newest first**: the latest reply is on top and marked **Latest**, and **Load older messages** brings in earlier ones.
+- Each message shows only what was new in it. The earlier emails it quotes ("On …, … wrote:" and "> …" lines, or Outlook's "From / Sent" header) fold under **Show quoted text**. The same applies to the linked email beside the DRF.
+- Reply by email still answers the latest message from someone else.
+
 ### Tour: Action Center customizing, Jarvis in Reports, GitLab
 - New step **Make the Action Center yours**: Customize, count tiles, your own widgets and pinned report widgets, and the new built-in widgets (My time this week, Follow-ups due, Recent tracker changes, Quick links and note).
 - New step **Jarvis in Reports**: Build with Jarvis, analyst notes, and Ask Jarvis in Data explorer. Shown to people with Reports and the AI BA Assistant who can make changes.
