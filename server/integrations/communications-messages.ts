@@ -130,7 +130,9 @@ export function messageRoutes(app: Express, deps: CommunicationsDeps, comms: Com
       const selected = await own(req, String(req.params.id)),
         user = current(req)
       const page = Number(req.query.page ?? 1),
-        pageSize = 50
+        pageSize = 50,
+        // ?order=newest lists replies newest first (Work Hub's reading view); the default stays oldest first.
+        newest = req.query.order === 'newest'
       if (!Number.isSafeInteger(page) || page < 1 || page > 1000000)
         throw new IntegrationError('Choose a valid thread page.')
       if (!selected.thread_id) {
@@ -144,8 +146,8 @@ export function messageRoutes(app: Express, deps: CommunicationsDeps, comms: Com
         .eq('owner_user_id', user.id)
         .eq('source', selected.source)
         .eq('thread_id', selected.thread_id)
-        .order('received_at', { ascending: true })
-        .order('id', { ascending: true })
+        .order('received_at', { ascending: !newest })
+        .order('id', { ascending: !newest })
         .range((page - 1) * pageSize, page * pageSize - 1)
       if (error) throw error
       res.json({ items: data || [], total: count || 0 })

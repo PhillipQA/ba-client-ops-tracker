@@ -695,3 +695,31 @@
 .communication-before-toggle:hover {
   opacity: 1;
 }
+
+/* Threads read newest first; each reply's quoted history is folded away. */
+.communication-thread-order {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--comm-muted, inherit);
+  opacity: 0.8;
+}
+.communication-thread-order + .communication-thread-message {
+  padding-top: 0;
+  border-top: 0;
+}
+.communication-thread-latest > strong {
+  color: var(--comm-accent, inherit);
+}
+.communication-quoted {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+.communication-quoted summary {
+  cursor: pointer;
+  opacity: 0.75;
+}
+.communication-quoted p,
+.linked-email-body .communication-quoted {
+  white-space: pre-wrap;
+  opacity: 0.8;
+}

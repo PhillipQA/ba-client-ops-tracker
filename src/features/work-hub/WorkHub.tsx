@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { splitQuoted } from '../email/quotedText'
 import { LayoutGrid, List, ChevronLeft, ChevronRight, Paperclip, CloudUpload } from 'lucide-react'
 import GitProviderHub from '../integrations/GitProviderHub'
 import {
@@ -543,7 +544,7 @@ export default function WorkHub({
     void workHubSync
       .read(
         selected.source.toLowerCase() as WorkHubSource,
-        `/api/communications/${selected.id}/thread?page=${threadPage}`,
+        `/api/communications/${selected.id}/thread?page=${threadPage}&order=newest`,
         controller.signal,
       )
       .then(result => {
@@ -739,9 +740,9 @@ export default function WorkHub({
   const replyByEmail = async () => {
     if (!selected || replying) return
     setReplying(true)
+    // The thread is newest first: reply to the latest message from someone else, not to your own sent email.
     const thread = selectedThread.length ? selectedThread : [selected]
-    // Reply to the latest message from someone else, not to a copy of your own sent email.
-    const received = [...thread].reverse().find(entry => !entry.source_labels?.includes('SENT')) || selected
+    const received = thread.find(entry => !entry.source_labels?.includes('SENT')) || selected
     const linked: string[] = Array.from(
       new Set<string>(
         thread.flatMap((entry: Message) => [
@@ -1351,19 +1352,31 @@ export default function WorkHub({
                     </button>
                   </p>
                 ) : selectedThread.length > 1 ? (
-                  selectedThread.map(entry => (
-                    <article key={entry.id} className="communication-thread-message">
-                      <strong>
-                        {entry.sender} · {new Date(entry.received_at).toLocaleString()}
-                        {entry.source_labels?.includes('SENT') ? ' · Sent from the tracker' : ''}
-                      </strong>
-                      <p>{entry.body || 'No plain text body available.'}</p>
-                      <AttachmentList message={entry} drive={driveOptions} />
-                    </article>
-                  ))
+                  <>
+                    <p className="communication-thread-order">
+                      {selectedThread.length < threadTotal
+                        ? `${threadTotal} messages`
+                        : `${selectedThread.length} messages`}{' '}
+                      · newest first
+                    </p>
+                    {selectedThread.map((entry, index) => (
+                      <article
+                        key={entry.id}
+                        className={`communication-thread-message${index === 0 ? ' communication-thread-latest' : ''}`}
+                      >
+                        <strong>
+                          {index === 0 ? 'Latest · ' : ''}
+                          {entry.sender} · {new Date(entry.received_at).toLocaleString()}
+                          {entry.source_labels?.includes('SENT') ? ' · Sent from the tracker' : ''}
+                        </strong>
+                        <EmailBody body={entry.body} />
+                        <AttachmentList message={entry} drive={driveOptions} />
+                      </article>
+                    ))}
+                  </>
                 ) : (
                   <>
-                    {selected.body || 'No plain text body available.'}
+                    <EmailBody body={selected.body} />
                     <AttachmentList message={selected} drive={driveOptions} />
                   </>
                 )}
@@ -1381,9 +1394,7 @@ export default function WorkHub({
                     disabled={threadLoading}
                     onClick={() => setThreadPage(value => value + 1)}
                   >
-                    {threadLoading
-                      ? 'Loading…'
-                      : `Load more thread messages (${selectedThread.length} of ${threadTotal})`}
+                    {threadLoading ? 'Loading…' : `Load older messages (${selectedThread.length} of ${threadTotal})`}
                   </button>
                 )}
               </div>
@@ -1689,5 +1700,22 @@ export default function WorkHub({
         </div>
       )}
     </section>
+  )
+}
+
+/** An email's own text, with the earlier messages it quotes folded under "Show quoted text". */
+function EmailBody({ body }: { body?: string | null }) {
+  if (!body) return <p>No plain text body available.</p>
+  const { main, quoted } = splitQuoted(body)
+  return (
+    <>
+      <p>{main}</p>
+      {quoted && (
+        <details className="communication-quoted">
+          <summary>Show quoted text</summary>
+          <p>{quoted}</p>
+        </details>
+      )}
+    </>
   )
 }
