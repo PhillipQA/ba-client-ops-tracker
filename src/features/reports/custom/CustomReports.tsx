@@ -712,7 +712,12 @@ export default function CustomReports(props: Props) {
                 <Plus size={15} /> New report
               </button>
               {jarvisReports && (
-                <button type="button" className="crp-btn" onClick={() => setJarvisOpen(true)}>
+                <button
+                  type="button"
+                  className="crp-btn"
+                  data-tour="reports-jarvis"
+                  onClick={() => setJarvisOpen(true)}
+                >
                   <Sparkles size={15} /> Build with Jarvis
                 </button>
               )}

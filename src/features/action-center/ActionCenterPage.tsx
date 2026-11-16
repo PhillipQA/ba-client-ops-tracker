@@ -457,7 +457,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           </label>
         )}
         {!editing && (
-          <button type="button" className="secondary" onClick={startCustomizing}>
+          <button type="button" className="secondary" data-tour="action-customize" onClick={startCustomizing}>
             <LayoutGrid size={15} /> Customize
           </button>
         )}

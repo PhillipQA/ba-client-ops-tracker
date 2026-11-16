@@ -10,6 +10,7 @@ test('the tour follows a working day: Action Center to Settings, with account se
   assert.deepEqual(steps, [
     'welcome',
     'action',
+    'action-customize',
     'calendar',
     'workhub',
     'gmail',
@@ -18,6 +19,7 @@ test('the tour follows a working day: Action Center to Settings, with account se
     'trackers',
     'documents',
     'reports',
+    'reports-jarvis',
     'ai',
     'settings',
     'admin-integrations',
@@ -64,4 +66,12 @@ test('each page step opens its page; Work Hub steps show their own tab', () => {
 
 test('the tour is remembered per person and account', () => {
   assert.notEqual(tourStorageKey('org-a', 'u1'), tourStorageKey('org-b', 'u1'))
+})
+
+test('Jarvis in Reports is shown to people who can use it; Viewers are not told to build', () => {
+  const viewer = ids(tourSteps({ isAdmin: false, modules: ALL, canWrite: false }))
+  assert.ok(!viewer.includes('reports-jarvis'))
+  assert.ok(viewer.includes('action-customize'))
+  const noAi = ids(tourSteps({ isAdmin: false, modules: ['reports'], canWrite: true }))
+  assert.deepEqual(noAi, ['welcome', 'reports', 'done'])
 })

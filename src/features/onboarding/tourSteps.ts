@@ -1,5 +1,5 @@
 // The guided tour a person sees at first sign-in (and from Tour in the top bar). After a welcome it walks the app in
-// the order of a working day: Action Center and calendar, Work Hub and what feeds it (Gmail, Discord, GitHub/GitLab),
+// the order of a working day: Action Center (and making it your own) and calendar, Work Hub and what feeds it (Gmail, Discord, GitHub/GitLab),
 // Trackers, Document Creation, Reports, the AI BA Assistant, and Settings last (where Administrators set up the
 // account). Only pages the person can open are shown.
 import type { AppModule } from '../../shared/types'
@@ -65,6 +65,22 @@ export function tourSteps(context: TourContext): TourStep[] {
       view: 'action',
     },
     has('action') && {
+      id: 'action-customize',
+      section: 'Your day',
+      title: 'Make the Action Center yours',
+      body: 'Customize puts what you need on top. Your layout is yours alone; Administrators can set a starting layout for each role.',
+      points: [
+        'Drag widgets into order, make them half or full width, or hide them.',
+        'Edit tiles: choose the counts at the top, rename and recolour them, or build your own count with filters.',
+        ...(has('reports')
+          ? ['Build your own widget with the Reports builder, or pin a chart from any saved report.']
+          : []),
+        'Add ready-made widgets: My time this week (40-hour target you can change), Follow-ups due, Recent tracker changes, Quick links and note.',
+      ],
+      target: '[data-tour="action-customize"]',
+      view: 'action',
+    },
+    has('action') && {
       id: 'calendar',
       section: 'Your day',
       title: 'Connect your Google Calendar',
@@ -119,8 +135,11 @@ export function tourSteps(context: TourContext): TourStep[] {
       id: 'gitlab',
       section: 'Work Hub',
       title: 'GitLab and GitHub',
-      body: 'Bring in tickets from the projects you choose, using your own personal token, and keep them next to the client’s other work.',
-      points: ['Choose GitLab or GitHub as the ticket provider; each has its own connection and projects.'],
+      body: 'Bring in tickets with your own personal token and keep them next to the client’s other work.',
+      points: [
+        'GitLab brings the tickets you created, are assigned to, or commented on, from every project. Nothing else.',
+        'Filter by project, label, milestone and due date; see priority, time spent and checklist progress.',
+      ],
       target: '[data-tour="workhub-tab-GitHub"]',
       view: 'inbox',
       click: '[data-tour="workhub-tab-GitHub"]',
@@ -159,9 +178,27 @@ export function tourSteps(context: TourContext): TourStep[] {
       section: 'Your work',
       title: 'Reports',
       body: 'Build dashboards from widgets, start from templates, and share them with your account. Data explorer answers anything else with SQL.',
+      ...(has('action')
+        ? { points: ['Pin any widget of a saved report to your Action Center; it follows the report.'] }
+        : {}),
       target: '[data-tour="nav-reports"]',
       view: 'reports',
     },
+    has('reports') &&
+      has('ai') &&
+      context.canWrite && {
+        id: 'reports-jarvis',
+        section: 'Your work',
+        title: 'Jarvis in Reports',
+        body: 'Ask in plain words and Jarvis does the data analyst’s work. It only sees table and column names; your rows stay in your browser.',
+        points: [
+          'Build with Jarvis: describe a report and get headline numbers, charts and tables you can change in words, then keep.',
+          'Add analyst notes for a short “What this shows” summary of the results.',
+          'In Data explorer, Ask Jarvis writes, changes, explains or fixes a SQL query.',
+        ],
+        target: '[data-tour="reports-jarvis"]',
+        view: 'reports',
+      },
     has('ai') && {
       id: 'ai',
       section: 'Your work',
@@ -172,6 +209,7 @@ export function tourSteps(context: TourContext): TourStep[] {
             'Link an email to a task and open its DRF or sign-off, with fields drafted from the email.',
             'Draft a tracker from data you give it.',
             'Nothing is linked or created until you approve.',
+            ...(has('reports') ? ['In Reports, Jarvis also writes SQL and builds whole reports.'] : []),
           ]
         : ['Summarize a tracker, or ask what is due or overdue.'],
       target: '[data-tour="nav-ai"]',
