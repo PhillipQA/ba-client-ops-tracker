@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: import into completed projects, chosen by typing
+- Importing (CSV, paste or a linked Google Sheet) into a new tracker now takes several projects, found by typing the name or contract number, instead of a long list. Projects completed in Seeds can be chosen too, so Sheets of finished work can be linked.
+- Choose the project first: its client is added to the tracker and picked for the new tasks.
+- Importing into an existing tracker: the tasks' project is also typed, and any project, completed included, can be chosen.
+- The imported tasks go under the default project even when it is completed. Rows added later still get no new tasks in a completed project.
+
 ### Trackers: a ticked box's subtask is done, also right after an import
 - Importing rows (or a Google Sheet) with **ticked checkboxes** made the subtasks for those boxes **Open**: a tick only completed its subtask when it changed, and these boxes were ticked before their subtasks existed. Now a subtask made for a ticked box is **completed (Done, with its resolved date) as it is made**, the same as ticking it.
 - **Trackers imported before this fix** are put right when an editor next opens them: every subtask in a ticked box that is still open is completed, once. It only completes, never reopens.

@@ -10,7 +10,14 @@ import {
   Table2,
   Upload,
 } from 'lucide-react'
-import { COLUMN_TYPES, TRACKER_LIMITS, trackerClientIds, type ColumnType, type Tracker } from './trackerModel'
+import {
+  COLUMN_TYPES,
+  TRACKER_CLIENTS,
+  TRACKER_LIMITS,
+  trackerClientIds,
+  type ColumnType,
+  type Tracker,
+} from './trackerModel'
 import {
   defaultMappings,
   parseTable,
@@ -25,6 +32,7 @@ import { checkNameColumns, sheetIdFrom } from './trackerSync'
 import { rememberReview } from './trackerNav'
 import { Dialog, plural } from './trackerUi'
 import TrackerClientPicker from './TrackerClientPicker'
+import TrackerProjectPicker, { type PickerProject } from './TrackerProjectPicker'
 import { isClosedProject } from '../tasks/lifecycle'
 import type { ReviewPreset } from './trackerReviewPlan'
 import {
@@ -41,7 +49,7 @@ type Props = {
   /** Importing into a tracker that exists, or into a new one made from the file or Sheet. */
   tracker?: Tracker
   clients: { id: string; name: string }[]
-  projects: { id: string; name: string; archived?: boolean; seedsArchived?: boolean }[]
+  projects: PickerProject[]
   people: Person[]
   today: string
   onClose: () => void
@@ -130,7 +138,8 @@ export default function TrackerImportDialog({
   // Step 3: the tracker (when new), and where its tasks go.
   const [name, setName] = useState('')
   const [clientIds, setClientIds] = useState<string[]>([])
-  const [projectId, setProjectId] = useState('')
+  // A new tracker's projects, the default first. Completed projects can be chosen too, for Sheets of finished work.
+  const [projectIds, setProjectIds] = useState<string[]>([])
   const [onlyMe, setOnlyMe] = useState(false)
   const [taskClientId, setTaskClientId] = useState('')
   const [taskProjectId, setTaskProjectId] = useState(tracker?.projectId || '')
@@ -309,12 +318,27 @@ export default function TrackerImportDialog({
   // The clients the new tasks can go under: the tracker's (when it has some), else every client.
   const trackerClients = tracker ? trackerClientIds(tracker) : clientIds
   const taskClients = trackerClients.length ? clients.filter(client => trackerClients.includes(client.id)) : clients
-  const tasksClient = taskClients.length === 1 ? taskClients[0].id : taskClientId
-  // A new tracker's tasks go to its project; an existing tracker's to the project chosen here.
-  const tasksProject = tracker ? taskProjectId : projectId
+  // A new tracker's tasks go to its default project; an existing tracker's to the project chosen here.
+  const tasksProject = tracker ? taskProjectId : projectIds[0] || ''
+  const projectOf = (id: string) => projects.find(project => project.id === id)
+  // The client is the project's own when the tasks can go there, unless another one is chosen.
+  const projectClient = projectOf(tasksProject)?.clientId || ''
+  const tasksClient =
+    taskClients.length === 1
+      ? taskClients[0].id
+      : taskClientId || (taskClients.some(client => client.id === projectClient) ? projectClient : '')
   const makesTasks = canCreateTasks && task >= 0 && Boolean(preview?.tasks)
-  const openProjects = (current: string) =>
-    projects.filter(project => !isClosedProject(project) || project.id === current)
+  /** A project brings its client: the new tracker follows it, and the tasks go under it. */
+  const pickProject = (ids: string[], picked?: PickerProject) => {
+    setProjectIds(ids)
+    const owner = picked?.clientId
+    if (owner && !clientIds.includes(owner) && clientIds.length < TRACKER_CLIENTS && clients.some(c => c.id === owner))
+      setClientIds([...clientIds, owner])
+  }
+  const pickTaskProject = (ids: string[], picked?: PickerProject) => {
+    setTaskProjectId(ids[0] || '')
+    if (picked?.clientId && taskClients.some(client => client.id === picked.clientId)) setTaskClientId(picked.clientId)
+  }
 
   /** Where each header ends up in the tracker: an existing column, or the new one made for it. */
   const columnOf = (index: number) => {
@@ -392,7 +416,7 @@ export default function TrackerImportDialog({
           columns: plan.columns,
           template: 'sheet',
           clientIds,
-          projectId,
+          projectIds,
           private: onlyMe,
         })
         trackerId = created.tracker.id
@@ -456,7 +480,7 @@ export default function TrackerImportDialog({
           columns: plan.columns,
           template: 'sheet',
           clientIds,
-          projectId,
+          projectIds,
           private: onlyMe,
         })
         made = created.tracker.id
@@ -1038,18 +1062,14 @@ export default function TrackerImportDialog({
                     autoFocus
                   />
                 </label>
+                <TrackerProjectPicker
+                  projects={projects}
+                  clients={clients}
+                  clientIds={clientIds}
+                  value={projectIds}
+                  onChange={pickProject}
+                />
                 <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
-                <label className="trk-field-block">
-                  Project
-                  <select value={projectId} onChange={event => setProjectId(event.target.value)}>
-                    <option value="">None</option>
-                    {openProjects(projectId).map(project => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label className="trk-checkline">
                   <input type="checkbox" checked={onlyMe} onChange={event => setOnlyMe(event.target.checked)} /> Only I
                   can see this tracker
@@ -1063,6 +1083,23 @@ export default function TrackerImportDialog({
                   The {plural(preview?.tasks || 0, 'task')} and {plural(preview?.subtasks || 0, 'subtask')} go under
                 </legend>
                 <div className="trk-import-new">
+                  {tracker ? (
+                    <TrackerProjectPicker
+                      projects={projects}
+                      clients={clients}
+                      clientIds={trackerClients}
+                      value={taskProjectId ? [taskProjectId] : []}
+                      onChange={pickTaskProject}
+                      max={1}
+                      label="Project"
+                    />
+                  ) : (
+                    <p className="trk-field-block">
+                      Project
+                      <strong>{projectOf(tasksProject)?.name || 'No project'}</strong>
+                      <small className="trk-muted-text">The tracker’s default project, above.</small>
+                    </p>
+                  )}
                   {taskClients.length === 1 ? (
                     <p className="trk-field-block">
                       Client
@@ -1071,7 +1108,7 @@ export default function TrackerImportDialog({
                   ) : (
                     <label className="trk-field-block">
                       Client
-                      <select value={taskClientId} onChange={event => setTaskClientId(event.target.value)}>
+                      <select value={tasksClient} onChange={event => setTaskClientId(event.target.value)}>
                         <option value="">Choose the client</option>
                         {[...taskClients]
                           .sort((a, b) => a.name.localeCompare(b.name))
@@ -1083,26 +1120,13 @@ export default function TrackerImportDialog({
                       </select>
                     </label>
                   )}
-                  {tracker ? (
-                    <label className="trk-field-block">
-                      Project
-                      <select value={taskProjectId} onChange={event => setTaskProjectId(event.target.value)}>
-                        <option value="">No project</option>
-                        {openProjects(taskProjectId).map(project => (
-                          <option key={project.id} value={project.id}>
-                            {project.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <p className="trk-field-block">
-                      Project
-                      <strong>{projects.find(project => project.id === projectId)?.name || 'No project'}</strong>
-                      <small className="trk-muted-text">The tracker’s project, above.</small>
-                    </p>
-                  )}
                 </div>
+                {isClosedProject(projectOf(tasksProject)) && (
+                  <p className="trk-muted-text">
+                    This project is completed. The imported tasks are filed under it as a record of its work; rows added
+                    later get no new tasks there.
+                  </p>
+                )}
                 <label className="trk-checkline">
                   <input
                     type="checkbox"

@@ -24,6 +24,8 @@ export default function TrackerProjectPicker({
   clientIds,
   value,
   onChange,
+  max = TRACKER_PROJECTS,
+  label = 'Projects',
 }: {
   projects: PickerProject[]
   clients: { id: string; name: string }[]
@@ -31,6 +33,9 @@ export default function TrackerProjectPicker({
   clientIds: string[]
   value: string[]
   onChange: (ids: string[], picked?: PickerProject) => void
+  /** At most this many: 1 picks a single project. */
+  max?: number
+  label?: string
 }) {
   const [query, setQuery] = useState('')
   const byId = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects])
@@ -64,7 +69,7 @@ export default function TrackerProjectPicker({
     query.trim() === ''
       ? open.filter(project => !value.includes(project.id) && clientIds.includes(project.clientId || '')).slice(0, 6)
       : []
-  const full = value.length >= TRACKER_PROJECTS
+  const full = value.length >= max
   const add = (project: PickerProject) => {
     if (!full) onChange([...value, project.id], project)
     setQuery('')
@@ -85,8 +90,8 @@ export default function TrackerProjectPicker({
     </>
   )
   return (
-    <div className="trk-field-block trk-clients" role="group" aria-label="Projects">
-      <span>Projects</span>
+    <div className="trk-field-block trk-clients" role="group" aria-label={label}>
+      <span>{label}</span>
       <div className="trk-client-chips">
         {value.map((id, at) => {
           const project = byId.get(id)
@@ -124,9 +129,13 @@ export default function TrackerProjectPicker({
         value={query}
         disabled={full}
         placeholder={
-          full ? `Up to ${TRACKER_PROJECTS} projects` : 'Add a project: type its name or contract number (SLSS #)'
+          full
+            ? max === 1
+              ? 'Remove the project to choose another'
+              : `Up to ${max} projects`
+            : 'Add a project: type its name or contract number (SLSS #)'
         }
-        aria-label="Add a project to this tracker"
+        aria-label={max === 1 ? `Choose the ${label.toLowerCase()}` : 'Add a project to this tracker'}
         onChange={event => setQuery(event.target.value)}
         onKeyDown={event => {
           if (event.key === 'Enter') {
@@ -142,7 +151,7 @@ export default function TrackerProjectPicker({
               {label(project)}
             </button>
           ))}
-          {!matches.length && <p className="trk-muted-text">No open project matches.</p>}
+          {!matches.length && <p className="trk-muted-text">No project matches.</p>}
         </div>
       )}
       {suggested.length > 0 && !full && (
