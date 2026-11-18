@@ -1319,6 +1319,7 @@ export default function DocumentCreation({
               projects={projects}
               items={items}
               disabled={!canGenerate || generating || extracting}
+              linkedIn={canUseInbox ? 'step 2' : undefined}
             />
             <DocHubResult draft={docHub} />
             <div className="document-generate-bar">

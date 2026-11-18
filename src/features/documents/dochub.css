@@ -640,3 +640,9 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* The DRF chooses the client, project and task in step 2: DocHub only shows what it is linked to. */
+.dochub-linked {
+  margin: 0;
+  font-size: 13px;
+}
