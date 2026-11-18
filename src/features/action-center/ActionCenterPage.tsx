@@ -576,7 +576,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
                 const text = notes ? (widget.text || '').replace(/^What this shows\n/, '') : widget.text
                 const added = addWidget(next, 'custom', { widget: { ...widget, title, text, x: 0, y: 0 } })
                 const wide = notes || widget.query?.view === 'table'
-                const item = added.at(-1)
+                const item = added[added.length - 1]
                 return wide && item && added !== next ? setWidgetWidth(added, keyOf(item), 'full') : added
               }, current),
             )
