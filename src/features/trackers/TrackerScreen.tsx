@@ -80,7 +80,7 @@ import { Dialog, HighlightSwatches, Notice, Popover, TrackerLoading, plural } fr
 import type { Conflict } from './trackerTwoWay'
 import { rememberSheetEdits, takeReview, takeSheetEdits, takeTrackerRow, type SheetEditsFor } from './trackerNav'
 import { autoDoneColumn } from './trackerAutoDone'
-import TrackerReview, { type ReviewOutcome } from './TrackerReview'
+import TrackerReview, { type ReviewOutcome, type ReviewPreset } from './TrackerReview'
 import { SYNC_LIMITS, describeSync } from './trackerSync'
 import { niceTime } from './trackerUi'
 import { SaveAsTemplateDialog } from './TemplateManager'
@@ -171,7 +171,12 @@ export default function TrackerScreen(props: Props) {
   const workAnchor = useRef<HTMLElement | null>(null)
   const [workCell, setWorkCell] = useState<{ rowId: string; columnId: string } | null>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
-  const [review, setReview] = useState<{ origin: 'sheet' | 'import'; ids: string[] | 'flagged' } | null>(null)
+  const [review, setReview] = useState<{
+    origin: 'sheet' | 'import'
+    ids: string[] | 'flagged'
+    /** Choices made on import: the review starts from them, and may create the tasks at once. */
+    preset?: ReviewPreset
+  } | null>(null)
   /** Two-way: an edit whose Sheet cell changed since the last sync, waiting for the person to choose. */
   const [conflict, setConflict] = useState<{
     rowId: string
@@ -303,7 +308,8 @@ export default function TrackerScreen(props: Props) {
     if (wanted && rowsRef.current.some(row => row.id === wanted)) setDrawerId(wanted)
     // Arriving straight from an import or a new Sheet connection opens the review of the new rows.
     const pending = takeReview(trackerId)
-    if (pending) setReview({ origin: pending === 'flagged' ? 'sheet' : 'import', ids: pending })
+    if (pending)
+      setReview({ origin: pending.rows === 'flagged' ? 'sheet' : 'import', ids: pending.rows, preset: pending.preset })
     // Back from allowing Google Sheets edits: carry on with what the person was doing.
     const purpose = takeSheetEdits(trackerId)
     if (purpose) {
@@ -502,6 +508,14 @@ export default function TrackerScreen(props: Props) {
     }
     if (outcome.reviewed.length) await trackerApi.reviewed(trackerId, outcome.reviewed).catch(() => undefined)
     await refresh()
+    const made = outcome.rowTasks.length + outcome.cellLinks.length
+    if (made)
+      say(
+        'info',
+        made === 1
+          ? 'Created 1 task from the rows.'
+          : `Created ${made.toLocaleString('en')} tasks and subtasks from the rows.`,
+      )
   }
 
   const refresh = useCallback(
@@ -3114,6 +3128,7 @@ export default function TrackerScreen(props: Props) {
           }
           onClose={() => setReview(null)}
           onApply={applyReview}
+          preset={review.preset}
         />
       )}
       {bulkOpen && (
@@ -3206,28 +3221,30 @@ export default function TrackerScreen(props: Props) {
         <TrackerImportDialog
           tracker={tracker}
           canLink={canEdit && !tracker.source}
-          onLinked={(matched, added) => {
+          canCreateTasks={Boolean(props.onCreateTasks && canEdit)}
+          onLinked={(matched, added, preset) => {
             setImporting(false)
             props.onListChanged()
-            void refresh().then(() =>
+            void refresh().then(() => {
               say(
                 'info',
                 `Linked to the Google Sheet: ${plural(matched, 'row')} matched, ${plural(added, 'row')} added.`,
-              ),
-            )
+              )
+              if (preset && props.onCreateTasks && canEdit) setReview({ origin: 'sheet', ids: 'flagged', preset })
+            })
           }}
           clients={props.clients}
           projects={props.projects}
           people={people}
           today={props.today}
           onClose={() => setImporting(false)}
-          onDone={(_, imported, ids) => {
+          onDone={(_, imported, ids, preset) => {
             setImporting(false)
             props.onListChanged()
             void refresh()
               .then(() => {
                 say('info', `${plural(imported, 'row')} imported.`)
-                if (ids?.length && props.onCreateTasks && canEdit) setReview({ origin: 'import', ids })
+                if (ids?.length && props.onCreateTasks && canEdit) setReview({ origin: 'import', ids, preset })
               })
               .catch(error =>
                 say(

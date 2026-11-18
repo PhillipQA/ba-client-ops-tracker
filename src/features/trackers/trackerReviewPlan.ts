@@ -2,6 +2,7 @@
  * The review of new tracker rows, as pure functions: what each row starts as, how rows group into tasks with their
  * subtasks for display, what "the task above" a row is, and what Create would make. Used by TrackerReview and tests.
  */
+import type { TaskDraft } from './TrackerWork'
 import { parentKeyOf } from './trackerSync'
 
 /** What a reviewed row becomes. A row with no choice is left for later; a skipped row stays a plain row. */
@@ -11,6 +12,20 @@ export type Choice =
   | { kind: 'subtask_new'; parentRowId: string }
 
 export type PlanRow = { id: string; taskId?: string | null; sourceKey?: string | null }
+
+/** A column chosen on import: by id, or by name when it was made by the import. */
+export type ColumnRef = { id?: string; name: string }
+/**
+ * Choices made on import, so the review starts from them: the task name column, the columns that give every task a
+ * subtask, and where the tasks go. With `auto`, the tasks are created at once, without the row-by-row list.
+ */
+export type ReviewPreset = {
+  nameColumn?: ColumnRef
+  subColumns?: ColumnRef[]
+  clientId?: string
+  projectId?: string
+  auto?: boolean
+}
 export type Choices = Record<string, Choice>
 
 /**
@@ -153,4 +168,78 @@ export function reviewCounts(open: PlanRow[], choices: Choices, skipped: Set<str
     else later += 1
   }
   return { tasks, subtasks: subtasks + tasks * columnSubtasks, plain, later }
+}
+
+/** Where a created task goes back to in the tracker: its row, or (a column's subtask) one cell of that row. */
+export type DraftLink = { rowId: string; columnId?: string }
+
+/**
+ * What Create makes, in order: a task for each task row; then for each task row, a subtask for each chosen column
+ * (named after the column, linked to that cell); then the rows under a task as its subtasks. Subtasks of a new task
+ * point at its draft by index, so one batch makes them all.
+ */
+export function reviewDrafts(input: {
+  open: PlanRow[]
+  choices: Choices
+  skipped: Set<string>
+  /** The columns that give every new task a subtask, in the order they were chosen. */
+  subColumns: { id: string; name: string }[]
+  titleOf: (rowId: string) => string
+  clientId: string
+  /** An existing project, or '' with `newProjectName` to make one. */
+  projectId: string
+  newProjectName?: string
+}): { drafts: TaskDraft[]; links: (DraftLink | null)[] } {
+  const { open, choices, skipped, subColumns, titleOf, clientId, projectId, newProjectName } = input
+  const drafts: TaskDraft[] = []
+  const links: (DraftLink | null)[] = []
+  const draftOfRow = new Map<string, number>()
+  const push = (draft: TaskDraft, link: DraftLink | null) => {
+    drafts.push(draft)
+    links.push(link)
+    return drafts.length - 1
+  }
+  const making = open.filter(row => willCreate(row.id, choices, skipped))
+  const taskRows = making.filter(row => choices[row.id].kind === 'task')
+  for (const row of taskRows)
+    draftOfRow.set(
+      row.id,
+      push(
+        { title: titleOf(row.id), clientId, projectId: newProjectName ? '' : projectId, newProjectName },
+        { rowId: row.id },
+      ),
+    )
+  for (const row of taskRows)
+    for (const column of subColumns)
+      push(
+        { title: column.name || 'Subtask', clientId: '', projectId: '', parentIndex: draftOfRow.get(row.id) },
+        { rowId: row.id, columnId: column.id },
+      )
+  for (const row of making) {
+    const choice = choices[row.id]
+    if (choice.kind === 'subtask_new')
+      push(
+        { title: titleOf(row.id), clientId: '', projectId: '', parentIndex: draftOfRow.get(choice.parentRowId) },
+        { rowId: row.id },
+      )
+    if (choice.kind === 'subtask')
+      push({ title: titleOf(row.id), clientId: '', projectId: '', parentTaskId: choice.parentTaskId }, { rowId: row.id })
+  }
+  return { drafts, links }
+}
+
+/** What was created, as row links and cell links for the tracker. */
+export function reviewOutcome(made: { id: string }[], links: (DraftLink | null)[], reviewed: string[]) {
+  const outcome = {
+    rowTasks: [] as { rowId: string; taskId: string }[],
+    cellLinks: [] as { rowId: string; columnId: string; taskId: string }[],
+    reviewed,
+  }
+  made.forEach((item, at) => {
+    const link = links[at]
+    if (!link) return
+    if (link.columnId) outcome.cellLinks.push({ rowId: link.rowId, columnId: link.columnId, taskId: item.id })
+    else outcome.rowTasks.push({ rowId: link.rowId, taskId: item.id })
+  })
+  return outcome
 }

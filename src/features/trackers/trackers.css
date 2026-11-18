@@ -1257,6 +1257,118 @@ a.trk-link-button {
   grid-template-columns: 1fr 140px;
   gap: 6px;
 }
+
+/* Import in three steps: your data, pick your headers, where it goes */
+.trk-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--k-muted);
+}
+.trk-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.trk-steps li span {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--k-border);
+  font-size: 11.5px;
+}
+.trk-steps li.on {
+  color: var(--k-text);
+}
+.trk-steps li.on span {
+  border-color: var(--k-accent);
+  background: var(--k-accent);
+  color: var(--k-solid);
+}
+.trk-steps li.done span {
+  border-color: var(--k-accent);
+  color: var(--k-accent);
+}
+.trk-source-kind {
+  justify-self: start;
+}
+.trk-sheet-pick {
+  display: grid;
+  gap: 12px;
+}
+.trk-keep-sync {
+  align-items: flex-start;
+}
+.trk-keep-sync span {
+  display: grid;
+  gap: 2px;
+}
+.trk-keep-sync small {
+  color: var(--k-muted);
+  font-size: 12.5px;
+}
+.trk-roles td:last-child {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.trk-suggest {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--k-accent-soft);
+  color: var(--k-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.trk-import-preview {
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--k-border);
+  border-radius: 12px;
+  background: var(--k-soft);
+  font-size: 13px;
+}
+.trk-import-preview p {
+  margin: 0;
+}
+.trk-import-totals {
+  color: var(--k-muted);
+}
+.trk-import-totals strong {
+  color: var(--k-text);
+}
+.trk-advanced summary {
+  cursor: pointer;
+  color: var(--k-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.trk-advanced[open] summary {
+  margin-bottom: 8px;
+}
+.trk-task-place {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--k-border);
+  border-radius: 12px;
+}
+.trk-task-place legend {
+  padding: 0 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--k-muted);
+}
 .trk-secret-note {
   display: flex !important;
   align-items: center;

@@ -1,20 +1,23 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { trackerClientIds, type Tracker, type TrackerColumn, type TrackerRow } from './trackerModel'
 import { shown, type Lookup } from './trackerQuery'
 import { Dialog, plural } from './trackerUi'
 import ClientSelect, { SearchSelect } from '../../shared/ui/SearchSelect'
-import type { TaskDraft, WorkTools } from './TrackerWork'
+import type { WorkTools } from './TrackerWork'
 import {
   choicesFromOrder,
   choicesFromSheet,
   reviewCounts,
+  reviewDrafts,
   reviewGroups,
+  reviewOutcome,
   sameChoice,
   setChoice,
   taskAbove,
-  willCreate,
   type Choice,
   type Choices,
+  type ColumnRef,
+  type ReviewPreset,
 } from './trackerReviewPlan'
 
 export type { Choice } from './trackerReviewPlan'
@@ -23,6 +26,7 @@ export type ReviewOutcome = {
   cellLinks: { rowId: string; columnId: string; taskId: string }[]
   reviewed: string[]
 }
+export type { ColumnRef, ReviewPreset } from './trackerReviewPlan'
 
 type Props = {
   tracker: Tracker
@@ -36,6 +40,7 @@ type Props = {
   onClose: () => void
   /** Links rows and cells to what was created, and marks rows reviewed. */
   onApply: (outcome: ReviewOutcome) => Promise<void>
+  preset?: ReviewPreset
 }
 
 type RuleTarget = 'task' | 'above' | 'skip' | 'later'
@@ -47,13 +52,27 @@ const short = (text: string, max = 32) => (text.length > max ? `${text.slice(0, 
  * grouped the way the Sheet or file groups them; untick what should stay a plain row, or change a row with its menu.
  * Nothing is created until Create is pressed.
  */
-export default function TrackerReview({ tracker, rows, allRows, lookup, tools, origin, onClose, onApply }: Props) {
+export default function TrackerReview({
+  tracker,
+  rows,
+  allRows,
+  lookup,
+  tools,
+  origin,
+  onClose,
+  onApply,
+  preset,
+}: Props) {
   const columns = tracker.columns
   const textColumns = columns.filter(column =>
     ['text', 'longtext', 'number', 'date', 'select', 'link', 'person'].includes(column.type),
   )
+  const find = (ref?: ColumnRef) =>
+    ref ? columns.find(column => column.id === ref.id) || columns.find(column => column.name === ref.name) : undefined
+  // The task name column: chosen on import, else the first column.
+  const nameColumn = find(preset?.nameColumn) || columns[0]
   const open = rows.filter(row => !row.taskId)
-  const firstText = (row: TrackerRow) => (columns[0] ? shown(columns[0], row, lookup).text.trim() : '')
+  const firstText = (row: TrackerRow) => (nameColumn ? shown(nameColumn, row, lookup).text.trim() : '')
 
   const [initialChoices] = useState<Choices>(() => {
     if (!tools.onCreate) return {}
@@ -63,7 +82,9 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
   })
   const [choices, setChoices] = useState(initialChoices)
   const [skipped, setSkipped] = useState<Set<string>>(new Set())
-  const [titleColumn, setTitleColumn] = useState(textColumns[0]?.id || '')
+  const [titleColumn, setTitleColumn] = useState(
+    textColumns.some(column => column.id === nameColumn?.id) ? nameColumn!.id : textColumns[0]?.id || '',
+  )
   // Rows under a task usually leave the name column blank, so their subtask title comes from another column.
   const [subTitleColumn, setSubTitleColumn] = useState(() =>
     bestTitleColumn(
@@ -74,10 +95,26 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
   )
   const [titles, setTitles] = useState<Record<string, string>>({})
   const own = trackerClientIds(tracker).filter(id => tools.clients.some(client => client.id === id))
-  const [clientId, setClientId] = useState(own.length === 1 ? own[0] : '')
-  const [projectId, setProjectId] = useState(tracker.projectId || '')
+  const [clientId, setClientId] = useState(
+    preset?.clientId && tools.clients.some(client => client.id === preset.clientId)
+      ? preset.clientId
+      : own.length === 1
+        ? own[0]
+        : '',
+  )
+  const [projectId, setProjectId] = useState(preset?.projectId ?? (tracker.projectId || ''))
   const [projectName, setProjectName] = useState('')
-  const [subColumns, setSubColumns] = useState<Set<string>>(new Set())
+  const [subColumns, setSubColumns] = useState<Set<string>>(
+    () =>
+      new Set(
+        (preset?.subColumns || [])
+          .map(find)
+          .filter((column): column is TrackerColumn => Boolean(column))
+          .map(column => column.id),
+      ),
+  )
+  // Choices made on import: create at once, and fall back to the full review only if something needs deciding.
+  const [auto, setAuto] = useState(Boolean(preset?.auto && tools.onCreate))
   const [ruleColumn, setRuleColumn] = useState(textColumns[0]?.id || '')
   const [ruleOp, setRuleOp] = useState<'is' | 'contains' | 'empty' | 'filled'>('is')
   const [ruleValue, setRuleValue] = useState('')
@@ -209,81 +246,43 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
     })
   }
 
+  /** Stops with a message; an automatic run shows the full review so the person can finish it. */
+  const stop = (message: string) => {
+    setError(message)
+    setAuto(false)
+  }
   const create = async () => {
     if (busy) return
-    if (counts.tasks && !clientId) return setError('Choose the client for the new tasks.')
+    if (counts.tasks && !clientId) return stop('Choose the client for the new tasks.')
     if (counts.tasks && projectId === NEW_PROJECT && !projectName.trim())
-      return setError('Name the new project, or choose an existing one.')
-    if (counts.tasks + counts.subtasks + counts.plain === 0) return setError('Nothing to create or save yet.')
+      return stop('Name the new project, or choose an existing one.')
+    if (counts.tasks + counts.subtasks + counts.plain === 0) return stop('Nothing to create or save yet.')
     setBusy(true)
     setError('')
     try {
-      const drafts: TaskDraft[] = [],
-        draftOfRow = new Map<string, number>(),
-        rowOfDraft: ({ rowId: string; columnId?: string } | null)[] = []
-      const push = (draft: TaskDraft, link: { rowId: string; columnId?: string } | null) => {
-        drafts.push(draft)
-        rowOfDraft.push(link)
-        return drafts.length - 1
-      }
-      const making = open.filter(row => willCreate(row.id, choices, skipped))
-      const taskRows = making.filter(row => choices[row.id].kind === 'task')
-      for (const row of taskRows)
-        draftOfRow.set(
-          row.id,
-          push(
-            {
-              title: titleOf(row),
-              clientId,
-              projectId: projectId === NEW_PROJECT ? '' : projectId,
-              newProjectName: projectId === NEW_PROJECT ? projectName.trim() : undefined,
-            },
-            { rowId: row.id },
-          ),
-        )
-      for (const row of taskRows)
-        for (const columnId of subColumns)
-          push(
-            {
-              title: columns.find(column => column.id === columnId)?.name || 'Subtask',
-              clientId: '',
-              projectId: '',
-              parentIndex: draftOfRow.get(row.id),
-            },
-            { rowId: row.id, columnId },
-          )
-      for (const row of making) {
-        const choice = choices[row.id]
-        if (choice.kind === 'subtask_new')
-          push(
-            { title: titleOf(row), clientId: '', projectId: '', parentIndex: draftOfRow.get(choice.parentRowId) },
-            { rowId: row.id },
-          )
-        if (choice.kind === 'subtask')
-          push(
-            { title: titleOf(row), clientId: '', projectId: '', parentTaskId: choice.parentTaskId },
-            { rowId: row.id },
-          )
-      }
-      const made = drafts.length ? await tools.onCreate!(drafts) : []
-      const outcome: ReviewOutcome = {
-        rowTasks: [],
-        cellLinks: [],
-        reviewed: open.filter(row => choices[row.id] || skipped.has(row.id)).map(row => row.id),
-      }
-      made.forEach((item, at) => {
-        const link = rowOfDraft[at]
-        if (!link) return
-        if (link.columnId) outcome.cellLinks.push({ rowId: link.rowId, columnId: link.columnId, taskId: item.id })
-        else outcome.rowTasks.push({ rowId: link.rowId, taskId: item.id })
+      const { drafts, links } = reviewDrafts({
+        open,
+        choices,
+        skipped,
+        subColumns: [...subColumns].map(id => ({ id, name: columns.find(column => column.id === id)?.name || '' })),
+        titleOf: id => titleOf(rowById.get(id)!),
+        clientId,
+        projectId: projectId === NEW_PROJECT ? '' : projectId,
+        newProjectName: projectId === NEW_PROJECT ? projectName.trim() : undefined,
       })
-      await onApply(outcome)
+      const made = drafts.length ? await tools.onCreate!(drafts) : []
+      const reviewed = open.filter(row => choices[row.id] || skipped.has(row.id)).map(row => row.id)
+      await onApply(reviewOutcome(made, links, reviewed))
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The tasks could not be created.')
       setBusy(false)
+      stop(e instanceof Error ? e.message : 'The tasks could not be created.')
     }
   }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, with the choices made on import
+  useEffect(() => {
+    if (auto) void create()
+  }, [])
   const leaveAllPlain = async () => {
     if (busy) return
     setBusy(true)
@@ -304,6 +303,15 @@ export default function TrackerReview({ tracker, rows, allRows, lookup, tools, o
   ]
     .filter(Boolean)
     .join(', ')
+
+  if (auto)
+    return (
+      <Dialog title="Creating your tasks" eyebrow="Import" onClose={onClose} busy>
+        <p className="trk-strip" role="status">
+          Creating {summary || 'your tasks'}…
+        </p>
+      </Dialog>
+    )
 
   /** One line of the list: tick, title, where it came from, and what it becomes. */
   const line = (row: TrackerRow, role: 'head' | 'child' | 'loose', children: string[] = []) => {

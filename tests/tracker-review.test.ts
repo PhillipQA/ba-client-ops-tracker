@@ -4,7 +4,9 @@ import {
   choicesFromOrder,
   choicesFromSheet,
   reviewCounts,
+  reviewDrafts,
   reviewGroups,
+  reviewOutcome,
   setChoice,
   taskAbove,
   willCreate,
@@ -99,4 +101,77 @@ test('counts: skipping a task skips nothing else by itself, but its subtasks can
   assert.deepEqual(reviewCounts(rows, choices, new Set(), 2), { tasks: 1, subtasks: 4, plain: 0, later: 1 })
   assert.equal(willCreate('b', choices, new Set(['a'])), false)
   assert.deepEqual(reviewCounts(rows, choices, new Set(['a', 'b', 'd'])), { tasks: 0, subtasks: 1, plain: 3, later: 0 })
+})
+
+test('create makes a task per named row, a subtask per chosen header (linked to its cell), then rows under', () => {
+  const open = rowsOf(['r0', 'r1', 'r2', 'r3'])
+  const choices = choicesFromOrder([
+    { id: 'r0', name: 'Makati' },
+    { id: 'r1', name: '' },
+    { id: 'r2', name: 'Ortigas' },
+    { id: 'r3', name: '' },
+  ])
+  const titles: Record<string, string> = { r0: 'Makati', r1: 'Permits', r2: 'Ortigas', r3: 'Wiring' }
+  const { drafts, links } = reviewDrafts({
+    open,
+    choices,
+    skipped: new Set(['r3']),
+    subColumns: [
+      { id: 'c-survey', name: 'Site survey' },
+      { id: 'c-live', name: 'Go-live' },
+    ],
+    titleOf: id => titles[id],
+    clientId: 'client-a',
+    projectId: 'project-x',
+  })
+  assert.deepEqual(
+    drafts.map(draft => [draft.title, draft.clientId, draft.projectId, draft.parentIndex ?? null]),
+    [
+      ['Makati', 'client-a', 'project-x', null],
+      ['Ortigas', 'client-a', 'project-x', null],
+      ['Site survey', '', '', 0],
+      ['Go-live', '', '', 0],
+      ['Site survey', '', '', 1],
+      ['Go-live', '', '', 1],
+      ['Permits', '', '', 0],
+    ],
+    'a skipped row under a task is not made',
+  )
+  assert.deepEqual(links, [
+    { rowId: 'r0' },
+    { rowId: 'r2' },
+    { rowId: 'r0', columnId: 'c-survey' },
+    { rowId: 'r0', columnId: 'c-live' },
+    { rowId: 'r2', columnId: 'c-survey' },
+    { rowId: 'r2', columnId: 'c-live' },
+    { rowId: 'r1' },
+  ])
+  const outcome = reviewOutcome(
+    drafts.map((_, at) => ({ id: `t${at}` })),
+    links,
+    ['r0', 'r1', 'r2', 'r3'],
+  )
+  assert.deepEqual(outcome.rowTasks, [
+    { rowId: 'r0', taskId: 't0' },
+    { rowId: 'r2', taskId: 't1' },
+    { rowId: 'r1', taskId: 't6' },
+  ])
+  assert.equal(outcome.cellLinks.length, 4)
+  assert.deepEqual(outcome.cellLinks[0], { rowId: 'r0', columnId: 'c-survey', taskId: 't2' })
+  assert.deepEqual(outcome.reviewed, ['r0', 'r1', 'r2', 'r3'])
+})
+
+test('create: a new project by name, and subtasks of tasks that already exist', () => {
+  const { drafts } = reviewDrafts({
+    open: rowsOf(['a', 'b']),
+    choices: { a: { kind: 'task' }, b: { kind: 'subtask', parentTaskId: 'existing-1' } },
+    skipped: new Set(),
+    subColumns: [],
+    titleOf: id => id.toUpperCase(),
+    clientId: 'c1',
+    projectId: '',
+    newProjectName: 'Sta. Rosa roll-out',
+  })
+  assert.deepEqual(drafts[0], { title: 'A', clientId: 'c1', projectId: '', newProjectName: 'Sta. Rosa roll-out' })
+  assert.deepEqual(drafts[1], { title: 'B', clientId: '', projectId: '', parentTaskId: 'existing-1' })
 })

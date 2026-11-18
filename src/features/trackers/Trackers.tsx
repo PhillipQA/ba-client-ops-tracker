@@ -661,6 +661,7 @@ export default function Trackers(props: Props) {
       )}
       {importing && (
         <TrackerImportDialog
+          canCreateTasks={Boolean(props.onCreateTasks)}
           clients={props.clients}
           projects={props.projects}
           people={people}
@@ -676,6 +677,7 @@ export default function Trackers(props: Props) {
       {connecting && (
         <TrackerImportDialog
           fromSheet
+          canCreateTasks={Boolean(props.onCreateTasks)}
           clients={props.clients}
           projects={props.projects}
           people={people}
