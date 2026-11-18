@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { trackerClientIds, type Tracker, type TrackerColumn, type TrackerRow } from './trackerModel'
 import { shown, type Lookup } from './trackerQuery'
 import { Dialog, plural } from './trackerUi'
@@ -279,9 +279,13 @@ export default function TrackerReview({
       stop(e instanceof Error ? e.message : 'The tasks could not be created.')
     }
   }
+  // Once only, even when React runs effects twice in development: tasks must never be created twice.
+  const started = useRef(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, with the choices made on import
   useEffect(() => {
-    if (auto) void create()
+    if (!auto || started.current) return
+    started.current = true
+    void create()
   }, [])
   const leaveAllPlain = async () => {
     if (busy) return

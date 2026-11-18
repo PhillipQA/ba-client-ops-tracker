@@ -221,8 +221,7 @@ export default function TrackerImportDialog({
     setError('')
     const parsed = toSource(parseTable(text), header)
     if (!parsed.ok) return setError(parsed.error)
-    if (!name.trim() && fileName)
-      setName(fileName.replace(/\.(csv|tsv|txt)$/i, '').slice(0, TRACKER_LIMITS.nameLength))
+    if (!name.trim() && fileName) setName(fileName.replace(/\.(csv|tsv|txt)$/i, '').slice(0, TRACKER_LIMITS.nameLength))
     start(parsed.source, false)
   }
   const choose = async (list: FileList | null) => {
@@ -289,9 +288,7 @@ export default function TrackerImportDialog({
 
   // The clients the new tasks can go under: the tracker's (when it has some), else every client.
   const trackerClients = tracker ? trackerClientIds(tracker) : clientIds
-  const taskClients = trackerClients.length
-    ? clients.filter(client => trackerClients.includes(client.id))
-    : clients
+  const taskClients = trackerClients.length ? clients.filter(client => trackerClients.includes(client.id)) : clients
   const tasksClient = taskClients.length === 1 ? taskClients[0].id : taskClientId
   // A new tracker's tasks go to its project; an existing tracker's to the project chosen here.
   const tasksProject = tracker ? taskProjectId : projectId
@@ -565,8 +562,8 @@ export default function TrackerImportDialog({
                   </button>
                   {fileName && <span className="trk-muted-text">{fileName}</span>}
                   <label className="trk-checkline">
-                    <input type="checkbox" checked={header} onChange={event => setHeader(event.target.checked)} />{' '}
-                    First row has the headers
+                    <input type="checkbox" checked={header} onChange={event => setHeader(event.target.checked)} /> First
+                    row has the headers
                   </label>
                 </div>
                 <label className="trk-field-block">
@@ -714,8 +711,8 @@ export default function TrackerImportDialog({
                     )}
                     {sheet?.excel && keepSync && (
                       <p className="trk-muted-text">
-                        <strong>This is an Excel file.</strong> The tracker follows it read only: change its rows in
-                        the Excel file and they come in on each sync. You can still make tasks and subtasks from them.
+                        <strong>This is an Excel file.</strong> The tracker follows it read only: change its rows in the
+                        Excel file and they come in on each sync. You can still make tasks and subtasks from them.
                       </p>
                     )}
                     {sheet && (
@@ -857,8 +854,8 @@ export default function TrackerImportDialog({
                   </p>
                   {nameCheck && nameCheck.repeated > 0 && (
                     <p className="trk-muted-text">
-                      {plural(nameCheck.repeated, 'row')} {nameCheck.repeated === 1 ? 'uses a name' : 'use names'}{' '}
-                      from a row above; each is still its own task.
+                      {plural(nameCheck.repeated, 'row')} {nameCheck.repeated === 1 ? 'uses a name' : 'use names'} from
+                      a row above; each is still its own task.
                     </p>
                   )}
                 </>
@@ -1016,8 +1013,8 @@ export default function TrackerImportDialog({
                   </select>
                 </label>
                 <label className="trk-checkline">
-                  <input type="checkbox" checked={onlyMe} onChange={event => setOnlyMe(event.target.checked)} /> Only
-                  I can see this tracker
+                  <input type="checkbox" checked={onlyMe} onChange={event => setOnlyMe(event.target.checked)} /> Only I
+                  can see this tracker
                 </label>
               </div>
             )}
@@ -1145,7 +1142,12 @@ export default function TrackerImportDialog({
             </button>
           )}
           {step === 'place' && (
-            <button type="button" className="trk-button primary" disabled={busy || Boolean(plan?.fatal)} onClick={finish}>
+            <button
+              type="button"
+              className="trk-button primary"
+              disabled={busy || Boolean(plan?.fatal)}
+              onClick={finish}
+            >
               {finishLabel}
             </button>
           )}

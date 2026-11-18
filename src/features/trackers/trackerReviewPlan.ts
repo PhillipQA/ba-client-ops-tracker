@@ -223,7 +223,10 @@ export function reviewDrafts(input: {
         { rowId: row.id },
       )
     if (choice.kind === 'subtask')
-      push({ title: titleOf(row.id), clientId: '', projectId: '', parentTaskId: choice.parentTaskId }, { rowId: row.id })
+      push(
+        { title: titleOf(row.id), clientId: '', projectId: '', parentTaskId: choice.parentTaskId },
+        { rowId: row.id },
+      )
   }
   return { drafts, links }
 }
