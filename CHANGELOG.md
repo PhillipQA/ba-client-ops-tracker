@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: Roll-up stays readable over a wallpaper
+- The Roll-up's tables were see-through, so a bright wallpaper theme washed out the site links, status and due badges. The tables now use the theme's solid surface, and each tracker's name and progress line sits on a soft bar, the same as the breadcrumb and legend. Works with every theme and interface mode.
+
 ### DRF: DocHub no longer asks again for the client, project and task
 - In **DocHub signature preparation** on a DRF, **Link to client**, **Filter by project** and **Existing task or subtask** are gone: they were the same choice as the Project and Task or subtask in **2. Linked email**. A line shows what the draft is linked to (client · project · task), or says to choose the project and task in step 2.
 - People without Work Hub (no step 2 picker) still choose them in the DocHub section. Sign-Off is unchanged.

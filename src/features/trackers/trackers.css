@@ -3973,6 +3973,17 @@ a.trk-link-button {
   align-items: center;
   justify-content: space-between;
   gap: 8px 14px;
+  /* The tracker's name and progress sit on the page background: a soft bar keeps them readable over a wallpaper. */
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--k-border) 60%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--k-solid) 86%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--k-text);
+}
+.trk-rollup-group > header .trk-muted-text {
+  color: color-mix(in srgb, var(--k-text) 82%, var(--k-muted));
 }
 .trk-rollup-group h3 {
   font-size: 15px;
@@ -3981,6 +3992,9 @@ a.trk-link-button {
   overflow-x: auto;
   border: 1px solid var(--k-border);
   border-radius: 12px;
+  /* Solid, so a wallpaper never shows through the rows (links, status and due badges stay readable). */
+  background: var(--k-solid);
+  color: var(--k-text);
 }
 .trk-rollup-table {
   width: 100%;
