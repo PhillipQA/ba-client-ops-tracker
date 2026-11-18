@@ -205,15 +205,28 @@ export function DocHubOptions({
   projects,
   items,
   disabled = false,
+  linkedIn,
 }: {
   draft: Draft
   clients: Client[]
   projects: Project[]
   items: WorkItem[]
   disabled?: boolean
+  /**
+   * Where the client, project and task were already chosen on this form (the DRF's “2. Linked email”).
+   * They are then not asked again: a line shows what the draft is linked to.
+   */
+  linkedIn?: string
 }) {
   const { projectId, setProjectId } = draft
   const selected = items.find(i => i.id === draft.options.taskId)
+  const linkedTo = [
+    clients.find(c => c.id === draft.options.clientId)?.name,
+    projects.find(p => p.id === projectId)?.name,
+    selected?.title,
+  ]
+    .filter(Boolean)
+    .join(' · ')
   useEffect(() => {
     if (selected?.projectId) setProjectId(selected.projectId)
   }, [draft.options.taskId])
@@ -244,65 +257,75 @@ export function DocHubOptions({
       {!draft.available && <p>Ask your account Administrator to add and enable the DocHub API key in Settings.</p>}
       {draft.enabled && (
         <div className="document-field-grid">
-          <label>
-            Link to client
-            <ClientSelect
-              clients={clients.filter(c => !c.archived)}
-              value={draft.options.clientId}
-              onChange={value => {
-                draft.setOptions(o => ({ ...o, clientId: value, taskId: '' }))
-                // A project of another client is let go, so the DRF's contract number follows the new client.
-                const owner = clientOfProject(projects, projectId)
-                if (owner && owner !== value) setProjectId('')
-              }}
-              extra={[{ value: '', label: 'No client selected' }]}
-              disabled={disabled || draft.busy}
-            />
-          </label>
-          <label>
-            Filter by project
-            <select
-              disabled={disabled || draft.busy}
-              value={projectId}
-              onChange={e => {
-                const id = e.target.value
-                setProjectId(id)
-                // The project brings its client.
-                draft.setOptions(o => ({ ...o, taskId: '', clientId: clientOfProject(projects, id) || o.clientId }))
-              }}
-            >
-              <option value="">All projects</option>
-              {projects
-                .filter(p => !isClosedProject(p))
-                .map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label className="document-field-wide">
-            Existing task or subtask
-            <SearchSelect
-              disabled={disabled || draft.busy}
-              value={draft.options.taskId}
-              onChange={id => {
-                const task = items.find(i => i.id === id)
-                draft.setOptions(o => ({ ...o, taskId: id, clientId: task?.clientId || o.clientId }))
-              }}
-              choices={[
-                { value: '', label: 'No task association' },
-                ...taskChoices({ items: allowed, clients, projects }, ''),
-              ]}
-              placeholder="Type a task or subtask"
-              empty="No open task or subtask matches"
-            />
-            <small>
+          {linkedIn ? (
+            <p className="document-field-wide dochub-linked">
               {selected
-                ? 'Updates will appear in this work item’s comments.'
-                : 'Choose the existing work item to keep signing updates in one place.'}
-            </small>
-          </label>
+                ? `Linked to ${linkedTo}, chosen in ${linkedIn}. Updates will appear in this work item’s comments.`
+                : `No task linked. Choose the project and task in ${linkedIn} to keep signing updates in one place.`}
+            </p>
+          ) : (
+            <>
+              <label>
+                Link to client
+                <ClientSelect
+                  clients={clients.filter(c => !c.archived)}
+                  value={draft.options.clientId}
+                  onChange={value => {
+                    draft.setOptions(o => ({ ...o, clientId: value, taskId: '' }))
+                    // A project of another client is let go, so the DRF's contract number follows the new client.
+                    const owner = clientOfProject(projects, projectId)
+                    if (owner && owner !== value) setProjectId('')
+                  }}
+                  extra={[{ value: '', label: 'No client selected' }]}
+                  disabled={disabled || draft.busy}
+                />
+              </label>
+              <label>
+                Filter by project
+                <select
+                  disabled={disabled || draft.busy}
+                  value={projectId}
+                  onChange={e => {
+                    const id = e.target.value
+                    setProjectId(id)
+                    // The project brings its client.
+                    draft.setOptions(o => ({ ...o, taskId: '', clientId: clientOfProject(projects, id) || o.clientId }))
+                  }}
+                >
+                  <option value="">All projects</option>
+                  {projects
+                    .filter(p => !isClosedProject(p))
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="document-field-wide">
+                Existing task or subtask
+                <SearchSelect
+                  disabled={disabled || draft.busy}
+                  value={draft.options.taskId}
+                  onChange={id => {
+                    const task = items.find(i => i.id === id)
+                    draft.setOptions(o => ({ ...o, taskId: id, clientId: task?.clientId || o.clientId }))
+                  }}
+                  choices={[
+                    { value: '', label: 'No task association' },
+                    ...taskChoices({ items: allowed, clients, projects }, ''),
+                  ]}
+                  placeholder="Type a task or subtask"
+                  empty="No open task or subtask matches"
+                />
+                <small>
+                  {selected
+                    ? 'Updates will appear in this work item’s comments.'
+                    : 'Choose the existing work item to keep signing updates in one place.'}
+                </small>
+              </label>
+            </>
+          )}
           <label>
             Signing order
             <select
