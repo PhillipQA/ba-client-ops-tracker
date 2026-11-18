@@ -168,7 +168,7 @@ export function planSync(input: {
   const keyIndex = indexOf.get(headerKey(input.keyHeader))
   if (keyIndex === undefined)
     return {
-      error: `The key column “${input.keyHeader}” is no longer in the Sheet. Reconnect and choose the key column again.`,
+      error: `The task name column (the key column) “${input.keyHeader}” is not in the Sheet's header row. Check its header in row 1 of the Sheet, or reconnect and choose another task name.`,
     }
 
   const byId = new Map(input.columns.map(column => [column.id, column]))
