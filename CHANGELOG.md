@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### GIT Tracker, part 1: database and template rules (nothing visible yet)
+- Groundwork for **GIT Tracker**, a tracker type that turns GitLab and GitHub tickets you add from Work Hub into rows, Tasks and Subtasks. Nothing in the app changes yet: screens and actions come in the next parts.
+- **Template rules** (shared by the editor and the server): a GIT template lists the rows one ticket adds (e.g. Analysis, Dev, QA), when each row applies, and whether it makes a Task, a Subtask under another row's Task, or nothing. Column rules add a Subtask per Task row (e.g. a QA retest box). Titles, descriptions and due dates are filled from the ticket and the row, such as `#{ticket.number} {ticket.title}`. A template with mistakes is refused with each one in plain words. One ticket makes at most 60 Tasks and Subtasks.
+- **Issue links** are read strictly: GitHub issue pages and GitLab issue pages on your own GitLab only. Pull requests, merge requests and other pages are refused.
+- Work for a ticket gets stable ids, so retrying after a failure never makes a second copy.
+- **Needs database migration v42** (`schema-v42-git-tracker.sql`): a tracker and template type (existing ones stay Standard and behave as before), repository mappings per workspace, tickets added to GIT Trackers with their generation status, and the work each one made. A ticket can be in one GIT Tracker once, enforced by the database.
 ### Action Center: SQL widgets from every Data explorer table, and Jarvis
 - **SQL widget** (Customize › Add): a widget of your own from any Data explorer table: tasks, time entries, clients, projects, activities, the activity log, people, Work Hub messages and every tracker. Write the SQL, **build it without SQL** (the Data explorer's builder), or **Ask Jarvis** to write, change, fix or explain it. Show it as a table, chart or number; it runs in your browser each time the Action Center opens.
 - **Build with Jarvis** (Customize › Add): describe what you want to see, and Jarvis plans the widgets, runs them, and adds them to your Action Center (tables full width, with optional analyst notes).

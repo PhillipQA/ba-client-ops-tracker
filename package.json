@@ -34,6 +34,7 @@
     "test:fsd-available": "node --import ./tests/support/setup.mjs --test tests/fsd-available.test.ts",
     "test:fsd-custom-features": "node --import ./tests/support/setup.mjs --test tests/fsd-custom-features.test.ts",
     "test:github": "node --import ./tests/support/setup.mjs --test tests/github.test.ts",
+    "test:git-tracker": "node --import ./tests/support/setup.mjs --test tests/git-generation.test.ts tests/git-ticket-url.test.ts",
     "test:gitlab": "node --import ./tests/support/setup.mjs --test tests/gitlab.test.ts",
     "test:egress": "node --import ./tests/support/setup.mjs --test tests/egress.test.ts",
     "test:work-hub-sync": "node --import ./tests/support/setup.mjs --test tests/work-hub-sync.test.ts",
