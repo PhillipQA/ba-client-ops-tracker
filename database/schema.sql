@@ -1,4 +1,4 @@
--- BA Client Ops Tracker: database schema (version 41)
+-- BA Client Ops Tracker: database schema (version 42)
 --
 -- Creates every table, constraint, index and function the app needs on an empty PostgreSQL 14+ database, plus the
 -- two starting sign-ins. Run it once, as the same database user the app connects with (DATABASE_URL):
@@ -10,7 +10,7 @@
 -- INTERNAL_ADMIN_BOOTSTRAP_PASSWORD or BXI_CORE_BOOTSTRAP_PASSWORD from the server's settings (12+ characters), and
 -- must then be changed.
 --
--- Changing the schema later: add database/migrations/schema-v42-<what>.sql (and so on), apply it to every database,
+-- Changing the schema later: add database/migrations/schema-v43-<what>.sql (and so on), apply it to every database,
 -- and fold it into this file so a new install gets it too. See database/README.md.
 
 begin;
@@ -30,7 +30,7 @@ begin
     ,'tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_t
     racker_templates','tenant_trackers','tracker_evidence_files','tracker_state','user_communication_settings','us
     er_communications','user_assistant_memory','user_email_signatures','user_task_timers','user_preferences','user_github_connections','user_github_issues','user_gitlab_connect
-    ions','user_gitlab_issues'
+    ions','user_gitlab_issues','tenant_git_repository_mappings','tenant_git_tracker_tickets','tenant_git_ticket_tasks'
   ] loop
     if to_regclass(format('public.%I', name)) is not null then
       raise exception 'Stopped: public.% already exists, so this database is already set up. Nothing was changed.', name;
@@ -853,6 +853,9 @@ CREATE TABLE public.tenant_tracker_templates (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     step_tasks boolean,
+    kind text DEFAULT 'standard'::text NOT NULL,
+    generation jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT tenant_tracker_templates_kind_check CHECK ((kind = ANY (ARRAY['standard'::text, 'git'::text]))),
     CONSTRAINT tenant_tracker_templates_name_check CHECK (((length(name) >= 1) AND (length(name) <= 80)))
 );
 
@@ -876,6 +879,11 @@ CREATE TABLE public.tenant_trackers (
     step_tasks boolean,
     members jsonb DEFAULT '[]'::jsonb NOT NULL,
     seeds_rows boolean DEFAULT false NOT NULL,
+    kind text DEFAULT 'standard'::text NOT NULL,
+    git_config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    git_template_id uuid,
+    git_template_revision integer,
+    CONSTRAINT tenant_trackers_kind_check CHECK ((kind = ANY (ARRAY['standard'::text, 'git'::text]))),
     CONSTRAINT tenant_trackers_name_check CHECK (((length(name) >= 1) AND (length(name) <= 120)))
 );
 
@@ -981,6 +989,7 @@ CREATE TABLE public.user_github_issues (
     available boolean DEFAULT true NOT NULL,
     qa_status text DEFAULT 'Not started'::text NOT NULL,
     linked_task_id text,
+    repository_id bigint,
     CONSTRAINT user_github_issues_qa_status_check CHECK ((qa_status = ANY (ARRAY['Not started'::text, 'In progress'::text, 'Needs retest'::text, 'Passed'::text, 'Failed'::text, 'Blocked'::text]))),
     CONSTRAINT user_github_issues_state_check CHECK ((state = ANY (ARRAY['open'::text, 'closed'::text])))
 );
@@ -1027,6 +1036,7 @@ CREATE TABLE public.user_gitlab_issues (
     available boolean DEFAULT true NOT NULL,
     qa_status text DEFAULT 'Not started'::text NOT NULL,
     linked_task_id text,
+    repository_id bigint,
     commented_by_me boolean DEFAULT false NOT NULL,
     due_date date,
     details jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -1289,6 +1299,8 @@ CREATE UNIQUE INDEX tenant_tracker_task_links_unique ON public.tenant_tracker_ta
 
 CREATE UNIQUE INDEX tenant_tracker_templates_key ON public.tenant_tracker_templates USING btree (tenant_id, template_key) WHERE (template_key <> ''::text);
 
+CREATE INDEX tenant_trackers_git ON public.tenant_trackers USING btree (tenant_id) WHERE (kind = 'git'::text);
+
 CREATE INDEX tenant_trackers_recent ON public.tenant_trackers USING btree (tenant_id, updated_at DESC);
 
 CREATE INDEX user_communications_owner_recent ON public.user_communications USING btree (tenant_id, owner_user_id, received_at DESC);
@@ -1504,6 +1516,79 @@ CREATE TABLE public.user_preferences (
     PRIMARY KEY (tenant_id, user_id)
 );
 
+-- GIT Tracker (schema v42): repository mappings, tickets added to GIT Trackers and the work they generated.
+CREATE TABLE public.tenant_git_repository_mappings (
+    id uuid default gen_random_uuid() not null primary key,
+    tenant_id uuid not null references public.organizations(id) on delete cascade,
+    provider text not null check (provider = any (array['github'::text, 'gitlab'::text])),
+    instance_url text not null,
+    connection_user_id text default ''::text not null,
+    repository_id bigint not null check (repository_id > 0),
+    repository_path text not null check (length(repository_path) between 1 and 300),
+    client_id text not null check (length(client_id) between 1 and 100),
+    project_id text not null check (length(project_id) between 1 and 100),
+    is_active boolean default true not null,
+    created_by text default ''::text not null,
+    updated_by text default ''::text not null,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+);
+-- One active mapping per repository; replaced mappings stay, inactive, for history.
+CREATE UNIQUE INDEX tenant_git_repository_mappings_active
+    on public.tenant_git_repository_mappings (tenant_id, provider, instance_url, repository_id) where is_active;
+
+CREATE TABLE public.tenant_git_tracker_tickets (
+    id uuid not null primary key,
+    tenant_id uuid not null references public.organizations(id) on delete cascade,
+    tracker_id uuid not null,
+    provider text not null check (provider = any (array['github'::text, 'gitlab'::text])),
+    instance_url text not null,
+    repository_id bigint not null check (repository_id > 0),
+    repository_path text not null,
+    issue_id bigint not null check (issue_id > 0),
+    issue_number integer not null check (issue_number > 0),
+    issue_url text not null,
+    title_snapshot text default ''::text not null,
+    client_id text not null,
+    project_id text not null,
+    mapping_id uuid,
+    template_id uuid,
+    template_revision integer,
+    generation_status text default 'Pending'::text not null
+        check (generation_status = any (array['Pending'::text, 'Processing'::text, 'Completed'::text, 'Failed'::text])),
+    generation_error text default ''::text not null,
+    attempts integer default 0 not null,
+    added_by text not null,
+    added_by_name text default ''::text not null,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null,
+    foreign key (tenant_id, tracker_id) references public.tenant_trackers(tenant_id, id) on delete cascade
+);
+-- A ticket is in a GIT Tracker at most once: repeated clicks and concurrent requests meet this constraint.
+CREATE UNIQUE INDEX tenant_git_tracker_tickets_once
+    on public.tenant_git_tracker_tickets (tenant_id, tracker_id, provider, instance_url, issue_id);
+CREATE INDEX tenant_git_tracker_tickets_issue
+    on public.tenant_git_tracker_tickets (tenant_id, provider, instance_url, issue_id);
+CREATE INDEX tenant_git_tracker_tickets_tracker_client
+    on public.tenant_git_tracker_tickets (tenant_id, tracker_id, client_id);
+
+CREATE TABLE public.tenant_git_ticket_tasks (
+    id uuid default gen_random_uuid() not null primary key,
+    tenant_id uuid not null references public.organizations(id) on delete cascade,
+    git_tracker_ticket_id uuid not null references public.tenant_git_tracker_tickets(id) on delete cascade,
+    tracker_row_id uuid,
+    rule_key text not null check (length(rule_key) between 1 and 120),
+    task_id text not null,
+    parent_task_id text,
+    work_type text not null check (work_type = any (array['Task'::text, 'Subtask'::text])),
+    template_id uuid,
+    created_at timestamp with time zone default now() not null
+);
+-- One rule makes a given piece of work once per ticket entry, however often generation is retried.
+CREATE UNIQUE INDEX tenant_git_ticket_tasks_once
+    on public.tenant_git_ticket_tasks (git_tracker_ticket_id, rule_key);
+CREATE INDEX tenant_git_ticket_tasks_task on public.tenant_git_ticket_tasks (tenant_id, task_id);
+
 
 -- ----------------------------------------------------------------------------------------------------
 -- Starting sign-ins
@@ -1525,4 +1610,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 41 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 42 as schema_version;

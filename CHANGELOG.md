@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### GIT Tracker, part 1: database and template rules (nothing visible yet)
+- Groundwork for **GIT Tracker**, a tracker type that turns GitLab and GitHub tickets you add from Work Hub into rows, Tasks and Subtasks. Nothing in the app changes yet: screens and actions come in the next parts.
+- **Template rules** (shared by the editor and the server): a GIT template lists the rows one ticket adds (e.g. Analysis, Dev, QA), when each row applies, and whether it makes a Task, a Subtask under another row's Task, or nothing. Column rules add a Subtask per Task row (e.g. a QA retest box). Titles, descriptions and due dates are filled from the ticket and the row, such as `#{ticket.number} {ticket.title}`. A template with mistakes is refused with each one in plain words. One ticket makes at most 60 Tasks and Subtasks.
+- **Issue links** are read strictly: GitHub issue pages and GitLab issue pages on your own GitLab only. Pull requests, merge requests and other pages are refused.
+- Work for a ticket gets stable ids, so retrying after a failure never makes a second copy.
+- **Needs database migration v42** (`schema-v42-git-tracker.sql`): a tracker and template type (existing ones stay Standard and behave as before), repository mappings per workspace, tickets added to GIT Trackers with their generation status, and the work each one made. A ticket can be in one GIT Tracker once, enforced by the database.
+
 ### Email threads: newest first, quoted text folded
 - Work Hub shows a conversation **newest first**: the latest reply is on top and marked **Latest**, and **Load older messages** brings in earlier ones.
 - Each message shows only what was new in it. The earlier emails it quotes ("On …, … wrote:" and "> …" lines, or Outlook's "From / Sent" header) fold under **Show quoted text**. The same applies to the linked email beside the DRF.
