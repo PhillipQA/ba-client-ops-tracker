@@ -1,6 +1,7 @@
 /**
- * Report widgets on the Action Center: ones a person builds here with the Reports builder, and ones pinned from a saved
- * report (which follow the report). Both are worked out in the browser from the same data Reports reads.
+ * Report widgets on the Action Center: ones a person builds here (with the Reports builder, or as a SQL query on the
+ * Data explorer's tables, written, built without SQL or by Jarvis), and ones pinned from a saved report (which follow
+ * the report). All are worked out in the browser from the same data Reports and the Data explorer read.
  */
 import { ExternalLink, X } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
@@ -8,7 +9,7 @@ import { businessDateKey } from '../../shared/businessDate'
 import type { AppState, SignedInUser } from '../../app/useAppState'
 import type { UserAccount } from '../../shared/types'
 import { reportApi } from '../reports/custom/reportApi'
-import { computeWidget, type ReportData } from '../reports/custom/reportData'
+import { computeWidget, rangeDates, type ReportData } from '../reports/custom/reportData'
 import {
   newWidget,
   type ReportFilters,
@@ -19,7 +20,12 @@ import {
 import { WidgetBody } from '../reports/custom/ReportWidgets'
 import { WidgetEditor } from '../reports/custom/WidgetEditor'
 import { trackerProblemOf, useReportSources, useTrackerData } from '../reports/custom/useReportSources'
+import { QueryResultView, useQueryRun } from '../reports/explorer/QueryResult'
+import { QueryWidgetEditor } from '../reports/explorer/QueryWidgetEditor'
+import { reportQueryParams, type ReportFilterValues } from '../reports/explorer/reportParams'
+import { useExplorerData } from '../reports/explorer/useExplorerData'
 import '../reports/custom/customReports.css'
+import '../reports/explorer/dataExplorer.css'
 
 const NO_FILTERS: ReportFilters = { range: 'all' }
 
@@ -66,6 +72,75 @@ export function useReportEngine(app: AppState, currentUser: SignedInUser, canUse
 }
 export type ReportEngine = ReturnType<typeof useReportEngine>
 
+/**
+ * The Data explorer's tables, for SQL widgets. As in Reports: Administrators and people given Data explorer query the
+ * whole account, everyone else their own work. Trackers and Work Hub messages load only when a query reads them.
+ */
+export function useActionCenterExplorer(
+  app: AppState,
+  engine: ReportEngine,
+  access: { canUseInbox: boolean; wholeAccount: boolean },
+) {
+  const { store } = app
+  return useExplorerData({
+    clients: store.clients,
+    projects: store.projects,
+    items: store.items,
+    planner: store.planner,
+    workEvents: store.workEvents || [],
+    accounts: store.accounts,
+    taskSettings: store.taskSettings,
+    currentUser: engine.me,
+    canUseTrackers: engine.canUseTrackers,
+    canUseInbox: access.canUseInbox,
+    wholeAccount: access.wholeAccount,
+  })
+}
+export type ActionCenterExplorer = ReturnType<typeof useExplorerData>
+
+const NO_FILTER_VALUES: ReportFilterValues = { range: null, client: '', project: '', person: '' }
+
+/** A report's filters as the values its SQL widgets' parameters take. */
+function filterValuesOf(filters: ReportFilters, data: ReportData): ReportFilterValues {
+  return {
+    range: rangeDates(filters, data.today),
+    client: data.clients.find(client => client.id === filters.clientId)?.name || '',
+    project: data.projects.find(project => project.id === filters.projectId)?.name || '',
+    person: (filters.userId && data.accounts.find(account => account.id === filters.userId)?.name) || '',
+    clientId: filters.clientId || '',
+    projectId: filters.projectId || '',
+    personId: filters.userId || '',
+  }
+}
+
+/** A SQL widget's result: run in the browser, again whenever the data changes. */
+function QueryView({
+  widget,
+  values,
+  explorer,
+  refresh,
+}: {
+  widget: Widget
+  values: ReportFilterValues
+  explorer: ActionCenterExplorer
+  refresh: unknown
+}) {
+  const query = widget.query ? { ...widget.query, params: reportQueryParams(widget.query, values) } : undefined
+  const { result, error, running } = useQueryRun(explorer.run, query, refresh)
+  const view = widget.query?.view || 'table'
+  return (
+    <div className={`crp-cell crp-kind-query ac-report-body dx-view-${view}`}>
+      {error ? (
+        <div className="crp-empty dx-error">{error}</div>
+      ) : result ? (
+        <QueryResultView result={result} view={view} today={explorer.today} />
+      ) : (
+        <div className="crp-empty">{running ? 'Running the query…' : ''}</div>
+      )}
+    </div>
+  )
+}
+
 /** The numbers, chart or table of one widget. */
 function WidgetView({ widget, filters, engine }: { widget: Widget; filters: ReportFilters; engine: ReportEngine }) {
   const { trackers, recordsFor, fieldsFor, today } = engine
@@ -111,10 +186,29 @@ function ReportPanel({
   )
 }
 
-export function CustomWidget({ widget, engine }: { widget: Widget; engine: ReportEngine }) {
+export function CustomWidget({
+  widget,
+  engine,
+  explorer,
+}: {
+  widget: Widget
+  engine: ReportEngine
+  explorer: ActionCenterExplorer
+}) {
   return (
-    <ReportPanel title={widget.title || WIDGET_LABELS[widget.kind]} sub="Your own widget">
-      <WidgetView widget={widget} filters={NO_FILTERS} engine={engine} />
+    <ReportPanel
+      title={widget.title || WIDGET_LABELS[widget.kind]}
+      sub={widget.kind === 'query' ? 'Your own widget · Data explorer' : 'Your own widget'}
+    >
+      {widget.kind === 'query' ? (
+        <QueryView widget={widget} values={NO_FILTER_VALUES} explorer={explorer} refresh={engine.data} />
+      ) : widget.kind === 'note' ? (
+        <div className="crp-cell crp-kind-note ac-report-body">
+          <p className="crp-note">{widget.text}</p>
+        </div>
+      ) : (
+        <WidgetView widget={widget} filters={NO_FILTERS} engine={engine} />
+      )}
     </ReportPanel>
   )
 }
@@ -143,6 +237,7 @@ export function PinnedWidget({
   widgetId,
   reports,
   engine,
+  explorer,
   onOpenReport,
   onRemove,
 }: {
@@ -150,6 +245,7 @@ export function PinnedWidget({
   widgetId: string
   reports: ReturnType<typeof useSavedReports>
   engine: ReportEngine
+  explorer: ActionCenterExplorer
   onOpenReport: () => void
   onRemove?: () => void
 }) {
@@ -198,7 +294,12 @@ export function PinnedWidget({
       }
     >
       {widget.kind === 'query' ? (
-        <p className="ac-widget-note">Query widgets show on their report. Open the report to see it.</p>
+        <QueryView
+          widget={widget}
+          values={filterValuesOf(report.definition.filters || NO_FILTERS, engine.data)}
+          explorer={explorer}
+          refresh={engine.data}
+        />
       ) : (
         <WidgetView widget={widget} filters={report.definition.filters || NO_FILTERS} engine={engine} />
       )}
@@ -206,15 +307,35 @@ export function PinnedWidget({
   )
 }
 
-/** The Reports builder, for a widget of the person's own on the Action Center. */
+/** A new SQL widget: a starting query the person changes, builds without SQL or asks Jarvis for. */
+export const newSqlWidget = (): Widget => ({
+  ...newWidget('query', { x: 0, y: 0 }),
+  title: 'Open work by client',
+  query: {
+    sql: 'SELECT client, count(*) AS open\nFROM tasks\nWHERE done = false\nGROUP BY client\nORDER BY open DESC',
+    view: 'bar',
+    params: {},
+  },
+})
+
+/**
+ * A widget of the person's own on the Action Center: the Reports builder for numbers, charts and tables, or the SQL
+ * widget settings (with the builder and Jarvis) for a query on the Data explorer's tables.
+ */
 export function BuildWidgetDialog({
   initial,
+  adding = false,
   engine,
+  sql,
   onSave,
   onClose,
 }: {
   initial?: Widget
+  /** A new widget (Add), not one being changed (Apply). */
+  adding?: boolean
   engine: ReportEngine
+  /** For SQL widgets: the tables, and what this person may do with them. */
+  sql?: { explorer: ActionCenterExplorer; canWriteSql: boolean; canAskJarvis: boolean }
   onSave: (widget: Widget) => void
   onClose: () => void
 }) {
@@ -223,6 +344,33 @@ export function BuildWidgetDialog({
   useEffect(() => {
     if (engine.canUseTrackers) trackers.loadList()
   }, [engine.canUseTrackers, trackers.loadList])
+  if (start.kind === 'query' && sql)
+    return (
+      <QueryWidgetEditor
+        widget={start}
+        canWriteSql={sql.canWriteSql}
+        clients={engine.data.clients}
+        projects={engine.data.projects}
+        accounts={engine.data.accounts}
+        tableNames={sql.explorer.catalog.map(table => table.name)}
+        loadTrackers={sql.explorer.loadTrackers}
+        explorer={sql.explorer}
+        canAskJarvis={sql.canAskJarvis}
+        eyebrow="Your own widget · Data explorer"
+        about="The query runs in your browser each time your Action Center opens, on fresh data."
+        saveLabel={adding ? 'Add widget' : 'Apply'}
+        preview={widget => (
+          <>
+            <div className="crp-card-head">
+              <h3>{widget.title || WIDGET_LABELS.query}</h3>
+            </div>
+            <QueryView widget={widget} values={NO_FILTER_VALUES} explorer={sql.explorer} refresh={engine.data} />
+          </>
+        )}
+        onSave={onSave}
+        onClose={onClose}
+      />
+    )
   return (
     <div className="crp-page ac-crp">
       <WidgetEditor

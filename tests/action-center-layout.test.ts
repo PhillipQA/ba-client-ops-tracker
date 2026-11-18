@@ -11,7 +11,7 @@ import {
   setWidgetWidth,
   widgetsToAdd,
 } from '../src/shared/actionCenterLayout'
-import { tilesOf } from '../src/shared/actionCenterSettings'
+import { layoutSql, tilesOf } from '../src/shared/actionCenterSettings'
 import { builtinValue, customValue } from '../src/features/action-center/countTiles'
 import { cleanJobRole } from '../src/shared/roles'
 import { awaitingSignature, emailsToShow } from '../src/features/action-center/widgetLists'
@@ -246,9 +246,9 @@ test('your own widgets and pinned widgets can repeat, each with its own key and 
   assert.equal((cleaned.find(item => item.id === 'custom')!.settings as any).widget.x, 0, 'placed by the layout')
   assert.deepEqual(cleaned.at(-1)!.settings, { reportId: 'r1', widgetId: 'w9' })
   assert.equal(
-    cleanLayout([{ id: 'custom', key: 'c1', settings: { widget: { kind: 'note', text: 'hi' } } }])!.length,
+    cleanLayout([{ id: 'custom', key: 'c1', settings: { widget: { kind: 'heading', text: 'hi' } } }])!.length,
     0,
-    'only numbers, charts, tables and timelines',
+    'no headings',
   )
   assert.equal(cleanLayout([{ id: 'pinned', settings: { reportId: 'r', widgetId: 'w' } }])!.length, 0, 'needs a key')
   assert.equal(cleanLayout([{ id: 'custom', key: 'bad key!', settings: {} }])!.length, 0)
@@ -260,4 +260,25 @@ test('your own widgets and pinned widgets can repeat, each with its own key and 
     !layoutToShow({ own: layout }, module => module !== 'reports').some(item => item.id === 'custom'),
     'needs Reports',
   )
+})
+
+test('your own widget can be a SQL query on the Data explorer tables, or Jarvis’s notes', () => {
+  const query = { sql: 'SELECT client, count(*) AS open FROM tasks GROUP BY client', view: 'bar', params: { x: '1' } }
+  const layout = cleanLayout([
+    { id: 'custom', key: 'q1', width: 'half', settings: { widget: { id: 'w1', kind: 'query', title: 'Open', query } } },
+    { id: 'custom', key: 'q2', settings: { widget: { kind: 'query', title: 'Empty', query: { sql: '  ' } } } },
+    { id: 'custom', key: 'n1', settings: { widget: { kind: 'note', text: 'What this shows\n• Hours are up' } } },
+    { id: 'custom', key: 'n2', settings: { widget: { kind: 'note', text: ' ' } } },
+    { id: 'workhub', width: 'half' },
+  ])!
+  assert.deepEqual(
+    layout.map(item => item.key || item.id),
+    ['q1', 'n1', 'workhub'],
+    'a query needs SQL and a note needs text',
+  )
+  const widget = (layout[0].settings as any).widget
+  assert.deepEqual(widget.query, query)
+  assert.equal(widget.x, 0)
+  assert.deepEqual([...layoutSql(layout)], [['q1', query.sql]])
+  assert.equal(layoutSql(null).size, 0)
 })

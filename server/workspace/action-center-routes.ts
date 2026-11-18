@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit'
 import { requireAuth, requireTenantWorkspace, type SessionUser } from '../core/auth'
 import { tenantIdForUser } from '../core/tenant-state'
 import { type ActionCenterLayout, cleanLayout } from '../../src/shared/actionCenterLayout'
+import { layoutSql } from '../../src/shared/actionCenterSettings'
 import { personRoles } from '../../src/shared/access'
 import { cleanJobRole, jobRoles } from '../../src/shared/roles'
 
@@ -46,6 +47,23 @@ export function createPreferenceStore(db: any): PreferenceStore {
       if (r.error) throw new PreferenceError(UNAVAILABLE, 503)
     },
   }
+}
+
+/** Administrators and people given the Data explorer write SQL, as in Reports. */
+export const writesSql = (user: Pick<SessionUser, 'role'> & { modules?: string[] }) =>
+  user.role === 'Administrator' || Boolean(user.modules?.includes('explorer'))
+
+/**
+ * Someone who cannot write SQL may keep, move and resize the SQL widgets they already have (from their saved layout or
+ * their role's starting layout) but not add new SQL or change it. Returns the first widget that breaks that, if any.
+ */
+export function newSqlIn(
+  layout: ActionCenterLayout | null,
+  existing: (ActionCenterLayout | null | undefined)[],
+): string | null {
+  const allowed = new Set(existing.flatMap(source => [...layoutSql(source).values()]))
+  for (const [key, sql] of layoutSql(layout)) if (!allowed.has(sql)) return key
+  return null
 }
 
 /** The starting layout of the first of a person's roles that has one. */
@@ -117,7 +135,15 @@ export function registerActionCenterRoutes(
       const user = who(req)
       const layout = layoutOf(req)
       const tenant = String(tenantIdForUser(user))
-      const { actionCenter: _old, ...rest } = await deps.store.read(tenant, String(user.id))
+      const { actionCenter: saved, ...rest } = await deps.store.read(tenant, String(user.id))
+      if (!writesSql(user) && layoutSql(layout).size) {
+        const role = roleLayoutFor((await deps.load(user.organizationId)).data, String(user.id))
+        if (newSqlIn(layout, [cleanLayout(saved), role?.layout]))
+          throw new PreferenceError(
+            'Only Administrators and people given Data explorer can add or change SQL widgets.',
+            403,
+          )
+      }
       await deps.store.write(tenant, String(user.id), layout ? { ...rest, actionCenter: layout } : rest)
       res.json({ own: layout })
     }),
