@@ -42,3 +42,29 @@ export function cellSubtaskPatches(columns: TrackerColumn[], changes: RowChange[
           byTask.set(link.taskId, tick.done)
   return [...byTask].map(([id, done]) => ({ id, done }))
 }
+
+/**
+ * Subtasks in a ticked Checkbox cell that are still open: to complete. A tick normally completes its subtask as it
+ * changes; this covers subtasks made for boxes that were already ticked (an import or a Sheet: the box was ticked
+ * before its subtask existed). It only completes, never reopens: an unticked box with a done subtask is left alone.
+ */
+export function tickedCellPatches(
+  columns: TrackerColumn[],
+  rows: { id: string; cells: Record<string, Cell> }[],
+  links: CellLink[],
+  isOpen: (taskId: string) => boolean,
+): DonePatch[] {
+  const checkbox = new Set(columns.filter(column => column.type === 'checkbox').map(column => column.id))
+  const cellsOf = new Map(rows.map(row => [row.id, row.cells]))
+  const ids = new Set<string>()
+  for (const link of links)
+    if (
+      link.columnId &&
+      link.taskId &&
+      checkbox.has(link.columnId) &&
+      ticked(cellsOf.get(link.rowId)?.[link.columnId]) &&
+      isOpen(link.taskId)
+    )
+      ids.add(link.taskId)
+  return [...ids].map(id => ({ id, done: true }))
+}

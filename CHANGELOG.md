@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: a ticked box's subtask is done, also right after an import
+- Importing rows (or a Google Sheet) with **ticked checkboxes** made the subtasks for those boxes **Open**: a tick only completed its subtask when it changed, and these boxes were ticked before their subtasks existed. Now a subtask made for a ticked box is **completed (Done, with its resolved date) as it is made**, the same as ticking it.
+- **Trackers imported before this fix** are put right when an editor next opens them: every subtask in a ticked box that is still open is completed, once. It only completes, never reopens.
+
 ### Trackers: Sheet columns with no header are caught on step 2
 - A Google Sheet column whose header cell (row 1) is blank was shown as “Column N” and could be chosen as the Task name. A synced tracker follows columns by their header, so connecting failed at the end with “The key column … is no longer in the Sheet”. Now, on a Sheet kept in sync, such columns are marked **No header in the Sheet**, start as **Leave out**, can't be the Task name or a Subtask, and the first named column is the default Task name. The note says what to do: add a header in row 1, or untick **Keep in sync** to copy the rows once (a copy has no such limit).
 - The sync's own message now says “task name column” and points to row 1 of the Sheet.
