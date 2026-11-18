@@ -14,8 +14,10 @@ import {
   type LayoutItem,
   addWidget,
   keyOf,
+  LAYOUT_LIMIT,
   removeWidget,
   setWidgetSettings,
+  setWidgetWidth,
   type WidgetId,
   widgetLabel,
   widgetsToAdd,
@@ -26,7 +28,16 @@ import type { UserAccount } from '../../shared/types'
 import { fieldValues, type ReportData, sourceFields, sourceRecords } from '../reports/custom/reportData'
 import { CountTiles, CountTilesDialog } from './ActionCenterCounts'
 import { FollowUpsWidget, LinksWidget, TimeWidget, TrackerChangesWidget } from './ActionCenterMore'
-import { BuildWidgetDialog, CustomWidget, PinnedWidget, useReportEngine, useSavedReports } from './ActionCenterReports'
+import {
+  BuildWidgetDialog,
+  CustomWidget,
+  newSqlWidget,
+  PinnedWidget,
+  useActionCenterExplorer,
+  useReportEngine,
+  useSavedReports,
+} from './ActionCenterReports'
+import { JarvisReportDialog } from '../reports/explorer/Jarvis'
 import type { Widget } from '../reports/custom/reportModel'
 import { builtinValue, customValue } from './countTiles'
 import { requestJson } from '../../shared/http'
@@ -90,10 +101,13 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
   const [draft, setDraft] = useState<ActionCenterLayout>([])
   const [dragging, setDragging] = useState('')
   const [editingTiles, setEditingTiles] = useState('')
-  /** The Reports builder: a new widget ('new') or the key of the one being changed. */
+  /** The builder: a new widget ('new', or 'new-sql' for a SQL query) or the key of the one being changed. */
   const [building, setBuilding] = useState('')
+  const [jarvisOpen, setJarvisOpen] = useState(false)
+  const [addNote, setAddNote] = useState('')
   const [roles, setRoles] = useState<{ id: string; name: string }[]>([])
   const startCustomizing = () => {
+    setAddNote('')
     setDraft(layout.layout)
     setEditing(true)
     // Administrators can save the layout as a role's starting layout: the roles come from Settings › Roles.
@@ -339,6 +353,13 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
       : customValue(tile, taskRecords, taskFields, today, currentUser.id)
   // Report widgets: built here, or pinned from a saved report.
   const engine = useReportEngine(app, currentUser, hasModule('trackers'))
+  // SQL widgets on the Data explorer's tables. Writing SQL (typed, built or by Jarvis) is for Administrators and people
+  // given Data explorer, as in Reports; anyone can see the SQL widgets they have.
+  const canWriteSql = currentUser.role === 'Administrator' || hasModule('explorer')
+  const canAskJarvis =
+    hasModule('ai') && (currentUser.role !== 'Viewer' || Boolean((currentUser as { askAi?: boolean }).askAi))
+  const explorer = useActionCenterExplorer(app, engine, { canUseInbox: hasModule('inbox'), wholeAccount: canWriteSql })
+  const sqlAccess = { explorer, canWriteSql, canAskJarvis }
   const visible = editing ? draft : layout.layout
   const reports = useSavedReports(visible.some(item => item.id === 'pinned'))
   const removeNow = (key: string) => {
@@ -403,7 +424,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         />
       )
     if (item.id === 'custom' && item.settings?.widget)
-      return <CustomWidget widget={item.settings.widget as Widget} engine={engine} />
+      return <CustomWidget widget={item.settings.widget as Widget} engine={engine} explorer={explorer} />
     if (item.id === 'pinned' && item.settings) {
       const { reportId, widgetId } = item.settings as { reportId: string; widgetId: string }
       return (
@@ -412,6 +433,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           widgetId={widgetId}
           reports={reports}
           engine={engine}
+          explorer={explorer}
           onOpenReport={() => openReport(reportId)}
           onRemove={() => removeNow(keyOf(item))}
         />
@@ -422,7 +444,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
   const editAction = (item: LayoutItem) =>
     item.id === 'counts'
       ? { label: 'Edit tiles', run: () => setEditingTiles(keyOf(item)) }
-      : item.id === 'custom'
+      : item.id === 'custom' && (item.settings?.widget as Widget | undefined)?.kind !== 'note'
         ? { label: 'Edit widget', run: () => setBuilding(keyOf(item)) }
         : undefined
   const frameLabel = (item: LayoutItem) =>
@@ -472,6 +494,8 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           isAdmin={currentUser.role === 'Administrator'}
           roles={roles}
           onBuild={hasModule('reports') ? () => setBuilding('new') : undefined}
+          onBuildSql={hasModule('reports') && canWriteSql ? () => setBuilding('new-sql') : undefined}
+          onJarvis={hasModule('reports') && canWriteSql && canAskJarvis ? () => setJarvisOpen(true) : undefined}
           onReset={() => {
             void layout.save(null)
             setEditing(false)
@@ -486,6 +510,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         />
       )}
       {!editing && layout.error && <p className="ac-widget-note">{layout.error}</p>}
+      {editing && addNote && <p className="ac-widget-note">{addNote}</p>}
       <div className={`ac-grid${editing ? ' editing' : ''}`}>
         {shown.map((item, index) => {
           const content = renderItem(item)
@@ -517,19 +542,51 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           <p className="ac-widget-note">Nothing on your Action Center. Add widgets above.</p>
         )}
       </div>
-      {building && (building === 'new' || buildingItem) && (
+      {building && (building.startsWith('new') || buildingItem) && (
         <BuildWidgetDialog
-          initial={buildingItem?.settings?.widget as Widget | undefined}
+          initial={building === 'new-sql' ? newSqlWidget() : (buildingItem?.settings?.widget as Widget | undefined)}
+          adding={building.startsWith('new')}
           engine={engine}
+          sql={sqlAccess}
           onClose={() => setBuilding('')}
           onSave={widget => {
             const settings = { widget: { ...widget, x: 0, y: 0 } }
             setDraft(current =>
-              building === 'new'
+              building.startsWith('new')
                 ? addWidget(current, 'custom', settings)
                 : setWidgetSettings(current, building, settings),
             )
             setBuilding('')
+          }}
+        />
+      )}
+      {jarvisOpen && (
+        <JarvisReportDialog
+          target="actionCenter"
+          explorer={explorer}
+          onClose={() => setJarvisOpen(false)}
+          onCreate={async (_name, widgets) => {
+            const room = LAYOUT_LIMIT - draft.length
+            const fitting = widgets.slice(0, Math.max(0, room))
+            setDraft(current =>
+              fitting.reduce((next, widget) => {
+                // Jarvis's analyst notes become a note widget; tables go full width.
+                const notes = widget.kind === 'note'
+                const title = notes ? 'What this shows' : widget.title
+                const text = notes ? (widget.text || '').replace(/^What this shows\n/, '') : widget.text
+                const added = addWidget(next, 'custom', { widget: { ...widget, title, text, x: 0, y: 0 } })
+                const wide = notes || widget.query?.view === 'table'
+                const item = added[added.length - 1]
+                return wide && item && added !== next ? setWidgetWidth(added, keyOf(item), 'full') : added
+              }, current),
+            )
+            const count = fitting.length
+            setAddNote(
+              count < widgets.length
+                ? `Only ${count} of Jarvis’s ${widgets.length} widgets fit: the most is ${LAYOUT_LIMIT}.`
+                : `Added ${count} widget${count === 1 ? '' : 's'} from Jarvis. Save the layout to keep them.`,
+            )
+            return true
           }}
         />
       )}
