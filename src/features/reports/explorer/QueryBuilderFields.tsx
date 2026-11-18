@@ -96,14 +96,9 @@ export function QueryBuilderFields({
       {SUMMARIES.find(item => item.value === builder.summary)?.measure && (
         <label>
           <span>Of</span>
-          <select
-            value={builder.measure}
-            onChange={event => applyBuilder({ ...builder, measure: event.target.value })}
-          >
+          <select value={builder.measure} onChange={event => applyBuilder({ ...builder, measure: event.target.value })}>
             {columns
-              .filter(
-                column => builder.summary === 'count_distinct' || ['number', 'date'].includes(column.type),
-              )
+              .filter(column => builder.summary === 'count_distinct' || ['number', 'date'].includes(column.type))
               .map(column => (
                 <option key={column.key} value={column.key}>
                   {column.key}
@@ -118,13 +113,10 @@ export function QueryBuilderFields({
           <select
             value=""
             onChange={event =>
-              event.target.value &&
-              applyBuilder({ ...builder, columns: [...builder.columns, event.target.value] })
+              event.target.value && applyBuilder({ ...builder, columns: [...builder.columns, event.target.value] })
             }
           >
-            <option value="">
-              {builder.columns.length ? 'Add a column…' : 'All columns (add to choose)…'}
-            </option>
+            <option value="">{builder.columns.length ? 'Add a column…' : 'All columns (add to choose)…'}</option>
             {columns
               .filter(column => !builder.columns.includes(column.key))
               .map(column => (
@@ -139,9 +131,7 @@ export function QueryBuilderFields({
                 type="button"
                 key={key}
                 className="on"
-                onClick={() =>
-                  applyBuilder({ ...builder, columns: builder.columns.filter(item => item !== key) })
-                }
+                onClick={() => applyBuilder({ ...builder, columns: builder.columns.filter(item => item !== key) })}
               >
                 {key} <X size={11} />
               </button>
@@ -237,10 +227,7 @@ export function QueryBuilderFields({
             // biome-ignore lint/suspicious/noArrayIndexKey: filters have no id of their own
             <div key={index} className="dx-filter">
               <span>{index ? 'and' : 'Only where'}</span>
-              <select
-                value={filter.column}
-                onChange={event => setFilter(index, { column: event.target.value })}
-              >
+              <select value={filter.column} onChange={event => setFilter(index, { column: event.target.value })}>
                 {columns.map(column => (
                   <option key={column.key} value={column.key}>
                     {column.key}
@@ -278,9 +265,7 @@ export function QueryBuilderFields({
                 type="button"
                 className="crp-icon small"
                 aria-label="Remove this condition"
-                onClick={() =>
-                  applyBuilder({ ...builder, filters: builder.filters.filter((_, at) => at !== index) })
-                }
+                onClick={() => applyBuilder({ ...builder, filters: builder.filters.filter((_, at) => at !== index) })}
               >
                 <X size={12} />
               </button>
