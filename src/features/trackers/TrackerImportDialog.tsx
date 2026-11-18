@@ -119,8 +119,11 @@ export default function TrackerImportDialog({
   const [header, setHeader] = useState(true)
   const [source, setSource] = useState<Source | null>(null)
   const [mappings, setMappings] = useState<Mapping[]>([])
-  // Sheet columns whose header cell (row 1) is blank: shown as “Column N”, but a sync can only follow named columns.
+  // Sheet columns whose header cell (row 1) is blank: shown as “Column N”; a sync only follows named columns.
   const [unnamed, setUnnamed] = useState<number[]>([])
+  // What the rows were read from (Sheet and tab, or the pasted text), so going back to step 1 and on again with the
+  // same data keeps the choices made on step 2.
+  const [readFrom, setReadFrom] = useState('')
   // Step 2: the task name header and the headers that give every task a subtask.
   const [task, setTask] = useState(-1)
   const [subtasks, setSubtasks] = useState<number[]>([])
@@ -195,7 +198,14 @@ export default function TrackerImportDialog({
    * The rows are in: every header starts as info, the first as the task name. On a Sheet kept in sync, columns with no
    * header start left out (a sync cannot follow them), and the task name is the first column that has one.
    */
-  const start = (parsed: Source, sheetSource: boolean, blank: number[] = []) => {
+  const start = (parsed: Source, sheetSource: boolean, from: string) => {
+    const same = from === readFrom && source && JSON.stringify(source.headers) === JSON.stringify(parsed.headers)
+    setReadFrom(from)
+    if (same) {
+      setStep('headers')
+      return
+    }
+    const blank = parsed.unnamed || []
     const unsyncable = following ? blank : []
     setSource(parsed)
     setUnnamed(blank)
@@ -218,10 +228,7 @@ export default function TrackerImportDialog({
       const parsed = toSource(result.grid, true)
       if (!parsed.ok) throw new Error(parsed.error)
       setHeader(true)
-      const blank = (result.grid[0] || [])
-        .map((cell, index) => (String(cell ?? '').trim() ? -1 : index))
-        .filter(index => index >= 0 && index < parsed.source.headers.length)
-      start(parsed.source, true, blank)
+      start(parsed.source, true, `sheet:${sheet.id}:${tab}:${keepSync}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The Sheet could not be read.')
     } finally {
@@ -233,7 +240,7 @@ export default function TrackerImportDialog({
     const parsed = toSource(parseTable(text), header)
     if (!parsed.ok) return setError(parsed.error)
     if (!name.trim() && fileName) setName(fileName.replace(/\.(csv|tsv|txt)$/i, '').slice(0, TRACKER_LIMITS.nameLength))
-    start(parsed.source, false)
+    start(parsed.source, false, `text:${header}:${text}`)
   }
   const choose = async (list: FileList | null) => {
     const picked = list?.[0]
@@ -432,6 +439,8 @@ export default function TrackerImportDialog({
     setBusy(true)
     setError('')
     const choicesForTasks = preset()
+    // A new tracker made here is removed again if the Sheet cannot be connected, so a retry never leaves a copy behind.
+    let made = ''
     try {
       let created: { tracker: Tracker }
       if (tracker) {
@@ -450,6 +459,7 @@ export default function TrackerImportDialog({
           projectId,
           private: onlyMe,
         })
+        made = created.tracker.id
       }
       // Each chosen Sheet column goes to the tracker column made for it (new columns are made in the same order).
       const headerMap: Record<string, string> = {}
@@ -476,6 +486,7 @@ export default function TrackerImportDialog({
         onDone(created.tracker.id, result.report?.added || 0, undefined, choicesForTasks)
       }
     } catch (e) {
+      if (made) await trackerApi.remove(made).catch(() => undefined)
       setError(
         e instanceof TrackerApiError && e.body.needsGoogle
           ? 'Allow Google Sheets first (button above), then try again.'

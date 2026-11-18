@@ -14,6 +14,9 @@ Released with pull request #110.
 ### Trackers: Sheet columns with no header are caught on step 2
 - A Google Sheet column whose header cell (row 1) is blank was shown as “Column N” and could be chosen as the Task name. A synced tracker follows columns by their header, so connecting failed at the end with “The key column … is no longer in the Sheet”. Now, on a Sheet kept in sync, such columns are marked **No header in the Sheet**, start as **Leave out**, can't be the Task name or a Subtask, and the first named column is the default Task name. The note says what to do: add a header in row 1, or untick **Keep in sync** to copy the rows once (a copy has no such limit).
 - The sync's own message now says “task name column” and points to row 1 of the Sheet.
+- **Going back to step 1 and on again keeps your step 2 choices** (Leave out, Task name, Subtask) when the Sheet, tab and sync setting are the same. Before, every header was reset, so a column you had left out came back.
+- **A new tracker is removed again if its Sheet can't be connected**, so retrying doesn't leave an empty copy behind.
+- “Column N” for a header with no name now counts the columns the import keeps (completely empty Sheet columns are dropped), so the warning always marks the right column.
 
 ### Trackers: Roll-up stays readable over a wallpaper
 - The Roll-up's tables were see-through, so a bright wallpaper theme washed out the site links, status and due badges. The tables now use the theme's solid surface, and each tracker's name and progress line sits on a soft bar, the same as the breadcrumb and legend. Works with every theme and interface mode.
