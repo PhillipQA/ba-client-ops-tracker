@@ -208,6 +208,9 @@ test('subtasks in boxes already ticked when they were made are completed, never 
     ],
     'ticked and open only: not the unticked box, the row task, a text cell, a done subtask or a missing row',
   )
-  assert.deepEqual(tickedCellPatches(cols, rows, links, () => false), [])
+  assert.deepEqual(
+    tickedCellPatches(cols, rows, links, () => false),
+    [],
+  )
   assert.equal(tickedCellPatches(cols, rows, [...links, links[0]], () => true).length, 3, 'one patch per subtask')
 })
