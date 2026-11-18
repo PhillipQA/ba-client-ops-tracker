@@ -4,7 +4,8 @@
  *
  * - counts: which tiles show, in order; built-in ones can be renamed and recoloured, and a person can build their own
  *   count of tasks with up to three filters (the same filters as Reports).
- * - custom: a widget built with the Reports builder (number, chart or table), kept in full with the layout.
+ * - custom: a widget built with the Reports builder (number, chart or table), a SQL query on the Data explorer's
+ *   tables (written, built without SQL, or by Jarvis), or Jarvis's analyst notes; kept in full with the layout.
  * - pinned: a widget of a saved report, by report and widget id; it follows the report.
  * - time: the person's weekly hours target (40 unless they change it).
  * - links: the person's own links and a short note.
@@ -121,6 +122,8 @@ export function cleanSettings(id: string, raw: unknown): Record<string, unknown>
     case 'custom': {
       const widget = cleanWidget(input.widget)
       if (!widget || !BUILDABLE.includes(widget.kind)) return undefined
+      if (widget.kind === 'query' && !widget.query?.sql.trim()) return undefined
+      if (widget.kind === 'note' && !widget.text?.trim()) return undefined
       return { widget: { ...widget, x: 0, y: 0 } }
     }
     case 'pinned': {
@@ -177,8 +180,21 @@ export function cleanLink(raw: unknown): QuickLink | null {
   return { label, url: url.toString() }
 }
 
-/** What the Action Center's own builder makes: numbers, charts and tables and timelines (not headings, notes or queries). */
-export const BUILDABLE: Widget['kind'][] = ['metric', 'bar', 'column', 'line', 'pie', 'table', 'gantt']
+/**
+ * What a widget of a person's own can be: the Reports builder's numbers, charts, tables and timelines; a SQL query on
+ * the Data explorer's tables; and a note (Jarvis's analyst notes). Not headings.
+ */
+export const BUILDABLE: Widget['kind'][] = ['metric', 'bar', 'column', 'line', 'pie', 'table', 'gantt', 'query', 'note']
+
+/** The SQL of each query widget of a person's own in a layout, by its key: who may add SQL is checked on save. */
+export function layoutSql(layout: { id: string; key?: string; settings?: Record<string, unknown> }[] | null = []) {
+  const found = new Map<string, string>()
+  for (const item of layout || []) {
+    const widget = item.id === 'custom' ? (item.settings?.widget as Widget | undefined) : undefined
+    if (widget?.kind === 'query' && widget.query?.sql) found.set(item.key || item.id, widget.query.sql)
+  }
+  return found
+}
 const REF = /^[A-Za-z0-9_:.$-]{1,80}$/
 export type CustomSettings = { widget: Widget }
 export type PinnedSettings = { reportId: string; widgetId: string }

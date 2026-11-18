@@ -181,16 +181,45 @@ export function JarvisBar({
 
 type Built = PlannedWidget & { result?: SqlResult; problem?: string }
 
-/** Reports: "Build with Jarvis". Plans a report, runs each query, and creates it when the person is happy. */
+const WORDING = {
+  report: {
+    title: 'Build a report with Jarvis',
+    eyebrow: 'Reports',
+    ask: 'What should the report show?',
+    plan: 'Plan the report',
+    planning: 'Planning the report…',
+    name: 'Report name',
+    create: 'Create report',
+    creating: 'Creating the report…',
+  },
+  actionCenter: {
+    title: 'Build widgets with Jarvis',
+    eyebrow: 'Action Center',
+    ask: 'What should your widgets show?',
+    plan: 'Plan the widgets',
+    planning: 'Planning the widgets…',
+    name: '',
+    create: 'Add to my Action Center',
+    creating: 'Adding the widgets…',
+  },
+}
+
+/**
+ * "Build with Jarvis": plans SQL widgets, runs each query, and hands them over when the person is happy. In Reports
+ * they become a new report; on the Action Center, widgets of the person's own.
+ */
 export function JarvisReportDialog({
   explorer,
   onCreate,
   onClose,
+  target = 'report',
 }: {
   explorer: Explorer
   onCreate: (name: string, widgets: Widget[]) => Promise<boolean>
   onClose: () => void
+  target?: keyof typeof WORDING
 }) {
+  const words = WORDING[target]
   const [request, setRequest] = useState('')
   const [plan, setPlan] = useState<ReportPlan | null>(null)
   const [built, setBuilt] = useState<Built[]>([])
@@ -221,7 +250,7 @@ export function JarvisReportDialog({
     }
   }
   const build = async () => {
-    setBusy('Planning the report…')
+    setBusy(words.planning)
     setProblem('')
     setNotes([])
     try {
@@ -261,17 +290,17 @@ export function JarvisReportDialog({
     }
   }
   const create = async () => {
-    setBusy('Creating the report…')
+    setBusy(words.creating)
     const ok = await onCreate(name.trim() || 'Report by Jarvis', layoutReport(working, notes))
     setBusy('')
     if (ok) onClose()
   }
 
   return (
-    <Dialog title="Build a report with Jarvis" eyebrow="Reports" size="wide" onClose={onClose} busy={Boolean(busy)}>
+    <Dialog title={words.title} eyebrow={words.eyebrow} size="wide" onClose={onClose} busy={Boolean(busy)}>
       <div className="dx-jarvis-report">
         <label className="crp-form-row">
-          <span>{plan ? 'Change the plan' : 'What should the report show?'}</span>
+          <span>{plan ? 'Change the plan' : words.ask}</span>
           <textarea
             rows={3}
             maxLength={1000}
@@ -293,7 +322,7 @@ export function JarvisReportDialog({
             disabled={Boolean(busy) || !request.trim()}
             onClick={() => void build()}
           >
-            <Sparkles size={14} /> {plan ? 'Update the plan' : 'Plan the report'}
+            <Sparkles size={14} /> {plan ? 'Update the plan' : words.plan}
           </button>
         </div>
         {busy && (
@@ -304,10 +333,12 @@ export function JarvisReportDialog({
         {problem && <p className="dx-jarvis-note dx-jarvis-problem">{problem}</p>}
         {plan && built.length > 0 && (
           <>
-            <label className="crp-form-row">
-              <span>Report name</span>
-              <input value={name} maxLength={120} onChange={event => setName(event.target.value)} />
-            </label>
+            {words.name && (
+              <label className="crp-form-row">
+                <span>{words.name}</span>
+                <input value={name} maxLength={120} onChange={event => setName(event.target.value)} />
+              </label>
+            )}
             <ol className="dx-jarvis-plan">
               {built.map(item => (
                 <li key={`${item.title}:${item.sql}`} className={item.problem ? 'failed' : ''}>
@@ -363,7 +394,7 @@ export function JarvisReportDialog({
           disabled={Boolean(busy) || !working.length}
           onClick={() => void create()}
         >
-          <FilePlus2 size={14} /> Create report
+          <FilePlus2 size={14} /> {words.create}
         </button>
       </div>
     </Dialog>

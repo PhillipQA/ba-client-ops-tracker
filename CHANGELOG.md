@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Action Center: SQL widgets from every Data explorer table, and Jarvis
+- **SQL widget** (Customize › Add): a widget of your own from any Data explorer table: tasks, time entries, clients, projects, activities, the activity log, people, Work Hub messages and every tracker. Write the SQL, **build it without SQL** (the Data explorer's builder), or **Ask Jarvis** to write, change, fix or explain it. Show it as a table, chart or number; it runs in your browser each time the Action Center opens.
+- **Build with Jarvis** (Customize › Add): describe what you want to see, and Jarvis plans the widgets, runs them, and adds them to your Action Center (tables full width, with optional analyst notes).
+- **Pinned SQL widgets now show their result** on the Action Center, with their report's filters, instead of "open the report to see it".
+- Same rules as Reports: Administrators and people given Data explorer write SQL and query the whole account; everyone else sees the SQL widgets they have (for example from a role's starting layout) on their own work and can move, resize or remove them, but not add or change SQL. The server enforces this when a layout is saved.
+- The Data explorer's builder is now one shared piece, used by the Data explorer, report SQL widgets and the Action Center. No database change.
+
 ### Email threads: newest first, quoted text folded
 - Work Hub shows a conversation **newest first**: the latest reply is on top and marked **Latest**, and **Load older messages** brings in earlier ones.
 - Each message shows only what was new in it. The earlier emails it quotes ("On …, … wrote:" and "> …" lines, or Outlook's "From / Sent" header) fold under **Show quoted text**. The same applies to the linked email beside the DRF.

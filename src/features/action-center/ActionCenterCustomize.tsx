@@ -2,7 +2,19 @@
  * Customizing the Action Center: a toolbar to start and finish, a frame around each widget to drag, resize or hide it,
  * and a list of widgets to add. Changes are a draft until Save; Cancel puts the page back as it was.
  */
-import { ArrowDown, ArrowUp, Check, GripVertical, LayoutGrid, Pencil, Plus, RotateCcw, X } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Database,
+  GripVertical,
+  LayoutGrid,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  X,
+} from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import {
   type ActionCenterLayout,
@@ -132,6 +144,8 @@ export function CustomizeBar({
   onCancel,
   onSave,
   onBuild,
+  onBuildSql,
+  onJarvis,
   note,
 }: {
   draft: ActionCenterLayout
@@ -147,6 +161,10 @@ export function CustomizeBar({
   onSave: () => void
   /** Opens the Reports builder for a widget of the person's own. */
   onBuild?: () => void
+  /** A widget of the person's own from the Data explorer's tables (SQL, the builder or Jarvis). */
+  onBuildSql?: () => void
+  /** Jarvis plans several SQL widgets from a description. */
+  onJarvis?: () => void
   note: string
 }) {
   const [roleId, setRoleId] = useState('')
@@ -170,7 +188,7 @@ export function CustomizeBar({
           </button>
         </div>
       </div>
-      {(addable.length > 0 || onBuild) && (
+      {(addable.length > 0 || onBuild || onBuildSql || onJarvis) && (
         <div className="ac-add">
           <span>Add:</span>
           {onBuild && (
@@ -181,6 +199,26 @@ export function CustomizeBar({
               onClick={onBuild}
             >
               <Plus size={14} /> Build your own widget
+            </button>
+          )}
+          {onBuildSql && (
+            <button
+              type="button"
+              className="secondary"
+              title="A query on any Data explorer table (tasks, time, clients, trackers…), with or without SQL"
+              onClick={onBuildSql}
+            >
+              <Database size={14} /> SQL widget
+            </button>
+          )}
+          {onJarvis && (
+            <button
+              type="button"
+              className="secondary"
+              title="Describe what you want to see; Jarvis plans the widgets from the Data explorer tables"
+              onClick={onJarvis}
+            >
+              <Sparkles size={14} /> Build with Jarvis
             </button>
           )}
           {addable.map(widget => (
