@@ -239,7 +239,8 @@ function cleanConditions(raw: unknown, columns: TrackerColumn[], where: string, 
       errors.push(`${where}: a condition needs a value to compare with.`)
       continue
     }
-    if (item.on === 'ticket' && isTicketField(item.field)) out.push({ on: 'ticket', field: item.field, op: item.op, value })
+    if (item.on === 'ticket' && isTicketField(item.field))
+      out.push({ on: 'ticket', field: item.field, op: item.op, value })
     else if (item.on === 'cell' && typeof item.columnId === 'string' && ids.has(item.columnId))
       out.push({ on: 'cell', columnId: item.columnId, op: item.op, value })
     else errors.push(`${where}: a condition refers to a ticket field or column that does not exist.`)
@@ -355,7 +356,8 @@ export function normalizeGitGeneration(
     })
   })
   if (columnRules.length && !taskRows.size) errors.push('Column rules need at least one row that makes a Task.')
-  if (!rows.some(row => row.work !== 'none')) errors.push('The template makes no Tasks: set at least one row to make a Task.')
+  if (!rows.some(row => row.work !== 'none'))
+    errors.push('The template makes no Tasks: set at least one row to make a Task.')
 
   return { generation: { version: GIT_GENERATION_VERSION, rows, columnRules }, errors }
 }
@@ -467,7 +469,8 @@ export function renderTemplate(
   context: { rowName: string; columnName?: string; cells: Record<string, Cell>; columns: TrackerColumn[] },
 ): string {
   return template.replace(PLACEHOLDER, (whole, name: string) => {
-    if (name.startsWith('ticket.') && isTicketField(name.slice(7))) return ticketText(ticket, name.slice(7) as GitTicketField)
+    if (name.startsWith('ticket.') && isTicketField(name.slice(7)))
+      return ticketText(ticket, name.slice(7) as GitTicketField)
     if (name === 'row') return context.rowName
     if (name === 'column' && context.columnName !== undefined) return context.columnName
     if (name.startsWith('col:')) {
@@ -541,7 +544,10 @@ export function planGitGeneration(input: GitPlanInput): GitPlan {
       if (column) cells[columnId] = resolveCell(column, value, ticket)
     }
     if (!conditionsHold(blueprint.when, ticket, cells, columns)) {
-      plan.skipped.push({ ruleKey: `row:${blueprint.key}`, reason: `Row ${blueprint.name}: its conditions do not hold.` })
+      plan.skipped.push({
+        ruleKey: `row:${blueprint.key}`,
+        reason: `Row ${blueprint.name}: its conditions do not hold.`,
+      })
       continue
     }
     plan.rows.push({ key: blueprint.key, id: idFor('row', blueprint.key), name: blueprint.name, cells })

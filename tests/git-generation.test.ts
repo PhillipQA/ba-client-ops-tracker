@@ -125,7 +125,10 @@ const plan = (overrides: Partial<Parameters<typeof planGitGeneration>[0]> = {}) 
   })
 
 test('uuidV5 matches the RFC 4122 example and stays stable', () => {
-  assert.equal(uuidV5('www.example.com', '6ba7b810-9dad-11d1-80b4-00c04fd430c8'), '2ed6657d-e927-568b-95e1-2665a8aea6a2')
+  assert.equal(
+    uuidV5('www.example.com', '6ba7b810-9dad-11d1-80b4-00c04fd430c8'),
+    '2ed6657d-e927-568b-95e1-2665a8aea6a2',
+  )
   assert.equal(gitEntryIds(entry)('work', 'row:dev'), gitEntryIds(entry)('work', 'row:dev'))
   assert.notEqual(gitEntryIds(entry)('work', 'row:dev'), gitEntryIds(entry)('row', 'dev'))
   assert.throws(() => uuidV5('x', 'not-a-uuid'))
@@ -143,8 +146,21 @@ test('Template mistakes are reported in plain words', () => {
     rows: [
       { key: 'Bad Key', name: '', cells: { owner: { from: 'fixed', value: 'x' } }, work: 'task', task: { title: '' } },
       { key: 'dup', name: 'A', cells: { number: { from: 'fixed', value: 'abc' } }, work: 'none' },
-      { key: 'dup', name: 'B', cells: { due: { from: 'ticket', field: 'title' } }, work: 'subtask', parentKey: 'nope', task: { title: '{ticket.nope}' } },
-      { key: 'c', name: 'C', cells: { type: { from: 'fixed', value: 'Bug' }, gone: { from: 'fixed', value: '1' } }, when: [{ on: 'cell', columnId: 'gone', op: 'equals', value: 'x' }], work: 'none' },
+      {
+        key: 'dup',
+        name: 'B',
+        cells: { due: { from: 'ticket', field: 'title' } },
+        work: 'subtask',
+        parentKey: 'nope',
+        task: { title: '{ticket.nope}' },
+      },
+      {
+        key: 'c',
+        name: 'C',
+        cells: { type: { from: 'fixed', value: 'Bug' }, gone: { from: 'fixed', value: '1' } },
+        when: [{ on: 'cell', columnId: 'gone', op: 'equals', value: 'x' }],
+        work: 'none',
+      },
     ],
     columnRules: [{ key: 'r', columnId: 'missing', task: { title: 'x' } }],
   }
@@ -210,7 +226,10 @@ test('One ticket makes several rows, Tasks and Subtasks under the mapped Client 
     link: 'https://gitlab.com/pos/barter/-/issues/142',
   })
   assert.ok(result.skipped.some(skip => skip.ruleKey === 'row:notes'))
-  assert.ok(result.skipped.some(skip => skip.ruleKey === 'col:retest:analysis'), 'Analysis has no retest tick')
+  assert.ok(
+    result.skipped.some(skip => skip.ruleKey === 'col:retest:analysis'),
+    'Analysis has no retest tick',
+  )
 })
 
 test('Planning the same entry twice gives the same ids; another entry gives new ones', () => {
@@ -233,7 +252,9 @@ test('A Subtask row whose Task row did not apply is skipped, never left without 
   const gated: GitGeneration = {
     ...generation,
     rows: generation.rows.map(row =>
-      row.key === 'dev' ? { ...row, when: [{ on: 'ticket', field: 'labels', op: 'contains', value: 'enhancement' }] } : row,
+      row.key === 'dev'
+        ? { ...row, when: [{ on: 'ticket', field: 'labels', op: 'contains', value: 'enhancement' }] }
+        : row,
     ),
   }
   const result = plan({ generation: gated })
@@ -263,7 +284,13 @@ test('Too many Tasks for one ticket stops generation', () => {
       work: 'task' as const,
       task: mapping('{row}'),
     })),
-    columnRules: [1, 2, 3].map(n => ({ key: `c${n}`, columnId: 'retest', rows: 'all' as const, when: [], task: mapping('{row}') })),
+    columnRules: [1, 2, 3].map(n => ({
+      key: `c${n}`,
+      columnId: 'retest',
+      rows: 'all' as const,
+      when: [],
+      task: mapping('{row}'),
+    })),
   }
   assert.match(plan({ generation: many }).errors.join(), /make 80 Tasks and Subtasks; the most is 60/)
   const atLimit = { ...many, columnRules: many.columnRules.slice(0, 2) }
