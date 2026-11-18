@@ -25,7 +25,7 @@ export default function TrackerProjectPicker({
   value,
   onChange,
   max = TRACKER_PROJECTS,
-  label = 'Projects',
+  title = 'Projects',
 }: {
   projects: PickerProject[]
   clients: { id: string; name: string }[]
@@ -35,7 +35,7 @@ export default function TrackerProjectPicker({
   onChange: (ids: string[], picked?: PickerProject) => void
   /** At most this many: 1 picks a single project. */
   max?: number
-  label?: string
+  title?: string
 }) {
   const [query, setQuery] = useState('')
   const byId = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects])
@@ -90,8 +90,8 @@ export default function TrackerProjectPicker({
     </>
   )
   return (
-    <div className="trk-field-block trk-clients" role="group" aria-label={label}>
-      <span>{label}</span>
+    <div className="trk-field-block trk-clients" role="group" aria-label={title}>
+      <span>{title}</span>
       <div className="trk-client-chips">
         {value.map((id, at) => {
           const project = byId.get(id)
@@ -135,7 +135,7 @@ export default function TrackerProjectPicker({
               : `Up to ${max} projects`
             : 'Add a project: type its name or contract number (SLSS #)'
         }
-        aria-label={max === 1 ? `Choose the ${label.toLowerCase()}` : 'Add a project to this tracker'}
+        aria-label={max === 1 ? `Choose the ${title.toLowerCase()}` : 'Add a project to this tracker'}
         onChange={event => setQuery(event.target.value)}
         onKeyDown={event => {
           if (event.key === 'Enter') {

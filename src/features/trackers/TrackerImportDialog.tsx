@@ -1091,7 +1091,7 @@ export default function TrackerImportDialog({
                       value={taskProjectId ? [taskProjectId] : []}
                       onChange={pickTaskProject}
                       max={1}
-                      label="Project"
+                      title="Project"
                     />
                   ) : (
                     <p className="trk-field-block">
