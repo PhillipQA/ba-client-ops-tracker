@@ -65,7 +65,12 @@ export function parseTable(input: string): string[][] {
   return rows
 }
 
-export type Source = { headers: string[]; rows: string[][] }
+export type Source = {
+  headers: string[]
+  rows: string[][]
+  /** Headers whose cell was blank (named “Column N” here), by their place in `headers`. */
+  unnamed?: number[]
+}
 
 /** Evens out ragged rows, drops empty rows and columns, and takes the header row. */
 export function toSource(
@@ -91,7 +96,9 @@ export function toSource(
       error: `A tracker can have at most ${TRACKER_LIMITS.columns} columns, and this sheet has ${headers.length}.`,
     }
   if (!rows.length) return { ok: false, error: 'The sheet has a header row but no rows under it.' }
-  return { ok: true, source: { headers, rows } }
+  // Counted after empty columns are dropped, so “Column 3” here is the same column as `headers[2]`.
+  const unnamed = firstRowIsHeader ? trimmed[0].flatMap((header, i) => (header ? [] : [i])) : []
+  return { ok: true, source: { headers, rows, unnamed } }
 }
 
 // ---- dates ----

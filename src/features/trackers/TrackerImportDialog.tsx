@@ -119,6 +119,11 @@ export default function TrackerImportDialog({
   const [header, setHeader] = useState(true)
   const [source, setSource] = useState<Source | null>(null)
   const [mappings, setMappings] = useState<Mapping[]>([])
+  // Sheet columns whose header cell (row 1) is blank: shown as “Column N”; a sync only follows named columns.
+  const [unnamed, setUnnamed] = useState<number[]>([])
+  // What the rows were read from (Sheet and tab, or the pasted text), so going back to step 1 and on again with the
+  // same data keeps the choices made on step 2.
+  const [readFrom, setReadFrom] = useState('')
   // Step 2: the task name header and the headers that give every task a subtask.
   const [task, setTask] = useState(-1)
   const [subtasks, setSubtasks] = useState<number[]>([])
@@ -189,15 +194,28 @@ export default function TrackerImportDialog({
     }
   }
 
-  /** The rows are in: every header starts as info, the first as the task name. */
-  const start = (parsed: Source, sheetSource: boolean) => {
+  /**
+   * The rows are in: every header starts as info, the first as the task name. On a Sheet kept in sync, columns with no
+   * header start left out (a sync cannot follow them), and the task name is the first column that has one.
+   */
+  const start = (parsed: Source, sheetSource: boolean, from: string) => {
+    const same = from === readFrom && source && JSON.stringify(source.headers) === JSON.stringify(parsed.headers)
+    setReadFrom(from)
+    if (same) {
+      setStep('headers')
+      return
+    }
+    const blank = parsed.unnamed || []
+    const unsyncable = following ? blank : []
     setSource(parsed)
+    setUnnamed(blank)
     setMappings(
-      defaultMappings(parsed, existing, today).map(mapping =>
-        sheetSource && mapping.type === 'secret' ? { ...mapping, type: 'text' } : mapping,
-      ),
+      defaultMappings(parsed, existing, today).map(mapping => {
+        const next = sheetSource && mapping.type === 'secret' ? { ...mapping, type: 'text' as ColumnType } : mapping
+        return unsyncable.includes(next.index) ? { ...next, include: false } : next
+      }),
     )
-    setTask(parsed.headers.length ? 0 : -1)
+    setTask(parsed.headers.findIndex((_, index) => !unsyncable.includes(index)))
     setSubtasks([])
     setStep('headers')
   }
@@ -210,7 +228,7 @@ export default function TrackerImportDialog({
       const parsed = toSource(result.grid, true)
       if (!parsed.ok) throw new Error(parsed.error)
       setHeader(true)
-      start(parsed.source, true)
+      start(parsed.source, true, `sheet:${sheet.id}:${tab}:${keepSync}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The Sheet could not be read.')
     } finally {
@@ -222,7 +240,7 @@ export default function TrackerImportDialog({
     const parsed = toSource(parseTable(text), header)
     if (!parsed.ok) return setError(parsed.error)
     if (!name.trim() && fileName) setName(fileName.replace(/\.(csv|tsv|txt)$/i, '').slice(0, TRACKER_LIMITS.nameLength))
-    start(parsed.source, false)
+    start(parsed.source, false, `text:${header}:${text}`)
   }
   const choose = async (list: FileList | null) => {
     const picked = list?.[0]
@@ -257,6 +275,8 @@ export default function TrackerImportDialog({
     setMappings(list => list.map(item => ({ ...item, include: next.included[item.index] ?? item.include })))
   }
   const giveRole = (index: number, role: HeaderRole) => apply(setRole(choices, index, role))
+  /** Columns a sync cannot follow: no header in row 1 of the Sheet. Copying once has no such limit. */
+  const unsynced = following ? unnamed : []
   const change = (index: number, patch: Partial<Mapping>) => {
     setMappings(list => list.map(item => (item.index === index ? { ...item, ...patch } : item)))
     // Unticking a header under Advanced leaves it out: it is no longer the task name or a subtask.
@@ -328,8 +348,17 @@ export default function TrackerImportDialog({
 
   const toPlace = () => {
     setError('')
+    if (following && unsynced.includes(task))
+      return setError(
+        `“${source?.headers[task]}” has no header in the Sheet, so it can’t be the task name of a synced tracker. Choose another column, or add a header in row 1 of the Sheet.`,
+      )
     if (following && task < 0)
       return setError('Choose the Task name header. It is how each row is recognised on every sync.')
+    const blocked = unsynced.filter(index => choices.included[index])
+    if (blocked.length)
+      return setError(
+        `${blocked.map(index => source?.headers[index]).join(', ')} ${blocked.length === 1 ? 'has' : 'have'} no header in the Sheet, so ${blocked.length === 1 ? 'it' : 'they'} can’t be kept in sync. Leave ${blocked.length === 1 ? 'it' : 'them'} out, or add a header in row 1 of the Sheet.`,
+      )
     if (!plan || plan.fatal) return
     setStep('place')
   }
@@ -410,6 +439,8 @@ export default function TrackerImportDialog({
     setBusy(true)
     setError('')
     const choicesForTasks = preset()
+    // A new tracker made here is removed again if the Sheet cannot be connected, so a retry never leaves a copy behind.
+    let made = ''
     try {
       let created: { tracker: Tracker }
       if (tracker) {
@@ -428,6 +459,7 @@ export default function TrackerImportDialog({
           projectId,
           private: onlyMe,
         })
+        made = created.tracker.id
       }
       // Each chosen Sheet column goes to the tracker column made for it (new columns are made in the same order).
       const headerMap: Record<string, string> = {}
@@ -454,6 +486,7 @@ export default function TrackerImportDialog({
         onDone(created.tracker.id, result.report?.added || 0, undefined, choicesForTasks)
       }
     } catch (e) {
+      if (made) await trackerApi.remove(made).catch(() => undefined)
       setError(
         e instanceof TrackerApiError && e.body.needsGoogle
           ? 'Allow Google Sheets first (button above), then try again.'
@@ -776,6 +809,9 @@ export default function TrackerImportDialog({
                           <strong>{headerName || `Column ${index + 1}`}</strong>
                           {suggested.includes(index) && <span className="trk-suggest">Suggested subtask</span>}
                           <small>{sample(index)}</small>
+                          {unsynced.includes(index) && (
+                            <small className="trk-unnamed">{`No header in the Sheet, so it can’t be kept in sync. Add a header in row 1 of the Sheet, or untick “Keep in sync” in step 1 to copy the rows once.`}</small>
+                          )}
                         </td>
                         <td>
                           <div className="trk-segmented" role="group" aria-label={`What ${headerName} becomes`}>
@@ -786,6 +822,7 @@ export default function TrackerImportDialog({
                                 className={role === item.role ? 'on' : ''}
                                 aria-pressed={role === item.role}
                                 title={item.about}
+                                disabled={item.role !== 'skip' && unsynced.includes(index)}
                                 onClick={() => giveRole(index, item.role)}
                               >
                                 {item.label}
@@ -884,6 +921,7 @@ export default function TrackerImportDialog({
                             <input
                               type="checkbox"
                               checked={mapping.include}
+                              disabled={unsynced.includes(mapping.index)}
                               aria-label={`Bring in ${source.headers[mapping.index]}`}
                               onChange={event => change(mapping.index, { include: event.target.checked })}
                             />

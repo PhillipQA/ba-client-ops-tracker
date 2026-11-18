@@ -711,3 +711,20 @@ test('rows with nothing readable are skipped, and an all-empty sheet is refused'
   const empty = planFor([['Cost'], ['x']], [col('c_cost', 'Cost', 'number')]).plan
   assert.match(empty.fatal, /No rows could be read/)
 })
+
+test('headers with a blank cell are named and listed, counted after empty columns are dropped', () => {
+  // Column B is empty everywhere and is dropped; column D has data but no header.
+  const parsed = toSource(
+    [
+      ['Site', '', 'Status', '', 'Go-live'],
+      ['Makati', '', 'Pre Live', 'note', '11/19/2026'],
+    ],
+    true,
+  )
+  assert.ok(parsed.ok)
+  if (!parsed.ok) return
+  assert.deepEqual(parsed.source.headers, ['Site', 'Status', 'Column 3', 'Go-live'])
+  assert.deepEqual(parsed.source.unnamed, [2], '“Column 3” is headers[2], not the Sheet’s third column')
+  const noHeader = toSource([['a', 'b']], false)
+  assert.ok(!noHeader.ok || noHeader.source.unnamed?.length === 0)
+})

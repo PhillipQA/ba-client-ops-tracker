@@ -1319,6 +1319,11 @@ a.trk-link-button {
   white-space: nowrap;
   vertical-align: middle;
 }
+.trk-unnamed {
+  display: block;
+  margin-top: 2px;
+  color: var(--k-warning);
+}
 .trk-suggest {
   margin-left: 8px;
   padding: 1px 7px;
