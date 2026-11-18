@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: importing in three steps
+- **Importing rows and linking a Google Sheet are now one flow of three steps**, the same for a CSV file, pasted cells and a Google Sheet:
+  1. **Your data**: choose a CSV file, paste cells, or pick a Google Sheet. For a Sheet, one switch: **keep the tracker in sync** (as before), or copy the rows once.
+  2. **Pick your headers**: mark each header as the **Task name**, a **Subtask** (every task gets one, named after the header and linked to its cell), **Info**, or **Leave out**. A preview shows the first task with its subtasks, and the totals (for example 42 tasks · 168 subtasks). Checkbox headers are marked as suggested subtasks; one click makes them subtasks, and nothing is ticked for you. Column names, types and existing columns are under **Advanced**.
+  3. **Where it goes**: the tracker's name, clients, project and privacy (for a new tracker), and the client and project of the new tasks, asked once.
+- **The tasks and subtasks are then created at once**, by the same review as before, from the choices made: a task for each row with a task name, the rows under it as its subtasks, and a subtask for each chosen header. Tick **Review row by row first** to see and adjust the list before anything is created, as before.
+- What is created does not change: the same rows, columns, tasks, subtasks, cell links and Sheet sync. The "Create tasks" review is now one shared, tested function.
+
 ### GIT Tracker, part 1: database and template rules (nothing visible yet)
 - Groundwork for **GIT Tracker**, a tracker type that turns GitLab and GitHub tickets you add from Work Hub into rows, Tasks and Subtasks. Nothing in the app changes yet: screens and actions come in the next parts.
 - **Template rules** (shared by the editor and the server): a GIT template lists the rows one ticket adds (e.g. Analysis, Dev, QA), when each row applies, and whether it makes a Task, a Subtask under another row's Task, or nothing. Column rules add a Subtask per Task row (e.g. a QA retest box). Titles, descriptions and due dates are filled from the ticket and the row, such as `#{ticket.number} {ticket.title}`. A template with mistakes is refused with each one in plain words. One ticket makes at most 60 Tasks and Subtasks.

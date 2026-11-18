@@ -1,4 +1,5 @@
 /** Remembers which tracker (and row) to open, so other screens can send the person straight to it. */
+import type { ReviewPreset } from './trackerReviewPlan'
 const OPEN_KEY = 'ba.trackers.open'
 const ROW_KEY = 'ba.trackers.openRow'
 
@@ -39,20 +40,27 @@ export const takeTrackerRow = (trackerId: string) => {
 }
 
 const REVIEW_KEY = 'ba.trackers.review'
-/** Asks the tracker to open the review of these rows ('flagged' = every row waiting for review) when it next opens. */
-export const rememberReview = (trackerId: string, rows: string[] | 'flagged') => {
+export type PendingReview = { rows: string[] | 'flagged'; preset?: ReviewPreset }
+/**
+ * Asks the tracker to open the review of these rows ('flagged' = every row waiting for review) when it next opens,
+ * starting from the choices made on import (which can create the tasks at once).
+ */
+export const rememberReview = (trackerId: string, rows: string[] | 'flagged', preset?: ReviewPreset) => {
   try {
-    window.sessionStorage.setItem(REVIEW_KEY, JSON.stringify({ trackerId, rows }))
+    window.sessionStorage.setItem(REVIEW_KEY, JSON.stringify({ trackerId, rows, preset }))
   } catch {
     /* The review can still be opened from the banner. */
   }
 }
-export const takeReview = (trackerId: string): string[] | 'flagged' | null => {
+export const takeReview = (trackerId: string): PendingReview | null => {
   try {
     const value = JSON.parse(window.sessionStorage.getItem(REVIEW_KEY) || 'null')
     if (!value || value.trackerId !== trackerId) return null
     window.sessionStorage.removeItem(REVIEW_KEY)
-    return value.rows === 'flagged' ? 'flagged' : Array.isArray(value.rows) ? value.rows.map(String) : null
+    const rows = value.rows === 'flagged' ? 'flagged' : Array.isArray(value.rows) ? value.rows.map(String) : null
+    if (!rows) return null
+    const preset = value.preset && typeof value.preset === 'object' ? (value.preset as ReviewPreset) : undefined
+    return { rows, preset }
   } catch {
     return null
   }
