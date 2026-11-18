@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### CI: fewer GitHub Actions minutes
+- The Build workflow runs on pull requests and on main, not on every branch push too, so a pull request's push no longer runs it twice. A newer push cancels the older run.
+- Build, Biome and tests are now one job, with the npm cache: one install, and one rounded-up minute instead of two.
+
 ### Trackers: import into completed projects, chosen by typing
 - Importing (CSV, paste or a linked Google Sheet) into a new tracker now takes several projects, found by typing the name or contract number, instead of a long list. Projects completed in Seeds can be chosen too, so Sheets of finished work can be linked.
 - Choose the project first: its client is added to the tracker and picked for the new tasks.

@@ -1,11 +1,18 @@
 name: Build
 
+# Runs once per change: on pull requests, and on main after a merge. A push to a branch with an open pull request runs
+# only through the pull request (not twice), and a newer push cancels the run it replaces.
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
 
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # One job: one install, and one billed minute rounded up instead of two.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -13,6 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - run: npm ci
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
@@ -23,23 +31,17 @@ jobs:
           status=$?
           node scripts/lint-summary.mjs biome.json.out
           exit $status
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
       # Authentication and access-control tests. These must pass.
       - name: Authentication and session tests
+        if: ${{ !cancelled() }}
         run: npm run test:auth-hardening
       # Deploy caching: index.html revalidates, missing assets 404 instead of returning HTML.
       - name: Static site caching tests
+        if: ${{ !cancelled() }}
         run: npm run test:static-site
       # The whole suite must pass. Each failing test is annotated on the run page with its error.
       - name: Full test suite
+        if: ${{ !cancelled() }}
         run: |
           set +e
           npm test > test-output.txt 2>&1
