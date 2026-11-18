@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cellSubtaskPatches, tickChanges } from '../src/features/trackers/cellSubtasks'
+import { cellSubtaskPatches, tickChanges, tickedCellPatches } from '../src/features/trackers/cellSubtasks'
 import type { TrackerColumn } from '../src/features/trackers/trackerModel'
 import { applyTrackerTaskPatches, trackerTaskUpdater } from '../server/trackers/tracker-task-updates'
 
@@ -177,4 +177,40 @@ test('the server saves once, retries once when the workspace changed meanwhile, 
 
   failures = 5
   await assert.rejects(update('org', [{ id: 's1', done: true }], actor, 'the Google Sheet'), /changed/)
+})
+
+test('subtasks in boxes already ticked when they were made are completed, never reopened', () => {
+  const cols: TrackerColumn[] = [
+    { id: 'site', name: 'Site', type: 'text' },
+    { id: 'pos', name: 'POS install', type: 'checkbox' },
+    { id: 'printer', name: 'Printer', type: 'checkbox' },
+    { id: 'notes', name: 'Notes', type: 'text' },
+  ]
+  const rows = [
+    { id: 'r1', cells: { site: 'Makati', pos: true, printer: false, notes: 'x' } },
+    { id: 'r2', cells: { site: 'Ortigas', pos: true, printer: true } },
+  ]
+  const links = [
+    { rowId: 'r1', columnId: 'pos', taskId: 't-pos-1' },
+    { rowId: 'r1', columnId: 'printer', taskId: 't-printer-1' },
+    { rowId: 'r1', taskId: 't-row-1' },
+    { rowId: 'r1', columnId: 'notes', taskId: 't-notes-1' },
+    { rowId: 'r2', columnId: 'pos', taskId: 't-pos-2' },
+    { rowId: 'r2', columnId: 'printer', taskId: 't-printer-2' },
+    { rowId: 'gone', columnId: 'pos', taskId: 't-gone' },
+  ]
+  const open = new Set(['t-pos-1', 't-printer-1', 't-row-1', 't-notes-1', 't-printer-2', 't-gone'])
+  assert.deepEqual(
+    tickedCellPatches(cols, rows, links, id => open.has(id)),
+    [
+      { id: 't-pos-1', done: true },
+      { id: 't-printer-2', done: true },
+    ],
+    'ticked and open only: not the unticked box, the row task, a text cell, a done subtask or a missing row',
+  )
+  assert.deepEqual(
+    tickedCellPatches(cols, rows, links, () => false),
+    [],
+  )
+  assert.equal(tickedCellPatches(cols, rows, [...links, links[0]], () => true).length, 3, 'one patch per subtask')
 })

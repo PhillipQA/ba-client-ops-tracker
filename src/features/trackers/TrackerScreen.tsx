@@ -87,7 +87,7 @@ import { SaveAsTemplateDialog } from './TemplateManager'
 import { sheetHasGantt } from './sheetGantt'
 import { keepsStepTasks, planMissingSteps, planStepTasks, siteTaskPatch, siteTaskTitle, stepColumns } from './stepTasks'
 import { rowContract, rowPlace } from './trackerProjects'
-import { cellSubtaskPatches } from './cellSubtasks'
+import { cellSubtaskPatches, tickedCellPatches } from './cellSubtasks'
 import { waitForCloudSaves } from '../../app/cloudStore'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
 import type { Client, Project, UserAccount, WorkItem } from '../../shared/types'
@@ -505,6 +505,9 @@ export default function TrackerScreen(props: Props) {
     if (outcome.cellLinks.length) {
       const result = await trackerApi.bulkLinks(trackerId, outcome.cellLinks)
       setLinks(result.links)
+      // A subtask made for a box that is already ticked is done from the start, like ticking it.
+      const ticks = tickedCellPatches(columns, rowsRef.current, outcome.cellLinks, () => true)
+      if (ticks.length && props.onUpdateTasks) await props.onUpdateTasks(ticks).catch(taskFailed)
     }
     if (outcome.reviewed.length) await trackerApi.reviewed(trackerId, outcome.reviewed).catch(() => undefined)
     await refresh()
@@ -951,6 +954,20 @@ export default function TrackerScreen(props: Props) {
   const linksRef = useRef(links)
   linksRef.current = links
   const noClientSaid = useRef(false)
+  // Once per tracker opened by someone who can edit it: subtasks in boxes that were already ticked when they were made
+  // (imports before this was fixed, Sheet rows) are completed, so the box and its subtask agree.
+  const ticksChecked = useRef('')
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per tracker, when its rows and links are in
+  useEffect(() => {
+    const update = props.onUpdateTasks
+    if (status !== 'ready' || !canEdit || !update || !links.length || ticksChecked.current === trackerId) return
+    ticksChecked.current = trackerId
+    const patches = tickedCellPatches(columns, rowsRef.current, links, id => {
+      const item = itemsRef.current.find(entry => entry.id === id)
+      return Boolean(item && !props.isTaskClosed(item.status))
+    })
+    if (patches.length) void update(patches).catch(taskFailed)
+  }, [status, canEdit, links, trackerId])
   const linkCells = async (cellLinks: { rowId: string; columnId: string; taskId: string }[]) => {
     for (let at = 0; at < cellLinks.length; at += TRACKER_LIMITS.importBatch) {
       const result = await trackerApi.bulkLinks(trackerId, cellLinks.slice(at, at + TRACKER_LIMITS.importBatch))
