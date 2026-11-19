@@ -279,6 +279,15 @@ export function scopeFor(state: any, userId: string): Scope {
     if (item?.clientId) scope.labelClients.add(text(item.clientId))
     if (item?.projectId) scope.labelProjects.add(text(item.projectId))
   }
+  // A Seeds project with no client of its own (Seeds lets each time entry name the parent) works for many clients.
+  // Its members see every Seeds client's name, so a task under it can say whose work it is. Names only: the client's
+  // contacts, notes and other work stay closed (limitedClient).
+  const sharedProject = list(state?.projects).some(
+    project => project?.seedsId && !project?.clientId && scope.fullProjects.has(text(project?.id)),
+  )
+  if (sharedProject)
+    for (const client of list(state?.clients))
+      if (client?.seedsId && !client?.seedsArchived) scope.labelClients.add(text(client.id))
   return scope
 }
 

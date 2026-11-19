@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Seeds: projects that work for several clients
+- A Seeds project with no client of its own (Seeds lets each time entry name the parent, for example an internal migration project) now shows its members every Seeds client by name, so a task under it can say whose work it is. Only names: other clients' contacts, notes and work stay closed.
+- Time on such a project is sent to Seeds with the task's client as the parent. Before, it always went with Seeds' default parent for the project. A project with its own client still always uses that client.
+
 ### Heads-ups: a dismissed heads-up stays dismissed
 - A heads-up closed with its X came back as new: the dismissal was forgotten as soon as one check did not list it, which happened whenever another heads-up took its place in the top few or a source (such as Gmail) could not be read. Dismissals are now kept for 30 days, until the heads-up gets worse (for example a warning that turns urgent), whatever one check returns.
 - Dismissed heads-ups no longer hold a place: the server sends them all, and the page takes out what you dismissed before keeping three of a kind and eight in all, so the next ones show instead.

@@ -67,6 +67,23 @@ test('an entry goes to Seeds as its time-entry body, with a key that never chang
   assert.equal(seedsTimeBody({ ...state, projects: [] }, state.items[0], entry('e1') as any).ok, false)
 })
 
+test('on a project with no client of its own, the time goes to the task’s client as the Seeds parent', () => {
+  const base = workspace()
+  const state = {
+    ...base,
+    clients: [...base.clients, { id: 'c2', name: 'Emperador Distillers', seedsId: '8' }],
+    projects: [{ ...base.projects[0], clientId: undefined, seedsTimeRules: { defaultParentId: '3' } }],
+  }
+  const parent = (clientId?: string) => {
+    const result: any = seedsTimeBody(state, { ...state.items[0], clientId }, entry('e1') as any)
+    return result.body.parentId
+  }
+  assert.equal(parent('c2'), 8)
+  assert.equal(parent(undefined), 3, 'no client on the task: the Seeds default')
+  const fixed: any = seedsTimeBody(base, { ...base.items[0], clientId: 'c2' } as any, entry('e1') as any)
+  assert.equal(fixed.body.parentId, 5, 'the project’s own client always wins')
+})
+
 test('the Google sign-in must be for this app, current, and the same person', () => {
   const at = { clientId: CLIENT, email: 'Bea@iRipple.com', now: Date.now() }
   assert.deepEqual(checkGoogleIdToken(goodToken(), at), { ok: true })

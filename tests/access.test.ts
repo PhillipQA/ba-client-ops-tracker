@@ -127,6 +127,35 @@ test('a PM on one project sees its work; its client shows by name only', () => {
   assert.equal(bolt.accessLimited, true)
 })
 
+test('a Seeds project with no client of its own shows its members every Seeds client by name', () => {
+  const base = workspace({
+    assignments: [{ id: 'x9', userId: 'pm', role: 'PM', projectId: 'P9', source: 'manual' }],
+  })
+  const state = {
+    ...base,
+    clients: [
+      { ...client('A', 'Acme'), seedsId: '1' },
+      { ...client('B', 'Bolt'), seedsId: '2' },
+      { ...client('C', 'Closed Co'), seedsId: '3', seedsArchived: true },
+    ],
+    projects: [...base.projects, { id: 'P9', name: 'Internal migration', status: 'Active', seedsId: '90' }],
+  }
+  const view = scopedState(state, scopeFor(state, 'pm'))
+  assert.deepEqual(ids(view.clients), ['A', 'B'], 'not a client closed in Seeds')
+  assert.equal(view.clients[0].notes, '', 'names only')
+  assert.deepEqual(ids(view.items), ['theirs'], 'no other work opens')
+
+  const saved = mergeScopedSave(
+    state,
+    { ...state, items: [...state.items, task('new', { clientId: 'B', projectId: 'P9' })] },
+    scopeFor(state, 'pm'),
+  )
+  assert.ok(saved.items.some((item: any) => item.id === 'new'), 'work under the project can name any client')
+
+  const own = { ...state, projects: state.projects.map(p => (p.id === 'P9' ? { ...p, clientId: 'A' } : p)) }
+  assert.deepEqual(ids(scopedState(own, scopeFor(own, 'pm')).clients), ['A'], 'a project with its own client: only it')
+})
+
 test('nothing of a hidden client leaves the server, whatever the field', () => {
   const state = workspace()
   for (const userId of ['ba', 'am']) {

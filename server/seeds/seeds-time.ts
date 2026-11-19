@@ -53,9 +53,12 @@ export function seedsTimeBody(
       ok: false,
       error: 'Seeds requires a product here. Choose the Seeds product in Log time, then send again.',
     }
-  const client = list(state?.clients).find(candidate => candidate?.id === project?.clientId)
-  // The parent (client company): the project's client, else Seeds' default for the project.
-  const parentId = seedsNumber(client?.seedsId) ?? seedsNumber(rules.defaultParentId)
+  const clients = list(state?.clients)
+  const own = clients.find(candidate => candidate?.id === project?.clientId)
+  // A project with no client of its own works for several clients: the task says which one.
+  const taskClient = own ? undefined : clients.find(candidate => candidate?.id === task?.clientId)
+  // The parent (client company): the project's client, else the task's, else Seeds' default for the project.
+  const parentId = seedsNumber(own?.seedsId) ?? seedsNumber(taskClient?.seedsId) ?? seedsNumber(rules.defaultParentId)
   if (!parentId && rules.parentRequired === true)
     return { ok: false, error: 'Seeds requires the client (parent) on this project, and none is linked.' }
   const minutes = Math.round(Number(entry.hours) * 60)
