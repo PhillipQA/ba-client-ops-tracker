@@ -633,10 +633,7 @@ test('an Administrator turns Seeds on; one sync matches everyone by email', asyn
   )
   const internal = state().projects.find((p: any) => p.seedsId === 's-internal')
   assert.ok(internal && !internal.clientId, 'a project nobody here is on comes in too, to log time on')
-  assert.ok(
-    !state().access.assignments.some((a: any) => a.projectId === internal.id),
-    'but nobody is assigned to it',
-  )
+  assert.ok(!state().access.assignments.some((a: any) => a.projectId === internal.id), 'but nobody is assigned to it')
   assert.ok(
     state().clients.some((c: any) => c.seedsId === 's-bolt' && c.name === 'Bolt Logistics'),
     'every Seeds client comes in, also one with no project anyone here is on',
