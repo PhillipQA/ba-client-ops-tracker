@@ -14,6 +14,9 @@ Released with pull request #110.
 ### Trackers: the Allow reading Excel files button shows again
 - Linking an Excel (.xlsx) file kept in Google Drive showed only "Allow reading Excel files in Google Drive first" with no way to allow it. The screen never received the server's Excel flag, so the **Allow reading Excel files** notice stayed hidden. It now shows, on opening the link, reading the tab and connecting. Excel files are still followed read only, never two-way.
 
+### CI: fewer GitHub Actions minutes
+- The Build workflow runs on pull requests and on main, not on every branch push too, so a pull request's push no longer runs it twice. A newer push cancels the older run.
+- Build, Biome and tests are now one job, with the npm cache: one install, and one rounded-up minute instead of two.
 ### Trackers: option lists are no longer covered by the column headers
 - A cell's option list (Lessor, Status, a person…) opening upward was drawn under the sticky column header row, which hid some options. Floating panels (cell pickers, toolbar menus) are now drawn above the page, or inside the open dialog, so no part of the grid can cover them.
 
