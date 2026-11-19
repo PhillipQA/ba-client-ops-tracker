@@ -31,7 +31,7 @@ import {
   type SeedsReadOptions,
   type SeedsSource,
 } from './seeds-client'
-import { decideSeedsMatch, planSeedsSync, refreshLinkedProjects, SEEDS_ACTOR } from './seeds-sync'
+import { decideSeedsMatch, planSeedsSync, refreshLinkedProjects, refreshSeedsClients, SEEDS_ACTOR } from './seeds-sync'
 import { checkGoogleIdToken, postSeedsTime, seedsTimeBody, seedsTimeKey } from './seeds-time'
 import { type TimeEntry, unsentToSeeds } from '../../src/features/tasks/effort'
 import { asList as list } from '../../src/shared/lists'
@@ -168,6 +168,8 @@ export function planAccountSync(
   }
   // Linked projects nobody here is on any more still follow Seeds: closed, deleted or renamed there.
   next = refreshLinkedProjects(next, snapshot.projects)
+  // Every Seeds client, not only those of projects someone here is on (personalSnapshot keeps only those).
+  next = refreshSeedsClients(next, snapshot.clients, options.id)
   const projects = new Set(snapshot.assignments.map(a => a.projectId).filter(Boolean))
   total.projects = projects.size
   total.clients = new Set(snapshot.projects.filter(p => projects.has(p.id) && p.clientId).map(p => p.clientId)).size
