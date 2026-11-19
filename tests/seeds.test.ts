@@ -9,7 +9,7 @@ import {
   seedsStatusFor,
   type SeedsSnapshot,
 } from '../src/shared/seeds'
-import { cleanSeedsBaseUrl, httpSeedsSource, parseSeeds } from '../server/seeds/seeds-client'
+import { answerShape, cleanSeedsBaseUrl, httpSeedsSource, nextCursorOf, parseSeeds } from '../server/seeds/seeds-client'
 import { personalSnapshot, registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
 import { planSeedsSync, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
@@ -435,6 +435,35 @@ test('the HTTP reader sends the token, follows cursors and reads only the projec
     httpSeedsSource('t', undefined, odd.fetcher, 1000, { gapMs: 0, sleep: async () => {} }).read(new Set()),
     /unexpected answer for projects/,
   )
+})
+
+test('the next page is found wherever Seeds marks it, and each list says how it was read', async () => {
+  for (const body of [
+    { data: [], nextCursor: 'n' },
+    { data: [], meta: { next_cursor: 'n' } },
+    { data: [], pagination: { nextCursor: 'n' } },
+    { data: [], meta: { pagination: { nextCursor: 'n' } } },
+    { data: { items: [], nextCursor: 'n' } },
+    { data: [], links: { next: '/api/v1/parents?limit=100&cursor=n' } },
+    { data: [], paging: { cursors: { after: 'n' } } },
+  ])
+    assert.equal(nextCursorOf(body), 'n', JSON.stringify(body))
+  assert.equal(nextCursorOf({ data: [], links: { next: null } }), '')
+  assert.equal(
+    answerShape({ success: true, data: [1], meta: { total: 3, page: 1 } }),
+    'success, data, meta{total, page}',
+  )
+
+  const hundred = Array.from({ length: 100 }, (_, i) => ({ id: i + 100, name: `Parent ${i}` }))
+  const { fetcher } = fakeSeeds({
+    '/parents?limit=100': { data: hundred, meta: { page: 1, total: 101 } },
+  })
+  const source = httpSeedsSource('t', undefined, fetcher, 1000, { gapMs: 0, sleep: async () => {} })
+  const { fields } = await source.read(new Set())
+  assert.deepEqual(fields.paging?.slice(0, 2), [
+    'users: 2 in 2 pages',
+    'parents: 100 in 1 page (last page full and no next-page marker found; answer: data, meta{page, total})',
+  ])
 })
 
 // ---- Routes, with a fake Seeds and an in-memory workspace ----

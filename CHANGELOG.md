@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Seeds: reading every page of Seeds' lists, and showing how they were read
+- The sync now finds Seeds' next-page marker in more places (a cursor in the answer, its meta or pagination, or a next-page link). A marker it missed made it stop after the first 100 records, so clients such as EMPERADOR DISTILLERS, INC. never arrived.
+- Settings › Integrations › Seeds › Fields Seeds sent › **paging** shows how many records each list returned and over how many pages. When a page came back full with no marker found, it also shows the names in Seeds' answer (never values), so the paging can be checked.
+
 ### Deploys: the new build number is built even while another build runs
 - After a merge, Northflank's free plan was often still building the merge itself, so it refused (409, one build at a time) to build the commit with the new build number. The app then kept showing the older number. The request now asks again every 30 seconds, for up to 15 minutes, until Northflank takes it.
 

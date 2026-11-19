@@ -217,7 +217,7 @@ export function SeedsConnectionCard() {
                 {fields.map(([list, names]) => (
                   <div key={list}>
                     <dt>{list}</dt>
-                    <dd>{names.join(', ')}</dd>
+                    <dd>{list === 'paging' ? names.map(line => <div key={line}>{line}</div>) : names.join(', ')}</dd>
                   </div>
                 ))}
               </dl>
