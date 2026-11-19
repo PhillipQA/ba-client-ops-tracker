@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Seeds: every Seeds client comes in
+- A sync read all of Seeds' clients (parents) but kept only those of projects someone here is a member of. A client that is only picked on time entries, such as EMPERADOR DISTILLERS, INC. on a shared project, never came in. Every Seeds client is now kept, linked by Seeds id, renamed and closed as in Seeds. A client already closed in Seeds is not added.
+
 ### Seeds: reading every page of Seeds' lists, and showing how they were read
 - The sync now finds Seeds' next-page marker in more places (a cursor in the answer, its meta or pagination, or a next-page link). A marker it missed made it stop after the first 100 records, so clients such as EMPERADOR DISTILLERS, INC. never arrived.
 - Settings › Integrations › Seeds › Fields Seeds sent › **paging** shows how many records each list returned and over how many pages. When a page came back full with no marker found, it also shows the names in Seeds' answer (never values), so the paging can be checked.

@@ -12,7 +12,7 @@ import {
 import { answerShape, cleanSeedsBaseUrl, httpSeedsSource, nextCursorOf, parseSeeds } from '../server/seeds/seeds-client'
 import { personalSnapshot, registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
-import { planSeedsSync, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
+import { planSeedsSync, refreshSeedsClients, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
 import { roleForSeedsTitle } from '../src/shared/roles'
 
 const options = {
@@ -96,6 +96,35 @@ test('names match whatever their case, punctuation or company suffix', () => {
 })
 
 const byName = (records: any[], name: string) => records.find(record => record.name === name)
+
+test('every Seeds client is kept here: added, renamed and closed by Seeds id, never by name', () => {
+  let n = 0
+  const id = () => `c${++n}`
+  const before = {
+    clients: [
+      { id: 'old', name: 'Emperador (typed by hand)' },
+      { id: 'k', name: 'Old name', seedsId: '7' },
+    ],
+  }
+  const after = refreshSeedsClients(
+    before,
+    [
+      { id: '38', name: 'EMPERADOR DISTILLERS, INC.' },
+      { id: '7', name: 'New name', archived: true },
+      { id: '9', name: 'Gone Co', archived: true },
+    ],
+    id,
+  )
+  assert.deepEqual(
+    after.clients.map((c: any) => [c.id, c.name, c.seedsId || '', Boolean(c.seedsArchived)]),
+    [
+      ['old', 'Emperador (typed by hand)', '', false],
+      ['k', 'New name', '7', true],
+      ['c1', 'EMPERADOR DISTILLERS, INC.', '38', false],
+    ],
+  )
+  assert.equal(refreshSeedsClients(after, [{ id: '38', name: 'EMPERADOR DISTILLERS, INC.' }], id), after, 'no change')
+})
 
 test('Seeds is the source of truth: a sync adds Seeds records fresh and leaves existing work alone', () => {
   counter = 0
@@ -565,6 +594,10 @@ test('an Administrator turns Seeds on; one sync matches everyone by email', asyn
     ['PM'],
   )
   assert.ok(!state().projects.some((p: any) => p.seedsId === 's-internal'), 'projects nobody here is on stay out')
+  assert.ok(
+    state().clients.some((c: any) => c.seedsId === 's-bolt' && c.name === 'Bolt Logistics'),
+    'every Seeds client comes in, also one with no project anyone here is on',
+  )
   const overview = await app.ask('GET', '/api/account/seeds', admin)
   assert.equal(overview.body.tokenReady, true)
   assert.deepEqual(overview.body.sync.fields, { users: ['id', 'email'] })

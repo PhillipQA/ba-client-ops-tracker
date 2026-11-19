@@ -109,6 +109,42 @@ export function refreshLinkedProjects(state: any, sources: SeedsProject[]) {
   return changed ? settle(state, { ...state, projects }) : state
 }
 
+/**
+ * Every Seeds parent becomes a client here, whether or not anyone here is on one of its projects: a Seeds project with
+ * no parent of its own lets each time entry name any parent, so all of them must be there to pick. Linked by Seeds id
+ * only (never by name); Seeds renames and closes them. A parent closed in Seeds that is not here yet is not added.
+ */
+export function refreshSeedsClients(state: any, sources: SeedsSnapshot['clients'], makeId: () => string = randomUUID) {
+  const bySource = new Map(sources.filter(source => source.id && source.name).map(source => [source.id, source]))
+  const clients = list(state?.clients)
+  const linked = new Set(clients.map(client => text(client?.seedsId)).filter(Boolean))
+  let changed = false
+  const updated = clients.map(client => {
+    const source = client?.seedsId ? bySource.get(text(client.seedsId)) : undefined
+    if (!source) return client
+    const next = { ...client, name: source.name }
+    if (source.archived) next.seedsArchived = true
+    else delete next.seedsArchived
+    if (stableRecord(next) === stableRecord(client)) return client
+    changed = true
+    return next
+  })
+  const added = [...bySource.values()]
+    .filter(source => !linked.has(source.id) && !source.archived)
+    .map(source => ({
+      id: makeId(),
+      name: source.name,
+      contact: '',
+      email: '',
+      status: 'Active',
+      health: 'Good',
+      notes: '',
+      seedsId: source.id,
+    }))
+  if (!changed && !added.length) return state
+  return settle(state, { ...state, clients: [...updated, ...added] })
+}
+
 export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Options) {
   const makeId = options.id || randomUUID
   const seeds = seedsState(state)
