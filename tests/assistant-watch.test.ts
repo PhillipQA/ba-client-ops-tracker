@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { BriefFacts } from '../src/features/ai/brief'
-import { keptDismissals, WATCH_RULES, watchAlerts } from '../src/features/ai/watch'
+import { pickAlerts, readDismissals, WATCH_RULES, watchAlerts, watchCandidates } from '../src/features/ai/watch'
 
 const none = { total: 0, items: [] }
 const facts = (extra: Partial<BriefFacts> = {}): BriefFacts => ({
@@ -95,8 +95,39 @@ test('heads-ups are few, and a dismissed one comes back only when it gets worse'
 
   const warning = watchAlerts(facts({ emails: list([email('m', 3)]) }))
   const worse = watchAlerts(facts({ emails: list([email('m', 5)]) }))
-  const dismissed = [warning[0].key, 'gone:1', 42]
-  assert.deepEqual(keptDismissals(dismissed, warning), [warning[0].key])
-  assert.deepEqual(keptDismissals(dismissed, worse), [], 'Now urgent: it shows again')
-  assert.deepEqual(keptDismissals('nonsense', warning), [])
+  assert.notEqual(warning[0].key, worse[0].key, 'Now urgent: a new key, so it shows again')
+})
+
+test('a dismissed heads-up stays away while it is missing from a check, for 30 days', () => {
+  const day = 86_400_000
+  const now = Date.parse('2026-11-19T08:00:00.000Z')
+  const kept = readDismissals(
+    [
+      'email:old-version:urgent',
+      { key: 'golive:t1:a:urgent', at: now - 2 * day },
+      { key: 'golive:t1:a:urgent', at: now - 5 * day },
+      { key: 'overdue:1:warning', at: now - (WATCH_RULES.dismissDays + 1) * day },
+      { key: '', at: now },
+      { at: now },
+      42,
+    ],
+    now,
+  )
+  assert.deepEqual(kept, [
+    { key: 'email:old-version:urgent', at: now },
+    { key: 'golive:t1:a:urgent', at: now - 2 * day },
+  ])
+  assert.deepEqual(readDismissals('nonsense', now), [])
+  const lots = Array.from({ length: WATCH_RULES.dismissKept + 5 }, (_, i) => ({ key: `email:${i}:x`, at: now - i }))
+  assert.equal(readDismissals(lots, now).length, WATCH_RULES.dismissKept, 'the newest are kept')
+})
+
+test('dismissed heads-ups hold no place: the next ones of that kind show instead', () => {
+  const today = facts({ emails: list([email('a', 9), email('b', 8), email('c', 7), email('d', 6), email('e', 6)]) })
+  const all = watchCandidates(today)
+  assert.equal(all.length, 5, 'the server sends every one')
+  const shown = (hidden: string[]) => pickAlerts(all.filter(alert => !hidden.includes(alert.key))).map(a => a.key)
+  assert.deepEqual(shown([]), ['email:a:urgent', 'email:b:urgent', 'email:c:urgent'])
+  assert.deepEqual(shown(['email:a:urgent', 'email:b:urgent']), ['email:c:urgent', 'email:d:urgent', 'email:e:urgent'])
+  assert.deepEqual(pickAlerts(all), watchAlerts(today), 'with nothing dismissed, the same few as before')
 })

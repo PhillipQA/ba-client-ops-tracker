@@ -2,7 +2,8 @@
  * The assistant's heads-ups, beside the notification bell: go-lives at risk, emails nobody answered, work and
  * follow-ups left for days, time Seeds refused. The server picks them by fixed rules from the morning brief's facts
  * (see watch.ts), so checking uses no AI. The page asks when it opens and every so often while it is in view; a
- * dismissed heads-up stays away, in this browser, until it gets worse.
+ * dismissed heads-up stays away, in this browser, until it gets worse (or for 30 days).
+ * The server sends every heads-up; the page takes out the dismissed ones, then keeps a few (pickAlerts).
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CircleAlert, Radar, RefreshCw, Sparkles, X } from 'lucide-react'
@@ -10,12 +11,23 @@ import type { AppState, SignedInUser } from '../../app/useAppState'
 import { requestJson } from '../../shared/http'
 import { rememberTrackerRow } from '../trackers/trackerNav'
 import { rememberWorkHubMessage } from '../work-hub/workHubNav'
-import { keptDismissals, type NewProject, newProjectAlerts, type WatchAction, type WatchAlert } from './watch'
+import {
+  type Dismissal,
+  type NewProject,
+  newProjectAlerts,
+  pickAlerts,
+  readDismissals,
+  type WatchAction,
+  type WatchAlert,
+} from './watch'
 import { clockText, elapsedMs, forgottenTimer } from '../tasks/timer'
 import { timerDayOf, timerNow, useTimers } from '../tasks/timerStore'
 
 /** How often an open page checks again. The server keeps its last check for ten minutes. */
 const CHECK_EVERY_MS = 20 * 60_000
+
+/** The server's heads-ups a person sees: the hidden ones taken out first, so they hold no place. */
+const shown = (alerts: WatchAlert[], hidden: Set<string>) => pickAlerts(alerts.filter(alert => !hidden.has(alert.key)))
 
 type WatchResponse = { alerts: WatchAlert[]; checkedAt: string }
 
@@ -23,14 +35,14 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
   const { applyTaskUpdate, canEditActionItem, canUseAI, hasModule, openTaskEditor, setAiPrompt, setView, store } = app
   const storeKey = `ba.watch.dismissed:${currentUser.organizationId || ''}:${currentUser.id}`
   const [alerts, setAlerts] = useState<WatchAlert[]>([])
-  const [dismissed, setDismissed] = useState<string[]>(() => {
+  const [dismissals, setDismissals] = useState<Dismissal[]>(() => {
     try {
-      const saved = JSON.parse(window.localStorage.getItem(storeKey) || '[]')
-      return Array.isArray(saved) ? saved.filter(key => typeof key === 'string') : []
+      return readDismissals(JSON.parse(window.localStorage.getItem(storeKey) || '[]'), Date.now())
     } catch {
       return []
     }
   })
+  const dismissed = dismissals.map(entry => entry.key)
   const [open, setOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [fresh, setFresh] = useState(0)
@@ -45,21 +57,23 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
   const root = useRef<HTMLDivElement>(null)
   const checkedAt = useRef(0)
   const known = useRef<Set<string> | null>(null)
-  const dismissedNow = useRef(dismissed)
-  dismissedNow.current = dismissed
-  const timerAlertsNow = useRef<WatchAlert[]>([])
+  const dismissedNow = useRef(dismissals)
+  dismissedNow.current = dismissals
 
   const keep = useCallback(
-    (keys: string[]) => {
-      setDismissed(keys)
+    (entries: Dismissal[]) => {
+      const kept = readDismissals(entries, Date.now())
+      dismissedNow.current = kept
+      setDismissals(kept)
       try {
-        window.localStorage.setItem(storeKey, JSON.stringify(keys))
+        window.localStorage.setItem(storeKey, JSON.stringify(kept))
       } catch {
         /* Dismissals then last until the page reloads. */
       }
     },
     [storeKey],
   )
+  const dismiss = (key: string) => keep([{ key, at: Date.now() }, ...dismissals])
 
   const check = useCallback(
     async (force = false) => {
@@ -75,13 +89,13 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
               .catch(() => projectAlertsNow.current)
           : []
         setProjectAlerts(projects)
-        const found = [...projects, ...(Array.isArray(result.alerts) ? result.alerts : [])]
-        setAlerts(found)
+        const server = Array.isArray(result.alerts) ? result.alerts : []
+        setAlerts(server)
         setHandled([])
-        const still = keptDismissals(dismissedNow.current, [...found, ...timerAlertsNow.current])
-        if (still.length !== dismissedNow.current.length) keep(still)
+        const found = [...projects, ...server]
+        const still = new Set(readDismissals(dismissedNow.current, Date.now()).map(entry => entry.key))
         // Heads-ups that were not there at the last check are announced, except on the first check of the page.
-        const live = found.filter(alert => !still.includes(alert.key))
+        const live = [...projects, ...shown(server, still)].filter(alert => !still.has(alert.key))
         if (known.current) setFresh(live.filter(alert => !known.current?.has(alert.key)).length)
         known.current = new Set(found.map(alert => alert.key))
       } catch {
@@ -90,7 +104,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
         setChecking(false)
       }
     },
-    [keep, withTrackers],
+    [withTrackers],
   )
 
   useEffect(() => {
@@ -135,10 +149,8 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
       open: { kind: 'task' as const, id: timer.taskId },
       ask: '',
     }))
-  timerAlertsNow.current = timerAlerts
-  const live = [...timerAlerts, ...alerts].filter(
-    alert => !dismissed.includes(alert.key) && !handled.includes(alert.key),
-  )
+  const hidden = new Set([...dismissed, ...handled])
+  const live = [...timerAlerts, ...projectAlerts, ...shown(alerts, hidden)].filter(alert => !hidden.has(alert.key))
   const urgent = live.some(alert => alert.severity === 'urgent')
 
   /** Where a heads-up opens, when this person may go there. */
@@ -289,11 +301,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
                         <Sparkles size={14} />
                       </button>
                     )}
-                    <button
-                      type="button"
-                      title="Dismiss until it gets worse"
-                      onClick={() => keep([...dismissed, alert.key])}
-                    >
+                    <button type="button" title="Dismiss until it gets worse" onClick={() => dismiss(alert.key)}>
                       <X size={14} />
                     </button>
                   </div>
