@@ -695,25 +695,24 @@ export function httpSeedsSource(
       membersByProject.push({ project, members: rows.map(parseSeeds.member) })
     }
     const assignments: SeedsSnapshot['assignments'] = []
-    const wantedProjects: typeof projects = []
     for (const { project, members } of membersByProject) {
-      let wanted = false
       for (const member of members) {
         // Seeds members carry their email; older answers gave only a user id, found in /users.
         const email = member.email || people.emailById.get(member.personId) || ''
         if (!email || !emails.has(email)) continue
-        wanted = true
         // No role on the member: fall back to the person's title, then "Member" (map it in Settings › Roles).
         const role = member.role || people.titleById.get(member.personId) || 'Member'
         assignments.push({ personId: member.personId, email, role, projectId: project.id })
       }
-      if (wanted) wantedProjects.push(project)
     }
 
+    // Seeds tasks (Meetings, Go Live…) of every open project read, not only those someone here is on: time can be
+    // logged on any open project (a company-wide one has no members here), so its Seeds task list is needed too.
+    const taskProjects = membersByProject.map(entry => entry.project)
     const rawTasks: any[] = []
     const taskLists: ReturnType<typeof parseSeeds.task>[][] = []
-    for (const [index, project] of wantedProjects.entries()) {
-      progress({ step: 'tasks', done: index, total: wantedProjects.length })
+    for (const [index, project] of taskProjects.entries()) {
+      progress({ step: 'tasks', done: index, total: taskProjects.length })
       const rows = await readForProject(project.id, 'tasks', skipped)
       if (!rows) continue
       rawTasks.push(...rows.slice(0, 5))

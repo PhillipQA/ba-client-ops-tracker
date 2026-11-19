@@ -32,7 +32,14 @@ import {
   type SeedsReadOptions,
   type SeedsSource,
 } from './seeds-client'
-import { decideSeedsMatch, planSeedsSync, refreshLinkedProjects, refreshSeedsClients, SEEDS_ACTOR } from './seeds-sync'
+import {
+  decideSeedsMatch,
+  planSeedsSync,
+  refreshLinkedProjects,
+  refreshSeedsClients,
+  refreshSeedsProjects,
+  SEEDS_ACTOR,
+} from './seeds-sync'
 import { checkGoogleIdToken, postSeedsTime, seedsTimeBody, seedsTimeKey } from './seeds-time'
 import { calendarTimeOf, calendarTimeWork, logCalendarTime, removeCalendarTime } from './calendar-time'
 import { type TimeEntry, unsentToSeeds } from '../../src/features/tasks/effort'
@@ -172,6 +179,8 @@ export function planAccountSync(
   next = refreshLinkedProjects(next, snapshot.projects)
   // Every Seeds client, not only those of projects someone here is on (personalSnapshot keeps only those).
   next = refreshSeedsClients(next, snapshot.clients, options.id)
+  // Every open Seeds project too, with its Seeds tasks: time can be logged on projects nobody here is a member of.
+  next = refreshSeedsProjects(next, snapshot, options.id)
   const projects = new Set(snapshot.assignments.map(a => a.projectId).filter(Boolean))
   total.projects = projects.size
   total.clients = new Set(snapshot.projects.filter(p => projects.has(p.id) && p.clientId).map(p => p.clientId)).size
