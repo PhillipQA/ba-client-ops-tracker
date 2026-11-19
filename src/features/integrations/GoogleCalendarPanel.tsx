@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, ExternalLink, RefreshCw } from 'lucide-react'
 import ActivityCommentPreview from '../tasks/ActivityCommentPreview'
+import type { Store } from '../../app/store'
+import { CalendarTimeBlock, useCalendarTime } from './CalendarTime'
 import {
   calendarRequest,
   scheduleRange,
@@ -275,7 +277,12 @@ export function CalendarPlatformControl({ organizationId }: { organizationId: st
   )
 }
 
-export default function GoogleCalendarPanel() {
+/**
+ * `store` and `canLog`: where time can be logged straight from an event (Seeds on, and the person can change work).
+ */
+export default function GoogleCalendarPanel({ store, canLog = false }: { store?: Store; canLog?: boolean } = {}) {
+  const calendarTime = useCalendarTime(canLog)
+  const loggedFor = new Map(calendarTime.entries.map(entry => [entry.eventId, entry]))
   const [connection, setConnection] = useState<CalendarConnection | null>(null),
     [choices, setChoices] = useState<CalendarChoice[]>([]),
     [selected, setSelected] = useState<string[]>([])
@@ -517,6 +524,14 @@ export default function GoogleCalendarPanel() {
                   {event.location ? ` · ${event.location}` : ''}
                 </p>
                 <ActivityCommentPreview text={event.notes} title={event.title} />
+                {store && canLog && calendarTime.ready && (
+                  <CalendarTimeBlock
+                    event={event}
+                    store={store}
+                    entry={loggedFor.get(event.id)}
+                    onEntries={calendarTime.setEntries}
+                  />
+                )}
                 {event.calendarLink && (
                   <a
                     className="secondary compact dashboard-link-button"

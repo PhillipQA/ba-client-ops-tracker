@@ -9,7 +9,13 @@ export function sanitizeStateForClient(state: any, user: { id: string; role?: st
   if (!state || typeof state !== 'object' || Array.isArray(state)) return state
   const administrator = user.role === 'Administrator'
   // With per-person visibility on, only the clients, projects and work this person is assigned to leave the server.
-  const { access: _access, seeds: _seeds, ...visible } = scopedState(state, scopeFor(state, user.id))
+  // Time logged from calendar events is private: each person reads their own through /api/seeds/calendar-time.
+  const {
+    access: _access,
+    seeds: _seeds,
+    calendarTime: _calendarTime,
+    ...visible
+  } = scopedState(state, scopeFor(state, user.id))
   return {
     ...visible,
     access: clientAccessFor(state, user),

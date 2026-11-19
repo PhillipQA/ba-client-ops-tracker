@@ -382,6 +382,8 @@ export function registerStoreRoutes(app: Express) {
         ...next,
         activity: mergeActivity(current.activity, next.activity),
         rtms: next.rtms === undefined ? current.rtms || [] : next.rtms,
+        // Time logged from calendar events is written only by /api/seeds/calendar-time, never by a workspace save.
+        calendarTime: Array.isArray(current.calendarTime) ? current.calendarTime : [],
         accounts: nextAccounts,
         items: normalizedItems,
         notifications: Array.isArray(current.notifications) ? current.notifications : [],

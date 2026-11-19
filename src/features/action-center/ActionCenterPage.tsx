@@ -179,7 +179,13 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         />
       </div>
     ),
-    calendar: <GoogleCalendarPanel key={`${currentUser.organizationId}:${currentUser.id}`} />,
+    calendar: (
+      <GoogleCalendarPanel
+        key={`${currentUser.organizationId}:${currentUser.id}`}
+        store={store}
+        canLog={canWrite && store.seeds?.connected === true}
+      />
+    ),
     assistant: canUseAI ? (
       <div className="panel dashboard-panel dashboard-ai-card">
         <div className="panel-heading dashboard-panel-heading">
