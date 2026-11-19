@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Heads-ups: a dismissed heads-up stays dismissed
+- A heads-up closed with its X came back as new: the dismissal was forgotten as soon as one check did not list it, which happened whenever another heads-up took its place in the top few or a source (such as Gmail) could not be read. Dismissals are now kept for 30 days, until the heads-up gets worse (for example a warning that turns urgent), whatever one check returns.
+- Dismissed heads-ups no longer hold a place: the server sends them all, and the page takes out what you dismissed before keeping three of a kind and eight in all, so the next ones show instead.
+
 ### Trackers: the Allow reading Excel files button shows again
 - Linking an Excel (.xlsx) file kept in Google Drive showed only "Allow reading Excel files in Google Drive first" with no way to allow it. The screen never received the server's Excel flag, so the **Allow reading Excel files** notice stayed hidden. It now shows, on opening the link, reading the tab and connecting. Excel files are still followed read only, never two-way.
 

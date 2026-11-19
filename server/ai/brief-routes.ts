@@ -26,7 +26,7 @@ import {
   briefIsClear,
   cleanBriefSummary,
 } from '../../src/features/ai/brief'
-import { type WatchAlert, watchAlerts } from '../../src/features/ai/watch'
+import { type WatchAlert, watchCandidates } from '../../src/features/ai/watch'
 import {
   cleanStatusEmail,
   projectClientIds,
@@ -208,7 +208,8 @@ export function registerBriefRoutes(app: Express, deps: BriefDeps = {}) {
       const at = now().getTime()
       let kept = watched.get(key)
       if (!kept || at - kept.at >= WATCH_KEEP_MS || req.query.fresh === '1') {
-        kept = { at, alerts: watchAlerts(await factsFor(user)) }
+        // All of them: the page leaves out what this person dismissed, then keeps a few (pickAlerts).
+        kept = { at, alerts: watchCandidates(await factsFor(user)) }
         watched.delete(key)
         watched.set(key, kept)
         while (watched.size > 2000) watched.delete(watched.keys().next().value as string)

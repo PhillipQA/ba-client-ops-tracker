@@ -122,14 +122,42 @@ export const WATCH_RULES = {
   /** Heads-ups of one kind, and in all. */
   perKind: 3,
   total: 8,
+  /** How long a dismissed heads-up stays away while it is no worse, and how many dismissals one browser keeps. */
+  dismissDays: 30,
+  dismissKept: 300,
 } as const
 
 const days = (count: number) => `${count} day${count === 1 ? '' : 's'}`
 const where = (item: { client?: string; project?: string }) => [item.client, item.project].filter(Boolean).join(' · ')
 
+/** The heads-ups a person sees: at most a few of one kind and a few in all, the urgent ones first. */
 export function watchAlerts(facts: BriefFacts): WatchAlert[] {
+  return pickAlerts(watchCandidates(facts))
+}
+
+/** The kind of a heads-up, from its key (golive, email, overdue…). */
+const kindOf = (alert: WatchAlert) => alert.key.slice(0, alert.key.indexOf(':'))
+
+/**
+ * Keeps a few of each kind, in the order given, then the most pressing in all. The page picks after taking out
+ * what the person dismissed, so a dismissed heads-up never holds the place of one they have not seen.
+ */
+export function pickAlerts(alerts: WatchAlert[]): WatchAlert[] {
+  const counted = new Map<string, number>()
+  const few = alerts.filter(alert => {
+    const seen = counted.get(kindOf(alert)) || 0
+    counted.set(kindOf(alert), seen + 1)
+    return seen < WATCH_RULES.perKind
+  })
+  const rank = (alert: WatchAlert) => (alert.severity === 'urgent' ? 0 : 1)
+  return few.sort((a, b) => rank(a) - rank(b)).slice(0, WATCH_RULES.total)
+}
+
+/** Every heads-up the facts call for, before any are left out (see pickAlerts). */
+export function watchCandidates(facts: BriefFacts): WatchAlert[] {
   const alerts: WatchAlert[] = []
-  const some = <T>(items: T[]) => items.slice(0, WATCH_RULES.perKind)
+  // Every one of a kind here: the page keeps a few of each (pickAlerts).
+  const some = <T>(items: T[]) => items
 
   // Go-lives passed or close, with steps still open.
   for (const site of some(
@@ -202,14 +230,28 @@ export function watchAlerts(facts: BriefFacts): WatchAlert[] {
       ask: 'Which of my time entries failed to send to Seeds, and why?',
     })
 
-  const rank = (alert: WatchAlert) => (alert.severity === 'urgent' ? 0 : 1)
-  return alerts.sort((a, b) => rank(a) - rank(b)).slice(0, WATCH_RULES.total)
+  return alerts
 }
 
-/** The keys a person dismissed that still match a heads-up: the rest are forgotten, so the list stays small. */
-export function keptDismissals(dismissed: unknown, alerts: WatchAlert[]) {
-  const live = new Set(alerts.map(alert => alert.key))
-  return (Array.isArray(dismissed) ? dismissed : []).filter(
-    (key): key is string => typeof key === 'string' && live.has(key),
-  )
+export type Dismissal = { key: string; at: number }
+
+/**
+ * The heads-ups a person dismissed, as saved in their browser, without those older than dismissDays. A heads-up that
+ * gets worse has a new key, so it shows again. A dismissal is kept even while its heads-up is missing from a check
+ * (another one took its place, or a source could not be read), so it does not come back as new. Keys saved by the
+ * earlier version (plain strings) count from now.
+ */
+export function readDismissals(saved: unknown, now: number): Dismissal[] {
+  const oldest = now - WATCH_RULES.dismissDays * 86_400_000
+  const latest = new Map<string, number>()
+  for (const entry of Array.isArray(saved) ? saved : []) {
+    const key = typeof entry === 'string' ? entry : typeof entry?.key === 'string' ? entry.key : ''
+    const at = typeof entry === 'string' ? now : Number(entry?.at)
+    if (!key || !Number.isFinite(at) || at < oldest) continue
+    latest.set(key, Math.max(at, latest.get(key) || 0))
+  }
+  return [...latest]
+    .map(([key, at]) => ({ key, at }))
+    .sort((a, b) => b.at - a.at)
+    .slice(0, WATCH_RULES.dismissKept)
 }
