@@ -150,7 +150,10 @@ test('a Seeds project with no client of its own shows its members every Seeds cl
     { ...state, items: [...state.items, task('new', { clientId: 'B', projectId: 'P9' })] },
     scopeFor(state, 'pm'),
   )
-  assert.ok(saved.items.some((item: any) => item.id === 'new'), 'work under the project can name any client')
+  assert.ok(
+    saved.items.some((item: any) => item.id === 'new'),
+    'work under the project can name any client',
+  )
 
   const own = { ...state, projects: state.projects.map(p => (p.id === 'P9' ? { ...p, clientId: 'A' } : p)) }
   assert.deepEqual(ids(scopedState(own, scopeFor(own, 'pm')).clients), ['A'], 'a project with its own client: only it')
