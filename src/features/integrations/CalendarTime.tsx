@@ -194,13 +194,13 @@ function CalendarTimeDialog({
   return (
     <Dialog title="Log time from the calendar" eyebrow={event.title} onClose={onClose} busy={busy}>
       <form
-        className="calendar-time-form"
+        className="form-grid"
         onSubmit={submitEvent => {
           submitEvent.preventDefault()
           void save()
         }}
       >
-        <label>
+        <label className="span-2">
           Project
           <SearchSelect
             choices={projects}
@@ -217,7 +217,7 @@ function CalendarTimeDialog({
           />
         </label>
         {project && !project.clientId && (
-          <label>
+          <label className="span-2">
             Client
             <ClientSelect
               clients={store.clients}
@@ -228,34 +228,33 @@ function CalendarTimeDialog({
             />
           </label>
         )}
-        <div className="calendar-time-row">
-          <label>
-            Date
-            <input type="date" value={date} onChange={change => setDate(change.target.value)} required />
-          </label>
-          <label>
-            Hours
-            <select value={hours} onChange={change => setHours(Number(change.target.value))}>
+        <label>
+          Date
+          <input type="date" value={date} onChange={change => setDate(change.target.value)} required />
+        </label>
+        {/* A label, so it takes the form's label style; each select is named for screen readers. */}
+        <label className="calendar-time-duration">
+          Duration
+          <div>
+            <select aria-label="Hours" value={hours} onChange={change => setHours(Number(change.target.value))}>
               {HOURS.map(value => (
                 <option key={value} value={value}>
                   {value} h
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            Minutes
-            <select value={minutes} onChange={change => setMinutes(Number(change.target.value))}>
+            <select aria-label="Minutes" value={minutes} onChange={change => setMinutes(Number(change.target.value))}>
               {MINUTES.map(value => (
                 <option key={value} value={value}>
                   {value} min
                 </option>
               ))}
             </select>
-          </label>
-        </div>
+          </div>
+          <small>{event.allDay ? 'All-day event: set the time spent' : 'From the event, in 15-minute steps'}</small>
+        </label>
         {rule && rule.tasks.length > 0 && (
-          <label>
+          <label className="span-2">
             Seeds task
             <select value={seedsTaskId} onChange={change => setSeedsTaskId(change.target.value)}>
               <option value="">{rule.taskRequired ? 'Choose the Seeds task' : 'The project’s default'}</option>
@@ -268,7 +267,7 @@ function CalendarTimeDialog({
           </label>
         )}
         {needsProduct && (
-          <label>
+          <label className="span-2">
             Product
             <select value={productId} onChange={change => setProductId(change.target.value)} required>
               <option value="">Choose the Seeds product</option>
@@ -280,7 +279,7 @@ function CalendarTimeDialog({
             </select>
           </label>
         )}
-        <label>
+        <label className="span-2">
           Remarks
           <input
             value={note}
@@ -290,11 +289,11 @@ function CalendarTimeDialog({
           />
         </label>
         {error && (
-          <p role="alert" className="calendar-message">
+          <p role="alert" className="calendar-message span-2">
             {error}
           </p>
         )}
-        <div className="calendar-time-buttons">
+        <div className="form-actions span-2">
           <button type="button" className="secondary" onClick={onClose}>
             Cancel
           </button>

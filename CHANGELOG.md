@@ -11,9 +11,8 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
-### Seeds: every open Seeds project comes in
-- A sync kept only Seeds projects someone here is a member of. Projects that anyone can log time on in Seeds, such as Company-Wide Programs or internal admin projects, never came in, so time could not be logged on them here. Every open Seeds project is now kept, under its Seeds client, with its Seeds tasks (Meetings, Go Live…). Nobody is assigned to a project they are not a member of in Seeds.
-- A full sync now also reads the Seeds tasks of every open project, so it takes a few minutes longer (Seeds allows 20 requests a minute).
+### Action Center: the Log time form looks like the app's other forms
+- Log time from the calendar now uses the standard form layout: padding inside the dialog, the usual field styles, project, client, Seeds task and remarks across, date and duration side by side, and Cancel / Log time in the usual place.
 
 ### Action Center: log time straight from a Google Calendar event
 - Each event in the Google Calendar panel has **Log time**: no task needed. The form starts from the event (its date, its length in 15-minute steps, its title as the remarks); pick the Seeds project (typed), and the client when the project has none of its own, then the Seeds task and product as Seeds requires.
