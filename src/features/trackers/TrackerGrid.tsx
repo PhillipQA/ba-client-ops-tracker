@@ -7,6 +7,7 @@ import {
   useState,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import {
@@ -79,6 +80,8 @@ type Props = {
   ) => { label: string; title: string; done: boolean; task: boolean } | null
   /** Present when tasks and subtasks can be picked from cells. */
   onWork?: (row: TrackerRow, column: TrackerColumn, element: HTMLElement) => void
+  /** A cell drawn by the tracker instead of its value (the Project column's chip), or null for the usual cell. */
+  customCell?: (row: TrackerRow, column: TrackerColumn) => ReactNode
   /** How many comments each row has; a row with some shows the count beside its number. */
   commentCounts?: Readonly<Record<string, number>>
   /** What each column shows in the totals row, by column id. Absent: no totals row. */
@@ -453,6 +456,7 @@ export default function TrackerGrid(props: Props) {
           if (column.align) classes.push(`trk-al-${column.align}`)
           if (on) classes.push('active')
           if (isEditing) classes.push('editing')
+          const custom = isEditing ? null : (props.customCell?.(row, column) ?? null)
           return (
             <div
               key={column.id}
@@ -491,15 +495,18 @@ export default function TrackerGrid(props: Props) {
                   onInvalid={props.onInvalid}
                 />
               ) : (
-                <CellView
-                  column={column}
-                  row={row}
-                  lookup={lookup}
-                  canEdit={canEdit}
-                  onToggle={value => props.onEdit(row, column, value)}
-                />
+                (custom ?? (
+                  <CellView
+                    column={column}
+                    row={row}
+                    lookup={lookup}
+                    canEdit={canEdit}
+                    onToggle={value => props.onEdit(row, column, value)}
+                  />
+                ))
               )}
               {!isEditing &&
+                !custom &&
                 (() => {
                   const work = props.cellWork?.(row, column)
                   const allowed =

@@ -192,14 +192,17 @@ export type TrackerColumn = {
 /**
  * `contract` (Text) is one-way: it shows the contract number of the linked task's project (from Seeds), and a row with
  * no task yet uses it to say which of the tracker's projects it is for (see rowProject).
+ * `project` (Text) shows the project of the row's task as a chip; picking another project there moves the task and its
+ * subtasks (see trackerProjects). The cell keeps the project's name so search, filters and sorting work.
  */
-export type TaskField = 'title' | 'start' | 'due' | 'progress' | 'contract'
+export type TaskField = 'title' | 'start' | 'due' | 'progress' | 'contract' | 'project'
 const TASK_FIELD_TYPES: Record<TaskField, ColumnType[]> = {
   title: ['text'],
   start: ['date'],
   due: ['date'],
   progress: ['number'],
   contract: ['text'],
+  project: ['text'],
 }
 /** The column that mirrors a task field, if any. */
 export const taskFieldColumn = (columns: TrackerColumn[], field: TaskField) =>

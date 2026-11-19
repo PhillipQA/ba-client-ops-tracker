@@ -7,6 +7,7 @@ import { trackerApi, type TaskLink } from '../../features/trackers/trackerApi'
 import type { TaskDraft } from '../../features/trackers/TrackerWork'
 import { tasksFromDrafts } from '../../features/trackers/trackerTaskDrafts'
 import { type TaskPatch, applyTaskPatches } from '../../features/trackers/trackerTasks'
+import { planProjectMove } from '../../features/trackers/trackerProjects'
 import { rememberTrackerRow } from '../../features/trackers/trackerNav'
 import { archivedWorkReason } from '../../features/tasks/lifecycle'
 import { useCallback, useEffect } from 'react'
@@ -127,6 +128,46 @@ export function useTrackerTasks(ui: UiState, saving: WorkspaceSave, signIn: Sign
     if (cloudStatus !== 'local') await waitForCloudSaves()
     return true
   }
+  /**
+   * A tracker's Project chip or bulk "Set project": moves tasks, with their subtasks, to one of the tracker's projects.
+   * Resolves with what moved; throws when the change could not be saved.
+   */
+  const moveTrackerTasks = async (
+    taskIds: string[],
+    projectId: string,
+  ): Promise<{ tasks: number; subtasks: number; skipped: number }> => {
+    if (!canWriteTasks || !hasModule('items')) throw new Error('Your role cannot change tasks.')
+    const current = storeRef.current
+    const project = current.projects.find(item => item.id === projectId)
+    if (!project) throw new Error('That project is no longer in the workspace.')
+    const plan = planProjectMove(
+      current.items.filter(item => !archivedWorkReason(current, item)),
+      taskIds,
+      project,
+    )
+    if (!plan.tasks) return { tasks: 0, subtasks: 0, skipped: plan.skipped }
+    const updated = new Map(plan.moved.map(item => [item.id, item]))
+    const today = businessDateKey()
+    const activity = plan.moved
+      .filter(item => !item.parentTaskId)
+      .map(item => ({
+        id: crypto.randomUUID(),
+        clientId: item.clientId,
+        projectId: item.projectId,
+        date: today,
+        text: `Moved task to ${project.name} from a tracker: ${item.title}`,
+      }))
+    if (
+      persist({
+        ...current,
+        items: current.items.map(item => updated.get(item.id) || item),
+        activity: [...activity, ...current.activity],
+      }) === false
+    )
+      throw new Error('You cannot move these tasks to that project.')
+    if (cloudStatus !== 'local') await waitForCloudSaves()
+    return { tasks: plan.tasks, subtasks: plan.subtasks, skipped: plan.skipped }
+  }
   const openTaskEditor = (id: string) => {
     if (!canWriteTasks) return
     const target = store.items.find(item => item.id === id)
@@ -190,6 +231,7 @@ export function useTrackerTasks(ui: UiState, saving: WorkspaceSave, signIn: Sign
     closedStatus,
     convertInquiry,
     createTrackerTasks,
+    moveTrackerTasks,
     updateTrackerTasks,
     openSubtaskCreator,
     openTaskEditor,

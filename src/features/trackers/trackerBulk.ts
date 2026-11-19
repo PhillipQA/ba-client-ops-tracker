@@ -10,7 +10,11 @@ const BULK_TYPES = ['select', 'person', 'checkbox', 'date', 'text', 'number']
 /** Columns that can be set for many rows at once: plain values a person picks or types, not filled from elsewhere. */
 export function bulkColumns(columns: TrackerColumn[]) {
   return columns.filter(
-    column => BULK_TYPES.includes(column.type) && !column.autoDone && column.taskField !== 'contract',
+    column =>
+      BULK_TYPES.includes(column.type) &&
+      !column.autoDone &&
+      column.taskField !== 'contract' &&
+      column.taskField !== 'project',
   )
 }
 

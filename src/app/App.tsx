@@ -81,6 +81,7 @@ function App() {
     cloudMessage,
     cloudStatus,
     createTrackerTasks,
+    moveTrackerTasks,
     updateTrackerTasks,
     currentUser,
     deleteTask,
@@ -610,6 +611,7 @@ function App() {
                 isTaskClosed={status => isTaskClosed(status, store.taskSettings)}
                 onCreateTasks={canWriteTasks && hasModule('items') ? createTrackerTasks : undefined}
                 onUpdateTasks={canWriteTasks && hasModule('items') ? updateTrackerTasks : undefined}
+                onMoveTasks={canWriteTasks && hasModule('items') ? moveTrackerTasks : undefined}
                 onTasksChanged={() => refreshWorkspace(false)}
                 currentUserId={currentUser?.id}
               />

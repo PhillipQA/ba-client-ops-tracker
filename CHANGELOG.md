@@ -11,6 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: a Project column, and Set project for many rows
+- A Text column can now show **the row's project** (Edit column › Row's project › Show the row's project). Each row shows its task's project as a chip. Click it to move the task, with its subtasks, to another of the tracker's projects; the menu is typed (project, contract number or client), marks the ★ default and completed projects, and has "Link another project to this tracker…".
+- A row with no task yet shows, as a dashed *auto* chip, where its task will go (its Contract number, else the ★ default). Picking a project there opens the row's task picker ready to create the task in that project. Completed projects keep their tasks but take no new ones, so they can only be picked for rows that already have a task.
+- A row whose task is a subtask shows its project locked: a subtask follows its task.
+- Select rows and use **Set project** to move their tasks at once; it says how many tasks and subtasks move, and which rows are skipped (no task yet, subtasks, already there).
+- Moving a task gives it the project's own client (its Seeds parent) when the project has one, and keeps its client under a project shared by several clients. A Seeds task (Go Live, Meetings…) stays only if the new project has it. The Contract number column follows the task's new project.
+- The Project column keeps the project's name in its cell, so search, filters and sorting work; it is not typed into or set with Set value. It is not written to a linked Google Sheet unless you map it to a Sheet column.
+- New columns now keep the Contract number setting when it is ticked while adding them (before, it was only saved when editing a column).
+
 ### Tasks keep their client under projects that work for several clients
 - A Seeds sync set every task's client to its Seeds project's client. For a project with no client of its own (such as BXI C# Migration Project) that meant no client, so every sync took the client off its tasks: tasks made by a tracker for EMPERADOR DISTILLERS ended up as "General / no client". A sync now leaves the client of such tasks alone.
 - Repair: when someone who can edit a tracker opens it, its tasks (and their subtasks) that have no client, under a project with no client of its own, get the tracker's client, if the tracker has exactly one. Nothing is guessed for a tracker with several clients.
