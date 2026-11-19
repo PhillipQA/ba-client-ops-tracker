@@ -3,6 +3,7 @@ import test from 'node:test'
 import { registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { checkGoogleIdToken, seedsTimeBody, seedsTimeKey } from '../server/seeds/seeds-time'
 import { SeedsError } from '../server/seeds/seeds-client'
+import { calendarTimeOf, logCalendarTime, removeCalendarTime } from '../server/seeds/calendar-time'
 
 const CLIENT = '123-abc.apps.googleusercontent.com'
 const idToken = (claims: Record<string, unknown>) =>
@@ -218,4 +219,62 @@ test('a sent entry is removed in Seeds, not here', async () => {
   const result = removeTimeEntry({ timeEntries: [entry('e4', { seedsEntryId: '900' })] }, 'e4', { id: 'u-bea' })
   assert.equal(result.ok, false)
   assert.match((result as any).error, /already in Seeds/)
+})
+
+test('time from a calendar event: on a Seeds project the person works on, once per event, by the task rules', () => {
+  const state = workspace()
+  const meeting = { eventId: 'g-1', eventTitle: 'Weekly sync', projectId: 'p1', date: '2026-11-09', hours: 1 }
+  const logged = logCalendarTime(state, bea, meeting, new Date('2026-11-09T09:00:00Z'), 'k1')
+  assert.ok(logged.ok)
+  const entry = logged.value.entry
+  assert.deepEqual(
+    [entry.eventId, entry.projectId, entry.hours, entry.userId, entry.forSeeds],
+    ['g-1', 'p1', 1, 'u-bea', true],
+  )
+  assert.deepEqual(calendarTimeOf(logged.value.state, 'u-bea'), [entry])
+  assert.deepEqual(calendarTimeOf(logged.value.state, 'u-pao'), [], 'only my own')
+
+  const twice = logCalendarTime(logged.value.state, bea, meeting, new Date(), 'k2')
+  assert.ok(!twice.ok && twice.status === 409, 'the same meeting is not logged twice')
+  const fails = (input: any, user: any = bea, at: any = state) => {
+    const result = logCalendarTime(at, user, input, new Date(), 'x')
+    return result.ok ? '' : result.error
+  }
+  assert.match(fails({ ...meeting, hours: 0.4 }), /15-minute/)
+  assert.match(fails({ ...meeting, projectId: 'nope' }), /project/)
+  assert.match(fails(meeting, { ...bea, role: 'Viewer' }), /Viewers/)
+  assert.match(fails(meeting, bea, { ...state, seeds: { connected: false } }), /Seeds is not turned on/)
+  const closed = { ...state, projects: state.projects.map(p => ({ ...p, status: 'Completed', seedsArchived: true })) }
+  assert.match(fails(meeting, bea, closed), /completed/)
+
+  const removed = removeCalendarTime(logged.value.state, bea, 'k1')
+  assert.ok(removed.ok)
+  assert.deepEqual(calendarTimeOf(removed.value.state, 'u-bea'), [])
+  const inSeeds = { ...logged.value.state, calendarTime: [{ ...entry, seedsEntryId: '901' }] }
+  assert.ok(!removeCalendarTime(inSeeds, bea, 'k1').ok, 'once in Seeds it is removed there')
+  assert.ok(!removeCalendarTime(logged.value.state, { ...bea, id: 'u-pao' }, 'k1').ok, 'not someone else’s')
+})
+
+test('calendar time is sent to Seeds with my other time, under its project', async () => {
+  const { app, sent, state } = setup(async input => `s-${input.key}`)
+  const logged = await app.ask('POST', '/api/seeds/calendar-time', bea, {
+    eventId: 'g-1',
+    eventTitle: 'Weekly sync',
+    projectId: 'p1',
+    date: '2026-11-09',
+    hours: 0.75,
+    note: 'Weekly sync',
+  })
+  assert.equal(logged.status, 200, JSON.stringify(logged.body))
+  assert.equal((await app.ask('GET', '/api/seeds/time', bea)).body.unsent, 3)
+
+  const result = await app.ask('POST', '/api/seeds/time/send', bea, { idToken: goodToken() })
+  assert.equal(result.body.sent, 3)
+  const calendar = sent.find(input => input.key === `ba-time-${logged.body.entry.id}`)
+  assert.deepEqual(
+    [calendar.body.projectId, calendar.body.minuteslogged, calendar.body.remarks],
+    [20, 45, 'Weekly sync'],
+  )
+  assert.equal(state().calendarTime[0].seedsEntryId, calendar ? `s-${calendar.key}` : '')
+  assert.equal(result.body.calendarTime[0].seedsEntryId, state().calendarTime[0].seedsEntryId)
 })

@@ -9,6 +9,7 @@ import { loadGoogle } from '../../shared/googleIdentity'
 import { requestJson } from '../../shared/http'
 import { Dialog } from '../../shared/ui/Dialog'
 import type { WorkItem } from '../../shared/types'
+import type { CalendarTimeEntry } from '../integrations/CalendarTime'
 import './seeds.css'
 
 export type SeedsTimeStatus = { ready: boolean; clientId: string; unsent: number; hours: number }
@@ -25,6 +26,8 @@ export type SeedsSendResult = {
   }[]
   left: number
   items: WorkItem[]
+  /** The person's time logged from calendar events, after sending (integrations/CalendarTime.tsx). */
+  calendarTime?: CalendarTimeEntry[]
 }
 type SeedsFailure = SeedsSendResult['failed'][number]
 const entryWord = (count: number) => (count === 1 ? 'entry' : 'entries')

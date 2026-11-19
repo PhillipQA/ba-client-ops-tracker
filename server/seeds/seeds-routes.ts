@@ -11,6 +11,7 @@
  * member decide what they see. Only projects someone here works on come in. The account syncs every 10 minutes; if
  * Seeds cannot be reached, the last synced access stays.
  */
+import { randomUUID } from 'node:crypto'
 import type { Express, NextFunction, Request, Response } from 'express'
 import { normalizeAssignment, rolesFor, workspaceAccess } from '../../src/shared/access'
 import { jobRoles } from '../../src/shared/roles'
@@ -33,6 +34,7 @@ import {
 } from './seeds-client'
 import { decideSeedsMatch, planSeedsSync, refreshLinkedProjects, refreshSeedsClients, SEEDS_ACTOR } from './seeds-sync'
 import { checkGoogleIdToken, postSeedsTime, seedsTimeBody, seedsTimeKey } from './seeds-time'
+import { calendarTimeOf, calendarTimeWork, logCalendarTime, removeCalendarTime } from './calendar-time'
 import { type TimeEntry, unsentToSeeds } from '../../src/features/tasks/effort'
 import { asList as list } from '../../src/shared/lists'
 
@@ -614,12 +616,34 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
 
   // ---- Sending time logs to Seeds ----
   const MAX_SEND = 100
-  const mineUnsent = (state: any, userId: string) =>
-    list(state?.items).flatMap(item =>
+  // Time on tasks, and time logged straight from calendar events (calendar-time.ts), which goes to Seeds the same way.
+  const mineUnsent = (state: any, userId: string): { item: any; entry: TimeEntry; calendar?: boolean }[] => [
+    ...list(state?.items).flatMap(item =>
       list(item?.timeEntries)
         .filter((entry: TimeEntry) => entry?.userId === userId && unsentToSeeds(entry))
         .map((entry: TimeEntry) => ({ item, entry })),
-    )
+    ),
+    ...calendarTimeOf(state, userId)
+      .filter(entry => unsentToSeeds(entry))
+      .map(entry => ({ item: calendarTimeWork(entry), entry, calendar: true })),
+  ]
+  const sentResult = (
+    entry: TimeEntry,
+    result: { seedsEntryId?: string; error?: string; productId?: string } | undefined,
+    now: string,
+  ) => {
+    if (!result || entry.seedsEntryId) return entry
+    if (result.seedsEntryId) {
+      const { seedsError: _dropped, ...rest } = entry
+      return {
+        ...rest,
+        ...(result.productId ? { productId: result.productId } : {}),
+        seedsEntryId: result.seedsEntryId,
+        seedsSentAt: now,
+      }
+    }
+    return { ...entry, seedsError: result.error }
+  }
 
   app.get(
     '/api/seeds/time',
@@ -690,29 +714,23 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         }
       }
       const now = new Date().toISOString()
-      const touched = new Set(todo.filter(({ entry }) => outcome.has(entry.id)).map(({ item }) => String(item.id)))
+      const touched = new Set(
+        todo.filter(({ entry, calendar }) => !calendar && outcome.has(entry.id)).map(({ item }) => String(item.id)),
+      )
       const saved = await service.update(user.organizationId, SEEDS_ACTOR, 'seeds-time-sent', current => ({
         ...current,
         items: list(current.items).map(item =>
           touched.has(String(item?.id))
             ? {
                 ...item,
-                timeEntries: list(item.timeEntries).map((entry: TimeEntry) => {
-                  const result = outcome.get(entry?.id)
-                  if (!result || entry.seedsEntryId) return entry
-                  if (result.seedsEntryId) {
-                    const { seedsError: _dropped, ...rest } = entry
-                    return {
-                      ...rest,
-                      ...(result.productId ? { productId: result.productId } : {}),
-                      seedsEntryId: result.seedsEntryId,
-                      seedsSentAt: now,
-                    }
-                  }
-                  return { ...entry, seedsError: result.error }
-                }),
+                timeEntries: list(item.timeEntries).map((entry: TimeEntry) =>
+                  sentResult(entry, outcome.get(entry?.id), now),
+                ),
               }
             : item,
+        ),
+        calendarTime: list(current.calendarTime).map((entry: TimeEntry) =>
+          entry?.userId === user.id ? sentResult(entry, outcome.get(entry?.id), now) : entry,
         ),
       }))
       const failed = [...outcome].filter(([, result]) => result.error)
@@ -740,7 +758,49 @@ export function registerSeedsRoutes(app: Express, deps: SeedsDeps) {
         })),
         left: Math.max(0, mineUnsent(saved, user.id).length),
         items: list(saved.items).filter(item => touched.has(String(item?.id))),
+        calendarTime: calendarTimeOf(saved, user.id),
       })
+    }),
+  )
+
+  // ---- Time logged straight from a Google Calendar event (calendar-time.ts) ----
+  app.get(
+    '/api/seeds/calendar-time',
+    ...auth,
+    wrap(async (req, res) => {
+      const user = who(req)
+      const state = (await deps.load(user.organizationId)).data || {}
+      res.json({ ready: seedsState(state).connected === true, entries: calendarTimeOf(state, user.id) })
+    }),
+  )
+
+  app.post(
+    '/api/seeds/calendar-time',
+    ...auth,
+    wrap(async (req, res) => {
+      const user = who(req)
+      let entry: TimeEntry | undefined
+      const saved = await service.update(user.organizationId, user, 'calendar-time', current => {
+        const result = logCalendarTime(current, user, req.body, new Date(), randomUUID())
+        if (!result.ok) throw new SeedsError(result.error, result.status)
+        entry = result.value.entry
+        return result.value.state
+      })
+      res.json({ entry, entries: calendarTimeOf(saved, user.id) })
+    }),
+  )
+
+  app.delete(
+    '/api/seeds/calendar-time/:id',
+    ...auth,
+    wrap(async (req, res) => {
+      const user = who(req)
+      const saved = await service.update(user.organizationId, user, 'calendar-time-removed', current => {
+        const result = removeCalendarTime(current, user, String(req.params.id || ''))
+        if (!result.ok) throw new SeedsError(result.error, result.status)
+        return result.value.state
+      })
+      res.json({ entries: calendarTimeOf(saved, user.id) })
     }),
   )
 
