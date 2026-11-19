@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Menus and pickers are solid again
+- Since option lists were moved above the grid (B96), menus such as a tracker column's options had no background and the grid showed through. They are now drawn inside the app, where the theme's colours apply, still above the grid's headers.
+
 ### Trackers: the Allow reading Excel files button shows again
 - Linking an Excel (.xlsx) file kept in Google Drive showed only "Allow reading Excel files in Google Drive first" with no way to allow it. The screen never received the server's Excel flag, so the **Allow reading Excel files** notice stayed hidden. It now shows, on opening the link, reading the tab and connecting. Excel files are still followed read only, never two-way.
 
