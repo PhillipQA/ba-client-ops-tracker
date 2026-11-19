@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Clients and Projects: a page at a time
+- Seeds › Clients and Seeds › Projects show 5, 20 or 50 per page (20 to start), with Previous, Next and "Showing 1–20 of 115 clients". The size is kept in this browser for each list; a new search, filter or sort goes back to the first page.
+
 ### Seeds: every Seeds client comes in
 - A sync read all of Seeds' clients (parents) but kept only those of projects someone here is a member of. A client that is only picked on time entries, such as EMPERADOR DISTILLERS, INC. on a shared project, never came in. Every Seeds client is now kept, linked by Seeds id, renamed and closed as in Seeds. A client already closed in Seeds is not added.
 
