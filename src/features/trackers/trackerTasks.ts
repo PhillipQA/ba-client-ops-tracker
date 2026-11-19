@@ -19,6 +19,8 @@ export type TaskPatch = {
   parentTaskId?: string
   /** true: complete it; false: reopen it. */
   done?: boolean
+  /** A client for a task that has none (under a project with no client of its own); never replaces one. */
+  clientId?: string
 }
 
 type Item = Pick<
@@ -228,6 +230,7 @@ export function applyTaskPatches<T extends Item>(
     const update: Partial<T> = {}
     if (patch.title !== undefined && patch.title.trim() && patch.title.trim() !== current.title)
       update.title = patch.title.trim().slice(0, 200) as T['title']
+    if (patch.clientId && !current.clientId) update.clientId = patch.clientId as T['clientId']
     if (patch.startDate !== undefined && patch.startDate !== (current.startDate || ''))
       update.startDate = patch.startDate as T['startDate']
     if (patch.dueDate !== undefined && patch.dueDate !== (current.dueDate || ''))

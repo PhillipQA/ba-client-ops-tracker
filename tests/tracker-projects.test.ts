@@ -1,7 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeColumns, trackerProjectIds } from '../src/features/trackers/trackerModel'
-import { contractKey, projectForContract, rowContract, rowPlace } from '../src/features/trackers/trackerProjects'
+import {
+  contractKey,
+  missingClientPatches,
+  projectForContract,
+  rowContract,
+  rowPlace,
+} from '../src/features/trackers/trackerProjects'
 import { planStepTasks } from '../src/features/trackers/stepTasks'
 
 const columns = [
@@ -105,4 +111,20 @@ test('a tracker keeps a project completed in Seeds, but its rows get new tasks o
     rowPlace(tracker, { cells: {}, taskId: 't' }, projects, [{ id: 't', projectId: 'done' }]).projectId,
     'done',
   )
+})
+
+test('tasks a sync left with no client get the tracker’s one client back, never a guess', () => {
+  const projects = [{ id: 'shared' }, { id: 'own', clientId: 'acme' }]
+  const items = [
+    { id: 't1', projectId: 'shared' },
+    { id: 's1', projectId: 'shared', parentTaskId: 't1' },
+    { id: 't2', projectId: 'shared', clientId: 'bolt' },
+    { id: 't3', projectId: 'own' },
+    { id: 't4', projectId: 'shared' },
+  ]
+  assert.deepEqual(missingClientPatches({ clientIds: ['emp'] }, ['t1', 't2', 't3'], items, projects), [
+    { id: 't1', clientId: 'emp' },
+    { id: 's1', clientId: 'emp' },
+  ])
+  assert.deepEqual(missingClientPatches({ clientIds: ['emp', 'bolt'] }, ['t1'], items, projects), [], 'two clients')
 })

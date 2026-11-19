@@ -230,6 +230,18 @@ test('a second sync changes nothing; renames, moves and archiving follow by Seed
     'its tasks and subtasks follow the project',
   )
   assert.equal(moved.items.find((i: any) => i.id === 't-uat').clientId, 'c-acme', 'work before Seeds is not moved')
+
+  // A project with no client of its own works for several clients: its tasks keep the client they name.
+  const shared = planSeedsSync(
+    moved,
+    snapshot({ projects: [{ ...snapshot().projects[0], clientId: '' }, ...snapshot().projects.slice(1)] }),
+    { ...options, id: sequential },
+  ).state
+  assert.deepEqual(
+    shared.items.filter((i: any) => i.id.startsWith('t-go')).map((i: any) => i.clientId),
+    [nimbus.id, nimbus.id],
+    'a sync never takes the client off work under a project with no client',
+  )
 })
 
 test('a sync passes the workspace rules: versions move on, archived work is left alone', () => {

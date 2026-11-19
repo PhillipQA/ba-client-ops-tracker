@@ -503,6 +503,9 @@ export function TaskEditForm({
 }) {
   const [rtmLinks, setRtmLinks] = useState<RtmLink[]>(item.rtmLinks || [])
   const [editProjectId, setEditProjectId] = useState(item.projectId || '')
+  // A task with no client, under a project with no client of its own, can be given one (once): a project that works
+  // for several clients needs each task to say whose work it is.
+  const [fillClientId, setFillClientId] = useState('')
   const [type, setType] = useState<ItemType>(item.type)
   const [status, setStatus] = useState(item.status)
   const [saving, setSaving] = useState(false)
@@ -516,6 +519,8 @@ export function TaskEditForm({
   }, [item])
   if (dirtyCheck) dirtyCheck.current = () => Boolean(opened.current) && snapshot() !== opened.current
   const parent = item.parentTaskId ? store.items.find(candidate => candidate.id === item.parentTaskId) : undefined
+  const chosenProject = store.projects.find(project => project.id === editProjectId)
+  const canFillClient = !parent && !item.clientId && !chosenProject?.clientId
   const inheritAssignmentValue = '__inherit_parent_assignment__'
   const inheritsParentAssignment = Boolean(
     parent &&
@@ -561,7 +566,7 @@ export function TaskEditForm({
       rtmLinks,
       qaResult: String(form.get('qaResult') || 'Not Run') as WorkItem['qaResult'],
       title: item.title,
-      clientId: item.clientId,
+      clientId: item.clientId || (canFillClient && fillClientId) || undefined,
       projectId: parent ? item.projectId : editProjectId || undefined,
       type,
       status,
@@ -649,14 +654,29 @@ export function TaskEditForm({
             <span>
               {parent
                 ? 'Subtask name, client, and parent project stay fixed. You can update its execution fields below.'
-                : 'Task name and client cannot be changed after creation.'}
+                : canFillClient
+                  ? 'Task name cannot be changed. It has no client yet: choose whose work it is, once.'
+                  : 'Task name and client cannot be changed after creation.'}
             </span>
           </div>
         </div>
-        <label>
-          Client
-          <input value={clientLabel} readOnly disabled />
-        </label>
+        {canFillClient ? (
+          <label>
+            Client
+            <ClientSelect
+              clients={store.clients}
+              value={fillClientId}
+              onChange={setFillClientId}
+              extra={[{ value: '', label: 'General / no client' }]}
+              aria-label="Client"
+            />
+          </label>
+        ) : (
+          <label>
+            Client
+            <input value={clientLabel} readOnly disabled />
+          </label>
+        )}
         {parent ? (
           <label>
             Project

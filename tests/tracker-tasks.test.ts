@@ -198,6 +198,19 @@ test('a phase task spans its subtasks and is done when all of them are', () => {
   assert.equal(reopened.items.find(item => item.id === 'p')!.status, 'Open', 'and reopening one reopens it')
   const early = applyTaskPatches(items, [{ id: 'p', done: true }], rules)
   assert.equal(early.items.find(item => item.id === 'p')!.status, 'Open', 'a task with open subtasks stays open')
+  const named = applyTaskPatches(
+    [{ ...items[0], clientId: 'c1' }, ...items.slice(1)],
+    [
+      { id: 'p', clientId: 'c2' },
+      { id: 'a', clientId: 'c2' },
+    ],
+    rules,
+  )
+  assert.deepEqual(
+    named.items.map(item => (item as { clientId?: string }).clientId),
+    ['c1', 'c2', undefined],
+    'a missing client is filled in; a client is never replaced',
+  )
   const moved = applyTaskPatches(
     [...items, { id: 'q', title: 'Other phase', status: 'Open' }],
     [{ id: 'b', parentTaskId: 'q' }],

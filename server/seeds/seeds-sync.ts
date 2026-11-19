@@ -285,19 +285,17 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
     else delete project.clientId
   }
 
-  // Work under a Seeds project belongs to that project's client: when Seeds moves a project, its tasks follow.
+  // Work under a Seeds project belongs to that project's client: when Seeds moves a project, its tasks follow. A
+  // project with no client of its own works for several clients: each task keeps the client it names.
   const clientOfSeedsProject = new Map(
-    projects.filter(project => project.seedsId).map(project => [text(project.id), text(project.clientId)] as const),
+    projects
+      .filter(project => project.seedsId && project.clientId)
+      .map(project => [text(project.id), text(project.clientId)] as const),
   )
   const items = list(state?.items).map(item => {
-    const projectId = text(item?.projectId)
-    if (!clientOfSeedsProject.has(projectId)) return item
-    const clientId = clientOfSeedsProject.get(projectId) || ''
-    if (text(item?.clientId) === clientId) return item
-    const moved = { ...item }
-    if (clientId) moved.clientId = clientId
-    else delete moved.clientId
-    return moved
+    const clientId = clientOfSeedsProject.get(text(item?.projectId))
+    if (!clientId || text(item?.clientId) === clientId) return item
+    return { ...item, clientId }
   })
 
   // Seeds tasks (Go Live, Meetings…) are not created here: tasks and subtasks are this app's own, and each can be
