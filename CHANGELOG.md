@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Action Center: the Log time form looks like the app's other forms
+- Log time from the calendar now uses the standard form layout: padding inside the dialog, the usual field styles, project, client, Seeds task and remarks across, date and duration side by side, and Cancel / Log time in the usual place.
+
 ### Action Center: log time straight from a Google Calendar event
 - Each event in the Google Calendar panel has **Log time**: no task needed. The form starts from the event (its date, its length in 15-minute steps, its title as the remarks); pick the Seeds project (typed), and the client when the project has none of its own, then the Seeds task and product as Seeds requires.
 - The time is kept with the event, shows on its card as Not sent or In Seeds, and goes to Seeds with your other time (Send to Seeds there, or on the Seeds page). One entry per event, so a meeting is not logged twice; remove it to log it again, until it is in Seeds.
