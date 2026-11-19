@@ -1,8 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
  * A floating panel next to an element. It is placed with fixed coordinates, so a scrolling grid cannot clip it, and it
- * closes on outside click, Escape, or when anything behind it scrolls.
+ * closes on outside click, Escape, or when anything behind it scrolls. It is drawn on the page (or in the open modal
+ * dialog, which sits in the browser's top layer), never inside the grid, so a sticky header or frozen column cannot
+ * cover it.
  */
 export function Popover({
   anchor,
@@ -23,6 +26,10 @@ export function Popover({
   const close = useRef(onClose)
   close.current = onClose
   const [style, setStyle] = useState<CSSProperties>({ position: 'fixed', top: 0, left: 0, visibility: 'hidden' })
+  const [host, setHost] = useState<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    setHost(anchor.current?.closest<HTMLElement>('dialog[open]') || document.body)
+  }, [anchor])
   useLayoutEffect(() => {
     const place = () => {
       const rect = anchor.current?.getBoundingClientRect(),
@@ -45,7 +52,7 @@ export function Popover({
     place()
     window.addEventListener('resize', place)
     return () => window.removeEventListener('resize', place)
-  }, [anchor, minWidth])
+  }, [anchor, minWidth, host])
   useEffect(() => {
     // A type-to-search field's list floats outside the panel (on the page), but it is part of the panel: picking from
     // it or scrolling it must not close the panel.
@@ -76,9 +83,11 @@ export function Popover({
       window.removeEventListener('scroll', scroll, true)
     }
   }, [anchor])
-  return (
+  if (!host) return null
+  return createPortal(
     <div ref={box} className={`k-popover ${className}`} style={style} role="dialog" aria-label={label}>
       {children}
-    </div>
+    </div>,
+    host,
   )
 }
