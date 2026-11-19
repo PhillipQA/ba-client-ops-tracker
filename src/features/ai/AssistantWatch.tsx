@@ -301,11 +301,7 @@ export default function AssistantWatch({ app, currentUser }: { app: AppState; cu
                         <Sparkles size={14} />
                       </button>
                     )}
-                    <button
-                      type="button"
-                      title="Dismiss until it gets worse"
-                      onClick={() => dismiss(alert.key)}
-                    >
+                    <button type="button" title="Dismiss until it gets worse" onClick={() => dismiss(alert.key)}>
                       <X size={14} />
                     </button>
                   </div>
