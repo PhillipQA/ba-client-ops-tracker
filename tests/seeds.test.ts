@@ -12,7 +12,7 @@ import {
 import { answerShape, cleanSeedsBaseUrl, httpSeedsSource, nextCursorOf, parseSeeds } from '../server/seeds/seeds-client'
 import { personalSnapshot, registerSeedsRoutes } from '../server/seeds/seeds-routes'
 import { assertLifecycleMutation } from '../src/features/tasks/lifecycle'
-import { planSeedsSync, refreshSeedsClients, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
+import { planSeedsSync, refreshSeedsClients, refreshSeedsProjects, SEEDS_ACTOR } from '../server/seeds/seeds-sync'
 import { roleForSeedsTitle } from '../src/shared/roles'
 
 const options = {
@@ -96,6 +96,41 @@ test('names match whatever their case, punctuation or company suffix', () => {
 })
 
 const byName = (records: any[], name: string) => records.find(record => record.name === name)
+
+test('every open Seeds project is kept here, under its client, with its Seeds tasks', () => {
+  let n = 0
+  const id = () => `p${++n}`
+  const before = {
+    clients: [{ id: 'c1', name: 'iRipple Group', seedsId: '1' }],
+    projects: [{ id: 'old', name: 'Linked', seedsId: '10', seedsTasks: [] }],
+  }
+  const after = refreshSeedsProjects(
+    before,
+    {
+      projects: [
+        { id: '10', clientId: '1', name: 'Linked', contractNumber: '' },
+        { id: '11', clientId: '1', name: 'Company-Wide Programs', contractNumber: '' },
+        { id: '12', clientId: '', name: 'PD-ADMIN TASKS', contractNumber: '' },
+        { id: '13', clientId: '9', name: 'Under a client not here', contractNumber: '' },
+        { id: '14', clientId: '1', name: 'Done', contractNumber: '', archived: true },
+      ],
+      tasks: [
+        { id: 't2', projectId: '11', name: 'Trainings' },
+        { id: 't1', projectId: '11', name: 'Meetings' },
+        { id: 't3', projectId: '10', name: 'Go Live' },
+      ],
+    },
+    id,
+  )
+  assert.deepEqual(
+    after.projects.map((p: any) => [p.id, p.name, p.clientId || '', (p.seedsTasks || []).map((t: any) => t.name)]),
+    [
+      ['old', 'Linked', '', ['Go Live']],
+      ['p1', 'Company-Wide Programs', 'c1', ['Meetings', 'Trainings']],
+      ['p2', 'PD-ADMIN TASKS', '', []],
+    ],
+  )
+})
 
 test('every Seeds client is kept here: added, renamed and closed by Seeds id, never by name', () => {
   let n = 0
@@ -426,7 +461,7 @@ function fakeSeeds(overrides: Record<string, any> = {}) {
   return { calls, fetcher }
 }
 
-test('the HTTP reader sends the token, follows cursors and reads only the projects people here are on', async () => {
+test('the HTTP reader sends the token, follows cursors, reads every open project’s members and tasks', async () => {
   const { calls, fetcher } = fakeSeeds()
   const { snapshot: read, fields } = await httpSeedsSource('secret-token', undefined, fetcher, 1000, {
     gapMs: 0,
@@ -451,7 +486,10 @@ test('the HTTP reader sends the token, follows cursors and reads only the projec
     ],
     'a project naming a Seeds client gets that client’s parent',
   )
-  assert.ok(!calls.some(call => call.url.endsWith('/projects/21/tasks')), 'no tasks for projects nobody here is on')
+  assert.ok(
+    calls.some(call => call.url.endsWith('/projects/21/tasks')),
+    'Seeds tasks of every open project, also one nobody here is on',
+  )
   assert.deepEqual(fields.members, ['userId', 'role'])
 
   const denied = fakeSeeds({ '/parents?limit=100': { status: 403, error: { code: 'forbidden', message: 'No grant' } } })
@@ -593,7 +631,9 @@ test('an Administrator turns Seeds on; one sync matches everyone by email', asyn
     activeAssignments(state(), 'u-pao').map(a => a.role),
     ['PM'],
   )
-  assert.ok(!state().projects.some((p: any) => p.seedsId === 's-internal'), 'projects nobody here is on stay out')
+  const internal = state().projects.find((p: any) => p.seedsId === 's-internal')
+  assert.ok(internal && !internal.clientId, 'a project nobody here is on comes in too, to log time on')
+  assert.ok(!state().access.assignments.some((a: any) => a.projectId === internal.id), 'but nobody is assigned to it')
   assert.ok(
     state().clients.some((c: any) => c.seedsId === 's-bolt' && c.name === 'Bolt Logistics'),
     'every Seeds client comes in, also one with no project anyone here is on',
@@ -688,7 +728,7 @@ test('when Seeds says to slow down, the reader waits as asked, widens the gap an
   assert.equal(read.assignments.length, 1, 'the sync finished after waiting')
   assert.ok(waits.includes(7000), 'waited as long as Seeds asked')
   assert.deepEqual(steps.slice(0, 4), ['lists:0/3', 'lists:1/3', 'lists:2/3', 'lists:3/3'])
-  assert.ok(steps.includes('members:1/2') && steps.includes('tasks:0/1'))
+  assert.ok(steps.includes('members:1/2') && steps.includes('tasks:0/2'))
 
   const always = (async () =>
     ({ ok: false, status: 429, headers: new Headers(), json: async () => ({}) }) as any) as any
@@ -813,6 +853,7 @@ test('a delta sync reads only the projects Seeds changed, and only their members
     '/projects/26/members',
     '/projects/20/tasks',
     '/projects/25/tasks',
+    '/projects/26/tasks',
   ])
   assert.ok(!paths.some(path => /^\/(users|parents|statuses)\?/.test(path)), 'no full lists in a delta')
   assert.ok(!paths.includes('/projects/1059/members'), 'no members for a deleted project')

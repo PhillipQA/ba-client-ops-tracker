@@ -145,6 +145,72 @@ export function refreshSeedsClients(state: any, sources: SeedsSnapshot['clients'
   return settle(state, { ...state, clients: [...updated, ...added] })
 }
 
+/** Each Seeds project's task list (by Seeds project id), as a project here keeps it, sorted by name. */
+function seedsTaskLists(sources: SeedsSnapshot['tasks']) {
+  const lists = new Map<
+    string,
+    { id: string; name: string; productRequired?: boolean; defaultProductId?: string; archived?: boolean }[]
+  >()
+  for (const task of sources) {
+    const tasks = lists.get(task.projectId) || []
+    tasks.push({
+      id: task.id,
+      name: task.name,
+      ...(task.productRequired ? { productRequired: true } : {}),
+      ...(task.defaultProductId ? { defaultProductId: task.defaultProductId } : {}),
+      ...(task.archived ? { archived: true } : {}),
+    })
+    lists.set(task.projectId, tasks)
+  }
+  for (const tasks of lists.values()) tasks.sort((a, b) => a.name.localeCompare(b.name))
+  return lists
+}
+
+/**
+ * Every open Seeds project becomes a project here, whether or not anyone here is a member: Seeds lets anyone log time
+ * on some projects (company-wide programs, internal admin), so they must be there to pick. It goes under its Seeds
+ * parent's client and keeps its Seeds task list (refreshed for every project the read covered). Linked by Seeds id
+ * only; renames and closing follow through refreshLinkedProjects. A project closed in Seeds is not added.
+ */
+export function refreshSeedsProjects(
+  state: any,
+  snapshot: Pick<SeedsSnapshot, 'projects' | 'tasks'>,
+  makeId: () => string = randomUUID,
+) {
+  const clientBySeeds = new Map(
+    list(state?.clients)
+      .filter(client => client?.seedsId)
+      .map(client => [text(client.seedsId), text(client.id)] as const),
+  )
+  const tasksOf = seedsTaskLists(snapshot.tasks)
+  const projects = list(state?.projects)
+  const linked = new Set(projects.map(project => text(project?.seedsId)).filter(Boolean))
+  let changed = false
+  const updated = projects.map(project => {
+    const tasks = project?.seedsId && !project.archived ? tasksOf.get(text(project.seedsId)) : undefined
+    if (!tasks) return project
+    const next = { ...project, seedsTasks: tasks }
+    if (stableRecord(next) === stableRecord(project)) return project
+    changed = true
+    return next
+  })
+  const added = snapshot.projects
+    .filter(source => source.id && source.name && !source.archived && !linked.has(source.id))
+    .filter(source => !source.clientId || clientBySeeds.has(source.clientId))
+    .map(source => {
+      const project: any = { id: makeId(), name: source.name, status: 'Active', targetDate: '', summary: '' }
+      project.seedsId = source.id
+      applyProject(project, source)
+      const clientId = source.clientId ? clientBySeeds.get(source.clientId) : ''
+      if (clientId) project.clientId = clientId
+      const tasks = tasksOf.get(source.id)
+      if (tasks) project.seedsTasks = tasks
+      return project
+    })
+  if (!changed && !added.length) return state
+  return settle(state, { ...state, projects: [...updated, ...added] })
+}
+
 export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Options) {
   const makeId = options.id || randomUUID
   const seeds = seedsState(state)
@@ -236,25 +302,11 @@ export function planSeedsSync(state: any, snapshot: SeedsSnapshot, options: Opti
 
   // Seeds tasks (Go Live, Meetings…) are not created here: tasks and subtasks are this app's own, and each can be
   // linked to one of its project's Seeds tasks, so time goes to the right Seeds task later.
-  const tasksByProject = new Map<
-    string,
-    { id: string; name: string; productRequired?: boolean; defaultProductId?: string; archived?: boolean }[]
-  >()
-  for (const task of snapshot.tasks) {
-    const tasks = tasksByProject.get(task.projectId) || []
-    tasks.push({
-      id: task.id,
-      name: task.name,
-      ...(task.productRequired ? { productRequired: true } : {}),
-      ...(task.defaultProductId ? { defaultProductId: task.defaultProductId } : {}),
-      ...(task.archived ? { archived: true } : {}),
-    })
-    tasksByProject.set(task.projectId, tasks)
-  }
+  const tasksByProject = seedsTaskLists(snapshot.tasks)
   for (const [seedsId, tasks] of tasksByProject) {
     const project = projectBySeeds.get(seedsId)
     if (!project || project.archived) continue
-    project.seedsTasks = tasks.sort((a, b) => a.name.localeCompare(b.name))
+    project.seedsTasks = tasks
   }
 
   // This person's own assignments: Seeds project members matched to them by email. A snapshot may hold other people's
