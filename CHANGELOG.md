@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Deploys: the new build number is built even while another build runs
+- After a merge, Northflank's free plan was often still building the merge itself, so it refused (409, one build at a time) to build the commit with the new build number. The app then kept showing the older number. The request now asks again every 30 seconds, for up to 15 minutes, until Northflank takes it.
+
 ### Seeds: projects that work for several clients
 - A Seeds project with no client of its own (Seeds lets each time entry name the parent, for example an internal migration project) now shows its members every Seeds client by name, so a task under it can say whose work it is. Only names: other clients' contacts, notes and work stay closed.
 - Time on such a project is sent to Seeds with the task's client as the parent. Before, it always went with Seeds' default parent for the project. A project with its own client still always uses that client.
