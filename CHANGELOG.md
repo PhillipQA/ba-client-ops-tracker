@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### CI: fewer GitHub Actions minutes
+- The Build workflow runs on pull requests and on main, not on every branch push too, so a pull request's push no longer runs it twice. A newer push cancels the older run.
+- Build, Biome and tests are now one job, with the npm cache: one install, and one rounded-up minute instead of two.
 ### Trackers: option lists are no longer covered by the column headers
 - A cell's option list (Lessor, Status, a person…) opening upward was drawn under the sticky column header row, which hid some options. Floating panels (cell pickers, toolbar menus) are now drawn above the page, or inside the open dialog, so no part of the grid can cover them.
 
