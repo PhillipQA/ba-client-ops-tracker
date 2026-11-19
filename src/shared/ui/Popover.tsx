@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 
 /**
  * A floating panel next to an element. It is placed with fixed coordinates, so a scrolling grid cannot clip it, and it
- * closes on outside click, Escape, or when anything behind it scrolls. It is drawn on the page (or in the open modal
- * dialog, which sits in the browser's top layer), never inside the grid, so a sticky header or frozen column cannot
- * cover it.
+ * closes on outside click, Escape, or when anything behind it scrolls. It is drawn at the top of the app shell (or in
+ * the open modal dialog, which sits in the browser's top layer), never inside the grid, so a sticky header or frozen
+ * column cannot cover it, and it keeps the theme's colours.
  */
 export function Popover({
   anchor,
@@ -28,7 +28,12 @@ export function Popover({
   const [style, setStyle] = useState<CSSProperties>({ position: 'fixed', top: 0, left: 0, visibility: 'hidden' })
   const [host, setHost] = useState<HTMLElement | null>(null)
   useLayoutEffect(() => {
-    setHost(anchor.current?.closest<HTMLElement>('dialog[open]') || document.body)
+    // Inside the app shell, not on <body>: the theme's colours (--k-solid…) are set on the shell, so outside it the
+    // panel would have no background. The shell has no transform, so the panel is still placed against the window.
+    const at = anchor.current
+    setHost(
+      at?.closest<HTMLElement>('dialog[open]') || at?.closest<HTMLElement>('.app-shell, .trk-page') || document.body,
+    )
   }, [anchor])
   useLayoutEffect(() => {
     const place = () => {
