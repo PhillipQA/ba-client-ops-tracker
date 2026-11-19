@@ -11,6 +11,11 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Tasks keep their client under projects that work for several clients
+- A Seeds sync set every task's client to its Seeds project's client. For a project with no client of its own (such as BXI C# Migration Project) that meant no client, so every sync took the client off its tasks: tasks made by a tracker for EMPERADOR DISTILLERS ended up as "General / no client". A sync now leaves the client of such tasks alone.
+- Repair: when someone who can edit a tracker opens it, its tasks (and their subtasks) that have no client, under a project with no client of its own, get the tracker's client, if the tracker has exactly one. Nothing is guessed for a tracker with several clients.
+- Edit task: a task with no client, under a project with no client of its own, can now be given one, once. Otherwise the client stays locked as before.
+
 ### Action Center: the Log time form looks like the app's other forms
 - Log time from the calendar now uses the standard form layout: padding inside the dialog, the usual field styles, project, client, Seeds task and remarks across, date and duration side by side, and Cancel / Log time in the usual place.
 

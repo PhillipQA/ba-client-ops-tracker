@@ -86,7 +86,7 @@ import { niceTime } from './trackerUi'
 import { SaveAsTemplateDialog } from './TemplateManager'
 import { sheetHasGantt } from './sheetGantt'
 import { keepsStepTasks, planMissingSteps, planStepTasks, siteTaskPatch, siteTaskTitle, stepColumns } from './stepTasks'
-import { rowContract, rowPlace } from './trackerProjects'
+import { missingClientPatches, rowContract, rowPlace } from './trackerProjects'
 import { cellSubtaskPatches, tickedCellPatches } from './cellSubtasks'
 import { waitForCloudSaves } from '../../app/cloudStore'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
@@ -966,7 +966,11 @@ export default function TrackerScreen(props: Props) {
       const item = itemsRef.current.find(entry => entry.id === id)
       return Boolean(item && !props.isTaskClosed(item.status))
     })
-    if (patches.length) void update(patches).catch(taskFailed)
+    // Tasks a Seeds sync left with no client (a project with no client of its own) get the tracker's one client back.
+    const linkedTasks = links.map(link => link.taskId).filter((id): id is string => Boolean(id))
+    const current = trackerRef.current
+    const clients = current ? missingClientPatches(current, linkedTasks, itemsRef.current, props.projects) : []
+    if (patches.length || clients.length) void update([...patches, ...clients]).catch(taskFailed)
   }, [status, canEdit, links, trackerId])
   const linkCells = async (cellLinks: { rowId: string; columnId: string; taskId: string }[]) => {
     for (let at = 0; at < cellLinks.length; at += TRACKER_LIMITS.importBatch) {

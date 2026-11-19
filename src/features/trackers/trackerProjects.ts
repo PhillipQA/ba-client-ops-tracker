@@ -84,3 +84,24 @@ export function rowContract<P extends ContractProject>(
   const projectId = items.find(item => item.id === row.taskId)?.projectId
   return (projectId && projects.find(project => project.id === projectId)?.contractNumber?.trim()) || ''
 }
+
+/**
+ * Tasks of a tracker (and their subtasks) with no client, under a project with no client of its own, get the tracker's
+ * client when it has exactly one. Seeds syncs before B109 took the client off such tasks; with several clients on the
+ * tracker nothing is guessed. Only fills in a missing client, never replaces one.
+ */
+export function missingClientPatches(
+  tracker: Pick<Tracker, 'clientId' | 'clientIds'>,
+  taskIds: string[],
+  items: { id: string; clientId?: string; projectId?: string; parentTaskId?: string }[],
+  projects: { id: string; clientId?: string }[],
+) {
+  const clients = trackerClientIds(tracker)
+  if (clients.length !== 1) return []
+  const linked = new Set(taskIds)
+  const ownClient = (projectId?: string) => Boolean(projectId && projects.find(p => p.id === projectId)?.clientId)
+  return items
+    .filter(item => linked.has(item.id) || Boolean(item.parentTaskId && linked.has(item.parentTaskId)))
+    .filter(item => !item.clientId && !ownClient(item.projectId))
+    .map(item => ({ id: item.id, clientId: clients[0] }))
+}
