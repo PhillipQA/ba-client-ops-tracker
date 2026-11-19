@@ -184,6 +184,7 @@ export default function TrackerImportDialog({
       setError(e instanceof Error ? e.message : 'Could not start the Google permission step.')
     }
   }
+  const needsExcel = (e: unknown) => e instanceof TrackerApiError && Boolean(e.body.needsExcel)
   const openSheet = async (idOrLink: string) => {
     const id = sheetIdFrom(idOrLink)
     if (!id) return setError('That is not a Google Sheets link. Copy the address of the Sheet from your browser.')
@@ -196,7 +197,8 @@ export default function TrackerImportDialog({
       setTab(result.tabs[0]?.title || '')
       if (!name.trim()) setName(result.name.replace(/\.xlsx$/i, '').slice(0, TRACKER_LIMITS.nameLength))
     } catch (e) {
-      if (e instanceof TrackerApiError && e.body.needsExcel) setExcelAllow(true)
+      // An Excel file needs one more Google permission: the notice under the search box asks for it.
+      if (needsExcel(e)) return setExcelAllow(true)
       setError(e instanceof Error ? e.message : 'That Sheet could not be opened.')
     } finally {
       setLooking(false)
@@ -239,6 +241,7 @@ export default function TrackerImportDialog({
       setHeader(true)
       start(parsed.source, true, `sheet:${sheet.id}:${tab}:${keepSync}`)
     } catch (e) {
+      if (needsExcel(e)) return setExcelAllow(true)
       setError(e instanceof Error ? e.message : 'The Sheet could not be read.')
     } finally {
       setLooking(false)
@@ -511,8 +514,11 @@ export default function TrackerImportDialog({
       }
     } catch (e) {
       if (made) await trackerApi.remove(made).catch(() => undefined)
+      if (needsExcel(e)) setExcelAllow(true)
       setError(
-        e instanceof TrackerApiError && e.body.needsGoogle
+        needsExcel(e)
+          ? 'Allow reading Excel files first (button above), then try again.'
+          : e instanceof TrackerApiError && e.body.needsGoogle
           ? 'Allow Google Sheets first (button above), then try again.'
           : e instanceof TrackerApiError && e.status === 409 && e.body.tracker
             ? 'Someone else changed this tracker while you were linking it. Close this window and try again.'

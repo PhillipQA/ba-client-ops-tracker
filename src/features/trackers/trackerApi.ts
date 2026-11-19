@@ -66,6 +66,7 @@ export function errorBody(data: any): TrackerApiError['body'] {
     needsGoogle: Boolean(data?.needsGoogle),
     noAccess: Boolean(data?.noAccess),
     needsWrite: Boolean(data?.needsWrite),
+    needsExcel: Boolean(data?.needsExcel),
     ...(Array.isArray(data?.conflicts) ? { conflicts: data.conflicts } : {}),
   }
 }

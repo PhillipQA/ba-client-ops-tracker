@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: the Allow reading Excel files button shows again
+- Linking an Excel (.xlsx) file kept in Google Drive showed only "Allow reading Excel files in Google Drive first" with no way to allow it. The screen never received the server's Excel flag, so the **Allow reading Excel files** notice stayed hidden. It now shows, on opening the link, reading the tab and connecting. Excel files are still followed read only, never two-way.
+
 ### Trackers: option lists are no longer covered by the column headers
 - A cell's option list (Lessor, Status, a person…) opening upward was drawn under the sticky column header row, which hid some options. Floating panels (cell pickers, toolbar menus) are now drawn above the page, or inside the open dialog, so no part of the grid can cover them.
 

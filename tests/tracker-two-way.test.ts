@@ -558,5 +558,10 @@ test('the screen receives what the server sends for it to act on', async () => {
   const body = errorBody({ error: 'x', needsWrite: true, conflicts, needsGoogle: false })
   assert.equal(body.needsWrite, true, 'the Allow editing with my Google banner depends on it')
   assert.deepEqual(body.conflicts, conflicts, 'the changed-in-the-Sheet window depends on it')
+  assert.equal(
+    errorBody({ error: 'x', needsGoogle: true, needsExcel: true }).needsExcel,
+    true,
+    'the Allow reading Excel files button depends on it',
+  )
   assert.equal(errorBody({}).conflicts, undefined)
 })
