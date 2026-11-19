@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: the Allow reading Excel files button shows again
+- Linking an Excel (.xlsx) file kept in Google Drive showed only "Allow reading Excel files in Google Drive first" with no way to allow it. The screen never received the server's Excel flag, so the **Allow reading Excel files** notice stayed hidden. It now shows, on opening the link, reading the tab and connecting. Excel files are still followed read only, never two-way.
+
 ### CI: fewer GitHub Actions minutes
 - The Build workflow runs on pull requests and on main, not on every branch push too, so a pull request's push no longer runs it twice. A newer push cancels the older run.
 - Build, Biome and tests are now one job, with the npm cache: one install, and one rounded-up minute instead of two.
