@@ -34,7 +34,7 @@ import type { SeedsSnapshot, SeedsTimeRules } from '../../src/shared/seeds'
 export const DEFAULT_SEEDS_URL = 'https://seeds.iripple.com/api/v1'
 
 export type SeedsFields = Partial<
-  Record<'users' | 'parents' | 'clients' | 'projects' | 'members' | 'tasks' | 'products', string[]>
+  Record<'users' | 'parents' | 'clients' | 'projects' | 'members' | 'tasks' | 'products' | 'paging', string[]>
 >
 
 /**
@@ -457,10 +457,41 @@ function page(body: any) {
           : Array.isArray(data?.rows)
             ? data.rows
             : null
-  const next = text(
-    body?.nextCursor ?? body?.meta?.nextCursor ?? body?.pagination?.nextCursor ?? data?.nextCursor ?? body?.next_cursor,
-  )
-  return { rows, next }
+  return { rows, next: nextCursorOf(body) }
+}
+
+/** Where an answer can say there is another page: a cursor field, or a link to the next page that carries one. */
+export function nextCursorOf(body: any) {
+  const data = body?.data
+  const holders = [body, body?.meta, body?.pagination, body?.meta?.pagination, body?.paging, data, data?.meta]
+  for (const holder of holders) {
+    const found = text(holder?.nextCursor ?? holder?.next_cursor ?? holder?.cursor?.next ?? holder?.cursors?.after)
+    if (found) return found
+  }
+  for (const link of [body?.links?.next, body?.meta?.links?.next, body?.next, body?.pagination?.next]) {
+    if (typeof link !== 'string' || !link.includes('cursor=')) continue
+    try {
+      const cursor = new URL(link, 'https://seeds.invalid').searchParams.get('cursor')
+      if (cursor) return cursor
+    } catch {
+      /* Not a link. */
+    }
+  }
+  return ''
+}
+
+/** The names in an answer, never its values: `success, data, meta{nextCursor, total}`. To see how Seeds pages. */
+export function answerShape(body: any) {
+  if (!body || typeof body !== 'object') return typeof body
+  return Object.keys(body)
+    .slice(0, 12)
+    .map(key => {
+      const value = body[key]
+      return value && typeof value === 'object' && !Array.isArray(value) && key !== 'data'
+        ? `${key}{${Object.keys(value).slice(0, 12).join(', ')}}`
+        : key
+    })
+    .join(', ')
 }
 
 /** The latest change time among Seeds' records, by Seeds' clock. */
@@ -546,6 +577,9 @@ export function httpSeedsSource(
     }
   }
 
+  // How each list of the current sync was paged (see readAll).
+  let paging: string[] = []
+
   /** A list the token may not be allowed to read: none instead of an error. */
   async function readAllIfAllowed(path: string, what: string) {
     try {
@@ -559,15 +593,24 @@ export function httpSeedsSource(
   async function readAll(path: string, what: string, query: Record<string, string> = {}) {
     const records: any[] = []
     let cursor = ''
+    let pages = 0
+    let last: any = null
     for (let count = 0; count < MAX_PAGES; count++) {
       const body = await get(path, what, { limit: String(PAGE_SIZE), ...query, ...(cursor ? { cursor } : {}) })
       const { rows, next } = page(body)
       if (!rows) throw new SeedsError(`Seeds sent an unexpected answer for ${what}.`)
       records.push(...rows)
+      pages++
+      last = { body, rows: rows.length }
       if (records.length > MAX_RECORDS) throw new SeedsError(`Seeds sent more ${what} than this app can sync.`)
       if (!next || next === cursor) break
       cursor = next
     }
+    // How each list was read, shown in Settings › Integrations › Seeds (Fields Seeds sent › paging). A full last
+    // page with no next-page marker this app knows may mean Seeds has more: the answer's names show how it pages.
+    const full = last && last.rows >= PAGE_SIZE
+    const more = full ? ` (last page full and no next-page marker found; answer: ${answerShape(last.body)})` : ''
+    paging.push(`${what}: ${records.length} in ${pages} page${pages === 1 ? '' : 's'}${more}`)
     return records
   }
 
@@ -617,14 +660,17 @@ export function httpSeedsSource(
       const note = (key: keyof SeedsFields, rows: any[]) => {
         if (rows.length) fields[key] = fieldNames(rows)
       }
+      paging = []
+      const withPaging = <T extends { fields: SeedsFields }>(result: T): T =>
+        paging.length ? { ...result, fields: { ...result.fields, paging: [...paging] } } : result
       try {
         if (delta && Number.isFinite(Date.parse(delta.since))) {
           const changes = await readChanges(emails, fields, note, delta)
-          if (changes) return changes
+          if (changes) return withPaging(changes)
         }
-        return await readEverything(emails, fields, note, linked)
+        return withPaging(await readEverything(emails, fields, note, linked))
       } catch (error) {
-        if (error instanceof SeedsError) error.fields = fields
+        if (error instanceof SeedsError) error.fields = paging.length ? { ...fields, paging: [...paging] } : fields
         throw error
       }
     },
