@@ -519,12 +519,12 @@ export default function TrackerImportDialog({
         needsExcel(e)
           ? 'Allow reading Excel files first (button above), then try again.'
           : e instanceof TrackerApiError && e.body.needsGoogle
-          ? 'Allow Google Sheets first (button above), then try again.'
-          : e instanceof TrackerApiError && e.status === 409 && e.body.tracker
-            ? 'Someone else changed this tracker while you were linking it. Close this window and try again.'
-            : e instanceof Error
-              ? e.message
-              : 'The Sheet could not be connected.',
+            ? 'Allow Google Sheets first (button above), then try again.'
+            : e instanceof TrackerApiError && e.status === 409 && e.body.tracker
+              ? 'Someone else changed this tracker while you were linking it. Close this window and try again.'
+              : e instanceof Error
+                ? e.message
+                : 'The Sheet could not be connected.',
       )
       setBusy(false)
       setProgress('')
