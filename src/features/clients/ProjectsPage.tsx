@@ -7,6 +7,7 @@ import { Empty, StatusChip } from '../../shared/ui/Chips'
 import { niceDate } from '../../shared/dates'
 import type { Project } from '../../shared/types'
 import { StatusReportDialog } from '../ai/StatusReportDialog'
+import { ListPager, usePaged } from '../../shared/ui/ListPager'
 
 /** Projects screen. It reads the app state; see app/useAppState. */
 export function ProjectsPage({ app }: { app: AppState }) {
@@ -33,6 +34,7 @@ export function ProjectsPage({ app }: { app: AppState }) {
       // Projects closed in Seeds (resolved, completed…) count as archived here.
       (projectArchiveFilter === 'all' || isClosedProject(project) === (projectArchiveFilter === 'archived')),
   )
+  const paged = usePaged(shown, 'projects-page-size', [source, projectArchiveFilter].join('|'))
   return (
     <section className="page-stack">
       <div className="section-actions">
@@ -55,6 +57,7 @@ export function ProjectsPage({ app }: { app: AppState }) {
           <option value="all">All</option>
         </select>
       </label>
+      {shown.length > 0 && <ListPager paged={paged} noun={['project', 'projects']} />}
       <div className="panel table-panel">
         <table>
           <thead>
@@ -75,7 +78,7 @@ export function ProjectsPage({ app }: { app: AppState }) {
                 </td>
               </tr>
             ) : (
-              shown.map(project => {
+              paged.rows.map(project => {
                 const clientIds = project.clientId
                   ? [project.clientId]
                   : [

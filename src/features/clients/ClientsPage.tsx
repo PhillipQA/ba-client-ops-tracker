@@ -5,6 +5,7 @@ import { isArchived } from '../tasks/lifecycle'
 import { useState } from 'react'
 import { SeedsBadge, type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 import { niceDate } from '../../shared/dates'
+import { ListPager, usePaged } from '../../shared/ui/ListPager'
 
 /** Clients screen. It reads the app state; see app/useAppState. */
 export function ClientsPage({ app }: { app: AppState }) {
@@ -27,6 +28,9 @@ export function ClientsPage({ app }: { app: AppState }) {
   const visibleClients = app.store.seeds?.cutoverAt
     ? allVisible.filter(({ client }) => sourceMatches(source, client))
     : allVisible
+  // A page at a time: Seeds brings in every client, often more than a hundred.
+  const filters = [source, clientArchiveFilter, clientSearch, clientSort].join('|')
+  const paged = usePaged(visibleClients, 'clients-page-size', filters)
   return (
     <section className="page-stack">
       <div className="section-actions">
@@ -98,9 +102,7 @@ export function ClientsPage({ app }: { app: AppState }) {
           </button>
         </div>
       </div>
-      <p className="client-result-count">
-        {visibleClients.length} client{visibleClients.length === 1 ? '' : 's'} shown
-      </p>
+      {visibleClients.length > 0 && <ListPager paged={paged} noun={['client', 'clients']} />}
       {visibleClients.length === 0 ? (
         <div className="panel empty-start-card">
           <Users size={24} />
@@ -124,7 +126,7 @@ export function ClientsPage({ app }: { app: AppState }) {
               </tr>
             </thead>
             <tbody>
-              {visibleClients.map(({ client, projectCount, openTaskCount, next }) => (
+              {paged.rows.map(({ client, projectCount, openTaskCount, next }) => (
                 <tr key={client.id}>
                   <td>
                     <button type="button" className="table-link" onClick={() => setSelectedClientId(client.id)}>
@@ -170,7 +172,7 @@ export function ClientsPage({ app }: { app: AppState }) {
         </div>
       ) : (
         <div className={`client-grid ${clientLayout === 'list' ? 'client-grid-list' : ''}`}>
-          {visibleClients.map(({ client, projectCount, openTaskCount, next }) => (
+          {paged.rows.map(({ client, projectCount, openTaskCount, next }) => (
             <div key={client.id} className="client-card-wrap">
               <button className="client-card" onClick={() => setSelectedClientId(client.id)}>
                 <div className="card-top">
