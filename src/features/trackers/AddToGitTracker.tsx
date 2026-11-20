@@ -170,12 +170,7 @@ export default function AddToGitTracker({ provider, ticketId, repository, client
             </p>
           )}
           <div className="integration-actions">
-            <button
-              type="button"
-              className="primary"
-              disabled={busy || !options.mapping}
-              onClick={() => void add()}
-            >
+            <button type="button" className="primary" disabled={busy || !options.mapping} onClick={() => void add()}>
               {busy ? 'Adding…' : 'Add'}
             </button>
             <button type="button" className="secondary" disabled={busy} onClick={() => setOpen(false)}>

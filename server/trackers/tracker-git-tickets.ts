@@ -46,8 +46,7 @@ const issueTable = (provider: GitProvider) => (provider === 'gitlab' ? 'user_git
 const missingSchema = (error: any) => error?.code === '42P01' || error?.code === '42703'
 
 export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: string) {
-  const { db, scope, route, who, idParam, trackerRow, workspace, columnsOf, mergeCells, record, touch, readOnly } =
-    core
+  const { db, scope, route, who, idParam, trackerRow, workspace, columnsOf, mergeCells, record, touch, readOnly } = core
   const nowMs = () => (deps.now ? deps.now() : new Date()).getTime()
   const stamp = () => new Date(nowMs()).toISOString()
 
@@ -128,7 +127,11 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
 
   async function workCount(tenant: string, entryIds: string[]) {
     if (!entryIds.length) return new Map<string, number>()
-    const r = await db.from(WORK).select('git_tracker_ticket_id').eq('tenant_id', tenant).in('git_tracker_ticket_id', entryIds)
+    const r = await db
+      .from(WORK)
+      .select('git_tracker_ticket_id')
+      .eq('tenant_id', tenant)
+      .in('git_tracker_ticket_id', entryIds)
     check(r.error)
     const counts = new Map<string, number>()
     for (const row of r.data || [])
@@ -159,7 +162,8 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
       .eq('attempts', entry.attempts)
       .select('*')
     check(claimed.error)
-    if (!claimed.data?.length) throw new TrackerError('This ticket is being added right now. Wait a moment, then reload.', 409)
+    if (!claimed.data?.length)
+      throw new TrackerError('This ticket is being added right now. Wait a moment, then reload.', 409)
 
     const finish = async (status: 'Completed' | 'Failed', error = '') => {
       const saved = await db
@@ -320,7 +324,11 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
 
       // 4. What each rule made, once per rule.
       if (plan.work.length) {
-        const have = await db.from(WORK).select('rule_key').eq('tenant_id', tenant).eq('git_tracker_ticket_id', entry.id)
+        const have = await db
+          .from(WORK)
+          .select('rule_key')
+          .eq('tenant_id', tenant)
+          .eq('git_tracker_ticket_id', entry.id)
         check(have.error)
         const done = new Set((have.data || []).map((row: any) => row.rule_key))
         const records = plan.work

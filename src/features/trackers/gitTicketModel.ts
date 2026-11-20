@@ -27,4 +27,3 @@ export type GitTicketEntry = {
   /** Tasks and Subtasks it made. */
   workCount?: number
 }
-

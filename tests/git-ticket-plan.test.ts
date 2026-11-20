@@ -57,8 +57,18 @@ test('a Work Hub ticket is read the way generation needs it', () => {
 
 test('a ticket finds its repository mapping by id, else by path before a sync has read the id', () => {
   const mappings = [
-    { provider: 'gitlab', instance_url: 'https://gitlab.example.com', repository_id: '42', repository_path: 'x/renamed' },
-    { provider: 'gitlab', instance_url: 'https://gitlab.example.com', repository_id: '43', repository_path: 'barter-11/bxi' },
+    {
+      provider: 'gitlab',
+      instance_url: 'https://gitlab.example.com',
+      repository_id: '42',
+      repository_path: 'x/renamed',
+    },
+    {
+      provider: 'gitlab',
+      instance_url: 'https://gitlab.example.com',
+      repository_id: '43',
+      repository_path: 'barter-11/bxi',
+    },
     { provider: 'gitlab', instance_url: 'https://gitlab.com', repository_id: '44', repository_path: 'barter-11/bxi' },
     { provider: 'github', instance_url: 'https://github.com', repository_id: '45', repository_path: 'barter-11/bxi' },
   ]
@@ -147,14 +157,20 @@ test('Tasks get their planned ids, so a retry makes only what is missing', () =>
   assert.equal(task.assignedToUserId, 'u1')
   assert.equal(dev.parentTaskId, task.id)
   assert.equal(retest.parentTaskId, task.id)
-  assert.ok(made.activity.every(entry => entry.id === 'fresh'), 'activity entries get fresh ids')
+  assert.ok(
+    made.activity.every(entry => entry.id === 'fresh'),
+    'activity entries get fresh ids',
+  )
 
   // Retried after the Task was saved but before the rest: only the Subtasks, under the existing Task.
   const again = missingWork(plan, new Set([task.id]))
   assert.deepEqual(again.ids, [dev.id, retest.id])
   assert.equal(again.drafts[0].parentTaskId, task.id)
   assert.equal(again.drafts[0].parentIndex, undefined)
-  const second = tasksFromDrafts(workspace([task]), again.drafts, { today: '2026-11-20', newId: plannedIds(again.ids, () => 'x') })
+  const second = tasksFromDrafts(workspace([task]), again.drafts, {
+    today: '2026-11-20',
+    newId: plannedIds(again.ids, () => 'x'),
+  })
   assert.deepEqual(
     second.made.map(item => [item.id, item.parentTaskId]),
     [
@@ -229,7 +245,10 @@ test('Work Hub offers Add to GIT Tracker; the GIT Tracker lists its tickets with
   assert.match(routes, /already in that GIT Tracker/, 'a ticket is added once')
   assert.match(routes, /is not mapped to a Client and Project yet/)
   assert.match(routes, /canCreateWork\(state, user/)
-  assert.match(read('server/trackers/trackers.ts'), /trackerRowRoutes\(app, core, sheetAccess, sheetWrite, automations, gitTickets\.hiddenSourceKeys\)/)
+  assert.match(
+    read('server/trackers/trackers.ts'),
+    /trackerRowRoutes\(app, core, sheetAccess, sheetWrite, automations, gitTickets\.hiddenSourceKeys\)/,
+  )
   assert.match(read('server/trackers/tracker-row-routes.ts'), /hidden\.has\(String\(entry\.source_key/)
   const hub = read('src/features/integrations/GithubHub.tsx')
   assert.match(hub, /<AddToGitTracker/)
