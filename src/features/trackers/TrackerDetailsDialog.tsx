@@ -115,8 +115,8 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, peopl
             />
             <p className="trk-muted-text">
               Type a project's name or contract number to add it; ★ makes one the default. Each row goes to its task's
-              project; a row with no task yet goes to the project whose contract number is in its Contract number
-              column (for example SLSS #), else to the default project.
+              project; a row with no task yet goes to the project whose contract number is in its Contract number column
+              (for example SLSS #), else to the default project.
             </p>
           </>
         )}

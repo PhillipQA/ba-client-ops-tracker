@@ -45,12 +45,7 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
   /** The GIT template a new GIT Tracker is made from, if the person may use it, with its rules checked. */
   async function gitTemplateFor(tenant: string, user: { id: string; role: string }, id: unknown) {
     if (typeof id !== 'string' || !UUID.test(id)) throw new TrackerError('Choose a GIT template for the GIT Tracker.')
-    const r = await db
-      .from('tenant_tracker_templates')
-      .select('*')
-      .eq('tenant_id', tenant)
-      .eq('id', id)
-      .maybeSingle()
+    const r = await db.from('tenant_tracker_templates').select('*').eq('tenant_id', tenant).eq('id', id).maybeSingle()
     if (r.error) throw new TrackerError(GIT_UPGRADE, 503, { needsUpgrade: true })
     const found = r.data
     const usable =

@@ -555,8 +555,7 @@ export function TemplateEditor({
               <small>(made as soon as a row has a name; ticking a box completes its subtask)</small>
             </label>
             <p className="trk-muted-text">
-              The first column names each row and holds the row’s task; the other cells can each hold one subtask of
-              it.
+              The first column names each row and holds the row’s task; the other cells can each hold one subtask of it.
             </p>
           </>
         )}

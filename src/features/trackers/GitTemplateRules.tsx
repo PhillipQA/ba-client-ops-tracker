@@ -94,7 +94,10 @@ export function GitTemplateRules({
   const setRow = (key: string, patch: Partial<GitRowBlueprint>) =>
     onChange({ ...value, rows: value.rows.map(row => (row.key === key ? { ...row, ...patch } : row)) })
   const setRule = (key: string, patch: Partial<GitColumnRule>) =>
-    onChange({ ...value, columnRules: value.columnRules.map(rule => (rule.key === key ? { ...rule, ...patch } : rule)) })
+    onChange({
+      ...value,
+      columnRules: value.columnRules.map(rule => (rule.key === key ? { ...rule, ...patch } : rule)),
+    })
   const moveRow = (at: number, by: number) => {
     const rows = [...value.rows]
     const [row] = rows.splice(at, 1)
@@ -208,7 +211,11 @@ export function GitTemplateRules({
                 value={row.work === 'subtask' ? `sub:${row.parentKey || ''}` : row.work}
                 onChange={event => {
                   const next = event.target.value
-                  const task = row.task || { title: '#{ticket.number} {ticket.title}', description: '', due: { from: 'none' } }
+                  const task = row.task || {
+                    title: '#{ticket.number} {ticket.title}',
+                    description: '',
+                    due: { from: 'none' },
+                  }
                   if (next === 'none') setRow(row.key, { work: 'none', parentKey: undefined })
                   else if (next === 'task') setRow(row.key, { work: 'task', parentKey: undefined, task })
                   else setRow(row.key, { work: 'subtask', parentKey: next.slice(4), task })
@@ -234,7 +241,9 @@ export function GitTemplateRules({
               mapping={row.task}
               dateColumns={dateColumns}
               onChange={task => setRow(row.key, { task })}
-              titleHint={row.work === 'task' ? '#{ticket.number} {ticket.title}' : '{row}: #{ticket.number} {ticket.title}'}
+              titleHint={
+                row.work === 'task' ? '#{ticket.number} {ticket.title}' : '{row}: #{ticket.number} {ticket.title}'
+              }
             />
           )}
           <CellFills columns={columns} cells={row.cells} onChange={cells => setRow(row.key, { cells })} />
@@ -247,12 +256,7 @@ export function GitTemplateRules({
         </fieldset>
       ))}
       <div className="git-rules-add">
-        <button
-          type="button"
-          className="trk-button"
-          disabled={value.rows.length >= GIT_LIMITS.rows}
-          onClick={addRow}
-        >
+        <button type="button" className="trk-button" disabled={value.rows.length >= GIT_LIMITS.rows} onClick={addRow}>
           <Plus size={14} aria-hidden="true" /> Add a row
         </button>
       </div>
@@ -270,7 +274,9 @@ export function GitTemplateRules({
               type="button"
               className="trk-icon-button small"
               aria-label={`Remove column rule ${at + 1}`}
-              onClick={() => onChange({ ...value, columnRules: value.columnRules.filter(item => item.key !== rule.key) })}
+              onClick={() =>
+                onChange({ ...value, columnRules: value.columnRules.filter(item => item.key !== rule.key) })
+              }
             >
               <Trash2 size={13} />
             </button>
@@ -291,7 +297,9 @@ export function GitTemplateRules({
               <select
                 value={rule.rows === 'all' ? 'all' : 'some'}
                 onChange={event =>
-                  setRule(rule.key, { rows: event.target.value === 'all' ? 'all' : taskRows.slice(0, 1).map(row => row.key) })
+                  setRule(rule.key, {
+                    rows: event.target.value === 'all' ? 'all' : taskRows.slice(0, 1).map(row => row.key),
+                  })
                 }
               >
                 <option value="all">Every Task row</option>
@@ -475,7 +483,11 @@ function CellFills({
               ))}
             </select>
             {value?.from === 'fixed' && (
-              <FixedValue column={column} value={value.value} onChange={next => set(column.id, { from: 'fixed', value: next })} />
+              <FixedValue
+                column={column}
+                value={value.value}
+                onChange={next => set(column.id, { from: 'fixed', value: next })}
+              />
             )}
           </div>
         )
@@ -628,8 +640,8 @@ function Preview({ generation, columns }: { generation: GitGeneration; columns: 
   return (
     <div className="git-preview">
       <p className="trk-muted-text">
-        Example: GitLab ticket #{SAMPLE.number} “{SAMPLE.title}”, labels {SAMPLE.labels.join(', ')}, due {SAMPLE.dueDate}
-        .
+        Example: GitLab ticket #{SAMPLE.number} “{SAMPLE.title}”, labels {SAMPLE.labels.join(', ')}, due{' '}
+        {SAMPLE.dueDate}.
       </p>
       {plan.errors.length > 0 && <p className="trk-field-error">{plan.errors[0]}</p>}
       <strong>Rows</strong>

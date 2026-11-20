@@ -326,7 +326,9 @@ test('GIT templates: rules checked against the columns, kept apart from the ordi
     })
     assert.equal(refused.status, 400)
     assert.match(refused.body.error, /GIT template has/)
-    assert.ok(refused.body.errors.some((error: string) => /Subtask row must belong under a row that makes a Task/.test(error)))
+    assert.ok(
+      refused.body.errors.some((error: string) => /Subtask row must belong under a row that makes a Task/.test(error)),
+    )
 
     // Its columns are what its rules refer to: removing one they fill is refused.
     const id = made.body.template.id
@@ -339,13 +341,18 @@ test('GIT templates: rules checked against the columns, kept apart from the ordi
     assert.equal((await ask('PATCH', `/api/tracker-templates/${id}`, { kind: 'standard' })).status, 400)
     assert.equal(
       (
-        await ask('POST', '/api/tracker-templates', {
-          name: 'Site rollout',
-          columns: starter.columns,
-          kind: 'git',
-          generation: starter.generation,
-          templateKey: 'site-rollout',
-        }, admin)
+        await ask(
+          'POST',
+          '/api/tracker-templates',
+          {
+            name: 'Site rollout',
+            columns: starter.columns,
+            kind: 'git',
+            generation: starter.generation,
+            templateKey: 'site-rollout',
+          },
+          admin,
+        )
       ).status,
       400,
     )

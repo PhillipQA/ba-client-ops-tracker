@@ -90,19 +90,19 @@ export function registerGitMappings(app: Express, deps: Deps) {
     }
   const workspace = async (tenant: string) => (await deps.load(tenant)).data || {}
   async function activeRows(tenant: string) {
-    const r = await db.from(TABLE).select('*').eq('tenant_id', tenant).eq('is_active', true).limit(MAPPING_LIMIT + 1)
+    const r = await db
+      .from(TABLE)
+      .select('*')
+      .eq('tenant_id', tenant)
+      .eq('is_active', true)
+      .limit(MAPPING_LIMIT + 1)
     if (r.error) throw r.error
     return (r.data || []) as any[]
   }
   /** The Administrator's own connection and token, to look the repository up with. */
   async function lookup(user: User, provider: GitProvider, name: string) {
     const table = provider === 'gitlab' ? 'user_gitlab_connections' : 'user_github_connections'
-    const r = await db
-      .from(table)
-      .select('*')
-      .eq('tenant_id', user.organizationId)
-      .eq('user_id', user.id)
-      .maybeSingle()
+    const r = await db.from(table).select('*').eq('tenant_id', user.organizationId).eq('user_id', user.id).maybeSingle()
     if (r.error) throw r.error
     const label = provider === 'gitlab' ? 'GitLab' : 'GitHub'
     if (!r.data?.encrypted_token)
