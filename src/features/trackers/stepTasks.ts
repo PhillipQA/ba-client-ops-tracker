@@ -13,8 +13,9 @@ import type { TaskDraft } from './TrackerWork'
 /** The templates whose trackers keep a task per row and a subtask per step. */
 export const STEP_TASK_TEMPLATES = ['site-rollout']
 /** On when the tracker says so (its own switch, schema v35); otherwise when it was made from Site rollout. */
-export const keepsStepTasks = (tracker: Pick<Tracker, 'template' | 'stepTasks'> | null | undefined) =>
-  Boolean(tracker && (tracker.stepTasks ?? STEP_TASK_TEMPLATES.includes(tracker.template)))
+export const keepsStepTasks = (tracker: Pick<Tracker, 'template' | 'stepTasks' | 'kind'> | null | undefined) =>
+  // A GIT Tracker's work comes from its GIT template, never from rows and checkboxes.
+  Boolean(tracker && tracker.kind !== 'git' && (tracker.stepTasks ?? STEP_TASK_TEMPLATES.includes(tracker.template)))
 
 /** The steps: every Checkbox column. */
 export const stepColumns = (columns: TrackerColumn[]) => columns.filter(column => column.type === 'checkbox')

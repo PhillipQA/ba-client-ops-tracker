@@ -142,6 +142,11 @@ export function TrackerCollection(props: CollectionProps) {
   )
   const chips = (tracker: Tracker) => (
     <>
+      {tracker.kind === 'git' && (
+        <span className="trk-chip trk-git-badge" title="A GIT Tracker: GitLab and GitHub tickets are added to it">
+          GIT
+        </span>
+      )}
       {tracker.private && (
         <span className="trk-chip">
           <Lock size={11} aria-hidden="true" /> Only you

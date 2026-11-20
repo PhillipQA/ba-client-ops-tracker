@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { UserAccount } from '../../shared/types'
+import type { Client, Project, UserAccount } from '../../shared/types'
 import { DocHubSettings } from '../documents/DocHubPanel'
 import { CalendarAccountSettings } from '../integrations/GoogleCalendarPanel'
 import { GmailAccountSettings } from '../integrations/GmailAccountSettings'
 import { DriveAccountSettings } from '../integrations/DriveAccountSettings'
+import { RepositoryMappingSettings } from '../integrations/RepositoryMappingSettings'
 import { AccessSettings, SeedsConnectionCard } from '../seeds/SeedsSettings'
 import { AccountWorkflow } from './WorkflowEditor'
 import { RolesSettings } from './RolesSettings'
@@ -677,7 +678,16 @@ function Templates() {
   )
 }
 
-export default function Settings({ currentUser }: { currentUser: UserAccount }) {
+export default function Settings({
+  currentUser,
+  clients = [],
+  projects = [],
+}: {
+  currentUser: UserAccount
+  /** For Repository mapping (GIT Tracker). */
+  clients?: Client[]
+  projects?: Project[]
+}) {
   const [data, setData] = useState<any>(null),
     [error, setError] = useState('')
   const isAdmin = currentUser.role === 'Administrator'
@@ -800,6 +810,13 @@ export default function Settings({ currentUser }: { currentUser: UserAccount }) 
             <GmailAccountSettings key={`gmail:${currentUser.organizationId}`} />
             <DriveAccountSettings key={`drive:${currentUser.organizationId}`} />
             <SeedsConnectionCard key={`seeds:${currentUser.organizationId}`} />
+            {activeTab === 'integrations' && (
+              <RepositoryMappingSettings
+                key={`git-mapping:${currentUser.organizationId}`}
+                clients={clients}
+                projects={projects}
+              />
+            )}
           </div>
           <div
             className="settings-tab-content"

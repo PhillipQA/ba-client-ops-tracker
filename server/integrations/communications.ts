@@ -1,5 +1,6 @@
 import { registerGitlab } from './gitlab'
 import { registerGithub } from './github'
+import { registerGitMappings } from './git-mappings'
 import { registerOutbound } from './gmail-outbound'
 import type { Express } from 'express'
 import { type CommunicationsDeps, google, oauthStates } from './communications-common'
@@ -73,6 +74,8 @@ export function registerCommunications(app: Express, deps: CommunicationsDeps) {
     commit: deps.commit,
     openStatus: deps.openStatus,
   })
+  // GIT Tracker: which Client and Project each repository's tickets belong to, for the whole workspace.
+  registerGitMappings(app, { db, requireAuth: deps.requireAuth, requireTenant: deps.requireTenant, load: deps.load })
   const timer = setInterval(() => {
     const now = Date.now()
     for (const [key, value] of oauthStates) if (value.expires < now) oauthStates.delete(key)

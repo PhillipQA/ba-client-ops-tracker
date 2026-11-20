@@ -664,7 +664,12 @@ function App() {
             )}
 
             {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && (
-              <Settings key={`${currentUser.organizationId}:${currentUser.id}`} currentUser={currentUser} />
+              <Settings
+                key={`${currentUser.organizationId}:${currentUser.id}`}
+                currentUser={currentUser}
+                clients={store.clients}
+                projects={store.projects}
+              />
             )}
 
             {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (

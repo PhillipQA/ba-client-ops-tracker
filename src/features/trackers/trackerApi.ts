@@ -128,6 +128,9 @@ export const trackerApi = {
     projectIds?: string[]
     private?: boolean
     stepTasks?: boolean
+    /** 'git': a GIT Tracker made from the GIT template gitTemplateId (its columns and rules come from it). */
+    kind?: 'git'
+    gitTemplateId?: string
   }) => call<{ tracker: Tracker }>('POST', '', body),
   get: (id: string, signal?: AbortSignal) => call<{ tracker: Tracker }>('GET', `/${id}`, undefined, signal),
   update: (
@@ -300,6 +303,10 @@ export type TemplateBody = {
   /** The built-in template this account copy replaces. */
   templateKey?: string
   stepTasks?: boolean
+  /** New templates only: 'git' makes a GIT template. */
+  kind?: 'git'
+  /** GIT templates: the rules (see gitGeneration). */
+  generation?: unknown
   revision?: number
 }
 const templateCall = <T>(method: string, path: string, body?: unknown, signal?: AbortSignal) =>
@@ -318,7 +325,7 @@ export class TemplateApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public body: { needsUpgrade?: boolean; template?: SavedTemplate } = {},
+    public body: { needsUpgrade?: boolean; template?: SavedTemplate; errors?: string[] } = {},
   ) {
     super(message)
   }

@@ -53,6 +53,7 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, peopl
   }
   // New Seeds projects of its clients become rows: offered once one of its clients comes from Seeds.
   const [seedsRows, setSeedsRows] = useState(tracker.seedsRows === true)
+  const git = tracker.kind === 'git'
   const seedsClients = projects.some(
     project => project.seedsId && project.clientId && clientIds.includes(project.clientId),
   )
@@ -72,8 +73,8 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, peopl
       const seedsChanged = seedsRows !== (tracker.seedsRows === true)
       await onSave({
         name: name.trim(),
-        clientIds,
-        projectIds,
+        // A GIT Tracker has no Client or Project of its own.
+        ...(git ? {} : { clientIds, projectIds }),
         ...(tracker.canManage && changed ? { members } : {}),
         ...(seedsChanged ? { seedsRows } : {}),
       })
@@ -96,20 +97,29 @@ export default function TrackerDetailsDialog({ tracker, clients, projects, peopl
             required
           />
         </label>
-        <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
-        <TrackerProjectPicker
-          projects={projects}
-          clients={clients}
-          clientIds={clientIds}
-          value={projectIds}
-          onChange={pickProjects}
-        />
-        <p className="trk-muted-text">
-          Type a project's name or contract number to add it; ★ makes one the default. Each row goes to its task's
-          project; a row with no task yet goes to the project whose contract number is in its Contract number column
-          (for example SLSS #), else to the default project.
-        </p>
-        {(seedsClients || tracker.seedsRows) && (
+        {git ? (
+          <p className="trk-muted-text">
+            A GIT Tracker has no Client or Project of its own: each ticket’s work goes under the Client and Project its
+            repository is mapped to.
+          </p>
+        ) : (
+          <>
+            <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
+            <TrackerProjectPicker
+              projects={projects}
+              clients={clients}
+              clientIds={clientIds}
+              value={projectIds}
+              onChange={pickProjects}
+            />
+            <p className="trk-muted-text">
+              Type a project's name or contract number to add it; ★ makes one the default. Each row goes to its task's
+              project; a row with no task yet goes to the project whose contract number is in its Contract number
+              column (for example SLSS #), else to the default project.
+            </p>
+          </>
+        )}
+        {!git && (seedsClients || tracker.seedsRows) && (
           <>
             <label className="trk-checkline">
               <input type="checkbox" checked={seedsRows} onChange={event => setSeedsRows(event.target.checked)} /> Add

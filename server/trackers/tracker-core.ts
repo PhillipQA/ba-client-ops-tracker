@@ -87,6 +87,8 @@ export function trackerCore(deps: Deps) {
     const scope = scopeFor(state, user.id)
     if (scope.all) return () => true
     return (row: any) => {
+      // A GIT Tracker holds tickets of every client and shows to everyone; its rows follow each ticket's client.
+      if (row.kind === 'git') return true
       const clients = splitClientIds(row.client_id)
       if (clients.length) return clients.every(clientId => scope.fullClients.has(clientId))
       const projects = splitClientIds(row.project_id)
@@ -141,6 +143,14 @@ export function trackerCore(deps: Deps) {
     projectIds: splitClientIds(row.project_id),
     private: Boolean(row.private),
     template: row.template || '',
+    ...(row.kind === 'git'
+      ? {
+          kind: 'git' as const,
+          gitConfig: row.git_config || {},
+          gitTemplateId: row.git_template_id || '',
+          gitTemplateRevision: Number(row.git_template_revision) || 1,
+        }
+      : {}),
     ...(typeof row.step_tasks === 'boolean' ? { stepTasks: row.step_tasks } : {}),
     seedsRows: row.seeds_rows === true,
     columns: Array.isArray(row.columns) ? row.columns : [],

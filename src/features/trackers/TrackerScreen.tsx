@@ -967,6 +967,8 @@ export default function TrackerScreen(props: Props) {
   }
   // ---- Site rollout: a task for each site and a subtask for each step (see stepTasks) ----
   const stepTasks = keepsStepTasks(tracker)
+  // A GIT Tracker: its rows come from GitLab and GitHub tickets, so it does not import or follow a Google Sheet.
+  const isGit = tracker?.kind === 'git'
   const linksRef = useRef(links)
   linksRef.current = links
   const noClientSaid = useRef(false)
@@ -1886,6 +1888,14 @@ export default function TrackerScreen(props: Props) {
             </span>
           )}
           {tracker.archived && <span className="trk-chip warn">Archived</span>}
+          {isGit && (
+            <span
+              className="trk-chip trk-git-badge"
+              title="A GIT Tracker: GitLab and GitHub tickets are added to it from Work Hub, from every client"
+            >
+              GIT Tracker
+            </span>
+          )}
           {stepTasks && (
             <span
               className="trk-chip"
@@ -1896,7 +1906,7 @@ export default function TrackerScreen(props: Props) {
           )}
         </div>
         <div className="trk-header-actions">
-          {canEdit && !tracker.source && (
+          {canEdit && !tracker.source && !isGit && (
             <button
               type="button"
               className="trk-button"
@@ -1909,7 +1919,7 @@ export default function TrackerScreen(props: Props) {
               <span className="trk-label">{creatingSheet ? 'Making Sheet…' : 'Create Google Sheet'}</span>
             </button>
           )}
-          {canEdit && (
+          {canEdit && !isGit && (
             <button
               type="button"
               className="trk-button"
@@ -1961,6 +1971,13 @@ export default function TrackerScreen(props: Props) {
           </button>
         </div>
       </header>
+      {isGit && (
+        <p className="trk-git-note">
+          A GIT Tracker: GitLab and GitHub tickets are added here from Work Hub, and its GIT template makes each
+          ticket’s rows, Tasks and Subtasks under the Client and Project the ticket’s repository is mapped to. Adding
+          tickets from Work Hub comes in the next update.
+        </p>
+      )}
       {moreOpen && (
         <Popover
           anchor={moreButton}
@@ -1979,10 +1996,10 @@ export default function TrackerScreen(props: Props) {
                   setDetails(true)
                 }}
               >
-                Rename, client and project…
+                {isGit ? 'Rename and users…' : 'Rename, client and project…'}
               </button>
             )}
-            {tracker.canEdit && !tracker.archived && (
+            {tracker.canEdit && !tracker.archived && !isGit && (
               <button
                 type="button"
                 role="menuitem"
@@ -1999,7 +2016,7 @@ export default function TrackerScreen(props: Props) {
                 {stepTasks ? 'Stop making tasks for rows' : 'Make each row a task, checkboxes subtasks'}
               </button>
             )}
-            {canEdit && !tracker.archived && (
+            {canEdit && !tracker.archived && !isGit && (
               <button
                 type="button"
                 role="menuitem"
@@ -2845,16 +2862,22 @@ export default function TrackerScreen(props: Props) {
               <strong>No rows yet.</strong>
             </p>
             <p className="trk-muted-text">
-              {canEdit ? 'Add a row, or bring in a sheet you already keep.' : 'Nothing has been added to this tracker.'}
+              {isGit
+                ? 'No ticket has been added yet.'
+                : canEdit
+                  ? 'Add a row, or bring in a sheet you already keep.'
+                  : 'Nothing has been added to this tracker.'}
             </p>
             {canEdit && (
               <div className="trk-card-actions">
                 <button type="button" className="trk-button primary" onClick={() => void addRow()}>
                   <Plus size={14} aria-hidden="true" /> Add row
                 </button>
-                <button type="button" className="trk-button" onClick={() => setImporting(true)}>
-                  <Upload size={14} aria-hidden="true" /> Import a sheet
-                </button>
+                {!isGit && (
+                  <button type="button" className="trk-button" onClick={() => setImporting(true)}>
+                    <Upload size={14} aria-hidden="true" /> Import a sheet
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -4,6 +4,7 @@
  * functions, so a value the grid accepts is a value the server accepts.
  */
 
+import type { GitGeneration } from './gitGeneration'
 import type { TimelineSettings } from './timelineModel'
 
 export const TRACKER_LIMITS = {
@@ -335,9 +336,21 @@ export type SyncReport = {
   fileVersion?: string
 }
 
+/**
+ * 'git': a GIT Tracker. GitLab and GitHub tickets are added to it from Work Hub, and its GIT template turns each into
+ * rows, Tasks and Subtasks under the ticket's mapped Client and Project. It has no Client or Project of its own.
+ */
+export type TrackerKind = 'standard' | 'git'
+
 export type Tracker = {
   id: string
   name: string
+  /** Missing before schema v42: a standard tracker. */
+  kind?: TrackerKind
+  /** GIT Trackers: the GIT template's rules, copied when the tracker was made. */
+  gitConfig?: GitGeneration
+  gitTemplateId?: string
+  gitTemplateRevision?: number
   /** The first of clientIds, kept for older callers. */
   clientId: string
   /** Every client this tracker follows. */

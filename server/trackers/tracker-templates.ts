@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Express, Request, RequestHandler, Response } from 'express'
-import { cleanName, normalizeColumns, TrackerError } from '../../src/features/trackers/trackerModel'
+import { normalizeGitGeneration } from '../../src/features/trackers/gitGeneration'
+import { cleanName, normalizeColumns, TrackerError, type TrackerColumn } from '../../src/features/trackers/trackerModel'
 import { TEMPLATE_LIMITS, TRACKER_TEMPLATES } from '../../src/features/trackers/trackerTemplates'
 
 /**
@@ -17,6 +18,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const TABLE = 'tenant_tracker_templates'
 /** Built-in templates the account can change. Blank stays as it is. */
 export const CHANGEABLE_KEYS = TRACKER_TEMPLATES.map(template => template.id).filter(id => id !== 'blank')
+export const GIT_UPGRADE =
+  'GIT templates and GIT Trackers need the database update database/migrations/schema-v42-git-tracker.sql. Ask your administrator to run it.'
+
+/** A GIT template's rules, checked against its columns: refused, with every mistake in plain words, if any. */
+export function checkedGeneration(raw: unknown, columns: TrackerColumn[]) {
+  const { generation, errors } = normalizeGitGeneration(raw, columns)
+  if (!errors.length) return generation
+  const what = errors.length === 1 ? 'a mistake' : `${errors.length} mistakes`
+  throw new TrackerError(`The GIT template has ${what}. ${errors[0]}`, 400, { errors })
+}
 
 const about = (value: unknown) => {
   if (value !== undefined && value !== null && typeof value !== 'string')
@@ -79,6 +90,7 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
     hidden: Boolean(row.hidden),
     templateKey: row.template_key || '',
     ...(typeof row.step_tasks === 'boolean' ? { stepTasks: row.step_tasks } : {}),
+    ...(row.kind === 'git' ? { kind: 'git', generation: row.generation || {} } : {}),
     revision: Number(row.revision) || 1,
     createdBy: row.created_by || '',
     createdByName: row.created_by_name || '',
@@ -129,6 +141,9 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
         )
       const name = cleanName(body.name, 'template name', TEMPLATE_LIMITS.name)
       const columns = normalizeColumns(body.columns)
+      const git = body.kind === 'git'
+      if (git && templateKey) throw new TrackerError('A GIT template cannot replace a built-in template.')
+      const generation = git ? checkedGeneration(body.generation, columns) : undefined
       if (templateKey) {
         const existing = await db
           .from(TABLE)
@@ -159,7 +174,8 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
         shared,
         hidden: shared && body.hidden === true,
         template_key: templateKey,
-        ...(typeof body.stepTasks === 'boolean' ? { step_tasks: body.stepTasks } : {}),
+        ...(typeof body.stepTasks === 'boolean' && !git ? { step_tasks: body.stepTasks } : {}),
+        ...(git ? { kind: 'git', generation } : {}),
         revision: 1,
         created_by: user.id,
         created_by_name: user.name,
@@ -168,6 +184,7 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
         updated_at: stamp,
       }
       let saved = await db.from(TABLE).insert(row)
+      if (saved.error && git) throw new TrackerError(GIT_UPGRADE, 503, { needsUpgrade: true })
       // Before schema v35 there is no step_tasks column: the template is kept without the setting.
       if (saved.error && 'step_tasks' in row) {
         const { step_tasks: _off, ...plain } = row as Record<string, unknown>
@@ -202,7 +219,15 @@ export function registerTrackerTemplateRoutes(app: Express, deps: Deps) {
       if (body.name !== undefined) patch.name = cleanName(body.name, 'template name', TEMPLATE_LIMITS.name)
       if (body.about !== undefined) patch.about = about(body.about)
       if (body.columns !== undefined) patch.columns = normalizeColumns(body.columns)
-      if (body.stepTasks !== undefined) patch.step_tasks = body.stepTasks === true
+      if (body.kind !== undefined && (body.kind === 'git') !== (current.kind === 'git'))
+        throw new TrackerError('A template stays a GIT template or a standard one. Make a new template instead.')
+      // A GIT template's rules are checked again whenever they or its columns change: they refer to its columns.
+      if (current.kind === 'git' && (body.generation !== undefined || body.columns !== undefined))
+        patch.generation = checkedGeneration(
+          body.generation ?? current.generation,
+          (patch.columns as TrackerColumn[] | undefined) ?? (Array.isArray(current.columns) ? current.columns : []),
+        )
+      if (body.stepTasks !== undefined && current.kind !== 'git') patch.step_tasks = body.stepTasks === true
       if (body.shared !== undefined) {
         const shared = body.shared === true
         if (shared && !isAdmin(user)) throw new TrackerError('Only Administrators make templates for everyone.', 403)

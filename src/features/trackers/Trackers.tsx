@@ -12,7 +12,14 @@ import {
   type FolderLayout,
   type TrackerLayout,
 } from './TrackerCollection'
-import { templateChoices, templateRows, withDoneColumn, type TemplateChoice } from './trackerTemplates'
+import {
+  gitTemplates,
+  templateChoices,
+  templateRows,
+  withDoneColumn,
+  type SavedTemplate,
+  type TemplateChoice,
+} from './trackerTemplates'
 import { TemplatesDialog, TemplateTag, useTrackerTemplates } from './TemplateManager'
 import { createRowTasks } from './trackerTaskActions'
 import type { TaskPatch } from './trackerTasks'
@@ -59,6 +66,8 @@ const remember = rememberTracker
 function NewTrackerDialog({
   initialTemplate,
   choices,
+  gitChoices,
+  onManageTemplates,
   clients,
   projects,
   items,
@@ -70,6 +79,10 @@ function NewTrackerDialog({
   initialTemplate: string
   /** The templates to start from: built-in ones, changed or not, and the account's own. */
   choices: TemplateChoice[]
+  /** GIT templates, for a GIT Tracker. */
+  gitChoices: SavedTemplate[]
+  /** Opens Templates, to make a GIT template when there is none. */
+  onManageTemplates?: () => void
   clients: Client[]
   projects: Project[]
   items: WorkItem[]
@@ -79,6 +92,10 @@ function NewTrackerDialog({
   onCreated: (tracker: Tracker, note?: string) => void
 }) {
   const templateById = (id: string) => choices.find(choice => choice.id === id)
+  // A GIT Tracker: GitLab and GitHub tickets are added to it, and its GIT template makes their work.
+  const [git, setGit] = useState(false)
+  const [gitTemplateId, setGitTemplateId] = useState(gitChoices[0]?.id || '')
+  const gitTemplate = gitChoices.find(item => item.id === gitTemplateId)
   const [templateId, setTemplateId] = useState(templateById(initialTemplate) ? initialTemplate : 'blank')
   const [name, setName] = useState(initialTemplate === 'blank' ? '' : templateById(initialTemplate)?.name || '')
   const [touched, setTouched] = useState(false)
@@ -106,8 +123,25 @@ function NewTrackerDialog({
     event.preventDefault()
     if (busy) return
     if (!name.trim()) return setError('Enter a name for the tracker.')
+    if (git && !gitTemplate) return setError('Choose a GIT template, or make one first.')
     setBusy(true)
     setError('')
+    if (git && gitTemplate) {
+      try {
+        const made = await trackerApi.create({
+          name: name.trim(),
+          columns: [],
+          kind: 'git',
+          gitTemplateId: gitTemplate.id,
+          private: onlyMe,
+        })
+        onCreated(made.tracker)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'The GIT Tracker could not be created.')
+        setBusy(false)
+      }
+      return
+    }
     try {
       const result = await trackerApi.create({
         name: name.trim(),
@@ -160,32 +194,81 @@ function NewTrackerDialog({
   return (
     <Dialog title="New tracker" eyebrow="Trackers" onClose={onClose} wide busy={busy}>
       <form className="trk-new" onSubmit={event => void submit(event)}>
-        <fieldset className="trk-templates">
-          <legend>Start from</legend>
-          {choices.map(item => (
-            <label key={item.id} className={`trk-template${item.id === templateId ? ' on' : ''}`}>
-              <input
-                type="radio"
-                name="template"
-                value={item.id}
-                checked={item.id === templateId}
-                onChange={() => pick(item.id)}
-              />
-              <strong>
-                {item.name}
-                <TemplateTag choice={item} />
-              </strong>
-              <span>{item.about}</span>
-              <small>
-                {item.columns
-                  .slice(0, 5)
-                  .map(column => column.name)
-                  .join(' · ')}
-                {item.columns.length > 5 ? ` · +${item.columns.length - 5}` : ''}
-              </small>
-            </label>
-          ))}
+        <fieldset className="trk-kind" aria-label="Kind of tracker">
+          <label className={`trk-template${git ? '' : ' on'}`}>
+            <input type="radio" name="kind" checked={!git} onChange={() => setGit(false)} />
+            <strong>Tracker</strong>
+            <span>Rows you add, import or follow from a Google Sheet, for one or more clients.</span>
+          </label>
+          <label className={`trk-template${git ? ' on' : ''}`}>
+            <input type="radio" name="kind" checked={git} onChange={() => setGit(true)} />
+            <strong>
+              GIT Tracker <span className="trk-git-badge">GIT</span>
+            </strong>
+            <span>
+              GitLab and GitHub tickets added from Work Hub, from every client. Its GIT template makes each ticket’s
+              rows, Tasks and Subtasks.
+            </span>
+          </label>
         </fieldset>
+        {git ? (
+          <fieldset className="trk-templates">
+            <legend>GIT template</legend>
+            {gitChoices.map(item => (
+              <label key={item.id} className={`trk-template${item.id === gitTemplateId ? ' on' : ''}`}>
+                <input
+                  type="radio"
+                  name="git-template"
+                  value={item.id}
+                  checked={item.id === gitTemplateId}
+                  onChange={() => setGitTemplateId(item.id)}
+                />
+                <strong>{item.name}</strong>
+                <span>{item.about}</span>
+                <small>
+                  {plural(item.generation?.rows?.length || 0, 'row')} per ticket · {item.columns.length} columns
+                </small>
+              </label>
+            ))}
+            {!gitChoices.length && (
+              <p className="trk-muted-text">
+                There is no GIT template yet. A GIT template says which rows, Tasks and Subtasks each ticket makes.{' '}
+                {onManageTemplates && (
+                  <button type="button" className="trk-link-button" onClick={onManageTemplates}>
+                    Make a GIT template
+                  </button>
+                )}
+              </p>
+            )}
+          </fieldset>
+        ) : (
+          <fieldset className="trk-templates">
+            <legend>Start from</legend>
+            {choices.map(item => (
+              <label key={item.id} className={`trk-template${item.id === templateId ? ' on' : ''}`}>
+                <input
+                  type="radio"
+                  name="template"
+                  value={item.id}
+                  checked={item.id === templateId}
+                  onChange={() => pick(item.id)}
+                />
+                <strong>
+                  {item.name}
+                  <TemplateTag choice={item} />
+                </strong>
+                <span>{item.about}</span>
+                <small>
+                  {item.columns
+                    .slice(0, 5)
+                    .map(column => column.name)
+                    .join(' · ')}
+                  {item.columns.length > 5 ? ` · +${item.columns.length - 5}` : ''}
+                </small>
+              </label>
+            ))}
+          </fieldset>
+        )}
         <div className="trk-new-fields">
           <label className="trk-field-block">
             Name
@@ -200,20 +283,29 @@ function NewTrackerDialog({
               required
             />
           </label>
-          <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
-          <TrackerProjectPicker
-            projects={projects}
-            clients={clients}
-            clientIds={clientIds}
-            value={projectIds}
-            onChange={(ids, picked) => {
-              setProjectIds(ids)
-              // A Seeds project brings its client (the Seeds parent).
-              if (picked?.seedsId && picked.clientId && !clientIds.includes(picked.clientId))
-                setClientIds([...clientIds, picked.clientId])
-            }}
-          />
-          {starter > 0 && (
+          {git ? (
+            <p className="trk-muted-text">
+              A GIT Tracker has no Client or Project of its own. Each ticket’s Tasks and Subtasks go under the Client
+              and Project its repository is mapped to (Settings › Integrations › Repository mapping).
+            </p>
+          ) : (
+            <>
+              <TrackerClientPicker clients={clients} value={clientIds} onChange={setClientIds} />
+              <TrackerProjectPicker
+                projects={projects}
+                clients={clients}
+                clientIds={clientIds}
+                value={projectIds}
+                onChange={(ids, picked) => {
+                  setProjectIds(ids)
+                  // A Seeds project brings its client (the Seeds parent).
+                  if (picked?.seedsId && picked.clientId && !clientIds.includes(picked.clientId))
+                    setClientIds([...clientIds, picked.clientId])
+                }}
+              />
+            </>
+          )}
+          {!git && starter > 0 && (
             <fieldset className="trk-starter">
               <label className="trk-checkline">
                 <input type="checkbox" checked={withRows} onChange={event => setWithRows(event.target.checked)} /> Start
@@ -328,6 +420,8 @@ export default function Trackers(props: Props) {
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [clientFilter, setClientFilter] = useState('')
+  /** '' every tracker, 'git' only GIT Trackers, 'standard' only the others. */
+  const [kindFilter, setKindFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   // Folders: My folder (the default), everyone's Folders, or All trackers; and how trackers and folders are laid out.
   const [home, setHome] = useStoredChoice('ba.trackers.home', ['mine', 'folders', 'all'] as const, 'mine')
@@ -391,13 +485,15 @@ export default function Trackers(props: Props) {
       tracker =>
         (showArchived || !tracker.archived) &&
         (!clientFilter || trackerClientIds(tracker).includes(clientFilter)) &&
+        (!kindFilter || (tracker.kind === 'git') === (kindFilter === 'git')) &&
         words.every(word =>
           `${tracker.name} ${trackerClientIds(tracker).map(clientName).join(' ')} ${trackerProjectIds(tracker).map(projectName).join(' ')} ${tracker.createdByName}`
             .toLowerCase()
             .includes(word),
         ),
     )
-  }, [trackers, query, clientFilter, showArchived, clientName, projectName])
+  }, [trackers, query, clientFilter, kindFilter, showArchived, clientName, projectName])
+  const hasGit = (trackers || []).some(tracker => tracker.kind === 'git')
   const archivedCount = (trackers || []).filter(tracker => tracker.archived).length
   const me = props.currentUserId || ''
   const activeAccounts = useMemo(() => props.accounts.filter(account => account.status === 'Active'), [props.accounts])
@@ -559,6 +655,16 @@ export default function Trackers(props: Props) {
                 extra={[{ value: '', label: 'All clients' }]}
               />
             </label>
+            {hasGit && (
+              <label className="trk-inline-select">
+                Kind
+                <select value={kindFilter} onChange={event => setKindFilter(event.target.value)}>
+                  <option value="">All trackers</option>
+                  <option value="git">GIT Trackers</option>
+                  <option value="standard">Other trackers</option>
+                </select>
+              </label>
+            )}
             {archivedCount > 0 && (
               <label className="trk-checkline">
                 <input
@@ -622,7 +728,7 @@ export default function Trackers(props: Props) {
           )}
           {!browsingFolders && !listed.length && (
             <p className="trk-empty-line">
-              {query || clientFilter
+              {query || clientFilter || kindFilter
                 ? `No tracker matches. ${plural((trackers || []).length, 'tracker')} in total.`
                 : home === 'all'
                   ? 'No tracker to show.'
@@ -649,6 +755,11 @@ export default function Trackers(props: Props) {
         <NewTrackerDialog
           initialTemplate={creating}
           choices={choices}
+          gitChoices={gitTemplates(templates.saved)}
+          onManageTemplates={() => {
+            setCreating(null)
+            setManaging(true)
+          }}
           clients={props.clients}
           projects={props.projects}
           items={props.items}

@@ -377,7 +377,11 @@ export function registerGitlab(
           const issues = values
             .map(v => {
               const repository = repositoryOf ? repositoryOf(v) : gitlabIssueRepository(v, row.instance_url)
-              return repository ? gitlabIssue(v, repository, row.gitlab_login, row.instance_url) : null
+              const issue = repository ? gitlabIssue(v, repository, row.gitlab_login, row.instance_url) : null
+              // GitLab's project id: the stable repository id GIT Tracker mappings use (schema v42).
+              return issue && Number.isSafeInteger(v?.project_id) && v.project_id > 0
+                ? { ...issue, repository_id: v.project_id as number }
+                : issue
             })
             .filter((i): i is NonNullable<typeof i> => Boolean(i && mine(i) && recent(i)))
           if (!issues.length) return
@@ -387,17 +391,22 @@ export function registerGitlab(
           )
           if (existing.error) throw existing.error
           const known = new Set((existing.data || []).map((i: any) => i.gitlab_id))
-          const result = await db.from('user_gitlab_issues').upsert(
-            issues.map(i => ({
-              ...i,
-              ...(mode === 'commented' ? { commented_by_me: true } : {}),
-              tenant_id: u.organizationId,
-              owner_user_id: u.id,
-              instance_url: row.instance_url,
-              gitlab_user_id: row.gitlab_user_id,
-            })),
-            { onConflict: 'tenant_id,owner_user_id,instance_url,gitlab_user_id,gitlab_id' },
-          )
+          const save = (withRepositoryId: boolean) =>
+            db.from('user_gitlab_issues').upsert(
+              issues.map(({ repository_id, ...i }: any) => ({
+                ...i,
+                ...(withRepositoryId && repository_id ? { repository_id } : {}),
+                ...(mode === 'commented' ? { commented_by_me: true } : {}),
+                tenant_id: u.organizationId,
+                owner_user_id: u.id,
+                instance_url: row.instance_url,
+                gitlab_user_id: row.gitlab_user_id,
+              })),
+              { onConflict: 'tenant_id,owner_user_id,instance_url,gitlab_user_id,gitlab_id' },
+            )
+          let result = await save(true)
+          // Before schema v42 there is no repository_id column: the tickets are kept without it.
+          if (result.error?.code === '42703') result = await save(false)
           if (result.error) throw result.error
           for (const issue of issues) {
             if (!counted.has(issue.gitlab_id)) {

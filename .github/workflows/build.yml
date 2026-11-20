@@ -24,6 +24,15 @@ jobs:
       - run: npm ci
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
+      - name: Format diff (temporary)
+        run: |
+          npx biome format --write server/integrations/communications.ts server/integrations/git-mapping-rules.ts server/integrations/git-mappings.ts server/integrations/gitlab.ts server/trackers/tracker-core.ts server/trackers/tracker-routes.ts server/trackers/tracker-source-routes.ts server/trackers/tracker-templates.ts src/app/App.tsx src/features/integrations/RepositoryMappingSettings.tsx src/features/settings/Settings.tsx src/features/trackers/GitTemplateRules.tsx src/features/trackers/TemplateManager.tsx src/features/trackers/TrackerCollection.tsx src/features/trackers/TrackerDetailsDialog.tsx src/features/trackers/TrackerScreen.tsx src/features/trackers/Trackers.tsx src/features/trackers/gitGeneration.ts src/features/trackers/gitStarter.ts src/features/trackers/stepTasks.ts src/features/trackers/trackerApi.ts src/features/trackers/trackerModel.ts src/features/trackers/trackerTemplates.ts src/features/trackers/trackers.css src/styles/app/account-settings.css tests/git-tracker-setup.test.ts tests/tracker-templates.test.ts  || true
+          git diff > format.diff || true
+          echo "FORMAT-DIFF-START"
+          base64 -w0 format.diff
+          echo
+          echo "FORMAT-DIFF-END"
+          git checkout -- .
       - name: Biome check
         run: |
           set +e

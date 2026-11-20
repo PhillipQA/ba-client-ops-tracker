@@ -1,6 +1,6 @@
 // Tracker templates the account keeps: list them, change their columns, hide or reset the built-in ones, and save a
 // tracker's columns as a template. Trackers already made from a template keep their own columns.
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, LayoutTemplate, Lock, Plus, Trash2, Users } from 'lucide-react'
 import {
   COLUMN_TYPES,
@@ -15,6 +15,8 @@ import {
 } from './trackerModel'
 import {
   columnsForTemplate,
+  gitTemplates,
+  savedChoiceId,
   TEMPLATE_LIMITS,
   templateChoices,
   type SavedTemplate,
@@ -23,6 +25,9 @@ import {
 import { TemplateApiError, templateApi, type TemplateBody } from './trackerApi'
 import { ColumnIcon, Dialog, Notice } from './trackerUi'
 import { keepsStepTasks } from './stepTasks'
+import { emptyGitGeneration, normalizeGitGeneration, type GitGeneration } from './gitGeneration'
+import { GitTemplateRules } from './GitTemplateRules'
+import { starterGitTemplate } from './gitStarter'
 
 /** The account's templates. Before the database upgrade there are none, and the built-in ones are offered as before. */
 export function useTrackerTemplates() {
@@ -83,10 +88,19 @@ export function TemplatesDialog({
   onSaved: (templates: SavedTemplate[]) => void
   onClose: () => void
 }) {
-  const [editing, setEditing] = useState<TemplateChoice | 'new' | null>(null)
+  const [editing, setEditing] = useState<TemplateChoice | 'new' | 'new-git' | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const choices = templateChoices(saved, isAdmin).filter(choice => choice.id !== 'blank')
+  // GIT templates, for GIT Trackers: always the account's own (there is no built-in one).
+  const gitChoices: TemplateChoice[] = gitTemplates(saved, isAdmin).map(item => ({
+    id: savedChoiceId(item),
+    name: item.name,
+    about: item.about,
+    columns: item.columns,
+    builtIn: false,
+    saved: item,
+  }))
   const replace = (template: SavedTemplate) => onSaved([...saved.filter(item => item.id !== template.id), template])
   const run = async (job: () => Promise<void>) => {
     setBusy(true)
@@ -138,7 +152,8 @@ export function TemplatesDialog({
   if (editing)
     return (
       <TemplateEditor
-        choice={editing === 'new' ? null : editing}
+        choice={editing === 'new' || editing === 'new-git' ? null : editing}
+        git={editing === 'new-git'}
         isAdmin={isAdmin}
         onClose={() => setEditing(null)}
         onSaved={template => {
@@ -156,47 +171,60 @@ export function TemplatesDialog({
           The columns new trackers start with. Changing a template does not change trackers already made from it.
           {isAdmin ? ' Built-in and shared templates are for everyone; only Administrators change them.' : ''}
         </p>
-        {choices.map(choice => {
+        {[...choices, ...gitChoices].map((choice, at) => {
           const changeable = canChange(choice, isAdmin) && !missing
+          const firstGit = at === choices.length
           return (
-            <div key={choice.id} className={`trk-tpl-row${choice.saved?.hidden ? ' is-hidden' : ''}`}>
-              <LayoutTemplate size={16} aria-hidden="true" />
-              <div className="trk-tpl-text">
-                <strong>{choice.name}</strong>
-                <span>{choice.about}</span>
-                <small>
-                  {plainTags(choice).join(' · ')} · {choice.columns.length} columns
-                </small>
+            <Fragment key={choice.id}>
+              {firstGit && (
+                <h3 className="trk-tpl-section">
+                  GIT templates <small>for GIT Trackers: what each GitLab or GitHub ticket makes</small>
+                </h3>
+              )}
+              <div className={`trk-tpl-row${choice.saved?.hidden ? ' is-hidden' : ''}`}>
+                <LayoutTemplate size={16} aria-hidden="true" />
+                <div className="trk-tpl-text">
+                  <strong>{choice.name}</strong>
+                  <span>{choice.about}</span>
+                  <small>
+                    {plainTags(choice).join(' · ')} · {choice.columns.length} columns
+                  </small>
+                </div>
+                <div className="trk-tpl-actions">
+                  {changeable && (
+                    <button type="button" className="trk-button" disabled={busy} onClick={() => setEditing(choice)}>
+                      Edit
+                    </button>
+                  )}
+                  {isAdmin && !missing && (choice.builtIn || choice.saved?.shared) && (
+                    <button
+                      type="button"
+                      className="trk-button"
+                      disabled={busy}
+                      onClick={() => void hide(choice, !choice.saved?.hidden)}
+                    >
+                      {choice.saved?.hidden ? 'Show' : 'Hide'}
+                    </button>
+                  )}
+                  {changeable && choice.saved && (
+                    <button type="button" className="trk-button" disabled={busy} onClick={() => remove(choice)}>
+                      {choice.saved.templateKey ? 'Reset' : 'Delete'}
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="trk-tpl-actions">
-                {changeable && (
-                  <button type="button" className="trk-button" disabled={busy} onClick={() => setEditing(choice)}>
-                    Edit
-                  </button>
-                )}
-                {isAdmin && !missing && (choice.builtIn || choice.saved?.shared) && (
-                  <button
-                    type="button"
-                    className="trk-button"
-                    disabled={busy}
-                    onClick={() => void hide(choice, !choice.saved?.hidden)}
-                  >
-                    {choice.saved?.hidden ? 'Show' : 'Hide'}
-                  </button>
-                )}
-                {changeable && choice.saved && (
-                  <button type="button" className="trk-button" disabled={busy} onClick={() => remove(choice)}>
-                    {choice.saved.templateKey ? 'Reset' : 'Delete'}
-                  </button>
-                )}
-              </div>
-            </div>
+            </Fragment>
           )
         })}
         <div className="k-dialog-actions">
           {canCreate && !missing && (
             <button type="button" className="trk-button" disabled={busy} onClick={() => setEditing('new')}>
               <Plus size={14} aria-hidden="true" /> New template
+            </button>
+          )}
+          {canCreate && !missing && (
+            <button type="button" className="trk-button" disabled={busy} onClick={() => setEditing('new-git')}>
+              <Plus size={14} aria-hidden="true" /> New GIT template
             </button>
           )}
           <span className="trk-spacer" />
@@ -213,17 +241,21 @@ function plainTags(choice: TemplateChoice) {
   const tags: string[] = []
   if (choice.builtIn) tags.push(choice.saved ? 'Built-in, changed' : 'Built-in')
   else tags.push(choice.saved?.shared ? 'For everyone' : 'Only you')
+  if (choice.saved?.kind === 'git') tags.push('GIT')
   if (choice.saved?.hidden) tags.push('Hidden')
   return tags
 }
 
 // --- Changing a template's columns ---
 
-type Draft = { key: string; name: string; type: ColumnType; choices: string; original?: TrackerColumn }
+/** `id`: the column's id, kept while the template is edited (a GIT template's rules refer to columns by id). */
+type Draft = { key: string; id: string; name: string; type: ColumnType; choices: string; original?: TrackerColumn }
 const LISTED_TYPES = COLUMN_TYPES.filter(item => item.type !== 'formula')
 const hasChoices = (type: ColumnType) => type === 'select' || type === 'multiselect'
+const newDraft = (): Draft => ({ key: randomId('d_'), id: randomId('c_'), name: '', type: 'text', choices: '' })
 const toDraft = (column: TrackerColumn): Draft => ({
   key: randomId('d_'),
+  id: column.id || randomId('c_'),
   name: column.name,
   type: column.type,
   choices: (column.options || []).map(option => option.label).join(', '),
@@ -236,7 +268,7 @@ function draftColumns(drafts: Draft[], doneKey: string): TrackerColumn[] {
     const same = draft.original && draft.original.type === draft.type ? draft.original : undefined
     const column: TrackerColumn = {
       ...(same || {}),
-      id: same?.id || randomId('c_'),
+      id: same?.id || draft.id,
       name: draft.name.trim(),
       type: draft.type,
     }
@@ -271,6 +303,7 @@ function draftColumns(drafts: Draft[], doneKey: string): TrackerColumn[] {
 export function TemplateEditor({
   choice,
   isAdmin,
+  git: newGit = false,
   initialColumns,
   initialStepTasks,
   onClose,
@@ -279,6 +312,8 @@ export function TemplateEditor({
   /** The template to change; null for a new one. */
   choice: TemplateChoice | null
   isAdmin: boolean
+  /** A new GIT template (an existing one is known from its kind). */
+  git?: boolean
   /** A new template's first columns, such as a tracker's. */
   initialColumns?: TrackerColumn[]
   /** A new template's first setting for tasks, such as the tracker's. */
@@ -286,9 +321,15 @@ export function TemplateEditor({
   onClose: () => void
   onSaved: (template: SavedTemplate) => void
 }) {
+  // A GIT template: its rules say what each ticket makes. A new one starts from the usual Ticket / Development / QA.
+  const git = choice ? choice.saved?.kind === 'git' : newGit
+  const [starter] = useState(() => (git && !choice ? starterGitTemplate() : null))
   const start = choice
     ? (choice.columns as TrackerColumn[])
-    : initialColumns || [{ id: '', name: 'Name', type: 'text' }]
+    : starter?.columns || initialColumns || [{ id: '', name: 'Name', type: 'text' }]
+  const [generation, setGeneration] = useState<GitGeneration>(
+    () => choice?.saved?.generation || starter?.generation || emptyGitGeneration(),
+  )
   const [name, setName] = useState(choice?.name || '')
   const [about, setAbout] = useState(choice?.about || '')
   const [shared, setShared] = useState(Boolean(choice?.saved?.shared))
@@ -301,6 +342,8 @@ export function TemplateEditor({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const builtIn = Boolean(choice?.builtIn)
+  // The columns as they are being edited, for the GIT rules (ids stay the same while editing).
+  const liveColumns = useMemo(() => (git ? draftColumns(drafts, doneKey) : []), [git, drafts, doneKey])
   const set = (key: string, patch: Partial<Draft>) =>
     setDrafts(list => list.map(item => (item.key === key ? { ...item, ...patch } : item)))
   const move = (index: number, by: number) =>
@@ -329,6 +372,10 @@ export function TemplateEditor({
     } catch (problem) {
       return setError(problem instanceof Error ? problem.message : 'Check the columns.')
     }
+    if (git) {
+      const problems = normalizeGitGeneration(generation, columns).errors
+      if (problems.length) return setError(`Fix the rules first: ${problems[0]}`)
+    }
     setBusy(true)
     try {
       onSaved(
@@ -337,7 +384,7 @@ export function TemplateEditor({
           about: about.trim(),
           columns,
           shared: builtIn || (isAdmin && shared),
-          stepTasks,
+          ...(git ? { generation, ...(choice ? {} : { kind: 'git' as const }) } : { stepTasks }),
         }),
       )
     } catch (problem) {
@@ -348,8 +395,8 @@ export function TemplateEditor({
 
   return (
     <Dialog
-      title={choice ? `Edit “${choice.name}”` : 'New template'}
-      eyebrow="Tracker template"
+      title={choice ? `Edit “${choice.name}”` : git ? 'New GIT template' : 'New template'}
+      eyebrow={git ? 'GIT template' : 'Tracker template'}
       onClose={onClose}
       wide
       busy={busy}
@@ -482,7 +529,7 @@ export function TemplateEditor({
             type="button"
             className="trk-button"
             disabled={drafts.length >= TRACKER_LIMITS.columns}
-            onClick={() => setDrafts(list => [...list, { key: randomId('d_'), name: '', type: 'text', choices: '' }])}
+            onClick={() => setDrafts(list => [...list, newDraft()])}
           >
             <Plus size={14} aria-hidden="true" /> Add a column
           </button>
@@ -498,15 +545,22 @@ export function TemplateEditor({
             </select>
           </label>
         </div>
-        <label className="trk-checkline">
-          <input type="checkbox" checked={stepTasks} onChange={event => setStepTasks(event.target.checked)} /> Each row
-          becomes a task, and each Checkbox column a subtask of it
-          <small>(made as soon as a row has a name; ticking a box completes its subtask)</small>
-        </label>
-        <p className="trk-muted-text">
-          The first column names each row and holds the row’s task; the other cells can each hold one subtask of it.
-          Trackers already made from this template keep their own columns and settings.
-        </p>
+        {git ? (
+          <GitTemplateRules columns={liveColumns} value={generation} onChange={setGeneration} />
+        ) : (
+          <>
+            <label className="trk-checkline">
+              <input type="checkbox" checked={stepTasks} onChange={event => setStepTasks(event.target.checked)} /> Each
+              row becomes a task, and each Checkbox column a subtask of it
+              <small>(made as soon as a row has a name; ticking a box completes its subtask)</small>
+            </label>
+            <p className="trk-muted-text">
+              The first column names each row and holds the row’s task; the other cells can each hold one subtask of
+              it.
+            </p>
+          </>
+        )}
+        <p className="trk-muted-text">Trackers already made from this template keep their own columns and settings.</p>
         {error && (
           <p className="trk-field-error" role="alert">
             {error}
