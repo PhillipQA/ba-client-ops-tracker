@@ -4,7 +4,9 @@ import test from 'node:test'
 
 test('Google is set up once per page; its answer goes to the Google button on screen now', async () => {
   const initialized: any[] = []
-  ;(globalThis as any).window = { google: { accounts: { id: { initialize: (config: any) => initialized.push(config) } } } }
+  ;(globalThis as any).window = {
+    google: { accounts: { id: { initialize: (config: any) => initialized.push(config) } } },
+  }
   const { googleWithHandler, releaseGoogleHandler } = await import('../src/shared/googleIdentity')
   const got: string[] = []
   const first = (credential: string) => got.push(`first:${credential}`)

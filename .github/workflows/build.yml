@@ -24,15 +24,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
-      - name: Format diff (temporary)
-        run: |
-          npx biome format --write src/shared/googleIdentity.ts src/app/AuthScreens.tsx src/features/seeds/SendToSeeds.tsx src/app/App.tsx tests/google-identity.test.ts || true
-          git diff > format.diff || true
-          echo "FORMAT-DIFF-START"
-          base64 -w0 format.diff
-          echo
-          echo "FORMAT-DIFF-END"
-          git checkout -- .
       - name: Biome check
         run: |
           set +e
