@@ -387,8 +387,8 @@ export default function Settings({
   const [data, setData] = useState<any>(null),
     [error, setError] = useState('')
   const isAdmin = currentUser.role === 'Administrator'
-  const [activeTab, setActiveTab] = useState<'templates' | 'integrations' | 'workflow' | 'roles' | 'access'>(
-    () => (new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'integrations' : 'templates'),
+  const [activeTab, setActiveTab] = useState<'templates' | 'integrations' | 'workflow' | 'roles' | 'access'>(() =>
+    new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'integrations' : 'templates',
   )
   const tabs = isAdmin
     ? [

@@ -129,7 +129,9 @@ function AgentCard({ value, refresh }: { value: PlatformAgent; refresh: () => Pr
         <button
           type="button"
           className="primary"
-          disabled={busy || !value.schemaReady || (!value.configured && !secret.trim()) || (providerChanged && !secret.trim())}
+          disabled={
+            busy || !value.schemaReady || (!value.configured && !secret.trim()) || (providerChanged && !secret.trim())
+          }
           onClick={() => void act('save')}
         >
           Save

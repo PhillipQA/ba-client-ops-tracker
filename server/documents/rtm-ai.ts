@@ -86,11 +86,7 @@ export function registerRtmAiRoutes(app: Express, deps: Deps) {
       if (matrix.revision !== req.body.matrixRevision)
         throw new IntegrationError('The RTM changed. Refresh it before generating a preview.', 409)
       const ai = await deps.aiAgents.active((req as any).authUser.organizationId, 'document')
-      if (!ai)
-        throw new IntegrationError(
-          `${AI_UNAVAILABLE.document} Manual entry is still available.`,
-          503,
-        )
+      if (!ai) throw new IntegrationError(`${AI_UNAVAILABLE.document} Manual entry is still available.`, 503)
       const config = normalizeAiConfig(ai.config)
       if (req.body.provider !== config.provider || req.body.model !== config.model)
         throw new IntegrationError(

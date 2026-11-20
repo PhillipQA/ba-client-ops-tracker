@@ -268,11 +268,7 @@ export function registerTestCaseRoutes(
       const sources = validateSources(req.body?.sources),
         skills = validateSkills(req.body?.skills),
         ai = await active(req)
-      if (!ai)
-        throw new IntegrationError(
-          AI_UNAVAILABLE.document,
-          503,
-        )
+      if (!ai) throw new IntegrationError(AI_UNAVAILABLE.document, 503)
       const result = await runTenantAi(
         ai.secret,
         ai.config,
@@ -304,11 +300,7 @@ export function registerTestCaseRoutes(
         skills = validateSkills(req.body?.skills),
         coverage = validateCoverage(req.body?.coverage, sources),
         ai = await active(req)
-      if (!ai)
-        throw new IntegrationError(
-          AI_UNAVAILABLE.document,
-          503,
-        )
+      if (!ai) throw new IntegrationError(AI_UNAVAILABLE.document, 503)
       const result = await runTenantAi(
         ai.secret,
         ai.config,

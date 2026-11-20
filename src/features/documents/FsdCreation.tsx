@@ -586,7 +586,8 @@ export default function FsdCreation({
         <span>
           {provider?.enabled
             ? `Document Agent: ${provider.name} · ${provider.model}`
-            : providerError || 'The Document Agent isn’t available for this account. Internal Admin sets up AI and turns it on for each account.'}
+            : providerError ||
+              'The Document Agent isn’t available for this account. Internal Admin sets up AI and turns it on for each account.'}
         </span>
         <span>
           {saveError ? 'Draft held in this page' : 'Draft retained in this browser tab'} · App v{APP_LABEL}

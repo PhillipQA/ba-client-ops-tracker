@@ -343,11 +343,7 @@ export function registerFsdRoutes(
     try {
       const { source, modules, features } = validateSourceAnalysisInput(req.body)
       const ai = await active(req)
-      if (!ai)
-        throw new IntegrationError(
-          `${AI_UNAVAILABLE.document} Your extracted text is kept.`,
-          503,
-        )
+      if (!ai) throw new IntegrationError(`${AI_UNAVAILABLE.document} Your extracted text is kept.`, 503)
       let parsed: any = {
         readability: 'unreadable',
         summary: 'No readable content was extracted from this source.',
@@ -394,11 +390,7 @@ export function registerFsdRoutes(
     try {
       const input = validateInput(req.body)
       const ai = await active(req)
-      if (!ai)
-        throw new IntegrationError(
-          AI_UNAVAILABLE.document,
-          503,
-        )
+      if (!ai) throw new IntegrationError(AI_UNAVAILABLE.document, 503)
       let grounding: ReturnType<typeof interpretRequirements> | ReturnType<typeof groundingFromSourceAnalyses>
       if (
         req.body.sourceReviewVersion === 1 ||

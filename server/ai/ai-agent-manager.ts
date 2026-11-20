@@ -5,7 +5,12 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
  */
 import type { Express, Request, Response, NextFunction } from 'express'
 import rateLimit from 'express-rate-limit'
-import { IntegrationError, encryptionKey, normalizeAiConfig, type AiProvider } from '../integrations/tenant-integrations'
+import {
+  IntegrationError,
+  encryptionKey,
+  normalizeAiConfig,
+  type AiProvider,
+} from '../integrations/tenant-integrations'
 export { AI_UNAVAILABLE } from './ai-messages'
 
 export type AiAgentId = 'ba_assistant' | 'document'

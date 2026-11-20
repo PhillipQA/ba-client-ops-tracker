@@ -114,10 +114,7 @@ export function registerAssistantRoutes(
     } catch {
       return void res.status(503).json({ error: 'BA Assistant settings are unavailable.' })
     }
-    if (!ai)
-      return void res
-        .status(503)
-        .json({ error: AI_UNAVAILABLE.ba_assistant })
+    if (!ai) return void res.status(503).json({ error: AI_UNAVAILABLE.ba_assistant })
 
     const message = typeof req.body?.message === 'string' ? req.body.message.trim() : ''
     if (!message) {

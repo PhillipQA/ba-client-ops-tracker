@@ -238,11 +238,7 @@ export function registerBrdRoutes(
         sources = validateSources(req.body?.sources),
         guidance = text(req.body?.guidance || '', 'guidance', 10000)
       const ai = await active(req)
-      if (!ai)
-        throw new IntegrationError(
-          AI_UNAVAILABLE.document,
-          503,
-        )
+      if (!ai) throw new IntegrationError(AI_UNAVAILABLE.document, 503)
       const sourceCatalog = sources.map(({ id, name, kind }) => ({ id, name, kind }))
       const request = JSON.stringify({ documentDetails: details, sourceCatalog, sources, guidance }),
         brdInstructions = instructions()

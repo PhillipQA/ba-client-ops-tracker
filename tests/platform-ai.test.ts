@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import {
-  aiModuleOn,
-  createAiAgentManager,
-  decryptAgentSecret,
-  encryptAgentSecret,
-} from '../server/ai/ai-agent-manager'
+import { aiModuleOn, createAiAgentManager, decryptAgentSecret, encryptAgentSecret } from '../server/ai/ai-agent-manager'
 
 process.env.TENANT_INTEGRATION_MASTER_KEY = 'cd'.repeat(32)
 const key = 'sk-platform-ai-key-for-everyone-9876'
@@ -25,10 +20,23 @@ function memoryDb(seed: Record<string, any[]>) {
       let single = false
       const q: any = {
         select: () => q,
-        eq: (k: string, v: unknown) => (filters.push([k, v]), q),
-        maybeSingle: () => ((single = true), q),
-        upsert: (v: any) => ((op = 'upsert'), (payload = v), q),
-        delete: () => ((op = 'delete'), q),
+        eq: (k: string, v: unknown) => {
+          filters.push([k, v])
+          return q
+        },
+        maybeSingle: () => {
+          single = true
+          return q
+        },
+        upsert: (v: any) => {
+          op = 'upsert'
+          payload = v
+          return q
+        },
+        delete: () => {
+          op = 'delete'
+          return q
+        },
         then(resolve: (value: unknown) => void) {
           const rows = tables.get(table)!
           const match = (row: any) => filters.every(([k, v]) => row[k] === v)
@@ -110,7 +118,10 @@ test('accounts no longer hold AI keys, and there is no connection test', () => {
   assert.match(manager, /'\/api\/internal-admin\/ai-agents'/)
   assert.doesNotMatch(manager, /\/api\/account\/ai-agents/)
   assert.doesNotMatch(manager, /\/test'/, 'no Test route')
-  assert.match(read('server/index.ts'), /registerAiAgentRoutes\(app, \{ requireAuth, requirePlatformAdmin, manager: aiAgents \}\)/)
+  assert.match(
+    read('server/index.ts'),
+    /registerAiAgentRoutes\(app, \{ requireAuth, requirePlatformAdmin, manager: aiAgents \}\)/,
+  )
   const settings = read('src/features/settings/Settings.tsx')
   assert.doesNotMatch(settings, /AI Agents|AIAgentManager|ai-agents/)
   const panel = read('src/features/admin/PlatformAiAgents.tsx')

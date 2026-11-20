@@ -32,7 +32,8 @@ export const MODULE_DEFINITIONS: { id: AppModule; label: string; description: st
   {
     id: 'ai',
     label: 'AI BA Assistant',
-    description: 'Contextual AI assessment and suggested actions, and AI in Document Creation (keys: Internal Admin › AI).',
+    description:
+      'Contextual AI assessment and suggested actions, and AI in Document Creation (keys: Internal Admin › AI).',
   },
   { id: 'settings', label: 'Settings', description: 'Account templates and integration credentials.' },
 ]
