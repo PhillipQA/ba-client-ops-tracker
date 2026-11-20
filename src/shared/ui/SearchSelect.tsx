@@ -56,7 +56,12 @@ export default function ClientSelect({ clients, extra = [], placeholder = 'Type 
   return <SearchSelect {...props} choices={choices} placeholder={placeholder} empty="No client matches" />
 }
 
-type SearchProps = Omit<Props, 'clients' | 'extra'> & { choices: SearchChoice[]; empty?: string }
+type SearchProps = Omit<Props, 'clients' | 'extra'> & {
+  choices: SearchChoice[]
+  empty?: string
+  /** Shown when the value is not among the choices. */
+  unknown?: string
+}
 
 /** The type-to-search field behind ClientSelect, for any list: choices keep their order; the first ones with an empty value are hints. */
 export function SearchSelect({
@@ -70,6 +75,7 @@ export function SearchSelect({
   placeholder = 'Type to search',
   className = '',
   empty = 'Nothing matches',
+  unknown = 'Unknown client',
   ...rest
 }: SearchProps) {
   const extra = useMemo(() => choices.filter(choice => choice.value === ''), [choices])
@@ -78,7 +84,7 @@ export function SearchSelect({
   const chosen = choices.find(choice => choice.value === current)
   // An empty choice such as “All clients” shows as the field's hint, so a required field stays empty until a client is chosen.
   const blank = extra.find(choice => choice.value === '')
-  const chosenLabel = current === '' ? '' : chosen ? chosen.label : 'Unknown client'
+  const chosenLabel = current === '' ? '' : chosen ? chosen.label : unknown
   const [text, setText] = useState(chosenLabel)
   const [typed, setTyped] = useState(false)
   const [open, setOpen] = useState(false)

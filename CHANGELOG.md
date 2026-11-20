@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Edit task: type to find the project
+- The Project field in New task and Edit task is now a search box: type part of the project name, its contract number or its client, instead of scrolling a long list. Projects are A to Z, grouped From Seeds / Before Seeds once Seeds is on, with the contract number and client shown beside each. A task's current project stays listed even if it is completed.
+
 ### Menus and pickers are solid everywhere
 - Some menus (a column's options, a row's task picker) could still show the grid through them. When a menu could not find its place in the app it was drawn on the bare page, where the theme's colours are not set. Menus now carry the theme's colours themselves, and fall back to the tracker page, so they are solid in every interface mode.
 

@@ -10,7 +10,7 @@ import { effortSummary, formatHours, normalizeEstimate, seedsTimeRule } from './
 import { isArchived, isClosedProject } from './lifecycle'
 import { isBeforeSeedsWork, seedsProductFor } from '../../shared/seeds'
 import type { RtmLink } from '../requirements/rtm'
-import ClientSelect from '../../shared/ui/SearchSelect'
+import ClientSelect, { type SearchChoice, SearchSelect } from '../../shared/ui/SearchSelect'
 import { type TaskCommentMutationResult, addTaskComment } from './taskComments'
 import {
   TASK_EVIDENCE_MAX_BYTES,
@@ -143,6 +143,29 @@ function SeedsProductField({
   )
 }
 
+/**
+ * The Project field's choices, typed into rather than scrolled: open projects A to Z, the one already chosen (`keep`)
+ * even if it is completed. Searchable by name, contract number and client; grouped From Seeds / Before Seeds once Seeds
+ * is on.
+ */
+function projectChoices(store: Store, none: string, keep?: string): SearchChoice[] {
+  const open = store.projects.filter(project => !isClosedProject(project) || project.id === keep)
+  open.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base', numeric: true }))
+  const client = (id?: string) => (id ? store.clients.find(entry => entry.id === id)?.name : '')
+  const choice = (project: (typeof open)[number], group?: string): SearchChoice => ({
+    value: project.id,
+    label: project.name || 'Unnamed project',
+    hint: [project.contractNumber, client(project.clientId)].filter(Boolean).join(' · ') || undefined,
+    group,
+  })
+  const blank = { value: '', label: none }
+  if (!open.some(project => project.seedsId)) return [blank, ...open.map(project => choice(project))]
+  return [
+    blank,
+    ...open.filter(project => project.seedsId).map(project => choice(project, 'From Seeds')),
+    ...open.filter(project => !project.seedsId).map(project => choice(project, 'Before Seeds')),
+  ]
+}
 export function TaskForm({
   canLinkRtm,
   store,
@@ -292,16 +315,16 @@ export function TaskForm({
           </label>
           <label>
             Project
-            <select value={projectId} disabled={!clientId} onChange={event => setProjectId(event.target.value)}>
-              <option value="">{clientId ? 'No project' : 'Select a client first'}</option>
-              {store.projects
-                .filter(project => !isClosedProject(project))
-                .map(project => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-            </select>
+            <SearchSelect
+              choices={projectChoices(store, clientId ? 'No project' : 'Select a client first')}
+              value={projectId}
+              disabled={!clientId}
+              onChange={setProjectId}
+              placeholder="Type a project, contract number or client"
+              empty="No open project matches"
+              unknown="Unknown project"
+              aria-label="Project"
+            />
           </label>
         </>
       )}
@@ -685,16 +708,16 @@ export function TaskEditForm({
         ) : (
           <label>
             Project
-            <select name="projectId" value={editProjectId} onChange={e => setEditProjectId(e.target.value)}>
-              <option value="">No project</option>
-              {store.projects
-                .filter(project => !isClosedProject(project) || project.id === item.projectId)
-                .map(project => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-            </select>
+            <SearchSelect
+              name="projectId"
+              choices={projectChoices(store, 'No project', item.projectId)}
+              value={editProjectId}
+              onChange={setEditProjectId}
+              placeholder="Type a project, contract number or client"
+              empty="No open project matches"
+              unknown="Unknown project"
+              aria-label="Project"
+            />
             {onMoveToSeeds && !item.archived && isBeforeSeedsWork(item, store.projects, store.clients) && (
               <button type="button" className="secondary compact task-move-seeds" onClick={onMoveToSeeds}>
                 Move to Seeds…
