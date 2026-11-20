@@ -5,7 +5,7 @@
  */
 import { Send } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { loadGoogle } from '../../shared/googleIdentity'
+import { googleWithHandler } from '../../shared/googleIdentity'
 import { requestJson } from '../../shared/http'
 import { Dialog } from '../../shared/ui/Dialog'
 import type { WorkItem } from '../../shared/types'
@@ -147,17 +147,9 @@ export function SendToSeedsButton({
     if (signedIn && signedIn.until - 60_000 > Date.now()) return void send(signedIn.token)
     setOpen(true)
     try {
-      await loadGoogle()
-      const google = (window as any).google
-      google.accounts.id.initialize({
-        client_id: status.clientId,
-        callback: (response: { credential?: string }) => {
-          if (!response.credential) return
-          signedIn = { token: response.credential, until: expiresAt(response.credential) }
-          void send(response.credential)
-        },
-        auto_select: false,
-        cancel_on_tap_outside: true,
+      const google = await googleWithHandler(status.clientId, credential => {
+        signedIn = { token: credential, until: expiresAt(credential) }
+        void send(credential)
       })
       requestAnimationFrame(() => {
         if (holder.current) google.accounts.id.renderButton(holder.current, { theme: 'outline', size: 'large' })

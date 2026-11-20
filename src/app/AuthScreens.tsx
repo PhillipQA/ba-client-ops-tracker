@@ -3,7 +3,7 @@ import { APP_LABEL } from '../shared/version'
 import { ArrowRight, Building2, Eye, EyeOff, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { type GoogleAccountChoice, googleSignInClientId } from '../features/accounts/auth'
-import { loadGoogle } from '../shared/googleIdentity'
+import { googleWithHandler, releaseGoogleHandler } from '../shared/googleIdentity'
 
 type GoogleLogin = (credential: string, account?: string) => Promise<GoogleAccountChoice[] | null>
 
@@ -42,22 +42,15 @@ function GoogleSignIn({
   useEffect(() => {
     if (!clientId) return
     let alive = true
-    loadGoogle()
-      .then(() => {
+    const onCredential = (value: string) => {
+      credential.current = value
+      void signIn.current(value, chosen.current || undefined).then(choices => setAccounts(choices || []))
+    }
+    // Set up once per page; this button only takes Google's answers while it is on screen (see googleIdentity.ts).
+    googleWithHandler(clientId, onCredential)
+      .then(google => {
         if (!alive || !holder.current) return
-        const google = (window as any).google
-        google.accounts.id.initialize({
-          client_id: clientId,
-          callback: (response: { credential?: string }) => {
-            if (!response.credential) return
-            credential.current = response.credential
-            void signIn
-              .current(response.credential, chosen.current || undefined)
-              .then(choices => setAccounts(choices || []))
-          },
-          auto_select: false,
-          cancel_on_tap_outside: true,
-        })
+        holder.current.replaceChildren()
         google.accounts.id.renderButton(holder.current, {
           theme: 'outline',
           size: 'large',
@@ -70,6 +63,7 @@ function GoogleSignIn({
       })
     return () => {
       alive = false
+      releaseGoogleHandler(onCredential)
     }
   }, [clientId])
   if (!clientId) return null
@@ -128,11 +122,14 @@ export function LoginScreen({
   error,
   onLogin,
   onGoogleLogin,
+  onClearError,
 }: {
   busy: boolean
   error: string
   onLogin: (account: string, username: string, password: string) => Promise<void>
   onGoogleLogin: GoogleLogin
+  /** The last sign-in's error belongs to the account it was for: Change clears it. */
+  onClearError?: () => void
 }) {
   const [forgot, setForgot] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -175,6 +172,7 @@ export function LoginScreen({
   const changeAccount = () => {
     setBack(true)
     setChosen('')
+    onClearError?.()
   }
 
   return (
