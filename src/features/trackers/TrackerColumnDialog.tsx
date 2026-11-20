@@ -34,6 +34,8 @@ export type ColumnDraft = {
   autoDone?: AutoDone | null
   /** Text columns: show the contract number of the row's project ('contract'), or null to stop. Left out when unchanged. */
   contract?: boolean
+  /** Text columns: show the row's project as a chip that moves its task ('project'). Left out when unchanged. */
+  project?: boolean
 }
 
 type Props = {
@@ -86,6 +88,9 @@ export default function TrackerColumnDialog({
   // Text columns can show the contract number of the row's project (from Seeds), e.g. an "SLSS #" column.
   const [contractOn, setContractOn] = useState(column?.taskField === 'contract')
   const otherContract = columns.find(item => item.id !== column?.id && item.taskField === 'contract')
+  // Or the row's project itself, as a chip: picking another project moves the row's task and its subtasks.
+  const [projectOn, setProjectOn] = useState(column?.taskField === 'project')
+  const otherProject = columns.find(item => item.id !== column?.id && item.taskField === 'project')
   /** When the setting is turned on, an option named like Done is chosen for "Set to", so most people need not pick it. */
   const guessDoneOption = () =>
     options.find(option => /^(done|completed?|closed|resolved|finished)$/i.test(option.label.trim()))?.id || ''
@@ -109,7 +114,10 @@ export default function TrackerColumnDialog({
   const lastOption = useRef<HTMLInputElement>(null)
   const info = COLUMN_TYPES.find(item => item.type === type)!
   const converting = !adding && Boolean(column) && type !== column!.type
-  const contractAllowed = type === 'text' && !converting && (!column?.taskField || column.taskField === 'contract')
+  const contractAllowed =
+    type === 'text' &&
+    !converting &&
+    (!column?.taskField || column.taskField === 'contract' || column.taskField === 'project')
   const hasOptions = (type === 'select' || type === 'multiselect') && !converting
   const [report, setReport] = useState<Extract<ConvertReport, { applied: false }> | null>(null)
   const autoAllowed = canAutoDone({ type }) && !converting
@@ -214,6 +222,7 @@ export default function TrackerColumnDialog({
         ...(summable ? { total: total ? column?.total || ('sum' as const) : null } : {}),
         ...(autoChanged ? { autoDone } : {}),
         ...(contractAllowed && contractOn !== (column?.taskField === 'contract') ? { contract: contractOn } : {}),
+        ...(contractAllowed && projectOn !== (column?.taskField === 'project') ? { project: projectOn } : {}),
       }
       const renamed =
         column &&
@@ -235,6 +244,8 @@ export default function TrackerColumnDialog({
           ...(type === 'formula' ? { formula } : {}),
           ...(type === 'number' || type === 'formula' ? { total: total ? ('sum' as const) : null } : {}),
           ...(autoChanged ? { autoDone } : {}),
+          ...(contractAllowed && contractOn ? { contract: true } : {}),
+          ...(contractAllowed && projectOn ? { project: true } : {}),
         })
       onClose()
     } catch (e) {
@@ -549,9 +560,35 @@ export default function TrackerColumnDialog({
           )}
           {contractAllowed && (
             <fieldset className="trk-options">
-              <legend>Contract number</legend>
+              <legend>Row's project</legend>
               <label className="trk-checkline">
-                <input type="checkbox" checked={contractOn} onChange={event => setContractOn(event.target.checked)} />{' '}
+                <input
+                  type="checkbox"
+                  checked={projectOn}
+                  onChange={event => {
+                    setProjectOn(event.target.checked)
+                    if (event.target.checked) setContractOn(false)
+                  }}
+                />{' '}
+                Show the row's project, and let it be changed here
+              </label>
+              {projectOn && (
+                <p className="trk-muted-text">
+                  Each row shows its task's project. Click it to move the task, with its subtasks, to another of this
+                  tracker's projects; a row with no task picks where its task is made. Select rows and use Set project
+                  to move many at once.
+                  {otherProject ? ` “${otherProject.name}” does this now; saving moves it here.` : ''}
+                </p>
+              )}
+              <label className="trk-checkline">
+                <input
+                  type="checkbox"
+                  checked={contractOn}
+                  onChange={event => {
+                    setContractOn(event.target.checked)
+                    if (event.target.checked) setProjectOn(false)
+                  }}
+                />{' '}
                 Fill it with the contract number of the row's project (from Seeds)
               </label>
               {contractOn && (

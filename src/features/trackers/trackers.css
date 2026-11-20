@@ -1779,7 +1779,7 @@ a.trk-link-button {
   padding: 6px 8px;
   border: 1px solid var(--k-line);
   border-radius: 8px;
-  background: var(--k-surface, transparent);
+  background: var(--k-solid);
 }
 .trk-link-list .trk-task-line {
   flex: 1 1 auto;
@@ -4058,4 +4058,95 @@ a.trk-link-button {
 .trk-rollup-choices label > span {
   display: grid;
   gap: 2px;
+}
+
+/* Project column: the row's project as a chip (TrackerRowProject) */
+.trk-project-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--k-border);
+  border-radius: 999px;
+  background: var(--k-solid);
+  color: var(--k-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+button.trk-project-chip {
+  cursor: pointer;
+}
+button.trk-project-chip:hover,
+button.trk-project-chip:focus-visible {
+  border-color: var(--k-accent);
+  background: var(--k-accent-soft);
+}
+.trk-project-chip.auto {
+  border-style: dashed;
+}
+.trk-project-chip.locked {
+  border-style: dashed;
+  color: var(--k-muted);
+}
+.trk-project-chip small {
+  color: var(--k-muted);
+  font-size: 10.5px;
+}
+.trk-project-chip svg {
+  flex: none;
+  color: var(--k-muted);
+}
+.trk-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trk-project-option {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.trk-project-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--k-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.trk-project-default svg {
+  color: #d4a017;
+}
+.trk-project-done {
+  padding: 0 5px;
+  border: 1px solid var(--k-border);
+  border-radius: 4px;
+  color: var(--k-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+}
+.trk-project-pop .trk-picker-list button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.trk-project-pop .trk-picker-list button.selected:disabled {
+  opacity: 1;
+}
+.trk-project-confirm {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px 4px 0;
+  border-top: 1px solid var(--k-line);
+  font-size: 12.5px;
+}
+.trk-project-confirm p {
+  margin: 0;
 }

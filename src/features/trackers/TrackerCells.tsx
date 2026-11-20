@@ -154,7 +154,9 @@ export function CellView({
 }
 
 export const editable = (column: TrackerColumn) =>
-  ['text', 'number', 'date', 'link', 'select', 'multiselect', 'person'].includes(column.type)
+  ['text', 'number', 'date', 'link', 'select', 'multiselect', 'person'].includes(column.type) &&
+  // A Project column is changed through its chip (it moves the task), never typed into.
+  column.taskField !== 'project'
 
 /** Text for the editing box. */
 function draftOf(column: TrackerColumn, value: Cell | undefined) {

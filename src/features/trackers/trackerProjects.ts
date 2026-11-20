@@ -105,3 +105,147 @@ export function missingClientPatches(
     .filter(item => !item.clientId && !ownClient(item.projectId))
     .map(item => ({ id: item.id, clientId: clients[0] }))
 }
+
+/** A project a row's Project chip offers: one of the tracker's projects. */
+export type RowProjectChoice = {
+  id: string
+  name: string
+  contractNumber: string
+  clientName: string
+  /** The tracker's default project (★): rows with no task and no contract number go there. */
+  isDefault: boolean
+  /** Completed in Seeds or archived: existing tasks may be moved there, but it takes no new tasks. */
+  completed: boolean
+}
+
+/** The tracker's projects for the Project chip, the default first, then by name. */
+export function trackerProjectChoices<P extends ContractProject>(
+  tracker: Pick<Tracker, 'projectId' | 'projectIds'>,
+  projects: P[],
+  clients: { id: string; name: string }[],
+): RowProjectChoice[] {
+  const ids = trackerProjectIds(tracker)
+  const fallback = ids[0] || ''
+  const defaultId = tracker.projectId && ids.includes(tracker.projectId) ? tracker.projectId : fallback
+  return ids
+    .flatMap(id => {
+      const project = projects.find(item => item.id === id)
+      if (!project) return []
+      return [
+        {
+          id,
+          name: project.name || 'Unnamed project',
+          contractNumber: project.contractNumber?.trim() || '',
+          clientName: clients.find(client => client.id === project.clientId)?.name || '',
+          isDefault: id === defaultId,
+          completed: isClosedProject(project),
+        },
+      ]
+    })
+    .sort(
+      (a, b) =>
+        Number(b.isDefault) - Number(a.isDefault) ||
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }),
+    )
+}
+
+/**
+ * What a row's Project chip shows. A row's own task can be moved to another project; a row whose task is a subtask
+ * follows its parent task; a row with no task shows where its task will go (rowPlace), marked auto.
+ */
+export type RowProjectView =
+  | { kind: 'task'; projectId: string; taskId: string; subtasks: number }
+  | { kind: 'subtask'; projectId: string; parentTitle: string }
+  | { kind: 'none'; projectId: string }
+
+type ViewItem = {
+  id: string
+  title?: string
+  projectId?: string
+  clientId?: string
+  parentTaskId?: string
+  archived?: boolean
+}
+
+export function rowProjectView<P extends ContractProject>(
+  tracker: Pick<Tracker, 'projectId' | 'projectIds' | 'clientId' | 'clientIds' | 'columns'>,
+  row: Pick<TrackerRow, 'cells' | 'taskId'>,
+  projects: P[],
+  items: ViewItem[],
+): RowProjectView {
+  const task = row.taskId ? items.find(item => item.id === row.taskId) : undefined
+  if (task?.parentTaskId) {
+    const parent = items.find(item => item.id === task.parentTaskId)
+    return { kind: 'subtask', projectId: task.projectId || parent?.projectId || '', parentTitle: parent?.title || '' }
+  }
+  if (task)
+    return {
+      kind: 'task',
+      projectId: task.projectId || '',
+      taskId: task.id,
+      subtasks: items.filter(item => item.parentTaskId === task.id && !item.archived).length,
+    }
+  return { kind: 'none', projectId: rowPlace(tracker, { cells: row.cells, taskId: '' }, projects, items).projectId }
+}
+
+/** The project name a Project column cell keeps, for search, filters and sorting: its task's project's name. */
+export function rowProjectName<P extends ContractProject>(
+  row: Pick<TrackerRow, 'taskId'>,
+  projects: P[],
+  items: { id: string; projectId?: string; parentTaskId?: string }[],
+): string {
+  if (!row.taskId) return ''
+  const task = items.find(item => item.id === row.taskId)
+  if (!task) return ''
+  const projectId = task.projectId || items.find(item => item.id === task.parentTaskId)?.projectId
+  return (projectId && projects.find(project => project.id === projectId)?.name?.trim()) || ''
+}
+
+type MovableItem = {
+  id: string
+  projectId?: string
+  clientId?: string
+  parentTaskId?: string
+  archived?: boolean
+  seedsTaskId?: string
+}
+
+/**
+ * Moves tasks (and their subtasks) to another project. Only top-level tasks move: a subtask among them is skipped, as
+ * it follows its parent. The client becomes the project's own (its Seeds parent) when it has one; a project shared by
+ * several clients keeps each task's client. A Seeds task (Go Live, Meetings…) is kept only if the new project has it.
+ */
+export function planProjectMove<T extends MovableItem>(
+  items: T[],
+  taskIds: string[],
+  project: { id: string; clientId?: string; seedsTasks?: { id: string }[] },
+): { items: T[]; moved: T[]; tasks: number; subtasks: number; skipped: number } {
+  const wanted = [...new Set(taskIds)]
+  const seedsTasks = new Set((project.seedsTasks || []).map(task => task.id))
+  const movable = new Set(
+    wanted.filter(id => {
+      const item = items.find(entry => entry.id === id)
+      return Boolean(item && !item.archived && !item.parentTaskId && item.projectId !== project.id)
+    }),
+  )
+  let tasks = 0,
+    subtasks = 0
+  const moved: T[] = []
+  const next = items.map(item => {
+    const own = movable.has(item.id)
+    const under = Boolean(item.parentTaskId && movable.has(item.parentTaskId))
+    if (!own && !under) return item
+    if (own) tasks += 1
+    else subtasks += 1
+    const { seedsTaskId, ...rest } = item
+    const keep = Boolean(seedsTaskId && seedsTasks.has(seedsTaskId))
+    const copy = {
+      ...(keep ? item : rest),
+      projectId: project.id,
+      clientId: project.clientId || item.clientId,
+    } as T
+    moved.push(copy)
+    return copy
+  })
+  return { items: next, moved, tasks, subtasks, skipped: wanted.length - movable.size }
+}

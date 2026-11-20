@@ -16,6 +16,7 @@ import { templateChoices, templateRows, withDoneColumn, type TemplateChoice } fr
 import { TemplatesDialog, TemplateTag, useTrackerTemplates } from './TemplateManager'
 import { createRowTasks } from './trackerTaskActions'
 import type { TaskPatch } from './trackerTasks'
+import type { MoveTasks } from './TrackerRowProject'
 import { trackerApi } from './trackerApi'
 import { rememberTracker, rememberedTracker } from './trackerNav'
 import { VIEW_PATHS, pathForTracker, trackerIdFromPath } from '../../app/routes'
@@ -45,6 +46,8 @@ type Props = {
   onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
   /** Changes tasks from a tracker (dates, titles, done); see trackerTasks. */
   onUpdateTasks?: (patches: TaskPatch[]) => Promise<boolean>
+  /** Moves tasks, with their subtasks, to another project (the Project chip, Set project). */
+  onMoveTasks?: MoveTasks
   /** Loads the workspace again after the server changed tasks (boxes ticked in a connected Sheet). */
   onTasksChanged?: () => Promise<void>
   currentUserId?: string
@@ -452,6 +455,7 @@ export default function Trackers(props: Props) {
         isTaskClosed={props.isTaskClosed}
         onCreateTasks={props.onCreateTasks}
         onUpdateTasks={props.onUpdateTasks}
+        onMoveTasks={props.onMoveTasks}
         onTasksChanged={props.onTasksChanged}
         currentUserId={props.currentUserId || ''}
         startNote={createdNote}

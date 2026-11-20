@@ -86,7 +86,16 @@ import { niceTime } from './trackerUi'
 import { SaveAsTemplateDialog } from './TemplateManager'
 import { sheetHasGantt } from './sheetGantt'
 import { keepsStepTasks, planMissingSteps, planStepTasks, siteTaskPatch, siteTaskTitle, stepColumns } from './stepTasks'
-import { missingClientPatches, rowContract, rowPlace } from './trackerProjects'
+import {
+  type RowProjectChoice,
+  missingClientPatches,
+  rowContract,
+  rowPlace,
+  rowProjectName,
+  rowProjectView,
+  trackerProjectChoices,
+} from './trackerProjects'
+import { ProjectChip, ProjectMenu, type MoveTasks } from './TrackerRowProject'
 import { cellSubtaskPatches, tickedCellPatches } from './cellSubtasks'
 import { waitForCloudSaves } from '../../app/cloudStore'
 import { useVisiblePolling } from '../../app/useVisiblePolling'
@@ -108,6 +117,8 @@ type Props = {
   onCreateTasks?: (drafts: TaskDraft[]) => Promise<WorkItem[]>
   /** Changes tasks from this tracker (title, dates, phase, done). */
   onUpdateTasks?: (patches: TaskPatch[]) => Promise<boolean>
+  /** Moves tasks, with their subtasks, to another of the tracker's projects (Project chip, Set project). */
+  onMoveTasks?: MoveTasks
   /** The server changed tasks (boxes ticked in the connected Sheet): load the workspace again to show them. */
   onTasksChanged?: () => Promise<void>
   /** The person using the tracker: new tasks are assigned to them. */
@@ -169,7 +180,12 @@ export default function TrackerScreen(props: Props) {
   const headerAnchor = useRef<HTMLElement | null>(null)
   const moreButton = useRef<HTMLButtonElement>(null)
   const workAnchor = useRef<HTMLElement | null>(null)
-  const [workCell, setWorkCell] = useState<{ rowId: string; columnId: string } | null>(null)
+  // projectId: picked on a row's Project chip before the row has a task; the picker opens on creating it there.
+  const [workCell, setWorkCell] = useState<{ rowId: string; columnId: string; projectId?: string } | null>(null)
+  // The Project chip's menu (one row) or "Set project" for the selected rows.
+  const [projectMenu, setProjectMenu] = useState<{ rowIds: string[]; bulk: boolean } | null>(null)
+  const projectAnchor = useRef<HTMLElement | null>(null)
+  const setProjectButton = useRef<HTMLButtonElement>(null)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [review, setReview] = useState<{
     origin: 'sheet' | 'import'
@@ -1232,6 +1248,38 @@ export default function TrackerScreen(props: Props) {
     }
   }, [rows, columns, props.projects, props.items, canEdit, status])
 
+  // The Project column shows each row's project as a chip. Its cell keeps the task's project's name, so search,
+  // filters and sorting work; rows with no task show where their task will go, and keep nothing.
+  const projectFilled = useRef(new Set<string>())
+  useEffect(() => {
+    const column = taskFieldColumn(columns, 'project')
+    if (!column || column.synced || !canEdit || status !== 'ready') return
+    for (const row of rows) {
+      const name = rowProjectName(row, props.projects, props.items)
+      const key = `${row.id}|${name}`
+      if (!name || projectFilled.current.has(key)) continue
+      if (cellText(column, row.cells[column.id]).trim() === name) continue
+      projectFilled.current.add(key)
+      patchRow(row.id, { cells: { [column.id]: name } })
+    }
+  }, [rows, columns, props.projects, props.items, canEdit, status])
+  const projectChoices = useMemo(
+    () => (tracker ? trackerProjectChoices(tracker, props.projects, props.clients) : []),
+    [tracker, props.projects, props.clients],
+  )
+  /** Moves the tasks of these rows (with their subtasks) to a project, and says what moved. */
+  const moveRowsToProject = async (rowIds: string[], choice: RowProjectChoice) => {
+    if (!props.onMoveTasks) throw new Error('Your role cannot move tasks.')
+    const taskIds = rowsRef.current.filter(row => rowIds.includes(row.id) && row.taskId).map(row => row.taskId)
+    const result = await props.onMoveTasks(taskIds, choice.id)
+    if (!result.tasks) {
+      say('info', `Nothing moved: the tasks are already in ${choice.name}, or are subtasks that follow their task.`)
+      return
+    }
+    const subtasks = result.subtasks ? ` and ${plural(result.subtasks, 'subtask')}` : ''
+    say('info', `Moved ${plural(result.tasks, 'task')}${subtasks} to ${choice.name}.`)
+  }
+
   // ---- row highlights, and colouring rows by their state ----
   const [statusColorsHere, setStatusColorsHere] = useState(() => {
     try {
@@ -1589,6 +1637,8 @@ export default function TrackerScreen(props: Props) {
       else if (draft.autoDone) copy.autoDone = draft.autoDone
       if (draft.contract === true) copy.taskField = 'contract'
       else if (draft.contract === false && copy.taskField === 'contract') delete copy.taskField
+      if (draft.project === true) copy.taskField = 'project'
+      else if (draft.project === false && copy.taskField === 'project') delete copy.taskField
       return copy
     }
     // Only one column marks rows done (or shows the contract): turning it on here turns it off elsewhere.
@@ -1599,6 +1649,10 @@ export default function TrackerScreen(props: Props) {
         result = rest
       }
       if (draft.contract === true && result.taskField === 'contract') {
+        const { taskField: _field, ...rest } = result
+        result = rest
+      }
+      if (draft.project === true && result.taskField === 'project') {
         const { taskField: _field, ...rest } = result
         result = rest
       }
@@ -2569,6 +2623,21 @@ export default function TrackerScreen(props: Props) {
               />
             </Popover>
           )}
+          {canEdit && props.onMoveTasks && projectChoices.length > 0 && (
+            <button
+              ref={setProjectButton}
+              type="button"
+              className="trk-button"
+              aria-expanded={Boolean(projectMenu?.bulk)}
+              onClick={() => {
+                projectAnchor.current = setProjectButton.current
+                setProjectMenu(open => (open?.bulk ? null : { rowIds: [...selected], bulk: true }))
+              }}
+              title="Move the selected rows' tasks, with their subtasks, to one of this tracker's projects"
+            >
+              Set project
+            </button>
+          )}
           {canEdit && props.onCreateTasks && (
             <button
               type="button"
@@ -2698,6 +2767,29 @@ export default function TrackerScreen(props: Props) {
           onWork={(row, column, element) => {
             workAnchor.current = element
             setWorkCell({ rowId: row.id, columnId: column.id })
+          }}
+          customCell={(row, column) => {
+            if (column.taskField !== 'project') return null
+            const view = rowProjectView(tracker, row, props.projects, props.items)
+            const name = props.projects.find(project => project.id === view.projectId)?.name || ''
+            // A row's own task moves; a row with no task picks where its task is made (not on a project timeline,
+            // whose rows become subtasks of their phase).
+            const canChange =
+              canEdit &&
+              (view.kind === 'task'
+                ? Boolean(props.onMoveTasks)
+                : view.kind === 'none' && Boolean(props.onCreateTasks) && !tasksKept && columns.length > 0)
+            return (
+              <ProjectChip
+                view={view}
+                name={name}
+                canChange={canChange}
+                onOpen={element => {
+                  projectAnchor.current = element
+                  setProjectMenu({ rowIds: [row.id], bulk: false })
+                }}
+              />
+            )
           }}
           cellWork={(row, column) => {
             if (column.id === columns[0]?.id) {
@@ -3093,6 +3185,76 @@ export default function TrackerScreen(props: Props) {
         </Popover>
       )}
 
+      {projectMenu &&
+        (() => {
+          const targets = rows.filter(row => projectMenu.rowIds.includes(row.id))
+          if (!targets.length) return null
+          const close = () => setProjectMenu(null)
+          const linkMore = tracker.canEdit && !tracker.archived ? () => setDetails(true) : undefined
+          if (!projectMenu.bulk) {
+            const row = targets[0]
+            const view = rowProjectView(tracker, row, props.projects, props.items)
+            const newTask = view.kind === 'none'
+            const subtasks = view.kind === 'task' ? view.subtasks : 0
+            return (
+              <ProjectMenu
+                anchor={projectAnchor}
+                heading={newTask ? 'Project for this row’s task' : 'Move this task to'}
+                choices={projectChoices}
+                currentId={view.projectId}
+                newTask={newTask}
+                note={
+                  newTask
+                    ? 'This row has no task yet. Pick its project, then create or pick the task.'
+                    : subtasks
+                      ? `Its ${plural(subtasks, 'subtask')} ${subtasks === 1 ? 'moves' : 'move'} with it.`
+                      : undefined
+                }
+                onPick={async choice => {
+                  if (newTask) {
+                    workAnchor.current = projectAnchor.current
+                    setWorkCell({ rowId: row.id, columnId: columns[0].id, projectId: choice.id })
+                    return
+                  }
+                  await moveRowsToProject([row.id], choice)
+                }}
+                onLinkMore={linkMore}
+                onClose={close}
+              />
+            )
+          }
+          const views = targets.map(row => rowProjectView(tracker, row, props.projects, props.items))
+          const tasks = views.flatMap(view => (view.kind === 'task' ? [view] : []))
+          const subtaskRows = views.filter(view => view.kind === 'subtask').length
+          const noTask = views.filter(view => view.kind === 'none').length
+          return (
+            <ProjectMenu
+              anchor={projectAnchor}
+              heading={`Move ${plural(targets.length, 'selected row')} to`}
+              choices={projectChoices}
+              note="Each row's task moves, with its subtasks."
+              confirmLabel={choice => `Move to ${choice.name}`}
+              summary={choice => {
+                const moving = tasks.filter(view => view.projectId !== choice.id)
+                const unique = new Set(moving.map(view => view.taskId)).size
+                const subtasks = moving.reduce((sum, view) => sum + view.subtasks, 0)
+                const withSubtasks = subtasks ? ` and ${plural(subtasks, 'subtask')}` : ''
+                const none = tasks.length ? 'they are already in this project.' : 'none of these rows has a task.'
+                const lines = [unique ? `Moves ${plural(unique, 'task')}${withSubtasks}.` : `No task to move: ${none}`]
+                const there = tasks.length - moving.length
+                if (there) lines.push(`${plural(there, 'row')} already there.`)
+                if (subtaskRows)
+                  lines.push(`${plural(subtaskRows, 'row')} with a subtask: skipped, it follows its task.`)
+                if (noTask) lines.push(`${plural(noTask, 'row')} with no task yet: skipped. Use each row's chip.`)
+                return lines
+              }}
+              onPick={choice => moveRowsToProject(projectMenu.rowIds, choice)}
+              onLinkMore={linkMore}
+              onClose={close}
+            />
+          )
+        })()}
+
       {workCell &&
         (() => {
           const row = rows.find(item => item.id === workCell.rowId),
@@ -3101,7 +3263,7 @@ export default function TrackerScreen(props: Props) {
           const first = column.id === columns[0]?.id
           return (
             <TrackerWorkPicker
-              key={`${row.id}:${column.id}`}
+              key={`${row.id}:${column.id}:${workCell.projectId || ''}`}
               anchor={workAnchor}
               tracker={tracker}
               row={row}
@@ -3109,6 +3271,7 @@ export default function TrackerScreen(props: Props) {
               mode={first ? 'task' : 'subtask'}
               rowTitle={rowTitle(columns, row)}
               current={cellLinks.get(row.id)?.get(column.id)?.taskId}
+              startProjectId={first ? workCell.projectId : undefined}
               tools={workTools}
               onClose={() => setWorkCell(null)}
               onPickTask={async taskId => {

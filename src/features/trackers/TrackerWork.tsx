@@ -76,10 +76,18 @@ const contractProjectOf = (tracker: Tracker, projects: WorkProject[], row?: Pick
  * Seeds parent, filled in), with an optional Seeds task; Before Seeds is still there to choose. Otherwise: the
  * tracker's clients first (picked automatically when there is one), and any project.
  */
-function useTaskContext(tracker: Tracker, tools: WorkTools, row?: Pick<TrackerRow, 'cells'>) {
+function useTaskContext(
+  tracker: Tracker,
+  tools: WorkTools,
+  row?: Pick<TrackerRow, 'cells'>,
+  /** A project picked for the row (its Project chip): the task starts there. */
+  startProjectId?: string,
+) {
   const fromSeeds = seedsProjects(tools.projects)
-  // A row whose contract number names a project starts on that project; else the tracker's default project.
-  const byContract = contractProjectOf(tracker, tools.projects, row)
+  // A project picked on the row's chip wins; then a row whose contract number names a project starts on that project;
+  // else the tracker's default project.
+  const picked = startProjectId ? tools.projects.find(project => project.id === startProjectId) : undefined
+  const byContract = picked || contractProjectOf(tracker, tools.projects, row)
   const startProject = byContract?.id || tracker.projectId
   const [target, setTarget] = useState<'seeds' | 'before'>(
     fromSeeds.length && !(byContract && !byContract.seedsId) ? 'seeds' : 'before',
@@ -264,6 +272,8 @@ type PickerProps = {
   rowTitle: string
   /** The subtask already in this cell, if any. */
   current?: string
+  /** Task mode: a project picked on the row's Project chip. The picker opens on creating a task there. */
+  startProjectId?: string
   tools: WorkTools
   onClose: () => void
   onPickTask: (taskId: string | null) => Promise<void>
@@ -275,13 +285,13 @@ type PickerProps = {
 export function TrackerWorkPicker(props: PickerProps) {
   const { tracker, row, column, mode, tools } = props
   const [query, setQuery] = useState('')
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState(mode === 'task' && Boolean(props.startProjectId) && Boolean(tools.onCreate))
   const [title, setTitle] = useState(
     mode === 'task' ? (props.rowTitle === 'Untitled row' ? '' : props.rowTitle) : column.name,
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const context = useTaskContext(tracker, tools, row)
+  const context = useTaskContext(tracker, tools, row, mode === 'task' ? props.startProjectId : undefined)
   const byId = useMemo(() => new Map(tools.items.map(item => [item.id, item])), [tools.items])
   const task = row.taskId ? byId.get(row.taskId) : undefined
   // A new subtask under a Seeds project: its Seeds task, matched from its name unless one is chosen.
