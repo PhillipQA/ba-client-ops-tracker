@@ -45,14 +45,39 @@ export function rememberAccess(organizationId: string | null | undefined, state:
 }
 
 /**
- * Whether Seeds still lets this signed-in person in (see auth/google-sign-in.ts). The role and email are read from the
- * workspace, so a change there counts at once; an unknown workspace lets the session through until it is loaded.
+ * Password sessions of people with a Seeds exception (set in Internal Admin; see auth/google-sign-in.ts), by session
+ * token, with whose they are. They stay signed in when Seeds does not list them. Kept here, in memory, like the
+ * sessions themselves, so the two end together on a restart.
  */
-export function seedsStillAdmits(user: { id: string; role: string; email?: string; organizationId?: string }) {
+const exceptionSessions = new Map<string, string>()
+
+export function rememberSeedsException(token: string, userId: string) {
+  if (token && userId) exceptionSessions.set(token, String(userId))
+}
+
+export function forgetSeedsException(token: string) {
+  exceptionSessions.delete(token)
+}
+
+/** Internal Admin took a person's exception away: their sessions are checked against Seeds again. */
+export function forgetSeedsExceptionsOf(userId: string) {
+  for (const [token, owner] of exceptionSessions) if (owner === String(userId)) exceptionSessions.delete(token)
+}
+
+/**
+ * Whether Seeds still lets this signed-in person in (see auth/google-sign-in.ts). The email is read from the
+ * workspace, so a change there counts at once; an unknown workspace lets the session through until it is loaded.
+ * A password session that came in by a Seeds exception stays in.
+ */
+export function seedsStillAdmits(
+  user: { id: string; role: string; email?: string; organizationId?: string },
+  token = '',
+) {
   const snapshot = user.organizationId ? snapshots.get(user.organizationId) : undefined
   if (!snapshot) return true
   const account = snapshot.accounts.find(entry => String(entry.id) === user.id)
-  return seedsAdmits({ role: account?.role ?? user.role, email: account?.email ?? user.email }, snapshot.employees)
+  if (seedsAdmits({ email: account?.email ?? user.email }, snapshot.employees)) return true
+  return Boolean(token) && exceptionSessions.get(token) === String(user.id)
 }
 
 /** The session as permission checks should see it. */
@@ -65,4 +90,5 @@ export function withAccess<T extends { id: string; role: string; modules: string
 
 export function forgetAccess() {
   snapshots.clear()
+  exceptionSessions.clear()
 }

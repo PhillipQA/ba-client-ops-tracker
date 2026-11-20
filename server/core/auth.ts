@@ -1,5 +1,5 @@
 // Sessions, passwords and the sign-in checks every route uses.
-import { seedsStillAdmits, withAccess } from '../services/access-cache'
+import { forgetSeedsException, seedsStillAdmits, withAccess } from '../services/access-cache'
 import bcrypt from 'bcryptjs'
 import type express from 'express'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -167,9 +167,11 @@ function parseCookies(header = '') {
 export function sessionFromRequest(req: express.Request) {
   const token = parseCookies(req.headers.cookie || '').ba_session
   let user = token ? (sessions.get(token) ?? null) : null
-  // Seeds decides who is in: someone no longer an active Seeds employee is signed out (Internal Admin is not a tenant).
-  if (user && user.accountType !== 'platform' && !seedsStillAdmits(user)) {
+  // Seeds decides who is in: someone no longer an active Seeds employee is signed out unless this password session
+  // came in by a Seeds exception (Internal Admin is not a tenant).
+  if (user && user.accountType !== 'platform' && !seedsStillAdmits(user, token)) {
     sessions.delete(token)
+    forgetSeedsException(token)
     user = null
   }
   // Account Managers are Viewers of four pages while per-person visibility is on (see services/access-cache.ts).

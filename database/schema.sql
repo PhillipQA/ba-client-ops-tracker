@@ -376,7 +376,8 @@ CREATE TABLE public.app_users (
     deleted_at timestamp with time zone,
     organization_id uuid NOT NULL,
     is_platform_admin boolean DEFAULT false NOT NULL,
-    last_login_at timestamp with time zone
+    last_login_at timestamp with time zone,
+    seeds_exempt boolean DEFAULT false NOT NULL
 );
 
 CREATE TABLE public.audit_logs (
@@ -1610,4 +1611,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 42 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 43 as schema_version;
