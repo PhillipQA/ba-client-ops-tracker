@@ -150,9 +150,8 @@ function SeedsProductField({
  * is on.
  */
 function projectChoices(store: Store, none: string, keep?: string): SearchChoice[] {
-  const open = store.projects
-    .filter(project => !isClosedProject(project) || project.id === keep)
-    .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base', numeric: true }))
+  const open = store.projects.filter(project => !isClosedProject(project) || project.id === keep)
+  open.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base', numeric: true }))
   const client = (id?: string) => (id ? store.clients.find(entry => entry.id === id)?.name : '')
   const choice = (project: (typeof open)[number], group?: string): SearchChoice => ({
     value: project.id,
