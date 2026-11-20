@@ -46,7 +46,8 @@ import AccountUsers from '../features/accounts/AccountUsers'
 import ThemePreferences from '../features/settings/ThemePreferences'
 import { themeForContext } from '../features/settings/theme'
 import { normalizeInterfaceMode } from '../features/settings/appearance'
-import { AuthSplash, LoginScreen } from './AuthScreens'
+import { AuthSplash, InternalAdminLogin, LoginScreen } from './AuthScreens'
+import { INTERNAL_ADMIN_PATH } from '../features/accounts/auth'
 import { Modal } from './Modal'
 import { ProfileModal } from './ProfileModal'
 import { type Store, isTaskClosed, normalizeStore, seedStore } from './store'
@@ -93,6 +94,7 @@ function App() {
     setMovingToSeeds,
     moveWorkToSeeds,
     handleLogin,
+    handleInternalLogin,
     handleGoogleLogin,
     handleLogout,
     handleNotificationAction,
@@ -251,7 +253,12 @@ function App() {
     )
   if (authChecking) return <AuthSplash />
   if (!authUser || !currentUser)
-    return <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} />
+    // Internal Admin signs in only on its own page; the workspace sign-in does not know that account.
+    return window.location.pathname.replace(/\/+$/, '') === INTERNAL_ADMIN_PATH ? (
+      <InternalAdminLogin busy={loginBusy} error={loginError} onLogin={handleInternalLogin} />
+    ) : (
+      <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} />
+    )
 
   const currentTheme = themeForContext(currentUser)
 

@@ -3,7 +3,14 @@
  */
 import { type View, PAGE_MODULES, navItems } from '../navigation'
 import { workHubSync } from '../../features/work-hub/workHubSync'
-import { type AuthUser, login, loginWithGoogle, logout } from '../../features/accounts/auth'
+import {
+  type AuthUser,
+  INTERNAL_ADMIN_PATH,
+  login,
+  loginInternalAdmin,
+  loginWithGoogle,
+  logout,
+} from '../../features/accounts/auth'
 import { waitForCloudSaves } from '../cloudStore'
 import type { UserAccount, AppModule } from '../../shared/types'
 import { normalizeInterfaceMode } from '../../features/settings/appearance'
@@ -60,6 +67,22 @@ export function useSignIn(ui: UiState) {
     setLoginError('')
     try {
       enterAs(await login(account, username, password))
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Login failed.')
+    } finally {
+      setLoginBusy(false)
+      setAuthChecking(false)
+    }
+  }
+
+  /** Internal Admin, from its own page (/internal_admin). Once signed in, the app opens at its home. */
+  const handleInternalLogin = async (username: string, password: string) => {
+    setLoginBusy(true)
+    setLoginError('')
+    try {
+      const user = await loginInternalAdmin(username, password)
+      if (window.location.pathname.replace(/\/+$/, '') === INTERNAL_ADMIN_PATH) window.history.replaceState(null, '', '/')
+      enterAs(user)
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Login failed.')
     } finally {
@@ -188,6 +211,7 @@ export function useSignIn(ui: UiState) {
     canWrite,
     canUseAI,
     handleLogin,
+    handleInternalLogin,
     handleGoogleLogin,
     handleLogout,
   }

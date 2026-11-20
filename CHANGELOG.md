@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Sign-in: account first, and Internal Admin on its own page
+- Sign-in is now two steps, because the same email can be a user in several accounts:
+  - **Step 1, Account.** The account is checked first. It must be an active account, and unknown, suspended and deleted accounts all get the same answer.
+  - **Step 2, slides in.** It shows "Signing in to *account* · Change", then **User and password**, or **Continue with Google**. Google now only signs in to a user of that account, so there's no more "choose an account" after Google.
+- Remember me opens straight on step 2 once the remembered account is checked again.
+- User and password are still checked together, with one answer for any mistake, so sign-in never tells which usernames exist. Account checks are rate limited (30 per 15 minutes per address).
+- **Internal Admin signs in only at `/internal_admin`**, with user and password (no account, no Google). On the workspace sign-in page, the Internal Admin account is treated as unknown, at both the account step and the password check. Failed attempts are still counted and limited.
+
 ### GIT Tracker, part 2: GIT Trackers, GIT templates and repository mapping
 - **GIT templates** (Trackers › Templates › New GIT template): the columns, plus the rows each GitLab or GitHub ticket adds (for example Ticket, Development and QA). Each row makes a Task, a Subtask under another row's Task, or nothing. Its cells, title, description and due date are filled from the ticket, and conditions can limit when it applies (for example only tickets labelled `bug`). Optional column rules add a Subtask per Task row for a column. The editor checks the rules as you type, the same way the server does, and **Try it with an example ticket** shows what one ticket would make. A new GIT template starts as Ticket (Task) with Development and QA Subtasks.
 - **GIT Trackers** (New tracker › GIT Tracker): made from a GIT template, with no Client or Project of their own. Each ticket's work goes under the Client and Project its repository is mapped to. Everyone with Trackers sees them. They show a GIT badge, and the list can be filtered by kind. They don't import, follow or make a Google Sheet, don't add Seeds projects as rows, and don't make tasks from rows and checkboxes. Adding tickets from Work Hub comes in part 3.

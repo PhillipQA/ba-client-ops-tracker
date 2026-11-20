@@ -28,3 +28,15 @@ export const googleSignInLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many sign-in attempts. Please try again in 15 minutes.' },
 })
+
+/**
+ * Sign-in step 1, checking the account before the user signs in to it. Account names are not secret, but a flood of
+ * guesses is stopped, per address.
+ */
+export const accountLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many account checks. Please try again in 15 minutes.' },
+})
