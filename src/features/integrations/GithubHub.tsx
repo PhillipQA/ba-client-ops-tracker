@@ -14,7 +14,7 @@ import { useWorkHubSync } from '../work-hub/useWorkHubSync'
 import { useIsClosed } from '../tasks/openWork'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { businessDateKey } from '../../shared/businessDate'
-import { dueText, duration, involvement, priorityLabels } from './gitlabDetails'
+import { dueDay, dueText, duration, involvement, priorityLabels } from './gitlabDetails'
 
 class ApiError extends Error {
   constructor(
@@ -1259,8 +1259,8 @@ function GitlabMeta({ ticket, today }: { ticket: GithubTicket; today: string }) 
   const { priority, severity } = priorityLabels(ticket.labels)
   const rows: [string, string][] = []
   rows.push(['I am', involvement(ticket) || 'Not involved'])
-  if (ticket.due_date)
-    rows.push(['Due date', `${ticket.due_date}${due && due.tone !== 'plain' ? ` (${due.text})` : ''}`])
+  if (dueDay(ticket.due_date))
+    rows.push(['Due date', `${dueDay(ticket.due_date)}${due && due.tone !== 'plain' ? ` (${due.text})` : ''}`])
   if (priority) rows.push(['Priority', priority])
   if (severity || d.severity) rows.push(['Severity', severity || String(d.severity)])
   if (d.type) rows.push(['Type', d.type.replace(/_/g, ' ')])

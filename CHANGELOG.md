@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Work Hub: due dates show again
+- Tickets with a due date showed **Due Invalid Date** in Work Hub. The database sends the date with a time attached, which the label could not read; only the day is used now, so it shows "Due in 3 days", "Overdue by 2 days" or the date. The ticket's details show the day too.
+
 ### Sign-in: Continue with Google works again after Change
 - After a Google sign-in was refused (for example for a wrong account), going back with **Change** and continuing left the Google button dead. Google's sign-in library was being set up again each time the step opened, which Google warns can break it. It is now set up once per page, and each Google button (the sign-in page, Send to Seeds) takes the answer while it is on screen.
 - **Change** also clears the previous account's error, so the new account starts clean.
