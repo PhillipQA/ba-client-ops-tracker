@@ -12,7 +12,7 @@ type SelectLike = {
   size: number
   disabled: boolean
   dataset: { native?: string }
-  options: ArrayLike<{ hidden: boolean }>
+  options: ArrayLike<{ hidden: boolean | string }>
 }
 
 /** Whether a <select> opens the search list: a single-choice, enabled dropdown with more than SEARCH_AFTER choices. */
