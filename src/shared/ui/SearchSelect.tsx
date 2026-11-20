@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { SEARCH_AFTER } from './selectSearch'
 
 export type ClientChoice = { id: string; name: string; seedsId?: string }
 type Extra = { value: string; label: string; hint?: string; depth?: number; group?: string }
@@ -63,8 +64,67 @@ type SearchProps = Omit<Props, 'clients' | 'extra'> & {
   unknown?: string
 }
 
-/** The type-to-search field behind ClientSelect, for any list: choices keep their order; the first ones with an empty value are hints. */
-export function SearchSelect({
+/**
+ * The type-to-search field behind ClientSelect, for any list: choices keep their order; the first ones with an empty
+ * value are hints. A short list (SEARCH_AFTER choices or fewer) is a plain dropdown instead: nothing to search.
+ */
+export function SearchSelect(props: SearchProps) {
+  return props.choices.length > SEARCH_AFTER ? <SearchBox {...props} /> : <ShortSelect {...props} />
+}
+
+/** A short list as a plain dropdown, with the same value, name and change as the search field. */
+function ShortSelect({
+  choices,
+  value,
+  defaultValue = '',
+  onChange,
+  name,
+  disabled,
+  required,
+  className = '',
+  unknown = 'Unknown client',
+  ...rest
+}: SearchProps) {
+  const current = value ?? defaultValue
+  const known = current === '' || choices.some(choice => choice.value === current)
+  const hasBlank = choices.some(choice => choice.value === '')
+  const text = (choice: Extra) =>
+    [choice.depth ? `↳ ${choice.label}` : choice.label, choice.hint].filter(Boolean).join(' · ')
+  const groups = [...new Set(choices.map(choice => choice.group || ''))].filter(Boolean)
+  const optionsOf = (list: Extra[]) =>
+    list.map(choice => (
+      <option key={choice.value || '__blank'} value={choice.value}>
+        {text(choice)}
+      </option>
+    ))
+  return (
+    <select
+      className={className || undefined}
+      data-native=""
+      name={name}
+      {...(value === undefined ? { defaultValue } : { value })}
+      disabled={disabled}
+      required={required}
+      aria-label={rest['aria-label']}
+      onChange={event => onChange?.(event.target.value)}
+    >
+      {!hasBlank && (
+        <option value="" disabled hidden>
+          Choose…
+        </option>
+      )}
+      {!known && <option value={current}>{unknown}</option>}
+      {optionsOf(choices.filter(choice => !choice.group))}
+      {groups.map(group => (
+        <optgroup key={group} label={group}>
+          {optionsOf(choices.filter(choice => choice.group === group))}
+        </optgroup>
+      ))}
+    </select>
+  )
+}
+
+function SearchBox({
   choices,
   value,
   defaultValue = '',

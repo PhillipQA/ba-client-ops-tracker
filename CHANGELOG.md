@@ -11,6 +11,11 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Long lists are searched, short ones stay dropdowns
+- Every dropdown in the app with more than 10 choices (projects, clients, people, Seeds tasks, columns…) now opens a search list instead of a long scrolling list: type part of a name to narrow it, arrow keys to move, Enter to pick, Escape to go back. Typing a letter on a focused dropdown opens the search with that letter. Groups stay as headings, and choices that cannot be picked are greyed out.
+- The other way round, a search box with 10 choices or fewer (such as Client when there are only a few) is now a plain dropdown.
+- Phones and tablets keep their own list, which is already easy to scroll with a finger.
+
 ### Edit task: type to find the project
 - The Project field in New task and Edit task is now a search box: type part of the project name, its contract number or its client, instead of scrolling a long list. Projects are A to Z, grouped From Seeds / Before Seeds once Seeds is on, with the contract number and client shown beside each. A task's current project stays listed even if it is completed.
 
