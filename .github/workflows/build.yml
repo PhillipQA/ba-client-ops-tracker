@@ -24,8 +24,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
-      - name: Format diff (temporary)
-        run: npx biome format src/features/tasks/TaskForms.tsx || true
       - name: Biome check
         run: |
           set +e

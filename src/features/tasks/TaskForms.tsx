@@ -143,7 +143,6 @@ function SeedsProductField({
   )
 }
 
-
 /**
  * The Project field's choices, typed into rather than scrolled: open projects A to Z, the one already chosen (`keep`)
  * even if it is completed. Searchable by name, contract number and client; grouped From Seeds / Before Seeds once Seeds
