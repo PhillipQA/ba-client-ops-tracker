@@ -7,9 +7,17 @@ import {
   exactLike,
   notInSeeds,
   seedsAllowsSignIn,
+  seedsSignInRoute,
   type GoogleCandidate,
 } from '../server/auth/google-sign-in'
-import { forgetAccess, rememberAccess, seedsStillAdmits } from '../server/services/access-cache'
+import {
+  forgetAccess,
+  forgetSeedsException,
+  forgetSeedsExceptionsOf,
+  rememberAccess,
+  rememberSeedsException,
+  seedsStillAdmits,
+} from '../server/services/access-cache'
 
 const CLIENT = 'tracker-client.apps.googleusercontent.com'
 const google = generateKeyPairSync('rsa', { modulusLength: 2048 })
@@ -98,7 +106,7 @@ test('the email picks one user: none is refused, several accounts ask which, a d
   assert.ok(!duplicate.ok && duplicate.status === 409 && !duplicate.accounts)
 })
 
-test('once Seeds is on, only its active employees sign in (by email); Administrators always may', () => {
+test('once Seeds is on, only its active employees sign in (by email); no one passes by role', () => {
   const people = [{ id: '7', name: 'Phillip', email: 'Phillip@iripple.com' }]
   const on = { seeds: { connected: true, people } }
   const ba = (email: string) => ({ role: 'Contributor', email })
@@ -106,7 +114,7 @@ test('once Seeds is on, only its active employees sign in (by email); Administra
   assert.equal(seedsAllowsSignIn(on, ba('left@iripple.com')), false)
   assert.equal(seedsAllowsSignIn(on, ba('')), false, 'a user without an email cannot be matched')
   assert.equal(seedsAllowsSignIn(on, { role: 'Viewer', email: 'am@iripple.com' }), false)
-  assert.equal(seedsAllowsSignIn(on, { role: 'Administrator', email: 'other@iripple.com' }), true, 'no lockout')
+  assert.equal(seedsAllowsSignIn(on, { role: 'Administrator', email: 'other@iripple.com' }), false, 'not by role')
   assert.equal(seedsAllowsSignIn({ seeds: { connected: false, people } }, ba('left@iripple.com')), true, 'Seeds off')
   assert.equal(seedsAllowsSignIn({ seeds: { connected: true, people: [] } }, ba('a@iripple.com')), true, 'no list')
   assert.equal(seedsAllowsSignIn({}, ba('a@iripple.com')), true)
@@ -132,6 +140,48 @@ test('a signed-in session ends once the person is no longer a Seeds employee', (
   assert.equal(seedsStillAdmits(ana), true)
   rememberAccess('org-a', state([{ id: '9', name: 'Ben', email: 'ben@iripple.com' }]))
   assert.equal(seedsStillAdmits(ana), false, 'removed from Seeds: signed out')
-  assert.equal(seedsStillAdmits(boss), true, 'Administrators stay in')
+  assert.equal(seedsStillAdmits(boss), false, 'Administrators answer to Seeds too')
+  forgetAccess()
+})
+
+test('a Seeds exception lets a password sign-in in, never Google', () => {
+  const on = { seeds: { connected: true, people: [{ id: '7', name: 'Ana', email: 'ana@iripple.com' }] } }
+  const ana = { role: 'Contributor', email: 'ana@iripple.com' }
+  const left = { role: 'Contributor', email: 'left@iripple.com' }
+  const boss = { role: 'Administrator', email: 'boss@iripple.com' }
+  assert.equal(seedsSignInRoute(on, ana, false, 'password'), 'seeds')
+  assert.equal(seedsSignInRoute(on, ana, false, 'google'), 'seeds')
+  assert.equal(seedsSignInRoute(on, ana, true, 'google'), 'seeds', 'in Seeds: Google works as always')
+  assert.equal(seedsSignInRoute(on, left, false, 'password'), null)
+  assert.equal(seedsSignInRoute(on, left, true, 'password'), 'exception')
+  assert.equal(seedsSignInRoute(on, left, true, 'google'), null, 'Google always needs Seeds')
+  assert.equal(seedsSignInRoute(on, boss, false, 'password'), null, 'Administrators need Seeds or an exception')
+  assert.equal(seedsSignInRoute(on, boss, false, 'google'), null)
+  // Before schema v43 there is no exception column: Administrators keep their old pass, everyone else needs Seeds.
+  assert.equal(seedsSignInRoute(on, boss, 'legacy', 'password'), 'exception')
+  assert.equal(seedsSignInRoute(on, boss, 'legacy', 'google'), 'exception')
+  assert.equal(seedsSignInRoute(on, left, 'legacy', 'password'), null)
+  assert.equal(seedsSignInRoute({}, left, false, 'google'), 'seeds', 'Seeds off: nothing to check')
+})
+
+test('an exception session stays in after Seeds drops the person, until Internal Admin takes it away', () => {
+  const state = {
+    accounts: [{ id: 'ana', role: 'Contributor', email: 'ana@iripple.com' }],
+    seeds: { connected: true, people: [{ id: '9', name: 'Ben', email: 'ben@iripple.com' }] },
+  }
+  const ana = { id: 'ana', role: 'Contributor', email: 'ana@iripple.com', organizationId: 'org-a' }
+  forgetAccess()
+  rememberAccess('org-a', state)
+  assert.equal(seedsStillAdmits(ana, 'token-1'), false, 'no exception: signed out')
+  rememberSeedsException('token-1', 'ana')
+  rememberSeedsException('token-2', 'ana')
+  assert.equal(seedsStillAdmits(ana, 'token-1'), true)
+  assert.equal(seedsStillAdmits(ana, 'token-3'), false, 'only the sessions that came in by the exception')
+  assert.equal(seedsStillAdmits({ ...ana, id: 'other' }, 'token-1'), false, 'a token is tied to its person')
+  forgetSeedsException('token-1')
+  assert.equal(seedsStillAdmits(ana, 'token-1'), false, 'signed out')
+  assert.equal(seedsStillAdmits(ana, 'token-2'), true)
+  forgetSeedsExceptionsOf('ana')
+  assert.equal(seedsStillAdmits(ana, 'token-2'), false, 'exception turned off: answers to Seeds again')
   forgetAccess()
 })

@@ -44,11 +44,15 @@ type PlatformUser = {
   isPlatformAdmin: boolean
   createdAt: string
   lastLoginAt?: string
+  /** May sign in with a password when Seeds does not list them (never with Google). */
+  seedsExempt?: boolean
 }
 
 type DashboardPayload = {
   organizations: OrganizationSummary[]
   users: PlatformUser[]
+  /** False until the database has schema v43, which stores Seeds exceptions. */
+  seedsExemptReady?: boolean
   totals: {
     organizations: number
     activeOrganizations: number
@@ -739,6 +743,7 @@ export default function InternalAdmin({
                             {user.lastLoginAt
                               ? `Last login ${new Date(user.lastLoginAt).toLocaleString()}`
                               : 'Never signed in'}
+                            {user.seedsExempt ? ' · Seeds exception' : ''}
                           </small>
                         </div>
                         <div className="internal-admin-user-actions">
@@ -803,6 +808,25 @@ export default function InternalAdmin({
                               })}
                             </div>
                           </div>
+                          {!user.isPlatformAdmin && (
+                            <div className="internal-admin-seeds-exception">
+                              <strong>Seeds</strong>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(user.seedsExempt)}
+                                  disabled={!dashboard?.seedsExemptReady}
+                                  onChange={event => void updateUser(user, { seedsExempt: event.target.checked })}
+                                />{' '}
+                                Can sign in with a password without Seeds
+                              </label>
+                              <small>
+                                {dashboard?.seedsExemptReady
+                                  ? 'For someone Seeds does not list, or has removed. Sign in with Google always needs Seeds.'
+                                  : 'Needs database schema v43: run database/migrations/schema-v43-seeds-exemptions.sql.'}
+                              </small>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

@@ -104,8 +104,16 @@ Once Seeds is on for the account and a sync has read its active-employee directo
   refused with a message saying so. A user with no email cannot be matched and is refused too.
 - **Signed-in sessions end** when someone drops out of the directory: after the next Seeds sync, their next request
   signs them out.
-- **Administrators are always let in**, so the account cannot be locked out (for example if an Administrator's email
-  differs in Seeds, or Seeds is misconfigured). Internal Admin is not affected.
+- **No one is let in by role**, Administrators included. The one way past Seeds is a **Seeds exception** that
+  Internal Admin sets on a user (Internal Admin › the user › Access › Seeds: *Can sign in with a password without
+  Seeds*). It covers **password sign-in only**: Sign in with Google always needs Seeds. It has no end date; Internal
+  Admin turns it off, and from the next request that person's sessions answer to Seeds again. Internal Admin itself
+  is not affected by Seeds.
+- Schema v43 stores the exceptions. Its first run gives one to each Administrator who is not in their account's
+  Seeds directory at that moment, so nobody is locked out by the change. Until it is run, Administrators keep the
+  old automatic pass and Internal Admin cannot set exceptions.
+- Turning Seeds on signs out anyone it does not list, including the Administrator who turned it on, after the first
+  sync. Check that every Administrator's email matches Seeds first, or give them an exception.
 - Someone in Seeds without a user here is still refused: an Administrator adds them in Users & Permissions.
 - The check uses the directory from the last sync, so sign-in keeps working while Seeds itself is down. Before Seeds
   is on, or if its directory is empty, nothing is checked.

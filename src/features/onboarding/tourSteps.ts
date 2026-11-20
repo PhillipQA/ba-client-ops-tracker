@@ -268,7 +268,7 @@ export function tourSteps(context: TourContext): TourStep[] {
       body: 'Add each teammate with their job roles, which decide the pages they can open. They can sign in with Continue with Google or a password.',
       points: [
         'Use each person’s Seeds email: once Seeds is on, only active Seeds employees can sign in.',
-        'Administrators can always sign in.',
+        'Someone Seeds does not list can sign in with a password only if Internal Admin allows it for them.',
       ],
       target: '[data-tour="nav-users"]',
     },

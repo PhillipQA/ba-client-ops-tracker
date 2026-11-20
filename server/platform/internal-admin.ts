@@ -3,6 +3,7 @@ import type { Express } from 'express'
 import { randomUUID } from 'node:crypto'
 import { validRecoveryEmail } from '../auth/password-recovery-email'
 import { recoverySubmitLimiter } from '../auth/rate-limits'
+import { SEEDS_EXEMPT_NEEDS_SCHEMA, seedsExemptionsById } from '../auth/seeds-exemptions'
 import { requireAuth, safeUser, secureHashPassword, sessions, type SessionUser, verifyPassword } from '../core/auth'
 import { INTERNAL_ADMIN_ACCOUNT_KEY } from '../core/constants'
 import { db } from '../core/database'
@@ -19,6 +20,7 @@ import {
   usernameExists,
 } from '../core/tenant-state'
 import { discordRuntimes } from '../integrations/discord'
+import { forgetSeedsExceptionsOf } from '../services/access-cache'
 import { requirePlatformAdmin } from './platform-auth'
 
 /** The internal admin console: organisations, users and passwords. */
@@ -46,6 +48,8 @@ export function registerInternalAdminRoutes(app: Express) {
       ])
       if (orgError) throw orgError
       if (userError) throw userError
+      // Read on its own so the console still loads on a database older than schema v43 (then null).
+      const seedsExemptions = await seedsExemptionsById(db)
       const userRows = users || []
       const organizationRows = (organizations || []).map((row: any) => {
         const scopedUsers = userRows.filter((user: any) => String(user.organization_id || '') === String(row.id))
@@ -75,7 +79,9 @@ export function registerInternalAdminRoutes(app: Express) {
           isPlatformAdmin: Boolean(user.is_platform_admin),
           createdAt: user.created_on || '',
           lastLoginAt: user.last_login_at || undefined,
+          seedsExempt: seedsExemptions?.get(String(user.id)) === true,
         })),
+        seedsExemptReady: Boolean(seedsExemptions),
         totals: {
           organizations: organizationRows.length,
           activeOrganizations: organizationRows.filter((org: any) => org.status === 'Active').length,
@@ -303,10 +309,17 @@ export function registerInternalAdminRoutes(app: Express) {
       if (req.body?.status === 'Active' || req.body?.status === 'Disabled') patch.status = req.body.status
       if (Array.isArray(req.body?.modules))
         patch.modules = cleanModules(req.body.modules).filter(module => organization.enabledModules.includes(module))
+      // The Seeds exception: may sign in with a password when Seeds does not list them (never with Google).
+      if (typeof req.body?.seedsExempt === 'boolean') {
+        if (!('seeds_exempt' in existing)) return void res.status(409).json({ error: SEEDS_EXEMPT_NEEDS_SCHEMA })
+        patch.seeds_exempt = req.body.seedsExempt
+      }
       const nextRole = patch.role || existing.role
       if (nextRole === 'Administrator') patch.modules = organization.enabledModules
       const { error } = await db.from('app_users').update(patch).eq('id', userId)
       if (error) throw error
+      // Without the exception, their signed-in sessions answer to Seeds again from the next request.
+      if (patch.seeds_exempt === false || patch.status === 'Disabled') forgetSeedsExceptionsOf(userId)
       const snapshotPatch: any = {}
       for (const [dbKey, appKey] of [
         ['name', 'name'],

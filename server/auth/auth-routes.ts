@@ -27,7 +27,7 @@ import {
   PASSWORD_BOOTSTRAP_MARKER,
 } from '../core/constants'
 import { db } from '../core/database'
-import { withAccess } from '../services/access-cache'
+import { forgetSeedsException, rememberSeedsException, withAccess } from '../services/access-cache'
 import {
   loadLegacyTrackerState,
   loadTenantState,
@@ -48,8 +48,9 @@ import {
   type GoogleCandidate,
   GoogleSignInError,
   notInSeeds,
-  seedsAllowsSignIn,
+  seedsSignInRoute,
 } from './google-sign-in'
+import { seedsExemptionOf } from './seeds-exemptions'
 import { SESSION_MAX_AGE_SECONDS } from './session-store'
 
 function loginIdentity(req: express.Request): LoginIdentity {
@@ -269,9 +270,12 @@ export function registerAuthRoutes(app: Express) {
           )
         }
 
-        // The password is right; Seeds decides whether this person may come in (Administrators always may).
+        // The password is right; Seeds decides whether this person may come in, or their Seeds exception does
+        // (set in Internal Admin; password sign-in only).
         const tenantState = await loadTenantState(organization.id)
-        if (!seedsAllowsSignIn(tenantState.data, normalizedAccount)) {
+        const exemption = await seedsExemptionOf(db, String(normalizedAccount.id), organization.id)
+        const seedsRoute = seedsSignInRoute(tenantState.data, normalizedAccount, exemption, 'password')
+        if (!seedsRoute) {
           clearLoginFailures(req)
           res.status(403).json({ error: notInSeeds(normalizedAccount.email) })
           return
@@ -287,6 +291,8 @@ export function registerAuthRoutes(app: Express) {
           organization,
         )
         const token = sessions.create(user)
+        // With an exception, this session stays in even if Seeds stops listing them (see services/access-cache.ts).
+        if (seedsRoute === 'exception' || exemption === true) rememberSeedsException(token, user.id)
         clearLoginFailures(req)
         // Read the workspace's access once so an Account Manager signs in straight to their four pages.
         await loadTenantState(organization.id).catch(() => undefined)
@@ -384,12 +390,16 @@ export function registerAuthRoutes(app: Express) {
           .json({ error: choice.error, ...(choice.accounts ? { accounts: choice.accounts } : {}) })
       const { user: row, organization } = choice.candidate
       const state = await loadTenantState(organization.id)
-      if (!seedsAllowsSignIn(state.data, { role: row.role, email: identity.email }))
-        throw new GoogleSignInError(notInSeeds(identity.email), 403)
+      // Google always needs Seeds: a Seeds exception is for password sign-in only. Before schema v43, Administrators
+      // keep the automatic pass they had.
+      const exemption = await seedsExemptionOf(db, String(row.id), String(organization.id))
+      const seedsRoute = seedsSignInRoute(state.data, { role: row.role, email: identity.email }, exemption, 'google')
+      if (!seedsRoute) throw new GoogleSignInError(notInSeeds(identity.email), 403)
       const loggedInAt = new Date().toISOString()
       await db.from('app_users').update({ last_login_at: loggedInAt, updated_at: loggedInAt }).eq('id', row.id)
       const user = safeUser({ ...row, last_login_at: loggedInAt }, organization as OrganizationInfo)
       const token = sessions.create(user)
+      if (seedsRoute === 'exception') rememberSeedsException(token, user.id)
       res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
       res.json({ user: withAccess(user), cloudConfigured: true, multiTenant: true })
     } catch (error) {
@@ -475,7 +485,10 @@ export function registerAuthRoutes(app: Express) {
 
   app.post('/api/auth/logout', requireAuth, (req, res) => {
     const { token } = sessionFromRequest(req)
-    if (token) sessions.delete(token)
+    if (token) {
+      sessions.delete(token)
+      forgetSeedsException(token)
+    }
     res.setHeader('Set-Cookie', sessionCookie('', 0))
     res.json({ ok: true })
   })

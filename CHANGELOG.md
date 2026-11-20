@@ -11,6 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Seeds sign-in: no automatic pass for Administrators; Internal Admin exceptions instead
+- **Database update needed: schema v43** (`database/migrations/schema-v43-seeds-exemptions.sql`). Run it before deploying.
+- Once Seeds is on, every sign-in needs the person's email in Seeds' active-employee directory. Administrators were always let in; now they need Seeds like everyone else.
+- **Seeds exception** (Internal Admin › a user › Access › Seeds: *Can sign in with a password without Seeds*): lets that one user sign in with their **password** when Seeds does not list them, for example after Seeds removed them or when their Seeds email differs. **Sign in with Google always needs Seeds.** The exception has no end date; turning it off sends that person's open sessions back to the Seeds check from their next request. Only Internal Admin can set it.
+- So nobody is locked out, the first run of schema v43 gives an exception to each Administrator who is not in their account's Seeds directory at that moment. Until v43 is run, Administrators keep the old automatic pass and the Internal Admin switch says the update is needed.
+- A disabled or deleted user still cannot sign in, exception or not.
+
 ### Sign-in: account first, and Internal Admin on its own page
 - Sign-in is now two steps, because the same email can be a user in several accounts:
   - **Step 1, Account.** Type the account and press Continue.

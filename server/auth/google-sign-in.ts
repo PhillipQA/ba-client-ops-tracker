@@ -147,9 +147,9 @@ export function chooseGoogleUser(candidates: GoogleCandidate[], email: string, a
 /**
  * Seeds decides who may sign in. Once Seeds is on for the account and has given its active-employee directory, a
  * person must be in it, by email, whichever way they sign in (Google or password), and a signed-in session ends once
- * they drop out of it. Administrators are let through, so the account can never be locked out by Seeds (for example
- * when an Administrator's email differs in Seeds). Before Seeds is on, or while its directory is empty, there is
- * nothing to check against.
+ * they drop out of it. Nobody is let through by role: the one way past Seeds is an exception that Internal Admin sets
+ * on a user, and it covers password sign-in only (see seedsSignInRoute). Before Seeds is on, or while its directory is
+ * empty, there is nothing to check against.
  */
 export function seedsEmployeeEmails(state: any): Set<string> | null {
   const seeds = seedsState(state)
@@ -165,8 +165,8 @@ export function seedsEmployeeEmails(state: any): Set<string> | null {
   )
 }
 
-export function seedsAdmits(user: { role?: unknown; email?: unknown }, employees: Set<string> | null) {
-  if (!employees || user.role === 'Administrator') return true
+export function seedsAdmits(user: { email?: unknown }, employees: Set<string> | null) {
+  if (!employees) return true
   const email = String(user.email || '')
     .trim()
     .toLowerCase()
@@ -179,6 +179,29 @@ export const notInSeeds = (email: unknown) =>
     ? `${String(email).trim()} is not an active employee in Seeds, so it cannot sign in here. Ask your Administrator.`
     : 'Your user has no email, so it cannot be matched to Seeds. Ask your Administrator to add your Seeds email.'
 
-export function seedsAllowsSignIn(state: any, user: { role?: unknown; email?: unknown }) {
+export function seedsAllowsSignIn(state: any, user: { email?: unknown }) {
   return seedsAdmits(user, seedsEmployeeEmails(state))
+}
+
+/**
+ * A user's Seeds exception, from app_users.seeds_exempt: true or false, or 'legacy' while the database is older than
+ * schema v43 and has no such column. Then Administrators keep the automatic pass they had before exceptions, so
+ * deploying ahead of the migration locks nobody out.
+ */
+export type SeedsExemption = boolean | 'legacy'
+
+/**
+ * How a sign-in gets past Seeds: 'seeds' when Seeds lets the person in (an active employee, or Seeds not checking),
+ * 'exception' when only the person's Seeds exception does, or null when they are refused. The exception is for
+ * password sign-in only: Sign in with Google always needs Seeds.
+ */
+export function seedsSignInRoute(
+  state: any,
+  user: { role?: unknown; email?: unknown },
+  exemption: SeedsExemption,
+  method: 'password' | 'google',
+): 'seeds' | 'exception' | null {
+  if (seedsAllowsSignIn(state, user)) return 'seeds'
+  if (exemption === 'legacy') return user.role === 'Administrator' ? 'exception' : null
+  return method === 'password' && exemption === true ? 'exception' : null
 }
