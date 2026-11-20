@@ -257,7 +257,13 @@ function App() {
     return window.location.pathname.replace(/\/+$/, '') === INTERNAL_ADMIN_PATH ? (
       <InternalAdminLogin busy={loginBusy} error={loginError} onLogin={handleInternalLogin} />
     ) : (
-      <LoginScreen busy={loginBusy} error={loginError} onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} />
+      <LoginScreen
+        busy={loginBusy}
+        error={loginError}
+        onLogin={handleLogin}
+        onGoogleLogin={handleGoogleLogin}
+        onClearError={() => setLoginError('')}
+      />
     )
 
   const currentTheme = themeForContext(currentUser)

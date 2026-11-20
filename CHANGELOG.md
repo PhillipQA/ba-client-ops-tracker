@@ -11,6 +11,10 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Sign-in: Continue with Google works again after Change
+- After a Google sign-in was refused (for example for a wrong account), going back with **Change** and continuing left the Google button dead. Google's sign-in library was being set up again each time the step opened, which Google warns can break it. It is now set up once per page, and each Google button (the sign-in page, Send to Seeds) takes the answer while it is on screen.
+- **Change** also clears the previous account's error, so the new account starts clean.
+
 ### Seeds sign-in: no automatic pass for Administrators; Internal Admin exceptions instead
 - **Database update needed: schema v43** (`database/migrations/schema-v43-seeds-exemptions.sql`). Run it before deploying.
 - Once Seeds is on, every sign-in needs the person's email in Seeds' active-employee directory. Administrators were always let in; now they need Seeds like everyone else.
