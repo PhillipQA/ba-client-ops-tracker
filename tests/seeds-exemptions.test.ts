@@ -48,10 +48,13 @@ test('Internal Admin reads every exception, or learns the database needs schema 
     ],
   })
   const map = await seedsExemptionsById(rows.db)
-  assert.deepEqual([...(map || [])], [
-    ['a', true],
-    ['b', false],
-  ])
+  assert.deepEqual(
+    [...(map || [])],
+    [
+      ['a', true],
+      ['b', false],
+    ],
+  )
   assert.equal(await seedsExemptionsById(fakeDb({ error: { code: '42703' } }).db), null)
   assert.match(SEEDS_EXEMPT_NEEDS_SCHEMA, /schema-v43-seeds-exemptions\.sql/)
 })
@@ -72,7 +75,10 @@ test('schema v43 adds the column once and grants it to Administrators Seeds does
 test('password sign-in may use the exception; Google never does; Internal Admin sets and revokes it', () => {
   const routes = read('server/auth/auth-routes.ts')
   assert.match(routes, /seedsSignInRoute\(tenantState\.data, normalizedAccount, exemption, 'password'\)/)
-  assert.match(routes, /seedsSignInRoute\(state\.data, \{ role: row\.role, email: identity\.email \}, exemption, 'google'\)/)
+  assert.match(
+    routes,
+    /seedsSignInRoute\(state\.data, \{ role: row\.role, email: identity\.email \}, exemption, 'google'\)/,
+  )
   assert.match(routes, /rememberSeedsException\(token, user\.id\)/)
   assert.match(routes, /forgetSeedsException\(token\)/, 'signing out forgets the session')
   const auth = read('server/core/auth.ts')
