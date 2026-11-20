@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './app/App'
 import CrashScreen from './app/CrashScreen'
+import LongSelectSearch from './shared/ui/LongSelectSearch'
 import './styles/fonts.css'
 import './styles/styles.css'
 import './shared/ui/ui.css'
@@ -32,6 +33,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <CrashScreen>
       <App />
+      <LongSelectSearch />
     </CrashScreen>
   </React.StrictMode>,
 )

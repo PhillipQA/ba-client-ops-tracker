@@ -215,6 +215,53 @@ label > .client-combo,
   cursor: default;
   color: color-mix(in srgb, currentColor 60%, transparent);
 }
+/* LongSelectSearch: the search list a long dropdown opens. */
+.select-search {
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  box-sizing: border-box;
+  border: 1px solid;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
+  font-size: 13px;
+  text-align: left;
+}
+.select-search input {
+  flex: none;
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  color: inherit;
+  font: inherit;
+}
+.select-search input:focus {
+  outline: 2px solid var(--combo-accent, #4f6bed);
+  outline-offset: -1px;
+}
+.select-search .client-combo-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: inherit;
+}
+.select-search .client-combo-list li.client-combo-group {
+  top: 0;
+  margin: 2px 0 0;
+}
+.select-search .client-combo-list li.disabled {
+  cursor: default;
+  opacity: 0.45;
+}
 .k-dialog-close.small {
   width: 24px;
   height: 24px;
