@@ -81,6 +81,20 @@ export async function login(account: string, username: string, password: string)
   return body.user as AuthUser
 }
 
+/** Internal Admin signs in on its own page, /internal_admin, with no account to choose. */
+export const INTERNAL_ADMIN_PATH = '/internal_admin'
+
+export async function loginInternalAdmin(username: string, password: string): Promise<AuthUser> {
+  const { response, body, requestId } = await authRequest('/api/auth/internal-login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+  if (!response.ok) throw new Error(body.error || `Login failed (HTTP ${response.status}). Reference: ${requestId}`)
+  if (!body.user || typeof body.user.id !== 'string')
+    throw new Error(`The server returned an incomplete login response. Please try again. Reference: ${requestId}`)
+  return body.user as AuthUser
+}
+
 /** The Google client ID for Sign in with Google, or '' when it is not set up. */
 export async function googleSignInClientId(): Promise<string> {
   try {

@@ -55,7 +55,13 @@ import { SESSION_MAX_AGE_SECONDS } from './session-store'
 function loginIdentity(req: express.Request): LoginIdentity {
   return {
     ip: req.ip || req.socket.remoteAddress || 'unknown',
-    account: typeof req.body?.account === 'string' ? req.body.account : '',
+    // The Internal Admin page sends no account: its attempts are counted against the Internal Admin account.
+    account:
+      req.path === '/api/auth/internal-login'
+        ? INTERNAL_ADMIN_ACCOUNT_KEY
+        : typeof req.body?.account === 'string'
+          ? req.body.account
+          : '',
     username: typeof req.body?.username === 'string' ? req.body.username : '',
   }
 }
@@ -81,7 +87,8 @@ function enforceLoginFailureLimit(req: express.Request, res: express.Response, n
 
 function rejectInvalidLogin(req: express.Request, res: express.Response) {
   setLoginRateHeaders(res, loginLimiter.recordFailure(loginIdentity(req)))
-  res.status(401).json({ error: 'Invalid account, user, or password.' })
+  // One answer for a wrong account, user or password: sign-in never says which one was wrong.
+  res.status(401).json({ error: 'Incorrect account, user, or password.' })
 }
 
 function clearLoginFailures(req: express.Request) {
@@ -106,6 +113,85 @@ export function registerAuthRoutes(app: Express) {
     res.json({ user })
   })
 
+  /**
+   * Internal Admin (the platform control plane) signs in here only, from the /internal_admin page. The workspace
+   * sign-in treats the Internal Admin account as unknown.
+   */
+  app.post('/api/auth/internal-login', enforceLoginFailureLimit, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim() : ''
+    const password = typeof req.body?.password === 'string' ? req.body.password : ''
+    if (!username || !password) return void res.status(400).json({ error: 'User and password are required.' })
+    try {
+      if (!db || !(await platformAuthSchemaReady())) {
+        res.status(409).json({
+          error: 'Internal Admin authentication is not initialized. Run the latest account/security schema first.',
+        })
+        return
+      }
+
+      const { data: platformAccount, error: platformError } = await db
+        .from('platform_users')
+        .select(
+          'id,account_key,username,password_hash,name,email,phone,status,must_change_password,last_login_at,deleted_at',
+        )
+        .ilike('account_key', INTERNAL_ADMIN_ACCOUNT_KEY)
+        .ilike('username', username)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (platformError) throw platformError
+      if (!platformAccount || platformAccount.status === 'Disabled') {
+        rejectInvalidLogin(req, res)
+        return
+      }
+
+      let storedHash = String(platformAccount.password_hash || '')
+      if (storedHash === PASSWORD_BOOTSTRAP_MARKER) {
+        if (!bootstrapPasswordUsable(internalAdminBootstrapPassword)) {
+          res.status(503).json({
+            error:
+              'Internal Admin requires a secure bootstrap password. Set INTERNAL_ADMIN_BOOTSTRAP_PASSWORD (12+ characters) in Render, then redeploy.',
+          })
+          return
+        }
+        if (!safeEqualText(password, internalAdminBootstrapPassword)) {
+          rejectInvalidLogin(req, res)
+          return
+        }
+        storedHash = await secureHashPassword(password)
+        const { error: bootstrapError } = await db
+          .from('platform_users')
+          .update({ password_hash: storedHash, must_change_password: true, updated_at: new Date().toISOString() })
+          .eq('id', platformAccount.id)
+        if (bootstrapError) throw bootstrapError
+      } else if (!(await verifyPassword(password, storedHash))) {
+        rejectInvalidLogin(req, res)
+        return
+      } else if (!isBcryptHash(storedHash)) {
+        storedHash = await secureHashPassword(password)
+        const { error: upgradeError } = await db
+          .from('platform_users')
+          .update({ password_hash: storedHash, updated_at: new Date().toISOString() })
+          .eq('id', platformAccount.id)
+        if (upgradeError) throw upgradeError
+      }
+
+      const loggedInAt = new Date().toISOString()
+      await db
+        .from('platform_users')
+        .update({ last_login_at: loggedInAt, updated_at: loggedInAt })
+        .eq('id', platformAccount.id)
+      const user = safePlatformUser({ ...platformAccount, password_hash: storedHash, last_login_at: loggedInAt })
+      const token = sessions.create(user)
+      clearLoginFailures(req)
+      res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
+      res.json({ user, cloudConfigured: true, multiTenant: true })
+    } catch (error) {
+      console.error('Internal Admin login failed:', error)
+      res.status(500).json({ error: 'Login failed.' })
+    }
+  })
+
   app.post('/api/auth/login', enforceLoginFailureLimit, async (req, res) => {
     const account = typeof req.body?.account === 'string' ? req.body.account.trim() : ''
     const username = typeof req.body?.username === 'string' ? req.body.username.trim() : ''
@@ -118,71 +204,9 @@ export function registerAuthRoutes(app: Express) {
     try {
       const accountKey = account.trim().toLowerCase().replace(/\s+/g, '_')
 
-      // The Internal Admin control plane is intentionally separate from tenant workspaces.
+      // Internal Admin signs in only at /internal_admin (POST /api/auth/internal-login): here it is no account at all.
       if (accountKey === INTERNAL_ADMIN_ACCOUNT_KEY) {
-        if (!db || !(await platformAuthSchemaReady())) {
-          res.status(409).json({
-            error: 'Internal Admin authentication is not initialized. Run the latest account/security schema first.',
-          })
-          return
-        }
-
-        const { data: platformAccount, error: platformError } = await db
-          .from('platform_users')
-          .select(
-            'id,account_key,username,password_hash,name,email,phone,status,must_change_password,last_login_at,deleted_at',
-          )
-          .ilike('account_key', INTERNAL_ADMIN_ACCOUNT_KEY)
-          .ilike('username', username)
-          .is('deleted_at', null)
-          .maybeSingle()
-        if (platformError) throw platformError
-        if (!platformAccount || platformAccount.status === 'Disabled') {
-          rejectInvalidLogin(req, res)
-          return
-        }
-
-        let storedHash = String(platformAccount.password_hash || '')
-        if (storedHash === PASSWORD_BOOTSTRAP_MARKER) {
-          if (!bootstrapPasswordUsable(internalAdminBootstrapPassword)) {
-            res.status(503).json({
-              error:
-                'Internal Admin requires a secure bootstrap password. Set INTERNAL_ADMIN_BOOTSTRAP_PASSWORD (12+ characters) in Render, then redeploy.',
-            })
-            return
-          }
-          if (!safeEqualText(password, internalAdminBootstrapPassword)) {
-            rejectInvalidLogin(req, res)
-            return
-          }
-          storedHash = await secureHashPassword(password)
-          const { error: bootstrapError } = await db
-            .from('platform_users')
-            .update({ password_hash: storedHash, must_change_password: true, updated_at: new Date().toISOString() })
-            .eq('id', platformAccount.id)
-          if (bootstrapError) throw bootstrapError
-        } else if (!(await verifyPassword(password, storedHash))) {
-          rejectInvalidLogin(req, res)
-          return
-        } else if (!isBcryptHash(storedHash)) {
-          storedHash = await secureHashPassword(password)
-          const { error: upgradeError } = await db
-            .from('platform_users')
-            .update({ password_hash: storedHash, updated_at: new Date().toISOString() })
-            .eq('id', platformAccount.id)
-          if (upgradeError) throw upgradeError
-        }
-
-        const loggedInAt = new Date().toISOString()
-        await db
-          .from('platform_users')
-          .update({ last_login_at: loggedInAt, updated_at: loggedInAt })
-          .eq('id', platformAccount.id)
-        const user = safePlatformUser({ ...platformAccount, password_hash: storedHash, last_login_at: loggedInAt })
-        const token = sessions.create(user)
-        clearLoginFailures(req)
-        res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
-        res.json({ user, cloudConfigured: true, multiTenant: true })
+        rejectInvalidLogin(req, res)
         return
       }
 
