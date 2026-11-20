@@ -1,5 +1,6 @@
 import { addWorkingDays, dayNumber, isoOf } from './timelineModel'
-import type { Cell, ColumnType, OptionColor, TaskField, TrackerColumn } from './trackerModel'
+import type { GitGeneration } from './gitGeneration'
+import type { Cell, ColumnType, OptionColor, TaskField, TrackerColumn, TrackerKind } from './trackerModel'
 
 export { addWorkingDays }
 
@@ -561,6 +562,10 @@ export type SavedTemplate = {
   templateKey: string
   /** Trackers made from it keep a task per row and a subtask per Checkbox column. Missing before schema v35. */
   stepTasks?: boolean
+  /** 'git': a GIT template, offered only for GIT Trackers. Missing before schema v42: standard. */
+  kind?: TrackerKind
+  /** GIT templates: how a ticket becomes rows, Tasks and Subtasks (see gitGeneration). */
+  generation?: GitGeneration
   revision: number
   createdBy: string
   createdByName: string
@@ -580,6 +585,8 @@ export const savedChoiceId = (saved: SavedTemplate) => (saved.templateKey ? save
  * keeps its starter rows, schedule and task settings, matched to the new columns by name.
  */
 export function templateChoices(saved: SavedTemplate[], withHidden = false): TemplateChoice[] {
+  // GIT templates are only for GIT Trackers (gitTemplates).
+  saved = saved.filter(item => item.kind !== 'git')
   const copies = new Map(saved.filter(item => item.templateKey).map(item => [item.templateKey, item]))
   const builtIn: TemplateChoice[] = TRACKER_TEMPLATES.flatMap(template => {
     const copy = copies.get(template.id)
@@ -621,3 +628,9 @@ export const columnsForTemplate = (columns: TrackerColumn[]): TrackerColumn[] =>
   columns.map(({ width: _width, frozen: _frozen, synced: _synced, ...column }) =>
     column.options ? { ...column, options: column.options.map(option => ({ ...option })) } : column,
   )
+
+/** The account's GIT templates, for a new GIT Tracker: shared first, then by name; hidden ones only when asked for. */
+export const gitTemplates = (saved: SavedTemplate[], withHidden = false) =>
+  saved
+    .filter(item => item.kind === 'git' && (withHidden || !item.hidden))
+    .sort((a, b) => Number(b.shared) - Number(a.shared) || a.name.localeCompare(b.name))

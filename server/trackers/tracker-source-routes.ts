@@ -23,6 +23,9 @@ import type { TrackerSyncPart } from './tracker-sync'
 import type { TrackerSheetWrite } from './tracker-sheet-write'
 import type { TrackerFollow } from './tracker-follow'
 
+/** A GIT Tracker's rows come from tickets, so it does not follow or make a Google Sheet. */
+const GIT_NO_SHEET = 'A GIT Tracker gets its rows from GitLab and GitHub tickets, so it cannot follow a Google Sheet.'
+
 export function trackerSourceRoutes(
   app: Express,
   deps: Deps,
@@ -288,6 +291,7 @@ export function trackerSourceRoutes(
         id = idParam(req)
       const tracker = await trackerRow(tenant, id, user)
       if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it first.', 409)
+      if (tracker.kind === 'git') throw new TrackerError(GIT_NO_SHEET)
       const body = req.body || {}
       const spreadsheetId = sheetId(body.spreadsheetId),
         tab = String(body.tab || '')
@@ -426,6 +430,7 @@ export function trackerSourceRoutes(
       const tracker = await trackerRow(tenant, id, user)
       if (readOnly(user)) throw new TrackerError('Viewers cannot make a Google Sheet from a tracker.', 403)
       if (tracker.archived_at) throw new TrackerError('This tracker is archived. Restore it first.', 409)
+      if (tracker.kind === 'git') throw new TrackerError(GIT_NO_SHEET)
       if (await sourceRow(tenant, id))
         throw new TrackerError(
           'This tracker already follows a Google Sheet. Disconnect it first to make a new one.',

@@ -4150,3 +4150,146 @@ button.trk-project-chip:focus-visible {
 .trk-project-confirm p {
   margin: 0;
 }
+
+/* GIT Trackers and GIT templates */
+.trk-git-badge {
+  border-color: color-mix(in srgb, #e2733a 55%, var(--k-border));
+  color: color-mix(in srgb, #e2733a 70%, var(--k-text));
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+span.trk-git-badge:not(.trk-chip) {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 10.5px;
+}
+.trk-git-note {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--k-border);
+  border-radius: 8px;
+  background: var(--k-soft);
+  color: var(--k-muted);
+  font-size: 13px;
+}
+.trk-kind {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+.trk-tpl-section {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+.trk-tpl-section small {
+  margin-left: 6px;
+  color: var(--k-muted);
+  font-weight: 400;
+}
+.git-rules {
+  display: grid;
+  gap: 10px;
+}
+.git-rules h3 {
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+.git-rule {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--k-border);
+  border-radius: 10px;
+}
+.git-rule legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+.git-rule-tools {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+.git-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.git-rule-grid .git-span {
+  grid-column: 1 / -1;
+}
+.git-rule-rows,
+.git-conditions,
+.git-cells {
+  display: grid;
+  gap: 6px;
+}
+.git-cells-title {
+  color: var(--k-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.git-cell,
+.git-condition {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+.git-condition {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 1fr) auto;
+}
+.git-cell-name {
+  font-size: 13px;
+}
+.git-rules-add {
+  display: flex;
+}
+.git-rules-errors {
+  padding: 8px 12px;
+  border: 1px solid var(--k-danger);
+  border-radius: 8px;
+  color: var(--k-danger);
+  font-size: 13px;
+}
+.git-rules-errors ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.git-preview {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px dashed var(--k-border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.git-preview ul {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.git-preview small {
+  color: var(--k-muted);
+}
+.git-preview-sub {
+  margin-left: 14px;
+  list-style: none;
+}
+@media (max-width: 720px) {
+  .trk-kind,
+  .git-rule-grid,
+  .git-cell,
+  .git-condition {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

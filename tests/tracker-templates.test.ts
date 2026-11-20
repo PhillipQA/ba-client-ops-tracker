@@ -2,7 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
 import { registerTrackerTemplateRoutes } from '../server/trackers/tracker-templates'
-import { templateChoices, templateById, columnsForTemplate } from '../src/features/trackers/trackerTemplates'
+import {
+  templateChoices,
+  templateById,
+  columnsForTemplate,
+  gitTemplates,
+} from '../src/features/trackers/trackerTemplates'
+import { starterGitTemplate } from '../src/features/trackers/gitStarter'
 
 type Row = Record<string, any>
 const KEYS: Record<string, string[]> = { tenant_tracker_templates: ['tenant_id', 'id'] }
@@ -286,4 +292,92 @@ test('New tracker offers changed built-in templates in place, then the account o
     columnsForTemplate([{ id: 'c1', name: 'A', type: 'text', width: 300, frozen: true, synced: true }]),
     [{ id: 'c1', name: 'A', type: 'text' }],
   )
+})
+
+test('GIT templates: rules checked against the columns, kept apart from the ordinary templates', async () => {
+  const starter = starterGitTemplate()
+  await serve(memoryDb(), async ask => {
+    const made = await ask('POST', '/api/tracker-templates', {
+      name: 'Ticket flow',
+      columns: starter.columns,
+      kind: 'git',
+      generation: starter.generation,
+    })
+    assert.equal(made.status, 201)
+    assert.equal(made.body.template.kind, 'git')
+    assert.deepEqual(
+      made.body.template.generation.rows.map((row: any) => [row.key, row.work, row.parentKey]),
+      [
+        ['ticket', 'task', undefined],
+        ['dev', 'subtask', 'ticket'],
+        ['qa', 'subtask', 'ticket'],
+      ],
+    )
+    assert.equal(made.body.template.stepTasks, undefined, 'a GIT template has no row/checkbox tasks')
+
+    // A Subtask row under a row that makes no Task is refused, with every mistake listed.
+    const broken = structuredClone(starter.generation)
+    broken.rows[0].work = 'none'
+    const refused = await ask('POST', '/api/tracker-templates', {
+      name: 'Broken',
+      columns: starter.columns,
+      kind: 'git',
+      generation: broken,
+    })
+    assert.equal(refused.status, 400)
+    assert.match(refused.body.error, /GIT template has/)
+    assert.ok(
+      refused.body.errors.some((error: string) => /Subtask row must belong under a row that makes a Task/.test(error)),
+    )
+
+    // Its columns are what its rules refer to: removing one they fill is refused.
+    const id = made.body.template.id
+    const fewer = made.body.template.columns.filter((column: any) => column.id !== 'c_stage')
+    const dropped = await ask('PATCH', `/api/tracker-templates/${id}`, { columns: fewer })
+    assert.equal(dropped.status, 400)
+    assert.ok(dropped.body.errors.some((error: string) => /fills a column that is not in the template/.test(error)))
+    const renamed = await ask('PATCH', `/api/tracker-templates/${id}`, { name: 'Ticket flow v2' })
+    assert.equal(renamed.status, 200)
+    assert.equal((await ask('PATCH', `/api/tracker-templates/${id}`, { kind: 'standard' })).status, 400)
+    assert.equal(
+      (
+        await ask(
+          'POST',
+          '/api/tracker-templates',
+          {
+            name: 'Site rollout',
+            columns: starter.columns,
+            kind: 'git',
+            generation: starter.generation,
+            templateKey: 'site-rollout',
+          },
+          admin,
+        )
+      ).status,
+      400,
+    )
+
+    const listed = (await ask('GET', '/api/tracker-templates')).body.templates
+    assert.equal(
+      templateChoices(listed).some(choice => choice.saved?.kind === 'git'),
+      false,
+      'not offered for an ordinary tracker',
+    )
+    assert.deepEqual(
+      gitTemplates(listed).map(item => item.name),
+      ['Ticket flow v2'],
+    )
+  })
+  // Before schema v42 the database refuses the kind: the person is told which update to run.
+  await serve(memoryDb(false, ['git']), async ask => {
+    const result = await ask('POST', '/api/tracker-templates', {
+      name: 'Ticket flow',
+      columns: starter.columns,
+      kind: 'git',
+      generation: starter.generation,
+    })
+    assert.equal(result.status, 503)
+    assert.equal(result.body.needsUpgrade, true)
+    assert.match(result.body.error, /schema-v42-git-tracker\.sql/)
+  })
 })

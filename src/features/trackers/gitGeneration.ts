@@ -180,7 +180,7 @@ function fixedFits(column: TrackerColumn, value: string) {
 }
 
 /** Ticket fields each column type can take. Text, long text and link take any. */
-function ticketFits(column: TrackerColumn, field: GitTicketField) {
+export function ticketFits(column: TrackerColumn, field: GitTicketField) {
   switch (column.type) {
     case 'number':
       return field === 'number'

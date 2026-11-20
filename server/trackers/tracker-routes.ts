@@ -14,6 +14,7 @@ import {
 } from '../../src/features/trackers/trackerModel'
 import { autoDoneColumn } from '../../src/features/trackers/trackerAutoDone'
 import { type Deps, UUID } from './tracker-common'
+import { checkedGeneration, GIT_UPGRADE } from './tracker-templates'
 import type { TrackerCore } from './tracker-core'
 import type { TrackerSheetAccess } from './tracker-source'
 
@@ -41,6 +42,25 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
     manageable,
   } = core
   const { sourceCheck, sourceRow, canWriteSheets, sourceOut } = sheetAccess
+  /** The GIT template a new GIT Tracker is made from, if the person may use it, with its rules checked. */
+  async function gitTemplateFor(tenant: string, user: { id: string; role: string }, id: unknown) {
+    if (typeof id !== 'string' || !UUID.test(id)) throw new TrackerError('Choose a GIT template for the GIT Tracker.')
+    const r = await db.from('tenant_tracker_templates').select('*').eq('tenant_id', tenant).eq('id', id).maybeSingle()
+    if (r.error) throw new TrackerError(GIT_UPGRADE, 503, { needsUpgrade: true })
+    const found = r.data
+    const usable =
+      found?.kind === 'git' &&
+      (found.shared || found.created_by === user.id) &&
+      !(found.hidden && user.role !== 'Administrator')
+    if (!usable) throw new TrackerError('That GIT template was not found. It may have been deleted or hidden.', 404)
+    const columns = normalizeColumns(Array.isArray(found.columns) ? found.columns : [])
+    return {
+      id: String(found.id),
+      revision: Number(found.revision) || 1,
+      columns,
+      generation: checkedGeneration(found.generation, columns),
+    }
+  }
   /** Marks rows as reviewed (made into tasks, or left as plain rows). */
   app.post(
     '/api/trackers/:id/rows/review',
@@ -105,9 +125,11 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
         tenant = user.organizationId
       const body = req.body || {}
       const name = cleanName(body.name, 'tracker name', TRACKER_LIMITS.nameLength)
-      const columns = normalizeColumns(body.columns ?? [{ name: 'Name', type: 'text' }])
+      // A GIT Tracker takes its columns and rules from a GIT template, and has no Client or Project of its own.
+      const git = body.kind === 'git' ? await gitTemplateFor(tenant, user, body.gitTemplateId) : null
+      const columns = git ? git.columns : normalizeColumns(body.columns ?? [{ name: 'Name', type: 'text' }])
       const state = await workspace(tenant)
-      const links = validateLinks(state, body, user)
+      const links = git ? { clientId: '', projectId: '' } : validateLinks(state, body, user)
       const existing = await db
         .from('tenant_trackers')
         .select('id', { count: 'exact', head: true })
@@ -122,8 +144,16 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
         client_id: links.clientId || '',
         project_id: links.projectId || '',
         private: body.private === true,
-        template: String(body.template || '').slice(0, 40),
-        ...(typeof body.stepTasks === 'boolean' ? { step_tasks: body.stepTasks } : {}),
+        template: git ? 'git' : String(body.template || '').slice(0, 40),
+        ...(typeof body.stepTasks === 'boolean' && !git ? { step_tasks: body.stepTasks } : {}),
+        ...(git
+          ? {
+              kind: 'git',
+              git_config: git.generation,
+              git_template_id: git.id,
+              git_template_revision: git.revision,
+            }
+          : {}),
         columns,
         views: [],
         revision: 1,
@@ -134,6 +164,7 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
         archived_at: null,
       }
       let saved = await db.from('tenant_trackers').insert(row)
+      if (saved.error && git) throw new TrackerError(GIT_UPGRADE, 503, { needsUpgrade: true })
       // Before schema v35 there is no step_tasks column: the tracker is made without it (its template still decides).
       if (saved.error && 'step_tasks' in row) {
         const { step_tasks: _off, ...plain } = row as Record<string, unknown>
@@ -435,6 +466,14 @@ export function trackerRoutes(app: Express, deps: Deps, core: TrackerCore, sheet
       const body = req.body || {},
         patch: Record<string, unknown> = {}
       if (body.name !== undefined) patch.name = cleanName(body.name, 'tracker name', TRACKER_LIMITS.nameLength)
+      if (row.kind === 'git') {
+        // Its rows come from tickets, each under the ticket's own Client and Project.
+        const fixed = ['clientId', 'clientIds', 'projectId', 'projectIds', 'stepTasks', 'seedsRows']
+        if (fixed.some(key => body[key] !== undefined))
+          throw new TrackerError(
+            'A GIT Tracker has no Client or Project of its own: each ticket’s work goes under the Client and Project its repository is mapped to.',
+          )
+      }
       if (
         body.clientId !== undefined ||
         body.clientIds !== undefined ||
