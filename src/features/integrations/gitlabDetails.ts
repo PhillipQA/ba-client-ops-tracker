@@ -35,7 +35,17 @@ export function duration(seconds?: number) {
 }
 
 /** "Overdue by 3 days", "Due today", "Due in 2 days", "Due Nov 30"; tone for colouring. */
-export function dueText(due: string | null | undefined, today: string, open = true) {
+/**
+ * A ticket's due date as YYYY-MM-DD. The database can send a date column as a full timestamp
+ * ("2026-11-28T00:00:00.000Z"); only the day counts.
+ */
+export function dueDay(due: string | null | undefined) {
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(String(due || '').trim())?.[0] || ''
+  return day && Number.isFinite(Date.parse(`${day}T00:00:00Z`)) ? day : ''
+}
+
+export function dueText(value: string | null | undefined, today: string, open = true) {
+  const due = dueDay(value)
   if (!due) return null
   const days = Math.round((Date.parse(`${due}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000)
   const date = new Date(`${due}T00:00:00Z`).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' })
