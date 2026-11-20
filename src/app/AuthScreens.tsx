@@ -2,12 +2,7 @@ import { ForgotPassword } from '../features/accounts/PasswordRecovery'
 import { APP_LABEL } from '../shared/version'
 import { ArrowRight, Building2, Eye, EyeOff, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
-import {
-  checkAccount,
-  type GoogleAccountChoice,
-  googleSignInClientId,
-  type LoginAccount,
-} from '../features/accounts/auth'
+import { type GoogleAccountChoice, googleSignInClientId } from '../features/accounts/auth'
 import { loadGoogle } from '../shared/googleIdentity'
 
 type GoogleLogin = (credential: string, account?: string) => Promise<GoogleAccountChoice[] | null>
@@ -80,6 +75,9 @@ function GoogleSignIn({
   if (!clientId) return null
   return (
     <div className="auth-google">
+      <div className="auth-divider" aria-hidden="true">
+        <span>OR</span>
+      </div>
       <div ref={holder} />
       {accounts.length > 0 && (
         <div className="auth-google-accounts" role="group" aria-label="Choose the account to open">
@@ -120,10 +118,10 @@ export function AuthSplash() {
 
 /**
  * Sign-in in two steps, as the same email can be a user in several accounts:
- * 1. Account: checked first (it must be an active account), so everything after it is inside that account.
- * 2. User and password, or Google, for a user of that account. They are checked together, with one answer for any
- *    mistake, so the screen never tells which usernames exist.
- * A remembered account opens straight on step 2, once it is checked again.
+ * 1. Account: which account to sign in to. Nothing is checked yet, so this step gives no hint whether it exists.
+ * 2. User and password, or Google, for a user of that account. Account, user and password are checked together, with
+ *    one answer for any mistake ("Incorrect account, user, or password").
+ * A remembered account opens straight on step 2.
  */
 export function LoginScreen({
   busy,
@@ -146,46 +144,17 @@ export function LoginScreen({
   const [username, setUsername] = useState(() =>
     rememberedLogin ? localStorage.getItem('client-ops-login-user') || '' : '',
   )
-  // Step 2 opens once the account is checked. `back` slides step 1 in from the left when going back to it.
-  const [chosen, setChosen] = useState<LoginAccount | null>(null)
+  // Step 2 opens with the account as typed (a remembered one at once). `back` slides step 1 in from the left.
+  const [chosen, setChosen] = useState(() => (rememberedLogin ? account.trim() : ''))
   const [back, setBack] = useState(false)
-  const [checking, setChecking] = useState(false)
-  const [accountError, setAccountError] = useState('')
-  const remembered = useRef(rememberedLogin ? account : '')
-  useEffect(() => {
-    const saved = remembered.current
-    if (!saved) return
-    let alive = true
-    setChecking(true)
-    checkAccount(saved)
-      .then(found => {
-        if (alive) setChosen(found)
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (alive) setChecking(false)
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
-  if (forgot)
-    return <ForgotPassword account={chosen?.key || account} username={username} onBack={() => setForgot(false)} />
+  if (forgot) return <ForgotPassword account={chosen || account} username={username} onBack={() => setForgot(false)} />
 
-  const continueToSignIn = async (event: FormEvent<HTMLFormElement>) => {
+  const continueToSignIn = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const typed = account.trim()
-    if (!typed) return setAccountError('Enter your account.')
-    setChecking(true)
-    setAccountError('')
-    try {
-      setChosen(await checkAccount(typed))
-      setBack(false)
-    } catch (e) {
-      setAccountError(e instanceof Error ? e.message : 'The account could not be checked.')
-    } finally {
-      setChecking(false)
-    }
+    if (!typed) return
+    setChosen(typed)
+    setBack(false)
   }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -194,18 +163,18 @@ export function LoginScreen({
     const nextUsername = String(form.get('username') || '').trim()
     if (remember) {
       localStorage.setItem('client-ops-login-remember', '1')
-      localStorage.setItem('client-ops-login-account', chosen.key)
+      localStorage.setItem('client-ops-login-account', chosen)
       localStorage.setItem('client-ops-login-user', nextUsername)
     } else {
       localStorage.removeItem('client-ops-login-remember')
       localStorage.removeItem('client-ops-login-account')
       localStorage.removeItem('client-ops-login-user')
     }
-    void onLogin(chosen.key, nextUsername, String(form.get('password') || ''))
+    void onLogin(chosen, nextUsername, String(form.get('password') || ''))
   }
   const changeAccount = () => {
     setBack(true)
-    setChosen(null)
+    setChosen('')
   }
 
   return (
@@ -233,7 +202,7 @@ export function LoginScreen({
           </ol>
           {!chosen ? (
             <div key="account" className={`auth-step${back ? ' from-left' : ''}`}>
-              <form className="auth-form auth-form-modern" onSubmit={event => void continueToSignIn(event)}>
+              <form className="auth-form auth-form-modern" onSubmit={continueToSignIn}>
                 <label>
                   <span>Account</span>
                   <div className="auth-input-shell">
@@ -241,10 +210,7 @@ export function LoginScreen({
                     <input
                       name="account"
                       value={account}
-                      onChange={event => {
-                        setAccount(event.target.value)
-                        setAccountError('')
-                      }}
+                      onChange={event => setAccount(event.target.value)}
                       autoComplete="organization"
                       placeholder="BXI-Core or customer account"
                       autoFocus
@@ -252,20 +218,9 @@ export function LoginScreen({
                     />
                   </div>
                 </label>
-                {accountError && (
-                  <div className="auth-error" role="alert">
-                    {accountError}
-                  </div>
-                )}
-                <button className="primary auth-submit auth-submit-modern" disabled={checking}>
-                  {checking ? (
-                    'Checking…'
-                  ) : (
-                    <>
-                      <span>Continue</span>
-                      <ArrowRight size={18} />
-                    </>
-                  )}
+                <button className="primary auth-submit auth-submit-modern">
+                  <span>Continue</span>
+                  <ArrowRight size={18} />
                 </button>
               </form>
             </div>
@@ -274,7 +229,7 @@ export function LoginScreen({
               <div className="auth-account-chip">
                 <Building2 size={16} aria-hidden="true" />
                 <span>
-                  Signing in to <strong>{chosen.name}</strong>
+                  Signing in to <strong>{chosen}</strong>
                 </span>
                 <button className="auth-inline-link" type="button" disabled={busy} onClick={changeAccount}>
                   Change
@@ -341,14 +296,7 @@ export function LoginScreen({
                   )}
                 </button>
               </form>
-              {chosen.google && (
-                <>
-                  <div className="auth-divider" aria-hidden="true">
-                    <span>OR</span>
-                  </div>
-                  <GoogleSignIn busy={busy} account={chosen.key} onGoogleLogin={onGoogleLogin} />
-                </>
-              )}
+              <GoogleSignIn busy={busy} account={chosen} onGoogleLogin={onGoogleLogin} />
             </div>
           )}
           <div className="auth-security-note">

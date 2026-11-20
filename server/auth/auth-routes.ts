@@ -40,13 +40,7 @@ import {
 } from '../core/tenant-state'
 import type { LoginIdentity } from './login-limiter'
 import { recoveryMailer, recoveryMessage, recoveryUnavailable, validRecoveryEmail } from './password-recovery-email'
-import {
-  accountLookupLimiter,
-  googleSignInLimiter,
-  loginLimiter,
-  recoveryRequestLimiter,
-  recoverySubmitLimiter,
-} from './rate-limits'
+import { googleSignInLimiter, loginLimiter, recoveryRequestLimiter, recoverySubmitLimiter } from './rate-limits'
 import {
   chooseGoogleUser,
   createGoogleVerifier,
@@ -93,7 +87,8 @@ function enforceLoginFailureLimit(req: express.Request, res: express.Response, n
 
 function rejectInvalidLogin(req: express.Request, res: express.Response) {
   setLoginRateHeaders(res, loginLimiter.recordFailure(loginIdentity(req)))
-  res.status(401).json({ error: 'Invalid account, user, or password.' })
+  // One answer for a wrong account, user or password: sign-in never says which one was wrong.
+  res.status(401).json({ error: 'Incorrect account, user, or password.' })
 }
 
 function clearLoginFailures(req: express.Request) {
@@ -119,40 +114,8 @@ export function registerAuthRoutes(app: Express) {
   })
 
   /**
-   * Sign-in, step 1: the account (organization) is checked before anyone signs in to it, so an email used in several
-   * accounts always opens the one chosen. The answer only says whether an active account goes by that name: unknown,
-   * suspended and deleted accounts get the same answer, and checks are rate limited. User and password (or Google) are
-   * then checked together in step 2, so the step does not tell which usernames exist.
-   */
-  app.post('/api/auth/account', accountLookupLimiter, async (req, res) => {
-    res.setHeader('Cache-Control', 'no-store')
-    const account = typeof req.body?.account === 'string' ? req.body.account.trim().slice(0, 200) : ''
-    if (!account) return void res.status(400).json({ error: 'Enter your account.' })
-    const notFound = () =>
-      res.status(404).json({ error: 'No active account goes by that name. Check the account name and try again.' })
-    try {
-      // Internal Admin has its own page (/internal_admin): it is not an account here.
-      if (account.toLowerCase().replace(/\s+/g, '_') === INTERNAL_ADMIN_ACCOUNT_KEY) return void notFound()
-      if (db && (await multiTenantSchemaReady())) {
-        const organization = await organizationByLoginKey(account)
-        if (!organization || organization.status !== 'Active') return void notFound()
-        return void res.json({
-          account: { key: organization.slug, name: organization.name, google: Boolean(googleSignInClientId()) },
-        })
-      }
-      // Legacy single-workspace mode signs in to BXI-Core only.
-      if ([BXI_CORE_ORG_SLUG, BXI_CORE_ORG_NAME.toLowerCase()].includes(account.toLowerCase()))
-        return void res.json({ account: { key: BXI_CORE_ORG_SLUG, name: BXI_CORE_ORG_NAME, google: false } })
-      notFound()
-    } catch (error) {
-      console.error('Account check failed:', error)
-      res.status(500).json({ error: 'The account could not be checked. Please try again.' })
-    }
-  })
-
-  /**
    * Internal Admin (the platform control plane) signs in here only, from the /internal_admin page. The workspace
-   * sign-in page and its account check treat the Internal Admin account as unknown.
+   * sign-in treats the Internal Admin account as unknown.
    */
   app.post('/api/auth/internal-login', enforceLoginFailureLimit, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store')

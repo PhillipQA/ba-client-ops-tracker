@@ -133,7 +133,8 @@ export function chooseGoogleUser(candidates: GoogleCandidate[], email: string, a
     }
   const inAccount = accountId ? candidates.filter(({ organization }) => organization.id === accountId) : candidates
   if (!inAccount.length)
-    return { ok: false, status: 403, error: `No active user in that account is registered with ${email}.` }
+    // The same answer whether the account is unknown or has no user with this email.
+    return { ok: false, status: 403, error: `Incorrect account, or ${email} is not a user of it.` }
   if (inAccount.length > 1)
     return {
       ok: false,
