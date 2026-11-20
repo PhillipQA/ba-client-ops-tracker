@@ -11,6 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### AI keys move to Internal Admin
+- **Database update needed: schema v44** (`database/migrations/schema-v44-platform-ai.sql`). Run it before deploying.
+- **Internal Admin › AI** holds one key, provider and model for each AI agent: the **BA Assistant** and the **Document Agent**. Every account uses them; accounts no longer enter AI keys.
+- An account gets AI when its **AI** module is on (Internal Admin › Tenant accounts › the account › Modules). That now covers AI in Document Creation (BRD, FSD, test cases, DRF and RTM) as well as the BA Assistant.
+- **Enter the keys again** in Internal Admin › AI: keys accounts saved before are no longer used. They are left in the database untouched.
+- There is **no connection test**: a wrong key shows as an error the first time someone uses AI.
+- Settings no longer has the **AI Agents** tab or the old shared AI key. Discord stays in Settings › Integrations, as before.
+- Where AI isn't available, the message now says Internal Admin sets it up, instead of pointing to Account Settings.
+
 ### Work Hub: due dates show again
 - Tickets with a due date showed **Due Invalid Date** in Work Hub. The database sends the date with a time attached, which the label could not read; only the day is used now, so it shows "Due in 3 days", "Overdue by 2 days" or the date. The ticket's details show the day too.
 

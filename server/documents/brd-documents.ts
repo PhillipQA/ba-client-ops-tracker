@@ -23,6 +23,7 @@ import {
   type BrdStakeholder,
 } from '../../src/features/documents/brd-model'
 import { documentOutputName } from '../../src/features/documents/documentFilename'
+import { AI_UNAVAILABLE } from '../ai/ai-messages'
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 function text(value: unknown, label: string, max: number, required = false) {
@@ -239,7 +240,7 @@ export function registerBrdRoutes(
       const ai = await active(req)
       if (!ai)
         throw new IntegrationError(
-          'Enable and configure the Document Agent in Account Settings → AI Agent Manager before generating a BRD.',
+          AI_UNAVAILABLE.document,
           503,
         )
       const sourceCatalog = sources.map(({ id, name, kind }) => ({ id, name, kind }))

@@ -13,6 +13,7 @@ import { aiAgents, type integrations } from '../core/services'
 import { tenantIdForUser } from '../core/tenant-state'
 import { aiProviderName, documentTemplateRow } from '../integrations/tenant-integrations'
 import { isDrfStage, recordDrfError } from './drf-diagnostics'
+import { AI_UNAVAILABLE } from '../ai/ai-messages'
 
 function documentAccessAllowed(user: SessionUser) {
   return user.role !== 'Viewer' && moduleAllowed(user, 'documents')
@@ -366,7 +367,7 @@ export function registerDrfRoutes(app: Express) {
         user,
         'cor_ai',
         503,
-        'Enable and configure the Document Agent in Account Settings → AI Agent Manager, or use Local Extractor.',
+        `${AI_UNAVAILABLE.document} Use Local Extractor instead.`,
         'Document Agent is not enabled.',
         { extractionMode: 'ai' },
       ))

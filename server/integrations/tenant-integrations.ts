@@ -517,8 +517,10 @@ export function registerIntegrationRoutes(
   const scope = [deps.requireAuth, deps.requireTenant, guard, limiter]
   const tenant = (req: Request) => (req as any).authUser.organizationId as string
   const kind = (req: Request): IntegrationKind => {
-    if (!['discord', 'openai'].includes(String(req.params.kind)))
-      throw new IntegrationError('Unknown integration.', 404)
+    // AI keys are set in Internal Admin › AI now, for every account; accounts keep only Discord here.
+    if (String(req.params.kind) === 'openai')
+      throw new IntegrationError('AI keys are set in Internal Admin now, for every account.', 410)
+    if (String(req.params.kind) !== 'discord') throw new IntegrationError('Unknown integration.', 404)
     return req.params.kind as IntegrationKind
   }
   app.get(
@@ -527,7 +529,7 @@ export function registerIntegrationRoutes(
     wrap(async (req, res) => {
       const id = tenant(req)
       const rows = await Promise.all(
-        (['discord', 'openai'] as const).map(async k => integrationSummary(await store.row(id, k), k)),
+        (['discord'] as const).map(async k => integrationSummary(await store.row(id, k), k)),
       )
       let encryptionReady = true
       try {

@@ -7,6 +7,7 @@ import { aiProviderName, IntegrationError, normalizeAiConfig } from '../integrat
 import { archivedWorkReason } from '../../src/features/tasks/lifecycle'
 import type { RtmStore } from '../../src/features/requirements/rtm'
 import { validateRtmSources, validateRtmAiOutput } from '../../src/features/requirements/rtm-ai'
+import { AI_UNAVAILABLE } from '../ai/ai-messages'
 
 export const RTM_AI_INSTRUCTIONS = `You are the Document Agent assisting a BA with a requirements traceability matrix.
 Return ONLY JSON: {"candidates":[{"key":"R1","parentKey":"","title":"...","description":"...","priority":"Medium","existingRequirementId":"","matchReason":"...","warnings":[],"evidence":[{"sourceId":"...","reference":"...","excerpt":"..."}]}],"gaps":[],"conflicts":[]}.
@@ -87,7 +88,7 @@ export function registerRtmAiRoutes(app: Express, deps: Deps) {
       const ai = await deps.aiAgents.active((req as any).authUser.organizationId, 'document')
       if (!ai)
         throw new IntegrationError(
-          'Enable and configure the Document Agent in Account Settings → AI Agent Manager. Manual entry is still available.',
+          `${AI_UNAVAILABLE.document} Manual entry is still available.`,
           503,
         )
       const config = normalizeAiConfig(ai.config)

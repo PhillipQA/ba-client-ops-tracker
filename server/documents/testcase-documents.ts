@@ -16,6 +16,7 @@ import {
   type TestCaseRow,
   type TestCaseSource,
 } from '../../src/features/documents/testcase-model'
+import { AI_UNAVAILABLE } from '../ai/ai-messages'
 
 function clean(value: unknown, label: string, max: number, required = false) {
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))
@@ -269,7 +270,7 @@ export function registerTestCaseRoutes(
         ai = await active(req)
       if (!ai)
         throw new IntegrationError(
-          'Enable and configure the Document Agent in Account Settings → AI Agent Manager before creating test cases.',
+          AI_UNAVAILABLE.document,
           503,
         )
       const result = await runTenantAi(
@@ -305,7 +306,7 @@ export function registerTestCaseRoutes(
         ai = await active(req)
       if (!ai)
         throw new IntegrationError(
-          'Enable and configure the Document Agent in Account Settings → AI Agent Manager before creating test cases.',
+          AI_UNAVAILABLE.document,
           503,
         )
       const result = await runTenantAi(

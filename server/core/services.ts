@@ -5,4 +5,5 @@ import { db } from './database'
 
 export const integrations = createIntegrationStore(db)
 
-export const aiAgents = createAiAgentManager(db, integrations)
+// AI keys are set in Internal Admin, one per agent, for every account with AI on.
+export const aiAgents = createAiAgentManager(db)

@@ -21,42 +21,15 @@ export async function settingsRequest(url: string, method = 'GET', data?: unknow
   if (!response.ok) throw new Error(result.error || 'Settings request failed.')
   return result
 }
-type AiProvider = 'gemini' | 'openai' | 'anthropic' | 'deepseek'
+/** The account's Discord bot. AI keys are not here any more: Internal Admin sets them for every account. */
 type Integration = {
-  kind: 'discord' | 'openai'
+  kind: 'discord'
   configured: boolean
   maskedKey: string
   enabled: boolean
-  config: { provider?: AiProvider; model?: string; allowedUserIds?: string[] }
+  config: { allowedUserIds?: string[] }
   connectionStatus: string
   lastTestedAt?: string
-}
-type AiAgent = {
-  id: 'ba_assistant' | 'document'
-  name: string
-  shortName: string
-  description: string
-  configured: boolean
-  inherited: boolean
-  enabled: boolean
-  maskedKey: string
-  config: { provider: AiProvider; model: string }
-  connectionStatus: string
-  lastTestedAt?: string | null
-  schemaReady: boolean
-  responsibilities: string[]
-  context: string[]
-}
-function providerFor(value: Integration) {
-  return value.config.provider || (value.config.model?.startsWith('gpt-') ? 'openai' : 'gemini')
-}
-function defaultModel(provider: AiProvider) {
-  return {
-    gemini: 'gemini-3.8-flash',
-    openai: 'gpt-5.6-terra',
-    anthropic: 'claude-sonnet-5',
-    deepseek: 'deepseek-flash',
-  }[provider]
 }
 function IntegrationCard({
   value,
@@ -69,25 +42,15 @@ function IntegrationCard({
 }) {
   const [secret, setSecret] = useState('')
   const [enabled, setEnabled] = useState(value.enabled)
-  const [provider, setProvider] = useState<AiProvider>(providerFor(value))
-  const [model, setModel] = useState(value.config.model || defaultModel(providerFor(value)))
   const [ids, setIds] = useState((value.config.allowedUserIds || []).join(', '))
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const providerChanged = value.kind === 'openai' && value.configured && provider !== providerFor(value)
   useEffect(() => {
-    const nextProvider = providerFor(value)
     setEnabled(value.enabled)
-    setProvider(nextProvider)
-    setModel(value.config.model || defaultModel(nextProvider))
     setIds((value.config.allowedUserIds || []).join(', '))
   }, [value])
   const act = async (action: 'save' | 'test' | 'remove') => {
-    if (
-      action === 'remove' &&
-      !window.confirm(`Remove this account’s ${value.kind === 'discord' ? 'Discord' : 'AI'} credential?`)
-    )
-      return
+    if (action === 'remove' && !window.confirm('Remove this account’s Discord credential?')) return
     setBusy(true)
     setMessage('')
     try {
@@ -95,9 +58,7 @@ function IntegrationCard({
       const result = await settingsRequest(
         action === 'test' ? `${url}/test` : url,
         action === 'test' ? 'POST' : action === 'remove' ? 'DELETE' : 'PUT',
-        action === 'save'
-          ? { secret, enabled, config: value.kind === 'discord' ? { allowedUserIds: ids } : { provider, model } }
-          : undefined,
+        action === 'save' ? { secret, enabled, config: { allowedUserIds: ids } } : undefined,
       )
       if (action !== 'test') setSecret('')
       setMessage(result.message || (action === 'remove' ? 'Credential removed.' : 'Account integration saved.'))
@@ -112,12 +73,8 @@ function IntegrationCard({
     <div className="panel account-integration-card">
       <div className="panel-heading">
         <div>
-          <h2>{value.kind === 'discord' ? 'Discord Integration' : 'Legacy Shared AI (Fallback)'}</h2>
-          <p>
-            {value.kind === 'discord'
-              ? 'Capture DMs and mentions into this account’s Inbox.'
-              : 'Compatibility fallback for agents that do not yet have their own credential. AI Agent Manager settings take priority.'}
-          </p>
+          <h2>Discord Integration</h2>
+          <p>Capture DMs and mentions into this account’s Inbox.</p>
         </div>
         <span className="role-badge">
           {value.configured ? (value.enabled ? 'Enabled' : 'Disabled') : 'Not configured'}
@@ -129,61 +86,24 @@ function IntegrationCard({
       {value.lastTestedAt && <p>Last tested: {new Date(value.lastTestedAt).toLocaleString()}</p>}
       <div className="integration-form">
         <label>
-          {value.configured
-            ? 'Replace credential (leave blank to keep it)'
-            : value.kind === 'discord'
-              ? 'Discord bot token'
-              : 'AI provider API key'}
+          {value.configured ? 'Replace credential (leave blank to keep it)' : 'Discord bot token'}
           <input type="password" value={secret} autoComplete="new-password" onChange={e => setSecret(e.target.value)} />
         </label>
-        {value.kind === 'discord' ? (
-          <label>
-            Allowed Discord user IDs (comma-separated)
-            <input value={ids} onChange={e => setIds(e.target.value)} />
-            <small>Leave blank to allow anyone who can DM or mention your bot.</small>
-          </label>
-        ) : (
-          <>
-            <label>
-              AI provider
-              <select
-                value={provider}
-                onChange={e => {
-                  const next = e.target.value as AiProvider
-                  setProvider(next)
-                  setModel(defaultModel(next))
-                }}
-              >
-                <option value="gemini">Gemini (Google AI Studio)</option>
-                <option value="openai">OpenAI (ChatGPT models)</option>
-                <option value="anthropic">Claude (Anthropic)</option>
-                <option value="deepseek">DeepSeek</option>
-              </select>
-            </label>
-            <label>
-              AI model ID
-              <input value={model} onChange={e => setModel(e.target.value)} required />
-            </label>
-            {provider === 'gemini' && (
-              <small>
-                Create the key in Google AI Studio. New Gemini keys should use Google’s current Auth Key flow.
-              </small>
-            )}
-            {providerChanged && <small>Changing provider requires that provider’s API key.</small>}
-          </>
-        )}
+        <label>
+          Allowed Discord user IDs (comma-separated)
+          <input value={ids} onChange={e => setIds(e.target.value)} />
+          <small>Leave blank to allow anyone who can DM or mention your bot.</small>
+        </label>
         <label className="checkbox-label">
           <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Enable for this
           account
         </label>
       </div>
-      {value.kind === 'discord' && (
-        <p>
-          Gateway: {runtime?.online ? `Online — ${runtime.botName}` : 'Offline'}
-          {runtime?.lastMessageAt ? ` · Last capture ${new Date(runtime.lastMessageAt).toLocaleString()}` : ''}
-          {runtime?.lastError ? ` · ${runtime.lastError}` : ''}
-        </p>
-      )}
+      <p>
+        Gateway: {runtime?.online ? `Online — ${runtime.botName}` : 'Offline'}
+        {runtime?.lastMessageAt ? ` · Last capture ${new Date(runtime.lastMessageAt).toLocaleString()}` : ''}
+        {runtime?.lastError ? ` · ${runtime.lastError}` : ''}
+      </p>
       {message && (
         <p role="status" className="settings-message">
           {message}
@@ -192,7 +112,7 @@ function IntegrationCard({
       <div className="integration-actions">
         <button
           className="primary"
-          disabled={busy || (!value.configured && !secret.trim()) || (providerChanged && !secret.trim())}
+          disabled={busy || (!value.configured && !secret.trim())}
           onClick={() => void act('save')}
         >
           Save settings
@@ -209,234 +129,10 @@ function IntegrationCard({
         </button>
       </div>
       <small>
-        Saved credentials are encrypted. The full key is never returned after saving.
-        {value.kind === 'discord'
-          ? ' Enable Message Content intent in the Discord Developer Portal.'
-          : ' This shared AI credential is retained as a fallback only. Configure separate agent credentials in AI Agent Manager for independent models and providers.'}
+        Saved credentials are encrypted. The full key is never returned after saving. Enable Message Content intent in
+        the Discord Developer Portal.
       </small>
     </div>
-  )
-}
-
-function AiAgentCard({ value, refresh }: { value: AiAgent; refresh: () => Promise<void> }) {
-  const [secret, setSecret] = useState('')
-  const [enabled, setEnabled] = useState(value.enabled)
-  const [provider, setProvider] = useState<AiProvider>(value.config.provider)
-  const [model, setModel] = useState(value.config.model)
-  const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(false)
-  const providerChanged = provider !== value.config.provider
-  const hasEffectiveCredential = value.configured || value.inherited
-  useEffect(() => {
-    setEnabled(value.enabled)
-    setProvider(value.config.provider)
-    setModel(value.config.model)
-    setSecret('')
-  }, [value])
-
-  const act = async (action: 'save' | 'test' | 'remove') => {
-    if (
-      action === 'remove' &&
-      !window.confirm(
-        `Remove the dedicated ${value.name} configuration? If a Legacy Shared AI credential exists, this agent will fall back to it.`,
-      )
-    )
-      return
-    setBusy(true)
-    setMessage('')
-    try {
-      const url = `/api/account/ai-agents/${value.id}`
-      const result = await settingsRequest(
-        action === 'test' ? `${url}/test` : url,
-        action === 'test' ? 'POST' : action === 'remove' ? 'DELETE' : 'PUT',
-        action === 'save' ? { secret, enabled, config: { provider, model } } : undefined,
-      )
-      if (action !== 'test') setSecret('')
-      setMessage(
-        result.message || (action === 'remove' ? 'Dedicated agent configuration removed.' : `${value.name} saved.`),
-      )
-      await refresh()
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'AI Agent request failed.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const status = value.configured
-    ? value.enabled
-      ? 'Dedicated'
-      : 'Disabled'
-    : value.inherited
-      ? value.enabled
-        ? 'Legacy fallback'
-        : 'Fallback disabled'
-      : 'Not configured'
-  return (
-    <div className="panel ai-agent-card">
-      <div className="panel-heading">
-        <div>
-          <h3>{value.name}</h3>
-          <p>{value.description}</p>
-        </div>
-        <span className="role-badge">{status}</span>
-      </div>
-      <div className="ai-agent-meta">
-        <span>
-          <b>Key:</b> {value.maskedKey || 'None'}
-        </span>
-        <span>
-          <b>Connection:</b> {value.connectionStatus.replace(/_/g, ' ')}
-        </span>
-        {value.lastTestedAt && (
-          <span>
-            <b>Tested:</b> {new Date(value.lastTestedAt).toLocaleString()}
-          </span>
-        )}
-      </div>
-      <div className="ai-agent-route">
-        <div>
-          <strong>Responsibilities</strong>
-          <span>{value.responsibilities.join(' · ')}</span>
-        </div>
-        <div>
-          <strong>Context boundary</strong>
-          <span>{value.context.join(' · ')}</span>
-        </div>
-      </div>
-      <div className="integration-form">
-        <label>
-          {value.configured
-            ? 'Replace agent API key (leave blank to keep it)'
-            : value.inherited
-              ? 'Dedicated API key (optional when keeping the same inherited provider)'
-              : 'Agent API key'}
-          <input type="password" value={secret} autoComplete="new-password" onChange={e => setSecret(e.target.value)} />
-        </label>
-        <label>
-          Provider
-          <select
-            value={provider}
-            onChange={e => {
-              const next = e.target.value as AiProvider
-              setProvider(next)
-              setModel(defaultModel(next))
-            }}
-          >
-            <option value="gemini">Gemini (Google AI Studio)</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Claude (Anthropic)</option>
-            <option value="deepseek">DeepSeek</option>
-          </select>
-        </label>
-        <label>
-          Model ID
-          <input value={model} onChange={e => setModel(e.target.value)} required />
-        </label>
-        <label className="checkbox-label">
-          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Enable {value.name}
-        </label>
-      </div>
-      {value.inherited && !value.configured && (
-        <small>
-          This agent currently inherits the Legacy Shared AI key. Saving creates an independent encrypted agent
-          configuration.
-        </small>
-      )}
-      {!value.schemaReady && (
-        <p role="alert" className="settings-message">
-          Separate agent storage is not available: check the database (a new database needs database/schema.sql).
-          Existing Legacy Shared AI continues to work as fallback.
-        </p>
-      )}
-      {providerChanged && hasEffectiveCredential && !secret.trim() && (
-        <small>Changing provider requires that provider’s API key.</small>
-      )}
-      {message && (
-        <p role="status" className="settings-message">
-          {message}
-        </p>
-      )}
-      <div className="integration-actions">
-        <button
-          className="primary"
-          disabled={
-            busy ||
-            !value.schemaReady ||
-            (!hasEffectiveCredential && !secret.trim()) ||
-            (providerChanged && hasEffectiveCredential && !secret.trim())
-          }
-          onClick={() => void act('save')}
-        >
-          Save agent
-        </button>
-        <button className="secondary" disabled={busy || !hasEffectiveCredential} onClick={() => void act('test')}>
-          Test agent
-        </button>
-        <button
-          className="secondary danger-button"
-          disabled={busy || !value.configured}
-          onClick={() => void act('remove')}
-        >
-          Remove dedicated config
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function AIAgentManager() {
-  const [data, setData] = useState<{ agents: AiAgent[]; schemaReady: boolean; encryptionReady: boolean } | null>(null)
-  const [error, setError] = useState('')
-  const load = async () => {
-    setData(await settingsRequest('/api/account/ai-agents'))
-    setError('')
-  }
-  useEffect(() => {
-    void load().catch(e => setError(e instanceof Error ? e.message : 'Could not load AI Agent Manager.'))
-  }, [])
-  return (
-    <section className="ai-agent-manager">
-      <div className="panel ai-agent-manager-head">
-        <div className="panel-heading">
-          <div>
-            <h2>AI Agent Manager</h2>
-            <p>Run separate AI roles with independent providers, models, credentials and context boundaries.</p>
-          </div>
-          <span className="role-badge">2 agents</span>
-        </div>
-        <div className="ai-agent-architecture">
-          <span>BA Client Ops Tracker</span>
-          <b>→</b>
-          <span>AI Agent Manager</span>
-          <b>→</b>
-          <span>BA Assistant</span>
-          <span className="architecture-divider">|</span>
-          <span>Document Agent</span>
-        </div>
-        <p className="settings-helper">
-          BA Assistant handles conversational workspace support. Document Agent handles BRD/FSD processing, AI test-case
-          generation, and reviewed RTM requirement/reference mapping. RTM task linking and assignment remain manual.
-        </p>
-        {data && !data.encryptionReady && (
-          <p role="alert" className="settings-message">
-            TENANT_INTEGRATION_MASTER_KEY must be configured before agent credentials can be encrypted.
-          </p>
-        )}
-        {error && (
-          <p role="alert" className="settings-message">
-            {error}
-          </p>
-        )}
-      </div>
-      {data && (
-        <div className="ai-agent-grid">
-          {data.agents.map(agent => (
-            <AiAgentCard key={agent.id} value={agent} refresh={load} />
-          ))}
-        </div>
-      )}
-    </section>
   )
 }
 
@@ -691,13 +387,12 @@ export default function Settings({
   const [data, setData] = useState<any>(null),
     [error, setError] = useState('')
   const isAdmin = currentUser.role === 'Administrator'
-  const [activeTab, setActiveTab] = useState<'templates' | 'agents' | 'integrations' | 'workflow' | 'roles' | 'access'>(
+  const [activeTab, setActiveTab] = useState<'templates' | 'integrations' | 'workflow' | 'roles' | 'access'>(
     () => (new URLSearchParams(window.location.hash.slice(1)).has('drive') ? 'integrations' : 'templates'),
   )
   const tabs = isAdmin
     ? [
         { id: 'templates' as const, label: 'Templates' },
-        { id: 'agents' as const, label: 'AI Agents' },
         { id: 'integrations' as const, label: 'Integrations' },
         { id: 'workflow' as const, label: 'Workflow' },
         { id: 'roles' as const, label: 'Roles' },
@@ -764,16 +459,6 @@ export default function Settings({
             tabIndex={0}
           >
             <Templates />
-          </div>
-          <div
-            className="settings-tab-content"
-            id="settings-section-agents"
-            role="tabpanel"
-            aria-labelledby="settings-tab-agents"
-            hidden={activeTab !== 'agents'}
-            tabIndex={0}
-          >
-            <AIAgentManager />
           </div>
           <div
             className="settings-tab-content"
@@ -854,7 +539,7 @@ export default function Settings({
       ) : (
         <div className="panel">
           <h2>Account settings</h2>
-          <p>Your account administrator manages templates, AI agents, and integrations.</p>
+          <p>Your account administrator manages templates and integrations.</p>
           <p className="settings-helper">
             Use <strong>My Themes</strong> in the left panel for interface mode and workspace background preferences.
           </p>

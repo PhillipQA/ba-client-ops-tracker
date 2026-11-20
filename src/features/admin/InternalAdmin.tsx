@@ -1,4 +1,5 @@
 import PlatformSettings from '../settings/PlatformSettings'
+import { PlatformAiAgents } from './PlatformAiAgents'
 import { CalendarPlatformControl } from '../integrations/GoogleCalendarPanel'
 import { GmailPlatformControl } from '../integrations/GmailAccountSettings'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
@@ -13,6 +14,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Sparkles,
   UserPlus,
   Users,
 } from 'lucide-react'
@@ -92,6 +94,7 @@ export default function InternalAdmin({
   const [selectedOrganizationId, setSelectedOrganizationId] = useState('')
   const [showCreateOrganization, setShowCreateOrganization] = useState(false)
   const [showCreateUser, setShowCreateUser] = useState(false)
+  const [showAi, setShowAi] = useState(false)
   const [expandedUserId, setExpandedUserId] = useState('')
   const [newOrganizationModules, setNewOrganizationModules] = useState<AppModule[]>([...ALL_MODULE_IDS])
   const [newUserRole, setNewUserRole] = useState<UserRole>('Contributor')
@@ -322,11 +325,14 @@ export default function InternalAdmin({
           </span>
           <h1>BXI-Core Multi-Tenant Admin</h1>
           <p>
-            Manage tenant accounts, enabled modules, users, and password recovery from the dedicated{' '}
+            Manage tenant accounts, enabled modules, AI keys, users, and password recovery from the dedicated{' '}
             <b>internal_admin</b> account.
           </p>
         </div>
         <div className="internal-admin-hero-actions">
+          <button className="secondary" type="button" onClick={() => setShowAi(value => !value)}>
+            <Sparkles size={16} /> AI
+          </button>
           <button className="secondary" type="button" onClick={() => setShowPlatformSecurity(value => !value)}>
             <LockKeyhole size={16} /> Security
           </button>
@@ -349,6 +355,9 @@ export default function InternalAdmin({
         </div>
       )}
       {message && <div className="settings-message">{message}</div>}
+
+      {/* AI keys for every account: an account gets AI when its AI module is on. */}
+      {showAi && <PlatformAiAgents />}
 
       {showPlatformSecurity && (
         <form className="panel internal-admin-security" onSubmit={event => void changePlatformPassword(event)}>
