@@ -4165,15 +4165,6 @@ span.trk-git-badge:not(.trk-chip) {
   border-radius: 4px;
   font-size: 10.5px;
 }
-.trk-git-note {
-  margin: 0;
-  padding: 8px 12px;
-  border: 1px solid var(--k-border);
-  border-radius: 8px;
-  background: var(--k-soft);
-  color: var(--k-muted);
-  font-size: 13px;
-}
 .trk-kind {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4292,4 +4283,88 @@ span.trk-git-badge:not(.trk-chip) {
   .git-condition {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+/* A GIT Tracker's tickets (GitTicketsPanel). */
+.trk-git-tickets {
+  border: 1px solid var(--k-border);
+  border-radius: 8px;
+  background: var(--k-soft);
+  font-size: 13px;
+}
+.trk-git-tickets > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.trk-git-failed {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+}
+.trk-git-tickets-body {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+.trk-git-help {
+  margin: 0;
+  color: var(--k-muted);
+}
+.trk-git-error {
+  margin: 0;
+  color: #ef4444;
+}
+.trk-git-client {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--k-muted);
+}
+.trk-git-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.trk-git-table th,
+.trk-git-table td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--k-border);
+  text-align: left;
+  vertical-align: top;
+}
+.trk-git-table th {
+  color: var(--k-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.trk-git-table td small {
+  display: block;
+  color: var(--k-muted);
+}
+.trk-git-table a {
+  color: inherit;
+  font-weight: 600;
+}
+.trk-git-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--k-border);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.trk-git-status--completed {
+  background: color-mix(in srgb, #22c55e 12%, transparent);
+}
+.trk-git-status--failed {
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+}
+.trk-git-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
 }
