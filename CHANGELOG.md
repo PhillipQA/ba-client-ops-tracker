@@ -11,6 +11,9 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Menus and pickers are solid everywhere
+- Some menus (a column's options, a row's task picker) could still show the grid through them. When a menu could not find its place in the app it was drawn on the bare page, where the theme's colours are not set. Menus now carry the theme's colours themselves, and fall back to the tracker page, so they are solid in every interface mode.
+
 ### Trackers: a Project column, and Set project for many rows
 - A Text column can now show **the row's project** (Edit column › Row's project › Show the row's project). Each row shows its task's project as a chip. Click it to move the task, with its subtasks, to another of the tracker's projects; the menu is typed (project, contract number or client), marks the ★ default and completed projects, and has "Link another project to this tracker…".
 - A row with no task yet shows, as a dashed *auto* chip, where its task will go (its Contract number, else the ★ default). Picking a project there opens the row's task picker ready to create the task in that project. Completed projects keep their tasks but take no new ones, so they can only be picked for rows that already have a task.
