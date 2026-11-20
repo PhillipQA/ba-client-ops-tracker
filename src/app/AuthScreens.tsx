@@ -56,9 +56,9 @@ function GoogleSignIn({
           callback: (response: { credential?: string }) => {
             if (!response.credential) return
             credential.current = response.credential
-            void signIn.current(response.credential, chosen.current || undefined).then(choices =>
-              setAccounts(choices || []),
-            )
+            void signIn
+              .current(response.credential, chosen.current || undefined)
+              .then(choices => setAccounts(choices || []))
           },
           auto_select: false,
           cancel_on_tap_outside: true,

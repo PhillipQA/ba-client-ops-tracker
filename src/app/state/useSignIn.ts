@@ -81,7 +81,8 @@ export function useSignIn(ui: UiState) {
     setLoginError('')
     try {
       const user = await loginInternalAdmin(username, password)
-      if (window.location.pathname.replace(/\/+$/, '') === INTERNAL_ADMIN_PATH) window.history.replaceState(null, '', '/')
+      if (window.location.pathname.replace(/\/+$/, '') === INTERNAL_ADMIN_PATH)
+        window.history.replaceState(null, '', '/')
       enterAs(user)
     } catch (error) {
       setLoginError(error instanceof Error ? error.message : 'Login failed.')

@@ -24,15 +24,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
-      - name: Format diff (temporary)
-        run: |
-          npx biome format --write server/auth/auth-routes.ts server/auth/rate-limits.ts src/app/App.tsx src/app/AuthScreens.tsx src/app/state/useSignIn.ts src/app/useAppState.tsx src/features/accounts/auth.ts src/styles/app/ui-refresh.css tests/login-steps.test.ts  || true
-          git diff > format.diff || true
-          echo "FORMAT-DIFF-START"
-          base64 -w0 format.diff
-          echo
-          echo "FORMAT-DIFF-END"
-          git checkout -- .
       - name: Biome check
         run: |
           set +e
