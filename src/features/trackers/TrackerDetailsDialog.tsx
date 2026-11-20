@@ -23,8 +23,9 @@ type Props = {
   onClose: () => void
   onSave: (body: {
     name: string
-    clientIds: string[]
-    projectIds: string[]
+    /** Left out for a GIT Tracker, which has no Client or Project of its own. */
+    clientIds?: string[]
+    projectIds?: string[]
     members?: string[]
     seedsRows?: boolean
   }) => Promise<void>
