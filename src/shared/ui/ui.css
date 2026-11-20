@@ -3,8 +3,10 @@
  * Colours follow the person's theme: the interface-mode variables (--ui-*) when set, then the wallpaper theme,
  * then the default dark look.
  */
+/* .k-popover carries them too, so a menu drawn outside the shell (on <body>) is never see-through. */
 .app-shell,
-.trk-page {
+.trk-page,
+.k-popover {
   --k-solid: var(--ui-surface, #1d1e21);
   --k-soft: var(--ui-soft, #272a2f);
   --k-input: var(--ui-input, #16171a);

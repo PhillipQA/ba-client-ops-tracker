@@ -30,9 +30,15 @@ export function Popover({
   useLayoutEffect(() => {
     // Inside the app shell, not on <body>: the theme's colours (--k-solid…) are set on the shell, so outside it the
     // panel would have no background. The shell has no transform, so the panel is still placed against the window.
-    const at = anchor.current
+    // An anchor that is gone from the page (re-rendered away) has no shell around it: then use the page's tracker or
+    // shell, so the panel keeps the tracker's styles too, and <body> only as a last resort.
+    const at = anchor.current?.isConnected ? anchor.current : null
     setHost(
-      at?.closest<HTMLElement>('dialog[open]') || at?.closest<HTMLElement>('.app-shell, .trk-page') || document.body,
+      at?.closest<HTMLElement>('dialog[open]') ||
+        at?.closest<HTMLElement>('.app-shell, .trk-page') ||
+        document.querySelector<HTMLElement>('.trk-page') ||
+        document.querySelector<HTMLElement>('.app-shell') ||
+        document.body,
     )
   }, [anchor])
   useLayoutEffect(() => {
