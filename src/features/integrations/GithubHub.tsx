@@ -15,6 +15,7 @@ import { useIsClosed } from '../tasks/openWork'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { businessDateKey } from '../../shared/businessDate'
 import { dueDay, dueText, duration, involvement, priorityLabels } from './gitlabDetails'
+import AddToGitTracker from '../trackers/AddToGitTracker'
 
 class ApiError extends Error {
   constructor(
@@ -129,6 +130,8 @@ export default function GithubHub({
   const openedAtRevision = useRef(0)
   const canWriteTasks =
     currentUser.role !== 'Viewer' && (currentUser.role === 'Administrator' || currentUser.modules.includes('items'))
+  // GIT Trackers: anyone who sees Trackers sees which ones a ticket is in; the server says who may add.
+  const canUseTrackers = currentUser.role === 'Administrator' || currentUser.modules.includes('trackers')
   const maps = connection?.repositories || [],
     pages = Math.max(1, Math.ceil(total / pageSize))
   const mapping = (repo: string) => maps.find(r => r.fullName === repo)
@@ -1086,6 +1089,16 @@ export default function GithubHub({
                   Open in {providerLabel}
                 </a>
               </div>
+              {canUseTrackers && (
+                <AddToGitTracker
+                  provider={provider}
+                  ticketId={selected.id}
+                  repository={selected.repository}
+                  clients={clients}
+                  projects={projects}
+                  onWorkMade={onTaskCreated}
+                />
+              )}
               {form === 'link' && (
                 <div className="github-task-form">
                   <h4>Link a task or subtask</h4>

@@ -14,6 +14,7 @@
  * - tracker-comments.ts: comments on rows, with @mentions
  * - tracker-reminders.ts: date reminders, checked every morning
  * - tracker-automations.ts: when → then automations, run after a row is saved
+ * - tracker-git-tickets.ts: GIT Trackers, tickets added from Work Hub and the rows and Tasks they make
  * - tracker-rollup.ts: the roll-up, rows of several trackers in one list
  * - tracker-recent.ts: recent changes across trackers, for the Action Center
  * - tracker-common.ts: shared types and helpers
@@ -36,6 +37,7 @@ import { trackerReminders } from './tracker-reminders'
 import { trackerAutomations } from './tracker-automations'
 import { trackerRollupRoutes } from './tracker-rollup'
 import { trackerRecentRoutes } from './tracker-recent'
+import { trackerGitTickets } from './tracker-git-tickets'
 export { secretRuleChanges } from './tracker-common'
 
 export function registerTrackerRoutes(app: Express, deps: Deps) {
@@ -49,7 +51,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   trackerColumnRoutes(app, core)
   const automations = trackerAutomations(deps, core, deps.timeZone || 'Asia/Manila')
   automations.routes(app)
-  trackerRowRoutes(app, core, sheetAccess, sheetWrite, automations)
+  // GIT Trackers: tickets added from Work Hub, and their rows and Tasks.
+  const gitTickets = trackerGitTickets(deps, core, deps.timeZone || 'Asia/Manila')
+  gitTickets.routes(app)
+  trackerRowRoutes(app, core, sheetAccess, sheetWrite, automations, gitTickets.hiddenSourceKeys)
   trackerCommentRoutes(app, deps, core)
   const { db, check, trackerVisibleIn, workspace, trackerOut, rowOut, columnsOf } = core
   const { allRows } = sheetAccess

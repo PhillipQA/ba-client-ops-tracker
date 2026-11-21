@@ -26,6 +26,8 @@ export function trackerRowRoutes(
   sheetAccess: TrackerSheetAccess,
   sheetWrite: TrackerSheetWrite,
   automations?: TrackerAutomations,
+  /** GIT Trackers: rows of tickets whose client the person doesn't see, by source key (see tracker-git-tickets). */
+  hiddenGitRows?: (tenant: string, trackerId: string, user: any) => Promise<Set<string>>,
 ) {
   const {
     scope,
@@ -63,6 +65,26 @@ export function trackerRowRoutes(
       const tracker = await trackerRow(tenant, id, user)
       const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0))
       const limit = Math.max(1, Math.min(PAGE, Math.floor(Number(req.query.limit) || 500)))
+      const columns = columnsOf(tracker)
+      // A GIT Tracker shows to everyone, but each ticket's rows only to people who see its client.
+      const hidden = tracker.kind === 'git' && hiddenGitRows ? await hiddenGitRows(tenant, id, user) : new Set()
+      if (hidden.size) {
+        const all = await db
+          .from('tenant_tracker_rows')
+          .select('*')
+          .eq('tenant_id', tenant)
+          .eq('tracker_id', id)
+          .order('position')
+          .order('created_at')
+          .limit(TRACKER_LIMITS.rows + 1)
+        check(all.error)
+        const shownRows = (all.data || []).filter((entry: any) => !hidden.has(String(entry.source_key || '')))
+        return void res.json({
+          rows: shownRows.slice(offset, offset + limit).map((entry: any) => rowOut(entry, columns)),
+          total: shownRows.length,
+          offset,
+        })
+      }
       const r = await db
         .from('tenant_tracker_rows')
         .select('*')
@@ -72,7 +94,6 @@ export function trackerRowRoutes(
         .order('created_at')
         .range(offset, offset + limit - 1)
       check(r.error)
-      const columns = columnsOf(tracker)
       res.json({
         rows: (r.data || []).map((entry: any) => rowOut(entry, columns)),
         total: await rowCount(tenant, id),

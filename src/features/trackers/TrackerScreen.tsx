@@ -1,3 +1,4 @@
+import GitTicketsPanel from './GitTicketsPanel'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
@@ -682,9 +683,17 @@ export default function TrackerScreen(props: Props) {
     () => new Set(shownColumns.filter(column => isFrozenColumn(column, columns)).map(column => column.id)),
     [shownColumns, columns],
   )
+  // A GIT Tracker's Client filter (GitTicketsPanel): only the rows that client's tickets made.
+  const [gitRowFilter, setGitRowFilter] = useState<ReadonlySet<string> | null>(null)
   const visible = useMemo(
-    () => visibleRows(rows, columns, { search, filters: work.filters, sort: work.sort, hidden: work.hidden }, lookup),
-    [rows, columns, search, work.filters, work.sort, work.hidden, lookup],
+    () =>
+      visibleRows(
+        gitRowFilter ? rows.filter(row => gitRowFilter.has(row.id)) : rows,
+        columns,
+        { search, filters: work.filters, sort: work.sort, hidden: work.hidden },
+        lookup,
+      ),
+    [rows, gitRowFilter, columns, search, work.filters, work.sort, work.hidden, lookup],
   )
   const entries = useMemo<Entry[]>(() => {
     const groupColumn = work.groupBy ? columns.find(column => column.id === work.groupBy) : undefined
@@ -699,7 +708,8 @@ export default function TrackerScreen(props: Props) {
   }, [visible, columns, work.groupBy, lookup])
   const canEdit = Boolean(tracker?.canEdit && !tracker.archived)
   const canEditSource = canEdit
-  const orderable = canEdit && !work.sort && !work.groupBy && work.filters.length === 0 && !work.search.trim()
+  const orderable =
+    canEdit && !work.sort && !work.groupBy && work.filters.length === 0 && !work.search.trim() && !gitRowFilter
   const activeView = tracker?.views.find(view => view.id === activeViewId)
   const baseline = activeView ? stripWork({ ...emptyWork, ...activeView }) : stripWork(emptyWork)
   const dirty = !sameValue(stripWork(work), baseline)
@@ -1844,7 +1854,7 @@ export default function TrackerScreen(props: Props) {
   const editingColumn =
     columnDialog?.mode === 'edit' ? columns.find(column => column.id === columnDialog.id) : undefined
   const savingText = saving > 0 ? 'Saving…' : 'All changes saved'
-  const filtered = work.filters.length > 0 || work.search.trim() !== ''
+  const filtered = work.filters.length > 0 || work.search.trim() !== '' || Boolean(gitRowFilter)
   const menuColumn = headerMenu ? columns.find(column => column.id === headerMenu.id) : undefined
   const menuIndex = menuColumn ? columns.findIndex(column => column.id === menuColumn.id) : -1
 
@@ -1972,11 +1982,18 @@ export default function TrackerScreen(props: Props) {
         </div>
       </header>
       {isGit && (
-        <p className="trk-git-note">
-          A GIT Tracker: GitLab and GitHub tickets are added here from Work Hub, and its GIT template makes each
-          ticket’s rows, Tasks and Subtasks under the Client and Project the ticket’s repository is mapped to. Adding
-          tickets from Work Hub comes in the next update.
-        </p>
+        <GitTicketsPanel
+          trackerId={trackerId}
+          canEdit={canEdit}
+          clients={props.clients}
+          projects={props.projects}
+          onFilter={setGitRowFilter}
+          onChanged={async () => {
+            await refresh().catch(() => undefined)
+            await props.onTasksChanged?.()
+          }}
+          say={say}
+        />
       )}
       {moreOpen && (
         <Popover
