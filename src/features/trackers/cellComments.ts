@@ -80,12 +80,12 @@ export function cellEntries(own: readonly RowComment[], task: Pick<WorkItem, 'co
     ...peopleComments(task)
       .filter(comment => !copies.has(comment.id))
       .map(comment => ({
-      id: comment.id,
-      author: comment.createdByName || 'Someone',
-      at: comment.createdAt,
-      text: comment.text,
-      source: 'task' as const,
-    })),
+        id: comment.id,
+        author: comment.createdByName || 'Someone',
+        at: comment.createdAt,
+        text: comment.text,
+        source: 'task' as const,
+      })),
   ]
   return entries.sort((a, b) => a.at.localeCompare(b.at))
 }

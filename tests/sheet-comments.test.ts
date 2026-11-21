@@ -82,7 +82,10 @@ test('the Sheets API answer becomes posts on cells; resolve-only replies are ski
       ['r1', false, 3, 1, 'ok', true, 'T3'],
     ],
   )
-  assert.equal(postsFromSheets({ ...data, comments: [{ ...data.comments[0], status: 'RESOLVED' }] }, 'Sites').posts[0].resolved, true)
+  assert.equal(
+    postsFromSheets({ ...data, comments: [{ ...data.comments[0], status: 'RESOLVED' }] }, 'Sites').posts[0].resolved,
+    true,
+  )
   assert.deepEqual(postsFromSheets(data, 'Missing'), { sheetId: null, posts: [] })
 })
 
@@ -104,12 +107,42 @@ test('a sync adds new Sheet comments, follows edits and deletes, and recognises 
     index,
     rowsByKey,
     kept: [
-      { recordId: 'k1', postId: 'edited', rowId: 'row-m', columnId: 'c-status', text: 'old', updatedAt: 'T', resolved: false },
-      { recordId: 'k2', postId: 'same', rowId: 'row-c', columnId: 'c-notes', text: 'kept', updatedAt: '2026-11-21T01:00:00Z', resolved: false },
-      { recordId: 'k3', postId: 'deleted-in-sheet', rowId: 'row-m', columnId: 'c-status', text: 'bye', updatedAt: 'T', resolved: false },
+      {
+        recordId: 'k1',
+        postId: 'edited',
+        rowId: 'row-m',
+        columnId: 'c-status',
+        text: 'old',
+        updatedAt: 'T',
+        resolved: false,
+      },
+      {
+        recordId: 'k2',
+        postId: 'same',
+        rowId: 'row-c',
+        columnId: 'c-notes',
+        text: 'kept',
+        updatedAt: '2026-11-21T01:00:00Z',
+        resolved: false,
+      },
+      {
+        recordId: 'k3',
+        postId: 'deleted-in-sheet',
+        rowId: 'row-m',
+        columnId: 'c-status',
+        text: 'bye',
+        updatedAt: 'T',
+        resolved: false,
+      },
     ],
     outgoing: [
-      { recordId: 'out1', rowId: 'row-c', columnId: 'c-status', sheetText: sheetCommentText('Phillip', 'retest Monday'), linked: false },
+      {
+        recordId: 'out1',
+        rowId: 'row-c',
+        columnId: 'c-status',
+        sheetText: sheetCommentText('Phillip', 'retest Monday'),
+        linked: false,
+      },
     ],
   })
   assert.deepEqual(
@@ -225,10 +258,12 @@ test('Excel comments are read: threaded comments with replies and resolved state
     'xl/workbook.xml': '<workbook><sheets><sheet name="Sites" r:id="rId1"/></sheets></workbook>',
     'xl/_rels/workbook.xml.rels':
       '<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId9" Type="http://schemas.microsoft.com/office/2017/10/relationships/person" Target="persons/person.xml"/></Relationships>',
-    'xl/worksheets/sheet1.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Task</t></is></c></row></sheetData></worksheet>',
+    'xl/worksheets/sheet1.xml':
+      '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Task</t></is></c></row></sheetData></worksheet>',
     'xl/worksheets/_rels/sheet1.xml.rels':
       '<Relationships><Relationship Id="r1" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/><Relationship Id="r2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/></Relationships>',
-    'xl/persons/person.xml': '<personList><person displayName="Ana Cruz" id="{P1}"/><person displayName="Ben" id="{P2}"/></personList>',
+    'xl/persons/person.xml':
+      '<personList><person displayName="Ana Cruz" id="{P1}"/><person displayName="Ben" id="{P2}"/></personList>',
     'xl/threadedComments/threadedComment1.xml':
       '<ThreadedComments><threadedComment ref="B2" dT="2026-11-21T01:00:00.00" personId="{P1}" id="{T1}" done="1"><text>Retest &amp; sign</text></threadedComment><threadedComment ref="B2" dT="2026-11-21T02:00:00.00" personId="{P2}" id="{T2}" parentId="{T1}"><text>ok</text></threadedComment></ThreadedComments>',
     'xl/comments1.xml':
@@ -236,7 +271,16 @@ test('Excel comments are read: threaded comments with replies and resolved state
   })
   const posts = readXlsx(file).comments('Sites')
   assert.deepEqual(
-    posts.map(item => [item.postId, item.threadId, item.head, item.rowIndex, item.columnIndex, item.author, item.text, item.resolved]),
+    posts.map(item => [
+      item.postId,
+      item.threadId,
+      item.head,
+      item.rowIndex,
+      item.columnIndex,
+      item.author,
+      item.text,
+      item.resolved,
+    ]),
     [
       ['{T1}', '{T1}', true, 1, 1, 'Ana Cruz', 'Retest & sign', true],
       ['{T2}', '{T1}', false, 1, 1, 'Ben', 'ok', true],

@@ -256,7 +256,9 @@ export default function TrackerComments({
                   )}
                 </span>
                 {comment.sheet?.state === 'failed' && (
-                  <small className="trk-field-error">Not in the Google Sheet: {comment.sheet.error || 'it could not be sent.'}</small>
+                  <small className="trk-field-error">
+                    Not in the Google Sheet: {comment.sheet.error || 'it could not be sent.'}
+                  </small>
                 )}
                 <p>
                   {commentParts(comment.text, names).map((part, index) =>

@@ -215,9 +215,10 @@ export function trackerSheetComments(deps: Deps, core: TrackerCore, sheetAccess:
           byTask.has(String(item?.id))
             ? {
                 ...item,
-                comments: [...(Array.isArray(item.comments) ? item.comments : []), ...byTask.get(String(item.id))!].slice(
-                  -500,
-                ),
+                comments: [
+                  ...(Array.isArray(item.comments) ? item.comments : []),
+                  ...byTask.get(String(item.id))!,
+                ].slice(-500),
               }
             : item,
         ),
@@ -249,7 +250,10 @@ export function trackerSheetComments(deps: Deps, core: TrackerCore, sheetAccess:
     const { tenant, tracker, source, grid, token, scope, excel, user } = input
     const index = sheetCellIndex(grid, source.key_header, source.header_map || {})
     let read = excel
-      ? { sheetId: null as number | null, posts: (await openWorkbook(token, scope, source.spreadsheet_id)).book.comments(source.tab) }
+      ? {
+          sheetId: null as number | null,
+          posts: (await openWorkbook(token, scope, source.spreadsheet_id)).book.comments(source.tab),
+        }
       : await sheetPosts(token, source)
     let stored = await records(tenant, tracker.id, ['comment', SHEET_KINDS.post, SHEET_KINDS.out])
     // Tracker comments waiting for the Sheet go first, so this sync already recognises them there.
@@ -384,7 +388,8 @@ export function trackerSheetComments(deps: Deps, core: TrackerCore, sheetAccess:
       const record = (await records(tenant, tracker.id, ['comment', SHEET_KINDS.out])).find(row => row.id === recordId)
       if (!record?.detail?.sheet) return
       if (!target) return
-      if (target.excel) return void (await setSheet({ ...record, tenant_id: tenant }, { ...record.detail.sheet, state: 'excel' }))
+      if (target.excel)
+        return void (await setSheet({ ...record, tenant_id: tenant }, { ...record.detail.sheet, state: 'excel' }))
       const grid = await readTab(target.access.token, target.source)
       const index = sheetCellIndex(grid, target.source.key_header, target.source.header_map || {})
       const read = await sheetPosts(target.access.token, target.source)
@@ -415,7 +420,10 @@ export function trackerSheetComments(deps: Deps, core: TrackerCore, sheetAccess:
         await batch(target.access.token, target.source, [
           { updateCommentPost: { commentId: sheet.threadId, postId: sheet.postId, content: text } },
         ])
-        await setSheet({ ...record, tenant_id: tenant, detail: { ...record.detail, text: change.text } }, { ...sheet, text })
+        await setSheet(
+          { ...record, tenant_id: tenant, detail: { ...record.detail, text: change.text } },
+          { ...sheet, text },
+        )
       }
     } catch (error) {
       log(change === 'deleted' ? 'deleting a comment in the Sheet' : 'editing a comment in the Sheet', error)
