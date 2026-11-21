@@ -1,3 +1,6 @@
+import type { RowComment } from './trackerComments'
+import { CellCommentBox, CellCommentTip } from './CellComments'
+import { cellCommentMap, cellEntries, cellKey, cellTaskId } from './cellComments'
 import GitTicketsPanel from './GitTicketsPanel'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -1509,15 +1512,40 @@ export default function TrackerScreen(props: Props) {
   const progress = useMemo(() => progressOf(columns, rows), [columns, rows])
   // How many comments each row has, shown beside the row number. Loaded once; kept up to date as comments are added.
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
+  // Comments on single cells (the tracker's own), by cell: the grid shows a corner and a tooltip for them.
+  const [cellOwn, setCellOwn] = useState<Map<string, RowComment[]>>(() => new Map())
   useEffect(() => {
     const controller = new AbortController()
     setCommentCounts({})
+    setCellOwn(new Map())
     trackerApi
       .commentCounts(trackerId, controller.signal)
-      .then(result => setCommentCounts(result.counts || {}))
+      .then(result => {
+        setCommentCounts(result.counts || {})
+        setCellOwn(cellCommentMap(result.cells || []))
+      })
       .catch(() => undefined)
     return () => controller.abort()
   }, [trackerId])
+  /** A row's comments changed in its panel: its cells' corners follow. */
+  const rowCommentsChanged = useCallback((rowId: string, comments: RowComment[]) => {
+    setCellOwn(current => {
+      const next = new Map([...current].filter(([key]) => !key.startsWith(`${rowId}|`)))
+      for (const [key, list] of cellCommentMap(comments.map(comment => ({ ...comment, rowId })))) next.set(key, list)
+      return next
+    })
+  }, [])
+  // The cell under the pointer (tooltip), and the cell being commented on (box).
+  const [cellTip, setCellTip] = useState<{ rowId: string; columnId: string; anchor: DOMRect } | null>(null)
+  const [cellBox, setCellBox] = useState<{ rowId: string; columnId: string; anchor: DOMRect } | null>(null)
+  const closeCellBox = useCallback(() => setCellBox(null), [])
+  /** The Task or Subtask linked to a cell: its comments are the cell's (see cellComments.ts). */
+  const cellTask = (row: TrackerRow, columnId: string) => {
+    const id = cellTaskId(row, columnId, columns[0]?.id || '', cellLinks)
+    return id ? lookup.task(id) : undefined
+  }
+  const cellComments = (row: TrackerRow, columnId: string) =>
+    cellEntries(cellOwn.get(cellKey(row.id, columnId)) || [], cellTask(row, columnId))
   const totalAnchor = useRef<HTMLElement | null>(null)
   const [totalFor, setTotalFor] = useState('')
   const setTotal = async (column: TrackerColumn, kind: TotalKind | null) => {
@@ -2790,6 +2818,16 @@ export default function TrackerScreen(props: Props) {
           links={linkMap}
           totals={totals}
           commentCounts={commentCounts}
+          cellComments={(row, column) => cellComments(row, column.id).length}
+          onCellTip={(row, column, cell) =>
+            setCellTip(cell ? { rowId: row.id, columnId: column.id, anchor: cell.getBoundingClientRect() } : null)
+          }
+          onCellComment={
+            canEdit
+              ? (row, column, cell) =>
+                  setCellBox({ rowId: row.id, columnId: column.id, anchor: cell.getBoundingClientRect() })
+              : undefined
+          }
           onPickTotal={
             canEdit
               ? (column, anchor) => {
@@ -3389,8 +3427,58 @@ export default function TrackerScreen(props: Props) {
           onHighlight={(row, color) => void highlight([row.id], color)}
           currentUserId={props.currentUserId}
           onCommentCount={(rowId, count) => setCommentCounts(current => ({ ...current, [rowId]: count }))}
+          onCommentsChanged={rowCommentsChanged}
         />
       )}
+
+      {cellTip &&
+        !cellBox &&
+        (() => {
+          const row = rows.find(item => item.id === cellTip.rowId)
+          const column = columns.find(item => item.id === cellTip.columnId)
+          const entries = row && column ? cellComments(row, column.id) : []
+          if (!row || !column || !entries.length) return null
+          return (
+            <CellCommentTip
+              anchor={cellTip.anchor}
+              entries={entries}
+              columnName={column.name}
+              taskTitle={cellTask(row, column.id)?.title}
+            />
+          )
+        })()}
+      {cellBox &&
+        (() => {
+          const row = rows.find(item => item.id === cellBox.rowId)
+          const column = columns.find(item => item.id === cellBox.columnId)
+          if (!row || !column) return null
+          const task = cellTask(row, column.id)
+          return (
+            <CellCommentBox
+              key={cellKey(row.id, column.id)}
+              trackerId={trackerId}
+              rowId={row.id}
+              columnId={column.id}
+              columnName={column.name}
+              anchor={cellBox.anchor}
+              entries={cellComments(row, column.id)}
+              task={task ? { id: task.id, title: task.title, kind: task.parentTaskId ? 'Subtask' : 'Task' } : undefined}
+              onClose={closeCellBox}
+              onCellComment={comment => {
+                setCellOwn(current => {
+                  const key = cellKey(row.id, column.id)
+                  return new Map(current).set(key, [...(current.get(key) || []), comment])
+                })
+                setCommentCounts(current => ({ ...current, [row.id]: (current[row.id] || 0) + 1 }))
+                say('info', `Comment added to ${column.name}.`)
+              }}
+              onTaskComment={async () => {
+                await props.onTasksChanged?.()
+                say('info', `Comment added to the ${task?.parentTaskId ? 'Subtask' : 'Task'}.`)
+              }}
+            />
+          )
+        })()}
 
       {conflict && (
         <Dialog title="Changed in the Google Sheet" eyebrow="Two-way sync" onClose={() => setConflict(null)}>

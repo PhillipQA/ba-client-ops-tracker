@@ -1,3 +1,4 @@
+import type { RowComment } from './trackerComments'
 import TrackerComments from './TrackerComments'
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Copy, ExternalLink, Eye, EyeOff, ListChecks, LockKeyhole, Search, Trash2, X } from 'lucide-react'
@@ -37,6 +38,8 @@ type Props = {
   currentUserId?: string
   /** Tells the grid how many comments a row has now. */
   onCommentCount?: (rowId: string, count: number) => void
+  /** The row's comments changed (added, edited or deleted here): the grid updates its cell corners. */
+  onCommentsChanged?: (rowId: string, comments: RowComment[]) => void
 }
 
 /** What the history says happened, in words. Person cells hold account ids, which are shown as names. */
@@ -852,6 +855,8 @@ export default function TrackerRowPanel(props: Props) {
           isAdmin={props.isAdmin}
           canComment={canEdit}
           onCount={props.onCommentCount}
+          columnNames={Object.fromEntries(tracker.columns.map(column => [column.id, column.name]))}
+          onChanged={props.onCommentsChanged}
         />
 
         <section className="trk-card" aria-label="History">

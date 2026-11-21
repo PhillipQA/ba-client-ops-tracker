@@ -84,6 +84,12 @@ type Props = {
   customCell?: (row: TrackerRow, column: TrackerColumn) => ReactNode
   /** How many comments each row has; a row with some shows the count beside its number. */
   commentCounts?: Readonly<Record<string, number>>
+  /** How many comments a cell has (its own, and its linked task's): above 0, the cell shows a corner. */
+  cellComments?: (row: TrackerRow, column: TrackerColumn) => number
+  /** The pointer is over a cell with comments (its element), or left it (null): show or hide the tooltip. */
+  onCellTip?: (row: TrackerRow, column: TrackerColumn, cell: HTMLElement | null) => void
+  /** Right-click on a cell, or Ctrl+Alt+M on the active cell: write a comment on it. */
+  onCellComment?: (row: TrackerRow, column: TrackerColumn, cell: HTMLElement) => void
   /** What each column shows in the totals row, by column id. Absent: no totals row. */
   totals?: ReadonlyMap<string, TotalShown>
   /** Opens the list of totals for a column (people who can change the columns). */
@@ -303,6 +309,13 @@ export default function TrackerGrid(props: Props) {
       return
     }
     if (!active) return
+    // Ctrl+Alt+M comments on the active cell, as in Google Sheets.
+    if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 'm' && props.onCellComment) {
+      event.preventDefault()
+      const cell = scroller.current?.querySelector<HTMLElement>('.trk-cell.active')
+      if (cell) props.onCellComment(row, column, cell)
+      return
+    }
     if (event.key === 'Enter' || event.key === 'F2') {
       event.preventDefault()
       beginEdit(row, column)
@@ -457,6 +470,8 @@ export default function TrackerGrid(props: Props) {
           if (on) classes.push('active')
           if (isEditing) classes.push('editing')
           const custom = isEditing ? null : (props.customCell?.(row, column) ?? null)
+          const noted = props.cellComments?.(row, column) || 0
+          if (noted) classes.push('trk-noted')
           return (
             <div
               key={column.id}
@@ -465,6 +480,19 @@ export default function TrackerGrid(props: Props) {
               className={classes.join(' ')}
               data-column={column.id}
               style={place ? { left: place.left } : undefined}
+              onMouseEnter={noted && props.onCellTip ? event => props.onCellTip!(row, column, event.currentTarget) : undefined}
+              onMouseLeave={noted && props.onCellTip ? () => props.onCellTip!(row, column, null) : undefined}
+              onContextMenu={
+                props.onCellComment && !isEditing
+                  ? event => {
+                      event.preventDefault()
+                      setActive({ rowId: row.id, columnId: column.id })
+                      setEditing(null)
+                      props.onCellTip?.(row, column, null)
+                      props.onCellComment!(row, column, event.currentTarget)
+                    }
+                  : undefined
+              }
               onClick={() => {
                 if (
                   on &&
@@ -562,6 +590,13 @@ export default function TrackerGrid(props: Props) {
                     )
                   return null
                 })()}
+              {noted > 0 && !isEditing && (
+                <span
+                  className="trk-comment-corner"
+                  role="img"
+                  aria-label={`${noted} comment${noted === 1 ? '' : 's'} on this cell`}
+                />
+              )}
               {column.id === first && !isEditing && (
                 <>
                   <button

@@ -14,10 +14,13 @@ export type RowComment = {
   mentions: string[]
   at: string
   editedAt?: string
+  /** Set when the comment is on one cell of the row: that cell's column. */
+  columnId?: string
 }
 export type Mentionable = { id: string; name: string }
 
-export const COMMENT_LIMITS = { chars: 2000, mentions: 10, perRow: 200 }
+/** cellsListed: how many cell comments a tracker sends to the grid for its corners and tooltips. */
+export const COMMENT_LIMITS = { chars: 2000, mentions: 10, perRow: 200, cellsListed: 3000 }
 
 /** The comment as typed, trimmed and capped; empty when there is nothing to post. */
 export const cleanCommentText = (raw: unknown) =>
