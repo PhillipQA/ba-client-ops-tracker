@@ -11,6 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: cell comments sync with the Google Sheet or Excel file
+- **Google Sheet → tracker**: on every sync, each comment and reply on a cell of the synced tab shows on the matching tracker cell (corner and tooltip, labelled "Google Sheet"), and in the row's Comments, read-only. Edits and deletes in the Sheet follow on the next sync; resolved threads are hidden.
+- **Tracker → Google Sheet**: a comment written on a cell of a row that came from the Sheet is posted to that cell in the Sheet, as a reply when the cell has an open thread. It is posted by the Google account that connected the Sheet, with the writer's name in front ("Phillip: retest Monday"). Editing or deleting it in the tracker changes it in the Sheet too. It is sent right away, and retried on the next sync when Google can't be reached; the connection needs permission to edit Sheets.
+- Comments written on a Task or Subtask cell (saved in the task) are sent to the Sheet the same way.
+- **Excel files**: comments and notes come to the tracker; nothing is written to the file.
+- A Sheet comment on a cell with a Task or Subtask is also added once to that task's Comments ("Ana in the Google Sheet: …").
+- Comments on rows or columns the tracker doesn't follow stay in the Sheet. The sync summary counts new comments.
+- No database update needed. Needs Phase 1 (cell comments).
+
 ### Trackers: comments on a cell, like Google Sheets
 - **Right-click a cell › comment box**, or press **Ctrl+Alt+M** on the selected cell. A cell with comments shows an orange **corner**; **hover** it to read them in a tooltip (the latest four, with how many earlier).
 - **A cell with a Task or Subtask** (its chip shows in the cell, or the row's Task in the first column) talks in that task's Comments: what you write on the cell is saved as a comment on the task, and the tooltip shows the task's comments. One conversation, kept in Tasks.

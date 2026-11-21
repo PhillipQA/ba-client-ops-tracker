@@ -221,11 +221,17 @@ export default function TrackerComments({
                   {comment.columnId && (
                     <span className="trk-comment-cell">on {columnNames?.[comment.columnId] || 'a removed column'}</span>
                   )}
+                  {comment.source === 'sheet' && (
+                    <span className="trk-comment-cell">
+                      from the {comment.excel ? 'Excel file' : 'Google Sheet'}
+                      {comment.resolved ? ' · resolved' : ''}
+                    </span>
+                  )}
                   <time dateTime={comment.at}>
                     {niceTime(comment.at)}
                     {comment.editedAt ? ' · edited' : ''}
                   </time>
-                  {canComment && (comment.authorId === currentUserId || isAdmin) && (
+                  {canComment && comment.source !== 'sheet' && (comment.authorId === currentUserId || isAdmin) && (
                     <span className="trk-comment-tools">
                       {comment.authorId === currentUserId && (
                         <button type="button" aria-label="Edit comment" onClick={() => setEditing(comment.id)}>
@@ -249,6 +255,9 @@ export default function TrackerComments({
                     </span>
                   )}
                 </span>
+                {comment.sheet?.state === 'failed' && (
+                  <small className="trk-field-error">Not in the Google Sheet: {comment.sheet.error || 'it could not be sent.'}</small>
+                )}
                 <p>
                   {commentParts(comment.text, names).map((part, index) =>
                     part.mention ? (

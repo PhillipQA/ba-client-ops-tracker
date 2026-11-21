@@ -38,12 +38,15 @@ import { trackerAutomations } from './tracker-automations'
 import { trackerRollupRoutes } from './tracker-rollup'
 import { trackerRecentRoutes } from './tracker-recent'
 import { trackerGitTickets } from './tracker-git-tickets'
+import { trackerSheetComments } from './tracker-sheet-comments'
 export { secretRuleChanges } from './tracker-common'
 
 export function registerTrackerRoutes(app: Express, deps: Deps) {
   const core = trackerCore(deps)
   const sheetAccess = trackerSource(deps, core)
-  const sync = trackerSync(deps, core, sheetAccess)
+  // Cell comments with the connected Google Sheet (both ways) or Excel file (read only).
+  const sheetComments = trackerSheetComments(deps, core, sheetAccess)
+  const sync = trackerSync(deps, core, sheetAccess, sheetComments)
   const sheetWrite = trackerSheetWrite(core, sheetAccess)
   const follow = trackerFollow(core, sheetAccess, sheetWrite)
   trackerSourceRoutes(app, deps, core, sheetAccess, sync, sheetWrite, follow)
@@ -55,7 +58,10 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   const gitTickets = trackerGitTickets(deps, core, deps.timeZone || 'Asia/Manila')
   gitTickets.routes(app)
   trackerRowRoutes(app, core, sheetAccess, sheetWrite, automations, gitTickets.hiddenSourceKeys)
-  trackerCommentRoutes(app, deps, core)
+  trackerCommentRoutes(app, deps, core, {
+    ...sheetComments,
+    sourceOf: (tenant, trackerId) => sheetAccess.sourceRow(tenant, trackerId),
+  })
   const { db, check, trackerVisibleIn, workspace, trackerOut, rowOut, columnsOf } = core
   const { allRows } = sheetAccess
   const seedsRows = trackerSeedsRows(deps, core, sheetAccess, sheetWrite)

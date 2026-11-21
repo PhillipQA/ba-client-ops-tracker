@@ -104,7 +104,7 @@ test('the tooltip shows the latest few and counts the rest', () => {
 
 test('comments are kept on their cell, and the grid offers the corner, tooltip and box', () => {
   const server = read('server/trackers/tracker-comments.ts')
-  assert.match(server, /detail: columnId \? \{ text, mentions, columnId \} : \{ text, mentions \}/)
+  assert.match(server, /\.\.\.\(columnId \? \{ columnId \} : \{\}\)/)
   assert.match(server, /That column is no longer in this tracker/)
   assert.match(
     server,

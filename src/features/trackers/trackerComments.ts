@@ -16,6 +16,16 @@ export type RowComment = {
   editedAt?: string
   /** Set when the comment is on one cell of the row: that cell's column. */
   columnId?: string
+  /** Brought from the tracker's Google Sheet or Excel file: read-only in the tracker. */
+  source?: 'sheet'
+  /** From an Excel file (otherwise a Google Sheet). */
+  excel?: boolean
+  /** Its thread was resolved in the Sheet. */
+  resolved?: boolean
+  /** The task comment it was copied to (a Sheet comment on a task cell). */
+  taskCommentId?: string
+  /** A tracker comment on a synced cell: how far it got to the Google Sheet. */
+  sheet?: { state: 'pending' | 'sent' | 'failed' | 'excel'; error?: string }
 }
 export type Mentionable = { id: string; name: string }
 

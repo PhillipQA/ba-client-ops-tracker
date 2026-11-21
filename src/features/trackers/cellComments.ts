@@ -5,6 +5,8 @@
  *   the cell is saved as a task comment, and the tooltip shows the task's comments. One conversation, kept in Tasks.
  * - Any other cell keeps its own comments in the tracker (row comments with a column), like Google Sheets.
  * - A cell that had its own comments before a task was linked keeps them; the tooltip shows both.
+ * - Comments from the tracker's Google Sheet or Excel file show too (sheetComments.ts); resolved threads do not. One
+ *   copied into the cell's task is shown once.
  *
  * Pure helpers, shared by the grid and the tests.
  */
@@ -48,23 +50,36 @@ export type CellTipEntry = {
   author: string
   at: string
   text: string
-  /** 'task' when it is one of the linked task's comments. */
-  source: 'cell' | 'task'
+  /** 'task': the linked task's comment. 'sheet': from the Google Sheet or Excel file. */
+  source: 'cell' | 'task' | 'sheet'
   edited?: boolean
+  /** A tracker comment not (yet) in the Google Sheet: why. */
+  notInSheet?: string
+  excel?: boolean
 }
 
 /** Everything said on a cell, oldest first: its own comments and its task's. */
 export function cellEntries(own: readonly RowComment[], task: Pick<WorkItem, 'comments'> | undefined | null) {
+  const shown = own.filter(comment => !comment.resolved)
+  const copies = new Set(own.map(comment => comment.taskCommentId).filter(Boolean))
   const entries: CellTipEntry[] = [
-    ...own.map(comment => ({
+    ...shown.map(comment => ({
       id: comment.id,
       author: comment.authorName || 'Someone',
       at: comment.at,
       text: comment.text,
-      source: 'cell' as const,
+      source: comment.source === 'sheet' ? ('sheet' as const) : ('cell' as const),
       ...(comment.editedAt ? { edited: true } : {}),
+      ...(comment.excel ? { excel: true } : {}),
+      ...(comment.sheet?.state === 'failed'
+        ? { notInSheet: comment.sheet.error || 'Not sent to the Google Sheet.' }
+        : comment.sheet?.state === 'pending'
+          ? { notInSheet: 'Not in the Google Sheet yet.' }
+          : {}),
     })),
-    ...peopleComments(task).map(comment => ({
+    ...peopleComments(task)
+      .filter(comment => !copies.has(comment.id))
+      .map(comment => ({
       id: comment.id,
       author: comment.createdByName || 'Someone',
       at: comment.createdAt,

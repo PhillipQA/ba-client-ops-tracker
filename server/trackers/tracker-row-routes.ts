@@ -469,7 +469,7 @@ export function trackerRowRoutes(
       res.json({
         // Comments are kept in the same table and have their own list.
         changes: (r.data || [])
-          .filter((entry: any) => entry.kind !== 'comment')
+          .filter((entry: any) => !['comment', 'sheet_comment', 'sheet_out'].includes(entry.kind))
           .slice(0, HISTORY)
           .map((entry: any) => ({
             id: entry.id,

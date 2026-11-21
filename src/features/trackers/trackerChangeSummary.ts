@@ -2,7 +2,8 @@
  * One line for a tracker history record, for the Action Center's "Recent tracker changes". Kinds that are private
  * (Secret values set or revealed) or personal (snoozed reminders) are not listed at all.
  */
-export const HIDDEN_CHANGE_KINDS = ['secrets', 'reveal', 'snooze']
+// sheet_comment and sheet_out are cell comments kept with the Google Sheet (tracker-sheet-comments.ts), not changes.
+export const HIDDEN_CHANGE_KINDS = ['secrets', 'reveal', 'snooze', 'sheet_comment', 'sheet_out']
 
 const quote = (value: unknown) => {
   const text = Array.isArray(value) ? value.join(', ') : String(value ?? '')

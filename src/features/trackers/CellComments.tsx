@@ -52,12 +52,16 @@ export function CellCommentTip({
           <li key={`${entry.source}:${entry.id}`}>
             <span className="trk-cell-tip-who">
               <strong>{entry.author}</strong>
+              {entry.source === 'sheet' && (
+                <span className="trk-cell-tip-from">{entry.excel ? 'Excel' : 'Google Sheet'}</span>
+              )}
               <time dateTime={entry.at}>
                 {niceTime(entry.at)}
                 {entry.edited ? ' · edited' : ''}
               </time>
             </span>
             <span>{tipText(entry.text)}</span>
+            {entry.notInSheet && <small className="trk-cell-tip-more">{entry.notInSheet}</small>}
           </li>
         ))}
       </ol>
@@ -127,7 +131,12 @@ export function CellCommentBox({
     setError('')
     try {
       if (task) {
-        await addTaskComment(task.id, text)
+        const saved = await addTaskComment(task.id, text)
+        // On a row from the tracker's Google Sheet, the comment goes to that cell in the Sheet too.
+        const mine = [...(saved.item?.comments || [])].reverse().find(comment => comment.text === text.trim())
+        await trackerApi
+          .sheetComment(trackerId, rowId, { columnId, text, taskCommentId: mine?.id || '' })
+          .catch(() => undefined)
         await onTaskComment()
       } else {
         const { comment } = await trackerApi.addComment(trackerId, rowId, { text, mentions, columnId })
@@ -168,6 +177,9 @@ export function CellCommentBox({
             <li key={`${entry.source}:${entry.id}`}>
               <span className="trk-cell-tip-who">
                 <strong>{entry.author}</strong>
+                {entry.source === 'sheet' && (
+                  <span className="trk-cell-tip-from">{entry.excel ? 'Excel' : 'Google Sheet'}</span>
+                )}
                 <time dateTime={entry.at}>{niceTime(entry.at)}</time>
               </span>
               <span>{tipText(entry.text)}</span>
