@@ -111,14 +111,14 @@ export function CellCommentBox({
     const away = (event: MouseEvent) => {
       if (box.current && !box.current.contains(event.target as Node)) onClose()
     }
-    const escape = (event: KeyboardEvent) => {
+    const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
     document.addEventListener('mousedown', away)
-    document.addEventListener('keydown', escape)
+    document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', away)
-      document.removeEventListener('keydown', escape)
+      document.removeEventListener('keydown', onKey)
     }
   }, [onClose])
 
