@@ -22,6 +22,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Format diff (temporary)
+        run: |
+          npx biome format --write server/trackers/tracker-comments.ts server/trackers/tracker-row-routes.ts server/trackers/tracker-sheet-comments.ts server/trackers/tracker-sync.ts server/trackers/trackers.ts server/trackers/xlsx.ts src/features/trackers/CellComments.tsx src/features/trackers/TrackerComments.tsx src/features/trackers/cellComments.ts src/features/trackers/sheetComments.ts src/features/trackers/trackerApi.ts src/features/trackers/trackerChangeSummary.ts src/features/trackers/trackerComments.ts src/features/trackers/trackerModel.ts src/features/trackers/trackerSync.ts src/features/trackers/trackers.css tests/cell-comments.test.ts tests/sheet-comments.test.ts  || true
+          git diff > format.diff || true
+          echo "FORMAT-DIFF-START"
+          base64 -w0 format.diff
+          echo
+          echo "FORMAT-DIFF-END"
+          git checkout -- .
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check
