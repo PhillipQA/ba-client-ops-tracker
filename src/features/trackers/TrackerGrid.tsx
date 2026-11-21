@@ -480,7 +480,9 @@ export default function TrackerGrid(props: Props) {
               className={classes.join(' ')}
               data-column={column.id}
               style={place ? { left: place.left } : undefined}
-              onMouseEnter={noted && props.onCellTip ? event => props.onCellTip!(row, column, event.currentTarget) : undefined}
+              onMouseEnter={
+                noted && props.onCellTip ? event => props.onCellTip!(row, column, event.currentTarget) : undefined
+              }
               onMouseLeave={noted && props.onCellTip ? () => props.onCellTip!(row, column, null) : undefined}
               onContextMenu={
                 props.onCellComment && !isEditing

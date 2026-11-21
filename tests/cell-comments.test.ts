@@ -106,7 +106,10 @@ test('comments are kept on their cell, and the grid offers the corner, tooltip a
   const server = read('server/trackers/tracker-comments.ts')
   assert.match(server, /detail: columnId \? \{ text, mentions, columnId \} : \{ text, mentions \}/)
   assert.match(server, /That column is no longer in this tracker/)
-  assert.match(server, /\.\.\.\(entry\.detail\?\.columnId \? \{ columnId: String\(entry\.detail\.columnId\) \} : \{\}\)/)
+  assert.match(
+    server,
+    /\.\.\.\(entry\.detail\?\.columnId \? \{ columnId: String\(entry\.detail\.columnId\) \} : \{\}\)/,
+  )
   assert.match(server, /res\.json\(\{ counts, cells \}\)/)
   const grid = read('src/features/trackers/TrackerGrid.tsx')
   assert.match(grid, /className="trk-comment-corner"/)
