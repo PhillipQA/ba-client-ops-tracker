@@ -331,6 +331,8 @@ export type SyncReport = {
   newHeaders: string[]
   /** Sheet columns that became tracker columns in this sync. */
   addedColumns?: string[]
+  /** Cell comments brought from the Sheet or Excel file in this sync (new, edited, removed there). */
+  comments?: { added: number; updated: number; removed: number }
   problems: number
   /** An Excel file's Drive modified time when it was read: a sync is skipped while the file is unchanged. */
   fileVersion?: string

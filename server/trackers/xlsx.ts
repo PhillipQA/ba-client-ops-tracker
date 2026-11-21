@@ -4,6 +4,7 @@
  * No dependencies: an .xlsx is a zip of XML files, unpacked with zlib.
  */
 import { inflateRawSync } from 'node:zlib'
+import type { SheetPost } from '../../src/features/trackers/sheetComments'
 
 /** Larger files are refused before they are read. */
 export const XLSX_MAX_BYTES = 20 * 1024 * 1024
@@ -119,6 +120,8 @@ export type Workbook = {
   tabs: { title: string; rows: number; columns: number }[]
   /** One tab's cells as text, header row first; null when there is no tab with that name. */
   grid: (title: string, limits?: { rows?: number; columns?: number }) => string[][] | null
+  /** One tab's comments: threaded comments with their replies, and older notes. Empty when it has none. */
+  comments: (title: string) => SheetPost[]
 }
 
 export function readXlsx(data: Buffer): Workbook {
@@ -186,8 +189,96 @@ export function readXlsx(data: Buffer): Workbook {
     }
   }
 
+  /** A part's relationships (targets resolved from the part's folder), by type. */
+  const relationsOf = (path: string) => {
+    const folder = path.slice(0, path.lastIndexOf('/'))
+    const rels = part(`${folder}/_rels/${path.slice(folder.length + 1)}.rels`)
+    return [...rels.matchAll(/<Relationship\b([^>]*?)\/?>/g)].map(match => {
+      const target = attr(match[1], 'Target') || ''
+      const parts = (target.startsWith('/') ? target.slice(1) : `${folder}/${target}`).split('/')
+      const resolved: string[] = []
+      for (const item of parts) {
+        if (item === '..') resolved.pop()
+        else if (item && item !== '.') resolved.push(item)
+      }
+      return { type: attr(match[1], 'Type') || '', target: resolved.join('/') }
+    })
+  }
+  const cellOf = (ref: string) => ({
+    rowIndex: Math.max(0, Number(/\d+/.exec(ref)?.[0] || 1) - 1),
+    columnIndex: Math.max(0, columnIndex(ref)),
+  })
+
   return {
     tabs: sheets.filter(sheet => !sheet.hidden).map(sheet => ({ title: sheet.title, ...dimension(sheet.path) })),
+    comments(title) {
+      const sheet = sheets.find(item => item.title === title) || sheets.find(item => item.title.trim() === title.trim())
+      if (!sheet) return []
+      const relations = relationsOf(sheet.path)
+      const posts: SheetPost[] = []
+      // Threaded comments (Excel 365): people come from the workbook's persons part.
+      const threaded = relations.filter(relation => /\/threadedComment$/.test(relation.type))
+      if (threaded.length) {
+        const people = new Map<string, string>()
+        for (const relation of relationsOf('xl/workbook.xml').filter(item => /\/person$/.test(item.type)))
+          for (const match of part(relation.target).matchAll(/<person\b([^>]*?)\/?>/g))
+            people.set(attr(match[1], 'id') || '', attr(match[1], 'displayName') || 'Someone')
+        const all: { attrs: string; text: string }[] = []
+        for (const relation of threaded)
+          for (const match of part(relation.target).matchAll(
+            /<threadedComment\b([^>]*?)(?:\/>|>([\s\S]*?)<\/threadedComment>)/g,
+          ))
+            all.push({ attrs: match[1], text: decode(/<text>([\s\S]*?)<\/text>/.exec(match[2] || '')?.[1] || '') })
+        const resolvedThreads = new Set(
+          all.filter(item => /^(1|true)$/.test(attr(item.attrs, 'done') || '')).map(item => attr(item.attrs, 'id')),
+        )
+        for (const item of all) {
+          const id = attr(item.attrs, 'id') || ''
+          const parent = attr(item.attrs, 'parentId') || ''
+          const text = item.text.trim()
+          if (!id || !text) continue
+          const at = attr(item.attrs, 'dT') || ''
+          posts.push({
+            threadId: parent || id,
+            postId: id,
+            head: !parent,
+            ...cellOf(attr(item.attrs, 'ref') || 'A1'),
+            author: people.get(attr(item.attrs, 'personId') || '') || 'Someone',
+            me: false,
+            text,
+            createdAt: at,
+            updatedAt: at,
+            resolved: resolvedThreads.has(parent || id),
+          })
+        }
+      }
+      // Notes (older comments). Excel also writes each threaded comment as a note: those cells are skipped.
+      const threadedCells = new Set(posts.map(post => `${post.rowIndex}:${post.columnIndex}`))
+      for (const relation of relations.filter(item => /\/comments$/.test(item.type))) {
+        const xml = part(relation.target)
+        const authors = [...xml.matchAll(/<author>([\s\S]*?)<\/author>/g)].map(match => decode(match[1]))
+        for (const match of xml.matchAll(/<comment\b([^>]*?)>([\s\S]*?)<\/comment>/g)) {
+          const ref = attr(match[1], 'ref') || ''
+          const place = cellOf(ref)
+          const text = textOf(match[2]).trim()
+          if (!ref || !text || threadedCells.has(`${place.rowIndex}:${place.columnIndex}`)) continue
+          const id = `note:${ref}`
+          posts.push({
+            threadId: id,
+            postId: id,
+            head: true,
+            ...place,
+            author: authors[Number(attr(match[1], 'authorId') || 0)] || 'Someone',
+            me: false,
+            text,
+            createdAt: '',
+            updatedAt: '',
+            resolved: false,
+          })
+        }
+      }
+      return posts
+    },
     grid(title, limits = {}) {
       const sheet = sheets.find(item => item.title === title) || sheets.find(item => item.title.trim() === title.trim())
       if (!sheet) return null

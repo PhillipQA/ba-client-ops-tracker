@@ -23,8 +23,14 @@ import { type RowChange, tickChanges, cellSubtaskPatches } from '../../src/featu
 import type { Deps, User } from './tracker-common'
 import type { TrackerCore } from './tracker-core'
 import type { TrackerSheetAccess, GanttState } from './tracker-source'
+import type { TrackerSheetComments } from './tracker-sheet-comments'
 
-export function trackerSync(deps: Deps, core: TrackerCore, sheetAccess: TrackerSheetAccess) {
+export function trackerSync(
+  deps: Deps,
+  core: TrackerCore,
+  sheetAccess: TrackerSheetAccess,
+  sheetComments?: TrackerSheetComments,
+) {
   const { db, now, columnsOf, check, record, workspace, mergeCells, touch } = core
   const {
     sourceRow,
@@ -71,12 +77,14 @@ export function trackerSync(deps: Deps, core: TrackerCore, sheetAccess: TrackerS
     }
     let grid: string[][]
     let token = ''
+    let scope: unknown = ''
     let excel = false
     let fileVersion = ''
     let gantt: GanttState | null = null
     try {
       const access = await googleFor(tenant, source.connected_by)
       token = access.token
+      scope = access.scope
       if (!canReadSheets(access.scope))
         throw new TrackerError(
           `${source.connected_by_name || 'The person who connected this Sheet'} needs to allow Google Sheets again. Anyone who can open the Sheet can reconnect it.`,
@@ -291,8 +299,21 @@ export function trackerSync(deps: Deps, core: TrackerCore, sheetAccess: TrackerS
         .in('id', planned.missing)
       sourceCheck(saved.error)
     }
+    // Cell comments: the tab's comments come to the tracker's cells, and comments written in the tracker go to the
+    // Sheet (Google Sheets only). Never fails the sync.
+    const comments = sheetComments
+      ? await sheetComments
+          .syncComments({ tenant, tracker: { ...tracker, columns }, source, grid, token, scope, excel, user })
+          .catch((error: any) => {
+            console.error('Syncing cell comments failed:', error?.message || error)
+            return null
+          })
+      : null
     const report = {
       ...planned.report,
+      ...(comments && (comments.added || comments.updated || comments.removed)
+        ? { comments: { added: comments.added, updated: comments.updated, removed: comments.removed } }
+        : {}),
       ...(grown.added.length ? { addedColumns: grown.added } : {}),
       ...(fileVersion ? { fileVersion } : {}),
     }
