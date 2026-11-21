@@ -28,6 +28,7 @@ import {
 import { SQL_LIMITS } from '../../src/features/reports/explorer/sqlEngine'
 import { runAiJson } from './parse-ai-json'
 import { runTenantAi } from './tenant-ai'
+import { AI_UNAVAILABLE } from './ai-messages'
 
 type Ai = { secret: string; config: unknown }
 export type SqlAssistDeps = {
@@ -93,8 +94,7 @@ export function registerSqlAssistRoutes(app: Express, deps: SqlAssistDeps = {}) 
         throw new AssistError('The tables are missing.')
       if (mode === 'notes' && !results) throw new AssistError('Run the report first.')
       const ai = await activeAi(String(tenantIdForUser(user))).catch(() => null)
-      if (!ai)
-        throw new AssistError('Turn on the BA Assistant in Account Settings › AI Agent Manager to use Jarvis.', 409)
+      if (!ai) throw new AssistError(AI_UNAVAILABLE.ba_assistant, 409)
       const today = dateKeyInTimeZone(deps.now ? deps.now() : new Date(), followUpTimeZone)
       const answer = await runAiJson(
         extra =>

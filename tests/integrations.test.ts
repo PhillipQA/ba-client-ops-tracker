@@ -207,18 +207,21 @@ test('real HTTP routes scope writes from authenticated tenant and deny unauthori
     for (const role of ['viewer', 'no-settings', 'platform'])
       assert.equal((await call('/api/account/integrations', role)).status, 403)
     assert.equal((await call('/api/account/integrations', 'admin', 'GET', undefined, 'suspended')).status, 403)
-    assert.equal(
-      (
-        await call('/api/account/integrations/openai', 'admin', 'PUT', {
-          secret: secretA,
-          tenant_id: 'b',
-          organizationId: 'b',
-        })
-      ).status,
-      200,
-    )
+    // AI keys are set in Internal Admin now: an account can no longer save one.
+    const aiKey = await call('/api/account/integrations/openai', 'admin', 'PUT', {
+      secret: secretA,
+      tenant_id: 'b',
+      organizationId: 'b',
+    })
+    assert.equal(aiKey.status, 410)
+    assert.match((await aiKey.json()).error, /Internal Admin/)
+    assert.equal(await store.row('a', 'openai'), null)
     assert.equal(await store.row('b', 'openai'), null)
-    assert.equal((await store.active('a', 'openai'))?.secret, secretA)
+    const listed = await (await call('/api/account/integrations', 'admin')).json()
+    assert.deepEqual(
+      listed.integrations.map((item: any) => item.kind),
+      ['discord'],
+    )
     const payload = await (await call('/api/account/integrations', 'admin')).text()
     assert(!payload.includes(secretA))
     assert(!payload.includes('encrypted_secret'))

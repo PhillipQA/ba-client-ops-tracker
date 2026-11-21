@@ -252,15 +252,6 @@ export function tourSteps(context: TourContext): TourStep[] {
       view: 'settings',
       click: '#settings-tab-templates',
     },
-    admin && {
-      id: 'admin-agents',
-      section: 'Settings',
-      title: 'Turn on the AI agents (optional)',
-      body: 'Add an AI provider key to use the AI BA Assistant and AI-enhanced COR extraction. Everything else works without it.',
-      target: '#settings-tab-agents',
-      view: 'settings',
-      click: '#settings-tab-agents',
-    },
     context.isAdmin && {
       id: 'admin-users',
       section: 'Settings',

@@ -510,7 +510,7 @@ export default function DocumentCreation({
       if (corExtractionMode === 'ai') {
         if (!aiExtractionStatus.available)
           throw new Error(
-            'AI extraction is unavailable. Configure and enable the Document Agent in Account Settings, or use Local Extractor.',
+            'AI extraction is unavailable: Internal Admin sets up AI and turns it on for each account. Use Local Extractor instead.',
           )
         const localText = await extractCorTextLocally(corFile, progress)
         if (!job.isCurrent()) return
@@ -797,7 +797,7 @@ export default function DocumentCreation({
                   </label>
                   {!aiExtractionStatus.available && (
                     <small>
-                      AI Enhanced is unavailable. Configure and enable the Document Agent in Account Settings to use it.
+                      AI Enhanced is unavailable: Internal Admin sets up AI and turns it on for each account.
                     </small>
                   )}
                   {aiExtractionStatus.available && corExtractionMode === 'ai' && (

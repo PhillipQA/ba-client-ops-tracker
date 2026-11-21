@@ -287,7 +287,7 @@ registerIntegrationRoutes(app, {
   reconnect: reconnectDiscord,
   status: discordStatusPayload,
 })
-registerAiAgentRoutes(app, { requireAuth, requireTenant: requireTenantWorkspace, organizationById, manager: aiAgents })
+registerAiAgentRoutes(app, { requireAuth, requirePlatformAdmin, manager: aiAgents })
 registerGoogleCalendarRoutes(app, {
   db,
   requireAuth,

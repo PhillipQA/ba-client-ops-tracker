@@ -242,7 +242,8 @@ export default function RtmAiImport({
             ? 'Loading agent settings…'
             : provider?.enabled
               ? `${provider.name} · ${provider.model}`
-              : providerError || 'Enable Document Agent in Account Settings → AI Agent Manager.'}
+              : providerError ||
+                'The Document Agent isn’t available for this account. Internal Admin sets up AI and turns it on for each account.'}
         </span>
         <button
           className="secondary compact"

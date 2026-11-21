@@ -40,6 +40,7 @@ import { trackerProjectIds } from '../../src/features/trackers/trackerModel'
 import { runTenantAi } from './tenant-ai'
 import { runAiJson } from './parse-ai-json'
 import type { TrackerReader } from './assistant-trackers'
+import { AI_UNAVAILABLE } from './ai-messages'
 
 /** Trackers read for a brief: the newest ones with a Go Live Date column. */
 const BRIEF_TRACKERS = 15
@@ -228,7 +229,7 @@ export function registerBriefRoutes(app: Express, deps: BriefDeps = {}) {
       if (!ai)
         throw new BriefError(
           mayAskAi(user)
-            ? 'Turn on the BA Assistant in Account Settings › AI Agent Manager to get a written brief.'
+            ? `${AI_UNAVAILABLE.ba_assistant} The brief below is still up to date.`
             : 'Your account does not have the AI BA Assistant.',
           409,
         )

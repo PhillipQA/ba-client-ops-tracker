@@ -69,7 +69,7 @@ test('schema v43 adds the column once and grants it to Administrators Seeds does
   assert.match(migration, /43 as schema_version/)
   const schema = read('database/schema.sql')
   assert.match(schema, /seeds_exempt boolean DEFAULT false NOT NULL/)
-  assert.match(schema, /43 as schema_version/)
+  assert.ok(Number(/(\d+) as schema_version/.exec(schema)?.[1]) >= 43, 'schema.sql includes v43')
 })
 
 test('password sign-in may use the exception; Google never does; Internal Admin sets and revokes it', () => {

@@ -30,7 +30,7 @@ begin
     ,'tenant_tracker_changes','tenant_tracker_rows','tenant_tracker_sources','tenant_tracker_task_links','tenant_t
     racker_templates','tenant_trackers','tracker_evidence_files','tracker_state','user_communication_settings','us
     er_communications','user_assistant_memory','user_email_signatures','user_task_timers','user_preferences','user_github_connections','user_github_issues','user_gitlab_connect
-    ions','user_gitlab_issues','tenant_git_repository_mappings','tenant_git_tracker_tickets','tenant_git_ticket_tasks'
+    ions','user_gitlab_issues','tenant_git_repository_mappings','tenant_git_tracker_tickets','tenant_git_ticket_tasks','platform_ai_agents'
   ] loop
     if to_regclass(format('public.%I', name)) is not null then
       raise exception 'Stopped: public.% already exists, so this database is already set up. Nothing was changed.', name;
@@ -577,6 +577,22 @@ CREATE TABLE public.planner_activities (
     organization_id uuid NOT NULL
 );
 
+CREATE TABLE public.platform_ai_agents (
+    agent_id text NOT NULL,
+    provider text NOT NULL,
+    model text NOT NULL,
+    encrypted_secret text NOT NULL,
+    secret_suffix text NOT NULL,
+    is_enabled boolean DEFAULT true NOT NULL,
+    updated_by text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_ai_agents_agent_id_check CHECK ((agent_id = ANY (ARRAY['ba_assistant'::text, 'document'::text]))),
+    CONSTRAINT platform_ai_agents_model_check CHECK (((length(model) >= 1) AND (length(model) <= 100))),
+    CONSTRAINT platform_ai_agents_provider_check CHECK ((provider = ANY (ARRAY['gemini'::text, 'openai'::text, 'anthropic'::text, 'deepseek'::text]))),
+    CONSTRAINT platform_ai_agents_secret_suffix_check CHECK ((length(secret_suffix) = 4))
+);
+
 CREATE TABLE public.platform_users (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     account_key text DEFAULT 'internal_admin'::text NOT NULL,
@@ -1110,6 +1126,9 @@ ALTER TABLE ONLY public.password_reset_tokens
 ALTER TABLE ONLY public.planner_activities
     ADD CONSTRAINT planner_activities_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.platform_ai_agents
+    ADD CONSTRAINT platform_ai_agents_pkey PRIMARY KEY (agent_id);
+
 ALTER TABLE ONLY public.platform_users
     ADD CONSTRAINT platform_users_pkey PRIMARY KEY (id);
 
@@ -1611,4 +1630,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 43 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 44 as schema_version;

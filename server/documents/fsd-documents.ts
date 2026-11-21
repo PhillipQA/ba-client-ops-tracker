@@ -47,6 +47,7 @@ import {
 import { validateFsdScope } from './fsd-scope'
 import { normalizeFeaturePreview } from './fsd-feature-preview'
 import { fsdFeatureCode } from '../../src/features/documents/fsd-features'
+import { AI_UNAVAILABLE } from '../ai/ai-messages'
 
 function text(value: unknown, label: string, max = 200, required = false) {
   if (typeof value !== 'string' || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))
@@ -342,11 +343,7 @@ export function registerFsdRoutes(
     try {
       const { source, modules, features } = validateSourceAnalysisInput(req.body)
       const ai = await active(req)
-      if (!ai)
-        throw new IntegrationError(
-          'Enable and configure the Document Agent in Account Settings → AI Agent Manager to analyze this source. Your extracted text is retained.',
-          503,
-        )
+      if (!ai) throw new IntegrationError(`${AI_UNAVAILABLE.document} Your extracted text is kept.`, 503)
       let parsed: any = {
         readability: 'unreadable',
         summary: 'No readable content was extracted from this source.',
@@ -393,11 +390,7 @@ export function registerFsdRoutes(
     try {
       const input = validateInput(req.body)
       const ai = await active(req)
-      if (!ai)
-        throw new IntegrationError(
-          'Enable and configure the Document Agent in Account Settings → AI Agent Manager before generating an FSD.',
-          503,
-        )
+      if (!ai) throw new IntegrationError(AI_UNAVAILABLE.document, 503)
       let grounding: ReturnType<typeof interpretRequirements> | ReturnType<typeof groundingFromSourceAnalyses>
       if (
         req.body.sourceReviewVersion === 1 ||

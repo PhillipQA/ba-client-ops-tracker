@@ -24,7 +24,6 @@ test('the tour follows a working day: Action Center to Settings, with account se
     'settings',
     'admin-integrations',
     'admin-templates',
-    'admin-agents',
     'admin-users',
     'done',
   ])

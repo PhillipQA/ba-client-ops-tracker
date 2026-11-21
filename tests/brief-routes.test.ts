@@ -173,7 +173,7 @@ test('without an AI agent the brief still works and says how to get a written on
     assert.deepEqual(brief.body.ai, { available: false })
     const summary = await ask('POST', '/api/assistant/brief/summary', 'ana')
     assert.equal(summary.status, 409)
-    assert.match(summary.body.error, /AI Agent Manager/)
+    assert.match(summary.body.error, /Internal Admin/)
   })
 })
 

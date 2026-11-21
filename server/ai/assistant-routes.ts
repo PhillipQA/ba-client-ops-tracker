@@ -66,6 +66,7 @@ import {
   memoryPrompt,
   type MemoryNote,
 } from '../../src/features/ai/memory'
+import { AI_UNAVAILABLE } from './ai-messages'
 
 /** The AI BA assistant. */
 export function registerAssistantRoutes(
@@ -113,10 +114,7 @@ export function registerAssistantRoutes(
     } catch {
       return void res.status(503).json({ error: 'BA Assistant settings are unavailable.' })
     }
-    if (!ai)
-      return void res
-        .status(503)
-        .json({ error: 'Enable and configure the BA Assistant in Account Settings → AI Agent Manager.' })
+    if (!ai) return void res.status(503).json({ error: AI_UNAVAILABLE.ba_assistant })
 
     const message = typeof req.body?.message === 'string' ? req.body.message.trim() : ''
     if (!message) {

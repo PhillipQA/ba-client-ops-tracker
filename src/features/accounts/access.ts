@@ -29,7 +29,12 @@ export const MODULE_DEFINITIONS: { id: AppModule; label: string; description: st
     description:
       "Advanced reports: query the whole account's tasks, time, clients and trackers with SQL, and save queries. Needs Reports.",
   },
-  { id: 'ai', label: 'AI BA Assistant', description: 'Contextual AI assessment and suggested actions.' },
+  {
+    id: 'ai',
+    label: 'AI BA Assistant',
+    description:
+      'Contextual AI assessment and suggested actions, and AI in Document Creation (keys: Internal Admin › AI).',
+  },
   { id: 'settings', label: 'Settings', description: 'Account templates and integration credentials.' },
 ]
 
