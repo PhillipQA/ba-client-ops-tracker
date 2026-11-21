@@ -11,14 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
-### AI keys move to Internal Admin
-- **Database update needed: schema v44** (`database/migrations/schema-v44-platform-ai.sql`). Run it before deploying.
-- **Internal Admin › AI** holds one key, provider and model for each AI agent: the **BA Assistant** and the **Document Agent**. Every account uses them; accounts no longer enter AI keys.
-- An account gets AI when its **AI** module is on (Internal Admin › Tenant accounts › the account › Modules). That now covers AI in Document Creation (BRD, FSD, test cases, DRF and RTM) as well as the BA Assistant.
-- **Enter the keys again** in Internal Admin › AI: keys accounts saved before are no longer used. They are left in the database untouched.
-- There is **no connection test**: a wrong key shows as an error the first time someone uses AI.
-- Settings no longer has the **AI Agents** tab or the old shared AI key. Discord stays in Settings › Integrations, as before.
-- Where AI isn't available, the message now says Internal Admin sets it up, instead of pointing to Account Settings.
+### GIT Tracker, part 3: add Work Hub tickets to a GIT Tracker
+- **Add to GIT Tracker** (Work Hub › open a GitLab or GitHub ticket › GIT Trackers): pick a GIT Tracker and the ticket's rows, Tasks and Subtasks are made from the tracker's GIT template, under the Client and Project its repository is mapped to. The panel says where the work will go first. If the repository isn't mapped yet, it says so and points to Settings › Integrations › Repository mapping instead of adding.
+- Each ticket shows the GIT Trackers it's in and how adding went: **Added · 3 Tasks**, or **Failed** with the reason and a **Retry** button. A ticket is in a GIT Tracker once, however often you click.
+- Retry only makes what's still missing: every row and Task has a fixed id for that ticket, so nothing is made twice.
+- **Tickets** in a GIT Tracker: every ticket added, with its Client › Project, who added it, and its status, with Retry and a remove button. Removing a ticket deletes the rows it made; its Tasks stay in Tasks.
+- **Client filter** in the Tickets list: picking a client also narrows the grid to that client's ticket rows.
+- With per-person visibility on, people see only the tickets, and ticket rows, of clients they can see.
+- New Tasks are assigned to the person who added the ticket, when they're an Administrator or Contributor.
+- No new database update: uses v42 from part 1.
 
 ### Work Hub: due dates show again
 - Tickets with a due date showed **Due Invalid Date** in Work Hub. The database sends the date with a time attached, which the label could not read; only the day is used now, so it shows "Due in 3 days", "Overdue by 2 days" or the date. The ticket's details show the day too.
