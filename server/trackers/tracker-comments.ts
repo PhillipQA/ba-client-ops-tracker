@@ -38,7 +38,16 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
     mentions: Array.isArray(entry.detail?.mentions) ? entry.detail.mentions.map(String) : [],
     at: entry.created_at,
     ...(entry.detail?.editedAt ? { editedAt: String(entry.detail.editedAt) } : {}),
+    ...(entry.detail?.columnId ? { columnId: String(entry.detail.columnId) } : {}),
   })
+  /** A comment on one cell names its column; it must be one of the tracker's. '' is a comment on the whole row. */
+  const columnOf = (tracker: any, raw: unknown) => {
+    const columnId = typeof raw === 'string' ? raw.trim() : ''
+    if (!columnId) return ''
+    if (!columnsOf(tracker).some((column: any) => column.id === columnId))
+      throw new TrackerError('That column is no longer in this tracker.', 404)
+    return columnId
+  }
   /** Active people who can see this tracker: the ones a comment may mention. */
   function mentionable(state: any, tracker: any): Mentionable[] {
     return (Array.isArray(state?.accounts) ? state.accounts : [])
@@ -150,15 +159,23 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
       await trackerRow(tenant, id, user)
       const r = await db
         .from('tenant_tracker_changes')
-        .select('row_id')
+        .select('id,row_id,actor_id,actor_name,detail,created_at')
         .eq('tenant_id', tenant)
         .eq('tracker_id', id)
         .eq('kind', KIND)
+        .order('created_at', { ascending: true })
         .limit(5000)
       check(r.error)
       const counts: Record<string, number> = {}
-      for (const entry of r.data || []) if (entry.row_id) counts[entry.row_id] = (counts[entry.row_id] || 0) + 1
-      res.json({ counts })
+      // Comments on single cells, for the corner and the hover tooltip in the grid.
+      const cells: (RowComment & { rowId: string })[] = []
+      for (const entry of r.data || []) {
+        if (!entry.row_id) continue
+        counts[entry.row_id] = (counts[entry.row_id] || 0) + 1
+        if (entry.detail?.columnId && cells.length < COMMENT_LIMITS.cellsListed)
+          cells.push({ ...out(entry), rowId: entry.row_id })
+      }
+      res.json({ counts, cells })
     }),
   )
   app.post(
@@ -176,6 +193,7 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
       if ((await commentsOf(tenant, id, row.id)).length >= COMMENT_LIMITS.perRow)
         throw new TrackerError(`A row can have at most ${COMMENT_LIMITS.perRow} comments.`)
       const mentions = mentionsIn(text, req.body?.mentions, mentionable(await workspace(tenant), tracker), user.id)
+      const columnId = columnOf(tracker, req.body?.columnId)
       const entry = {
         id: randomUUID(),
         tenant_id: tenant,
@@ -184,7 +202,7 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
         actor_id: user.id,
         actor_name: user.name,
         kind: KIND,
-        detail: { text, mentions },
+        detail: columnId ? { text, mentions, columnId } : { text, mentions },
         created_at: now(),
       }
       check((await db.from('tenant_tracker_changes').insert(entry)).error)
@@ -208,7 +226,13 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
       const text = cleanCommentText(req.body?.text)
       if (!text) throw new TrackerError('A comment cannot be empty. Delete it instead.')
       const mentions = mentionsIn(text, req.body?.mentions, mentionable(await workspace(tenant), tracker), user.id)
-      const detail = { text, mentions, editedAt: now() }
+      // A cell comment stays on its cell.
+      const detail = {
+        text,
+        mentions,
+        editedAt: now(),
+        ...(entry.detail?.columnId ? { columnId: String(entry.detail.columnId) } : {}),
+      }
       check(
         (await db.from('tenant_tracker_changes').update({ detail }).eq('tenant_id', tenant).eq('id', entry.id)).error,
       )

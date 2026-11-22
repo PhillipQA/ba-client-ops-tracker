@@ -17,7 +17,7 @@ import {
 import { niceTime } from './trackerUi'
 
 /** A text box that offers people after "@". Reports the text and the ids of the people picked. */
-function CommentBox({
+export function CommentBox({
   people,
   initial = '',
   initialMentions = [],
@@ -127,6 +127,8 @@ export default function TrackerComments({
   isAdmin,
   canComment,
   onCount,
+  columnNames,
+  onChanged,
 }: {
   trackerId: string
   rowId: string
@@ -135,6 +137,10 @@ export default function TrackerComments({
   canComment: boolean
   /** Tells the grid how many comments the row has now. */
   onCount?: (rowId: string, count: number) => void
+  /** Column names by id, to say which cell a cell comment is on. */
+  columnNames?: Readonly<Record<string, string>>
+  /** The row's comments changed here: the grid updates its cell corners. */
+  onChanged?: (rowId: string, comments: RowComment[]) => void
 }) {
   const [comments, setComments] = useState<RowComment[] | null>(null)
   const [people, setPeople] = useState<Mentionable[]>([])
@@ -167,6 +173,7 @@ export default function TrackerComments({
       const next = await work()
       setComments(next)
       onCount?.(rowId, next.length)
+      onChanged?.(rowId, next)
       return true
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'That did not save. Try again.')
@@ -211,6 +218,9 @@ export default function TrackerComments({
               <li key={comment.id} className={comment.mentions.includes(currentUserId) ? 'mentions-me' : ''}>
                 <span className="trk-comment-head">
                   <strong>{comment.authorName || 'Someone'}</strong>
+                  {comment.columnId && (
+                    <span className="trk-comment-cell">on {columnNames?.[comment.columnId] || 'a removed column'}</span>
+                  )}
                   <time dateTime={comment.at}>
                     {niceTime(comment.at)}
                     {comment.editedAt ? ' · edited' : ''}

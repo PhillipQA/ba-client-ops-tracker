@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Trackers: comments on a cell, like Google Sheets
+- **Right-click a cell › comment box**, or press **Ctrl+Alt+M** on the selected cell. A cell with comments shows an orange **corner**; **hover** it to read them in a tooltip (the latest four, with how many earlier).
+- **A cell with a Task or Subtask** (its chip shows in the cell, or the row's Task in the first column) talks in that task's Comments: what you write on the cell is saved as a comment on the task, and the tooltip shows the task's comments. One conversation, kept in Tasks.
+- **Any other cell** keeps its comments in the tracker. @mentions notify people, as in row comments, and each one shows in the row's Comments panel tagged with its column ("on Status"), where your own can be edited or deleted.
+- A cell that had its own comments before a task was linked keeps them; the tooltip shows both.
+- Comments stay in the tracker: they are not written to a connected Google Sheet. People who can only view a tracker can read comments but not add them.
+- No database update needed.
+
 ### GIT Tracker, part 3: add Work Hub tickets to a GIT Tracker
 - **Add to GIT Tracker** (Work Hub › open a GitLab or GitHub ticket › GIT Trackers): pick a GIT Tracker and the ticket's rows, Tasks and Subtasks are made from the tracker's GIT template, under the Client and Project its repository is mapped to. The panel says where the work will go first. If the repository isn't mapped yet, it says so and points to Settings › Integrations › Repository mapping instead of adding.
 - Each ticket shows the GIT Trackers it's in and how adding went: **Added · 3 Tasks**, or **Failed** with the reason and a **Retry** button. A ticket is in a GIT Tracker once, however often you click.
