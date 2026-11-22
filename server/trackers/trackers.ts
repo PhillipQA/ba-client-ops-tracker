@@ -57,7 +57,7 @@ export function registerTrackerRoutes(app: Express, deps: Deps) {
   // GIT Trackers: tickets added from Work Hub, and their rows and Tasks.
   const gitTickets = trackerGitTickets(deps, core, deps.timeZone || 'Asia/Manila')
   gitTickets.routes(app)
-  trackerRowRoutes(app, core, sheetAccess, sheetWrite, automations, gitTickets.hiddenSourceKeys)
+  trackerRowRoutes(app, core, sheetAccess, sheetWrite, automations, gitTickets.hiddenSourceKeys, gitTickets.pinCells)
   trackerCommentRoutes(app, deps, core, {
     ...sheetComments,
     sourceOf: (tenant, trackerId) => sheetAccess.sourceRow(tenant, trackerId),

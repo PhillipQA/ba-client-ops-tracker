@@ -11,6 +11,16 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### GIT Tracker: columns fill from the ticket and follow it
+- **Name a column after a ticket field and it fills itself**: Title, Number (or Ticket #), URL, Repository, Labels, Assignees, Author, Milestone, Due date, State (or Ticket state) and Description, plus common other names for them. A column only takes a field that fits it: Due date needs a Date column, State a Choice or text column. Person and Checkbox columns aren't filled, and Status is left as your team's own workflow column.
+- **Label groups**: any other column takes its value from the ticket's label of the same name. A Priority column gets High from `priority::high` (GitLab scoped labels), `Priority: High` or `priority/high`. If a ticket has two labels from one group, the first is used. For a Choice column the value must be one of its choices; if it isn't, the cell is left as it was.
+- A template row that fills a column itself still wins: a fixed value is set once, and a ticket field it fills follows the ticket.
+- **Rows follow their ticket**, on by default, only at these moments: when you sign in, when the app is loaded (a browser refresh), after a GitLab or GitHub **Sync** in Work Hub, and with the new **Refresh** button in the GIT Tracker's Tickets panel (which syncs GitLab and GitHub first). Never on a timer. Existing ticket rows fill in on the first refresh.
+- **Your edits are kept**: a cell you change by hand in a ticket row is pinned, and refreshes leave it alone. The Tickets panel lists each ticket's pinned cells; × lets it follow the ticket again. Each ticket has a **Follows ticket** switch to stop following.
+- A label removed from the ticket doesn't clear its column: a column with no matching label might not be a label group at all, so it is left as it was.
+- Each update is in the row's history ("updated from GitLab #7: Priority from “High” to “Low”").
+- **Database update needed: schema v45** (`database/migrations/schema-v45-git-follow.sql`). Run it before deploying. Until it is run, new ticket rows still fill from the ticket, but nothing is refreshed or pinned, and Refresh says the update is needed.
+
 ### Trackers: cell comments sync with the Google Sheet or Excel file
 - **Google Sheet → tracker**: on every sync, each comment and reply on a cell of the synced tab shows on the matching tracker cell (corner and tooltip, labelled "Google Sheet"), and in the row's Comments, read-only. Edits and deletes in the Sheet follow on the next sync; resolved threads are hidden.
 - **Tracker → Google Sheet**: a comment written on a cell of a row that came from the Sheet is posted to that cell in the Sheet, as a reply when the cell has an open thread. It is posted by the Google account that connected the Sheet, with the writer's name in front ("Phillip: retest Monday"). Editing or deleting it in the tracker changes it in the Sheet too. It is sent right away, and retried on the next sync when Google can't be reached; the connection needs permission to edit Sheets.

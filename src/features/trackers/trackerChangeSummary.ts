@@ -24,6 +24,14 @@ export function changeSummary(kind: string, detail: any, name: (id: string) => s
       const more = cells.length > 1 ? ` and ${cells.length - 1} more` : ''
       return `set ${first.name || 'a cell'} to ${quote(to)}${more}`
     }
+    case 'git_follow': {
+      const cells: any[] = Array.isArray(d.cells) ? d.cells : []
+      const first = cells[0]
+      const from = d.provider === 'github' ? 'GitHub' : 'GitLab'
+      if (!first) return `updated the row from ${from}`
+      const more = cells.length > 1 ? ` and ${cells.length - 1} more` : ''
+      return `updated ${first.name || 'a cell'} to ${quote(first.to)}${more} from ${from}`
+    }
     case 'comment':
       return `commented: ${quote(d.text)}`
     case 'task_linked':
