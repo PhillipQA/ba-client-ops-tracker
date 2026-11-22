@@ -159,6 +159,8 @@ export interface WorkItem {
   docHubDocuments?: import('../features/documents/dochub').DocHubLink[]
   /** Gmail attachments saved to the account's Google Drive. Written only by the save-to-Drive API. */
   driveFiles?: TaskDriveFile[]
+  /** Tasks that block this one (their ids): shown in the editor, table, board and Timeline; see dependencies.ts. */
+  blockedBy?: string[]
   /** Optional estimate in hours. */
   estimateHours?: number
   /** Time logged against this task. Written only through the time-entry API. */

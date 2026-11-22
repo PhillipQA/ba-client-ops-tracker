@@ -6,6 +6,8 @@ import { isWaitingOnDone, openWaitingOnOptions, waitingOnTone } from './waitingO
 import type { Client, Project, TaskSettings, UserAccount, WaitingOn, WorkItem } from '../../shared/types'
 import './effort.css'
 import { PriorityChip } from '../../shared/ui/Chips'
+import { isTaskClosed } from '../../app/store'
+import { BlockedBadge } from './BlockedBadge'
 
 type Props = {
   items: WorkItem[]
@@ -205,6 +207,9 @@ export default function TaskBoard({
                           {parent ? `Subtask of ${parent.title} · ` : ''}
                           {clientName(item.clientId)} · {projectName(item.projectId)}
                         </p>
+                        {!isTaskClosed(item.status, taskSettings) && (
+                          <BlockedBadge item={item} items={allItems} taskSettings={taskSettings} />
+                        )}
                       </div>
                       <div className={`board-card-effort${effort.overBy > 0 ? ' over' : ''}`}>
                         <div className="effort-progress-track" aria-hidden="true">

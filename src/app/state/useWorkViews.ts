@@ -13,6 +13,7 @@ import { useMemo, useEffect } from 'react'
 import { isWaitingOnDone, waitingOnOptions, defaultWaitingOn } from '../../features/tasks/waitingOn'
 import { seedAccounts } from '../data'
 import type { TaskLayout, BoardGroup } from '../../features/tasks/taskBoardModel'
+import type { CalendarDate } from '../../features/tasks/taskViews'
 import type { WorkItem } from '../../shared/types'
 import { isTaskClosed } from '../store'
 import { addDays } from '../../shared/dates'
@@ -25,9 +26,11 @@ export function useWorkViews(ui: UiState, signIn: SignIn) {
     taskLayout,
     boardGroup,
     boardShowSubtasks,
+    taskCalendarDate,
     setTaskLayout,
     setBoardGroup,
     setBoardShowSubtasks,
+    setTaskCalendarDate,
     authUser,
     setClientLayout,
     clientSearch,
@@ -68,15 +71,22 @@ export function useWorkViews(ui: UiState, signIn: SignIn) {
     [store.items, store.taskSettings, currentUser],
   )
 
-  const chooseTaskView = (next: { layout?: TaskLayout; group?: BoardGroup; subtasks?: boolean }) => {
+  const chooseTaskView = (next: {
+    layout?: TaskLayout
+    group?: BoardGroup
+    subtasks?: boolean
+    calendarDate?: CalendarDate
+  }) => {
     const view = {
       layout: next.layout ?? taskLayout,
       group: next.group ?? boardGroup,
       subtasks: next.subtasks ?? boardShowSubtasks,
+      calendarDate: next.calendarDate ?? taskCalendarDate,
     }
     setTaskLayout(view.layout)
     setBoardGroup(view.group)
     setBoardShowSubtasks(view.subtasks)
+    setTaskCalendarDate(view.calendarDate)
     if (!authUser) return
     try {
       localStorage.setItem(`ba-task-view:${authUser.organizationId}:${authUser.id}`, JSON.stringify(view))

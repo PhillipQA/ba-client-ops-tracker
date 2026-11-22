@@ -11,6 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Tasks: Calendar and Timeline views, saved views, and task dependencies (Phase 1)
+- **Four views of the same filtered list**: Table and Board as before, plus **Calendar** and **Timeline**. The filters, Active/Archived and the Seeds folder apply to all four.
+  - **Calendar**: a month grid of tasks on their due date, or follow-up date ("Show by"). Overdue open work is marked, closed work is muted, and blocked tasks show a lock. Shows 3 a day with "+N more"; click a task to open it.
+  - **Timeline**: a bar per task from its start date to its due date (◆ when it has only one), subtasks under their task, a today line, and Days/Weeks zoom. An arrow runs from each blocking task to the task it blocks. A task that starts before an open blocker is due is outlined in red.
+- **Saved views**: save the current filters and layout under a name ("My overdue", "This week's due"), pick it from **View** to come back to it, update it, or delete it. They're yours only and follow you to any browser. They're kept with your Action Center layout; without schema v40, this browser keeps them.
+- **Task dependencies**: the task editor has a **Dependencies** section. Add the tasks that block this one by typing a name, remove one with ×, and see which tasks this one blocks. Self-blocking and loops (A waits on B waits on A) aren't offered. Open tasks with open blockers show **Blocked by …** in the table and on board cards. Changes are in the task's history.
+- **Existing logic is unchanged**: dependencies show where work is held up but don't stop status changes or closing. Statuses, Waiting on, subtasks and closing rules work as before.
+- No database update.
+
 ### Trackers: cell comments sync with the Google Sheet or Excel file
 - **Google Sheet → tracker**: on every sync, each comment and reply on a cell of the synced tab shows on the matching tracker cell (corner and tooltip, labelled "Google Sheet"), and in the row's Comments, read-only. Edits and deletes in the Sheet follow on the next sync; resolved threads are hidden.
 - **Tracker → Google Sheet**: a comment written on a cell of a row that came from the Sheet is posted to that cell in the Sheet, as a reply when the cell has an open thread. It is posted by the Google account that connected the Sheet, with the writer's name in front ("Phillip: retest Monday"). Editing or deleting it in the tracker changes it in the Sheet too. It is sent right away, and retried on the next sync when Google can't be reached; the connection needs permission to edit Sheets.

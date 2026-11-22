@@ -312,6 +312,7 @@ export function authoritativeWorkEvents(current: any, next: any, actor: SessionU
       ['dueDate', 'due date'],
       ['followUpDate', 'follow-up date'],
       ['estimateHours', 'estimate'],
+      ['blockedBy', 'blocked-by tasks'],
     ] as const) {
       if (String(before[field] || '') !== String(item[field] || ''))
         created.push(

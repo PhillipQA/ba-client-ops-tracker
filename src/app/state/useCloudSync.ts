@@ -24,6 +24,7 @@ import {
   STORE_SCHEMA_VERSION,
 } from '../store'
 import type { UiState } from './useUiState'
+import { TASK_LAYOUTS } from '../../features/tasks/taskViews'
 
 export function useCloudSync(ui: UiState) {
   const {
@@ -43,6 +44,7 @@ export function useCloudSync(ui: UiState) {
     setTaskLayout,
     setBoardGroup,
     setBoardShowSubtasks,
+    setTaskCalendarDate,
     workspaceRefreshBusy,
     setRefreshingCloud,
     cloudStatus,
@@ -170,18 +172,20 @@ export function useCloudSync(ui: UiState) {
     setTaskLayout('table')
     setBoardGroup('status')
     setBoardShowSubtasks(false)
+    setTaskCalendarDate('due')
     if (!authUser) return
     try {
       const saved = JSON.parse(
         localStorage.getItem(`ba-task-view:${authUser.organizationId}:${authUser.id}`) || '{}',
-      ) as { layout?: string; group?: string; subtasks?: boolean }
-      setTaskLayout(saved.layout === 'board' ? 'board' : 'table')
+      ) as { layout?: string; group?: string; subtasks?: boolean; calendarDate?: string }
+      setTaskLayout(TASK_LAYOUTS.find(layout => layout === saved.layout) || 'table')
+      setTaskCalendarDate(saved.calendarDate === 'followUp' ? 'followUp' : 'due')
       setBoardGroup(saved.group === 'waiting' ? 'waiting' : 'status')
       setBoardShowSubtasks(saved.subtasks === true)
     } catch {
       /* Defaults already applied. */
     }
-  }, [authUser?.id, authUser?.organizationId, setBoardGroup, setTaskLayout, setBoardShowSubtasks])
+  }, [authUser?.id, authUser?.organizationId, setBoardGroup, setTaskLayout, setBoardShowSubtasks, setTaskCalendarDate])
 
   useEffect(() => {
     resetCloudSession()
