@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import zlib from 'node:zlib'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Server } from 'node:http'
@@ -19,6 +20,11 @@ before(async () => {
     '<!doctype html><script type="module" src="/assets/index-NEW.js"></script>',
   )
   writeFileSync(path.join(dist, 'assets', 'index-NEW.js'), 'console.log(1)')
+  // A build's compressed copies (scripts/compress-dist.mjs).
+  const big = 'console.log("compressed copy");\n'.repeat(100)
+  writeFileSync(path.join(dist, 'assets', 'big-NEW.js'), big)
+  writeFileSync(path.join(dist, 'assets', 'big-NEW.js.br'), zlib.brotliCompressSync(big))
+  writeFileSync(path.join(dist, 'assets', 'big-NEW.js.gz'), zlib.gzipSync(big))
   writeFileSync(path.join(dist, 'favicon.ico'), 'x')
   const app = express()
   registerStaticSite(app, dist)
@@ -62,4 +68,22 @@ test('a missing asset from an old build is a 404, not index.html', async () => {
 test('other public files are still served', async () => {
   const res = await fetch(base + '/favicon.ico')
   assert.equal(res.status, 200)
+})
+
+test('the compressed copy of a built file is sent when the browser accepts it', async () => {
+  const expected = 'console.log("compressed copy");\n'.repeat(100)
+  for (const [accept, encoding] of [
+    ['gzip, deflate, br', 'br'],
+    ['gzip', 'gzip'],
+  ]) {
+    const res = await fetch(`${base}/assets/big-NEW.js`, { headers: { 'accept-encoding': accept } })
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('content-encoding'), encoding)
+    assert.match(res.headers.get('content-type') || '', /javascript/)
+    assert.match(res.headers.get('cache-control') || '', /immutable/)
+    assert.equal(await res.text(), expected, 'fetch decodes it back to the file')
+  }
+  const plain = await fetch(`${base}/assets/big-NEW.js`, { headers: { 'accept-encoding': 'identity' } })
+  assert.equal(plain.headers.get('content-encoding'), null)
+  assert.equal(await plain.text(), expected)
 })

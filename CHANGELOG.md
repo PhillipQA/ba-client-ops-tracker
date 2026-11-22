@@ -11,6 +11,15 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Faster: smaller downloads, fewer re-renders, quicker saves
+- **Pages download when you first open them.** Sign-in used to download the whole app (1.75 MB of JavaScript). Now it downloads what the first screen needs (about 0.84 MB), and each page follows when opened: Trackers, Reports, Documents, RTM, Work Hub, Settings, Internal Admin, AI and the Seeds pages. Hovering a menu item starts its download early. The Action Center's widget editors and Jarvis load when opened.
+- **After a deploy**, a page left open on the old build reloads itself once when you open a page whose files changed, instead of failing.
+- **Compressed downloads.** The build writes Brotli and gzip copies of the app's files, and the server sends the smallest one the browser accepts (about 4× smaller). Large API answers, like the workspace, tracker rows and reports, are compressed too. Uses Node's own zlib; no new packages.
+- **Documents** opens on first visit instead of at sign-in. While hidden, it no longer re-renders on every workspace change; it still keeps your drafts when you switch pages.
+- **Dates format about 50× faster** in long lists and tracker grids (date formatters are reused instead of made per cell). The business date is checked at midnight, on focus and every 15 minutes, instead of every second.
+- **Saves and loads hash the workspace once per saved version** instead of on every load and twice per save (about 15 ms each with 4,000 tasks).
+- No database update. Northflank's build runs `npm run build`, which now also writes the compressed copies.
+
 ### Trackers: cell comments sync with the Google Sheet or Excel file
 - **Google Sheet → tracker**: on every sync, each comment and reply on a cell of the synced tab shows on the matching tracker cell (corner and tooltip, labelled "Google Sheet"), and in the row's Comments, read-only. Edits and deletes in the Sheet follow on the next sync; resolved threads are hidden.
 - **Tracker → Google Sheet**: a comment written on a cell of a row that came from the Sheet is posted to that cell in the Sheet, as a reply when the cell has an open thread. It is posted by the Google account that connected the Sheet, with the writer's name in front ("Phillip: retest Monday"). Editing or deleting it in the tracker changes it in the Sheet too. It is sent right away, and retried on the next sync when Google can't be reached; the connection needs permission to edit Sheets.

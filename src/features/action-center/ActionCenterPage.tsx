@@ -5,7 +5,7 @@ import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from './ac
 import GoogleCalendarPanel from '../integrations/GoogleCalendarPanel'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { isClosedProject } from '../tasks/lifecycle'
-import { type ReactNode, useMemo, useState } from 'react'
+import { lazy, type ReactNode, Suspense, useMemo, useState } from 'react'
 import { isBeforeSeedsWork } from '../../shared/seeds'
 import { type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 import { MorningBrief } from './MorningBrief'
@@ -37,13 +37,17 @@ import {
   useReportEngine,
   useSavedReports,
 } from './ActionCenterReports'
-import { JarvisReportDialog } from '../reports/explorer/Jarvis'
 import type { Widget } from '../reports/custom/reportModel'
 import { builtinValue, customValue } from './countTiles'
 import { requestJson } from '../../shared/http'
 import { CustomizeBar, WidgetFrame } from './ActionCenterCustomize'
 import { DocHubWidget, RolloutsWidget, WorkHubWidget } from './ActionCenterWidgets'
 import { useActionCenterLayout } from './useActionCenterLayout'
+
+// Jarvis downloads when it is opened.
+const JarvisReportDialog = lazy(() =>
+  import('../reports/explorer/Jarvis').then(module => ({ default: module.JarvisReportDialog })),
+)
 
 /** Action Center screen. It reads the app state; see app/useAppState. */
 export function ActionCenterPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
@@ -567,6 +571,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         />
       )}
       {jarvisOpen && (
+        <Suspense fallback={null}>
         <JarvisReportDialog
           target="actionCenter"
           explorer={explorer}
@@ -595,6 +600,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
             return true
           }}
         />
+        </Suspense>
       )}
       {tilesItem && (
         <CountTilesDialog

@@ -4,7 +4,7 @@
  * as an error the first time someone uses AI.
  */
 import { useEffect, useState } from 'react'
-import { settingsRequest } from '../settings/Settings'
+import { settingsRequest } from '../settings/settingsRequest'
 
 type AiProvider = 'gemini' | 'openai' | 'anthropic' | 'deepseek'
 type PlatformAgent = {

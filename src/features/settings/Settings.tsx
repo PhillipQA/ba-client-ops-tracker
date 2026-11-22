@@ -10,17 +10,9 @@ import { AccountWorkflow } from './WorkflowEditor'
 import { RolesSettings } from './RolesSettings'
 import type { SignoffTemplateKind } from '../documents/signoff'
 
-export async function settingsRequest(url: string, method = 'GET', data?: unknown) {
-  const response = await fetch(url, {
-    method,
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: data === undefined ? undefined : JSON.stringify(data),
-  })
-  const result = await response.json()
-  if (!response.ok) throw new Error(result.error || 'Settings request failed.')
-  return result
-}
+import { settingsRequest } from './settingsRequest'
+
+export { settingsRequest }
 /** The account's Discord bot. AI keys are not here any more: Internal Admin sets them for every account. */
 type Integration = {
   kind: 'discord'

@@ -4,7 +4,7 @@
  * the report). All are worked out in the browser from the same data Reports and the Data explorer read.
  */
 import { ExternalLink, X } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { businessDateKey } from '../../shared/businessDate'
 import type { AppState, SignedInUser } from '../../app/useAppState'
 import type { UserAccount } from '../../shared/types'
@@ -18,16 +18,21 @@ import {
   type Widget,
 } from '../reports/custom/reportModel'
 import { WidgetBody } from '../reports/custom/ReportWidgets'
-import { WidgetEditor } from '../reports/custom/WidgetEditor'
 import { trackerProblemOf, useReportSources, useTrackerData } from '../reports/custom/useReportSources'
 import { QueryResultView, useQueryRun } from '../reports/explorer/QueryResult'
-import { QueryWidgetEditor } from '../reports/explorer/QueryWidgetEditor'
 import { reportQueryParams, type ReportFilterValues } from '../reports/explorer/reportParams'
 import { useExplorerData } from '../reports/explorer/useExplorerData'
 import '../reports/custom/customReports.css'
 import '../reports/explorer/dataExplorer.css'
 
 const NO_FILTERS: ReportFilters = { range: 'all' }
+// The widget editors download when a widget is built or changed, not with the Action Center.
+const WidgetEditor = lazy(() =>
+  import('../reports/custom/WidgetEditor').then(module => ({ default: module.WidgetEditor })),
+)
+const QueryWidgetEditor = lazy(() =>
+  import('../reports/explorer/QueryWidgetEditor').then(module => ({ default: module.QueryWidgetEditor })),
+)
 
 /** The data report widgets read, for the signed-in person. */
 export function useReportEngine(app: AppState, currentUser: SignedInUser, canUseTrackers: boolean) {
@@ -346,6 +351,7 @@ export function BuildWidgetDialog({
   }, [engine.canUseTrackers, trackers.loadList])
   if (start.kind === 'query' && sql)
     return (
+      <Suspense fallback={null}>
       <QueryWidgetEditor
         widget={start}
         canWriteSql={sql.canWriteSql}
@@ -370,9 +376,11 @@ export function BuildWidgetDialog({
         onSave={onSave}
         onClose={onClose}
       />
+      </Suspense>
     )
   return (
     <div className="crp-page ac-crp">
+      <Suspense fallback={null}>
       <WidgetEditor
         widget={start}
         trackers={trackers.list}
@@ -393,6 +401,7 @@ export function BuildWidgetDialog({
         onClose={onClose}
         onSave={onSave}
       />
+      </Suspense>
     </div>
   )
 }

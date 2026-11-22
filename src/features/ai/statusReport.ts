@@ -11,6 +11,7 @@ import { waitingOnOptions } from '../tasks/waitingOn'
 import { goLiveColumn, siteTaskTitle, stepColumns } from '../trackers/stepTasks'
 import { trackerClientIds, trackerProjectIds, type Tracker, type TrackerRow } from '../trackers/trackerModel'
 import { addDayKeys, daysBetween, describeItem, type BriefItem, weekdayOf } from './brief'
+import { dateFormat } from '../../shared/intlFormat'
 
 /** For the client (sent to them), or for the team (internal: names, hours and notes). */
 export type ReportAudience = 'client' | 'team'
@@ -258,7 +259,7 @@ export function statusFacts(input: {
 export function reportDate(key: string) {
   if (!isDateKey(key)) return ''
   const [year, month, day] = key.split('-').map(Number)
-  return new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+  return dateFormat('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
     new Date(Date.UTC(year, month - 1, day)),
   )
 }

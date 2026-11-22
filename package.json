@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/compress-dist.mjs",
     "start": "tsx server.ts --production",
     "preview": "vite preview",
     "test": "node --import ./tests/support/setup.mjs --test tests/*.test.ts tests/*.test.mjs",

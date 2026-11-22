@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { MODULE_DEFINITIONS, defaultModulesForRole } from './access'
-import { settingsRequest } from '../settings/Settings'
+import { settingsRequest } from '../settings/settingsRequest'
 import { waitForCloudSaves } from '../../app/cloudStore'
 import type { AppModule, UserAccount, UserRole } from '../../shared/types'
 import type { JobRole } from '../../shared/roles'
