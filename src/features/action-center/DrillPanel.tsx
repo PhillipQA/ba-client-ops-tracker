@@ -41,7 +41,9 @@ export function DrillPanel({
   }, [drill.rows, search, order])
   const sortBy = (key: string) =>
     setOrder(current =>
-      current?.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' },
+      current?.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' },
     )
   const open = (row: DrillRow) => {
     if (!row.taskId) return

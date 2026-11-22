@@ -738,8 +738,10 @@ export function WidgetBody({
       if (!computed.chart.categories.length) return <Empty />
       if (widget.kind === 'table')
         return <SummaryTable widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
-      if (widget.kind === 'pie') return <PieChart widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
-      if (widget.kind === 'bar') return <BarChart widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
+      if (widget.kind === 'pie')
+        return <PieChart widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
+      if (widget.kind === 'bar')
+        return <BarChart widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
       return <ColumnOrLine widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
     case 'rows':
       return <RowsTable computed={computed} />

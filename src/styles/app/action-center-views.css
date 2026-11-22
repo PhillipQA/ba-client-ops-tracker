@@ -698,7 +698,7 @@ button.metric-card.ac-tile-open:focus-visible {
   align-items: center;
   gap: 8px;
 }
-.ac-drill-bar input[type='search'] {
+.ac-drill-bar input[type="search"] {
   flex: 1 1 220px;
   min-width: 0;
 }

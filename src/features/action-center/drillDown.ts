@@ -149,7 +149,9 @@ export function tileDrill(
   if (items) {
     const waiting =
       id === 'waitingDev'
-        ? waitingOnOptions(input.taskSettings).find(option => option.label === input.waitingTitle.replace(/^Waiting on /, ''))?.label
+        ? waitingOnOptions(input.taskSettings).find(
+            option => option.label === input.waitingTitle.replace(/^Waiting on /, ''),
+          )?.label
         : id === 'waitingClient'
           ? waitingOnOptions(input.taskSettings).find(option => option.id === 'client' && !option.done)?.label
           : undefined

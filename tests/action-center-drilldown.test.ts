@@ -153,7 +153,11 @@ const records = sourceRecords('tasks', data)
 const fields = sourceFields('tasks')
 
 test('a person’s own tile lists the tasks its filters count', () => {
-  const tile: CountTile = { id: 'mine', title: 'Barter open', filters: [{ field: 'client', op: 'is', value: 'Barter' }] }
+  const tile: CountTile = {
+    id: 'mine',
+    title: 'Barter open',
+    filters: [{ field: 'client', op: 'is', value: 'Barter' }],
+  }
   const value = customValue(tile, records, fields, today, 'u1')
   const drill = tileDrill(tile, 'Barter open', input, context, { records, fields })
   assert.equal(String(drill.rows.length), value.value)
@@ -194,10 +198,7 @@ test('the panel searches, sorts and exports what it shows', () => {
   assert.equal(searchRows(drill.rows, '').length, drill.rows.length)
   const byDue = sortRows(drill.rows, 'due', 'asc')
   assert.equal(byDue[0].id, 'late', 'dates sort as dates; no date last')
-  assert.deepEqual(
-    sortRows(drill.rows, 'task', 'desc').map(row => row.id)[0],
-    'today',
-  )
+  assert.deepEqual(sortRows(drill.rows, 'task', 'desc').map(row => row.id)[0], 'today')
   const csv = drillCsvRows(drill, byDue.slice(0, 1))
   assert.deepEqual(csv[0], ['Task', 'Client', 'Project', 'Status', 'Due', 'Follow-up', 'Assignee'])
   assert.equal(csv[1][0], 'Task late')
@@ -212,5 +213,8 @@ test('tiles and report widgets open the panel; SQL widgets do not', () => {
   assert.match(reports, /\['metric', 'bar', 'column', 'line', 'pie', 'table'\]\.includes\(widget\.kind\)/)
   const charts = read('src/features/reports/custom/ReportWidgets.tsx')
   assert.match(charts, /onClick=\{onPick \? \(\) => onPick\(category\.key, category\.label\) : undefined\}/)
-  assert.match(read('src/features/action-center/ActionCenterCounts.tsx'), /className=\{`\$\{className\} ac-tile-open`\}/)
+  assert.match(
+    read('src/features/action-center/ActionCenterCounts.tsx'),
+    /className=\{`\$\{className\} ac-tile-open`\}/,
+  )
 })
