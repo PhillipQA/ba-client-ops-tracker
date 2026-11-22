@@ -4464,3 +4464,9 @@ span.trk-git-badge:not(.trk-chip) {
   background: var(--k-warning-soft, rgba(232, 163, 61, 0.15));
   font-size: 11px;
 }
+.trk-cell-tip-from {
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--k-accent-soft, rgba(52, 140, 230, 0.15));
+  font-size: 10px;
+}

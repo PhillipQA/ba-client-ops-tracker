@@ -255,6 +255,9 @@ export const trackerApi = {
   /** columnId: a comment on that one cell of the row. */
   addComment: (id: string, rowId: string, body: { text: string; mentions: string[]; columnId?: string }) =>
     call<{ comment: RowComment }>('POST', `/${id}/rows/${rowId}/comments`, body),
+  /** A comment saved in a task-linked cell's task: sent to that cell in the Google Sheet too (synced rows only). */
+  sheetComment: (id: string, rowId: string, body: { columnId: string; text: string; taskCommentId: string }) =>
+    call<{ queued: boolean }>('POST', `/${id}/rows/${rowId}/sheet-comments`, body),
   editComment: (id: string, commentId: string, body: { text: string; mentions: string[] }) =>
     call<{ comment: RowComment }>('PATCH', `/${id}/comments/${commentId}`, body),
   deleteComment: (id: string, commentId: string) => call<{ deleted: true }>('DELETE', `/${id}/comments/${commentId}`),

@@ -14,12 +14,19 @@ import {
 } from '../../src/features/trackers/trackerComments'
 import { TrackerError } from '../../src/features/trackers/trackerModel'
 import { rowTitle } from '../../src/features/trackers/trackerQuery'
+import { sheetCommentText } from '../../src/features/trackers/sheetComments'
 import { type Deps, type User, UUID } from './tracker-common'
 import type { TrackerCore } from './tracker-core'
+import { SHEET_KINDS, type TrackerSheetComments } from './tracker-sheet-comments'
 
 const KIND = 'comment'
 
-export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore) {
+export function trackerCommentRoutes(
+  app: Express,
+  deps: Deps,
+  core: TrackerCore,
+  sheet?: TrackerSheetComments & { sourceOf: (tenant: string, trackerId: string) => Promise<any> },
+) {
   const { scope, route, who, idParam, trackerRow, db, check, workspace, trackerVisibleIn, oneRow, now, columnsOf } =
     core
   const limit = rateLimit({
@@ -39,6 +46,23 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
     at: entry.created_at,
     ...(entry.detail?.editedAt ? { editedAt: String(entry.detail.editedAt) } : {}),
     ...(entry.detail?.columnId ? { columnId: String(entry.detail.columnId) } : {}),
+    // From the Google Sheet or Excel file: read-only here.
+    ...(entry.kind === SHEET_KINDS.post
+      ? {
+          source: 'sheet' as const,
+          resolved: Boolean(entry.detail?.resolved),
+          ...(entry.detail?.taskCommentId ? { taskCommentId: String(entry.detail.taskCommentId) } : {}),
+          ...(entry.detail?.excel ? { excel: true } : {}),
+        }
+      : {}),
+    ...(entry.kind === KIND && entry.detail?.sheet?.state
+      ? {
+          sheet: {
+            state: String(entry.detail.sheet.state) as 'pending' | 'sent' | 'failed' | 'excel',
+            ...(entry.detail.sheet.error ? { error: String(entry.detail.sheet.error) } : {}),
+          },
+        }
+      : {}),
   })
   /** A comment on one cell names its column; it must be one of the tracker's. '' is a comment on the whole row. */
   const columnOf = (tracker: any, raw: unknown) => {
@@ -71,7 +95,7 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
       .eq('tenant_id', tenant)
       .eq('tracker_id', trackerId)
       .eq('row_id', rowId)
-      .eq('kind', KIND)
+      .in('kind', [KIND, SHEET_KINDS.post])
       .order('created_at', { ascending: true })
       .limit(COMMENT_LIMITS.perRow)
     check(r.error)
@@ -159,10 +183,10 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
       await trackerRow(tenant, id, user)
       const r = await db
         .from('tenant_tracker_changes')
-        .select('id,row_id,actor_id,actor_name,detail,created_at')
+        .select('id,row_id,actor_id,actor_name,kind,detail,created_at')
         .eq('tenant_id', tenant)
         .eq('tracker_id', id)
-        .eq('kind', KIND)
+        .in('kind', [KIND, SHEET_KINDS.post])
         .order('created_at', { ascending: true })
         .limit(5000)
       check(r.error)
@@ -202,13 +226,59 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
         actor_id: user.id,
         actor_name: user.name,
         kind: KIND,
-        detail: columnId ? { text, mentions, columnId } : { text, mentions },
+        detail: {
+          text,
+          mentions,
+          ...(columnId ? { columnId } : {}),
+          // On a row that came from the tracker's Google Sheet: it goes to that cell in the Sheet too.
+          ...(columnId && row.source_key && sheet && (await sheet.sourceOf(tenant, id))
+            ? { sheet: { state: 'pending', text: sheetCommentText(user.name, text) } }
+            : {}),
+        },
         created_at: now(),
       }
       check((await db.from('tenant_tracker_changes').insert(entry)).error)
       const comment = out(entry)
       await notifyMentions(user, tracker, row, comment)
       res.status(201).json({ comment })
+      if ((entry.detail as any).sheet) void sheet?.sendNow(tenant, tracker, entry.id)
+    }),
+  )
+  // A comment written on a task-linked cell is saved in the task (POST /api/tasks/:id/comments). On a row from the
+  // tracker's Google Sheet it also goes to that cell in the Sheet; this keeps a note of it, so the next sync knows it.
+  app.post(
+    '/api/trackers/:id/rows/:rowId/sheet-comments',
+    ...scope,
+    limit,
+    route(async (req, res) => {
+      const user = who(req),
+        tenant = user.organizationId,
+        id = idParam(req)
+      const tracker = await trackerRow(tenant, id, user)
+      const row = await oneRow(tenant, id, String(req.params.rowId))
+      const text = cleanCommentText(req.body?.text)
+      const columnId = columnOf(tracker, req.body?.columnId)
+      if (!text || !columnId) throw new TrackerError('Write a comment on a cell first.')
+      if (!row.source_key || !sheet || !(await sheet.sourceOf(tenant, id))) return void res.json({ queued: false })
+      const entry = {
+        id: randomUUID(),
+        tenant_id: tenant,
+        tracker_id: id,
+        row_id: row.id,
+        actor_id: user.id,
+        actor_name: user.name,
+        kind: SHEET_KINDS.out,
+        detail: {
+          text,
+          columnId,
+          taskCommentId: String(req.body?.taskCommentId || ''),
+          sheet: { state: 'pending', text: sheetCommentText(user.name, text) },
+        },
+        created_at: now(),
+      }
+      check((await db.from('tenant_tracker_changes').insert(entry)).error)
+      res.status(201).json({ queued: true })
+      void sheet.sendNow(tenant, tracker, entry.id)
     }),
   )
   // Your own comment: change its words. People newly mentioned are notified; nobody is notified twice.
@@ -227,11 +297,16 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
       if (!text) throw new TrackerError('A comment cannot be empty. Delete it instead.')
       const mentions = mentionsIn(text, req.body?.mentions, mentionable(await workspace(tenant), tracker), user.id)
       // A cell comment stays on its cell.
+      const sent = Boolean(entry.detail?.sheet?.postId)
       const detail = {
         text,
         mentions,
         editedAt: now(),
         ...(entry.detail?.columnId ? { columnId: String(entry.detail.columnId) } : {}),
+        // Not in the Sheet yet: it goes with its new words. Already there: the Sheet's post is edited below.
+        ...(entry.detail?.sheet
+          ? { sheet: sent ? entry.detail.sheet : { ...entry.detail.sheet, text: sheetCommentText(user.name, text) } }
+          : {}),
       }
       check(
         (await db.from('tenant_tracker_changes').update({ detail }).eq('tenant_id', tenant).eq('id', entry.id)).error,
@@ -240,6 +315,7 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
       const row = await oneRow(tenant, id, entry.row_id).catch(() => null)
       if (row) await notifyMentions(user, tracker, row, comment)
       res.json({ comment })
+      if (sent) void sheet?.followEdit(tenant, id, { ...entry, detail }, { text })
     }),
   )
   // Your own comment, or any comment for an Administrator.
@@ -257,6 +333,7 @@ export function trackerCommentRoutes(app: Express, deps: Deps, core: TrackerCore
         throw new TrackerError('You can only delete your own comments.', 403)
       check((await db.from('tenant_tracker_changes').delete().eq('tenant_id', tenant).eq('id', entry.id)).error)
       res.json({ deleted: true })
+      if (entry.detail?.sheet?.postId) void sheet?.followEdit(tenant, id, entry, 'deleted')
     }),
   )
 }

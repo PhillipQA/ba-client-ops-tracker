@@ -313,6 +313,8 @@ export function describeSync(report: SyncReport) {
   if (report.returned) parts.push(`${report.returned} back in the Sheet`)
   if (report.addedColumns?.length)
     parts.push(`${report.addedColumns.length} new column${report.addedColumns.length === 1 ? '' : 's'}`)
+  if (report.comments?.added)
+    parts.push(`${report.comments.added} new comment${report.comments.added === 1 ? '' : 's'}`)
   if (!parts.length) parts.push('No changes')
   return parts.join(' · ')
 }
