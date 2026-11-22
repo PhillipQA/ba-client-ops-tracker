@@ -22,15 +22,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Format diff (temporary)
-        run: |
-          npx biome format --write scripts/compress-dist.mjs server/index.ts server/platform/compression.ts server/platform/static-site.ts server/services/workspace-version.ts server/workspace/store-routes.ts src/app/App.tsx src/app/PageLoading.tsx src/app/lazyPage.ts src/app/state/useAccountAndRoutes.ts src/features/accounts/AccountUsers.tsx src/features/action-center/ActionCenterPage.tsx src/features/action-center/ActionCenterReports.tsx src/features/action-center/ActionCenterWidgets.tsx src/features/admin/PlatformAiAgents.tsx src/features/ai/statusReport.ts src/features/settings/PlatformSettings.tsx src/features/settings/Settings.tsx src/features/settings/settingsRequest.ts src/features/tasks/TaskBoard.tsx src/features/tasks/TaskEffort.tsx src/features/trackers/trackerReminders.ts src/features/trackers/trackerUi.tsx src/shared/businessDate.ts src/shared/dates.ts src/shared/intlFormat.ts tests/functional-routes.ts tests/performance.test.ts tests/static-site.test.ts  || true
-          git diff > format.diff || true
-          echo "FORMAT-DIFF-START"
-          base64 -w0 format.diff
-          echo
-          echo "FORMAT-DIFF-END"
-          git checkout -- .
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check
