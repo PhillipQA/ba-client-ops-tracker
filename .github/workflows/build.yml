@@ -22,6 +22,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Format diff (temporary)
+        run: |
+          npx biome format --write src/features/action-center/ActionCenterCounts.tsx src/features/action-center/ActionCenterPage.tsx src/features/action-center/ActionCenterReports.tsx src/features/action-center/DrillPanel.tsx src/features/action-center/drillDown.ts src/features/reports/custom/ReportWidgets.tsx src/features/reports/custom/reportData.ts src/styles/app/action-center-views.css tests/action-center-drilldown.test.ts  || true
+          git diff > format.diff || true
+          echo "FORMAT-DIFF-START"
+          base64 -w0 format.diff
+          echo
+          echo "FORMAT-DIFF-END"
+          git checkout -- .
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check
