@@ -78,7 +78,8 @@ export function blockerChoices(task: WorkItem, chosen: readonly string[], items:
   const byId = new Map(index(items)).set(task.id, { ...task, blockedBy: [...chosen] })
   const taken = new Set(chosen)
   return items.filter(
-    candidate => candidate.id !== task.id && !taken.has(candidate.id) && !createsLoop(task.id, candidate.id, items, byId),
+    candidate =>
+      candidate.id !== task.id && !taken.has(candidate.id) && !createsLoop(task.id, candidate.id, items, byId),
   )
 }
 

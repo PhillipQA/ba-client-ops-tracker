@@ -646,7 +646,10 @@ export function TaskEditForm({
   }).length
   const blockingCount = blockedBy(item.id, store.items).length
   const dependencyMeta =
-    [blockers.length ? `Blocked by ${blockers.length}${openBlockers ? ` (${openBlockers} open)` : ''}` : '', blockingCount ? `Blocks ${blockingCount}` : '']
+    [
+      blockers.length ? `Blocked by ${blockers.length}${openBlockers ? ` (${openBlockers} open)` : ''}` : '',
+      blockingCount ? `Blocks ${blockingCount}` : '',
+    ]
       .filter(Boolean)
       .join(' · ') || 'None'
   const effortMeta = `${formatHours(effortSummary(item, store.items).logged)} logged`
@@ -670,7 +673,12 @@ export function TaskEditForm({
           followUpDate={item.followUpDate || ''}
         />
       </Fold>
-      <Fold id="dependencies" title="Dependencies" meta={dependencyMeta} defaultOpen={blockers.length > 0 || blockingCount > 0}>
+      <Fold
+        id="dependencies"
+        title="Dependencies"
+        meta={dependencyMeta}
+        defaultOpen={blockers.length > 0 || blockingCount > 0}
+      >
         <BlockedByField
           task={item}
           items={store.items}

@@ -81,7 +81,8 @@ export function TasksPage({ app }: { app: AppState }) {
   })
   const chosenView = saved.views.find(view => view.id === viewId)
   const changedFromView =
-    chosenView && JSON.stringify({ ...chosenView, id: '', name: '' }) !== JSON.stringify({ ...current(), id: '', name: '' })
+    chosenView &&
+    JSON.stringify({ ...chosenView, id: '', name: '' }) !== JSON.stringify({ ...current(), id: '', name: '' })
   const applyView = (view: SavedTaskView) => {
     setQuery(view.filters.query)
     setTaskStatusFilter(view.filters.status)
@@ -206,7 +207,9 @@ export function TasksPage({ app }: { app: AppState }) {
                   aria-label={`Delete the view ${chosenView.name}`}
                   onClick={() => {
                     if (!window.confirm(`Delete the view “${chosenView.name}”? Your tasks are not changed.`)) return
-                    void saved.save(saved.views.filter(view => view.id !== chosenView.id)).then(ok => ok && setViewId(''))
+                    void saved
+                      .save(saved.views.filter(view => view.id !== chosenView.id))
+                      .then(ok => ok && setViewId(''))
                   }}
                 >
                   <Trash2 size={14} />

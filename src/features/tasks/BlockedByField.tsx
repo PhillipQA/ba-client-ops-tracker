@@ -82,9 +82,7 @@ export function BlockedByField({ task, items, clients, projects, taskSettings, v
         />
       )}
       {blocking.length > 0 && (
-        <p className="muted blocked-by-blocking">
-          This task blocks: {blocking.map(item => item.title).join(', ')}
-        </p>
+        <p className="muted blocked-by-blocking">This task blocks: {blocking.map(item => item.title).join(', ')}</p>
       )}
     </div>
   )

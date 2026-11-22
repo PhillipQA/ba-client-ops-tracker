@@ -29,7 +29,14 @@ export default function TaskTimeline({ items, allItems, taskSettings, today, onO
   const allRows = useMemo(() => timelineRows(items), [items])
   const rows = allRows.slice(0, MAX_ROWS)
   const byId = useMemo(() => new Map(allItems.map(item => [item.id, item])), [allItems])
-  const range = useMemo(() => timelineRange(rows.map(row => row.span), today), [rows, today])
+  const range = useMemo(
+    () =>
+      timelineRange(
+        rows.map(row => row.span),
+        today,
+      ),
+    [rows, today],
+  )
   const width = DAY_WIDTH[zoom]
   const x = (day: string) => daysBetween(range.start, day) * width
   const rowOf = new Map(rows.map((row, at) => [row.item.id, at]))
@@ -64,7 +71,9 @@ export default function TaskTimeline({ items, allItems, taskSettings, today, onO
           task it blocks.
         </span>
         {undated > 0 && <span className="muted">{undated} without a start or due date aren’t shown.</span>}
-        {allRows.length > MAX_ROWS && <span className="muted">Showing the first {MAX_ROWS}; narrow the filters to see the rest.</span>}
+        {allRows.length > MAX_ROWS && (
+          <span className="muted">Showing the first {MAX_ROWS}; narrow the filters to see the rest.</span>
+        )}
       </div>
       {!rows.length ? (
         <p className="muted task-tl-empty">No tasks here have a start or due date yet.</p>
@@ -76,18 +85,30 @@ export default function TaskTimeline({ items, allItems, taskSettings, today, onO
               <div className="task-tl-track" style={{ width: range.days * width }}>
                 {months.map(day => (
                   <span key={`m${day}`} className="task-tl-month" style={{ left: x(day) }}>
-                    {new Date(`${day}T00:00:00Z`).toLocaleDateString('en', { month: 'short', year: 'numeric', timeZone: 'UTC' })}
+                    {new Date(`${day}T00:00:00Z`).toLocaleDateString('en', {
+                      month: 'short',
+                      year: 'numeric',
+                      timeZone: 'UTC',
+                    })}
                   </span>
                 ))}
                 {ticks.map(day => (
-                  <span key={`d${day}`} className="task-tl-tick" style={{ left: x(day), width: zoom === 'week' ? width : 7 * width }}>
+                  <span
+                    key={`d${day}`}
+                    className="task-tl-tick"
+                    style={{ left: x(day), width: zoom === 'week' ? width : 7 * width }}
+                  >
                     {Number(day.slice(8))}
                   </span>
                 ))}
               </div>
             </div>
             <div className="task-tl-body" style={{ height: rows.length * ROW }}>
-              <div className="task-tl-today" style={{ left: 260 + x(today) + width / 2 }} title={`Today, ${shortDay(today)}`} />
+              <div
+                className="task-tl-today"
+                style={{ left: 260 + x(today) + width / 2 }}
+                title={`Today, ${shortDay(today)}`}
+              />
               <svg
                 className="task-tl-links"
                 width={range.days * width}
@@ -96,7 +117,15 @@ export default function TaskTimeline({ items, allItems, taskSettings, today, onO
                 aria-hidden="true"
               >
                 <defs>
-                  <marker id="task-tl-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                  <marker
+                    id="task-tl-arrow"
+                    viewBox="0 0 8 8"
+                    refX="7"
+                    refY="4"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto"
+                  >
                     <path d="M0,0 L8,4 L0,8 z" />
                   </marker>
                 </defs>
@@ -122,7 +151,13 @@ export default function TaskTimeline({ items, allItems, taskSettings, today, onO
                 const blocked = closed ? '' : blockedText(openBlockersOf(item, allItems, taskSettings, byId))
                 const late = !closed && clash(item, span.start)
                 const dates = span.milestone ? shortDay(span.start) : `${shortDay(span.start)} – ${shortDay(span.end)}`
-                const tip = [item.title, dates, item.status, blocked, late ? 'Starts before a blocking task is due' : '']
+                const tip = [
+                  item.title,
+                  dates,
+                  item.status,
+                  blocked,
+                  late ? 'Starts before a blocking task is due' : '',
+                ]
                   .filter(Boolean)
                   .join(' · ')
                 return (
@@ -142,7 +177,9 @@ export default function TaskTimeline({ items, allItems, taskSettings, today, onO
                       className={`task-tl-bar-item${span.milestone ? ' is-milestone' : ''}${closed ? ' is-closed' : ''}${late ? ' is-clash' : ''}`}
                       style={{
                         left: 260 + x(span.start),
-                        width: span.milestone ? undefined : Math.max(width, (daysBetween(span.start, span.end) + 1) * width),
+                        width: span.milestone
+                          ? undefined
+                          : Math.max(width, (daysBetween(span.start, span.end) + 1) * width),
                       }}
                       title={tip}
                       aria-label={tip}

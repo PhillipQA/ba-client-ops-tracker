@@ -133,7 +133,8 @@ export type Span = { start: string; end: string; milestone: boolean }
 export function spanOf(item: Pick<WorkItem, 'startDate' | 'dueDate'>): Span | null {
   const start = isDay(item.startDate) ? item.startDate : ''
   const due = isDay(item.dueDate) ? item.dueDate : ''
-  if (start && due) return due >= start ? { start, end: due, milestone: false } : { start: due, end: start, milestone: false }
+  if (start && due)
+    return due >= start ? { start, end: due, milestone: false } : { start: due, end: start, milestone: false }
   const only = start || due
   return only ? { start: only, end: only, milestone: true } : null
 }
@@ -158,7 +159,9 @@ export function timelineRows(items: readonly WorkItem[]): { item: WorkItem; span
     .map(item => ({ item, span: spanOf(item) }))
     .filter((row): row is { item: WorkItem; span: Span } => Boolean(row.span))
   const order = (a: { span: Span; item: WorkItem }, b: { span: Span; item: WorkItem }) =>
-    a.span.start.localeCompare(b.span.start) || a.span.end.localeCompare(b.span.end) || a.item.title.localeCompare(b.item.title)
+    a.span.start.localeCompare(b.span.start) ||
+    a.span.end.localeCompare(b.span.end) ||
+    a.item.title.localeCompare(b.item.title)
   const shown = new Set(dated.map(row => row.item.id))
   const children = new Map<string, typeof dated>()
   const tops: typeof dated = []
@@ -170,8 +173,10 @@ export function timelineRows(items: readonly WorkItem[]): { item: WorkItem; span
       else children.set(parent, [row])
     } else tops.push(row)
   }
-  return tops.sort(order).flatMap(row => [
-    { ...row, depth: 0 },
-    ...(children.get(row.item.id) || []).sort(order).map(child => ({ ...child, depth: 1 })),
-  ])
+  return tops
+    .sort(order)
+    .flatMap(row => [
+      { ...row, depth: 0 },
+      ...(children.get(row.item.id) || []).sort(order).map(child => ({ ...child, depth: 1 })),
+    ])
 }

@@ -61,11 +61,21 @@ export default function TaskCalendar({ items, allItems, taskSettings, today, dat
   return (
     <div className="task-calendar">
       <div className="task-cal-bar">
-        <button type="button" className="icon-button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Previous month"
+          onClick={() => setMonth(shiftMonth(month, -1))}
+        >
           <ChevronLeft size={16} />
         </button>
         <h3 aria-live="polite">{title}</h3>
-        <button type="button" className="icon-button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))}>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Next month"
+          onClick={() => setMonth(shiftMonth(month, 1))}
+        >
           <ChevronRight size={16} />
         </button>
         <button type="button" className="secondary" onClick={() => setMonth(monthOf(today))}>
@@ -100,7 +110,11 @@ export default function TaskCalendar({ items, allItems, taskSettings, today, dat
                   <span className="task-cal-date">{Number(day.slice(8))}</span>
                   {list.length > 0 && <ul>{shown.map(chip)}</ul>}
                   {list.length > SHOWN_PER_DAY && (
-                    <button type="button" className="link-button task-cal-more" onClick={() => setOpenDay(expanded ? '' : day)}>
+                    <button
+                      type="button"
+                      className="link-button task-cal-more"
+                      onClick={() => setOpenDay(expanded ? '' : day)}
+                    >
                       {expanded ? 'Show less' : `+${list.length - SHOWN_PER_DAY} more`}
                     </button>
                   )}
