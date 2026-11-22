@@ -9,9 +9,10 @@ A workspace for business analysts:
 - **Work Hub**: Gmail, Discord, GitHub and GitLab in one place.
 - **Documents**: BRD, FSD, DRF, sign-offs and test cases, with e-signatures through DocHub.
 - **Requirements traceability** (RTM).
-- **Trackers**: spreadsheet-like tables that can follow a Google Sheet (one- or two-way) or an Excel file kept in Google Drive (read only), with project timelines and site rollouts that make tasks and subtasks.
+- **Trackers**: spreadsheet-like tables that can follow a Google Sheet (one- or two-way) or an Excel file kept in Google Drive (read only), with project timelines and site rollouts that make tasks and subtasks, and comments on cells that sync with the Sheet.
+- **GIT Trackers**: GitLab and GitHub tickets added from Work Hub become tracker rows, Tasks and Subtasks, following a GIT template, under the Client and Project each repository is mapped to.
 - **Task evidence** kept in the shared Google Drive.
-- **Reports** and an **AI BA assistant** that drafts work for you to approve.
+- **Reports** with your own widgets, and an **AI BA assistant** that drafts work for you to approve.
 
 It is a React + Vite frontend served by an Express server (TypeScript, Node.js), with a PostgreSQL database. In production it runs on [Northflank](https://northflank.com).
 
@@ -48,7 +49,7 @@ createdb ba_tracker
 psql "postgresql://localhost/ba_tracker" -v ON_ERROR_STOP=1 -f database/schema.sql
 ```
 
-It ends with `BA Client Ops Tracker database ready | 39`. No `psql`? Open `database/schema.sql` in DBeaver, connected to the empty database, and run the whole script. More in [database/README.md](database/README.md).
+It ends with `BA Client Ops Tracker database ready` and the schema version. No `psql`? Open `database/schema.sql` in DBeaver, connected to the empty database, and run the whole script. More in [database/README.md](database/README.md).
 
 **3. Add your settings**
 
@@ -73,12 +74,17 @@ Open **http://localhost:5173**. One server runs both the app and its API.
 
 **5. Sign in**
 
-| Account | Username | Password |
+| Who | Where | Sign in with |
 | --- | --- | --- |
-| `internal_admin` | `admin` | your `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` |
-| `BXI-Core` | `Admin` | your `BXI_CORE_BOOTSTRAP_PASSWORD` |
+| Internal Admin | **http://localhost:5173/internal_admin** | user `admin`, your `INTERNAL_ADMIN_BOOTSTRAP_PASSWORD` |
+| The first workspace | **http://localhost:5173** | account `BXI-Core`, then user `Admin`, your `BXI_CORE_BOOTSTRAP_PASSWORD` |
 
-The first sign-in saves each bootstrap password as that account's password; changing the variable later does not reset it. Internal Admin must choose a new password straight away; change the BXI-Core one too, from your profile. **Internal Admin** manages accounts and which modules they have. **BXI-Core** is the first workspace: add people under **Users & Permissions**.
+Workspace sign-in is two steps: the account first, then user and password (or **Continue with Google**). Internal Admin signs in only at `/internal_admin`; on the normal sign-in page it is just an incorrect account.
+
+The first sign-in saves each bootstrap password as that account's password; changing the variable later does not reset it. Internal Admin must choose a new password straight away; change the BXI-Core one too, from your profile.
+
+- **Internal Admin** manages accounts, which modules each one has, the AI keys (**Internal Admin › AI**) and Seeds sign-in exceptions.
+- **BXI-Core** is the first workspace: add people under **Users & Permissions**.
 
 ## Deploy on Northflank
 
@@ -138,7 +144,7 @@ Northflank builds and deploys every push to `main`. Before pushing:
 
 1. Read the [changelog](CHANGELOG.md) entry. If it says the database changes, back up the addon and run the new migration from `database/migrations/` against it **first** (as in step 2 above).
 2. Check locally: `npm ci && npm run build && npm test`.
-3. Push or merge to `main`. Watch the build in Northflank, then hard-refresh the app (Ctrl+Shift+R) and check the version on the sign-in page.
+3. Push or merge to `main`. Each merged pull request raises the build number (2.0 · B123…). Watch the build in Northflank, then hard-refresh the app (Ctrl+Shift+R) and check the build on the sign-in page.
 
 A restart or deploy signs everyone out; their data is unaffected. To roll back, redeploy the previous build in Northflank.
 
@@ -161,7 +167,7 @@ Locally they go in `.env.local` (see [.env.example](.env.example)); on Northflan
 | `SEEDS_GOOGLE_CLIENT_ID` | to send time to Seeds | The Google OAuth web client ID registered with the SEEDS Admin. Each person signs in with Google when they send time. Also used for **Sign in with Google** unless `GOOGLE_SIGNIN_CLIENT_ID` is set. |
 | `GOOGLE_SIGNIN_CLIENT_ID` | no | A separate Google client for **Sign in with Google**. |
 
-Discord, DocHub, AI providers and Google (Gmail, Drive, Sheets, Calendar) credentials are entered in the app (**Settings**), not here.
+Discord, DocHub and Google (Gmail, Drive, Sheets, Calendar) credentials are entered in the app (**Settings**), and the AI keys in **Internal Admin › AI**, not here.
 
 ## Integrations
 
@@ -173,9 +179,9 @@ All optional; the app works without them.
 | Gmail, Google Drive, Google Sheets, Google Calendar | One Google Cloud project; see [Google setup](docs/setup/google.md). Following Excel files in Drive also needs the `drive.readonly` scope. |
 | Shared Google Drive (email attachments, task evidence, signed documents) | Settings → Integrations, connected once by an Administrator. |
 | Discord | Settings → Integrations (workspace bot); each user links their Discord ID in Work Hub. |
-| GitHub, GitLab | Each user, in Work Hub → integration settings. |
+| GitHub, GitLab | Each user, in Work Hub → integration settings. For GIT Trackers, an Administrator maps each repository to a Client and Project in Settings → Integrations → Repository mapping. |
 | DocHub (e-signatures) | Settings → Integrations. |
-| AI BA assistant and document agent | Settings → AI Agent Manager. |
+| AI BA assistant and document agent | **Internal Admin › AI**: one provider, model and key per agent, used by every account. An account gets AI when its **AI** module is on (Internal Admin › the account › Modules). |
 | Forgot password emails | `SMTP_*` settings; see [password recovery](docs/setup/password-recovery.md). |
 
 ## Commands
@@ -203,6 +209,8 @@ GitHub Actions runs the build, Biome and the tests on every push and pull reques
 | Blank page or the old version after a deploy | The build failed (check Northflank's build log), or the browser cached the old page: hard-refresh (Ctrl+Shift+R). |
 | Pages load but nothing saves | The service runs `npm run preview` instead of `npm start`. |
 | Google says "redirect_uri_mismatch" | The redirect addresses in Google Cloud must match `APP_BASE_URL`; see [Google setup](docs/setup/google.md). |
+| Someone can't sign in after Seeds was turned on | Once Seeds is on, every sign-in needs the person's email in Seeds' active-employee directory, Administrators included. Internal Admin › the user › Access › Seeds can let one person sign in with their password without Seeds (Google sign-in always needs Seeds). |
+| AI says it isn't set up, or the key is wrong | Internal Admin › AI has the key for that agent, and the account's **AI** module is on. There is no connection test: a wrong key shows as an error the first time someone uses AI. |
 | Seeds sync says the token is not accepted or not allowed | `SEEDS_API_TOKEN` is wrong or missing a permission; ask the SEEDS Admin. Settings → Integrations → Seeds shows the last error. |
 | A time entry stays "Not sent" | Open the task: the entry shows Seeds' reason. Edit it (pencil) to add what Seeds requires, such as a product, then **Send to Seeds** again. |
 | Everyone was signed out | The service restarted or redeployed. Expected; nothing is lost. |
