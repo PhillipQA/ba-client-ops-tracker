@@ -22,15 +22,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Format diff (temporary)
-        run: |
-          npx biome format --write server/core/tenant-state.ts server/index.ts server/workspace/task-view-routes.ts src/app/state/useCloudSync.ts src/app/state/useUiState.ts src/app/state/useWorkViews.ts src/features/tasks/BlockedBadge.tsx src/features/tasks/BlockedByField.tsx src/features/tasks/TaskBoard.tsx src/features/tasks/TaskCalendar.tsx src/features/tasks/TaskForms.tsx src/features/tasks/TaskTable.tsx src/features/tasks/TaskTimeline.tsx src/features/tasks/TasksPage.tsx src/features/tasks/dependencies.ts src/features/tasks/taskBoardModel.ts src/features/tasks/taskViews.css src/features/tasks/taskViews.ts src/features/tasks/useSavedTaskViews.ts src/shared/types.ts tests/task-view-routes.test.ts tests/task-views.test.ts  || true
-          git diff > format.diff || true
-          echo "FORMAT-DIFF-START"
-          base64 -w0 format.diff
-          echo
-          echo "FORMAT-DIFF-END"
-          git checkout -- .
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check
