@@ -126,6 +126,9 @@ function Legend({ items, color }: { items: { key: string; label: string }[]; col
   )
 }
 
+/** Clicking a group (a bar, slice, point or summary row) shows the records behind it: its key, as chartData drew it. */
+type PickGroup = ((key: string, label: string) => void) | undefined
+
 /** What a widget's numbers are: its own label, or what its measure says. */
 const valueName = (widget: Widget, fields: Field[]) => widget.valueLabel || measureName(widget.measure, fields)
 
@@ -135,7 +138,17 @@ const Empty = ({ children = 'Nothing to show for these filters.' }: { children?:
 
 // --- Charts ---
 
-function BarChart({ widget, chart, fields }: { widget: Widget; chart: ChartData; fields: Field[] }) {
+function BarChart({
+  widget,
+  chart,
+  fields,
+  onPick,
+}: {
+  widget: Widget
+  chart: ChartData
+  fields: Field[]
+  onPick?: PickGroup
+}) {
   const tip = useTip()
   const series = chart.series[0]
   const max = Math.max(0, ...series.values.map(value => value ?? 0))
@@ -150,6 +163,7 @@ function BarChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
           <div
             className="crp-bar-row"
             key={category.key}
+            onClick={onPick ? () => onPick(category.key, category.label) : undefined}
             onMouseMove={event =>
               tip.show(event, category.label, [
                 { label: valueName(widget, fields), value: formatNumber(value, widget.measure) },
@@ -175,7 +189,17 @@ function BarChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
   )
 }
 
-function ColumnOrLine({ widget, chart, fields }: { widget: Widget; chart: ChartData; fields: Field[] }) {
+function ColumnOrLine({
+  widget,
+  chart,
+  fields,
+  onPick,
+}: {
+  widget: Widget
+  chart: ChartData
+  fields: Field[]
+  onPick?: PickGroup
+}) {
   const [ref, size] = useSize<HTMLDivElement>()
   const tip = useTip()
   const [hover, setHover] = useState<number | null>(null)
@@ -389,6 +413,7 @@ function ColumnOrLine({ widget, chart, fields }: { widget: Widget; chart: ChartD
                 width={band}
                 height={plotH}
                 onMouseMove={label(index)}
+                onClick={onPick ? () => onPick(category.key, category.label) : undefined}
               />
             ))}
           </svg>
@@ -400,7 +425,17 @@ function ColumnOrLine({ widget, chart, fields }: { widget: Widget; chart: ChartD
   )
 }
 
-function PieChart({ widget, chart, fields }: { widget: Widget; chart: ChartData; fields: Field[] }) {
+function PieChart({
+  widget,
+  chart,
+  fields,
+  onPick,
+}: {
+  widget: Widget
+  chart: ChartData
+  fields: Field[]
+  onPick?: PickGroup
+}) {
   const [ref, size] = useSize<HTMLDivElement>()
   const tip = useTip()
   const [hover, setHover] = useState<string | null>(null)
@@ -450,6 +485,7 @@ function PieChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
                     fill={color(arc.category)}
                     className="crp-slice"
                     opacity={hover === null || hover === arc.category.key ? 1 : 0.45}
+                    onClick={onPick ? () => onPick(arc.category.key, arc.category.label) : undefined}
                     onMouseMove={event => {
                       setHover(arc.category.key)
                       tip.show(event, arc.category.label, lines(arc.index))
@@ -477,6 +513,7 @@ function PieChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
             key={arc.category.key}
             onMouseEnter={() => setHover(arc.category.key)}
             onMouseLeave={() => setHover(null)}
+            onClick={onPick ? () => onPick(arc.category.key, arc.category.label) : undefined}
             className={hover === arc.category.key ? 'on' : ''}
           >
             <i style={{ background: color(arc.category) }} />
@@ -490,7 +527,17 @@ function PieChart({ widget, chart, fields }: { widget: Widget; chart: ChartData;
   )
 }
 
-function SummaryTable({ widget, chart, fields }: { widget: Widget; chart: ChartData; fields: Field[] }) {
+function SummaryTable({
+  widget,
+  chart,
+  fields,
+  onPick,
+}: {
+  widget: Widget
+  chart: ChartData
+  fields: Field[]
+  onPick?: PickGroup
+}) {
   const group = fields.find(field => field.key === widget.groupBy)?.label || 'Group'
   return (
     <div className="crp-table-wrap">
@@ -508,7 +555,7 @@ function SummaryTable({ widget, chart, fields }: { widget: Widget; chart: ChartD
         </thead>
         <tbody>
           {chart.categories.map((category, index) => (
-            <tr key={category.key}>
+            <tr key={category.key} onClick={onPick ? () => onPick(category.key, category.label) : undefined}>
               <td>{category.label}</td>
               {chart.series.map(series => (
                 <td key={series.key} className="num">
@@ -646,6 +693,7 @@ export function WidgetBody({
   fields,
   today,
   problem,
+  onPick,
 }: {
   widget: Widget
   computed: Computed | null
@@ -653,6 +701,11 @@ export function WidgetBody({
   today: string
   /** Shown instead of the data, e.g. while a tracker loads. */
   problem?: string
+  /**
+   * Drill-down (the Action Center): a group's key and label, or null for the whole widget (a metric). Without it the
+   * widget is not clickable.
+   */
+  onPick?: (key: string | null, label: string) => void
 }) {
   if (widget.kind === 'heading') return <h3 className="crp-heading">{widget.text || 'Section'}</h3>
   if (widget.kind === 'note') return <p className="crp-note">{widget.text}</p>
@@ -660,7 +713,20 @@ export function WidgetBody({
   switch (computed.kind) {
     case 'metric':
       return (
-        <div className="crp-metric">
+        <div
+          className="crp-metric"
+          {...(onPick
+            ? {
+                role: 'button',
+                tabIndex: 0,
+                title: 'See these rows',
+                onClick: () => onPick(null, valueName(widget, fields)),
+                onKeyDown: (event: { key: string }) => {
+                  if (event.key === 'Enter') onPick(null, valueName(widget, fields))
+                },
+              }
+            : {})}
+        >
           <strong>{formatNumber(computed.value, widget.measure)}</strong>
           <span>
             {valueName(widget, fields)}
@@ -670,10 +736,11 @@ export function WidgetBody({
       )
     case 'chart':
       if (!computed.chart.categories.length) return <Empty />
-      if (widget.kind === 'table') return <SummaryTable widget={widget} chart={computed.chart} fields={fields} />
-      if (widget.kind === 'pie') return <PieChart widget={widget} chart={computed.chart} fields={fields} />
-      if (widget.kind === 'bar') return <BarChart widget={widget} chart={computed.chart} fields={fields} />
-      return <ColumnOrLine widget={widget} chart={computed.chart} fields={fields} />
+      if (widget.kind === 'table')
+        return <SummaryTable widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
+      if (widget.kind === 'pie') return <PieChart widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
+      if (widget.kind === 'bar') return <BarChart widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
+      return <ColumnOrLine widget={widget} chart={computed.chart} fields={fields} onPick={onPick} />
     case 'rows':
       return <RowsTable computed={computed} />
     case 'gantt':

@@ -668,3 +668,96 @@ button.ac-swatch[aria-pressed="true"] {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Action Center drill-down: tiles and report widgets open the list behind their number (DrillPanel). */
+button.metric-card.ac-tile-open {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+button.metric-card.ac-tile-open:hover {
+  border-color: var(--accent, #2563eb);
+  transform: translateY(-1px);
+}
+button.metric-card.ac-tile-open:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 2px;
+}
+.ac-drill {
+  display: grid;
+  gap: 12px;
+}
+.ac-drill-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ac-drill-bar input[type='search'] {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.ac-drill-count {
+  color: var(--muted, #64748b);
+  font-size: 13px;
+}
+.ac-drill-table {
+  max-height: min(60vh, 560px);
+  overflow: auto;
+  border: 1px solid var(--border, #e5e9f0);
+  border-radius: 10px;
+}
+.ac-drill-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ac-drill-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface, #fff);
+  text-align: left;
+  border-bottom: 1px solid var(--border, #e5e9f0);
+}
+.ac-drill-table th button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.ac-drill-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border, #eef1f5);
+  vertical-align: top;
+}
+.ac-drill-number {
+  text-align: right;
+}
+.ac-drill-open {
+  cursor: pointer;
+}
+.ac-drill-open:hover td,
+.ac-drill-open:focus-visible td {
+  background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
+}
+.ac-report-drillable .crp-bar-row,
+.ac-report-drillable .crp-hit,
+.ac-report-drillable .crp-pie path,
+.ac-report-drillable .crp-summary tbody tr,
+.ac-report-drillable .crp-metric {
+  cursor: pointer;
+}
