@@ -77,8 +77,21 @@ export type GitRefreshResult = {
 }
 
 export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: string) {
-  const { db, scope, route, who, idParam, trackerRow, workspace, columnsOf, mergeCells, record, touch, readOnly, shown } =
-    core
+  const {
+    db,
+    scope,
+    route,
+    who,
+    idParam,
+    trackerRow,
+    workspace,
+    columnsOf,
+    mergeCells,
+    record,
+    touch,
+    readOnly,
+    shown,
+  } = core
   const nowMs = () => (deps.now ? deps.now() : new Date()).getTime()
   const stamp = () => new Date(nowMs()).toISOString()
 
@@ -548,7 +561,12 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
    * A person changed cells of a ticket row by hand: they are pinned, so a refresh leaves them as the person set them.
    * Best effort: without schema v45 there is nothing to pin.
    */
-  async function pinCells(tenant: string, trackerId: string, row: { id: string; source_key?: string }, columnIds: string[]) {
+  async function pinCells(
+    tenant: string,
+    trackerId: string,
+    row: { id: string; source_key?: string },
+    columnIds: string[],
+  ) {
     const entryId = entryIdOfSourceKey(row.source_key)
     if (!entryId || !columnIds.length) return
     const r = await db
@@ -773,7 +791,8 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
           .eq('tenant_id', tenant)
           .eq('id', row.id)
           .select('*')
-        if (saved.error && missingSchema(saved.error)) throw new TrackerError(FOLLOW_UPGRADE, 503, { needsUpgrade: true })
+        if (saved.error && missingSchema(saved.error))
+          throw new TrackerError(FOLLOW_UPGRADE, 503, { needsUpgrade: true })
         check(saved.error)
         const next = saved.data?.[0] || { ...row, ...patch }
         const refreshed = next.follows_ticket !== false ? await refresh(tenant, user, { entryId: row.id }) : null

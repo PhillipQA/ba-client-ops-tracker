@@ -120,10 +120,7 @@ test('followed cells: header names, label groups and the template row’s ticket
   // No label of the group: the column is left alone (it may not be a label group at all).
   assert.equal('c_severity' in followedCells(columns, { ...ticket, labels: [] }).cells, false)
   // Columns another feature fills are never followed.
-  const managed = followedCells(
-    [{ id: 'x', name: 'Title', type: 'text', taskField: 'title' } as TrackerColumn],
-    ticket,
-  )
+  const managed = followedCells([{ id: 'x', name: 'Title', type: 'text', taskField: 'title' } as TrackerColumn], ticket)
   assert.deepEqual(managed.cells, {})
 })
 
@@ -138,8 +135,16 @@ test('a refresh changes what differs, never pinned cells; empty values count as 
   assert.equal(patch.cells.c_title, 'Login fails')
   assert.equal('c_due' in patch.cells, false, 'pinned')
   assert.equal('c_notes' in patch.cells, false, 'not followed')
-  const cleared = followedCells(columns, { ...ticket, milestone: '' }, { cells: { c_notes: { from: 'ticket', field: 'milestone' } } })
-  assert.deepEqual(refreshPatch({}, { c_notes: cleared.cells.c_notes }, []).changed, [], 'empty and missing are the same')
+  const cleared = followedCells(
+    columns,
+    { ...ticket, milestone: '' },
+    { cells: { c_notes: { from: 'ticket', field: 'milestone' } } },
+  )
+  assert.deepEqual(
+    refreshPatch({}, { c_notes: cleared.cells.c_notes }, []).changed,
+    [],
+    'empty and missing are the same',
+  )
   assert.deepEqual(refreshPatch({ c_notes: 'Sprint 3' }, { c_notes: cleared.cells.c_notes }, []).cells, { c_notes: '' })
 })
 
@@ -381,7 +386,10 @@ test('without schema v45 a refresh says so and changes nothing; pinning is quiet
     trackers: 0,
     needsUpgrade: true,
   })
-  assert.deepEqual(tables.tenant_tracker_rows.find(item => item.id === rowId).data, { c_stage: 'Ticket', c_notes: 'mine' })
+  assert.deepEqual(tables.tenant_tracker_rows.find(item => item.id === rowId).data, {
+    c_stage: 'Ticket',
+    c_notes: 'mine',
+  })
   await git.pinCells(TENANT, 't1', { id: rowId, source_key: gitSourceKey(ENTRY) }, ['c_title'])
 })
 

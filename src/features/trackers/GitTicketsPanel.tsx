@@ -168,8 +168,8 @@ export default function GitTicketsPanel({
         </p>
         <p className="trk-git-help">
           Columns named after a ticket field (Title, Labels, Assignees, Milestone, Due date, State…) or a label group
-          (Priority takes High from <code>priority::high</code>) fill themselves. They follow the ticket at sign-in,
-          on Sync in Work Hub, and on Refresh. Cells you change by hand are pinned and keep your value.
+          (Priority takes High from <code>priority::high</code>) fill themselves. They follow the ticket at sign-in, on
+          Sync in Work Hub, and on Refresh. Cells you change by hand are pinned and keep your value.
         </p>
         <div className="trk-git-refresh">
           <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void refreshRows()}>

@@ -3,7 +3,13 @@ import { type HttpMethod, requestJson } from '../../shared/http'
 import type { GitTicketEntry } from './gitTicketModel'
 
 /** What a refresh changed: ticket rows brought up to date with their tickets. */
-export type GitRefreshResult = { tickets: number; rows: number; cells: number; trackers: number; needsUpgrade?: boolean }
+export type GitRefreshResult = {
+  tickets: number
+  rows: number
+  cells: number
+  trackers: number
+  needsUpgrade?: boolean
+}
 
 export type GitTicketOptions = {
   /** GIT Trackers the ticket can be added to. */
@@ -38,8 +44,7 @@ export const gitTicketsApi = {
   remove: (trackerId: string, entryId: string) =>
     call<{ removed: boolean; rows: number }>(`/api/trackers/${trackerId}/git-tickets/${entryId}`, 'DELETE'),
   /** Refresh in a GIT Tracker: its ticket rows only. */
-  refresh: (trackerId: string) =>
-    call<GitRefreshResult>(`/api/trackers/${trackerId}/git-tickets/refresh`, 'POST', {}),
+  refresh: (trackerId: string) => call<GitRefreshResult>(`/api/trackers/${trackerId}/git-tickets/refresh`, 'POST', {}),
   /** Every GIT Tracker of the workspace (after sign-in, or a Work Hub sync of one provider). */
   refreshAll: (provider?: 'gitlab' | 'github') =>
     call<GitRefreshResult>('/api/tracker-git/refresh', 'POST', provider ? { provider } : {}),
