@@ -352,55 +352,55 @@ export function BuildWidgetDialog({
   if (start.kind === 'query' && sql)
     return (
       <Suspense fallback={null}>
-      <QueryWidgetEditor
-        widget={start}
-        canWriteSql={sql.canWriteSql}
-        clients={engine.data.clients}
-        projects={engine.data.projects}
-        accounts={engine.data.accounts}
-        tableNames={sql.explorer.catalog.map(table => table.name)}
-        loadTrackers={sql.explorer.loadTrackers}
-        explorer={sql.explorer}
-        canAskJarvis={sql.canAskJarvis}
-        eyebrow="Your own widget · Data explorer"
-        about="The query runs in your browser each time your Action Center opens, on fresh data."
-        saveLabel={adding ? 'Add widget' : 'Apply'}
-        preview={widget => (
-          <>
-            <div className="crp-card-head">
-              <h3>{widget.title || WIDGET_LABELS.query}</h3>
-            </div>
-            <QueryView widget={widget} values={NO_FILTER_VALUES} explorer={sql.explorer} refresh={engine.data} />
-          </>
-        )}
-        onSave={onSave}
-        onClose={onClose}
-      />
+        <QueryWidgetEditor
+          widget={start}
+          canWriteSql={sql.canWriteSql}
+          clients={engine.data.clients}
+          projects={engine.data.projects}
+          accounts={engine.data.accounts}
+          tableNames={sql.explorer.catalog.map(table => table.name)}
+          loadTrackers={sql.explorer.loadTrackers}
+          explorer={sql.explorer}
+          canAskJarvis={sql.canAskJarvis}
+          eyebrow="Your own widget · Data explorer"
+          about="The query runs in your browser each time your Action Center opens, on fresh data."
+          saveLabel={adding ? 'Add widget' : 'Apply'}
+          preview={widget => (
+            <>
+              <div className="crp-card-head">
+                <h3>{widget.title || WIDGET_LABELS.query}</h3>
+              </div>
+              <QueryView widget={widget} values={NO_FILTER_VALUES} explorer={sql.explorer} refresh={engine.data} />
+            </>
+          )}
+          onSave={onSave}
+          onClose={onClose}
+        />
       </Suspense>
     )
   return (
     <div className="crp-page ac-crp">
       <Suspense fallback={null}>
-      <WidgetEditor
-        widget={start}
-        trackers={trackers.list}
-        canUseTrackers={engine.canUseTrackers}
-        fieldsFor={(source, trackerId) => {
-          if (source === 'tracker') trackers.ensure(trackerId)
-          return engine.fieldsFor(source, trackerId)
-        }}
-        recordsFor={engine.recordsFor}
-        preview={widget => (
-          <>
-            <div className="crp-card-head">
-              <h3>{widget.title || WIDGET_LABELS[widget.kind]}</h3>
-            </div>
-            <WidgetView widget={widget} filters={NO_FILTERS} engine={engine} />
-          </>
-        )}
-        onClose={onClose}
-        onSave={onSave}
-      />
+        <WidgetEditor
+          widget={start}
+          trackers={trackers.list}
+          canUseTrackers={engine.canUseTrackers}
+          fieldsFor={(source, trackerId) => {
+            if (source === 'tracker') trackers.ensure(trackerId)
+            return engine.fieldsFor(source, trackerId)
+          }}
+          recordsFor={engine.recordsFor}
+          preview={widget => (
+            <>
+              <div className="crp-card-head">
+                <h3>{widget.title || WIDGET_LABELS[widget.kind]}</h3>
+              </div>
+              <WidgetView widget={widget} filters={NO_FILTERS} engine={engine} />
+            </>
+          )}
+          onClose={onClose}
+          onSave={onSave}
+        />
       </Suspense>
     </div>
   )

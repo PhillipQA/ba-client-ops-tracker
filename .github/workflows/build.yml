@@ -31,12 +31,6 @@ jobs:
           echo
           echo "FORMAT-DIFF-END"
           git checkout -- .
-      - name: Bundle sizes (temporary)
-        run: |
-          npx vite build --logLevel warn >/dev/null 2>&1 || true
-          node scripts/compress-dist.mjs || true
-          echo "BUNDLE-START"; ls -lS dist/assets | head -25; echo "BUNDLE-END"
-          rm -rf dist
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check

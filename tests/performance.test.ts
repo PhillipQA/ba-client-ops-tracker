@@ -57,7 +57,11 @@ test('the Action Center loads widget editors and Jarvis when opened; settingsReq
     'src/features/settings/PlatformSettings.tsx',
     'src/features/accounts/AccountUsers.tsx',
   ])
-    assert.match(read(file), /import \{ settingsRequest \} from '[./]+(features\/)?settings\/settingsRequest'|from '\.\/settingsRequest'/, file)
+    assert.match(
+      read(file),
+      /import \{ settingsRequest \} from '[./]+(features\/)?settings\/settingsRequest'|from '\.\/settingsRequest'/,
+      file,
+    )
 })
 
 test('a page from an old build reloads once to get the new build, then shows the error', async () => {
@@ -102,8 +106,12 @@ function exchange(method: string, acceptEncoding: string) {
   const res: any = {
     headersSent: false,
     writableEnded: false,
-    setHeader: (name: string, value: string) => void (headers[name.toLowerCase()] = value),
-    vary: (field: string) => void (headers.vary = field),
+    setHeader: (name: string, value: string) => {
+      headers[name.toLowerCase()] = value
+    },
+    vary: (field: string) => {
+      headers.vary = field
+    },
     end: (body: Buffer) => {
       result.body = body
       res.headersSent = true
@@ -167,8 +175,12 @@ test('built files: compress-dist writes .br and .gz copies; the server sends the
     const sent: { file?: string; headers: Record<string, string>; next: boolean } = { headers: {}, next: false }
     const res: any = {
       headersSent: false,
-      setHeader: (name: string, value: string) => void (sent.headers[name.toLowerCase()] = value),
-      sendFile: (file: string) => void (sent.file = file),
+      setHeader: (name: string, value: string) => {
+        sent.headers[name.toLowerCase()] = value
+      },
+      sendFile: (file: string) => {
+        sent.file = file
+      },
     }
     serve({ method: 'GET', path: '/index-ABC.js', headers: { 'accept-encoding': 'gzip, br' } } as any, res, () => {
       sent.next = true
@@ -213,7 +225,13 @@ test('the business date is checked at midnight, not every second', () => {
 })
 
 test('the workspace version is hashed once per stored revision', () => {
-  const state = { clients: [{ id: 'c1', name: 'A' }], projects: [], planner: [], rtms: [], items: [{ id: 't1', title: 'One' }] }
+  const state = {
+    clients: [{ id: 'c1', name: 'A' }],
+    projects: [],
+    planner: [],
+    rtms: [],
+    items: [{ id: 't1', title: 'One' }],
+  }
   const first = storedWorkspaceVersion('tenant-perf', '2026-11-22T10:00:00Z', state)
   assert.equal(first, workspaceVersion(state))
   // Same updated_at means the same stored data: the remembered version is used without hashing again.
@@ -224,12 +242,18 @@ test('the workspace version is hashed once per stored revision', () => {
   // Without updated_at nothing is remembered.
   assert.equal(storedWorkspaceVersion('tenant-perf', undefined, state), workspaceVersion(state))
   const routes = read('server/workspace/store-routes.ts')
-  assert.match(routes, /version: storedWorkspaceVersion\(String\(tenantIdForUser\(user\)\), state\.updatedAt, state\.data\)/)
+  assert.match(
+    routes,
+    /version: storedWorkspaceVersion\(String\(tenantIdForUser\(user\)\), state\.updatedAt, state\.data\)/,
+  )
   assert.match(routes, /storedWorkspaceVersion\(String\(organizationId\), currentState\.updatedAt, current\)/)
 })
 
 test('compression is wired into the server and the build', () => {
   assert.match(read('server/index.ts'), /app\.use\('\/api', compressJson\(\)\)/)
-  assert.match(read('server/platform/static-site.ts'), /app\.use\('\/assets', precompressedAssets\(path\.join\(dist, 'assets'\)\)\)/)
+  assert.match(
+    read('server/platform/static-site.ts'),
+    /app\.use\('\/assets', precompressedAssets\(path\.join\(dist, 'assets'\)\)\)/,
+  )
   assert.match(read('package.json'), /"build": "tsc -b && vite build && node scripts\/compress-dist\.mjs"/)
 })

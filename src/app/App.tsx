@@ -613,131 +613,131 @@ function App() {
               )}
 
             <Suspense fallback={<PageLoading />}>
-            {!selectedClient &&
-              !selectedProject &&
-              view === 'internal-admin' &&
-              currentUser.isPlatformAdmin &&
-              currentUser.accountType === 'platform' && (
-                <InternalAdmin
-                  mustChangePassword={Boolean(authUser.mustChangePassword)}
-                  recoveryEmail={authUser.email}
-                  onRecoveryEmailChange={email => setAuthUser({ ...authUser, email })}
+              {!selectedClient &&
+                !selectedProject &&
+                view === 'internal-admin' &&
+                currentUser.isPlatformAdmin &&
+                currentUser.accountType === 'platform' && (
+                  <InternalAdmin
+                    mustChangePassword={Boolean(authUser.mustChangePassword)}
+                    recoveryEmail={authUser.email}
+                    onRecoveryEmailChange={email => setAuthUser({ ...authUser, email })}
+                  />
+                )}
+
+              {!selectedClient && !selectedProject && view === 'action' && hasModule('action') && (
+                <ActionCenterPage app={appState} currentUser={currentUser} />
+              )}
+
+              {!selectedClient && !selectedProject && isSeedsView(view) && <SeedsTabs app={appState} />}
+
+              {!selectedClient && !selectedProject && view === 'seeds' && <SeedsSyncPage app={appState} />}
+
+              {!selectedClient && !selectedProject && view === 'clients' && hasModule('clients') && (
+                <ClientsPage app={appState} />
+              )}
+
+              {!selectedClient && !selectedProject && view === 'projects' && hasModule('projects') && (
+                <ProjectsPage app={appState} />
+              )}
+
+              {!selectedClient && !selectedProject && view === 'inbox' && hasModule('inbox') && (
+                <InboxPage app={appState} currentUser={currentUser} />
+              )}
+
+              {!selectedClient && !selectedProject && view === 'items' && hasModule('items') && (
+                <TasksPage app={appState} />
+              )}
+
+              {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && (
+                <RequirementsTraceability
+                  key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`}
+                  store={store}
+                  canEdit={canWrite}
+                  canLink={canWrite && canWriteTasks && hasModule('items')}
+                  canOverride={currentUser?.role === 'Administrator'}
+                  context={rtmContext}
+                  onSave={saveRtms}
+                  onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
+                />
+              )}
+              {!selectedClient && !selectedProject && view === 'trackers' && hasModule('trackers') && (
+                <Trackers
+                  key={`${authUser?.organizationId}:${authUser?.id}`}
+                  isAdmin={currentUser?.role === 'Administrator'}
+                  canCreate={canWrite}
+                  items={store.items}
+                  clients={store.clients}
+                  projects={store.projects}
+                  accounts={store.accounts}
+                  today={today}
+                  onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
+                  isTaskClosed={status => isTaskClosed(status, store.taskSettings)}
+                  onCreateTasks={canWriteTasks && hasModule('items') ? createTrackerTasks : undefined}
+                  onUpdateTasks={canWriteTasks && hasModule('items') ? updateTrackerTasks : undefined}
+                  onMoveTasks={canWriteTasks && hasModule('items') ? moveTrackerTasks : undefined}
+                  onTasksChanged={() => refreshWorkspace(false)}
+                  currentUserId={currentUser?.id}
+                />
+              )}
+              {hasModule('documents') && documentsSeen.current && (
+                <div className="document-retained" hidden={!documentsOpen}>
+                  <Suspense fallback={documentsOpen ? <PageLoading /> : null}>
+                    <DocumentCreation
+                      key={`${authUser?.organizationId}:${authUser?.id}`}
+                      clients={documentInputs.clients}
+                      projects={documentInputs.projects}
+                      accounts={documentInputs.accounts}
+                      items={documentInputs.items}
+                      launch={documentLaunch}
+                      canGenerate={canWrite}
+                      canUseInbox={hasModule('inbox')}
+                      draftKey={`${authUser?.organizationId}:${authUser?.id}`}
+                      active={pageActive && documentsOpen}
+                    />
+                  </Suspense>
+                </div>
+              )}
+
+              {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && (
+                <CustomReports
+                  canUseTrackers={hasModule('trackers')}
+                  canExplore={hasModule('explorer')}
+                  canAskJarvis={
+                    hasModule('ai') &&
+                    (currentUser.role !== 'Viewer' || Boolean((currentUser as { askAi?: boolean }).askAi))
+                  }
+                  canUseInbox={hasModule('inbox')}
+                  clients={store.clients}
+                  projects={store.projects}
+                  items={store.items}
+                  planner={store.planner}
+                  taskSettings={store.taskSettings}
+                  accounts={store.accounts}
+                  workEvents={store.workEvents}
+                  currentUser={currentUser}
                 />
               )}
 
-            {!selectedClient && !selectedProject && view === 'action' && hasModule('action') && (
-              <ActionCenterPage app={appState} currentUser={currentUser} />
-            )}
+              {!selectedClient && !selectedProject && view === 'users' && canManageAccounts && (
+                <AccountUsers currentUser={currentUser} onChanged={acceptAccountUsers} />
+              )}
+              {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && (
+                <ThemePreferences user={currentUser} onSave={saveOwnPreferences} />
+              )}
 
-            {!selectedClient && !selectedProject && isSeedsView(view) && <SeedsTabs app={appState} />}
-
-            {!selectedClient && !selectedProject && view === 'seeds' && <SeedsSyncPage app={appState} />}
-
-            {!selectedClient && !selectedProject && view === 'clients' && hasModule('clients') && (
-              <ClientsPage app={appState} />
-            )}
-
-            {!selectedClient && !selectedProject && view === 'projects' && hasModule('projects') && (
-              <ProjectsPage app={appState} />
-            )}
-
-            {!selectedClient && !selectedProject && view === 'inbox' && hasModule('inbox') && (
-              <InboxPage app={appState} currentUser={currentUser} />
-            )}
-
-            {!selectedClient && !selectedProject && view === 'items' && hasModule('items') && (
-              <TasksPage app={appState} />
-            )}
-
-            {!selectedClient && !selectedProject && view === 'requirements' && hasModule('requirements') && (
-              <RequirementsTraceability
-                key={`${authUser?.organizationId}:${authUser?.id}:${rtmContext.clientId || ''}:${rtmContext.projectId || ''}`}
-                store={store}
-                canEdit={canWrite}
-                canLink={canWrite && canWriteTasks && hasModule('items')}
-                canOverride={currentUser?.role === 'Administrator'}
-                context={rtmContext}
-                onSave={saveRtms}
-                onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
-              />
-            )}
-            {!selectedClient && !selectedProject && view === 'trackers' && hasModule('trackers') && (
-              <Trackers
-                key={`${authUser?.organizationId}:${authUser?.id}`}
-                isAdmin={currentUser?.role === 'Administrator'}
-                canCreate={canWrite}
-                items={store.items}
-                clients={store.clients}
-                projects={store.projects}
-                accounts={store.accounts}
-                today={today}
-                onOpenTask={canWriteTasks && hasModule('items') ? openTaskEditor : undefined}
-                isTaskClosed={status => isTaskClosed(status, store.taskSettings)}
-                onCreateTasks={canWriteTasks && hasModule('items') ? createTrackerTasks : undefined}
-                onUpdateTasks={canWriteTasks && hasModule('items') ? updateTrackerTasks : undefined}
-                onMoveTasks={canWriteTasks && hasModule('items') ? moveTrackerTasks : undefined}
-                onTasksChanged={() => refreshWorkspace(false)}
-                currentUserId={currentUser?.id}
-              />
-            )}
-            {hasModule('documents') && documentsSeen.current && (
-              <div className="document-retained" hidden={!documentsOpen}>
-                <Suspense fallback={documentsOpen ? <PageLoading /> : null}>
-                <DocumentCreation
-                  key={`${authUser?.organizationId}:${authUser?.id}`}
-                  clients={documentInputs.clients}
-                  projects={documentInputs.projects}
-                  accounts={documentInputs.accounts}
-                  items={documentInputs.items}
-                  launch={documentLaunch}
-                  canGenerate={canWrite}
-                  canUseInbox={hasModule('inbox')}
-                  draftKey={`${authUser?.organizationId}:${authUser?.id}`}
-                  active={pageActive && documentsOpen}
+              {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && (
+                <Settings
+                  key={`${currentUser.organizationId}:${currentUser.id}`}
+                  currentUser={currentUser}
+                  clients={store.clients}
+                  projects={store.projects}
                 />
-                </Suspense>
-              </div>
-            )}
+              )}
 
-            {!selectedClient && !selectedProject && view === 'reports' && hasModule('reports') && (
-              <CustomReports
-                canUseTrackers={hasModule('trackers')}
-                canExplore={hasModule('explorer')}
-                canAskJarvis={
-                  hasModule('ai') &&
-                  (currentUser.role !== 'Viewer' || Boolean((currentUser as { askAi?: boolean }).askAi))
-                }
-                canUseInbox={hasModule('inbox')}
-                clients={store.clients}
-                projects={store.projects}
-                items={store.items}
-                planner={store.planner}
-                taskSettings={store.taskSettings}
-                accounts={store.accounts}
-                workEvents={store.workEvents}
-                currentUser={currentUser}
-              />
-            )}
-
-            {!selectedClient && !selectedProject && view === 'users' && canManageAccounts && (
-              <AccountUsers currentUser={currentUser} onChanged={acceptAccountUsers} />
-            )}
-            {!selectedClient && !selectedProject && view === 'themes' && currentUser.accountType !== 'platform' && (
-              <ThemePreferences user={currentUser} onSave={saveOwnPreferences} />
-            )}
-
-            {!selectedClient && !selectedProject && view === 'settings' && hasModule('settings') && (
-              <Settings
-                key={`${currentUser.organizationId}:${currentUser.id}`}
-                currentUser={currentUser}
-                clients={store.clients}
-                projects={store.projects}
-              />
-            )}
-
-            {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
-              <AiPage app={appState} currentUser={currentUser} />
-            )}
+              {!selectedClient && !selectedProject && view === 'ai' && hasModule('ai') && (
+                <AiPage app={appState} currentUser={currentUser} />
+              )}
             </Suspense>
 
             {selectedClient && (

@@ -27,7 +27,10 @@ function reloadedAlready() {
 }
 
 /** A failed page download: reload once for a newer build, otherwise let the error show. */
-export function recoverFromStaleBuild(error: unknown, reload: () => void = () => window.location.reload()): Promise<never> {
+export function recoverFromStaleBuild(
+  error: unknown,
+  reload: () => void = () => window.location.reload(),
+): Promise<never> {
   if (reloadedAlready()) {
     remember(false)
     return Promise.reject(error)

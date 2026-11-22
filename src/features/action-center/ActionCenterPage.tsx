@@ -572,34 +572,34 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
       )}
       {jarvisOpen && (
         <Suspense fallback={null}>
-        <JarvisReportDialog
-          target="actionCenter"
-          explorer={explorer}
-          onClose={() => setJarvisOpen(false)}
-          onCreate={async (_name, widgets) => {
-            const room = LAYOUT_LIMIT - draft.length
-            const fitting = widgets.slice(0, Math.max(0, room))
-            setDraft(current =>
-              fitting.reduce((next, widget) => {
-                // Jarvis's analyst notes become a note widget; tables go full width.
-                const notes = widget.kind === 'note'
-                const title = notes ? 'What this shows' : widget.title
-                const text = notes ? (widget.text || '').replace(/^What this shows\n/, '') : widget.text
-                const added = addWidget(next, 'custom', { widget: { ...widget, title, text, x: 0, y: 0 } })
-                const wide = notes || widget.query?.view === 'table'
-                const item = added[added.length - 1]
-                return wide && item && added !== next ? setWidgetWidth(added, keyOf(item), 'full') : added
-              }, current),
-            )
-            const count = fitting.length
-            setAddNote(
-              count < widgets.length
-                ? `Only ${count} of Jarvis’s ${widgets.length} widgets fit: the most is ${LAYOUT_LIMIT}.`
-                : `Added ${count} widget${count === 1 ? '' : 's'} from Jarvis. Save the layout to keep them.`,
-            )
-            return true
-          }}
-        />
+          <JarvisReportDialog
+            target="actionCenter"
+            explorer={explorer}
+            onClose={() => setJarvisOpen(false)}
+            onCreate={async (_name, widgets) => {
+              const room = LAYOUT_LIMIT - draft.length
+              const fitting = widgets.slice(0, Math.max(0, room))
+              setDraft(current =>
+                fitting.reduce((next, widget) => {
+                  // Jarvis's analyst notes become a note widget; tables go full width.
+                  const notes = widget.kind === 'note'
+                  const title = notes ? 'What this shows' : widget.title
+                  const text = notes ? (widget.text || '').replace(/^What this shows\n/, '') : widget.text
+                  const added = addWidget(next, 'custom', { widget: { ...widget, title, text, x: 0, y: 0 } })
+                  const wide = notes || widget.query?.view === 'table'
+                  const item = added[added.length - 1]
+                  return wide && item && added !== next ? setWidgetWidth(added, keyOf(item), 'full') : added
+                }, current),
+              )
+              const count = fitting.length
+              setAddNote(
+                count < widgets.length
+                  ? `Only ${count} of Jarvis’s ${widgets.length} widgets fit: the most is ${LAYOUT_LIMIT}.`
+                  : `Added ${count} widget${count === 1 ? '' : 's'} from Jarvis. Save the layout to keep them.`,
+              )
+              return true
+            }}
+          />
         </Suspense>
       )}
       {tilesItem && (
