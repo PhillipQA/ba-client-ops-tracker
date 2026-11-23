@@ -532,7 +532,13 @@ export function registerStoreRoutes(app: Express) {
 
       // `behind`: the browser's copy still lacks the other changes, so it keeps its old version. Its next save is checked
       // record by record again, and a whole-copy save is refused until it has fetched the latest.
-      res.json({ configured: true, saved: true, updatedAt, version: saved.version, ...(behind ? { behind: true } : {}) })
+      res.json({
+        configured: true,
+        saved: true,
+        updatedAt,
+        version: saved.version,
+        ...(behind ? { behind: true } : {}),
+      })
     } catch (error) {
       // Someone else saved in the moment between the version check and this commit. refreshRequired lets the browser
       // fetch the latest, merge its own changes onto it and retry, instead of showing the Save conflict box.

@@ -108,7 +108,12 @@ test('fingerprints ignore key order; malformed change sets are refused', () => {
   ])
     assert.equal(isWorkspaceChanges(bad), false, JSON.stringify(bad))
   // A record changed without saying how it looked before cannot slip past the check.
-  const sneaky = { collections: { items: { upsert: [task('a')], remove: [], base: {} } }, set: {}, unset: [], setBase: {} }
+  const sneaky = {
+    collections: { items: { upsert: [task('a')], remove: [], base: {} } },
+    set: {},
+    unset: [],
+    setBase: {},
+  }
   assert.equal(changeConflict(workspace([task('a')]), sneaky), 'items a')
 })
 
@@ -147,7 +152,8 @@ test('the browser sends a change set, and the whole copy once a server without t
   globalThis.fetch = (async (url: string, init?: any) => {
     const reply = (status: number, body: any) =>
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
-    if (url === '/api/store' && !init?.method) return reply(200, { configured: true, ...server, revision: server.version })
+    if (url === '/api/store' && !init?.method)
+      return reply(200, { configured: true, ...server, revision: server.version })
     const body = JSON.parse(init.body)
     sent.push({ method: init.method, body })
     if (init.method === 'PATCH' && !patchSupported) return reply(404, { error: 'Not found' })
@@ -211,7 +217,10 @@ test('a save taken onto unseen changes keeps the old version, so a later whole c
 test('wiring: PATCH /api/store/changes shares the save checks; schema v46 writes only changed rows', () => {
   const routes = read('server/workspace/store-routes.ts')
   assert.match(routes, /app\.put\('\/api\/store', requireAuth, requireTenantWorkspace, saveWorkspace\('full'\)\)/)
-  assert.match(routes, /app\.patch\('\/api\/store\/changes', requireAuth, requireTenantWorkspace, saveWorkspace\('changes'\)\)/)
+  assert.match(
+    routes,
+    /app\.patch\('\/api\/store\/changes', requireAuth, requireTenantWorkspace, saveWorkspace\('changes'\)\)/,
+  )
   assert.match(routes, /behind && changeConflict\(visible, changes\)/)
   assert.match(routes, /behind \? \{ behind: true \}/)
   assert.match(routes, /applyWorkspaceChanges\(visible, changes\)/)
@@ -219,7 +228,11 @@ test('wiring: PATCH /api/store/changes shares the save checks; schema v46 writes
   const tenant = read('server/core/tenant-state.ts')
   assert.match(tenant, /db\.rpc\('save_tenant_changes_v1'/)
   assert.match(tenant, /code === 'BA046'/, 'out-of-step tables fall back to the full save')
-  assert.match(tenant, /code === 'PGRST202' \|\| code === '42883'/, 'a database without v46 falls back to the full save')
+  assert.match(
+    tenant,
+    /code === 'PGRST202' \|\| code === '42883'/,
+    'a database without v46 falls back to the full save',
+  )
   assert.match(tenant, /db\.rpc\('save_tenant_state_v16'/, 'the full save is still there')
 
   const migration = read('database/migrations/schema-v46-changed-record-saves.sql')

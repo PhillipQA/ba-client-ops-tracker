@@ -700,7 +700,9 @@ async function writeTenantState(
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
   if (!before || !loadedRevisions.has(before)) throw new TenantSaveError('Reload the workspace before saving.', 409)
   const auditEntries = before ? auditEntriesForChanges(before, state, actor, reason, organizationId) : []
-  let result = synchronize ? await writeChangedRecords(organizationId, state, before, auditEntries, actor, reason) : null
+  let result = synchronize
+    ? await writeChangedRecords(organizationId, state, before, auditEntries, actor, reason)
+    : null
   if (!result)
     result = await db.rpc('save_tenant_state_v16', {
       p_expected_updated_at: loadedRevisions.get(before),

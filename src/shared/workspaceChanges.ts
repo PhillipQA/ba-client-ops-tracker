@@ -33,11 +33,17 @@ export type WorkspaceChanges = {
 
 /** JSON with object keys sorted, so two equal values always give the same text. */
 export function stableJson(value: unknown): string {
-  return JSON.stringify(value, (_key, entry) =>
-    entry && typeof entry === 'object' && !Array.isArray(entry)
-      ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]]))
-      : entry,
-  ) ?? 'undefined'
+  return (
+    JSON.stringify(value, (_key, entry) =>
+      entry && typeof entry === 'object' && !Array.isArray(entry)
+        ? Object.fromEntries(
+            Object.keys(entry)
+              .sort()
+              .map(key => [key, entry[key]]),
+          )
+        : entry,
+    ) ?? 'undefined'
+  )
 }
 
 /** A short fingerprint of a value: two 32-bit FNV-1a hashes of its stable JSON. Equal values, equal fingerprints. */
@@ -50,7 +56,7 @@ export function fingerprint(value: unknown): string {
     a = Math.imul(a ^ code, 0x01000193)
     b = Math.imul(b ^ code, 0x5bd1e995) ^ (b >>> 15)
   }
-  return (a >>> 0).toString(36) + '.' + (b >>> 0).toString(36)
+  return `${(a >>> 0).toString(36)}.${(b >>> 0).toString(36)}`
 }
 
 function idOf(record: unknown) {
@@ -148,9 +154,7 @@ export function diffWorkspace(before: unknown, after: unknown): WorkspaceChanges
 }
 
 export function hasChanges(changes: WorkspaceChanges) {
-  return (
-    Object.keys(changes.collections).length > 0 || Object.keys(changes.set).length > 0 || changes.unset.length > 0
-  )
+  return Object.keys(changes.collections).length > 0 || Object.keys(changes.set).length > 0 || changes.unset.length > 0
 }
 
 /** Checks that a change set from the network has the shape above. */
@@ -217,7 +221,8 @@ export function applyWorkspaceChanges<T>(current: T, changes: WorkspaceChanges):
       const id = idOf(record) as string
       if (present.has(id) || removed.has(id)) continue
       const previous = entry.after && own(entry.after, id) ? entry.after[id] : undefined
-      const at = previous === null ? 0 : previous === undefined ? -1 : kept.findIndex(item => idOf(item) === previous) + 1
+      const at =
+        previous === null ? 0 : previous === undefined ? -1 : kept.findIndex(item => idOf(item) === previous) + 1
       if (at <= 0 && previous !== null) kept.push(record)
       else kept.splice(at, 0, record)
       present.add(id)

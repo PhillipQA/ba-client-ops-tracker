@@ -22,7 +22,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx biome format --write src/shared/workspaceChanges.ts server/services/record-changes.ts server/core/tenant-state.ts server/workspace/store-routes.ts src/app/cloudStore.ts tests/changed-record-saves.test.ts tests/egress.test.ts tests/functional-routes.ts tests/workspace-merge.test.ts || true; git diff > format.diff; echo FORMAT-DIFF-START; base64 -w0 format.diff; echo; echo FORMAT-DIFF-END; git checkout -- .
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check
