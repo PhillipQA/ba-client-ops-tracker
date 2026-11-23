@@ -10,7 +10,7 @@ uniquely named records, and the tests run one at a time.
 | `03-clients-projects` | Add a client and a project |
 | `04-tasks` | Create, edit, complete and archive a task |
 | `05-subtasks` | Add a subtask; closing the task asks to close it too |
-| `06-task-board` | Tasks as a board and back to the table |
+| `06-task-views` | The same task in the Table, Board, Calendar and Timeline views |
 | `07-action-center` | The Due today tile counts a task and lists it when clicked |
 | `08-trackers` | Create a tracker, add a row, type a cell |
 | `09-users` | Add a Contributor in Users & Permissions |
