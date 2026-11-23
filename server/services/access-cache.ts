@@ -46,8 +46,8 @@ export function rememberAccess(organizationId: string | null | undefined, state:
 
 /**
  * Password sessions of people with a Seeds exception (set in Internal Admin; see auth/google-sign-in.ts), by session
- * token, with whose they are. They stay signed in when Seeds does not list them. Kept here, in memory, like the
- * sessions themselves, so the two end together on a restart.
+ * key (core/auth.ts passes sessions.keyFor(token)), with whose they are. They stay signed in when Seeds does not list
+ * them. The session store keeps the mark with the session and puts it back here when it restores the session.
  */
 const exceptionSessions = new Map<string, string>()
 

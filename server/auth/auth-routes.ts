@@ -6,6 +6,7 @@ import {
   isBcryptHash,
   type OrganizationInfo,
   passwordHash,
+  rememberSeedsExceptionSession,
   requireAuth,
   safeEqualText,
   safePlatformUser,
@@ -27,7 +28,7 @@ import {
   PASSWORD_BOOTSTRAP_MARKER,
 } from '../core/constants'
 import { db } from '../core/database'
-import { forgetSeedsException, rememberSeedsException, withAccess } from '../services/access-cache'
+import { forgetSeedsException, withAccess } from '../services/access-cache'
 import {
   loadLegacyTrackerState,
   loadTenantState,
@@ -292,7 +293,7 @@ export function registerAuthRoutes(app: Express) {
         )
         const token = sessions.create(user)
         // With an exception, this session stays in even if Seeds stops listing them (see services/access-cache.ts).
-        if (seedsRoute === 'exception' || exemption === true) rememberSeedsException(token, user.id)
+        if (seedsRoute === 'exception' || exemption === true) rememberSeedsExceptionSession(token, user.id)
         clearLoginFailures(req)
         // Read the workspace's access once so an Account Manager signs in straight to their four pages.
         await loadTenantState(organization.id).catch(() => undefined)
@@ -399,7 +400,7 @@ export function registerAuthRoutes(app: Express) {
       await db.from('app_users').update({ last_login_at: loggedInAt, updated_at: loggedInAt }).eq('id', row.id)
       const user = safeUser({ ...row, last_login_at: loggedInAt }, organization as OrganizationInfo)
       const token = sessions.create(user)
-      if (seedsRoute === 'exception') rememberSeedsException(token, user.id)
+      if (seedsRoute === 'exception') rememberSeedsExceptionSession(token, user.id)
       res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_SECONDS))
       res.json({ user: withAccess(user), cloudConfigured: true, multiTenant: true })
     } catch (error) {
@@ -487,7 +488,7 @@ export function registerAuthRoutes(app: Express) {
     const { token } = sessionFromRequest(req)
     if (token) {
       sessions.delete(token)
-      forgetSeedsException(token)
+      forgetSeedsException(sessions.keyFor(token))
     }
     res.setHeader('Set-Cookie', sessionCookie('', 0))
     res.json({ ok: true })

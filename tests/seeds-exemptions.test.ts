@@ -79,14 +79,17 @@ test('password sign-in may use the exception; Google never does; Internal Admin 
     routes,
     /seedsSignInRoute\(state\.data, \{ role: row\.role, email: identity\.email \}, exemption, 'google'\)/,
   )
-  assert.match(routes, /rememberSeedsException\(token, user\.id\)/)
-  assert.match(routes, /forgetSeedsException\(token\)/, 'signing out forgets the session')
+  assert.match(routes, /rememberSeedsExceptionSession\(token, user\.id\)/)
+  assert.match(routes, /forgetSeedsException\(sessions\.keyFor\(token\)\)/, 'signing out forgets the session')
   const auth = read('server/core/auth.ts')
-  assert.match(auth, /seedsStillAdmits\(user, token\)/)
+  assert.match(auth, /seedsStillAdmits\(user, sessions\.keyFor\(token\)\)/)
+  // The mark is stored with the session (schema v47) and comes back with it after a restart.
+  assert.match(auth, /sessions\.setFlag\(token, SEEDS_EXCEPTION, true\)/)
+  assert.match(auth, /if \(session\.flags\[SEEDS_EXCEPTION\]\) rememberSeedsException\(key/)
   const admin = read('server/platform/internal-admin.ts')
   assert.match(admin, /typeof req\.body\?\.seedsExempt === 'boolean'/)
   assert.match(admin, /status\(409\)\.json\(\{ error: SEEDS_EXEMPT_NEEDS_SCHEMA \}\)/)
-  assert.match(admin, /forgetSeedsExceptionsOf\(userId\)/)
+  assert.match(admin, /forgetSeedsExceptionSessionsOf\(userId\)/)
   assert.match(admin, /seedsExemptReady: Boolean\(seedsExemptions\)/)
   const ui = read('src/features/admin/InternalAdmin.tsx')
   assert.match(ui, /Can sign in with a password without Seeds/)
