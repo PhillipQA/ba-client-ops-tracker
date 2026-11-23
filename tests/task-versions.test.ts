@@ -22,7 +22,12 @@ import {
 } from '../src/app/cloudStore'
 
 const read = (path: string) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
-const task = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: `Task ${id}`, status: 'Open', ...extra })
+const task = (id: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  title: `Task ${id}`,
+  status: 'Open',
+  ...extra,
+})
 const workspace = (items: any[], extra: Record<string, unknown> = {}) => ({
   schemaVersion: 6,
   clients: [{ id: 'c1', name: 'Acme' }],
@@ -59,7 +64,9 @@ test('a refresh downloads only what differs from the copy it has, and rebuilds t
 
 test('record versions are small next to the records', () => {
   const big = workspace(
-    Array.from({ length: 200 }, (_, index) => task(`t${index}`, { description: 'Lorem ipsum dolor sit amet '.repeat(20) })),
+    Array.from({ length: 200 }, (_, index) =>
+      task(`t${index}`, { description: 'Lorem ipsum dolor sit amet '.repeat(20) }),
+    ),
   )
   assert.ok(JSON.stringify(workspaceVersions(big)).length * 20 < JSON.stringify(big).length)
 })
@@ -126,7 +133,8 @@ function fakeServer(initial: any, adjust: (data: any) => any = data => data) {
   const fetch = (async (url: string, init?: any) => {
     const body = init?.body ? JSON.parse(init.body) : undefined
     state.calls.push({ url: `${init?.method || 'GET'} ${url}`, body })
-    if (url === '/api/store' && !init?.method) return reply(200, { configured: true, ...state, revision: state.version })
+    if (url === '/api/store' && !init?.method)
+      return reply(200, { configured: true, ...state, revision: state.version })
     if (url === '/api/store/sync')
       return reply(200, { configured: true, version: state.version, changes: changesSince(body.versions, state.data) })
     if (url === '/api/store/changes') {
@@ -205,9 +213,15 @@ test('what the server adjusted in a save is taken in, so the next save from anot
     assert.equal(shown.detail.data.items[0].stamped, true)
     // Someone else saves a different task; this browser's next edit to a, with a fingerprint of a as stored, goes in.
     const other = server.state.data
-    server.state.data = { ...other, items: other.items.map((item: any) => (item.id === 'b' ? { ...item, owner: 'Ben' } : item)) }
+    server.state.data = {
+      ...other,
+      items: other.items.map((item: any) => (item.id === 'b' ? { ...item, owner: 'Ben' } : item)),
+    }
     server.state.version = 'v-ben'
-    await queueCloudStoreSave({ ...shown.detail.data, items: shown.detail.data.items.map((item: any) => (item.id === 'a' ? { ...item, title: 'Renamed' } : item)) })
+    await queueCloudStoreSave({
+      ...shown.detail.data,
+      items: shown.detail.data.items.map((item: any) => (item.id === 'a' ? { ...item, title: 'Renamed' } : item)),
+    })
     const saves = server.state.calls.filter(call => call.url === 'PATCH /api/store/changes')
     const last = saves.at(-1)!.body
     assert.equal(last.changes.collections.items.base.a, fingerprint(other.items[0]), 'compares with what is stored')
@@ -236,7 +250,10 @@ test('a save conflict is settled per record: Use theirs, then saving resumes wit
       server.state.data.items.map((item: any) => `${item.id}:${item.status}`),
       ['a:Done', 'b:Waiting'],
     )
-    assert.ok(events.some(event => event.type === WORKSPACE_MERGED), 'the app shows the settled workspace')
+    assert.ok(
+      events.some(event => event.type === WORKSPACE_MERGED),
+      'the app shows the settled workspace',
+    )
     assert.equal(saveClash(), undefined)
   })
 })

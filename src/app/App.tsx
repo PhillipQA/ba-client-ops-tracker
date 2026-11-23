@@ -493,8 +493,8 @@ function App() {
                 <p>{saveConflict}</p>
                 <ConflictChoice conflict={saveConflict} settle={settleConflict} />
                 <p>
-                  Or download your pending workspace copy and reload, then reapply your edits to the current records. Open
-                  editors stay open for reference; reopen them before saving.
+                  Or download your pending workspace copy and reload, then reapply your edits to the current records.
+                  Open editors stay open for reference; reopen them before saving.
                 </p>
                 <button className="secondary" disabled={recoveringCloud} onClick={() => void recoverCloud()}>
                   {recoveringCloud ? 'Reloading…' : 'Download edits and reload latest'}

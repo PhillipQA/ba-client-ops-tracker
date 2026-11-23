@@ -15,12 +15,11 @@ function side(record: unknown, field: string | undefined) {
   if (!field || !record || typeof record !== 'object') return shown(record)
   let value: unknown = record
   for (const part of field.split(/\.|\[|\]/).filter(Boolean))
-    value =
-      Array.isArray(value)
-        ? value.find(entry => entry && typeof entry === 'object' && String((entry as { id?: unknown }).id) === part)
-        : value && typeof value === 'object'
-          ? (value as Record<string, unknown>)[part]
-          : undefined
+    value = Array.isArray(value)
+      ? value.find(entry => entry && typeof entry === 'object' && String((entry as { id?: unknown }).id) === part)
+      : value && typeof value === 'object'
+        ? (value as Record<string, unknown>)[part]
+        : undefined
   return shown(value)
 }
 
