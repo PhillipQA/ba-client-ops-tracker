@@ -1,12 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import {
-  SessionStore,
-  sessionKey,
-  type SessionPersistence,
-  type StoredSession,
-} from '../server/auth/session-store'
+import { SessionStore, sessionKey, type SessionPersistence, type StoredSession } from '../server/auth/session-store'
 import { sessionDatabase } from '../server/auth/session-database'
 
 const MINUTE = 60_000
@@ -15,7 +10,12 @@ type User = { id: string; role: string }
 
 function clock(start = 1_000_000) {
   let at = start
-  return { now: () => at, advance: (ms: number) => void (at += ms) }
+  return {
+    now: () => at,
+    advance: (ms: number) => {
+      at += ms
+    },
+  }
 }
 
 /** A stand-in for public.app_sessions, shared by every store made from it (two servers, or before and after a restart). */
@@ -55,7 +55,14 @@ function table() {
       for (const [key, row] of rows) if (row.expiresAt <= now) rows.delete(key)
     },
   }
-  return { rows, log, persistence, setDown: (value: boolean) => void (down = value) }
+  return {
+    rows,
+    log,
+    persistence,
+    setDown: (value: boolean) => {
+      down = value
+    },
+  }
 }
 
 const store = (persistence: SessionPersistence<User>, time: ReturnType<typeof clock>, extra = {}) =>

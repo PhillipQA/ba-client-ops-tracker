@@ -152,7 +152,9 @@ export class SessionStore<T> {
   private persist(key: string, entry: Entry<T>) {
     const { user, createdAt, lastSeenAt, flags } = entry
     entry.storedSeenAt = lastSeenAt
-    void this.write(key, persistence => persistence.save(key, { user, createdAt, lastSeenAt, flags }, this.expiresAt(entry)))
+    void this.write(key, persistence =>
+      persistence.save(key, { user, createdAt, lastSeenAt, flags }, this.expiresAt(entry)),
+    )
       .then(() => {
         entry.persisted = true
         entry.checkedAt = this.now()
@@ -172,7 +174,16 @@ export class SessionStore<T> {
   create(user: T, flags: Record<string, boolean> = {}) {
     const token = randomBytes(32).toString('hex')
     const at = this.now()
-    const entry: Entry<T> = { user, createdAt: at, lastSeenAt: at, flags: { ...flags }, token, checkedAt: at, persisted: false, storedSeenAt: at }
+    const entry: Entry<T> = {
+      user,
+      createdAt: at,
+      lastSeenAt: at,
+      flags: { ...flags },
+      token,
+      checkedAt: at,
+      persisted: false,
+      storedSeenAt: at,
+    }
     this.entries_.set(sessionKey(token), entry)
     this.persist(sessionKey(token), entry)
     return token
@@ -221,7 +232,16 @@ export class SessionStore<T> {
       // A stand-in names only a session this store holds; one already gone starts nothing.
       if (tokenOrKey.startsWith('restored:')) return this
       const at = this.now()
-      entry = { user, createdAt: at, lastSeenAt: at, flags: {}, token: tokenOrKey, checkedAt: at, persisted: false, storedSeenAt: at }
+      entry = {
+        user,
+        createdAt: at,
+        lastSeenAt: at,
+        flags: {},
+        token: tokenOrKey,
+        checkedAt: at,
+        persisted: false,
+        storedSeenAt: at,
+      }
       this.entries_.set(key, entry)
     }
     this.persist(key, entry)
@@ -299,7 +319,12 @@ export class SessionStore<T> {
       storedSeenAt: stored.lastSeenAt,
     }
     this.entries_.set(key, entry)
-    this.onRestore?.(key, { user: entry.user, createdAt: entry.createdAt, lastSeenAt: entry.lastSeenAt, flags: entry.flags })
+    this.onRestore?.(key, {
+      user: entry.user,
+      createdAt: entry.createdAt,
+      lastSeenAt: entry.lastSeenAt,
+      flags: entry.flags,
+    })
   }
 
   /**
@@ -328,7 +353,13 @@ export class SessionStore<T> {
     // Held here and stored before, but no longer stored: signed out on another server. A session written or read
     // since the list was taken, or whose write is still on its way (or failed), is left alone.
     for (const [key, entry] of this.entries_)
-      if (entry.persisted && entry.checkedAt < started && !live.has(key) && !this.writes.has(key) && !this.reads.has(key))
+      if (
+        entry.persisted &&
+        entry.checkedAt < started &&
+        !live.has(key) &&
+        !this.writes.has(key) &&
+        !this.reads.has(key)
+      )
         this.drop(key)
     return restored
   }

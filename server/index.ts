@@ -378,5 +378,7 @@ process.on('SIGTERM', () => {
   clearInterval(discordTimer)
   for (const runtime of discordRuntimes.values()) void runtime.client.destroy()
   // Sign-ins and sign-outs still being written are finished first, briefly.
-  void Promise.race([sessions.flush(), new Promise(resolve => setTimeout(resolve, 2000))]).finally(() => process.exit(0))
+  void Promise.race([sessions.flush(), new Promise(resolve => setTimeout(resolve, 2000))]).finally(() =>
+    process.exit(0),
+  )
 })
