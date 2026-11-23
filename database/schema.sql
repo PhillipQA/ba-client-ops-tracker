@@ -348,6 +348,24 @@ CREATE TABLE public.activity_logs (
     organization_id uuid NOT NULL
 );
 
+CREATE TABLE public.app_sessions (
+    token_hash text NOT NULL PRIMARY KEY,
+    user_id text NOT NULL,
+    organization_id text,
+    account_type text DEFAULT 'tenant'::text NOT NULL,
+    user_data jsonb NOT NULL,
+    flags jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    last_seen_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT app_sessions_token_hash_check CHECK ((token_hash ~ '^[a-f0-9]{64}$'::text))
+);
+
+CREATE INDEX app_sessions_user_idx ON public.app_sessions USING btree (user_id);
+
+CREATE INDEX app_sessions_expires_idx ON public.app_sessions USING btree (expires_at);
+
+
 CREATE TABLE public.app_settings (
     id text NOT NULL,
     setting_key text NOT NULL,
@@ -1633,4 +1651,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 45 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 47 as schema_version;

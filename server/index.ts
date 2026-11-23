@@ -38,6 +38,7 @@ import { followUpTimeZone, isProduction, port, projectRoot } from './core/config
 import { db } from './core/database'
 import {
   bootstrapPasswordUsable,
+  loadSession,
   requireAuth,
   requireTenantWorkspace,
   safeUser,
@@ -123,6 +124,9 @@ const docHubDeps: Parameters<typeof createDocHubService>[0] = {
 }
 const docHubService = createDocHubService(docHubDeps)
 registerDocHubWebhook(app, docHubDeps, docHubService)
+// The request's sign-in is read from the database when this server does not hold it (made on another instance or
+// before a restart) or has not checked it for a minute (signed out elsewhere). Every check below reads that copy.
+app.use(loadSession)
 // Large JSON bodies only for signed-in requests; sign-in and anonymous requests get a small limit (see body-limits).
 app.use(jsonBodies({ json: express.json, signedIn: req => Boolean(sessionFromRequest(req).user) }))
 // Large JSON answers (the workspace, tracker rows, reports) go out compressed when the browser accepts it.
@@ -333,6 +337,11 @@ if (!isProduction) {
   registerStaticSite(app, dist)
 }
 
+// Sign-ins kept in the database (schema v47) are loaded, so a restart or deploy signs no one out, and signing a person
+// out everywhere (account disabled, password changed) reaches every one of their sessions.
+void sessions.restore().then(count => {
+  if (count) console.log(`Restored ${count} sign-in${count === 1 ? '' : 's'} from the database.`)
+})
 const server = app.listen(port, () => {
   console.log(`BA Client Ops Tracker running on http://localhost:${port}`)
   console.log(`HTTP timeouts: keepAlive=${server.keepAliveTimeout}ms, headers=${server.headersTimeout}ms`)
@@ -365,5 +374,6 @@ discordTimer.unref()
 process.on('SIGTERM', () => {
   clearInterval(discordTimer)
   for (const runtime of discordRuntimes.values()) void runtime.client.destroy()
-  process.exit(0)
+  // Sign-ins and sign-outs still being written are finished first, briefly.
+  void Promise.race([sessions.flush(), new Promise(resolve => setTimeout(resolve, 2000))]).finally(() => process.exit(0))
 })

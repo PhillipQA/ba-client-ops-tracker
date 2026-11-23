@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Sign-ins kept in the database (Phase 3)
+- **Database update needed: schema v47** (`database/migrations/schema-v47-sessions.sql`). Run it before or after deploying. Until it is run, sign-ins stay in memory as before; the server looks for the table every ten minutes, so no restart is needed.
+- **A restart or deploy no longer signs everyone out.** Sign-ins are kept in the new `app_sessions` table and loaded when the server starts, and **every server instance knows every sign-in**.
+  - Each request's sign-in is read from the database when this server doesn't hold it, or hasn't checked it for a minute. A sign-out on one instance reaches the others within a minute.
+  - Signing a person out everywhere (account disabled, password changed or reset, removed by Internal Admin) also reaches their sessions restored after a restart.
+- **Only a SHA-256 of each token is stored**, never the token itself, so a copy of the table signs no one in. Rows hold the signed-in user as the server uses it (no password hash), the 8-hour and idle limits (enforced as before), and marks such as a Seeds exception sign-in, which now also survives a restart.
+- Sign-ins and sign-outs are written in order, so a quick sign-out is never undone. If the database can't be reached, sign-ins keep working from memory and are stored once it's back. Activity is written at most once a minute per session.
+
 ### Tasks: repeating tasks and custom fields (Phase 2)
 - **Repeating tasks**: set a task's **Repeat** in the new-task form or the task editor: every N days (optionally workdays only), weeks (on chosen weekdays), months or years, until an optional end date.
   - When it's **closed**, the next one is made automatically: same title, details, client, project, assignee, priority, estimate and custom fields; status Open; dates moved to the next occurrence; subtasks copied as Open subtasks. Comments, evidence, time entries, files and results start fresh.

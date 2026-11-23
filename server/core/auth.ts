@@ -1,12 +1,14 @@
 // Sessions, passwords and the sign-in checks every route uses.
-import { forgetSeedsException, seedsStillAdmits, withAccess } from '../services/access-cache'
+import { forgetSeedsException, rememberSeedsException, seedsStillAdmits, withAccess } from '../services/access-cache'
 import bcrypt from 'bcryptjs'
 import type express from 'express'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { type InterfaceMode, normalizeInterfaceMode } from '../../src/features/settings/appearance'
 import { normalizeAppTheme, normalizeClientThemes } from '../../src/features/settings/theme'
+import { sessionDatabase } from '../auth/session-database'
 import { idleTimeoutFromEnv, SessionStore } from '../auth/session-store'
 import { isProduction } from './config'
+import { db } from './database'
 import {
   ALL_MODULES,
   BCRYPT_ROUNDS,
@@ -41,10 +43,56 @@ export type OrganizationInfo = {
   enabledModules: string[]
 }
 
-// Sessions expire on the server (8 hours absolute, 2 hours idle by default), not only in the browser cookie.
+/** A session that came in by a Seeds exception is marked with this flag (see services/access-cache.ts). */
+const SEEDS_EXCEPTION = 'seedsException'
+
+// Sessions expire on the server (8 hours absolute, 2 hours idle by default), not only in the browser cookie. With a
+// database they are kept in public.app_sessions (schema v47), so a restart or deploy signs no one out and every server
+// instance knows every sign-in; this server's memory is a cache of them.
 export const sessions = new SessionStore<SessionUser>({
   idleTimeoutMs: idleTimeoutFromEnv(process.env.SESSION_IDLE_TIMEOUT_MINUTES),
+  persistence: db?.pool ? sessionDatabase<SessionUser>(db.pool) : undefined,
+  onRestore: (key, session) => {
+    if (session.flags[SEEDS_EXCEPTION]) rememberSeedsException(key, String(session.user.id))
+  },
+  onError: error => {
+    // A missing table (schema v47 not run yet) is reported once by the session database itself.
+    if ((error as { code?: string })?.code !== '42P01')
+      console.error('Session store:', (error as Error)?.message || error)
+  },
 })
+
+/**
+ * This session stays in even if Seeds stops listing its person (see services/access-cache.ts). The mark is stored with
+ * the session, so it outlives a restart too.
+ */
+export function rememberSeedsExceptionSession(token: string, userId: string) {
+  rememberSeedsException(sessions.keyFor(token), userId)
+  sessions.setFlag(token, SEEDS_EXCEPTION, true)
+}
+
+/** Internal Admin took a person's Seeds exception away: their sessions answer to Seeds again. */
+export function forgetSeedsExceptionSessionsOf(userId: string) {
+  for (const [token, user] of sessions.entries())
+    if (String(user.id) === String(userId)) {
+      forgetSeedsException(sessions.keyFor(token))
+      sessions.setFlag(token, SEEDS_EXCEPTION, false)
+    }
+}
+
+/**
+ * Express middleware, before any route: brings this server's copy of the request's session up to date with the
+ * database (see SessionStore.ready), so every check after it, which reads the copy, sees a sign-in made on another
+ * instance or before a restart, and not one signed out elsewhere.
+ */
+export function loadSession(req: express.Request, _res: express.Response, next: express.NextFunction) {
+  const token = parseCookies(req.headers.cookie || '').ba_session
+  if (!token) return next()
+  sessions.ready(token).then(
+    () => next(),
+    () => next(),
+  )
+}
 
 // Legacy SHA-256 digest retained only for backward-compatible verification and
 // as the browser-to-server pre-hash used by the existing Settings UI. Passwords
@@ -169,9 +217,9 @@ export function sessionFromRequest(req: express.Request) {
   let user = token ? (sessions.get(token) ?? null) : null
   // Seeds decides who is in: someone no longer an active Seeds employee is signed out unless this password session
   // came in by a Seeds exception (Internal Admin is not a tenant).
-  if (user && user.accountType !== 'platform' && !seedsStillAdmits(user, token)) {
+  if (user && user.accountType !== 'platform' && !seedsStillAdmits(user, sessions.keyFor(token))) {
     sessions.delete(token)
-    forgetSeedsException(token)
+    forgetSeedsException(sessions.keyFor(token))
     user = null
   }
   // Account Managers are Viewers of four pages while per-person visibility is on (see services/access-cache.ts).

@@ -4,7 +4,15 @@ import { randomUUID } from 'node:crypto'
 import { validRecoveryEmail } from '../auth/password-recovery-email'
 import { recoverySubmitLimiter } from '../auth/rate-limits'
 import { SEEDS_EXEMPT_NEEDS_SCHEMA, seedsExemptionsById } from '../auth/seeds-exemptions'
-import { requireAuth, safeUser, secureHashPassword, sessions, type SessionUser, verifyPassword } from '../core/auth'
+import {
+  forgetSeedsExceptionSessionsOf,
+  requireAuth,
+  safeUser,
+  secureHashPassword,
+  sessions,
+  type SessionUser,
+  verifyPassword,
+} from '../core/auth'
 import { INTERNAL_ADMIN_ACCOUNT_KEY } from '../core/constants'
 import { db } from '../core/database'
 import {
@@ -20,7 +28,6 @@ import {
   usernameExists,
 } from '../core/tenant-state'
 import { discordRuntimes } from '../integrations/discord'
-import { forgetSeedsExceptionsOf } from '../services/access-cache'
 import { requirePlatformAdmin } from './platform-auth'
 
 /** The internal admin console: organisations, users and passwords. */
@@ -319,7 +326,7 @@ export function registerInternalAdminRoutes(app: Express) {
       const { error } = await db.from('app_users').update(patch).eq('id', userId)
       if (error) throw error
       // Without the exception, their signed-in sessions answer to Seeds again from the next request.
-      if (patch.seeds_exempt === false || patch.status === 'Disabled') forgetSeedsExceptionsOf(userId)
+      if (patch.seeds_exempt === false || patch.status === 'Disabled') forgetSeedsExceptionSessionsOf(userId)
       const snapshotPatch: any = {}
       for (const [dbKey, appKey] of [
         ['name', 'name'],
