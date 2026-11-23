@@ -10,6 +10,14 @@ import {
   rollOverOpenSubtaskFollowUps,
 } from '../services/follow-up-rollover'
 import { reconcileNotifications } from '../services/notification-engine'
+import {
+  duplicateItemId,
+  itemsWritePlan,
+  snapshotWithItems,
+  snapshotWithoutItems,
+  tablesAreSource,
+  workspaceFromStored,
+} from '../services/item-tables'
 import { changedRows } from '../services/record-changes'
 import { createWorkspaceGuard } from '../services/workspace-guard'
 import { workspaceVersion } from '../services/workspace-version'
@@ -22,8 +30,59 @@ export async function loadLegacyTrackerState() {
   if (!db) return { configured: false, data: null as any, updatedAt: undefined as string | undefined }
   const { data, error } = await db.from('tracker_state').select('data, updated_at').eq('id', 'main').maybeSingle()
   if (error) throw error
-  return { configured: true, data: data?.data ?? null, updatedAt: data?.updated_at as string | undefined }
+  let legacy = data?.data ?? null
+  // The original workspace's copy (tracker_state) follows its tenant: with tasks in their tables, read them there.
+  if (legacy?.itemsInTables === true) legacy = workspaceFromStored(legacy, await itemRows(BXI_CORE_ORG_ID)).state
+  return { configured: true, data: legacy, updatedAt: data?.updated_at as string | undefined }
 }
+
+/** A tenant's live task and inquiry rows (raw_data), for a snapshot that keeps its tasks in their tables. */
+async function itemRows(organizationId: string) {
+  const rows: any[] = []
+  for (const table of ['tasks', 'inquiries']) {
+    const { data, error } = await db
+      .from(table)
+      .select('raw_data')
+      .eq('organization_id', organizationId)
+      .is('deleted_at', null)
+    if (error) throw error
+    rows.push(...(data || []).map((row: any) => row.raw_data))
+  }
+  return rows
+}
+
+/**
+ * The stored snapshot and, when it keeps its tasks in their tables (Phase 4C), those rows: one statement, so both are
+ * read as of the same moment and a save in between cannot mix old and new.
+ */
+async function readTenantSnapshot(organizationId: string) {
+  if (!db.pool) {
+    const { data, error } = await db
+      .from('tenant_state')
+      .select('data, updated_at')
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+    if (error) throw error
+    const items = data?.data?.itemsInTables === true ? await itemRows(organizationId) : null
+    return data ? { data: data.data, updated_at: data.updated_at, items } : null
+  }
+  const result = await db.pool.query(
+    `select s.data, s.updated_at,
+       case when s.data->>'itemsInTables' = 'true' then (
+         select coalesce(jsonb_agg(r.raw_data), '[]'::jsonb) from (
+           select raw_data from public.tasks where organization_id = s.organization_id and deleted_at is null
+           union all
+           select raw_data from public.inquiries where organization_id = s.organization_id and deleted_at is null
+         ) r)
+       end as items
+     from public.tenant_state s where s.organization_id = $1`,
+    [organizationId],
+  )
+  return result.rows[0] || null
+}
+
+/** Whether the workspace was loaded from a snapshot that keeps its tasks in their tables. */
+const itemsInTablesOf = new WeakMap<object, boolean>()
 
 export async function multiTenantSchemaReady() {
   if (!db) return false
@@ -91,12 +150,7 @@ export async function loadTenantState(organizationId?: string | null) {
   if (!db) return { configured: false, data: null as any, updatedAt: undefined as string | undefined }
   // A known tenant must never fall back to the original workspace after a DB error.
   if (organizationId) {
-    const { data, error } = await db
-      .from('tenant_state')
-      .select('data, updated_at')
-      .eq('organization_id', organizationId)
-      .maybeSingle()
-    if (error) throw error
+    const data = await readTenantSnapshot(organizationId)
     // Recover accounts missing from older/fresh snapshots without replacing operational data.
     // app_users is the authentication authority; passwords never come from the browser.
     const { data: users, error: usersError } = await db
@@ -105,12 +159,17 @@ export async function loadTenantState(organizationId?: string | null) {
       .eq('organization_id', organizationId)
       .is('deleted_at', null)
     if (usersError) throw usersError
-    const snapshot = data?.data && typeof data.data === 'object' ? data.data : emptyTenantData()
+    const stored = workspaceFromStored(
+      data?.data && typeof data.data === 'object' ? data.data : emptyTenantData(),
+      data?.items,
+    )
+    const snapshot = stored.state
     const accounts = Array.isArray(snapshot.accounts) ? snapshot.accounts : []
     const knownIds = new Set(accounts.map((account: any) => String(account.id)))
     const recovered = (users || []).filter((user: any) => !knownIds.has(String(user.id))).map(accountFromDatabase)
     const recoveredState = { ...snapshot, accounts: [...accounts, ...recovered] }
     loadedRevisions.set(recoveredState, data?.updated_at || null)
+    itemsInTablesOf.set(recoveredState, stored.inTables)
     rememberAccess(organizationId, recoveredState)
     return { configured: true, data: recoveredState, updatedAt: data?.updated_at as string | undefined }
   }
@@ -656,22 +715,26 @@ let changedRecordSavesMissingUntil = 0
 async function writeChangedRecords(
   organizationId: string,
   state: any,
+  snapshot: any,
   before: any,
   auditEntries: any[],
   actor: SessionUser | null,
   reason: string,
+  onlyTables?: readonly string[],
 ) {
   if (!db || Date.now() < changedRecordSavesMissingUntil) return null
   // Users (app_users) are the sign-in authority and Internal Admin writes them too: they are still written whole.
-  const { changes, counts } = changedRows(
-    normalizedRecords(before, organizationId),
-    normalizedRecords(state, organizationId),
-    ['app_users'],
-  )
+  const all = changedRows(normalizedRecords(before, organizationId), normalizedRecords(state, organizationId), [
+    'app_users',
+  ])
+  const pick = (value: Record<string, unknown>) =>
+    onlyTables ? Object.fromEntries(Object.entries(value).filter(([table]) => onlyTables.includes(table))) : value
+  const changes = pick(all.changes)
+  const counts = pick(all.counts)
   const result = await db.rpc('save_tenant_changes_v1', {
     p_expected_updated_at: loadedRevisions.get(before),
     p_organization_id: organizationId,
-    p_state: state,
+    p_state: snapshot,
     p_changes: changes,
     p_counts: counts,
     p_audit_entries: auditEntries,
@@ -702,19 +765,42 @@ async function writeTenantState(
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
   if (!before || !loadedRevisions.has(before)) throw new TenantSaveError('Reload the workspace before saving.', 409)
   const auditEntries = before ? auditEntriesForChanges(before, state, actor, reason, organizationId) : []
-  let result = synchronize
-    ? await writeChangedRecords(organizationId, state, before, auditEntries, actor, reason)
+  // Phase 4C: where tasks are kept (see services/item-tables.ts). Keeping them in their tables needs the changed-rows
+  // save (schema v46): without it, the snapshot keeps them as before.
+  const plan = itemsWritePlan({
+    wantTables: tablesAreSource() && Date.now() >= changedRecordSavesMissingUntil,
+    wasInTables: itemsInTablesOf.get(before) === true,
+    synchronize,
+  })
+  if (plan.toTables) {
+    const duplicate = duplicateItemId(state)
+    if (duplicate) throw new TenantSaveError('Duplicate record IDs are not allowed.', 400)
+  }
+  let result = plan.changedRows
+    ? await writeChangedRecords(
+        organizationId,
+        state,
+        plan.toTables ? snapshotWithoutItems(state) : snapshotWithItems(state),
+        before,
+        auditEntries,
+        actor,
+        reason,
+        plan.onlyTables,
+      )
     : null
-  if (!result)
+  if (!result) {
+    // The full save. Items stay in their tables only when every record is written with it.
+    const keepTables = plan.fullSaveKeepsTables && Date.now() >= changedRecordSavesMissingUntil
     result = await db.rpc('save_tenant_state_v16', {
       p_expected_updated_at: loadedRevisions.get(before),
       p_organization_id: organizationId,
-      p_state: state,
-      p_records: synchronize ? normalizedRecords(state, organizationId) : null,
+      p_state: keepTables ? snapshotWithoutItems(state) : snapshotWithItems(state),
+      p_records: plan.syncRecordsOnFullSave ? normalizedRecords(state, organizationId) : null,
       p_audit_entries: auditEntries,
       p_actor_id: actor?.id || null,
       p_reason: reason,
     })
+  }
   const { data, error } = result
   if (error) {
     if (error.code === 'PGRST202' || error.code === '42883')
