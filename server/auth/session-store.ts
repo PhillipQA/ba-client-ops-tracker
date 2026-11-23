@@ -302,20 +302,34 @@ export class SessionStore<T> {
     this.onRestore?.(key, { user: entry.user, createdAt: entry.createdAt, lastSeenAt: entry.lastSeenAt, flags: entry.flags })
   }
 
-  /** Loads every live stored session (after a restart), so signing someone out everywhere reaches them all. */
+  /**
+   * Loads every live stored session (after a restart), so signing someone out everywhere reaches them all. Run again
+   * every minute with several server instances: it takes in sessions made elsewhere and drops ones signed out
+   * elsewhere. Returns how many sessions were taken in.
+   */
   async restore() {
     if (!this.persistence) return 0
-    const at = this.now()
-    let restored = 0
+    const started = this.now()
+    let stored: [string, StoredSession<T>][]
     try {
-      for (const [key, stored] of await this.persistence.loadAll(at)) {
-        if (this.entries_.has(key) || this.expired(stored, at)) continue
-        this.take(key, stored, undefined, at)
-        restored += 1
-      }
+      stored = await this.persistence.loadAll(started)
     } catch (error) {
       this.onError(error)
+      return 0
     }
+    const at = this.now()
+    const live = new Set(stored.map(([key]) => key))
+    let restored = 0
+    for (const [key, session] of stored) {
+      if (this.entries_.has(key) || this.expired(session, at)) continue
+      this.take(key, session, undefined, at)
+      restored += 1
+    }
+    // Held here and stored before, but no longer stored: signed out on another server. A session written or read
+    // since the list was taken, or whose write is still on its way (or failed), is left alone.
+    for (const [key, entry] of this.entries_)
+      if (entry.persisted && entry.checkedAt < started && !live.has(key) && !this.writes.has(key) && !this.reads.has(key))
+        this.drop(key)
     return restored
   }
 

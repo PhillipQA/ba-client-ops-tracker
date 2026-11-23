@@ -14,7 +14,7 @@ Released with pull request #110.
 ### Sign-ins kept in the database (Phase 3)
 - **Database update needed: schema v47** (`database/migrations/schema-v47-sessions.sql`). Run it before or after deploying. Until it is run, sign-ins stay in memory as before; the server looks for the table every ten minutes, so no restart is needed.
 - **A restart or deploy no longer signs everyone out.** Sign-ins are kept in the new `app_sessions` table and loaded when the server starts, and **every server instance knows every sign-in**.
-  - Each request's sign-in is read from the database when this server doesn't hold it, or hasn't checked it for a minute. A sign-out on one instance reaches the others within a minute.
+  - Each request's sign-in is read from the database when this server doesn't hold it, or hasn't checked it for a minute, and each instance re-reads the list every minute. A sign-out on one instance reaches the others within about a minute.
   - Signing a person out everywhere (account disabled, password changed or reset, removed by Internal Admin) also reaches their sessions restored after a restart.
 - **Only a SHA-256 of each token is stored**, never the token itself, so a copy of the table signs no one in. Rows hold the signed-in user as the server uses it (no password hash), the 8-hour and idle limits (enforced as before), and marks such as a Seeds exception sign-in, which now also survives a restart.
 - Sign-ins and sign-outs are written in order, so a quick sign-out is never undone. If the database can't be reached, sign-ins keep working from memory and are stored once it's back. Activity is written at most once a minute per session.

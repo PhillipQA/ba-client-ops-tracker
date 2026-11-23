@@ -342,6 +342,9 @@ if (!isProduction) {
 void sessions.restore().then(count => {
   if (count) console.log(`Restored ${count} sign-in${count === 1 ? '' : 's'} from the database.`)
 })
+// With more than one instance: sign-ins made, and signed out, on the others are picked up every minute.
+const sessionSyncTimer = setInterval(() => void sessions.restore(), 60_000)
+sessionSyncTimer.unref()
 const server = app.listen(port, () => {
   console.log(`BA Client Ops Tracker running on http://localhost:${port}`)
   console.log(`HTTP timeouts: keepAlive=${server.keepAliveTimeout}ms, headers=${server.headersTimeout}ms`)

@@ -231,6 +231,43 @@ test('signing a person out everywhere reaches sessions restored after a restart'
   assert.ok(after.get(ben))
 })
 
+test('with two servers, signing a person out everywhere on one reaches sessions made on the other', async () => {
+  const time = clock()
+  const db = table()
+  const a = store(db.persistence, time)
+  await a.restore() // A started first
+  const b = store(db.persistence, time)
+  const token = b.create({ id: 'ana', role: 'Viewer' })
+  await b.flush()
+  time.advance(MINUTE)
+  await a.restore() // A's minute sync takes in B's sign-in
+  for (const [handle, user] of a.entries()) if (user.id === 'ana') a.delete(handle)
+  await a.flush()
+  time.advance(MINUTE)
+  await b.restore() // B's minute sync (or its next request) drops it
+  assert.equal(b.get(token), null)
+})
+
+test('the minute sync never drops a session whose save landed after the list was read', async () => {
+  const time = clock()
+  const db = table()
+  let s: SessionStore<User> | undefined
+  let late = ''
+  const persistence: SessionPersistence<User> = {
+    ...db.persistence,
+    async loadAll(now) {
+      const rows = await db.persistence.loadAll(now)
+      // A sign-in is made and stored while the list is on its way back.
+      late = s!.create({ id: 'late', role: 'Viewer' })
+      await s!.flush()
+      return rows
+    },
+  }
+  s = store(persistence, time)
+  await s.restore()
+  assert.ok(s.get(late), 'kept')
+})
+
 test('without a database the store works in memory exactly as before', async () => {
   const s = new SessionStore<User>()
   const token = s.create({ id: 'ana', role: 'Viewer' })
