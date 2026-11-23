@@ -11,14 +11,13 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
-### Faster: smaller downloads, fewer re-renders, quicker saves
-- **Pages download when you first open them.** Sign-in used to download the whole app (1.75 MB of JavaScript). Now it downloads what the first screen needs (about 0.84 MB), and each page follows when opened: Trackers, Reports, Documents, RTM, Work Hub, Settings, Internal Admin, AI and the Seeds pages. Hovering a menu item starts its download early. The Action Center's widget editors and Jarvis load when opened.
-- **After a deploy**, a page left open on the old build reloads itself once when you open a page whose files changed, instead of failing.
-- **Compressed downloads.** The build writes Brotli and gzip copies of the app's files, and the server sends the smallest one the browser accepts (about 4× smaller). Large API answers, like the workspace, tracker rows and reports, are compressed too. Uses Node's own zlib; no new packages.
-- **Documents** opens on first visit instead of at sign-in. While hidden, it no longer re-renders on every workspace change; it still keeps your drafts when you switch pages.
-- **Dates format about 50× faster** in long lists and tracker grids (date formatters are reused instead of made per cell). The business date is checked at midnight, on focus and every 15 minutes, instead of every second.
-- **Saves and loads hash the workspace once per saved version** instead of on every load and twice per save (about 15 ms each with 4,000 tasks).
-- No database update. Northflank's build runs `npm run build`, which now also writes the compressed copies.
+### Action Center: click a number to see what's behind it
+- **Count tiles open their list.** Click a tile (Needs attention, Overdue, Due today, Waiting on Developer or Client, Inquiries, or your own Reports-filter counts) to see exactly the tasks it counted: Task, Client, Project, Status, Due, Follow-up and Assignee. Late dates are marked.
+- **Activities** lists today's meetings, tracker activities and follow-ups; **Unsent time** lists your time entries not yet sent to Seeds, with their tasks.
+- **Report widgets drill down.** Click a bar, column, point, pie slice or summary-table row to see the records in that group ("Other" lists the groups not drawn on their own); click a metric to see all its records. Works for your own widgets and ones pinned from Reports. SQL widgets aren't clickable.
+- The list has **search**, **sorting** by any column, **click a task to open it**, and **Export CSV** (everything listed, even past the first 300 shown).
+- **Open in Tasks** appears where the Tasks page's filters can show the same list: Overdue, Waiting on Developer and Waiting on Client.
+- Tiles and widgets don't open while you're customizing the layout.
 
 ### Trackers: cell comments sync with the Google Sheet or Excel file
 - **Google Sheet → tracker**: on every sync, each comment and reply on a cell of the synced tab shows on the matching tracker cell (corner and tooltip, labelled "Google Sheet"), and in the row's Comments, read-only. Edits and deletes in the Sheet follow on the next sync; resolved threads are hidden.

@@ -1580,6 +1580,9 @@ CREATE TABLE public.tenant_git_tracker_tickets (
     attempts integer default 0 not null,
     added_by text not null,
     added_by_name text default ''::text not null,
+    follows_ticket boolean default true not null,
+    pinned_cells jsonb default '{}'::jsonb not null,
+    refreshed_at timestamp with time zone,
     created_at timestamp with time zone default now() not null,
     updated_at timestamp with time zone default now() not null,
     foreign key (tenant_id, tracker_id) references public.tenant_trackers(tenant_id, id) on delete cascade
@@ -1630,4 +1633,4 @@ VALUES ('admin', '00000000-0000-0000-0000-000000000001', 'Admin', '__BOOTSTRAP_R
 
 commit;
 
-select 'BA Client Ops Tracker database ready' as result, 44 as schema_version;
+select 'BA Client Ops Tracker database ready' as result, 45 as schema_version;

@@ -39,6 +39,8 @@ import {
 } from './ActionCenterReports'
 import type { Widget } from '../reports/custom/reportModel'
 import { builtinValue, customValue } from './countTiles'
+import { DrillPanel } from './DrillPanel'
+import { type Drill, type TasksFilter, tileDrill } from './drillDown'
 import { requestJson } from '../../shared/http'
 import { CustomizeBar, WidgetFrame } from './ActionCenterCustomize'
 import { DocHubWidget, RolloutsWidget, WorkHubWidget } from './ActionCenterWidgets'
@@ -361,6 +363,44 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           waitingDev: actionCenterWaitingDev,
         })
       : customValue(tile, taskRecords, taskFields, today, currentUser.id)
+  // Drill-down: a tile, or a report widget's bar, slice, point or metric, opens the list behind its number.
+  const [drill, setDrill] = useState<Drill | null>(null)
+  const openTile = (tile: CountTile, title: string) =>
+    setDrill(
+      tileDrill(
+        tile,
+        title,
+        {
+          open: actionCenterWorkItems,
+          allItems: store.items,
+          taskSettings: store.taskSettings,
+          today,
+          meId: currentUser.id,
+          waitingTitle: actionCenterWaitingTitle,
+          waitingDev: actionCenterWaitingDev,
+          activities: todayActivities,
+          followUps: todayFollowUps,
+        },
+        { clients: store.clients, projects: store.projects, accounts: store.accounts, today },
+        { records: taskRecords, fields: taskFields },
+      ),
+    )
+  const openDrillTask = (taskId: string) => {
+    const task = store.items.find(item => item.id === taskId)
+    if (task && canEditActionItem(task)) openTaskEditor(task.id)
+    else setView('items')
+  }
+  /** Tasks, filtered to show the same list (only for lists its filters can show). */
+  const openInTasks = (filter: TasksFilter) => {
+    app.setQuery('')
+    app.setTaskArchiveView('active')
+    app.setTaskClientFilter('')
+    app.setTaskProjectFilter('')
+    app.setTaskStatusFilter('')
+    app.setTaskDateFilter(filter.date || 'All')
+    app.setWaitingFilter(filter.waitingOn || 'All')
+    setView('items')
+  }
   // Report widgets: built here, or pinned from a saved report.
   const engine = useReportEngine(app, currentUser, hasModule('trackers'))
   // SQL widgets on the Data explorer's tables. Writing SQL (typed, built or by Jarvis) is for Administrators and people
@@ -391,7 +431,8 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     else void layout.save(setWidgetSettings(layout.layout, key, settings))
   }
   const renderItem = (item: LayoutItem): ReactNode => {
-    if (item.id === 'counts') return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} />
+    if (item.id === 'counts')
+      return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} onOpen={editing ? undefined : openTile} />
     if (item.id === 'time')
       return (
         <TimeWidget
@@ -434,7 +475,14 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         />
       )
     if (item.id === 'custom' && item.settings?.widget)
-      return <CustomWidget widget={item.settings.widget as Widget} engine={engine} explorer={explorer} />
+      return (
+        <CustomWidget
+          widget={item.settings.widget as Widget}
+          engine={engine}
+          explorer={explorer}
+          onDrill={editing ? undefined : setDrill}
+        />
+      )
     if (item.id === 'pinned' && item.settings) {
       const { reportId, widgetId } = item.settings as { reportId: string; widgetId: string }
       return (
@@ -446,6 +494,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           explorer={explorer}
           onOpenReport={() => openReport(reportId)}
           onRemove={() => removeNow(keyOf(item))}
+          onDrill={editing ? undefined : setDrill}
         />
       )
     }
@@ -601,6 +650,14 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
             }}
           />
         </Suspense>
+      )}
+      {drill && (
+        <DrillPanel
+          drill={drill}
+          onClose={() => setDrill(null)}
+          onOpenTask={openDrillTask}
+          onOpenInTasks={drill.tasks ? () => openInTasks(drill.tasks as TasksFilter) : undefined}
+        />
       )}
       {tilesItem && (
         <CountTilesDialog

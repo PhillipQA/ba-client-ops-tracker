@@ -20,6 +20,12 @@ export type GitTicketEntry = {
   addedByName: string
   addedAt: string
   updatedAt: string
+  /** Its rows follow the ticket: refreshed at sign-in, Sync in Work Hub, and Refresh. On unless turned off. */
+  follows: boolean
+  /** Columns a person changed by hand in its rows, which a refresh leaves alone. */
+  pinnedColumns: string[]
+  /** When its rows were last compared with the ticket ('' when never). */
+  refreshedAt: string
   /** The tracker rows it made (only in a tracker's ticket list). */
   rowIds?: string[]
   /** The tracker's name (only in a ticket's list of GIT Trackers). */

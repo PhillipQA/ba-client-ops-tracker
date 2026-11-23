@@ -247,7 +247,7 @@ test('Work Hub offers Add to GIT Tracker; the GIT Tracker lists its tickets with
   assert.match(routes, /canCreateWork\(state, user/)
   assert.match(
     read('server/trackers/trackers.ts'),
-    /trackerRowRoutes\(app, core, sheetAccess, sheetWrite, automations, gitTickets\.hiddenSourceKeys\)/,
+    /trackerRowRoutes\(app, core, sheetAccess, sheetWrite, automations, gitTickets\.hiddenSourceKeys/,
   )
   assert.match(read('server/trackers/tracker-row-routes.ts'), /hidden\.has\(String\(entry\.source_key/)
   const hub = read('src/features/integrations/GithubHub.tsx')

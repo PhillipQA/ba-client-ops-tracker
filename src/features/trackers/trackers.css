@@ -4368,6 +4368,50 @@ span.trk-git-badge:not(.trk-chip) {
   gap: 6px;
   justify-content: flex-end;
 }
+/* Rows follow their ticket (gitFollow.ts): Refresh, the per-ticket switch and pinned cells. */
+.trk-git-refresh {
+  display: flex;
+  justify-content: flex-end;
+}
+.trk-git-help code {
+  font-size: 12px;
+}
+.trk-git-follow label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.trk-git-pins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.trk-git-pins li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 6px;
+  border: 1px solid var(--k-border);
+  border-radius: 6px;
+  color: var(--k-muted);
+  font-size: 12px;
+}
+.trk-git-unpin {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.trk-git-unpin:hover,
+.trk-git-unpin:focus-visible {
+  color: var(--k-text, inherit);
+}
 /* Comments on a cell (CellComments.tsx): a corner like Google Sheets, a tooltip on hover, a box to write one. */
 .trk-cell.trk-noted:not(.trk-frozen) {
   position: relative;

@@ -9,10 +9,22 @@
  *   step makes only what is missing. A failed entry keeps its error and can be retried.
  * - Removing a ticket deletes the rows it made. Its Tasks stay: time may have been logged on them.
  * - People who don't see a ticket's client don't see its entry, or its rows (see tracker-row-routes.ts).
+ * - Its rows follow the ticket (gitFollow.ts): columns named after a ticket field or a label group fill themselves,
+ *   and `refresh` updates them when GitLab or GitHub is synced (sign-in, Sync in Work Hub, Refresh in the GIT
+ *   Tracker). Cells a person changed by hand are pinned and left alone. Following needs schema v45; without it new
+ *   rows still fill, and refresh quietly does nothing.
  */
 import { randomUUID } from 'node:crypto'
 import type { Express } from 'express'
-import { planGitGeneration } from '../../src/features/trackers/gitGeneration'
+import {
+  addPins,
+  cleanPins,
+  followedCells,
+  followedValues,
+  refreshPatch,
+  removePins,
+} from '../../src/features/trackers/gitFollow'
+import { normalizeGitGeneration, planGitGeneration } from '../../src/features/trackers/gitGeneration'
 import { TRACKER_LIMITS, TrackerError } from '../../src/features/trackers/trackerModel'
 import { tasksFromDrafts } from '../../src/features/trackers/trackerTaskDrafts'
 import { canSeeClient, scopeFor } from '../../src/shared/access'
@@ -22,6 +34,7 @@ import { dateKeyInTimeZone } from '../services/follow-up-rollover'
 import { canCreateWork } from '../services/visibility'
 import {
   canGenerate,
+  entryIdOfSourceKey,
   entryOut,
   failureText,
   type GitProvider,
@@ -29,8 +42,10 @@ import {
   GITHUB_INSTANCE,
   gitSourceKey,
   issueIds,
+  issueKey,
   mappingForTicket,
   missingWork,
+  newestIssues,
   plannedIds,
   ticketSnapshot,
 } from './git-ticket-plan'
@@ -44,9 +59,39 @@ const ENTRIES = 'tenant_git_tracker_tickets'
 const WORK = 'tenant_git_ticket_tasks'
 const issueTable = (provider: GitProvider) => (provider === 'gitlab' ? 'user_gitlab_issues' : 'user_github_issues')
 const missingSchema = (error: any) => error?.code === '42P01' || error?.code === '42703'
+const FOLLOW_UPGRADE =
+  'Following GitLab needs database schema v45. Run database/migrations/schema-v45-git-follow.sql, then try again.'
+/** The most ticket entries one refresh compares, and Work Hub tickets read per query. */
+const REFRESH_MAX = 500
+const READ_CHUNK = 200
+
+export type GitRefreshResult = {
+  /** Ticket entries compared with their ticket. */
+  tickets: number
+  rows: number
+  cells: number
+  /** GIT Trackers with a changed row. */
+  trackers: number
+  /** The database needs schema v45 before rows can follow their tickets. */
+  needsUpgrade?: boolean
+}
 
 export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: string) {
-  const { db, scope, route, who, idParam, trackerRow, workspace, columnsOf, mergeCells, record, touch, readOnly } = core
+  const {
+    db,
+    scope,
+    route,
+    who,
+    idParam,
+    trackerRow,
+    workspace,
+    columnsOf,
+    mergeCells,
+    record,
+    touch,
+    readOnly,
+    shown,
+  } = core
   const nowMs = () => (deps.now ? deps.now() : new Date()).getTime()
   const stamp = () => new Date(nowMs()).toISOString()
 
@@ -274,13 +319,21 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
           const taskOfRow = new Map(
             plan.work.filter(work => work.ruleKey === `row:${work.rowKey}`).map(work => [work.rowKey, work.id]),
           )
+          // Columns named after a ticket field or a label group fill themselves; the template row's own cells win.
+          const blueprints = new Map(
+            normalizeGitGeneration(tracker.git_config || {}, columns).generation.rows.map(row => [row.key, row]),
+          )
+          const startCells = (row: (typeof plan.rows)[number]) => ({
+            ...followedValues(followedCells(columns, ticket, blueprints.get(row.key)).cells),
+            ...row.cells,
+          })
           const inserted = await db.from('tenant_tracker_rows').insert(
             missing.map(row => ({
               tenant_id: tenant,
               tracker_id: tracker.id,
               id: row.id,
               position: ++position,
-              data: mergeCells({}, columns, row.cells),
+              data: mergeCells({}, columns, startCells(row)),
               secrets: {},
               task_id: taskOfRow.get(row.key) || '',
               version: 1,
@@ -359,6 +412,176 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
       const message = error instanceof TrackerError ? error.message : failureText(error)
       return await finish('Failed', message)
     }
+  }
+
+  /**
+   * Brings ticket rows up to date with their tickets, as Work Hub last read them: every followed cell (gitFollow.ts)
+   * that differs, except pinned ones. Only entries that are Completed and follow their ticket. Same-moment calls for
+   * the same scope share one run (several people signing in at once).
+   */
+  const running = new Map<string, Promise<GitRefreshResult>>()
+  function refresh(
+    tenant: string,
+    user: User,
+    only: { trackerId?: string; entryId?: string; provider?: GitProvider } = {},
+  ): Promise<GitRefreshResult> {
+    const key = [tenant, only.trackerId || '', only.entryId || '', only.provider || ''].join('|')
+    const held = running.get(key)
+    if (held) return held
+    const job = refreshNow(tenant, user, only).finally(() => running.delete(key))
+    running.set(key, job)
+    return job
+  }
+
+  async function refreshNow(
+    tenant: string,
+    user: User,
+    only: { trackerId?: string; entryId?: string; provider?: GitProvider },
+  ): Promise<GitRefreshResult> {
+    const result: GitRefreshResult = { tickets: 0, rows: 0, cells: 0, trackers: 0 }
+    let trackersQuery = db.from('tenant_trackers').select('*').eq('tenant_id', tenant).eq('kind', 'git')
+    if (only.trackerId) trackersQuery = trackersQuery.eq('id', only.trackerId)
+    const trackers = await trackersQuery
+    check(trackers.error)
+    const open = (trackers.data || []).filter((row: any) => !row.archived_at)
+    if (!open.length) return result
+    let entriesQuery = db
+      .from(ENTRIES)
+      .select('*')
+      .eq('tenant_id', tenant)
+      .eq('generation_status', 'Completed')
+      .eq('follows_ticket', true)
+      .in(
+        'tracker_id',
+        open.map((row: any) => row.id),
+      )
+    if (only.entryId) entriesQuery = entriesQuery.eq('id', only.entryId)
+    if (only.provider) entriesQuery = entriesQuery.eq('provider', only.provider)
+    const entries = await entriesQuery.order('created_at', { ascending: false }).limit(REFRESH_MAX)
+    if (entries.error) {
+      if (missingSchema(entries.error)) return { ...result, needsUpgrade: true }
+      check(entries.error)
+    }
+    const all = entries.data || []
+    if (!all.length) return result
+
+    // Each ticket as Work Hub has it now: one read per provider and chunk, the freshest copy of each.
+    const issues = new Map<string, any>()
+    for (const from of ['gitlab', 'github'] as GitProvider[]) {
+      const ids = [...new Set(all.filter((row: any) => row.provider === from).map((row: any) => Number(row.issue_id)))]
+      for (let at = 0; at < ids.length; at += READ_CHUNK) {
+        const r = await db
+          .from(issueTable(from))
+          .select('*')
+          .eq('tenant_id', tenant)
+          .in(from === 'gitlab' ? 'gitlab_id' : 'github_id', ids.slice(at, at + READ_CHUNK))
+        check(r.error)
+        for (const [key, row] of newestIssues(from, r.data || [])) issues.set(key, row)
+      }
+    }
+
+    for (const tracker of open) {
+      const mine = all.filter((row: any) => row.tracker_id === tracker.id)
+      if (!mine.length) continue
+      const columns = columnsOf(tracker)
+      const byId = new Map(columns.map(column => [column.id, column]))
+      const blueprints = normalizeGitGeneration(tracker.git_config || {}, columns).generation.rows
+      const rows = await db
+        .from('tenant_tracker_rows')
+        .select('id,data,version,source_key')
+        .eq('tenant_id', tenant)
+        .eq('tracker_id', tracker.id)
+        .in(
+          'source_key',
+          mine.map((row: any) => gitSourceKey(row.id)),
+        )
+      check(rows.error)
+      let changedHere = false
+      for (const entry of mine) {
+        const issue = issues.get(issueKey(entry.provider, entry.instance_url, entry.issue_id))
+        if (!issue) continue
+        const ticket = ticketSnapshot(entry.provider, issue)
+        const idFor = gitEntryIds(entry.id)
+        const blueprintOf = new Map(blueprints.map(row => [idFor('row', row.key), row]))
+        const pins = cleanPins(entry.pinned_cells)
+        for (const row of (rows.data || []).filter((item: any) => item.source_key === gitSourceKey(entry.id))) {
+          const followed = followedCells(columns, ticket, blueprintOf.get(row.id)).cells
+          const patch = refreshPatch(row.data || {}, followed, pins[row.id] || [])
+          if (!patch.changed.length) continue
+          const version = Number(row.version || 1)
+          const saved = await db
+            .from('tenant_tracker_rows')
+            .update({
+              data: mergeCells(row.data || {}, columns, patch.cells),
+              version: version + 1,
+              updated_by: user.id,
+              updated_at: stamp(),
+            })
+            .eq('tenant_id', tenant)
+            .eq('tracker_id', tracker.id)
+            .eq('id', row.id)
+            .eq('version', version)
+            .select('id')
+          // Someone saved the row at the same moment: leave it; the next refresh compares again.
+          if (saved.error || !saved.data?.length) continue
+          result.rows++
+          result.cells += patch.changed.length
+          changedHere = true
+          await record(tenant, tracker.id, row.id, user, 'git_follow', {
+            provider: entry.provider,
+            ticket: `#${ticket.number}`,
+            cells: patch.changed.map(columnId => ({
+              columnId,
+              name: byId.get(columnId)?.name || '',
+              from: shown(byId.get(columnId)!, row.data?.[columnId]),
+              to: shown(byId.get(columnId)!, patch.cells[columnId]),
+            })),
+          })
+        }
+        await db
+          .from(ENTRIES)
+          .update({
+            refreshed_at: stamp(),
+            title_snapshot: ticket.title.slice(0, 300) || entry.title_snapshot,
+            ...(ticket.url ? { issue_url: ticket.url } : {}),
+          })
+          .eq('tenant_id', tenant)
+          .eq('id', entry.id)
+        result.tickets++
+      }
+      if (changedHere) {
+        result.trackers++
+        await touch(tenant, tracker.id)
+      }
+    }
+    return result
+  }
+
+  /**
+   * A person changed cells of a ticket row by hand: they are pinned, so a refresh leaves them as the person set them.
+   * Best effort: without schema v45 there is nothing to pin.
+   */
+  async function pinCells(
+    tenant: string,
+    trackerId: string,
+    row: { id: string; source_key?: string },
+    columnIds: string[],
+  ) {
+    const entryId = entryIdOfSourceKey(row.source_key)
+    if (!entryId || !columnIds.length) return
+    const r = await db
+      .from(ENTRIES)
+      .select('id,pinned_cells')
+      .eq('tenant_id', tenant)
+      .eq('tracker_id', trackerId)
+      .eq('id', entryId)
+      .maybeSingle()
+    if (r.error || !r.data) return
+    await db
+      .from(ENTRIES)
+      .update({ pinned_cells: addPins(r.data.pinned_cells, row.id, columnIds) })
+      .eq('tenant_id', tenant)
+      .eq('id', entryId)
   }
 
   /** Entries the person may see: those of clients they see (everyone sees all with per-person visibility off). */
@@ -504,6 +727,80 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
       }),
     )
 
+    // Bring ticket rows up to date with their tickets: after sign-in and after a GitLab or GitHub sync in Work Hub.
+    // It writes only what the tickets say, and answers with counts, so anyone who uses Trackers may start it.
+    app.post(
+      '/api/tracker-git/refresh',
+      ...scope,
+      route(async (req, res) => {
+        const user = who(req)
+        const from = req.body?.provider
+        res.json(
+          await refresh(user.organizationId, user, from === 'gitlab' || from === 'github' ? { provider: from } : {}),
+        )
+      }),
+    )
+
+    // Refresh in a GIT Tracker: its ticket rows only.
+    app.post(
+      '/api/trackers/:id/git-tickets/refresh',
+      ...scope,
+      route(async (req, res) => {
+        const user = who(req),
+          tenant = user.organizationId,
+          id = idParam(req)
+        const tracker = await trackerRow(tenant, id, user)
+        if (tracker.kind !== 'git') throw new TrackerError('Only GIT Trackers follow tickets.', 409)
+        res.json(await refresh(tenant, user, { trackerId: id }))
+      }),
+    )
+
+    // Follow the ticket or stop, and release pinned cells (then the ticket's values come back right away).
+    app.patch(
+      '/api/trackers/:id/git-tickets/:entryId',
+      ...scope,
+      route(async (req, res) => {
+        const user = who(req),
+          tenant = user.organizationId,
+          id = idParam(req)
+        const tracker = await trackerRow(tenant, id, user)
+        editable(user, tracker)
+        const row = await oneEntry(tenant, id, String(req.params.entryId))
+        if (!(await visibleEntries(tenant, user, [row])).length)
+          throw new TrackerError('That ticket is not in this GIT Tracker.', 404)
+        const body = req.body || {}
+        const patch: Record<string, unknown> = {}
+        if (body.follows !== undefined) {
+          if (typeof body.follows !== 'boolean') throw new TrackerError('Choose whether the rows follow the ticket.')
+          patch.follows_ticket = body.follows
+        }
+        if (body.unpin !== undefined) {
+          const unpin =
+            body.unpin === 'all'
+              ? 'all'
+              : Array.isArray(body.unpin)
+                ? body.unpin.filter((value: unknown): value is string => typeof value === 'string').slice(0, 100)
+                : null
+          if (!unpin) throw new TrackerError('Choose the cells to release.')
+          patch.pinned_cells = removePins(cleanPins(row.pinned_cells), unpin)
+        }
+        if (!Object.keys(patch).length) throw new TrackerError('Nothing to change.')
+        const saved = await db
+          .from(ENTRIES)
+          .update({ ...patch, updated_at: stamp() })
+          .eq('tenant_id', tenant)
+          .eq('id', row.id)
+          .select('*')
+        if (saved.error && missingSchema(saved.error))
+          throw new TrackerError(FOLLOW_UPGRADE, 503, { needsUpgrade: true })
+        check(saved.error)
+        const next = saved.data?.[0] || { ...row, ...patch }
+        const refreshed = next.follows_ticket !== false ? await refresh(tenant, user, { entryId: row.id }) : null
+        const after = refreshed?.rows ? await oneEntry(tenant, id, row.id) : next
+        res.json({ entry: { ...entryOut(after), trackerName: tracker.name }, refreshed })
+      }),
+    )
+
     // A GIT Tracker's tickets, with the rows each made, for its ticket list and the Client filter.
     app.get(
       '/api/trackers/:id/git-tickets',
@@ -624,7 +921,7 @@ export function trackerGitTickets(deps: Deps, core: TrackerCore, timeZone: strin
     )
   }
 
-  return { routes, generate, hiddenSourceKeys }
+  return { routes, generate, hiddenSourceKeys, refresh, pinCells }
 }
 
 export type TrackerGitTickets = ReturnType<typeof trackerGitTickets>

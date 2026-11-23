@@ -689,7 +689,8 @@ export function measureName(measure: Measure, fields: Field[]) {
 export type Group = { key: string; label: string; records: Rec[] }
 
 const BLANK = '(blank)'
-function groupKeyOf(record: Rec, field: Field | undefined, bucket: Bucket | undefined) {
+/** The group a record falls in for a field (a chart bar, slice or point), as chartData groups it. */
+export function groupKeyOf(record: Rec, field: Field | undefined, bucket: Bucket | undefined) {
   if (!field) return { key: '', label: '' }
   const value = record[field.key]
   if (field.type === 'date') {
