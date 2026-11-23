@@ -1,6 +1,6 @@
 /** Tasks: create one, change it in the editor, complete it, and archive it. */
 import { expect, test } from '@playwright/test'
-import { ADMIN_STATE, createClient, createTask, dialog, saved, shot, taskRow } from './support/app'
+import { ADMIN_STATE, createClient, createTask, dialog, dropdown, saved, shot, taskRow } from './support/app'
 
 test.use({ storageState: ADMIN_STATE })
 
@@ -15,7 +15,7 @@ test('create, edit, complete and archive a task', async ({ page }, testInfo) => 
   await row.getByRole('button', { name: 'Edit task' }).click()
   const editor = dialog(page, 'Edit task')
   await expect(editor).toBeVisible()
-  await editor.getByLabel('Priority').selectOption('High')
+  await dropdown(editor, 'Priority').selectOption('High')
   await shot(page, testInfo, '02-task-editor')
   await editor.getByRole('button', { name: 'Save changes' }).click()
   await expect(editor).toBeHidden()

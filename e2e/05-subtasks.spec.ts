@@ -23,7 +23,10 @@ test('a task with an open subtask asks before closing both', async ({ page }, te
   await expect(confirm).toBeVisible()
   await expect(confirm).toContainText(subtask)
   await shot(page, testInfo, '02-close-with-subtask')
-  const word = (await confirm.getByLabel(/^Type .* to confirm$/).getAttribute('aria-label'))?.replace(/^Type | to confirm$/g, '')
+  const word = (await confirm.getByLabel(/^Type .* to confirm$/).getAttribute('aria-label'))?.replace(
+    /^Type | to confirm$/g,
+    '',
+  )
   await confirm.getByLabel(/^Type .* to confirm$/).fill(word || '')
   await confirm.getByRole('button', { name: /^Close task and 1 subtask/ }).click()
   await expect(confirm).toBeHidden()

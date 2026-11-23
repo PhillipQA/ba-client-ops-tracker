@@ -2,7 +2,7 @@
  * Shared steps for the end-to-end tests: who signs in, saved screenshots, reaching a page, and making the records a
  * test needs (each test makes its own, with a unique name, so tests don't depend on each other).
  */
-import { expect, type Page, type TestInfo } from '@playwright/test'
+import { expect, type Locator, type Page, type TestInfo } from '@playwright/test'
 import path from 'node:path'
 
 /** The workspace account and its Administrator, from the environment (CI sets test values; never real ones). */
@@ -61,6 +61,13 @@ export async function saved(page: Page) {
   await expect(page.getByText('Database synced').first()).toBeVisible({ timeout: 20_000 })
 }
 
+/**
+ * A dropdown by its label. A <select> inside its <label> is named by the label plus the chosen option ("Status
+ * Open"), so the label is matched at the start. Labels here are plain words.
+ */
+export const dropdown = (scope: Page | Locator, label: string) =>
+  scope.getByRole('combobox', { name: new RegExp(`^${label}\\b`) })
+
 /** The dialog with this title. */
 export const dialog = (page: Page, title: string | RegExp) => page.getByRole('dialog', { name: title })
 
@@ -88,8 +95,8 @@ export async function createTask(
   await page.getByRole('button', { name: 'New task' }).click()
   const form = dialog(page, 'Add task')
   await form.getByLabel('Task title').fill(title)
-  await form.getByLabel('Client', { exact: true }).selectOption({ label: options.client })
-  if (options.status) await form.getByLabel('Status', { exact: true }).selectOption(options.status)
+  await dropdown(form, 'Client').selectOption({ label: options.client })
+  if (options.status) await dropdown(form, 'Status').selectOption(options.status)
   if (options.dueDate) await form.getByLabel('Due date').fill(options.dueDate)
   const assignee = form.getByLabel('Assigned to')
   const first = await assignee.locator('option', { hasText: '·' }).first().getAttribute('value')

@@ -18,11 +18,16 @@ test('create a tracker and add a row', async ({ page }, testInfo) => {
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText(name)
 
   await page.getByRole('button', { name: 'Add row' }).first().click()
-  const cell = page.locator('input.trk-input').first()
-  await expect(cell).toBeFocused()
-  await cell.fill('First row from the E2E tests')
-  await cell.press('Enter')
+  // A new row opens its first cell for typing.
+  await expect(page.locator('input.trk-input:focus')).toHaveCount(1)
+  await page.keyboard.type('First row from the E2E tests')
+  await page.keyboard.press('Enter')
   await expect(page.getByText('First row from the E2E tests')).toBeVisible()
-  await expect(page.getByRole('status').filter({ hasText: /Saved|All changes saved/ }).first()).toBeVisible()
+  await expect(
+    page
+      .getByRole('status')
+      .filter({ hasText: /Saved|All changes saved/ })
+      .first(),
+  ).toBeVisible()
   await shot(page, testInfo, '03-row-added')
 })

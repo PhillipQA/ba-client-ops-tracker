@@ -29,10 +29,12 @@ test('Internal Admin signs in at /internal_admin and sees the accounts', async (
     await signIn(CHANGED)
   } else {
     await shot(page, testInfo, '02-choose-new-password')
-    await page.getByLabel('Current password').fill(BOOTSTRAP)
-    await page.getByLabel('New password', { exact: true }).fill(CHANGED)
-    await page.getByLabel('Confirm new password').fill(CHANGED)
-    await page.getByRole('button', { name: 'Change password' }).click()
+    // The page has a second password form (recovery email); use the security one.
+    const form = page.locator('form').filter({ has: security })
+    await form.getByLabel('Current password').fill(BOOTSTRAP)
+    await form.getByLabel('New password', { exact: true }).fill(CHANGED)
+    await form.getByLabel('Confirm new password').fill(CHANGED)
+    await form.getByRole('button', { name: 'Change password' }).click()
     await expect(security).toBeHidden()
   }
   await expect(page.getByText('BXI-Core').first()).toBeVisible()

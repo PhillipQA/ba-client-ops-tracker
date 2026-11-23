@@ -6,7 +6,20 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!dist", "!.github", "!public", "!templates", "!database", "!package-lock.json", "!**/*.md", "!test-results", "!playwright-report", "!e2e/screenshots", "!e2e/.auth"]
+    "includes": [
+      "**",
+      "!dist",
+      "!.github",
+      "!public",
+      "!templates",
+      "!database",
+      "!package-lock.json",
+      "!**/*.md",
+      "!test-results",
+      "!playwright-report",
+      "!e2e/screenshots",
+      "!e2e/.auth"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -28,6 +41,9 @@
   },
   "linter": {
     "enabled": true,
+    "domains": {
+      "playwright": "none"
+    },
     "rules": {
       "recommended": true,
       "correctness": {
@@ -63,5 +79,15 @@
         "noInteractiveElementToNoninteractiveRole": "warn"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["e2e/**", "playwright.config.ts"],
+      "linter": {
+        "domains": {
+          "playwright": "recommended"
+        }
+      }
+    }
+  ]
 }

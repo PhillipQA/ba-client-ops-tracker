@@ -59,6 +59,15 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: End-to-end tests (headed)
         run: xvfb-run -a npx playwright test --headed
+      - name: Show what the page looked like when a test failed
+        if: failure()
+        run: |
+          for file in test-results/*/error-context.md; do
+            [ -f "$file" ] || continue
+            echo "::group::$file"
+            cat "$file"
+            echo "::endgroup::"
+          done
       - name: Keep the report, traces and screenshots
         if: always()
         uses: actions/upload-artifact@v4
