@@ -22,15 +22,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Format diff (temporary)
-        run: |
-          npx biome format --write e2e playwright.config.ts src/features/tasks/TaskTable.tsx || true
-          git diff > format.diff || true
-          echo "FORMAT-DIFF-START"
-          base64 -w0 format.diff
-          echo
-          echo "FORMAT-DIFF-END"
-          git checkout -- .
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check

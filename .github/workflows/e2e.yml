@@ -58,7 +58,7 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: End-to-end tests (headed)
-        run: xvfb-run -a npx playwright test --headed --repeat-each=3
+        run: xvfb-run -a npx playwright test --headed
       - name: Show what the page looked like when a test failed
         if: failure()
         run: |
@@ -79,7 +79,7 @@ jobs:
             e2e/screenshots/
           retention-days: 14
       - name: Commit the screenshots to the branch
-        if: success() && false
+        if: success()
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
