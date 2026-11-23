@@ -717,7 +717,12 @@ export function TaskEditForm({
         />
       </Fold>
       {!parent && (
-        <Fold id="repeat" title="Repeat" meta={repeat ? recurrenceText(repeat) : 'Doesn’t repeat'} defaultOpen={Boolean(repeat)}>
+        <Fold
+          id="repeat"
+          title="Repeat"
+          meta={repeat ? recurrenceText(repeat) : 'Doesn’t repeat'}
+          defaultOpen={Boolean(repeat)}
+        >
           <RepeatField
             value={repeat}
             onChange={setRepeat}

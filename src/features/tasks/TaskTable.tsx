@@ -371,7 +371,9 @@ export function TaskTable({
           <td key={`custom:${field.id}`} className={field.type === 'number' ? 'numeric' : undefined}>
             {field.type === 'url' && typeof item.custom?.[field.id] === 'string' ? (
               <a href={String(item.custom?.[field.id])} target="_blank" rel="noreferrer noopener">
-                {String(item.custom?.[field.id]).replace(/^https?:\/\//, '').slice(0, 40)}
+                {String(item.custom?.[field.id])
+                  .replace(/^https?:\/\//, '')
+                  .slice(0, 40)}
               </a>
             ) : (
               fieldText(field, item.custom?.[field.id])

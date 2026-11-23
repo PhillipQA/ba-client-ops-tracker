@@ -115,7 +115,8 @@ test('the next copy: same details, Open, dates moved, subtasks copied, nothing d
   assert.equal(head.followUpDate, '2026-11-29')
   assert.equal(head.resolution, '')
   assert.equal(head.resolvedDate, undefined)
-  for (const key of ['comments', 'evidence', 'timeEntries', 'recurrenceNextId'] as const) assert.equal(head[key], undefined, key)
+  for (const key of ['comments', 'evidence', 'timeEntries', 'recurrenceNextId'] as const)
+    assert.equal(head[key], undefined, key)
   assert.equal(head.estimateHours, 2)
   assert.deepEqual(head.custom, { module: 'Billing' })
   assert.equal(head.recurrenceOf, 'p')
@@ -123,7 +124,11 @@ test('the next copy: same details, Open, dates moved, subtasks copied, nothing d
   assert.equal(child.parentTaskId, 'new1')
   assert.equal(child.status, openStatus)
   assert.equal(child.dueDate, '2026-11-29')
-  assert.equal(nextCopy(sub, [parent, sub], { openStatus, openWaitingOn: 'Me' }, '2026-11-23'), null, 'subtasks don’t repeat')
+  assert.equal(
+    nextCopy(sub, [parent, sub], { openStatus, openWaitingOn: 'Me' }, '2026-11-23'),
+    null,
+    'subtasks don’t repeat',
+  )
 })
 
 test('closing a repeating task makes the next one once; other changes make nothing', () => {
@@ -145,7 +150,14 @@ test('closing a repeating task makes the next one once; other changes make nothi
   const again = reopened.map(item => (item.id === 'a' ? { ...item, status: closedStatus } : item))
   assert.equal(withRecurrences(reopened, again, settings, isTaskClosed, open, '2026-11-23').made.length, 0)
   // A task added already closed, or one that was closed before, makes nothing.
-  const created = withRecurrences([], [task('x', { recurrence: rule, status: closedStatus })], settings, isTaskClosed, open, '2026-11-23')
+  const created = withRecurrences(
+    [],
+    [task('x', { recurrence: rule, status: closedStatus })],
+    settings,
+    isTaskClosed,
+    open,
+    '2026-11-23',
+  )
   assert.equal(created.made.length, 0)
 })
 
@@ -190,14 +202,20 @@ test('workflow: custom fields are kept unless sent, saved when sent, refused whe
   const kept = planWorkflowUpdate(current, [], base)
   assert.ok(kept.ok)
   assert.deepEqual(kept.ok && kept.taskSettings.customFields, current.customFields)
-  const saved = planWorkflowUpdate(current, [], { ...base, customFields: [{ id: 'pts', name: 'Points', type: 'number' }] })
+  const saved = planWorkflowUpdate(current, [], {
+    ...base,
+    customFields: [{ id: 'pts', name: 'Points', type: 'number' }],
+  })
   assert.ok(saved.ok)
   assert.deepEqual(saved.ok && saved.taskSettings.customFields, [{ id: 'pts', name: 'Points', type: 'number' }])
   const cleared = planWorkflowUpdate(current, [], { ...base, customFields: [] })
   assert.equal(cleared.ok && 'customFields' in cleared.taskSettings, false)
   const bad = planWorkflowUpdate(current, [], { ...base, customFields: [{ id: 'x', name: '', type: 'text' }] })
   assert.equal(bad.ok, false)
-  assert.deepEqual(normalizeTaskSettings({ ...settings, customFields: [{ id: 'a', name: 'A', type: 'nope' } as any] }).customFields, undefined)
+  assert.deepEqual(
+    normalizeTaskSettings({ ...settings, customFields: [{ id: 'a', name: 'A', type: 'nope' } as any] }).customFields,
+    undefined,
+  )
   assert.deepEqual(normalizeTaskSettings(current).customFields, current.customFields)
 })
 

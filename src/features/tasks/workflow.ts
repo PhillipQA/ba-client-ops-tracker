@@ -66,6 +66,8 @@ export interface WorkflowInput {
   waitingOn?: unknown
   visibleColumns: unknown
   labels?: unknown
+  /** Custom task fields (customFields.ts); kept as they are when not sent. */
+  customFields?: unknown
 }
 
 type Item = { status?: unknown; waitingOn?: unknown; archived?: unknown; title?: unknown }

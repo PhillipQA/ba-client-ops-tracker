@@ -317,7 +317,8 @@ export function authoritativeWorkEvents(current: any, next: any, actor: SessionU
       ['custom', 'custom fields'],
     ] as const) {
       // Lists and objects (repeat rules, custom field values) compare by content.
-      const text = (value: unknown) => (value && typeof value === 'object' ? JSON.stringify(value) : String(value || ''))
+      const text = (value: unknown) =>
+        value && typeof value === 'object' ? JSON.stringify(value) : String(value || '')
       if (text(before[field]) !== text(item[field]))
         created.push(
           make(

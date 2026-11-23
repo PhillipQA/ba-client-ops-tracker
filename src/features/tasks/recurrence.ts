@@ -10,6 +10,9 @@
  */
 import type { TaskSettings, WorkItem } from '../../shared/types'
 
+/** A task's dates as the repeat rules read them (a task, or a form's dates as typed). */
+type Dates = { dueDate?: string; startDate?: string; followUpDate?: string }
+
 export type RepeatUnit = 'day' | 'week' | 'month' | 'year'
 export type Recurrence = {
   every: number
@@ -87,14 +90,18 @@ export function nextOccurrence(from: string, rule: Recurrence): string {
 }
 
 /** The date a closed task's next copy counts from: due, start, follow-up, or the day it closed. */
-export function anchorDay(item: Pick<WorkItem, 'dueDate' | 'startDate' | 'followUpDate'>, today: string) {
+export function anchorDay(item: Dates, today: string) {
   return [item.dueDate, item.startDate, item.followUpDate].find(isDay) || today
 }
 
 /**
  * The next occurrence on or after today (missed ones are skipped), or null when the series has ended (`until`).
  */
-export function nextDueDay(item: Pick<WorkItem, 'dueDate' | 'startDate' | 'followUpDate'>, rule: Recurrence, today: string) {
+export function nextDueDay(
+  item: Dates,
+  rule: Recurrence,
+  today: string,
+) {
   let next = nextOccurrence(anchorDay(item, today), rule)
   for (let guard = 0; next < today && guard < 2000; guard++) next = nextOccurrence(next, rule)
   if (rule.until && next > rule.until) return null
@@ -113,7 +120,8 @@ const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export function recurrenceText(rule: Recurrence) {
   const [one, many] = UNIT_NAMES[rule.unit]
   let text = rule.every === 1 ? `Every ${one}` : `Every ${rule.every} ${many}`
-  if (rule.unit === 'week' && rule.weekdays?.length) text += ` on ${rule.weekdays.map(day => WEEKDAY_NAMES[day]).join(', ')}`
+  if (rule.unit === 'week' && rule.weekdays?.length)
+    text += ` on ${rule.weekdays.map(day => WEEKDAY_NAMES[day]).join(', ')}`
   if (rule.unit === 'day' && rule.workdaysOnly) text += ' (workdays)'
   if (rule.unit === 'month' && rule.monthDay) text += ` on day ${rule.monthDay}`
   if (rule.until) text += ` · until ${rule.until}`
@@ -169,7 +177,8 @@ export function nextCopy(
   const head: WorkItem = {
     ...fresh(task, id),
     dueDate: due,
-    recurrence: rule.unit === 'month' && !rule.monthDay ? { ...rule, monthDay: Number(anchorDay(task, today).slice(8)) } : rule,
+    recurrence:
+      rule.unit === 'month' && !rule.monthDay ? { ...rule, monthDay: Number(anchorDay(task, today).slice(8)) } : rule,
     recurrenceOf: task.recurrenceOf || task.id,
   }
   const subtasks = items

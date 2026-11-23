@@ -42,7 +42,9 @@ export function CustomFieldInputs({ fields, values, onChange, disabled }: Props)
               >
                 <option value="">—</option>
                 {/* A value that is no longer an option is still shown, as it was saved. */}
-                {value && !field.options?.includes(String(value)) && <option value={String(value)}>{String(value)}</option>}
+                {value && !field.options?.includes(String(value)) && (
+                  <option value={String(value)}>{String(value)}</option>
+                )}
                 {field.options?.map(option => (
                   <option key={option} value={option}>
                     {option}
@@ -52,7 +54,15 @@ export function CustomFieldInputs({ fields, values, onChange, disabled }: Props)
             ) : (
               <input
                 id={id}
-                type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.type === 'url' ? 'url' : 'text'}
+                type={
+                  field.type === 'number'
+                    ? 'number'
+                    : field.type === 'date'
+                      ? 'date'
+                      : field.type === 'url'
+                        ? 'url'
+                        : 'text'
+                }
                 inputMode={field.type === 'number' ? 'decimal' : undefined}
                 step={field.type === 'number' ? 'any' : undefined}
                 placeholder={field.type === 'url' ? 'https://' : undefined}

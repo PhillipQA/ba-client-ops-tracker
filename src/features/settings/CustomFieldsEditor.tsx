@@ -92,7 +92,10 @@ export function CustomFieldsEditor({ fields, onChange }: Props) {
                     value={field.type}
                     onChange={event => {
                       const type = event.target.value as TaskFieldType
-                      update(field.id, type === 'select' ? { type, options: field.options || [] } : { type, options: undefined })
+                      update(
+                        field.id,
+                        type === 'select' ? { type, options: field.options || [] } : { type, options: undefined },
+                      )
                     }}
                   >
                     {FIELD_TYPES.map(type => (
