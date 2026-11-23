@@ -19,6 +19,16 @@ Released with pull request #110.
 - **Only a SHA-256 of each token is stored**, never the token itself, so a copy of the table signs no one in. Rows hold the signed-in user as the server uses it (no password hash), the 8-hour and idle limits (enforced as before), and marks such as a Seeds exception sign-in, which now also survives a restart.
 - Sign-ins and sign-outs are written in order, so a quick sign-out is never undone. If the database can't be reached, sign-ins keep working from memory and are stored once it's back. Activity is written at most once a minute per session.
 
+### Saves send and write only what changed (Phase 4A)
+- **Database update needed: schema v46** (`database/migrations/schema-v46-changed-record-saves.sql`). Run it before or after deploying. Until it is run, saves work exactly as before; the server starts using it within ten minutes, without a restart.
+- **Smaller saves from the browser**: a save now sends only the records that changed (and any other setting that changed) instead of the whole workspace, through the new `PATCH /api/store/changes`. Editing one task sends that task.
+  - The server lays the changes on the workspace as that person sees it and runs **the same checks as before**: permissions, closing rules, Seeds fields, server-owned comments, evidence and Drive links, history and notifications.
+  - **Fewer "newer changes" refusals**: each changed record carries a fingerprint of how it looked before the edit. When someone else saved in the meantime but touched different records, the save can go through straight away (the browser keeps its old version until it has fetched their changes, so nothing it holds can overwrite them). When the fingerprints don't match, the browser fetches the latest and merges as before, and a real clash still stops with the Save conflict box.
+  - A reordered list is still sent whole, so order is kept. Old tabs, and a server without the new route, keep sending the whole workspace (`PUT /api/store` is unchanged).
+- **Fewer database writes**: with schema v46, a save writes only the rows that changed, instead of rewriting every client, project, task, inquiry, activity, planner entry, status and setting. Users are still written whole, as they are the sign-in authority.
+  - Same lock and the same "changed while saving" check as before. If a table's rows are found out of step with the workspace (written elsewhere), nothing is saved and the server saves everything once instead, which puts them right.
+- Next (each its own pull request): 4B, per-task versions and loading only what changed; 4C, the tasks table becomes the source of truth.
+
 ### Tasks: repeating tasks and custom fields (Phase 2)
 - **Repeating tasks**: set a task's **Repeat** in the new-task form or the task editor: every N days (optionally workdays only), weeks (on chosen weekdays), months or years, until an optional end date.
   - When it's **closed**, the next one is made automatically: same title, details, client, project, assignee, priority, estimate and custom fields; status Open; dates moved to the next occurrence; subtasks copied as Open subtasks. Comments, evidence, time entries, files and results start fresh.

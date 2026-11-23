@@ -13,6 +13,8 @@ import { workspaceVersion, mergeActivity, storedWorkspaceVersion } from '../serv
 import { runTenantAi } from '../server/ai/tenant-ai'
 import { emptyFsdDraft, fsdSectionsForModules } from '../src/features/documents/fsd-model'
 import { createWorkspaceGuard } from '../server/services/workspace-guard'
+import { sanitizeStateForClient } from '../server/services/client-state'
+import { applyWorkspaceChanges, changeConflict, isWorkspaceChanges } from '../src/shared/workspaceChanges'
 import { defaultTaskSettings } from '../src/app/data'
 import { openWaitingOnOptions } from '../src/features/tasks/waitingOn'
 import { assertRtmMutation, reconcileRtm } from '../src/features/requirements/rtm'
@@ -291,6 +293,13 @@ try {
     const end = index.indexOf('\n' + indent + '})', start) + indent.length + 3
     return index.slice(start, end)
   }
+  // PUT /api/store and PATCH /api/store/changes share one handler, saveWorkspace.
+  const saveRoutes = () => {
+    const start = index.indexOf('const saveWorkspace = ')
+    const last = "saveWorkspace('changes'))"
+    assert.ok(start >= 0, 'saveWorkspace')
+    return index.slice(start, index.indexOf(last, start) + last.length)
+  }
   const mount = (code: string, deps: any) =>
     Function(
       ...Object.keys(deps),
@@ -412,13 +421,17 @@ try {
       statement('prepareAccountPasswords'),
       statement('accountChangesAreSelfOnly'),
       statement('authoritativeWorkEvents'),
-      route('put', '/api/store'),
+      saveRoutes(),
     ].join('\n'),
     {
       app,
       workspaceVersion,
       storedWorkspaceVersion,
       mergeActivity,
+      isWorkspaceChanges,
+      changeConflict,
+      applyWorkspaceChanges,
+      sanitizeStateForClient,
       requireAuth: pass,
       requireTenantWorkspace: pass,
       db: {},
