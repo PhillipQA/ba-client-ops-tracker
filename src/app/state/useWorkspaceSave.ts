@@ -10,7 +10,11 @@ import { loadNotifications } from '../../features/notifications/notifications'
 import type { TaskCommentMutationResult } from '../../features/tasks/taskComments'
 import type { TimeEntryMutationResult } from '../../features/tasks/timeEntries'
 import type { Client, Project, AppNotification, WorkActivityEvent } from '../../shared/types'
+import { withRecurrences } from '../../features/tasks/recurrence'
+import { defaultWaitingOn } from '../../features/tasks/waitingOn'
 import {
+  defaultOpenTaskStatus,
+  isTaskClosed,
   organizationStorageKey,
   type Store,
   workEventsForItemChanges,
@@ -54,7 +58,32 @@ export function useWorkspaceSave(ui: UiState) {
     }
   }
 
-  const persist = (next: Store) => {
+  const persist = (requested: Store) => {
+    let next = requested
+    // A repeating task that has just been closed gets its next copy (recurrence.ts), however it was closed.
+    const repeated = withRecurrences(
+      storeRef.current.items,
+      next.items,
+      next.taskSettings,
+      isTaskClosed,
+      { openStatus: defaultOpenTaskStatus(next.taskSettings), openWaitingOn: defaultWaitingOn(next.taskSettings) },
+      today,
+    )
+    if (repeated.made.length)
+      next = {
+        ...next,
+        items: repeated.items,
+        activity: [
+          ...repeated.made.map(({ from, next: copy }) => ({
+            id: crypto.randomUUID(),
+            clientId: from.clientId,
+            projectId: from.projectId,
+            date: today,
+            text: `Repeating task: made the next “${copy.title}”${copy.dueDate ? `, due ${copy.dueDate}` : ''}`,
+          })),
+          ...next.activity,
+        ],
+      }
     try {
       assertLifecycleMutation(storeRef.current, next, authUser)
       assertRtmMutation(storeRef.current, next, authUser)

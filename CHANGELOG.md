@@ -11,6 +11,18 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Tasks: repeating tasks and custom fields (Phase 2)
+- **Repeating tasks**: set a task's **Repeat** in the new-task form or the task editor: every N days (optionally workdays only), weeks (on chosen weekdays), months or years, until an optional end date.
+  - When it's **closed**, the next one is made automatically: same title, details, client, project, assignee, priority, estimate and custom fields; status Open; dates moved to the next occurrence; subtasks copied as Open subtasks. Comments, evidence, time entries, files and results start fresh.
+  - The next due date counts from the closed task's due date and is never in the past: missed occurrences are skipped, so overdue repeats don't pile up. Monthly tasks keep their day (the 31st becomes the last day of short months).
+  - Each close makes one copy, once: reopening and closing again doesn't make a second. A **Repeats** badge shows on table rows and board cards, the Activity log notes each copy, and only top-level tasks repeat.
+- **Custom task fields**: Administrators add their own fields in **Settings › Workflow › Custom task fields**, such as Module, Ticket link or Story points. Types: Text, Number, Date, Choice, Checkbox and Link.
+  - Fill them in the new-task form and the task editor.
+  - Tick **Table column** to show a field as a column in the Tasks table.
+  - Search finds their values.
+  - Changes go into the task's history.
+  - Removing a field hides its values without deleting them.
+- **Existing logic is unchanged**: closing rules (subtasks first), statuses and Waiting on work as before. Repeating only adds the next task after a close. No database update.
 ### End-to-end tests with screenshots (Phase 1 of 3)
 - **Playwright end-to-end tests** drive the real app in Chromium against a real database: sign-in and sign-out, Internal Admin's first sign-in, clients and projects, creating, editing, completing and archiving tasks, subtasks and the close confirmation, the Tasks board, the Action Center's Due today drill-down, trackers, adding a user, Settings › Workflow, and that every main page opens.
 - **CI runs them headed** (a real browser window on a virtual display) on a fresh database for every pull request. The screenshots each test takes are **committed to the pull request** in `e2e/screenshots/`, so the PR shows what each screen looks like and they're kept in git. The report, traces and failure videos are in the run's artifact.

@@ -3,7 +3,10 @@
 .task-calendar,
 .task-timeline,
 .blocked-by,
-.blocked-badge {
+.blocked-badge,
+.repeat-badge,
+.repeat-field,
+.custom-fields-editor {
   --tv-surface: var(--ui-surface, var(--theme-surface, #212121));
   --tv-soft: var(--ui-soft, rgba(255, 255, 255, 0.05));
   --tv-border: var(--ui-border, var(--theme-border, #3a3a3a));
@@ -377,4 +380,111 @@
 .blocked-by-blocking {
   margin: 0;
   font-size: 12px;
+}
+
+/* Repeating tasks (RepeatField, RepeatBadge) */
+.repeat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 6px 2px 0;
+  padding: 1px 6px;
+  border: 1px solid var(--tv-accent);
+  border-radius: 999px;
+  color: var(--tv-accent);
+  font-size: 11px;
+  font-weight: 650;
+}
+.repeat-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+.repeat-field > label {
+  display: grid;
+  gap: 4px;
+}
+.repeat-every {
+  grid-auto-flow: column;
+  align-items: center;
+  grid-template-columns: auto 70px auto;
+}
+.repeat-every input {
+  width: 70px;
+}
+.repeat-weekdays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.repeat-weekdays legend {
+  width: 100%;
+  margin-bottom: 4px;
+  color: var(--tv-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.repeat-weekdays button {
+  min-width: 42px;
+  padding: 4px 6px;
+  border: 1px solid var(--tv-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tv-text);
+  cursor: pointer;
+}
+.repeat-weekdays button[aria-pressed="true"] {
+  border-color: var(--tv-accent);
+  background: var(--tv-accent-soft);
+}
+.repeat-check {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+}
+.repeat-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  font-size: 12px;
+}
+
+/* Custom task fields */
+.custom-field-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.custom-fields-editor {
+  display: grid;
+  gap: 8px;
+}
+.custom-fields-editor table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.custom-fields-editor th,
+.custom-fields-editor td {
+  padding: 6px;
+  border-bottom: 1px solid var(--tv-border);
+  text-align: left;
+  vertical-align: top;
+}
+.custom-fields-editor th {
+  color: var(--tv-muted);
+  font-size: 12px;
+}
+.custom-fields-editor input[type="text"] {
+  width: 100%;
+}
+
+.custom-fields-editor .workflow-row-actions {
+  display: flex;
+  gap: 4px;
 }

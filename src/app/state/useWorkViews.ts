@@ -19,6 +19,7 @@ import { isTaskClosed } from '../store'
 import { addDays } from '../../shared/dates'
 import type { UiState } from './useUiState'
 import type { SignIn } from './useSignIn'
+import { customSearchText } from '../../features/tasks/customFields'
 
 export function useWorkViews(ui: UiState, signIn: SignIn) {
   const {
@@ -152,6 +153,8 @@ export function useWorkViews(ui: UiState, signIn: SignIn) {
           projectName(item.projectId),
           item.type,
           item.status,
+          // The account's custom fields are searched too.
+          customSearchText(store.taskSettings.customFields || [], item),
         ]
           .join(' ')
           .toLowerCase()
@@ -167,7 +170,7 @@ export function useWorkViews(ui: UiState, signIn: SignIn) {
           (a.followUpDate || '9999').localeCompare(b.followUpDate || '9999')
         )
       })
-  }, [store.items, query, waitingFilter, store.clients, store.projects, today])
+  }, [store.items, store.taskSettings, query, waitingFilter, store.clients, store.projects, today])
 
   const actionCenterUsers = trackedActionCenterUsers(store.accounts)
   const resolvedActionCenterScope = resolveActionCenterScope(

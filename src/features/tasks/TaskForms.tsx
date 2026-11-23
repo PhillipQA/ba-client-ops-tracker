@@ -36,6 +36,10 @@ import {
 import { type ClipboardEvent, type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { BlockedByField } from './BlockedByField'
 import { blockedBy, blockerIds, cleanBlockers } from './dependencies'
+import { CustomFieldInputs } from './CustomFieldInputs'
+import { cleanCustomValues, cleanFieldValue, type TaskFieldValue } from './customFields'
+import { cleanRecurrence, type Recurrence, recurrenceText } from './recurrence'
+import { RepeatField } from './RepeatField'
 
 export function WorkScheduleFields({
   itemKind,
@@ -186,6 +190,10 @@ export function TaskForm({
   const [rtmLinks, setRtmLinks] = useState<RtmLink[]>([])
   const [type, setType] = useState<ItemType>(preset?.type || 'Task')
   const [status, setStatus] = useState(defaultOpenTaskStatus(store.taskSettings))
+  // Repeat (top-level tasks only) and the account's custom fields.
+  const [repeat, setRepeat] = useState<Recurrence | undefined>(undefined)
+  const [customValues, setCustomValues] = useState<Record<string, TaskFieldValue | string>>({})
+  const customFields = store.taskSettings.customFields || []
   const assignableUsers = store.accounts.filter(
     account => account.status === 'Active' && (account.role === 'Administrator' || account.role === 'Contributor'),
   )
@@ -246,6 +254,8 @@ export function TaskForm({
       description: String(form.get('description') || ''),
       resolution: '',
       source: form.get('source') as WorkItem['source'],
+      recurrence: parent ? undefined : repeat,
+      custom: cleanCustomValues(customFields, customValues),
     })
   }
   const lockedClientId = parent?.clientId || preset?.clientId || ''
@@ -404,6 +414,14 @@ export function TaskForm({
         <small>Used by linked Testing stages. Passed requires completed work.</small>
       </label>
       <WorkScheduleFields itemKind={parent ? 'Subtask' : 'Task'} />
+      {!parent && <RepeatField value={repeat} onChange={setRepeat} dates={{}} today={businessDateKey()} />}
+      {customFields.length > 0 && (
+        <CustomFieldInputs
+          fields={customFields}
+          values={customValues}
+          onChange={(id, value) => setCustomValues(current => ({ ...current, [id]: value }))}
+        />
+      )}
       <label>
         Estimate (hours)
         <input
@@ -535,12 +553,17 @@ export function TaskEditForm({
   const [status, setStatus] = useState(item.status)
   // Tasks that block this one (dependencies.ts).
   const [blockers, setBlockers] = useState<string[]>(() => blockerIds(item))
+  // Repeat (top-level tasks only) and the account's custom fields.
+  const [repeat, setRepeat] = useState<Recurrence | undefined>(() => cleanRecurrence(item.recurrence))
+  const [customValues, setCustomValues] = useState<Record<string, TaskFieldValue | string>>(() => ({ ...item.custom }))
+  const customFields = store.taskSettings.customFields || []
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   // What the form held when it opened (or was last saved), to tell unsaved changes apart before minimizing.
   const formRef = useRef<HTMLFormElement>(null)
   const opened = useRef('')
-  const snapshot = () => formSnapshot(formRef.current, [rtmLinks, editProjectId, type, status, blockers])
+  const snapshot = () =>
+    formSnapshot(formRef.current, [rtmLinks, editProjectId, type, status, blockers, repeat || null, customValues])
   useEffect(() => {
     opened.current = formSnapshot(formRef.current, [
       item.rtmLinks || [],
@@ -548,6 +571,8 @@ export function TaskEditForm({
       item.type,
       item.status,
       blockerIds(item),
+      cleanRecurrence(item.recurrence) || null,
+      { ...item.custom },
     ])
   }, [item])
   if (dirtyCheck) dirtyCheck.current = () => Boolean(opened.current) && snapshot() !== opened.current
@@ -619,6 +644,8 @@ export function TaskEditForm({
         const kept = cleanBlockers(item.id, blockers, store.items)
         return kept.length ? kept : undefined
       })(),
+      recurrence: parent ? undefined : repeat,
+      custom: cleanCustomValues(customFields, customValues, item.custom),
     }
     setSaveError('')
     setSaving(true)
@@ -689,6 +716,44 @@ export function TaskEditForm({
           onChange={setBlockers}
         />
       </Fold>
+      {!parent && (
+        <Fold
+          id="repeat"
+          title="Repeat"
+          meta={repeat ? recurrenceText(repeat) : 'Doesn’t repeat'}
+          defaultOpen={Boolean(repeat)}
+        >
+          <RepeatField
+            value={repeat}
+            onChange={setRepeat}
+            dates={{ dueDate: item.dueDate, startDate: item.startDate, followUpDate: item.followUpDate }}
+            today={businessDateKey()}
+          />
+          {item.recurrenceNextId && (
+            <p className="muted span-2">
+              The next one was already made when this task was closed
+              {store.items.find(candidate => candidate.id === item.recurrenceNextId)
+                ? `: “${store.items.find(candidate => candidate.id === item.recurrenceNextId)?.title}”`
+                : ''}
+              . Closing it again won’t make another.
+            </p>
+          )}
+        </Fold>
+      )}
+      {customFields.length > 0 && (
+        <Fold
+          id="custom-fields"
+          title="Custom fields"
+          meta={`${customFields.filter(field => cleanFieldValue(field, customValues[field.id]) !== undefined).length} of ${customFields.length} filled`}
+          defaultOpen
+        >
+          <CustomFieldInputs
+            fields={customFields}
+            values={customValues}
+            onChange={(id, value) => setCustomValues(current => ({ ...current, [id]: value }))}
+          />
+        </Fold>
+      )}
       <Fold id="effort" title="Effort" meta={effortMeta} defaultOpen>
         <TaskEffort
           item={item}

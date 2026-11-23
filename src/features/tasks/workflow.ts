@@ -15,6 +15,7 @@ import type {
   WorkflowLabels,
 } from '../../shared/types'
 import { applyWaitingOnRenames, planWaitingOnUpdate, waitingOnOptions } from './waitingOn'
+import { cleanFieldDefs } from './customFields'
 
 export const PRIORITIES: Priority[] = ['Low', 'Medium', 'High', 'Urgent']
 export const HEALTHS: Client['health'][] = ['Good', 'Watch', 'At Risk']
@@ -65,6 +66,8 @@ export interface WorkflowInput {
   waitingOn?: unknown
   visibleColumns: unknown
   labels?: unknown
+  /** Custom task fields (customFields.ts); kept as they are when not sent. */
+  customFields?: unknown
 }
 
 type Item = { status?: unknown; waitingOn?: unknown; archived?: unknown; title?: unknown }
@@ -170,6 +173,12 @@ export function planWorkflowUpdate(
   })
   renamedTasks += items.filter(item => waiting.update.renamed.has(String(item?.waitingOn ?? ''))).length
   const labels = cleanLabels(input.labels === undefined ? current?.labels : input.labels)
+  // Custom task fields: kept as they were unless sent. Removing one hides its values on tasks (kept, not deleted).
+  if (input.customFields !== undefined && !Array.isArray(input.customFields))
+    return fail('Send the custom fields as a list.')
+  const customFields = cleanFieldDefs(input.customFields === undefined ? current?.customFields : input.customFields)
+  if (Array.isArray(input.customFields) && customFields.length < input.customFields.length)
+    return fail('Every custom field needs a unique name, a type, and (for Choice) at least one option.')
   return {
     ok: true,
     taskSettings: {
@@ -177,6 +186,7 @@ export function planWorkflowUpdate(
       visibleColumns: [...new Set<TaskColumnKey>(['status', ...(input.visibleColumns as TaskColumnKey[])])],
       waitingOn: waiting.update.options,
       ...(Object.keys(labels).length ? { labels } : {}),
+      ...(customFields.length ? { customFields } : {}),
     },
     items: nextItems,
     renamedTasks,
