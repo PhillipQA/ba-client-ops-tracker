@@ -1,5 +1,6 @@
 import express, { type Express } from 'express'
 import path from 'node:path'
+import { precompressedAssets } from './compression'
 
 // Serves the built frontend in production.
 //
@@ -14,6 +15,8 @@ import path from 'node:path'
 export function registerStaticSite(app: Express, dist: string) {
   const noCache = 'no-cache'
 
+  // The Brotli or gzip copy made at build time, when the browser accepts it (compression.ts).
+  app.use('/assets', precompressedAssets(path.join(dist, 'assets')))
   app.use(
     '/assets',
     express.static(path.join(dist, 'assets'), {

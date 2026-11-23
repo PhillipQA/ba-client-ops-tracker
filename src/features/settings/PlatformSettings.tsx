@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { settingsRequest } from './Settings'
+import { settingsRequest } from './settingsRequest'
 import type { TaskSettings } from '../../shared/types'
 import { waitingOnOptions } from '../tasks/waitingOn'
 import { WorkflowEditor, workflowSavedMessage } from './WorkflowEditor'

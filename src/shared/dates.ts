@@ -1,5 +1,6 @@
 import { businessDateKey } from './businessDate'
 import type { PlannerActivity } from './types'
+import { dateFormat } from './intlFormat'
 
 export function localDateKey(date: Date) {
   const yyyy = date.getFullYear()
@@ -15,7 +16,7 @@ export function todayOrLater(date: string) {
 export function niceDate(date: string) {
   if (!date) return '—'
   const [year, month, day] = date.split('-').map(Number)
-  return new Intl.DateTimeFormat('en', {
+  return dateFormat('en', {
     month: 'short',
     day: 'numeric',
     year: year === new Date().getFullYear() ? undefined : 'numeric',

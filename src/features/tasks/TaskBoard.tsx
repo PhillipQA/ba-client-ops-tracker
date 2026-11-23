@@ -6,6 +6,7 @@ import { isWaitingOnDone, openWaitingOnOptions, waitingOnTone } from './waitingO
 import type { Client, Project, TaskSettings, UserAccount, WaitingOn, WorkItem } from '../../shared/types'
 import './effort.css'
 import { PriorityChip } from '../../shared/ui/Chips'
+import { dateFormat } from '../../shared/intlFormat'
 
 type Props = {
   items: WorkItem[]
@@ -26,7 +27,7 @@ type Props = {
 
 function shortDate(date: string) {
   const [year, month, day] = date.split('-').map(Number)
-  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(year, month - 1, day))
+  return dateFormat('en', { month: 'short', day: 'numeric' }).format(new Date(year, month - 1, day))
 }
 
 function initials(name: string) {

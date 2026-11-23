@@ -20,6 +20,7 @@ import { SendToSeedsButton } from '../seeds/SendToSeeds'
 import TaskTimerBar, { type TimerDay } from './TaskTimerBar'
 import { timersApi } from './timerStore'
 import './effort.css'
+import { dateFormat } from '../../shared/intlFormat'
 
 type Props = {
   item: WorkItem
@@ -36,7 +37,7 @@ const NO_SEEDS_TASK = 'none'
 
 function niceEntryDate(date: string) {
   const [year, month, day] = date.split('-').map(Number)
-  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(year, month - 1, day))
+  return dateFormat('en', { month: 'short', day: 'numeric' }).format(new Date(year, month - 1, day))
 }
 
 /** Effort section of the task editor. It sits inside the task form, so its controls never submit that form. */

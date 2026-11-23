@@ -5,7 +5,7 @@ import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from './ac
 import GoogleCalendarPanel from '../integrations/GoogleCalendarPanel'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { isClosedProject } from '../tasks/lifecycle'
-import { type ReactNode, useMemo, useState } from 'react'
+import { lazy, type ReactNode, Suspense, useMemo, useState } from 'react'
 import { isBeforeSeedsWork } from '../../shared/seeds'
 import { type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 import { MorningBrief } from './MorningBrief'
@@ -37,7 +37,6 @@ import {
   useReportEngine,
   useSavedReports,
 } from './ActionCenterReports'
-import { JarvisReportDialog } from '../reports/explorer/Jarvis'
 import type { Widget } from '../reports/custom/reportModel'
 import { builtinValue, customValue } from './countTiles'
 import { DrillPanel } from './DrillPanel'
@@ -46,6 +45,11 @@ import { requestJson } from '../../shared/http'
 import { CustomizeBar, WidgetFrame } from './ActionCenterCustomize'
 import { DocHubWidget, RolloutsWidget, WorkHubWidget } from './ActionCenterWidgets'
 import { useActionCenterLayout } from './useActionCenterLayout'
+
+// Jarvis downloads when it is opened.
+const JarvisReportDialog = lazy(() =>
+  import('../reports/explorer/Jarvis').then(module => ({ default: module.JarvisReportDialog })),
+)
 
 /** Action Center screen. It reads the app state; see app/useAppState. */
 export function ActionCenterPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
@@ -616,34 +620,36 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         />
       )}
       {jarvisOpen && (
-        <JarvisReportDialog
-          target="actionCenter"
-          explorer={explorer}
-          onClose={() => setJarvisOpen(false)}
-          onCreate={async (_name, widgets) => {
-            const room = LAYOUT_LIMIT - draft.length
-            const fitting = widgets.slice(0, Math.max(0, room))
-            setDraft(current =>
-              fitting.reduce((next, widget) => {
-                // Jarvis's analyst notes become a note widget; tables go full width.
-                const notes = widget.kind === 'note'
-                const title = notes ? 'What this shows' : widget.title
-                const text = notes ? (widget.text || '').replace(/^What this shows\n/, '') : widget.text
-                const added = addWidget(next, 'custom', { widget: { ...widget, title, text, x: 0, y: 0 } })
-                const wide = notes || widget.query?.view === 'table'
-                const item = added[added.length - 1]
-                return wide && item && added !== next ? setWidgetWidth(added, keyOf(item), 'full') : added
-              }, current),
-            )
-            const count = fitting.length
-            setAddNote(
-              count < widgets.length
-                ? `Only ${count} of Jarvis’s ${widgets.length} widgets fit: the most is ${LAYOUT_LIMIT}.`
-                : `Added ${count} widget${count === 1 ? '' : 's'} from Jarvis. Save the layout to keep them.`,
-            )
-            return true
-          }}
-        />
+        <Suspense fallback={null}>
+          <JarvisReportDialog
+            target="actionCenter"
+            explorer={explorer}
+            onClose={() => setJarvisOpen(false)}
+            onCreate={async (_name, widgets) => {
+              const room = LAYOUT_LIMIT - draft.length
+              const fitting = widgets.slice(0, Math.max(0, room))
+              setDraft(current =>
+                fitting.reduce((next, widget) => {
+                  // Jarvis's analyst notes become a note widget; tables go full width.
+                  const notes = widget.kind === 'note'
+                  const title = notes ? 'What this shows' : widget.title
+                  const text = notes ? (widget.text || '').replace(/^What this shows\n/, '') : widget.text
+                  const added = addWidget(next, 'custom', { widget: { ...widget, title, text, x: 0, y: 0 } })
+                  const wide = notes || widget.query?.view === 'table'
+                  const item = added[added.length - 1]
+                  return wide && item && added !== next ? setWidgetWidth(added, keyOf(item), 'full') : added
+                }, current),
+              )
+              const count = fitting.length
+              setAddNote(
+                count < widgets.length
+                  ? `Only ${count} of Jarvis’s ${widgets.length} widgets fit: the most is ${LAYOUT_LIMIT}.`
+                  : `Added ${count} widget${count === 1 ? '' : 's'} from Jarvis. Save the layout to keep them.`,
+              )
+              return true
+            }}
+          />
+        </Suspense>
       )}
       {drill && (
         <DrillPanel
