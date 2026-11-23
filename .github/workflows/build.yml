@@ -22,6 +22,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Format diff (temporary)
+        run: |
+          npx biome format --write e2e/01-sign-in.spec.ts e2e/02-internal-admin.spec.ts e2e/03-clients-projects.spec.ts e2e/04-tasks.spec.ts e2e/05-subtasks.spec.ts e2e/06-task-board.spec.ts e2e/07-action-center.spec.ts e2e/08-trackers.spec.ts e2e/09-users.spec.ts e2e/10-settings-workflow.spec.ts e2e/11-pages.spec.ts e2e/auth.setup.ts e2e/support/app.ts  playwright.config.ts || true
+          git diff > format.diff || true
+          echo "FORMAT-DIFF-START"
+          base64 -w0 format.diff
+          echo
+          echo "FORMAT-DIFF-END"
+          git checkout -- .
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check
