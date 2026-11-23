@@ -97,11 +97,7 @@ export function anchorDay(item: Dates, today: string) {
 /**
  * The next occurrence on or after today (missed ones are skipped), or null when the series has ended (`until`).
  */
-export function nextDueDay(
-  item: Dates,
-  rule: Recurrence,
-  today: string,
-) {
+export function nextDueDay(item: Dates, rule: Recurrence, today: string) {
   let next = nextOccurrence(anchorDay(item, today), rule)
   for (let guard = 0; next < today && guard < 2000; guard++) next = nextOccurrence(next, rule)
   if (rule.until && next > rule.until) return null
