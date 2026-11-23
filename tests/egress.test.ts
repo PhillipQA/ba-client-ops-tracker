@@ -277,7 +277,7 @@ test('an edit during a revision check cannot be replaced by a stale refresh', as
   })
   let loads = 0
   browser(t, async (url, init) => {
-    if (init?.method === 'PUT') return response({ configured: true, version: 'v2' })
+    if (init?.method === 'PUT' || init?.method === 'PATCH') return response({ configured: true, version: 'v2' })
     if (String(url).endsWith('/revision')) {
       started?.()
       await new Promise<void>(resolve => {

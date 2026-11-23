@@ -14,6 +14,7 @@ import {
   workspaceAccess,
 } from '../../src/shared/access'
 import { keepSeedsFields } from '../../src/shared/seeds'
+import { applyWorkspaceChanges, changeConflict, isWorkspaceChanges } from '../../src/shared/workspaceChanges'
 import { WorkspaceRaceError } from '../services/workspace-guard'
 import {
   isBcryptHash,
@@ -244,14 +245,24 @@ export function registerStoreRoutes(app: Express) {
     }
   })
 
-  app.put('/api/store', requireAuth, requireTenantWorkspace, async (req, res) => {
+  /**
+   * Saves the workspace. `full` takes the browser's whole copy (PUT /api/store); `changes` takes only what changed
+   * since the browser's copy (PATCH /api/store/changes, see src/shared/workspaceChanges.ts) and lays it on the stored
+   * workspace as this person sees it. Both then go through the same checks and the same save.
+   */
+  const saveWorkspace = (mode: 'full' | 'changes') => async (req: express.Request, res: express.Response) => {
     if (!db) {
       res.status(503).json({ configured: false, error: 'Database is not configured.' })
       return
     }
-    let next = req.body?.data
-    if (!next || typeof next !== 'object' || Array.isArray(next)) {
+    const changes = mode === 'changes' && isWorkspaceChanges(req.body?.changes) ? req.body.changes : null
+    let next = mode === 'full' ? req.body?.data : null
+    if (mode === 'full' && (!next || typeof next !== 'object' || Array.isArray(next))) {
       res.status(400).json({ configured: true, error: 'A tracker data object is required.' })
+      return
+    }
+    if (mode === 'changes' && !changes) {
+      res.status(400).json({ configured: true, error: 'A list of changes is required.' })
       return
     }
 
@@ -286,14 +297,24 @@ export function registerStoreRoutes(app: Express) {
       const currentVersion = currentState.data
         ? storedWorkspaceVersion(String(organizationId), currentState.updatedAt, current)
         : workspaceVersion(current)
-      if (typeof req.body?.baseVersion !== 'string' || req.body.baseVersion !== currentVersion) {
-        return void res.status(409).json({
+      const newerChanges = () =>
+        void res.status(409).json({
           configured: true,
           refreshRequired: true,
           error:
             'This workspace has newer changes. Your edits are retained locally. Download them and reload the latest workspace before reapplying your change.',
         })
-      }
+      if (typeof req.body?.baseVersion !== 'string') return newerChanges()
+      // Saved onto newer changes from elsewhere, which this browser has not seen yet.
+      let behind = false
+      if (changes) {
+        const visible = sanitizeStateForClient(current, user)
+        // Someone else saved since this browser's copy. Their save and this one can both stand when they changed
+        // different records: every record changed here must still be as this browser last saw it.
+        behind = req.body.baseVersion !== currentVersion
+        if (behind && changeConflict(visible, changes)) return newerChanges()
+        next = applyWorkspaceChanges(visible, changes)
+      } else if (req.body.baseVersion !== currentVersion) return newerChanges()
 
       // With per-person visibility on, the browser holds only part of the workspace. Lay its save onto the whole
       // workspace: records it cannot see or change stay as stored. Access and Seeds data belong to the server.
@@ -509,7 +530,9 @@ export function registerStoreRoutes(app: Express) {
               sessions.set(token, safeUser({ ...own, isPlatformAdmin: sessionUser.isPlatformAdmin }, organization))
       }
 
-      res.json({ configured: true, saved: true, updatedAt, version: saved.version })
+      // `behind`: the browser's copy still lacks the other changes, so it keeps its old version. Its next save is checked
+      // record by record again, and a whole-copy save is refused until it has fetched the latest.
+      res.json({ configured: true, saved: true, updatedAt, version: saved.version, ...(behind ? { behind: true } : {}) })
     } catch (error) {
       // Someone else saved in the moment between the version check and this commit. refreshRequired lets the browser
       // fetch the latest, merge its own changes onto it and retry, instead of showing the Save conflict box.
@@ -521,5 +544,8 @@ export function registerStoreRoutes(app: Express) {
         error: error instanceof Error ? error.message : 'Cloud database save failed.',
       })
     }
-  })
+  }
+
+  app.put('/api/store', requireAuth, requireTenantWorkspace, saveWorkspace('full'))
+  app.patch('/api/store/changes', requireAuth, requireTenantWorkspace, saveWorkspace('changes'))
 }

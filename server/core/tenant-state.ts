@@ -10,6 +10,7 @@ import {
   rollOverOpenSubtaskFollowUps,
 } from '../services/follow-up-rollover'
 import { reconcileNotifications } from '../services/notification-engine'
+import { changedRows } from '../services/record-changes'
 import { createWorkspaceGuard } from '../services/workspace-guard'
 import { workspaceVersion } from '../services/workspace-version'
 import { type OrganizationInfo, type SessionUser, verifyPassword } from './auth'
@@ -642,6 +643,51 @@ export async function ensureTenantFollowUpsCurrent(organizationId: string): Prom
   return { ...current, changes: [], notificationCount: 0 }
 }
 
+/** Off once the database is found without schema v46; checked again after a while, so running it needs no restart. */
+let changedRecordSavesMissingUntil = 0
+
+/**
+ * Saves through save_tenant_changes_v1 (schema v46), writing only the rows that changed. Returns null when the full
+ * save should run instead: the database has no v46 yet, or its record tables are out of step with the workspace
+ * (rows written elsewhere), which the full save puts right.
+ */
+async function writeChangedRecords(
+  organizationId: string,
+  state: any,
+  before: any,
+  auditEntries: any[],
+  actor: SessionUser | null,
+  reason: string,
+) {
+  if (!db || Date.now() < changedRecordSavesMissingUntil) return null
+  // Users (app_users) are the sign-in authority and Internal Admin writes them too: they are still written whole.
+  const { changes, counts } = changedRows(
+    normalizedRecords(before, organizationId),
+    normalizedRecords(state, organizationId),
+    ['app_users'],
+  )
+  const result = await db.rpc('save_tenant_changes_v1', {
+    p_expected_updated_at: loadedRevisions.get(before),
+    p_organization_id: organizationId,
+    p_state: state,
+    p_changes: changes,
+    p_counts: counts,
+    p_audit_entries: auditEntries,
+    p_actor_id: actor?.id || null,
+    p_reason: reason,
+  })
+  const code = (result.error as any)?.code
+  if (code === 'PGRST202' || code === '42883') {
+    changedRecordSavesMissingUntil = Date.now() + 10 * 60_000
+    return null
+  }
+  if (code === 'BA046') {
+    console.warn('Record tables were out of step with the workspace; saving every record once.')
+    return null
+  }
+  return result
+}
+
 async function writeTenantState(
   organizationId: string | undefined,
   state: any,
@@ -653,15 +699,19 @@ async function writeTenantState(
   if (!db) throw new TenantSaveError('Database is not configured.', 503)
   if (!organizationId) throw new TenantSaveError('A tenant workspace is required.', 403)
   if (!before || !loadedRevisions.has(before)) throw new TenantSaveError('Reload the workspace before saving.', 409)
-  const { data, error } = await db.rpc('save_tenant_state_v16', {
-    p_expected_updated_at: loadedRevisions.get(before),
-    p_organization_id: organizationId,
-    p_state: state,
-    p_records: synchronize ? normalizedRecords(state, organizationId) : null,
-    p_audit_entries: before ? auditEntriesForChanges(before, state, actor, reason, organizationId) : [],
-    p_actor_id: actor?.id || null,
-    p_reason: reason,
-  })
+  const auditEntries = before ? auditEntriesForChanges(before, state, actor, reason, organizationId) : []
+  let result = synchronize ? await writeChangedRecords(organizationId, state, before, auditEntries, actor, reason) : null
+  if (!result)
+    result = await db.rpc('save_tenant_state_v16', {
+      p_expected_updated_at: loadedRevisions.get(before),
+      p_organization_id: organizationId,
+      p_state: state,
+      p_records: synchronize ? normalizedRecords(state, organizationId) : null,
+      p_audit_entries: auditEntries,
+      p_actor_id: actor?.id || null,
+      p_reason: reason,
+    })
+  const { data, error } = result
   if (error) {
     if (error.code === 'PGRST202' || error.code === '42883')
       throw new TenantSaveError(
