@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Action Center: click a number to see what's behind it
+- **Count tiles open their list.** Click a tile (Needs attention, Overdue, Due today, Waiting on Developer or Client, Inquiries, or your own Reports-filter counts) to see exactly the tasks it counted: Task, Client, Project, Status, Due, Follow-up and Assignee. Late dates are marked.
+- **Activities** lists today's meetings, tracker activities and follow-ups; **Unsent time** lists your time entries not yet sent to Seeds, with their tasks.
+- **Report widgets drill down.** Click a bar, column, point, pie slice or summary-table row to see the records in that group ("Other" lists the groups not drawn on their own); click a metric to see all its records. Works for your own widgets and ones pinned from Reports. SQL widgets aren't clickable.
+- The list has **search**, **sorting** by any column, **click a task to open it**, and **Export CSV** (everything listed, even past the first 300 shown).
+- **Open in Tasks** appears where the Tasks page's filters can show the same list: Overdue, Waiting on Developer and Waiting on Client.
+- Tiles and widgets don't open while you're customizing the layout.
+
 ### Trackers: cell comments sync with the Google Sheet or Excel file
 - **Google Sheet → tracker**: on every sync, each comment and reply on a cell of the synced tab shows on the matching tracker cell (corner and tooltip, labelled "Google Sheet"), and in the row's Comments, read-only. Edits and deletes in the Sheet follow on the next sync; resolved threads are hidden.
 - **Tracker → Google Sheet**: a comment written on a cell of a row that came from the Sheet is posted to that cell in the Sheet, as a reply when the cell has an open thread. It is posted by the Google account that connected the Sheet, with the writer's name in front ("Phillip: retest Monday"). Editing or deleting it in the tracker changes it in the Sheet too. It is sent right away, and retried on the next sync when Google can't be reached; the connection needs permission to edit Sheets.

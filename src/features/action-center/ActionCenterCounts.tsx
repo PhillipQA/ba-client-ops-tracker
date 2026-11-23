@@ -59,20 +59,46 @@ const DETAIL_NAMES: Record<TileDetail, string> = {
   none: 'Nothing',
 }
 
-export function CountTiles({ tiles, readValue }: { tiles: CountTile[]; readValue: (tile: CountTile) => TileValue }) {
+export function CountTiles({
+  tiles,
+  readValue,
+  onOpen,
+}: {
+  tiles: CountTile[]
+  readValue: (tile: CountTile) => TileValue
+  /** Clicking a tile opens the list behind its number (DrillPanel). */
+  onOpen?: (tile: CountTile, title: string) => void
+}) {
   if (!tiles.length) return <p className="ac-widget-note">No count tiles. Add some under Customize.</p>
   return (
     <div className="metric-grid dashboard-metrics ac-tiles">
       {tiles.map(tile => {
         const shown = readValue(tile)
-        return (
-          <div key={tile.id} className={`metric-card${tile.color ? ` ac-tile-${tile.color}` : ''}`}>
+        const title = tile.title || shown.title
+        const className = `metric-card${tile.color ? ` ac-tile-${tile.color}` : ''}`
+        const body = (
+          <>
             <div className="metric-icon">{tile.builtin ? ICONS[tile.builtin] : <Hash size={18} />}</div>
             <div>
-              <span>{tile.title || shown.title}</span>
+              <span>{title}</span>
               <strong>{shown.value}</strong>
               {shown.detail && <small>{shown.detail}</small>}
             </div>
+          </>
+        )
+        return onOpen ? (
+          <button
+            key={tile.id}
+            type="button"
+            className={`${className} ac-tile-open`}
+            title={`See the ${title.toLowerCase()} list`}
+            onClick={() => onOpen(tile, title)}
+          >
+            {body}
+          </button>
+        ) : (
+          <div key={tile.id} className={className}>
+            {body}
           </div>
         )
       })}
