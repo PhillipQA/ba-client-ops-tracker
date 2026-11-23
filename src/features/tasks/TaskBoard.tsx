@@ -8,7 +8,6 @@ import './effort.css'
 import { PriorityChip } from '../../shared/ui/Chips'
 import { isTaskClosed } from '../../app/store'
 import { BlockedBadge, RepeatBadge } from './BlockedBadge'
-import { BlockedBadge } from './BlockedBadge'
 import { dateFormat } from '../../shared/intlFormat'
 
 type Props = {
