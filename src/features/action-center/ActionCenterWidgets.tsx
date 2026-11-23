@@ -14,6 +14,7 @@ import { ROLLUP_ID, STATE_LABEL, dueThisWeek, rollupItems } from '../trackers/tr
 import { type DocHubDocument, docHubLabels } from '../documents/dochub'
 import { rememberWorkHubMessage } from '../work-hub/workHubNav'
 import { awaitingSignature, type Email, emailsToShow } from './widgetLists'
+import { dateFormat } from '../../shared/intlFormat'
 
 type View = (view: any) => void
 
@@ -38,8 +39,8 @@ const shortDate = (value?: string) => {
   if (!date || Number.isNaN(date.getTime())) return ''
   const today = new Date()
   return date.toDateString() === today.toDateString()
-    ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    : date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    ? dateFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)
+    : dateFormat(undefined, { month: 'short', day: 'numeric' }).format(date)
 }
 /** "Ana Cruz <ana@client.com>" → "Ana Cruz". */
 const senderName = (sender: string) =>
@@ -199,10 +200,9 @@ export function DocHubWidget({ setView }: { setView: View }) {
 const shortDay = (value: string) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   return match
-    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString([], {
-        month: 'short',
-        day: 'numeric',
-      })
+    ? dateFormat(undefined, { month: 'short', day: 'numeric' }).format(
+        new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+      )
     : value
 }
 

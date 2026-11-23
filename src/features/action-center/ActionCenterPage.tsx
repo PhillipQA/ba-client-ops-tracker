@@ -5,7 +5,7 @@ import { canBrowseTeamActionCenter, type ActionCenterScopeSelection } from './ac
 import GoogleCalendarPanel from '../integrations/GoogleCalendarPanel'
 import ClientSelect from '../../shared/ui/SearchSelect'
 import { isClosedProject } from '../tasks/lifecycle'
-import { type ReactNode, useMemo, useState } from 'react'
+import { lazy, type ReactNode, Suspense, useMemo, useState } from 'react'
 import { isBeforeSeedsWork } from '../../shared/seeds'
 import { type SourceFilter, SourceFilterSelect, sourceMatches } from '../seeds/SeedsPage'
 import { MorningBrief } from './MorningBrief'
@@ -37,13 +37,19 @@ import {
   useReportEngine,
   useSavedReports,
 } from './ActionCenterReports'
-import { JarvisReportDialog } from '../reports/explorer/Jarvis'
 import type { Widget } from '../reports/custom/reportModel'
 import { builtinValue, customValue } from './countTiles'
+import { DrillPanel } from './DrillPanel'
+import { type Drill, type TasksFilter, tileDrill } from './drillDown'
 import { requestJson } from '../../shared/http'
 import { CustomizeBar, WidgetFrame } from './ActionCenterCustomize'
 import { DocHubWidget, RolloutsWidget, WorkHubWidget } from './ActionCenterWidgets'
 import { useActionCenterLayout } from './useActionCenterLayout'
+
+// Jarvis downloads when it is opened.
+const JarvisReportDialog = lazy(() =>
+  import('../reports/explorer/Jarvis').then(module => ({ default: module.JarvisReportDialog })),
+)
 
 /** Action Center screen. It reads the app state; see app/useAppState. */
 export function ActionCenterPage({ app, currentUser }: { app: AppState; currentUser: SignedInUser }) {
@@ -357,6 +363,44 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           waitingDev: actionCenterWaitingDev,
         })
       : customValue(tile, taskRecords, taskFields, today, currentUser.id)
+  // Drill-down: a tile, or a report widget's bar, slice, point or metric, opens the list behind its number.
+  const [drill, setDrill] = useState<Drill | null>(null)
+  const openTile = (tile: CountTile, title: string) =>
+    setDrill(
+      tileDrill(
+        tile,
+        title,
+        {
+          open: actionCenterWorkItems,
+          allItems: store.items,
+          taskSettings: store.taskSettings,
+          today,
+          meId: currentUser.id,
+          waitingTitle: actionCenterWaitingTitle,
+          waitingDev: actionCenterWaitingDev,
+          activities: todayActivities,
+          followUps: todayFollowUps,
+        },
+        { clients: store.clients, projects: store.projects, accounts: store.accounts, today },
+        { records: taskRecords, fields: taskFields },
+      ),
+    )
+  const openDrillTask = (taskId: string) => {
+    const task = store.items.find(item => item.id === taskId)
+    if (task && canEditActionItem(task)) openTaskEditor(task.id)
+    else setView('items')
+  }
+  /** Tasks, filtered to show the same list (only for lists its filters can show). */
+  const openInTasks = (filter: TasksFilter) => {
+    app.setQuery('')
+    app.setTaskArchiveView('active')
+    app.setTaskClientFilter('')
+    app.setTaskProjectFilter('')
+    app.setTaskStatusFilter('')
+    app.setTaskDateFilter(filter.date || 'All')
+    app.setWaitingFilter(filter.waitingOn || 'All')
+    setView('items')
+  }
   // Report widgets: built here, or pinned from a saved report.
   const engine = useReportEngine(app, currentUser, hasModule('trackers'))
   // SQL widgets on the Data explorer's tables. Writing SQL (typed, built or by Jarvis) is for Administrators and people
@@ -387,7 +431,8 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
     else void layout.save(setWidgetSettings(layout.layout, key, settings))
   }
   const renderItem = (item: LayoutItem): ReactNode => {
-    if (item.id === 'counts') return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} />
+    if (item.id === 'counts')
+      return <CountTiles tiles={tilesOf(item.settings)} readValue={tileValue} onOpen={editing ? undefined : openTile} />
     if (item.id === 'time')
       return (
         <TimeWidget
@@ -430,7 +475,14 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         />
       )
     if (item.id === 'custom' && item.settings?.widget)
-      return <CustomWidget widget={item.settings.widget as Widget} engine={engine} explorer={explorer} />
+      return (
+        <CustomWidget
+          widget={item.settings.widget as Widget}
+          engine={engine}
+          explorer={explorer}
+          onDrill={editing ? undefined : setDrill}
+        />
+      )
     if (item.id === 'pinned' && item.settings) {
       const { reportId, widgetId } = item.settings as { reportId: string; widgetId: string }
       return (
@@ -442,6 +494,7 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
           explorer={explorer}
           onOpenReport={() => openReport(reportId)}
           onRemove={() => removeNow(keyOf(item))}
+          onDrill={editing ? undefined : setDrill}
         />
       )
     }
@@ -567,33 +620,43 @@ export function ActionCenterPage({ app, currentUser }: { app: AppState; currentU
         />
       )}
       {jarvisOpen && (
-        <JarvisReportDialog
-          target="actionCenter"
-          explorer={explorer}
-          onClose={() => setJarvisOpen(false)}
-          onCreate={async (_name, widgets) => {
-            const room = LAYOUT_LIMIT - draft.length
-            const fitting = widgets.slice(0, Math.max(0, room))
-            setDraft(current =>
-              fitting.reduce((next, widget) => {
-                // Jarvis's analyst notes become a note widget; tables go full width.
-                const notes = widget.kind === 'note'
-                const title = notes ? 'What this shows' : widget.title
-                const text = notes ? (widget.text || '').replace(/^What this shows\n/, '') : widget.text
-                const added = addWidget(next, 'custom', { widget: { ...widget, title, text, x: 0, y: 0 } })
-                const wide = notes || widget.query?.view === 'table'
-                const item = added[added.length - 1]
-                return wide && item && added !== next ? setWidgetWidth(added, keyOf(item), 'full') : added
-              }, current),
-            )
-            const count = fitting.length
-            setAddNote(
-              count < widgets.length
-                ? `Only ${count} of Jarvis’s ${widgets.length} widgets fit: the most is ${LAYOUT_LIMIT}.`
-                : `Added ${count} widget${count === 1 ? '' : 's'} from Jarvis. Save the layout to keep them.`,
-            )
-            return true
-          }}
+        <Suspense fallback={null}>
+          <JarvisReportDialog
+            target="actionCenter"
+            explorer={explorer}
+            onClose={() => setJarvisOpen(false)}
+            onCreate={async (_name, widgets) => {
+              const room = LAYOUT_LIMIT - draft.length
+              const fitting = widgets.slice(0, Math.max(0, room))
+              setDraft(current =>
+                fitting.reduce((next, widget) => {
+                  // Jarvis's analyst notes become a note widget; tables go full width.
+                  const notes = widget.kind === 'note'
+                  const title = notes ? 'What this shows' : widget.title
+                  const text = notes ? (widget.text || '').replace(/^What this shows\n/, '') : widget.text
+                  const added = addWidget(next, 'custom', { widget: { ...widget, title, text, x: 0, y: 0 } })
+                  const wide = notes || widget.query?.view === 'table'
+                  const item = added[added.length - 1]
+                  return wide && item && added !== next ? setWidgetWidth(added, keyOf(item), 'full') : added
+                }, current),
+              )
+              const count = fitting.length
+              setAddNote(
+                count < widgets.length
+                  ? `Only ${count} of Jarvis’s ${widgets.length} widgets fit: the most is ${LAYOUT_LIMIT}.`
+                  : `Added ${count} widget${count === 1 ? '' : 's'} from Jarvis. Save the layout to keep them.`,
+              )
+              return true
+            }}
+          />
+        </Suspense>
+      )}
+      {drill && (
+        <DrillPanel
+          drill={drill}
+          onClose={() => setDrill(null)}
+          onOpenTask={openDrillTask}
+          onOpenInTasks={drill.tasks ? () => openInTasks(drill.tasks as TasksFilter) : undefined}
         />
       )}
       {tilesItem && (

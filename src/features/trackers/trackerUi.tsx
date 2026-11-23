@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import type { ColumnType, OptionColor } from './trackerModel'
 import type { Tone } from './trackerQuery'
+import { dateFormat } from '../../shared/intlFormat'
 
 export const TYPE_ICONS: Record<ColumnType, typeof Type> = {
   text: Type,
@@ -80,18 +81,16 @@ export function Avatar({ name }: { name: string }) {
 export function niceDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return value
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString('en', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return dateFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(
+    new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+  )
 }
 
 export function niceTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
     ? ''
-    : date.toLocaleString('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : dateFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date)
 }
 
 export function plural(count: number, one: string, many = `${one}s`) {
