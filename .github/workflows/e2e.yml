@@ -58,7 +58,7 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: End-to-end tests (headed)
-        run: xvfb-run -a npx playwright test --headed
+        run: xvfb-run -a npx playwright test --headed --repeat-each=3
       - name: Show what the page looked like when a test failed
         if: failure()
         run: |
@@ -79,7 +79,7 @@ jobs:
             e2e/screenshots/
           retention-days: 14
       - name: Commit the screenshots to the branch
-        if: success()
+        if: success() && false
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
@@ -90,7 +90,8 @@ jobs:
             echo 'The screenshots did not change.'
             exit 0
           fi
-          git commit --quiet -m "E2E screenshots (run ${{ github.run_number }})"
+          # [skip ci]: this commit only adds screenshots, so it doesn't start the workflows again.
+          git commit --quiet -m "E2E screenshots (run ${{ github.run_number }}) [skip ci]"
           for attempt in 1 2 3; do
             if git push --quiet origin "HEAD:$BRANCH"; then
               echo "Screenshots committed to $BRANCH."

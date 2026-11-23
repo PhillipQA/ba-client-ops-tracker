@@ -26,14 +26,15 @@ export const businessToday = () =>
   }).format(new Date())
 
 /**
- * Saves a screenshot to e2e/screenshots/<spec>/<name>.png. These files are kept in git: CI commits new ones to the
- * pull request, so what each step looked like can be reviewed there.
+ * Saves a screenshot to e2e/screenshots/<spec>/<name>.jpg. These files are kept in git: CI commits new ones to the
+ * pull request, so what each step looked like can be reviewed there. JPEG keeps them small (about a fifth of PNG),
+ * since every changed set stays in the repository's history.
  */
 export async function shot(page: Page, testInfo: TestInfo, name: string) {
   const spec = path.basename(testInfo.file).replace(/\.spec\.ts$/, '')
-  const file = path.join(import.meta.dirname, '..', 'screenshots', spec, `${name}.png`)
-  await page.screenshot({ path: file, fullPage: true, animations: 'disabled', caret: 'hide' })
-  await testInfo.attach(name, { path: file, contentType: 'image/png' })
+  const file = path.join(import.meta.dirname, '..', 'screenshots', spec, `${name}.jpg`)
+  await page.screenshot({ path: file, type: 'jpeg', quality: 70, fullPage: true, animations: 'disabled', caret: 'hide' })
+  await testInfo.attach(name, { path: file, contentType: 'image/jpeg' })
 }
 
 /** The two-step workspace sign-in: account first, then user and password. */

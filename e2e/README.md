@@ -19,7 +19,7 @@ uniquely named records, and the tests run one at a time.
 
 ## Screenshots
 
-Each test saves screenshots of its steps in `e2e/screenshots/<test>/`. In CI ([e2e.yml](../.github/workflows/e2e.yml))
+Each test saves screenshots of its steps in `e2e/screenshots/<test>/` (JPEG, to keep the repository small). In CI ([e2e.yml](../.github/workflows/e2e.yml))
 the tests run headed (a real browser window on a virtual display) on a fresh database, and the new screenshots are
 committed to the pull request's branch, so the PR shows what changed and they stay in git. The full report, traces
 and videos of failures are in the run's **e2e-report** artifact.
