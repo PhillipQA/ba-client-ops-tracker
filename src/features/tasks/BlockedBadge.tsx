@@ -1,8 +1,12 @@
-/** "Blocked by …" on an open task whose blockers are not all closed (table rows and board cards). */
-import { Lock } from 'lucide-react'
+/**
+ * Table-row and board-card badges: "Blocked by …" on an open task whose blockers are not all closed, and the repeat
+ * rule of a repeating task.
+ */
+import { Lock, Repeat } from 'lucide-react'
 import './taskViews.css'
 import type { TaskSettings, WorkItem } from '../../shared/types'
 import { blockedText, openBlockersOf } from './dependencies'
+import { cleanRecurrence, recurrenceText } from './recurrence'
 
 export function BlockedBadge({
   item,
@@ -19,6 +23,16 @@ export function BlockedBadge({
   return (
     <span className="blocked-badge" title={open.map(blocker => `${blocker.title} (${blocker.status})`).join('\n')}>
       <Lock size={11} aria-hidden="true" /> {blockedText(open)}
+    </span>
+  )
+}
+
+export function RepeatBadge({ item }: { item: WorkItem }) {
+  const rule = item.parentTaskId ? undefined : cleanRecurrence(item.recurrence)
+  if (!rule) return null
+  return (
+    <span className="repeat-badge" title={`${recurrenceText(rule)}. Closing it makes the next one.`}>
+      <Repeat size={11} aria-hidden="true" /> Repeats
     </span>
   )
 }

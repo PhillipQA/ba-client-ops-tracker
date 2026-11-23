@@ -31,6 +31,7 @@ import { waitingOnOptions } from '../features/tasks/waitingOn'
 import { cleanLabels } from '../features/tasks/workflow'
 import type { ClientAccess } from '../shared/access'
 import type { SeedsStatus } from '../shared/seeds'
+import { cleanFieldDefs } from '../features/tasks/customFields'
 
 export const STORE_SCHEMA_VERSION = 6
 export const STORAGE_KEY = 'ba-client-ops-tracker-v2'
@@ -144,11 +145,13 @@ export function normalizeTaskSettings(value: Partial<TaskSettings> | undefined):
     visibleColumns.splice(dueIndex >= 0 ? dueIndex : visibleColumns.length, 0, 'startDate')
   }
   const labels = cleanLabels(value?.labels)
+  const customFields = cleanFieldDefs(value?.customFields)
   return {
     statuses: safeStatuses,
     visibleColumns: [...new Set(visibleColumns)],
     waitingOn: waitingOnOptions(value),
     ...(Object.keys(labels).length ? { labels } : {}),
+    ...(customFields.length ? { customFields } : {}),
   }
 }
 

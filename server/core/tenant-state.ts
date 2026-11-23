@@ -313,16 +313,20 @@ export function authoritativeWorkEvents(current: any, next: any, actor: SessionU
       ['followUpDate', 'follow-up date'],
       ['estimateHours', 'estimate'],
       ['blockedBy', 'blocked-by tasks'],
+      ['recurrence', 'repeat'],
+      ['custom', 'custom fields'],
     ] as const) {
-      if (String(before[field] || '') !== String(item[field] || ''))
+      // Lists and objects (repeat rules, custom field values) compare by content.
+      const text = (value: unknown) => (value && typeof value === 'object' ? JSON.stringify(value) : String(value || ''))
+      if (text(before[field]) !== text(item[field]))
         created.push(
           make(
             item,
             'updated',
             `${actor.name} changed the ${label} for “${item.title}”.`,
             field,
-            String(before[field] || ''),
-            String(item[field] || ''),
+            text(before[field]),
+            text(item[field]),
           ),
         )
     }

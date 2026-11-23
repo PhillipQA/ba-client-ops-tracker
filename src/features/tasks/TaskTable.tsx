@@ -22,7 +22,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useState } from 'react'
-import { BlockedBadge } from './BlockedBadge'
+import { BlockedBadge, RepeatBadge } from './BlockedBadge'
+import { fieldText } from './customFields'
 
 export function FilterBar({
   query,
@@ -115,6 +116,8 @@ export function TaskTable({
     followUpDate: 'Follow-up',
   }
   const columns = taskSettings.visibleColumns.filter(column => !hiddenColumns.includes(column))
+  // Custom task fields chosen to show as columns (Settings › Workflow).
+  const shownFields = (taskSettings.customFields || []).filter(field => field.showInTable)
   // Start Date is a core scheduling field in v0.6.22. Keep it visible even when
   // an older saved column preference does not contain the newly introduced key.
   if (!hiddenColumns.includes('startDate') && !columns.includes('startDate')) {
@@ -292,6 +295,7 @@ export function TaskTable({
             <div>
               <strong>{item.title}</strong>
               {!isClosedTask(item) && <BlockedBadge item={item} items={sourceItems} taskSettings={taskSettings} />}
+              <RepeatBadge item={item} />
               {item.docHubDocuments?.map(d => (
                 <span className="dochub-task-badge" key={d.id}>
                   DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}
@@ -360,6 +364,17 @@ export function TaskTable({
               >
                 {niceDate(item.followUpDate)}
               </span>
+            )}
+          </td>
+        ))}
+        {shownFields.map(field => (
+          <td key={`custom:${field.id}`} className={field.type === 'number' ? 'numeric' : undefined}>
+            {field.type === 'url' && typeof item.custom?.[field.id] === 'string' ? (
+              <a href={String(item.custom?.[field.id])} target="_blank" rel="noreferrer noopener">
+                {String(item.custom?.[field.id]).replace(/^https?:\/\//, '').slice(0, 40)}
+              </a>
+            ) : (
+              fieldText(field, item.custom?.[field.id])
             )}
           </td>
         ))}
@@ -495,6 +510,9 @@ export function TaskTable({
               <th>Task / Subtask</th>
               {columns.map(column => (
                 <th key={column}>{labels[column]}</th>
+              ))}
+              {shownFields.map(field => (
+                <th key={`custom:${field.id}`}>{field.name}</th>
               ))}
               <th>Actions</th>
             </tr>

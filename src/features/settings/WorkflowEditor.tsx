@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import type { TaskSettings, WaitingOnDefinition } from '../../shared/types'
 import { WAITING_ON_LIMITS, waitingOnOptions } from '../tasks/waitingOn'
 import { HEALTHS, PRIORITIES, TASK_COLUMNS, WORKFLOW_LIMITS, type WorkflowLabels } from '../tasks/workflow'
+import { CustomFieldsEditor, customFieldsProblem } from './CustomFieldsEditor'
 
 export type WorkflowUsage = { statuses: Record<string, number>; waitingOn: Record<string, number> }
 export type WorkflowSave = TaskSettings & { statusMoves: Record<string, string> }
@@ -162,6 +163,7 @@ export function WorkflowEditor({
   const problem =
     statusProblem(settings.statuses) ||
     waitingOnProblem(settings.waitingOn || []) ||
+    customFieldsProblem(settings.customFields || []) ||
     (removed.some(status => !settings.statuses.some(kept => kept.id === moves[status.id]))
       ? 'Choose where the tasks of each removed status move.'
       : '')
@@ -316,6 +318,11 @@ export function WorkflowEditor({
         ))}
       </div>
 
+      <CustomFieldsEditor
+        fields={settings.customFields || []}
+        onChange={customFields => setSettings({ ...settings, customFields })}
+      />
+
       {problem && (
         <p className="settings-message" role="alert">
           {problem}
@@ -330,6 +337,7 @@ export function WorkflowEditor({
             ...settings,
             statuses: settings.statuses.map(status => ({ ...status, label: status.label.trim() })),
             waitingOn: (settings.waitingOn || []).map(option => ({ ...option, label: option.label.trim() })),
+            customFields: (settings.customFields || []).map(field => ({ ...field, name: field.name.trim() })),
             statusMoves: moves,
           })
         }
@@ -371,7 +379,10 @@ export function AccountWorkflow({
       <div className="panel-heading">
         <div>
           <h2>Workflow</h2>
-          <p>Your account’s task statuses, waiting-on options, task columns and names for priorities and health.</p>
+          <p>
+            Your account’s task statuses, waiting-on options, task columns, names for priorities and health, and custom
+            task fields.
+          </p>
         </div>
       </div>
       {view ? (

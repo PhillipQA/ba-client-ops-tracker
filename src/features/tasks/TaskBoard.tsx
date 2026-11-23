@@ -7,7 +7,7 @@ import type { Client, Project, TaskSettings, UserAccount, WaitingOn, WorkItem } 
 import './effort.css'
 import { PriorityChip } from '../../shared/ui/Chips'
 import { isTaskClosed } from '../../app/store'
-import { BlockedBadge } from './BlockedBadge'
+import { BlockedBadge, RepeatBadge } from './BlockedBadge'
 
 type Props = {
   items: WorkItem[]
@@ -210,6 +210,7 @@ export default function TaskBoard({
                         {!isTaskClosed(item.status, taskSettings) && (
                           <BlockedBadge item={item} items={allItems} taskSettings={taskSettings} />
                         )}
+                        <RepeatBadge item={item} />
                       </div>
                       <div className={`board-card-effort${effort.overBy > 0 ? ' over' : ''}`}>
                         <div className="effort-progress-track" aria-hidden="true">

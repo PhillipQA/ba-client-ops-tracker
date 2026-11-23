@@ -51,6 +51,8 @@ export interface TaskSettings {
   waitingOn?: WaitingOnDefinition[]
   /** The account's own names for priorities and client health (features/tasks/workflow.ts). */
   labels?: WorkflowLabels
+  /** The account's own task fields (features/tasks/customFields.ts). */
+  customFields?: import('../features/tasks/customFields').TaskFieldDef[]
 }
 
 export interface WorkflowLabels {
@@ -161,6 +163,14 @@ export interface WorkItem {
   driveFiles?: TaskDriveFile[]
   /** Tasks that block this one (their ids): shown in the editor, table, board and Timeline; see dependencies.ts. */
   blockedBy?: string[]
+  /** Repeats: when closed, the next copy is made (features/tasks/recurrence.ts). Top-level tasks only. */
+  recurrence?: import('../features/tasks/recurrence').Recurrence
+  /** The copy made when this repeating task was closed (so closing it again makes no second copy). */
+  recurrenceNextId?: string
+  /** The first task of the series this copy belongs to. */
+  recurrenceOf?: string
+  /** Values of the account's custom task fields: field id -> value (features/tasks/customFields.ts). */
+  custom?: Record<string, import('../features/tasks/customFields').TaskFieldValue>
   /** Optional estimate in hours. */
   estimateHours?: number
   /** Time logged against this task. Written only through the time-entry API. */
