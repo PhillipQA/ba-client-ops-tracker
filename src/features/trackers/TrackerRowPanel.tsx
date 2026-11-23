@@ -58,6 +58,15 @@ function describe(change: TrackerChange, columns: TrackerColumn[], people: Perso
           return `changed ${cell.name} ${from ? `from “${from}” ` : ''}${to ? `to “${to}”` : 'to empty'}`
         })
         .join('; ')
+    case 'git_follow':
+      return `updated from ${detail.provider === 'github' ? 'GitHub' : 'GitLab'} ${detail.ticket || ''}: ${(
+        detail.cells || []
+      )
+        .map(
+          (cell: any) =>
+            `${cell.name} ${cell.from ? `from “${cell.from}” ` : ''}${cell.to ? `to “${cell.to}”` : 'to empty'}`,
+        )
+        .join('; ')}`
     case 'secrets':
       return (detail.cells || [])
         .map((cell: any) => `${cell.action === 'set' ? 'set' : 'cleared'} ${cell.name}`)
