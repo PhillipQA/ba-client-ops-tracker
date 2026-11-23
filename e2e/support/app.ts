@@ -33,7 +33,14 @@ export const businessToday = () =>
 export async function shot(page: Page, testInfo: TestInfo, name: string) {
   const spec = path.basename(testInfo.file).replace(/\.spec\.ts$/, '')
   const file = path.join(import.meta.dirname, '..', 'screenshots', spec, `${name}.jpg`)
-  await page.screenshot({ path: file, type: 'jpeg', quality: 70, fullPage: true, animations: 'disabled', caret: 'hide' })
+  await page.screenshot({
+    path: file,
+    type: 'jpeg',
+    quality: 70,
+    fullPage: true,
+    animations: 'disabled',
+    caret: 'hide',
+  })
   await testInfo.attach(name, { path: file, contentType: 'image/jpeg' })
 }
 
@@ -84,6 +91,21 @@ export async function saved(page: Page) {
 export const dropdown = (scope: Page | Locator, label: string) =>
   scope.getByRole('combobox', { name: new RegExp(`^${label}\\b`) })
 
+/**
+ * Picks an option in a dropdown by its label. Short lists are a plain <select>; longer ones (more clients, say)
+ * become a type-to-search box, where the name is typed and the matching option clicked.
+ */
+export async function pick(scope: Page | Locator, label: string, option: string) {
+  const field = dropdown(scope, label)
+  if ((await field.evaluate(element => element.tagName)) === 'SELECT') {
+    await field.selectOption({ label: option })
+    return
+  }
+  await field.fill(option)
+  const page = 'page' in scope ? scope.page() : scope
+  await page.getByRole('option', { name: option }).first().click()
+}
+
 /** The dialog with this title. */
 export const dialog = (page: Page, title: string | RegExp) => page.getByRole('dialog', { name: title })
 
@@ -111,7 +133,7 @@ export async function createTask(
   await page.getByRole('button', { name: 'New task' }).click()
   const form = dialog(page, 'Add task')
   await form.getByLabel('Task title').fill(title)
-  await dropdown(form, 'Client').selectOption({ label: options.client })
+  await pick(form, 'Client', options.client)
   if (options.status) await dropdown(form, 'Status').selectOption(options.status)
   if (options.dueDate) await form.getByLabel('Due date').fill(options.dueDate)
   const assignee = form.getByLabel('Assigned to')
