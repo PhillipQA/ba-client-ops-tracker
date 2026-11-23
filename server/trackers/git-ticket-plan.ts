@@ -109,6 +109,7 @@ export function plannedIds(ids: string[], fresh: () => string) {
   return () => (at < ids.length ? ids[at++] : fresh())
 }
 
+import { pinnedColumns } from '../../src/features/trackers/gitFollow'
 import type { GitEntryStatus, GitTicketEntry } from '../../src/features/trackers/gitTicketModel'
 export type { GitEntryStatus, GitTicketEntry }
 
@@ -132,6 +133,9 @@ export function entryOut(row: any): GitTicketEntry {
     addedByName: String(row.added_by_name || ''),
     addedAt: String(row.created_at || ''),
     updatedAt: String(row.updated_at || ''),
+    follows: row.follows_ticket !== false,
+    pinnedColumns: pinnedColumns(row.pinned_cells),
+    refreshedAt: row.refreshed_at ? String(row.refreshed_at) : '',
   }
 }
 
@@ -149,3 +153,21 @@ export const failureText = (error: unknown) =>
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 500) || 'Something went wrong.'
+
+/**
+ * The freshest copy of each ticket among Work Hub rows (several people may have the same ticket), keyed by
+ * provider, instance and the provider's ticket id.
+ */
+export function newestIssues(provider: GitProvider, rows: any[]) {
+  const out = new Map<string, any>()
+  const idKey = provider === 'gitlab' ? 'gitlab_id' : 'github_id'
+  for (const row of rows) {
+    const instance = provider === 'gitlab' ? String(row.instance_url || 'https://gitlab.com') : GITHUB_INSTANCE
+    const key = issueKey(provider, instance, row[idKey])
+    const held = out.get(key)
+    if (!held || String(row.updated_at || '') > String(held.updated_at || '')) out.set(key, row)
+  }
+  return out
+}
+export const issueKey = (provider: string, instance: string, issueId: unknown) =>
+  `${provider}|${instance}|${Number(issueId) || 0}`

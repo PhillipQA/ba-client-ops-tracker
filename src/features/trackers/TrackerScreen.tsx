@@ -2013,6 +2013,7 @@ export default function TrackerScreen(props: Props) {
         <GitTicketsPanel
           trackerId={trackerId}
           canEdit={canEdit}
+          columns={columns}
           clients={props.clients}
           projects={props.projects}
           onFilter={setGitRowFilter}

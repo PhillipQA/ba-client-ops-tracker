@@ -8,6 +8,7 @@ import { registerSignoffRoutes } from './documents/signoff-documents'
 import { registerAccountUsers } from './accounts/account-users'
 import express from 'express'
 import path from 'node:path'
+import { compressJson } from './platform/compression'
 import { registerStaticSite } from './platform/static-site'
 import { registerTaskViewRoutes } from './workspace/task-view-routes'
 import { requirePlatformAdmin } from './platform/platform-auth'
@@ -124,6 +125,8 @@ const docHubService = createDocHubService(docHubDeps)
 registerDocHubWebhook(app, docHubDeps, docHubService)
 // Large JSON bodies only for signed-in requests; sign-in and anonymous requests get a small limit (see body-limits).
 app.use(jsonBodies({ json: express.json, signedIn: req => Boolean(sessionFromRequest(req).user) }))
+// Large JSON answers (the workspace, tracker rows, reports) go out compressed when the browser accepts it.
+app.use('/api', compressJson())
 
 registerAuthRoutes(app)
 

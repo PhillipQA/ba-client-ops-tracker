@@ -12,6 +12,7 @@
 import { conditionHolds, type RuleCondition, ruleNeedsValue, ruleOpLabel, ruleOpsFor } from './highlightRules'
 import { randomId, type TrackerColumn, type TrackerRow } from './trackerModel'
 import { type Lookup, rowTitle, shown } from './trackerQuery'
+import { dateFormat } from '../../shared/intlFormat'
 
 export type ReminderWhen = 'before' | 'on' | 'after'
 export type TrackerReminder = {
@@ -235,6 +236,6 @@ export const reminderHourReached = (hour: number) => hour >= REMINDER_HOUR
 
 /** The hour of the day in the business time zone. */
 export function businessHour(now: Date, timeZone: string) {
-  const hour = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(now)
+  const hour = dateFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(now)
   return Number(hour) || 0
 }

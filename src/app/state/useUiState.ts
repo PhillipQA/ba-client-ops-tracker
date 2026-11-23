@@ -6,6 +6,7 @@ import type { View, ClientLayout } from '../navigation'
 import { routeFromLocation } from '../routes'
 import { useBusinessDate } from '../../shared/businessDate'
 import { usePageActive } from '../useVisiblePolling'
+import { gitFollowSession } from '../../features/trackers/gitRefresh'
 import { WORK_HUB_INTEGRATIONS, workHubSync } from '../../features/work-hub/workHubSync'
 import { useWorkHubSync } from '../../features/work-hub/useWorkHubSync'
 import type { TaskLink } from '../../features/trackers/trackerApi'
@@ -157,6 +158,17 @@ export function useUiState() {
     authUser?.status,
     authUser?.lastLoginAt,
     authUser?.modules.includes('inbox'),
+  ])
+  // GIT Tracker rows follow their tickets: brought up to date once at sign-in and each time the app loads.
+  useEffect(() => {
+    gitFollowSession(authUser)
+  }, [
+    authUser?.id,
+    authUser?.organizationId,
+    authUser?.accountType,
+    authUser?.status,
+    authUser?.lastLoginAt,
+    authUser?.modules.includes('trackers'),
   ])
   const storeRef = useRef(store)
   const workspaceRefreshBusy = useRef(false)

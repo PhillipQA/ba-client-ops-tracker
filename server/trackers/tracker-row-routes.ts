@@ -28,6 +28,8 @@ export function trackerRowRoutes(
   automations?: TrackerAutomations,
   /** GIT Trackers: rows of tickets whose client the person doesn't see, by source key (see tracker-git-tickets). */
   hiddenGitRows?: (tenant: string, trackerId: string, user: any) => Promise<Set<string>>,
+  /** GIT Trackers: cells a person changes by hand in a ticket's rows are pinned, so a refresh leaves them alone. */
+  pinGitCells?: (tenant: string, trackerId: string, row: any, columnIds: string[]) => Promise<void>,
 ) {
   const {
     scope,
@@ -300,6 +302,8 @@ export function trackerRowRoutes(
             action: cleaned.secrets[columnId] ? 'set' : 'cleared',
           })),
         })
+      if (changed.length && pinGitCells && String(current.source_key || '').startsWith('git:'))
+        await pinGitCells(tenant, id, current, changed).catch(() => {})
       if (taskId !== (current.task_id || '')) {
         const title = taskId
           ? ((await workspace(tenant)).items || []).find((item: any) => item.id === taskId)?.title || ''

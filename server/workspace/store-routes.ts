@@ -55,7 +55,7 @@ import {
 import { preserveTaskSettings } from '../services/tenant-save-settings'
 import { applyEffortSaveRules } from '../services/time-entries'
 import { readNotificationState, readWorkspaceRevision, workspaceRevision } from '../services/workspace-reads'
-import { mergeActivity, workspaceVersion } from '../services/workspace-version'
+import { mergeActivity, storedWorkspaceVersion, workspaceVersion } from '../services/workspace-version'
 
 function accountDefaults(account: any) {
   return {
@@ -157,7 +157,7 @@ export function registerStoreRoutes(app: Express) {
         configured: true,
         data: sanitizeStateForClient(state.data, user),
         updatedAt: state.updatedAt,
-        version: workspaceVersion(state.data),
+        version: storedWorkspaceVersion(String(tenantIdForUser(user)), state.updatedAt, state.data),
         revision: workspaceRevision(state.updatedAt, followUpTimeZone),
         timeZone: followUpTimeZone,
         organizationId: user.organizationId,
@@ -283,7 +283,10 @@ export function registerStoreRoutes(app: Express) {
               taskSettings: defaultTaskSettings,
             }
 
-      if (typeof req.body?.baseVersion !== 'string' || req.body.baseVersion !== workspaceVersion(current)) {
+      const currentVersion = currentState.data
+        ? storedWorkspaceVersion(String(organizationId), currentState.updatedAt, current)
+        : workspaceVersion(current)
+      if (typeof req.body?.baseVersion !== 'string' || req.body.baseVersion !== currentVersion) {
         return void res.status(409).json({
           configured: true,
           refreshRequired: true,
