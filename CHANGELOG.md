@@ -23,6 +23,11 @@ Released with pull request #110.
   - Changes go into the task's history.
   - Removing a field hides its values without deleting them.
 - **Existing logic is unchanged**: closing rules (subtasks first), statuses and Waiting on work as before. Repeating only adds the next task after a close. No database update.
+### End-to-end tests with screenshots (Phase 1 of 3)
+- **Playwright end-to-end tests** drive the real app in Chromium against a real database: sign-in and sign-out, Internal Admin's first sign-in, clients and projects, creating, editing, completing and archiving tasks, subtasks and the close confirmation, the Tasks board, the Action Center's Due today drill-down, trackers, adding a user, Settings › Workflow, and that every main page opens.
+- **CI runs them headed** (a real browser window on a virtual display) on a fresh database for every pull request. The screenshots each test takes are **committed to the pull request** in `e2e/screenshots/`, so the PR shows what each screen looks like and they're kept in git. The report, traces and failure videos are in the run's artifact.
+- Run them yourself with `npm run e2e:headed` against an empty database of your own; see `e2e/README.md`. Never against a live workspace.
+- No change to the app. No database update.
 
 ### Tasks: Calendar and Timeline views, saved views, and task dependencies (Phase 1)
 - **Four views of the same filtered list**: Table and Board as before, plus **Calendar** and **Timeline**. The filters, Active/Archived and the Seeds folder apply to all four.
