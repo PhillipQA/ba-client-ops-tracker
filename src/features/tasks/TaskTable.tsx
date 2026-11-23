@@ -41,7 +41,12 @@ export function FilterBar({
     <div className="filters">
       <label className="search-box">
         <Search size={17} />
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search title, client, project..." />
+        <input
+          aria-label="Search tasks"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search title, client, project..."
+        />
       </label>
       <select
         aria-label="Filter by waiting on"

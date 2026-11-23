@@ -22,3 +22,8 @@ Thumbs.db
 # Local uploads / generated working files
 uploads/
 build-output/
+
+# End-to-end test output (e2e/screenshots/ is kept in git on purpose)
+test-results/
+playwright-report/
+e2e/.auth/

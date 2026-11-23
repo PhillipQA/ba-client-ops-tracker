@@ -9,6 +9,8 @@
     "start": "tsx server.ts --production",
     "preview": "vite preview",
     "test": "node --import ./tests/support/setup.mjs --test tests/*.test.ts tests/*.test.mjs",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
     "test:auth-hardening": "node --import ./tests/support/setup.mjs --test tests/session-store.test.ts tests/login-limiter.test.ts tests/auth-hardening.test.ts tests/client-state.test.ts tests/profile-credentials.test.ts tests/account-guard.test.ts tests/body-limits.test.ts",
     "test:communications": "node --import ./tests/support/setup.mjs --test tests/communications.test.ts",
     "test:integrations": "node --import ./tests/support/setup.mjs --test tests/integrations.test.ts",
@@ -74,6 +76,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.2",
+    "@playwright/test": "^1.65.1",
     "@types/express": "^4.17.21",
     "@types/node": "^24.3.1",
     "@types/nodemailer": "^8.0.2",
