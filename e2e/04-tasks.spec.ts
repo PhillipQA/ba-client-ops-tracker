@@ -15,6 +15,8 @@ test('create, edit, complete and archive a task', async ({ page }, testInfo) => 
   await row.getByRole('button', { name: 'Edit task' }).click()
   const editor = dialog(page, 'Edit task')
   await expect(editor).toBeVisible()
+  // Priority is under Details, which starts folded.
+  await editor.locator('summary', { hasText: 'Details' }).click()
   await dropdown(editor, 'Priority').selectOption('High')
   await shot(page, testInfo, '02-task-editor')
   await editor.getByRole('button', { name: 'Save changes' }).click()

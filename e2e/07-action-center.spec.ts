@@ -1,23 +1,27 @@
-/** Action Center: a task due today is counted, and clicking the count lists it. */
+/**
+ * Action Center: a task due today is in the Morning brief, and clicking the Needs attention count lists the work
+ * behind it.
+ */
 import { expect, test } from '@playwright/test'
 import { ADMIN_STATE, businessToday, createClient, createTask, dialog, open, shot } from './support/app'
 
 test.use({ storageState: ADMIN_STATE })
 
-test('the Due today tile counts a task due today and lists it when clicked', async ({ page }, testInfo) => {
+test('a task due today is in the brief, and the Needs attention count lists it', async ({ page }, testInfo) => {
   const client = await createClient(page)
   const title = await createTask(page, { client, dueDate: businessToday() })
 
   await open(page, '/', 'My Action Center')
-  const tile = page.getByRole('button', { name: /Due today/ }).first()
+  await expect(page.getByRole('region', { name: 'Due today' })).toContainText(title)
+  const tile = page.getByRole('button', { name: /^Needs attention/ })
   await expect(tile).toBeVisible()
   await shot(page, testInfo, '01-action-center')
 
   await tile.click()
-  const list = dialog(page, /Due today/)
+  const list = dialog(page, /Needs attention/)
   await expect(list).toBeVisible()
   await expect(list.getByRole('row').filter({ hasText: title })).toBeVisible()
-  await shot(page, testInfo, '02-due-today-list')
+  await shot(page, testInfo, '02-needs-attention-list')
   await list.getByRole('button', { name: 'Close' }).click()
   await expect(list).toBeHidden()
 })

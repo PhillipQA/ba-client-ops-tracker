@@ -22,7 +22,8 @@ test('create a tracker and add a row', async ({ page }, testInfo) => {
   await expect(page.locator('input.trk-input:focus')).toHaveCount(1)
   await page.keyboard.type('First row from the E2E tests')
   await page.keyboard.press('Enter')
-  await expect(page.getByText('First row from the E2E tests')).toBeVisible()
+  await expect(page.locator('input.trk-input')).toHaveCount(0)
+  await expect(page.getByRole('gridcell', { name: 'First row from the E2E tests' })).toBeVisible()
   await expect(
     page
       .getByRole('status')

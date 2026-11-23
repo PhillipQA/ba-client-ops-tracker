@@ -11,7 +11,7 @@ uniquely named records, and the tests run one at a time.
 | `04-tasks` | Create, edit, complete and archive a task |
 | `05-subtasks` | Add a subtask; closing the task asks to close it too |
 | `06-task-views` | The same task in the Table, Board, Calendar and Timeline views |
-| `07-action-center` | The Due today tile counts a task and lists it when clicked |
+| `07-action-center` | A task due today is in the Morning brief; the Needs attention count lists it |
 | `08-trackers` | Create a tracker, add a row, type a cell |
 | `09-users` | Add a Contributor in Users & Permissions |
 | `10-settings-workflow` | Add a task status; the task form offers it |

@@ -46,6 +46,21 @@ export async function signIn(page: Page, user = USER, password = PASSWORD, accou
   await page.getByRole('button', { name: 'Sign in' }).click()
 }
 
+/**
+ * The guided tour starts by itself at a person's first sign-in in a browser (and covers the page). Skips it if it
+ * appears; the browser then remembers it, and the saved session carries that to the other tests.
+ */
+export async function skipTour(page: Page) {
+  const skip = page.getByRole('button', { name: 'Skip the tour' })
+  try {
+    await skip.waitFor({ state: 'visible', timeout: 5_000 })
+  } catch {
+    return
+  }
+  await skip.click()
+  await expect(skip).toBeHidden()
+}
+
 /** The page's main heading, once the app has loaded the page. */
 export const heading = (page: Page, name: string | RegExp) => page.getByRole('heading', { level: 1, name }).first()
 

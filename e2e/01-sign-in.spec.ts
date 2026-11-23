@@ -1,6 +1,6 @@
 /** Workspace sign-in: the account step, a wrong password, the right one, and signing out. */
 import { expect, test } from '@playwright/test'
-import { ACCOUNT, heading, PASSWORD, shot, USER } from './support/app'
+import { ACCOUNT, heading, PASSWORD, shot, skipTour, USER } from './support/app'
 
 test('sign in to the workspace in two steps, and sign out', async ({ page }, testInfo) => {
   await page.goto('/')
@@ -19,6 +19,7 @@ test('sign in to the workspace in two steps, and sign out', async ({ page }, tes
   await page.getByLabel('Password', { exact: true }).fill(PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(heading(page, 'My Action Center')).toBeVisible()
+  await skipTour(page)
   await shot(page, testInfo, '03-action-center')
 
   await page.getByRole('button', { name: 'Sign out' }).click()
