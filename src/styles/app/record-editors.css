@@ -193,3 +193,26 @@
     font-size: 12px;
   }
 }
+
+/* Save conflict box: choosing a version of the one clashing record (app/ConflictChoice.tsx). */
+.conflict-choice {
+  margin: 10px 0;
+}
+.conflict-choice dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0;
+}
+.conflict-choice dt {
+  font-weight: 600;
+}
+.conflict-choice dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.conflict-choice-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

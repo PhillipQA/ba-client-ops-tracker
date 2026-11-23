@@ -162,6 +162,8 @@ export function tenantIdForUser(user: SessionUser | null | undefined) {
 type NormalizedSyncResult = {
   ready: boolean
   version?: string
+  /** The workspace as saved, after the server's own reconciling (RTM history). */
+  state?: any
   syncedAt?: string
   counts?: Record<string, number>
   error?: string
@@ -588,7 +590,7 @@ export async function commitTenantState(
     const saved = await writeTenantState(organizationId, reconciled, actor, reason, current, synchronize)
     rememberAccess(organizationId, reconciled)
     announceCommit(organizationId, current, reconciled, actor)
-    return saved
+    return { ...saved, state: reconciled }
   })
 }
 
