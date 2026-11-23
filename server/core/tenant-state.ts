@@ -802,6 +802,8 @@ async function writeTenantState(
     })
   }
   const { data, error } = result
+  if (!error && plan.toTables && itemsInTablesOf.get(before) !== true && !plan.changedRows)
+    console.log(`Workspace ${organizationId}: tasks are now kept in their tables (Phase 4C).`)
   if (error) {
     if (error.code === 'PGRST202' || error.code === '42883')
       throw new TenantSaveError(

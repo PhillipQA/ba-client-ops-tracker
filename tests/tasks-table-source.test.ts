@@ -89,8 +89,14 @@ test('TASKS_SOURCE chooses where tasks are kept; duplicate item ids are caught',
 test('wiring: loads read the snapshot and task rows in one statement; saves follow the plan', () => {
   const tenant = read('server/core/tenant-state.ts')
   assert.match(tenant, /const data = await readTenantSnapshot\(organizationId\)/)
-  assert.match(tenant, /select raw_data from public\.tasks where organization_id = s\.organization_id and deleted_at is null/)
-  assert.match(tenant, /select raw_data from public\.inquiries where organization_id = s\.organization_id and deleted_at is null/)
+  assert.match(
+    tenant,
+    /select raw_data from public\.tasks where organization_id = s\.organization_id and deleted_at is null/,
+  )
+  assert.match(
+    tenant,
+    /select raw_data from public\.inquiries where organization_id = s\.organization_id and deleted_at is null/,
+  )
   assert.match(tenant, /itemsInTablesOf\.set\(recoveredState, stored\.inTables\)/)
   assert.match(tenant, /wantTables: tablesAreSource\(\) && Date\.now\(\) >= changedRecordSavesMissingUntil/)
   assert.match(tenant, /plan\.toTables \? snapshotWithoutItems\(state\) : snapshotWithItems\(state\)/)
