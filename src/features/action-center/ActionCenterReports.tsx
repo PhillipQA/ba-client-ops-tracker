@@ -24,6 +24,7 @@ import { QueryResultView, useQueryRun } from '../reports/explorer/QueryResult'
 import { QueryWidgetEditor } from '../reports/explorer/QueryWidgetEditor'
 import { reportQueryParams, type ReportFilterValues } from '../reports/explorer/reportParams'
 import { useExplorerData } from '../reports/explorer/useExplorerData'
+import { type Drill, recordRows, widgetDrillRecords } from './drillDown'
 import '../reports/custom/customReports.css'
 import '../reports/explorer/dataExplorer.css'
 
@@ -141,8 +142,18 @@ function QueryView({
   )
 }
 
-/** The numbers, chart or table of one widget. */
-function WidgetView({ widget, filters, engine }: { widget: Widget; filters: ReportFilters; engine: ReportEngine }) {
+/** The numbers, chart or table of one widget. With onDrill, a bar, slice, point or metric opens its records. */
+function WidgetView({
+  widget,
+  filters,
+  engine,
+  onDrill,
+}: {
+  widget: Widget
+  filters: ReportFilters
+  engine: ReportEngine
+  onDrill?: (drill: Drill) => void
+}) {
   const { trackers, recordsFor, fieldsFor, today } = engine
   useEffect(() => {
     if (widget.source === 'tracker') trackers.ensure(widget.trackerId)
@@ -154,9 +165,27 @@ function WidgetView({ widget, filters, engine }: { widget: Widget; filters: Repo
     () => (problem ? null : computeWidget(widget, records, fields, filters, today)),
     [widget, records, fields, filters, today, problem],
   )
+  const pick = (key: string | null, label: string) => {
+    if (!onDrill) return
+    const found = widgetDrillRecords(widget, records, fields, filters, today, key)
+    const name = widget.title || WIDGET_LABELS[widget.kind]
+    onDrill({
+      title: key === null ? name : `${name}: ${label}`,
+      subtitle: key === null ? label : undefined,
+      ...recordRows(found, fields, widget, widget.source === 'tasks'),
+    })
+  }
+  const drillable = Boolean(onDrill) && ['metric', 'bar', 'column', 'line', 'pie', 'table'].includes(widget.kind)
   return (
-    <div className={`crp-cell crp-kind-${widget.kind} ac-report-body`}>
-      <WidgetBody widget={widget} computed={computed} fields={fields} today={today} problem={problem} />
+    <div className={`crp-cell crp-kind-${widget.kind} ac-report-body${drillable ? ' ac-report-drillable' : ''}`}>
+      <WidgetBody
+        widget={widget}
+        computed={computed}
+        fields={fields}
+        today={today}
+        problem={problem}
+        onPick={drillable ? pick : undefined}
+      />
     </div>
   )
 }
@@ -190,10 +219,12 @@ export function CustomWidget({
   widget,
   engine,
   explorer,
+  onDrill,
 }: {
   widget: Widget
   engine: ReportEngine
   explorer: ActionCenterExplorer
+  onDrill?: (drill: Drill) => void
 }) {
   return (
     <ReportPanel
@@ -207,7 +238,7 @@ export function CustomWidget({
           <p className="crp-note">{widget.text}</p>
         </div>
       ) : (
-        <WidgetView widget={widget} filters={NO_FILTERS} engine={engine} />
+        <WidgetView widget={widget} filters={NO_FILTERS} engine={engine} onDrill={onDrill} />
       )}
     </ReportPanel>
   )
@@ -240,6 +271,7 @@ export function PinnedWidget({
   explorer,
   onOpenReport,
   onRemove,
+  onDrill,
 }: {
   reportId: string
   widgetId: string
@@ -248,6 +280,7 @@ export function PinnedWidget({
   explorer: ActionCenterExplorer
   onOpenReport: () => void
   onRemove?: () => void
+  onDrill?: (drill: Drill) => void
 }) {
   const report = reports.items?.find(item => item.id === reportId && item.kind === 'report')
   const widget = report?.definition?.widgets.find(item => item.id === widgetId)
@@ -301,7 +334,12 @@ export function PinnedWidget({
           refresh={engine.data}
         />
       ) : (
-        <WidgetView widget={widget} filters={report.definition.filters || NO_FILTERS} engine={engine} />
+        <WidgetView
+          widget={widget}
+          filters={report.definition.filters || NO_FILTERS}
+          engine={engine}
+          onDrill={onDrill}
+        />
       )}
     </ReportPanel>
   )
