@@ -1,4 +1,5 @@
 import { setBusinessTimeZone } from '../shared/businessDate'
+import { diffWorkspace } from '../shared/workspaceChanges'
 import { mergeWorkspace } from './workspaceMerge'
 export type CloudStorageStatus = 'checking' | 'local' | 'saving' | 'synced' | 'error'
 
@@ -41,6 +42,8 @@ let pendingSnapshot: unknown
 let serverData: unknown
 /** The server copy this browser's own data was last brought up to date with: queued saves are changes from it. */
 let localBase: unknown
+/** Saves send only what changed (PATCH /api/store/changes) until a server without it answers; then the whole copy. */
+let changeSaves = true
 /**
  * Fired when a save merged changes saved elsewhere: the app takes them into what it shows. When it cannot (the person
  * changed the same field meanwhile), it cancels the event and names the field in `clash`.
@@ -61,6 +64,7 @@ export function resetCloudSession() {
   pendingSnapshot = undefined
   serverData = undefined
   localBase = undefined
+  changeSaves = true
   saveQueue = Promise.resolve()
 }
 
@@ -145,16 +149,26 @@ async function saveCloudStoreNow<T>(data: T, activeSession: number, parent: unkn
       // Nothing came from elsewhere (an earlier save of this browser was simply ahead): the snapshot as it is.
       payload = JSON.stringify(merged.data) === JSON.stringify(data) ? data : merged.data
     }
-    const response = await fetch('/api/store', {
-      method: 'PUT',
+    // Only what changed since the server copy goes over the wire; the server lays it on the workspace and saves the
+    // changed records. Without a server copy to compare with, or with a server that has no such route, the whole copy.
+    const changes = changeSaves && serverData ? diffWorkspace(serverData, payload) : null
+    const response = await fetch(changes ? '/api/store/changes' : '/api/store', {
+      method: changes ? 'PATCH' : 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ data: payload, baseVersion }),
+      body: JSON.stringify(changes ? { changes, baseVersion } : { data: payload, baseVersion }),
     })
     const body = await response.json().catch(() => ({}))
     if (activeSession !== session) throw new Error('The workspace session changed during saving.')
+    if (changes && (response.status === 404 || response.status === 405)) {
+      changeSaves = false
+      attempt--
+      continue
+    }
     if (response.ok) {
-      baseVersion = body.version
+      // Taken onto newer changes from elsewhere that this copy lacks: keep the old version, so a later whole-copy save
+      // cannot overwrite them (it is refused and merged), and the next refresh brings them in.
+      if (!body.behind) baseVersion = body.version
       serverData = payload
       // Saves may merge server activity. Check once on the next active-tab refresh.
       loadedRevision = undefined
