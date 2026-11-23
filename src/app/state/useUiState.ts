@@ -16,6 +16,7 @@ import type { AuthUser } from '../../features/accounts/auth'
 import type { CloudStorageStatus } from '../cloudStore'
 import type { DrfPrefill } from '../../features/documents/drfPrefill'
 import type { TaskLayout, BoardGroup } from '../../features/tasks/taskBoardModel'
+import type { CalendarDate } from '../../features/tasks/taskViews'
 import { confirmWord } from '../../features/tasks/closeSubtasks'
 import type { CloseWithSubtasksRequest } from '../../features/tasks/CloseWithSubtasksDialog'
 import type { WaitingOn, ItemType, WorkItem } from '../../shared/types'
@@ -56,6 +57,8 @@ export function useUiState() {
   const [taskLayout, setTaskLayout] = useState<TaskLayout>('table')
   const [boardGroup, setBoardGroup] = useState<BoardGroup>('status')
   const [boardShowSubtasks, setBoardShowSubtasks] = useState(false)
+  // The Calendar view places tasks by their due or follow-up date.
+  const [taskCalendarDate, setTaskCalendarDate] = useState<CalendarDate>('due')
   const [clientSearch, setClientSearch] = useState('')
   const [clientSort, setClientSort] = useState('name')
   const [projectArchiveFilter, setProjectArchiveFilter] = useState('active')
@@ -192,6 +195,7 @@ export function useUiState() {
     setTaskLayout,
     setBoardGroup,
     setBoardShowSubtasks,
+    setTaskCalendarDate,
     workspaceRefreshBusy,
     setRefreshingCloud,
     cloudStatus,
@@ -223,6 +227,7 @@ export function useUiState() {
     taskLayout,
     boardGroup,
     boardShowSubtasks,
+    taskCalendarDate,
     clientSearch,
     clientArchiveFilter,
     clientSort,

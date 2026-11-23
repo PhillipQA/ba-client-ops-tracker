@@ -22,6 +22,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useState } from 'react'
+import { BlockedBadge } from './BlockedBadge'
 
 export function FilterBar({
   query,
@@ -290,6 +291,7 @@ export function TaskTable({
             )}
             <div>
               <strong>{item.title}</strong>
+              {!isClosedTask(item) && <BlockedBadge item={item} items={sourceItems} taskSettings={taskSettings} />}
               {item.docHubDocuments?.map(d => (
                 <span className="dochub-task-badge" key={d.id}>
                   DocHub · {docHubLabels[d.status] || d.status} · {d.signed}/{d.total}

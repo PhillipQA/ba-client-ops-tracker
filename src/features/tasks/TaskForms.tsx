@@ -34,6 +34,8 @@ import {
   Upload,
 } from 'lucide-react'
 import { type ClipboardEvent, type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
+import { BlockedByField } from './BlockedByField'
+import { blockedBy, blockerIds, cleanBlockers } from './dependencies'
 
 export function WorkScheduleFields({
   itemKind,
@@ -531,14 +533,22 @@ export function TaskEditForm({
   const [fillClientId, setFillClientId] = useState('')
   const [type, setType] = useState<ItemType>(item.type)
   const [status, setStatus] = useState(item.status)
+  // Tasks that block this one (dependencies.ts).
+  const [blockers, setBlockers] = useState<string[]>(() => blockerIds(item))
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   // What the form held when it opened (or was last saved), to tell unsaved changes apart before minimizing.
   const formRef = useRef<HTMLFormElement>(null)
   const opened = useRef('')
-  const snapshot = () => formSnapshot(formRef.current, [rtmLinks, editProjectId, type, status])
+  const snapshot = () => formSnapshot(formRef.current, [rtmLinks, editProjectId, type, status, blockers])
   useEffect(() => {
-    opened.current = formSnapshot(formRef.current, [item.rtmLinks || [], item.projectId || '', item.type, item.status])
+    opened.current = formSnapshot(formRef.current, [
+      item.rtmLinks || [],
+      item.projectId || '',
+      item.type,
+      item.status,
+      blockerIds(item),
+    ])
   }, [item])
   if (dirtyCheck) dirtyCheck.current = () => Boolean(opened.current) && snapshot() !== opened.current
   const parent = item.parentTaskId ? store.items.find(candidate => candidate.id === item.parentTaskId) : undefined
@@ -605,6 +615,10 @@ export function TaskEditForm({
       description: String(form.get('description') || ''),
       seedsTaskId: String(form.get('seedsTaskId') || '') || undefined,
       productId: parent ? item.productId : String(form.get('productId') || '') || undefined,
+      blockedBy: (() => {
+        const kept = cleanBlockers(item.id, blockers, store.items)
+        return kept.length ? kept : undefined
+      })(),
     }
     setSaveError('')
     setSaving(true)
@@ -626,6 +640,18 @@ export function TaskEditForm({
   const short = (date?: string) =>
     date ? new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'
   const scheduleMeta = `Due ${short(item.dueDate)} · Follow-up ${short(item.followUpDate)}`
+  const openBlockers = blockers.filter(id => {
+    const blocker = store.items.find(candidate => candidate.id === id)
+    return blocker && !isTaskClosed(blocker.status, store.taskSettings)
+  }).length
+  const blockingCount = blockedBy(item.id, store.items).length
+  const dependencyMeta =
+    [
+      blockers.length ? `Blocked by ${blockers.length}${openBlockers ? ` (${openBlockers} open)` : ''}` : '',
+      blockingCount ? `Blocks ${blockingCount}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'None'
   const effortMeta = `${formatHours(effortSummary(item, store.items).logged)} logged`
   const docCount = item.docHubDocuments?.length || 0
   const docMeta = docCount ? `${docCount} document${docCount === 1 ? '' : 's'}` : 'None yet'
@@ -645,6 +671,22 @@ export function TaskEditForm({
           startDate={item.startDate || ''}
           dueDate={item.dueDate || ''}
           followUpDate={item.followUpDate || ''}
+        />
+      </Fold>
+      <Fold
+        id="dependencies"
+        title="Dependencies"
+        meta={dependencyMeta}
+        defaultOpen={blockers.length > 0 || blockingCount > 0}
+      >
+        <BlockedByField
+          task={item}
+          items={store.items}
+          clients={store.clients}
+          projects={store.projects}
+          taskSettings={store.taskSettings}
+          value={blockers}
+          onChange={setBlockers}
         />
       </Fold>
       <Fold id="effort" title="Effort" meta={effortMeta} defaultOpen>

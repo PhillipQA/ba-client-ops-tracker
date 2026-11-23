@@ -2,7 +2,8 @@ import type { TaskSettings, WorkItem } from '../../shared/types'
 import { waitingOnOptions, waitingOnTone } from './waitingOn'
 
 export type BoardGroup = 'status' | 'waiting'
-export type TaskLayout = 'table' | 'board'
+/** The Tasks page's layouts of one filtered list (see taskViews.ts). */
+export type TaskLayout = 'table' | 'board' | 'calendar' | 'timeline'
 
 export interface BoardColumn {
   key: string

@@ -10,6 +10,7 @@ import express from 'express'
 import path from 'node:path'
 import { compressJson } from './platform/compression'
 import { registerStaticSite } from './platform/static-site'
+import { registerTaskViewRoutes } from './workspace/task-view-routes'
 import { requirePlatformAdmin } from './platform/platform-auth'
 import { registerPlatformSettings } from './platform/platform-settings'
 import { registerIntegrationRoutes } from './integrations/tenant-integrations'
@@ -214,6 +215,8 @@ registerActionCenterRoutes(app, {
   load: loadTenantState,
   commit: commitTenantState,
 })
+// Each person's saved Tasks views, in the same per-person preferences.
+registerTaskViewRoutes(app, { store: createPreferenceStore(db) })
 registerWorkflowRoutes(app, {
   requireAuth,
   requireTenant: requireTenantWorkspace,

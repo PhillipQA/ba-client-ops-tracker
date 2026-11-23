@@ -2,18 +2,27 @@ import type { AppState } from '../../app/useAppState'
 import { FilterBar, TaskTable } from './TaskTable'
 import { waitingOnOptions } from './waitingOn'
 import ClientSelect from '../../shared/ui/SearchSelect'
-import { Archive, Columns3, Plus, Table2 } from 'lucide-react'
+import { Archive, CalendarDays, Columns3, GanttChart, Plus, Save, Table2, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import './taskViews.css'
 import TaskBoard from './TaskBoard'
+import TaskCalendar from './TaskCalendar'
+import TaskTimeline from './TaskTimeline'
+import { type SavedTaskView, viewSummary } from './taskViews'
+import { useSavedTaskViews } from './useSavedTaskViews'
 import { type SourceFilter, sourceMatches } from '../seeds/SeedsPage'
 import { isClosedProject } from './lifecycle'
 import { isBeforeSeedsWork } from '../../shared/seeds'
 
-/** Tasks screen. It reads the app state; see app/useAppState. */
+/**
+ * Tasks screen. It reads the app state; see app/useAppState. One filtered list, shown as a Table, Board, Calendar or
+ * Timeline; your saved views keep a set of filters with a layout under a name.
+ */
 export function TasksPage({ app }: { app: AppState }) {
   const {
     archiveTask,
     archivedTaskCount,
+    authUser,
     reopenTask,
     setTaskArchiveView,
     taskArchiveView,
@@ -40,6 +49,7 @@ export function TasksPage({ app }: { app: AppState }) {
     store,
     taskClientFilter,
     taskDateFilter,
+    taskCalendarDate,
     taskLayout,
     taskProjectFilter,
     taskStatusFilter,
@@ -51,6 +61,48 @@ export function TasksPage({ app }: { app: AppState }) {
   // Once Seeds is on, tasks are in the same folders as their project (or, with no project, their client): From Seeds
   // or Before Seeds. Tasks with neither count as From Seeds.
   const [folder, setFolder] = useState<SourceFilter>('seeds')
+  // Saved views: the chosen one, and the name being typed for a new one (null when not saving).
+  const saved = useSavedTaskViews(authUser ? `${authUser.organizationId || ''}:${authUser.id}` : '')
+  const [viewId, setViewId] = useState('')
+  const [naming, setNaming] = useState<string | null>(null)
+  const current = (): Omit<SavedTaskView, 'id' | 'name'> => ({
+    layout: taskLayout,
+    group: boardGroup,
+    subtasks: boardShowSubtasks,
+    calendarDate: taskCalendarDate,
+    filters: {
+      query,
+      status: taskStatusFilter,
+      client: taskClientFilter,
+      project: taskProjectFilter,
+      date: taskDateFilter,
+      waiting: waitingFilter,
+    },
+  })
+  const chosenView = saved.views.find(view => view.id === viewId)
+  const changedFromView =
+    chosenView &&
+    JSON.stringify({ ...chosenView, id: '', name: '' }) !== JSON.stringify({ ...current(), id: '', name: '' })
+  const applyView = (view: SavedTaskView) => {
+    setQuery(view.filters.query)
+    setTaskStatusFilter(view.filters.status)
+    setTaskClientFilter(view.filters.client)
+    setTaskProjectFilter(view.filters.project)
+    setTaskDateFilter(view.filters.date)
+    setWaitingFilter(view.filters.waiting)
+    chooseTaskView({ layout: view.layout, group: view.group, subtasks: view.subtasks, calendarDate: view.calendarDate })
+  }
+  const saveNew = async () => {
+    const name = (naming || '').trim()
+    if (!name) return
+    const id = `view-${Date.now().toString(36)}`
+    const rest = saved.views.filter(view => view.name.toLowerCase() !== name.toLowerCase())
+    if (await saved.save([...rest, { id, name, ...current() }])) {
+      setViewId(id)
+      setNaming(null)
+    }
+  }
+  const openTask = canWriteTasks ? openTaskEditor : undefined
   const cutover = Boolean(store.seeds?.cutoverAt)
   const filteredTasks = cutover
     ? allFiltered.filter(item =>
@@ -110,6 +162,89 @@ export function TasksPage({ app }: { app: AppState }) {
               <span>Archived{archivedTaskCount ? ` (${archivedTaskCount})` : ''}</span>
             </button>
           </div>
+        </div>
+        <div className="task-saved-views">
+          <label>
+            View
+            <select
+              value={chosenView ? viewId : ''}
+              onChange={event => {
+                const view = saved.views.find(candidate => candidate.id === event.target.value)
+                setViewId(view?.id || '')
+                if (view) applyView(view)
+              }}
+            >
+              <option value="">{saved.views.length ? 'Choose a saved view' : 'No saved views yet'}</option>
+              {saved.views.map(view => (
+                <option key={view.id} value={view.id} title={viewSummary(view)}>
+                  {view.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {naming === null ? (
+            <>
+              <button type="button" className="secondary" onClick={() => setNaming('')}>
+                <Save size={14} /> Save as view
+              </button>
+              {chosenView && changedFromView && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() =>
+                    void saved.save(
+                      saved.views.map(view => (view.id === chosenView.id ? { ...view, ...current() } : view)),
+                    )
+                  }
+                >
+                  Update “{chosenView.name}”
+                </button>
+              )}
+              {chosenView && (
+                <button
+                  type="button"
+                  className="secondary"
+                  aria-label={`Delete the view ${chosenView.name}`}
+                  onClick={() => {
+                    if (!window.confirm(`Delete the view “${chosenView.name}”? Your tasks are not changed.`)) return
+                    void saved
+                      .save(saved.views.filter(view => view.id !== chosenView.id))
+                      .then(ok => ok && setViewId(''))
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </>
+          ) : (
+            <form
+              className="task-saved-views-name"
+              onSubmit={event => {
+                event.preventDefault()
+                void saveNew()
+              }}
+            >
+              <input
+                aria-label="Name of the view"
+                placeholder="e.g. My overdue, This week’s due"
+                maxLength={60}
+                value={naming}
+                onChange={event => setNaming(event.target.value)}
+              />
+              <button type="submit" className="primary" disabled={!naming.trim()}>
+                Save
+              </button>
+              <button type="button" className="secondary" onClick={() => setNaming(null)}>
+                Cancel
+              </button>
+            </form>
+          )}
+          <span className="muted task-saved-views-note">
+            {saved.error ||
+              (saved.onServer
+                ? 'Saves the filters below and the layout, just for you.'
+                : 'Saves the filters below and the layout in this browser.')}
+          </span>
         </div>
         <FilterBar
           query={query}
@@ -230,7 +365,48 @@ export function TasksPage({ app }: { app: AppState }) {
               <Columns3 size={16} />
               <span>Board</span>
             </button>
+            <button
+              type="button"
+              aria-pressed={taskLayout === 'calendar'}
+              onClick={() => chooseTaskView({ layout: 'calendar' })}
+              title="Calendar"
+            >
+              <CalendarDays size={16} />
+              <span>Calendar</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={taskLayout === 'timeline'}
+              onClick={() => chooseTaskView({ layout: 'timeline' })}
+              title="Timeline"
+            >
+              <GanttChart size={16} />
+              <span>Timeline</span>
+            </button>
           </div>
+          {taskLayout === 'calendar' && (
+            <>
+              <span className="toolbar-label" id="calendar-date-label">
+                Show by
+              </span>
+              <div className="client-layout-switch" role="group" aria-labelledby="calendar-date-label">
+                <button
+                  type="button"
+                  aria-pressed={taskCalendarDate === 'due'}
+                  onClick={() => chooseTaskView({ calendarDate: 'due' })}
+                >
+                  <span>Due date</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={taskCalendarDate === 'followUp'}
+                  onClick={() => chooseTaskView({ calendarDate: 'followUp' })}
+                >
+                  <span>Follow-up date</span>
+                </button>
+              </div>
+            </>
+          )}
           {taskLayout === 'board' && (
             <>
               <span className="toolbar-label" id="board-group-label">
@@ -263,7 +439,24 @@ export function TasksPage({ app }: { app: AppState }) {
             </>
           )}
         </div>
-        {taskLayout === 'board' ? (
+        {taskLayout === 'calendar' ? (
+          <TaskCalendar
+            items={filteredTasks}
+            allItems={store.items}
+            taskSettings={store.taskSettings}
+            today={today}
+            dateField={taskCalendarDate}
+            onOpen={openTask}
+          />
+        ) : taskLayout === 'timeline' ? (
+          <TaskTimeline
+            items={filteredTasks}
+            allItems={store.items}
+            taskSettings={store.taskSettings}
+            today={today}
+            onOpen={openTask}
+          />
+        ) : taskLayout === 'board' ? (
           <TaskBoard
             items={filteredTasks}
             allItems={store.items}
