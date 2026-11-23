@@ -1,3 +1,4 @@
+import { ConflictChoice } from './ConflictChoice'
 import { memo, Suspense, useEffect, useRef, useState } from 'react'
 import { requestJson } from '../shared/http'
 import { workspaceAutoRefreshAllowed } from './activePolling'
@@ -156,6 +157,7 @@ function App() {
     rtmContext,
     saveActivity,
     saveConflict,
+    settleConflict,
     saveLifecycleRecord,
     saveOwnPreferences,
     saveRtms,
@@ -489,8 +491,9 @@ function App() {
               <div className="panel" role="alert">
                 <strong>Save conflict — your edits are kept locally.</strong>
                 <p>{saveConflict}</p>
+                <ConflictChoice conflict={saveConflict} settle={settleConflict} />
                 <p>
-                  Download your pending workspace copy and reload, then reapply your edits to the current records. Open
+                  Or download your pending workspace copy and reload, then reapply your edits to the current records. Open
                   editors stay open for reference; reopen them before saving.
                 </p>
                 <button className="secondary" disabled={recoveringCloud} onClick={() => void recoverCloud()}>

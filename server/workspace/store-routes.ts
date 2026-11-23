@@ -14,7 +14,14 @@ import {
   workspaceAccess,
 } from '../../src/shared/access'
 import { keepSeedsFields } from '../../src/shared/seeds'
-import { applyWorkspaceChanges, changeConflict, isWorkspaceChanges } from '../../src/shared/workspaceChanges'
+import {
+  applyWorkspaceChanges,
+  changeConflict,
+  changesSince,
+  diffWorkspace,
+  isWorkspaceChanges,
+  isWorkspaceVersions,
+} from '../../src/shared/workspaceChanges'
 import { WorkspaceRaceError } from '../services/workspace-guard'
 import {
   isBcryptHash,
@@ -157,6 +164,35 @@ export function registerStoreRoutes(app: Express) {
       res.json({
         configured: true,
         data: sanitizeStateForClient(state.data, user),
+        updatedAt: state.updatedAt,
+        version: storedWorkspaceVersion(String(tenantIdForUser(user)), state.updatedAt, state.data),
+        revision: workspaceRevision(state.updatedAt, followUpTimeZone),
+        timeZone: followUpTimeZone,
+        organizationId: user.organizationId,
+        organizationName: user.organizationName,
+      })
+    } catch (error) {
+      console.error('Database load failed:', error)
+      res
+        .status(500)
+        .json({ configured: true, error: error instanceof Error ? error.message : 'Cloud database load failed.' })
+    }
+  })
+
+  /**
+   * Delta load (Phase 4B): the browser sends the version of every record it holds (see workspaceVersions) and gets
+   * back only the records that differ, as a change set to lay on its copy, instead of the whole workspace.
+   */
+  app.post('/api/store/sync', requireAuth, requireTenantWorkspace, async (req, res) => {
+    if (!db) return void res.status(503).json({ configured: false, error: 'Database is not configured.' })
+    if (!isWorkspaceVersions(req.body?.versions))
+      return void res.status(400).json({ configured: true, error: 'Record versions are required.' })
+    const user = (req as express.Request & { authUser: SessionUser }).authUser
+    try {
+      const state = await ensureTenantFollowUpsCurrent(String(tenantIdForUser(user)))
+      res.json({
+        configured: true,
+        changes: changesSince(req.body.versions, sanitizeStateForClient(state.data, user)),
         updatedAt: state.updatedAt,
         version: storedWorkspaceVersion(String(tenantIdForUser(user)), state.updatedAt, state.data),
         revision: workspaceRevision(state.updatedAt, followUpTimeZone),
@@ -315,6 +351,8 @@ export function registerStoreRoutes(app: Express) {
         if (behind && changeConflict(visible, changes)) return newerChanges()
         next = applyWorkspaceChanges(visible, changes)
       } else if (req.body.baseVersion !== currentVersion) return newerChanges()
+      // The workspace as this browser will hold it after the save, before the server's checks adjust it.
+      const sent = structuredClone(next)
 
       // With per-person visibility on, the browser holds only part of the workspace. Lay its save onto the whole
       // workspace: records it cannot see or change stay as stored. Access and Seeds data belong to the server.
@@ -532,12 +570,16 @@ export function registerStoreRoutes(app: Express) {
 
       // `behind`: the browser's copy still lacks the other changes, so it keeps its old version. Its next save is checked
       // record by record again, and a whole-copy save is refused until it has fetched the latest.
+      // `adjusted`: what the server changed in what was sent (normalized dates and assignees, server-kept comments and
+      // files, history). The browser lays it on its copy so its next save compares with what is really stored.
+      const adjusted = !behind && saved.state ? diffWorkspace(sent, sanitizeStateForClient(saved.state, user)) : null
       res.json({
         configured: true,
         saved: true,
         updatedAt,
         version: saved.version,
         ...(behind ? { behind: true } : {}),
+        ...(adjusted ? { adjusted } : {}),
       })
     } catch (error) {
       // Someone else saved in the moment between the version check and this commit. refreshRequired lets the browser

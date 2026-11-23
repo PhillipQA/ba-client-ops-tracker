@@ -11,6 +11,14 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Per-task versions, delta loads and choosing per task in a conflict (Phase 4B)
+- **No database update.** Builds on Phase 4A (schema v46).
+- **Refreshes download only what changed**: when the browser already has a copy, a refresh (automatic or Refresh now) sends a short version of every record it holds and gets back only the records that differ. One edit elsewhere means one task comes down instead of the whole workspace. Retries after a "newer changes" refusal load the same way. A server without the new route (`POST /api/store/sync`) gets the whole load, as before.
+- **The browser knows what the server stored**: after a save, the server sends back what it adjusted in it (normalized dates and assignees, server-kept comments, files and history). The browser shows it at once and compares its next save with it. So the per-task check from Phase 4A now works after the browser's own saves too: someone else saving a different task no longer refuses your next save.
+- **Choose per task in a save conflict**: when you and someone else changed the same field of the same task, the Save conflict box shows both versions with **Keep mine** and **Use theirs**. Your other edits are saved either way, and further clashing records are asked about one by one. A clashing setting is chosen as a whole.
+  - **Download edits and reload latest** is still there.
+  - A clash with an edit made while a save was going out still uses it.
+
 ### Saves send and write only what changed (Phase 4A)
 - **Database update needed: schema v46** (`database/migrations/schema-v46-changed-record-saves.sql`). Run it before or after deploying. Until it is run, saves work exactly as before; the server starts using it within ten minutes, without a restart.
 - **Smaller saves from the browser**: a save now sends only the records that changed (and any other setting that changed) instead of the whole workspace, through the new `PATCH /api/store/changes`. Editing one task sends that task.
