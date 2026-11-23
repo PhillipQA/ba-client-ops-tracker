@@ -11,6 +11,12 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### End-to-end tests with screenshots (Phase 1 of 3)
+- **Playwright end-to-end tests** drive the real app in Chromium against a real database: sign-in and sign-out, Internal Admin's first sign-in, clients and projects, creating, editing, completing and archiving tasks, subtasks and the close confirmation, the Tasks board, the Action Center's Due today drill-down, trackers, adding a user, Settings › Workflow, and that every main page opens.
+- **CI runs them headed** (a real browser window on a virtual display) on a fresh database for every pull request. The screenshots each test takes are **committed to the pull request** in `e2e/screenshots/`, so the PR shows what each screen looks like and they're kept in git. The report, traces and failure videos are in the run's artifact.
+- Run them yourself with `npm run e2e:headed` against an empty database of your own; see `e2e/README.md`. Never against a live workspace.
+- No change to the app. No database update.
+
 ### Tasks: Calendar and Timeline views, saved views, and task dependencies (Phase 1)
 - **Four views of the same filtered list**: Table and Board as before, plus **Calendar** and **Timeline**. The filters, Active/Archived and the Seeds folder apply to all four.
   - **Calendar**: a month grid of tasks on their due date, or follow-up date ("Show by"). Overdue open work is marked, closed work is muted, and blocked tasks show a lock. Shows 3 a day with "+N more"; click a task to open it.

@@ -22,15 +22,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Lockfile diff (temporary)
-        run: |
-          npm install -D @playwright/test --package-lock-only --no-audit --no-fund
-          git diff package.json package-lock.json > lock.diff || true
-          echo "LOCK-DIFF-START"
-          base64 -w0 lock.diff
-          echo
-          echo "LOCK-DIFF-END"
-          git checkout -- package.json package-lock.json
       - run: npm run build
       # Formatting and lint errors fail the build; warnings are listed in the run's annotations.
       - name: Biome check

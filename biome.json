@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!dist", "!.github", "!public", "!templates", "!database", "!package-lock.json", "!**/*.md"]
+    "includes": ["**", "!dist", "!.github", "!public", "!templates", "!database", "!package-lock.json", "!**/*.md", "!test-results", "!playwright-report", "!e2e/screenshots", "!e2e/.auth"]
   },
   "formatter": {
     "enabled": true,
