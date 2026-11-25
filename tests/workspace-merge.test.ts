@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mergeWorkspace } from '../src/app/workspaceMerge'
 import { loadCloudStore, queueCloudStoreSave, resetCloudSession, WORKSPACE_MERGED } from '../src/app/cloudStore'
-import { applyWorkspaceChanges } from '../src/shared/workspaceChanges'
+import { applyWorkspaceChanges, changesSince } from '../src/shared/workspaceChanges'
 
 /** What a fake server stores for a save: the whole copy (PUT) or its stored copy with the changes laid on (PATCH). */
 const savedData = (body: any, stored: any) => (body.changes ? applyWorkspaceChanges(stored, body.changes) : body.data)
@@ -85,6 +85,12 @@ test('a save refused because someone else saved first is merged onto theirs and 
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     if (url === '/api/store' && (!init || !init.method))
       return reply(200, { configured: true, ...server, revision: server.version })
+    if (url === '/api/store/sync')
+      return reply(200, {
+        configured: true,
+        version: server.version,
+        changes: changesSince(JSON.parse(init.body).versions, server.data),
+      })
     if ((url === '/api/store' && init.method === 'PUT') || (url === '/api/store/changes' && init.method === 'PATCH')) {
       const body = JSON.parse(init.body)
       puts.push(body)
@@ -164,6 +170,12 @@ test('an edit to the same field made while a merged save is going out stops savi
       new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
     if (url === '/api/store' && !init?.method)
       return reply(200, { configured: true, ...server, revision: server.version })
+    if (url === '/api/store/sync')
+      return reply(200, {
+        configured: true,
+        version: server.version,
+        changes: changesSince(JSON.parse(init.body).versions, server.data),
+      })
     const body = JSON.parse(init.body)
     puts.push(body)
     if (body.baseVersion !== server.version)

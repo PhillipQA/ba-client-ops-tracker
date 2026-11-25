@@ -11,6 +11,22 @@ Released with pull request #110.
 
 **No database migration.** Seeds needs one server setting: the Seeds application token from a SEEDS Admin, as the Northflank secret `SEEDS_API_TOKEN` (see [docs/setup/seeds.md](docs/setup/seeds.md)).
 
+### Tasks live in their own tables (Phase 4C)
+- **No new database update**, but it needs schema v46 from Phase 4A. Without v46, tasks stay in the workspace snapshot as before.
+- **The tasks and inquiries tables are now where tasks are kept.** The workspace snapshot no longer stores them, only their order. Every load reads the snapshot and the task rows in one database statement, so a save in between can't mix old and new. The rest of the app sees the same workspace as before, so nothing else changes.
+  - The snapshot written on every save shrinks by the size of all tasks (with their comments, evidence, files and history). Saves write only the task rows that changed (Phase 4A).
+  - **The switch happens by itself** on the first save after deploying: every record is written once, and the snapshot drops its tasks in the same transaction. Account-only saves never switch. If a quick save can't write the task rows, it puts the tasks back into the snapshot instead, and the next save switches again.
+  - **Safety**: a load that finds no task rows while the snapshot lists some refuses to continue rather than show (and later save) an empty list. Duplicate task ids are refused before saving.
+- **Going back**: set `TASKS_SOURCE=snapshot` and save once. The tasks go back into the snapshot and the tables stay up to date. Do this **before rolling back to a build older than this one**, because older builds read tasks only from the snapshot.
+
+### Per-task versions, delta loads and choosing per task in a conflict (Phase 4B)
+- **No database update.** Builds on Phase 4A (schema v46).
+- **Refreshes download only what changed**: when the browser already has a copy, a refresh (automatic or Refresh now) sends a short version of every record it holds and gets back only the records that differ. One edit elsewhere means one task comes down instead of the whole workspace. Retries after a "newer changes" refusal load the same way. A server without the new route (`POST /api/store/sync`) gets the whole load, as before.
+- **The browser knows what the server stored**: after a save, the server sends back what it adjusted in it (normalized dates and assignees, server-kept comments, files and history). The browser shows it at once and compares its next save with it. So the per-task check from Phase 4A now works after the browser's own saves too: someone else saving a different task no longer refuses your next save.
+- **Choose per task in a save conflict**: when you and someone else changed the same field of the same task, the Save conflict box shows both versions with **Keep mine** and **Use theirs**. Your other edits are saved either way, and further clashing records are asked about one by one. A clashing setting is chosen as a whole.
+  - **Download edits and reload latest** is still there.
+  - A clash with an edit made while a save was going out still uses it.
+
 ### Sign-ins kept in the database (Phase 3)
 - **Database update needed: schema v47** (`database/migrations/schema-v47-sessions.sql`). Run it before or after deploying. Until it is run, sign-ins stay in memory as before; the server looks for the table every ten minutes, so no restart is needed.
 - **A restart or deploy no longer signs everyone out.** Sign-ins are kept in the new `app_sessions` table and loaded when the server starts, and **every server instance knows every sign-in**.
