@@ -701,15 +701,26 @@ button.metric-card.ac-tile-open:focus-visible {
 .ac-drill-bar input[type="search"] {
   flex: 1 1 220px;
   min-width: 0;
+  min-height: 37px;
+  padding: 0 12px;
+  border: 1px solid var(--k-border, #dfe3ea);
+  border-radius: 10px;
+  background: var(--k-input, #fff);
+  color: var(--k-text, #253044);
+  font: inherit;
+  font-size: 14px;
+}
+.ac-drill-bar input[type="search"]::placeholder {
+  color: var(--k-muted, #64748b);
 }
 .ac-drill-count {
-  color: var(--muted, #64748b);
+  color: var(--k-muted, #64748b);
   font-size: 13px;
 }
 .ac-drill-table {
   max-height: min(60vh, 560px);
   overflow: auto;
-  border: 1px solid var(--border, #e5e9f0);
+  border: 1px solid var(--k-line, #e5e9f0);
   border-radius: 10px;
 }
 .ac-drill-table table {
@@ -721,9 +732,11 @@ button.metric-card.ac-tile-open:focus-visible {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface, #fff);
+  /* The dialog's own colours (shared UI kit), so the sticky header is opaque and readable in every theme and mode. */
+  background: var(--k-soft, #f0f3f8);
+  color: var(--k-muted, #536278);
   text-align: left;
-  border-bottom: 1px solid var(--border, #e5e9f0);
+  border-bottom: 1px solid var(--k-line, #e5e9f0);
 }
 .ac-drill-table th button {
   display: inline-flex;
@@ -741,7 +754,8 @@ button.metric-card.ac-tile-open:focus-visible {
 }
 .ac-drill-table td {
   padding: 7px 10px;
-  border-bottom: 1px solid var(--border, #eef1f5);
+  color: var(--k-text, #253044);
+  border-bottom: 1px solid var(--k-line, #eef1f5);
   vertical-align: top;
 }
 .ac-drill-number {
