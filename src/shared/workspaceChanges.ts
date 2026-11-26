@@ -233,3 +233,94 @@ export function applyWorkspaceChanges<T>(current: T, changes: WorkspaceChanges):
   for (const key of changes.unset) delete state[key]
   return state as T
 }
+
+/**
+ * Per-record versions (Phase 4B): a fingerprint of every record, in list order, and of every other top-level value.
+ * The browser sends this for its copy; the server answers with only what differs (changesSince), so a refresh after
+ * one edit elsewhere downloads that one record instead of the whole workspace.
+ */
+export type WorkspaceVersions = {
+  collections: Record<string, [string, string][]>
+  values: Record<string, string>
+}
+
+export function workspaceVersions(state: unknown): WorkspaceVersions {
+  const versions: WorkspaceVersions = { collections: {}, values: {} }
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return versions
+  for (const [key, value] of Object.entries(state as Record<string, unknown>)) {
+    if (value === undefined) continue
+    if (isRecordList(value))
+      versions.collections[key] = value.map(record => [idOf(record) as string, fingerprint(record)])
+    else versions.values[key] = fingerprint(value)
+  }
+  return versions
+}
+
+/** Checks that versions from the network have the shape above. */
+export function isWorkspaceVersions(value: unknown): value is WorkspaceVersions {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const versions = value as WorkspaceVersions
+  if (!versions.collections || typeof versions.collections !== 'object' || Array.isArray(versions.collections))
+    return false
+  if (!versions.values || typeof versions.values !== 'object' || Array.isArray(versions.values)) return false
+  return Object.values(versions.collections).every(
+    list =>
+      Array.isArray(list) &&
+      list.every(entry => Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'string'),
+  )
+}
+
+/**
+ * What changed from a copy described only by its versions to `current`, in the same shape as a save's change set:
+ * laid on that copy with applyWorkspaceChanges it gives `current`. A list whose remaining records are in a different
+ * order is sent whole.
+ */
+export function changesSince(known: WorkspaceVersions, current: unknown): WorkspaceChanges {
+  const changes: WorkspaceChanges = { collections: {}, set: {}, unset: [], setBase: {} }
+  const state = (current && typeof current === 'object' && !Array.isArray(current) ? current : {}) as Record<
+    string,
+    unknown
+  >
+  const knownKeys = new Set([...Object.keys(known.collections), ...Object.keys(known.values)])
+  for (const key of knownKeys)
+    if (state[key] === undefined) {
+      changes.unset.push(key)
+      changes.setBase[key] = known.values[key] ?? null
+    }
+  for (const [key, value] of Object.entries(state)) {
+    if (value === undefined) continue
+    const knownList = own(known.collections, key) ? known.collections[key] : undefined
+    if (knownList && isRecordList(value)) {
+      const was = new Map(knownList)
+      const now = new Map(value.map(record => [idOf(record) as string, record]))
+      const order = (ids: string[]) => ids.filter(id => was.has(id) && now.has(id))
+      if (stableJson(order(knownList.map(([id]) => id))) !== stableJson(order([...now.keys()]))) {
+        changes.set[key] = value
+        changes.setBase[key] = null
+        continue
+      }
+      const upsert: Record<string, unknown>[] = []
+      const base: Record<string, string | null> = {}
+      const after: Record<string, string | null> = {}
+      let previousId: string | null = null
+      for (const [id, record] of now) {
+        const prior = previousId
+        previousId = id
+        const print = was.get(id)
+        if (print !== undefined && print === fingerprint(record)) continue
+        upsert.push(record)
+        base[id] = print ?? null
+        if (print === undefined) after[id] = prior
+      }
+      const remove = [...was.keys()].filter(id => !now.has(id))
+      for (const id of remove) base[id] = was.get(id) as string
+      if (upsert.length || remove.length) changes.collections[key] = { upsert, remove, base, after }
+      continue
+    }
+    const print = fingerprint(value)
+    if (!knownList && known.values[key] === print) continue
+    changes.set[key] = value
+    changes.setBase[key] = known.values[key] ?? null
+  }
+  return changes
+}

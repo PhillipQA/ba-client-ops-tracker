@@ -160,6 +160,7 @@ Locally they go in `.env.local` (see [.env.example](.env.example)); on Northflan
 | `APP_BASE_URL` | yes | The app's address: `http://localhost:5173` locally, the public `https://` address when hosted. Used in sign-in links and Google redirect addresses. |
 | `PORT` | no | Port the server listens on (default `5173`). |
 | `SESSION_IDLE_TIMEOUT_MINUTES` | no | Sign-out after this many idle minutes (default 120). Sessions also end 8 hours after sign-in. |
+| `TASKS_SOURCE` | no | Where tasks are kept: `tables` (default; the tasks and inquiries tables, needs schema v46) or `snapshot` (inside the workspace snapshot, as before Phase 4C). Set `snapshot` before rolling back to an older build, and save once. |
 | `FOLLOW_UP_TIME_ZONE` | no | Time zone for business dates (default `Asia/Manila`). |
 | `SMTP_*` | no | Email for **Forgot password**; see [password recovery](docs/setup/password-recovery.md). |
 | `SEEDS_API_TOKEN` | for Seeds | The Seeds application token from a SEEDS Admin. Server only: never in the browser, Git, logs or screenshots. See [Seeds setup](docs/setup/seeds.md). |
