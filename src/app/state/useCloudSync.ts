@@ -13,7 +13,9 @@ import {
   loadCloudStore,
   resetCloudSession,
   queueCloudStoreSave,
+  resolveSaveClash,
 } from '../cloudStore'
+import type { ClashChoice } from '../conflictChoice'
 import { mergeWorkspace } from '../workspaceMerge'
 import {
   organizationStorageKey,
@@ -297,7 +299,26 @@ export function useCloudSync(ui: UiState) {
     events: ['dochub-updated'],
   })
 
-  return { recoverCloud, refreshWorkspace }
+  /**
+   * Settles a save conflict for the one record it is about (Phase 4B): keep this browser's version or take the other
+   * one. Returns the next clashing record, if any, for the next choice; otherwise saving resumes.
+   */
+  const settleConflict = async (choice: ClashChoice) => {
+    const result = await resolveSaveClash<Store>(choice)
+    if (!result.done) return result.next
+    try {
+      localStorage.removeItem(`${organizationStorageKey(authUser?.organizationId)}:pending-edits`)
+    } catch {
+      /* Nothing pending is kept. */
+    }
+    setSaveConflict('')
+    setLastCloudSync(result.saved.updatedAt || new Date().toISOString())
+    setCloudStatus('synced')
+    setCloudMessage('Database synced')
+    return undefined
+  }
+
+  return { recoverCloud, refreshWorkspace, settleConflict }
 }
 
 export type CloudSync = ReturnType<typeof useCloudSync>

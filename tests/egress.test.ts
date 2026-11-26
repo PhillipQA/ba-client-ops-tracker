@@ -236,7 +236,8 @@ test('unchanged workspace checks download only revision metadata; manual refresh
   assert.equal(calls.filter(url => url === '/api/store').length, 1)
   assert.equal(calls.filter(url => url.endsWith('/revision')).length, 3)
   assert.deepEqual((await loadCloudStore()).data, snapshot.data)
-  assert.equal(calls.filter(url => url === '/api/store').length, 2)
+  // A manual refresh loads again: with a copy in hand, as a delta load (Phase 4B).
+  assert.equal(calls.filter(url => url === '/api/store' || url === '/api/store/sync').length, 2)
 })
 
 test('changed revisions load the workspace once and then return to small checks', async t => {

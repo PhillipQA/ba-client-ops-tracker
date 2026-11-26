@@ -124,7 +124,7 @@ export function useAppState() {
     view,
     waitingFilter,
   } = ui
-  const { recoverCloud, refreshWorkspace } = cloud
+  const { recoverCloud, refreshWorkspace, settleConflict } = cloud
   const {
     applyCommentMutation,
     applyEvidenceMutation,
@@ -320,6 +320,7 @@ export function useAppState() {
     recoveringCloud,
     refreshNotifications,
     refreshWorkspace,
+    settleConflict,
     refreshingCloud,
     reorderSubtasks,
     resetToken,
