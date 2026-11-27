@@ -48,6 +48,27 @@
 .task-saved-views-name input {
   min-width: 220px;
 }
+/* Same look as the Tasks filters below (search box and status select), in every theme and mode. */
+.task-saved-views select,
+.task-saved-views-name input {
+  min-height: 37px;
+  border: 1px solid var(--k-border, var(--tv-border));
+  border-radius: 10px;
+  background: var(--k-input, var(--tv-surface));
+  color: var(--k-text, var(--tv-text));
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+}
+.task-saved-views select {
+  padding: 0 34px 0 10px;
+}
+.task-saved-views-name input {
+  padding: 0 12px;
+}
+.task-saved-views-name input::placeholder {
+  color: var(--k-muted, var(--tv-muted));
+}
 .task-saved-views-note {
   font-size: 12px;
   align-self: center;
