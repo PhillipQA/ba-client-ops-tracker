@@ -1,10 +1,10 @@
 name: Build
 
-# Runs once per change: on pull requests, and on main after a merge. A push to a branch with an open pull request runs
+# Runs once per change: on pull requests, and on main or hotfix after a merge. A push to a branch with an open pull request runs
 # only through the pull request (not twice), and a newer push cancels the run it replaces.
 on:
   push:
-    branches: [main]
+    branches: [main, hotfix]
   pull_request:
 
 concurrency:
